@@ -1,0 +1,102 @@
+---
+description: >
+  Learn how to repackage your Castor application into a distributable PHAR file,
+  customize it with your own logo, and prepare for static compilation.
+---
+
+# Repacking your application in a new phar
+
+You have created a Castor application, with many tasks, and you want to
+distribute it as a single phar file? Castor can help you with that.
+
+## Pre-requisites
+
+You'll need
+[box](https://github.com/box-project/box/blob/main/doc/installation.md#installation)
+to create the phar. The box binary must be available in your path.
+
+You'll also need to ensure the phar creation is allowed by your PHP
+configuration. See the [PHP
+documentation](https://www.php.net/manual/en/phar.configuration.php#ini.phar.readonly) to disabled
+`phar.readonly`.
+
+## Running the Repack Command
+
+Then, run the repack command to create the new phar:
+
+```bash
+castor repack
+```
+
+> [!NOTE]
+> Castor will automatically import all files in the current directory.
+> So ensure to have the fewer files possible in the directory where you run the
+> repack task to avoid including useless files in the phar.
+<!-- -->
+> [!NOTE]
+> If a `box.json` file exists in your application directory,
+> it will be merged with the config file used by Castor.
+> None of these keys `base-path`, `main`, `alias` or `output` keys can be
+> defined in your application box config.
+<!-- -->
+> [!CAUTION]
+> If some classes are missing in your phar, it might be because they are
+> excluded by castor's `box.json` file. In this case, you should override the
+> default configuration with a local `box.json` file
+
+{% include-markdown "/build/command_castor-repack.md" start="`castor:repack`\n---------------" %}
+
+## Repack with your logo
+
+When you repack, you can use the `--no-logo` option to hide the Castor logo.
+
+Alternatively, you can replace the Castor logo with your own.
+Use the `--logo-file` option and provide the absolute path (or a path relative
+to the working directory) of a `.php` file.
+
+This file must return a string or a closure that returns a string.
+The closure will receive the application name and version as string parameters.
+
+### Example
+
+```php
+// repack/my-logo.php
+
+<?php
+
+return '❤️ My LOGO ❤️';
+```
+
+```bash
+castor repack --logo-file repack/my-logo.php
+```
+
+or
+
+```php
+// repack/my-complex-logo.php
+
+<?php
+
+return function (string $appName, string $appVersion) {
+    return <<<LOGO
+
+    ❤️ My LOGO for {$appName} in Version {$appVersion} ❤️
+
+    LOGO;
+};
+```
+
+```bash
+castor repack --logo-file repack/my-complex-logo.php
+```
+
+![img.png](../../../assets/custom-logo.png)
+
+## Going further
+
+Packaging your Castor app as a phar simplifies distribution but requires PHP
+setup on target systems.
+
+[Castor's `compile` command](compile.md) streamlines this by embedding the phar
+in a PHP binary, creating a static executable for diverse environments.

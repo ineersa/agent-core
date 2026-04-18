@@ -1,0 +1,22 @@
+includes:
+    - phpstan-baseline.neon
+    - vendor/phpstan/phpstan-strict-rules/rules.neon
+    - vendor/phpstan/phpstan-phpunit/extension.neon
+    - vendor/shipmonk/dead-code-detector/rules.neon
+
+parameters:
+    level: 6
+    treatPhpDocTypesAsCertain: false
+    paths:
+        - src/
+        - castor.php
+        - .castor/
+    scanFiles:
+        - .castor.stub.php
+        - .castor/helpers.php
+    tmpDir: var/phpstan
+    excludePaths:
+        - var/*
+        - vendor/*
+    parallel:
+        maximumNumberOfProcesses: 1

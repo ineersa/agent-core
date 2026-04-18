@@ -1,0 +1,44 @@
+{
+    "name": "ineersa/agent-core",
+    "description": "Agent loop and core agentic features Symfony bundle",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Ineersa\\AgentCore\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Ineersa\\AgentCore\\Tests\\": "tests/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Illia Vasylevskyi",
+            "email": "ineersa@gmail.com"
+        }
+    ],
+    "require": {
+        "php": ">=8.5",
+        "symfony/config": "^8.0",
+        "symfony/console": "^8.0",
+        "symfony/dependency-injection": "^8.0",
+        "symfony/http-kernel": "^8.0",
+        "symfony/messenger": "^8.0",
+        "symfony/mercure": "^0.7",
+        "league/flysystem": "^3.30",
+        "league/flysystem-local": "^3.30",
+        "doctrine/dbal": "^4.3",
+        "doctrine/migrations": "^3.8"
+    },
+    "require-dev": {
+        "friendsofphp/php-cs-fixer": "^3.94.2",
+        "phpstan/phpstan": "^2.1.44",
+        "phpstan/phpstan-phpunit": "^2.0.16",
+        "phpstan/phpstan-strict-rules": "^2.0.10",
+        "phpunit/phpunit": "^13.0.5",
+        "shipmonk/dead-code-detector": "^0.15.1",
+        "symfony/framework-bundle": "^8.0"
+    }
+}

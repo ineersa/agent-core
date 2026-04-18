@@ -1,0 +1,7 @@
+{
+  "allowCommandPatterns": [],
+  "allowWriteOutsideCwd": [],
+  "allowDestructiveInPaths": [],
+  "protectedReadPatterns": [],
+  "dangerousCommandPatterns": []
+}
