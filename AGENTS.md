@@ -40,42 +40,51 @@ If any of these fail, the work is **not complete**.
   - property hooks
 - Apply these features pragmatically (readability first, no novelty for novelty’s sake).
 
-## Repository structure (current)
+## AI Documentation Index (ai-index.json)
 
-```text
-src/
-  AgentLoopBundle.php
-  DependencyInjection/      # Bundle extension + configuration tree
-  Contract/                 # Public contracts (runner, stores, hooks, extension seams)
-    Hook/
-    Extension/
-    Tool/
-  Domain/                   # Pure domain messages/events/commands/run/tool value objects
-    Run/
-    Message/
-    Tool/
-    Event/
-    Command/
-  Application/              # Use-case orchestration, routing, reducer, dispatching
-    Orchestrator/
-    Handler/
-    Reducer/
-  Infrastructure/           # Integrations/adapters (storage, mercure, messenger, Symfony AI)
-    Doctrine/
-    Messenger/
-    SymfonyAi/
-    Storage/
-    Mercure/
-  Api/                      # HTTP/API layer placeholders for later stages
-    Http/
-    Dto/
-  Command/                  # Symfony console commands
-config/
-  services.php              # DI service wiring
-  messenger.php             # Messenger buses/transports/routing defaults
-  doctrine.php              # Doctrine integration placeholder
-implementation/             # Staged implementation plan + progress tracker
+The repository uses a hierarchical `ai-index.json` + `docs/` system for codebase navigation.
+Every namespace and sub-namespace has its own `ai-index.json` and a `docs/` directory with per-file documentation.
+
+### Reading policy (mandatory)
+
+- **Always read `ai-index.json` in the project root first** to understand the full namespace layout before exploring any code.
+- When working within a specific namespace, read its `ai-index.json` to find relevant files and their responsibilities.
+- When exploring a file, read its corresponding `docs/*.md` for detailed documentation before reading the source code.
+- This saves context by avoiding broad source file reads — use the index to locate exactly what you need.
+
+### Index maintenance (mandatory delegation)
+
+**The main agent MUST NOT update ai-index.json or docs directly.** All index maintenance is delegated to the **index-maintainer** subagent.
+
+The index-maintainer subagent:
+- Receives its skill (index-maintainer) pre-loaded in its system prompt
+- Uses scout subagents internally for code exploration
+- Only processes the specific paths you give it — never rescans the whole repo
+
+#### Session tracking (mandatory)
+
+During every session, **track all namespaces, sub-namespaces, and files you create, modify, or rename** in `src/`. At the end of the session (after all user-requested work is done), launch the index-maintainer subagent with the full list of touched paths.
+
+Example task for index-maintainer:
 ```
+Update ai-index.json and docs for these paths:
+- src/Application/Handler/ (modified ToolExecutor.php, added NewHandler.php)
+- src/Domain/Event/ (added CustomEvent.php)
+- src/Infrastructure/Storage/ (renamed InMemoryRunStore.php)
+```
+
+#### When to run index-maintainer
+
+- **Always once at session end** — after all code changes are complete, before claiming done.
+- **On demand** — when the user explicitly asks to update docs/fix indexes, or runs `/index-maintainer`.
+- **Never mid-task** — let the main agent finish code changes first, then delegate cleanup.
+
+#### What index-maintainer expects
+
+You must pass:
+1. The list of namespaces/sub-namespaces/files that changed
+2. What changed (added, modified, renamed, removed)
+3. Enough context for it to launch scouts effectively
 
 ## Namespace responsibilities
 

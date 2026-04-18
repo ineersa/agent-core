@@ -1,0 +1,62 @@
+{
+  "spec": "agent-core.ai-docs/v1",
+  "namespace": "Contract\\Hook",
+  "fqcn": "Ineersa\\AgentCore\\Contract\\Hook",
+  "description": "Hook interfaces for intercepting agent loop lifecycle: context transforms, LLM conversion, tool call boundaries, cancellation, and message providers.",
+  "files": [
+    {
+      "file": "TransformContextHookInterface.php",
+      "type": "interface",
+      "responsibility": "Transform the message context before LLM call — filter, augment, or rewrite messages.",
+      "docs": "docs/TransformContextHookInterface.md"
+    },
+    {
+      "file": "ConvertToLlmHookInterface.php",
+      "type": "interface",
+      "responsibility": "Convert AgentMessage list into a MessageBag for LLM provider consumption.",
+      "docs": "docs/ConvertToLlmHookInterface.md"
+    },
+    {
+      "file": "BeforeProviderRequestHookInterface.php",
+      "type": "interface",
+      "responsibility": "Intercept before LLM provider call — can return a ProviderRequest to modify/override.",
+      "docs": "docs/BeforeProviderRequestHookInterface.md"
+    },
+    {
+      "file": "BeforeToolCallHookInterface.php",
+      "type": "interface",
+      "responsibility": "Intercept before tool execution — can return BeforeToolCallResult to modify/skip call.",
+      "docs": "docs/BeforeToolCallHookInterface.md"
+    },
+    {
+      "file": "AfterToolCallHookInterface.php",
+      "type": "interface",
+      "responsibility": "Intercept after tool execution — can return AfterToolCallResult to modify result.",
+      "docs": "docs/AfterToolCallHookInterface.md"
+    },
+    {
+      "file": "CancellationTokenInterface.php",
+      "type": "interface",
+      "responsibility": "Cooperative cancellation check — isCancellationRequested().",
+      "docs": "docs/CancellationTokenInterface.md"
+    },
+    {
+      "file": "NullCancellationToken.php",
+      "type": "class",
+      "responsibility": "No-op cancellation token — always returns false. Read-only value object.",
+      "docs": "docs/NullCancellationToken.md"
+    },
+    {
+      "file": "SteeringMessagesProviderInterface.php",
+      "type": "interface",
+      "responsibility": "Provides steering messages injected at start of context to guide agent behavior.",
+      "docs": "docs/SteeringMessagesProviderInterface.md"
+    },
+    {
+      "file": "FollowUpMessagesProviderInterface.php",
+      "type": "interface",
+      "responsibility": "Provides follow-up messages appended after the main context.",
+      "docs": "docs/FollowUpMessagesProviderInterface.md"
+    }
+  ]
+}

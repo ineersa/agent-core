@@ -1,0 +1,14 @@
+{
+  "spec": "agent-core.ai-docs/v1",
+  "namespace": "Infrastructure\\Messenger",
+  "fqcn": "Ineersa\\AgentCore\\Infrastructure\\Messenger",
+  "description": "Messenger bus configuration — bus name constants.",
+  "files": [
+    {
+      "file": "BusNames.php",
+      "type": "final class",
+      "responsibility": "Bus name constants: COMMAND_BUS, EXECUTION_BUS, PUBLISHER_BUS — central reference for all messenger wiring.",
+      "docs": "docs/BusNames.md"
+    }
+  ]
+}

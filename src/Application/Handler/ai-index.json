@@ -1,0 +1,122 @@
+{
+  "spec": "agent-core.ai-docs/v1",
+  "namespace": "Application\\Handler",
+  "fqcn": "Ineersa\\AgentCore\\Application\\Handler",
+  "description": "Handler infrastructure — command routing, extension registries, LLM/tool execution workers, outbox projectors, event dispatching, step dispatch, locking, idempotency, replay, and tool batch collection.",
+  "files": [
+    {
+      "file": "CommandRouter.php",
+      "type": "final class",
+      "responsibility": "Routes ApplyCommand to core/extension/rejected — validates prefix, options, cancel-safe support.",
+      "docs": "docs/CommandRouter.md"
+    },
+    {
+      "file": "CommandHandlerRegistry.php",
+      "type": "final class",
+      "responsibility": "Registry of CommandHandlerInterface — finds handler by command kind.",
+      "docs": "docs/CommandHandlerRegistry.md"
+    },
+    {
+      "file": "EventSubscriberRegistry.php",
+      "type": "final class",
+      "responsibility": "Registry of EventSubscriberInterface — yields subscribers matching an event type.",
+      "docs": "docs/EventSubscriberRegistry.md"
+    },
+    {
+      "file": "HookDispatcher.php",
+      "type": "readonly class",
+      "responsibility": "Dispatches boundary hooks via Symfony EventDispatcher + HookSubscriberRegistry. Validates hook names.",
+      "docs": "docs/HookDispatcher.md"
+    },
+    {
+      "file": "HookSubscriberRegistry.php",
+      "type": "final class",
+      "responsibility": "Registry of HookSubscriberInterface — yields subscribers matching a hook name.",
+      "docs": "docs/HookSubscriberRegistry.md"
+    },
+    {
+      "file": "ExecuteLlmStepWorker.php",
+      "type": "readonly class",
+      "responsibility": "Messenger handler (agent.execution.bus) — invokes Platform, normalizes response, dispatches LlmStepResult to command bus.",
+      "docs": "docs/ExecuteLlmStepWorker.md"
+    },
+    {
+      "file": "ExecuteToolCallWorker.php",
+      "type": "readonly class",
+      "responsibility": "Messenger handler (agent.execution.bus) — invokes ToolExecutorInterface, dispatches ToolCallResult to command bus.",
+      "docs": "docs/ExecuteToolCallWorker.md"
+    },
+    {
+      "file": "ToolExecutor.php",
+      "type": "final class",
+      "responsibility": "Policy-aware placeholder implementing ToolExecutorInterface — resolves execution mode/timeout per tool. Real execution in stage 06.",
+      "docs": "docs/ToolExecutor.md"
+    },
+    {
+      "file": "ToolCatalogResolver.php",
+      "type": "final class",
+      "responsibility": "Aggregates ToolCatalogProviderInterface providers, deduplicates by name, enforces schema stability across turns.",
+      "docs": "docs/ToolCatalogResolver.md"
+    },
+    {
+      "file": "ToolBatchCollector.php",
+      "type": "final class",
+      "responsibility": "Collects tool call results into ordered batches — registers expected, collects results, returns complete/accepted/duplicate/rejected outcomes.",
+      "docs": "docs/ToolBatchCollector.md"
+    },
+    {
+      "file": "ToolBatchCollectOutcome.php",
+      "type": "readonly class",
+      "responsibility": "Outcome of batch collection — rejected/duplicate/acceptedPending/acceptedComplete factory methods.",
+      "docs": "docs/ToolBatchCollectOutcome.md"
+    },
+    {
+      "file": "OutboxProjector.php",
+      "type": "readonly class",
+      "responsibility": "Projects events to JSONL + Mercure outbox sinks, then runs both projectors inline.",
+      "docs": "docs/OutboxProjector.md"
+    },
+    {
+      "file": "JsonlOutboxProjectorWorker.php",
+      "type": "readonly class",
+      "responsibility": "Messenger handler (agent.publisher.bus) — claims JSONL outbox entries, appends to RunLogWriter, marks processed/failed.",
+      "docs": "docs/JsonlOutboxProjectorWorker.md"
+    },
+    {
+      "file": "MercureOutboxProjectorWorker.php",
+      "type": "readonly class",
+      "responsibility": "Messenger handler (agent.publisher.bus) — claims Mercure outbox entries, publishes via RunEventPublisher, marks processed/failed.",
+      "docs": "docs/MercureOutboxProjectorWorker.md"
+    },
+    {
+      "file": "RunEventDispatcher.php",
+      "type": "readonly class",
+      "responsibility": "Dispatches RunEvent via Symfony EventDispatcher + EventSubscriberRegistry.",
+      "docs": "docs/RunEventDispatcher.md"
+    },
+    {
+      "file": "StepDispatcher.php",
+      "type": "readonly class",
+      "responsibility": "Dispatches effect commands to execution bus and publisher messages to publisher bus.",
+      "docs": "docs/StepDispatcher.md"
+    },
+    {
+      "file": "RunLockManager.php",
+      "type": "readonly class",
+      "responsibility": "Per-run mutual exclusion using Symfony Lock — synchronized() wraps a callable with acquire/release.",
+      "docs": "docs/RunLockManager.md"
+    },
+    {
+      "file": "MessageIdempotencyService.php",
+      "type": "final class",
+      "responsibility": "In-memory idempotency tracker — wasHandled/markHandled scoped by (scope, runId, idempotencyKey).",
+      "docs": "docs/MessageIdempotencyService.md"
+    },
+    {
+      "file": "ReplayService.php",
+      "type": "readonly class",
+      "responsibility": "Rebuilds hot prompt state from canonical events (fallback to JSONL). Verifies sequence integrity, estimates tokens, saves to PromptStateStore.",
+      "docs": "docs/ReplayService.md"
+    }
+  ]
+}

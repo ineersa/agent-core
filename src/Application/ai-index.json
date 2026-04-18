@@ -1,0 +1,29 @@
+{
+  "spec": "agent-core.ai-docs/v1",
+  "namespace": "Application",
+  "fqcn": "Ineersa\\AgentCore\\Application",
+  "description": "Runtime coordination and flow: orchestrator, reducer, command router, effect dispatchers, tool execution, outbox projection, and event dispatching.",
+  "subNamespaces": [
+    {
+      "namespace": "Orchestrator",
+      "fqcn": "Ineersa\\AgentCore\\Application\\Orchestrator",
+      "path": "Orchestrator",
+      "description": "Top-level orchestrators — AgentRunner (public API) dispatches to message bus; RunOrchestrator handles all bus messages with locking, idempotency, CQRS commit, and effect dispatch.",
+      "index": "Orchestrator/ai-index.json"
+    },
+    {
+      "namespace": "Handler",
+      "fqcn": "Ineersa\\AgentCore\\Application\\Handler",
+      "path": "Handler",
+      "description": "Handler infrastructure — command routing, registries, LLM/tool workers, outbox projectors, event dispatching, step dispatch, locking, idempotency, replay, tool batch collection.",
+      "index": "Handler/ai-index.json"
+    },
+    {
+      "namespace": "Reducer",
+      "fqcn": "Ineersa\\AgentCore\\Application\\Reducer",
+      "path": "Reducer",
+      "description": "Pure state reducer — transforms RunState given bus commands, produces effects for async execution.",
+      "index": "Reducer/ai-index.json"
+    }
+  ]
+}

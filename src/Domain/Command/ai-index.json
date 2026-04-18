@@ -1,0 +1,26 @@
+{
+  "spec": "agent-core.ai-docs/v1",
+  "namespace": "Domain\\Command",
+  "fqcn": "Ineersa\\AgentCore\\Domain\\Command",
+  "description": "Command value objects for the agent loop — kind constants, pending queue items, and routed commands with core/extension/rejected discrimination.",
+  "files": [
+    {
+      "file": "CoreCommandKind.php",
+      "type": "final class",
+      "responsibility": "Constants for core command kinds: steer, follow_up, cancel, human_response, continue. With isCore() check.",
+      "docs": "docs/CoreCommandKind.md"
+    },
+    {
+      "file": "PendingCommand.php",
+      "type": "readonly class",
+      "responsibility": "Pending command in queue — runId, kind, idempotencyKey, payload, options.",
+      "docs": "docs/PendingCommand.md"
+    },
+    {
+      "file": "RoutedCommand.php",
+      "type": "readonly class",
+      "responsibility": "Routed command with status discrimination — core(), extension(), rejected() factory methods.",
+      "docs": "docs/RoutedCommand.md"
+    }
+  ]
+}

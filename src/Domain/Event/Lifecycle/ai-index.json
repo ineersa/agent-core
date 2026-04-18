@@ -1,0 +1,74 @@
+{
+  "spec": "agent-core.ai-docs/v1",
+  "namespace": "Domain\\Event\\Lifecycle",
+  "fqcn": "Ineersa\\AgentCore\\Domain\\Event\\Lifecycle",
+  "description": "Typed lifecycle event subclasses extending AbstractLifecycleRunEvent. Each maps to a CoreLifecycleEventType constant.",
+  "files": [
+    {
+      "file": "AbstractLifecycleRunEvent.php",
+      "type": "abstract readonly class",
+      "responsibility": "Base class for all lifecycle events — auto-fills type from static::TYPE constant.",
+      "docs": "docs/AbstractLifecycleRunEvent.md"
+    },
+    {
+      "file": "AgentStartEvent.php",
+      "type": "readonly class",
+      "responsibility": "AGENT_START — must be the first event in the stream.",
+      "docs": null
+    },
+    {
+      "file": "AgentEndEvent.php",
+      "type": "readonly class",
+      "responsibility": "AGENT_END — must be the final event in the stream.",
+      "docs": null
+    },
+    {
+      "file": "TurnStartEvent.php",
+      "type": "readonly class",
+      "responsibility": "TURN_START — opens a new turn scope.",
+      "docs": null
+    },
+    {
+      "file": "TurnEndEvent.php",
+      "type": "readonly class",
+      "responsibility": "TURN_END — closes the current turn scope.",
+      "docs": null
+    },
+    {
+      "file": "MessageStartEvent.php",
+      "type": "readonly class",
+      "responsibility": "MESSAGE_START — begins an LLM message emission.",
+      "docs": null
+    },
+    {
+      "file": "MessageUpdateEvent.php",
+      "type": "readonly class",
+      "responsibility": "MESSAGE_UPDATE — streaming delta for an in-progress message.",
+      "docs": null
+    },
+    {
+      "file": "MessageEndEvent.php",
+      "type": "readonly class",
+      "responsibility": "MESSAGE_END — completes a message, may indicate tool calls pending.",
+      "docs": null
+    },
+    {
+      "file": "ToolExecutionStartEvent.php",
+      "type": "readonly class",
+      "responsibility": "TOOL_EXECUTION_START — begins tool execution phase.",
+      "docs": null
+    },
+    {
+      "file": "ToolExecutionUpdateEvent.php",
+      "type": "readonly class",
+      "responsibility": "TOOL_EXECUTION_UPDATE — progress update during tool execution.",
+      "docs": null
+    },
+    {
+      "file": "ToolExecutionEndEvent.php",
+      "type": "readonly class",
+      "responsibility": "TOOL_EXECUTION_END — completes a tool execution with order_index.",
+      "docs": null
+    }
+  ]
+}

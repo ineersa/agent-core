@@ -1,0 +1,26 @@
+{
+  "spec": "agent-core.ai-docs/v1",
+  "namespace": "DependencyInjection",
+  "fqcn": "Ineersa\\AgentCore\\DependencyInjection",
+  "description": "Symfony bundle extension: config tree definition, config validation, service loading, and framework config prepend (messenger, doctrine).",
+  "files": [
+    {
+      "file": "AgentLoopExtension.php",
+      "class": "AgentLoopExtension",
+      "responsibility": "Symfony DI extension — prepends messenger/doctrine config, processes bundle configuration into container parameters, loads services.php.",
+      "docs": "docs/AgentLoopExtension.md"
+    },
+    {
+      "file": "Configuration.php",
+      "class": "Configuration",
+      "responsibility": "Defines the full configuration tree for agent_loop: runtime mode, streaming, LLM defaults, storage backends, tool execution, commands, events, checkpoints, retention.",
+      "docs": "docs/Configuration.md"
+    }
+  ],
+  "relatedRootFile": {
+    "file": "../AgentLoopBundle.php",
+    "class": "AgentLoopBundle",
+    "responsibility": "Bundle entry point — registers AgentLoopExtension as the container extension.",
+    "docs": null
+  }
+}

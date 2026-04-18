@@ -1,0 +1,20 @@
+{
+  "spec": "agent-core.ai-docs/v1",
+  "namespace": "Application\\Orchestrator",
+  "fqcn": "Ineersa\\AgentCore\\Application\\Orchestrator",
+  "description": "Top-level orchestrators — AgentRunner is the public API facade; RunOrchestrator is the central CQRS processor handling all bus messages.",
+  "files": [
+    {
+      "file": "AgentRunner.php",
+      "type": "final class",
+      "responsibility": "Implements AgentRunnerInterface — thin facade that dispatches StartRun, AdvanceRun, ApplyCommand to the command bus. Handles start/continue/steer/followUp/cancel/answerHuman.",
+      "docs": "docs/AgentRunner.md"
+    },
+    {
+      "file": "RunOrchestrator.php",
+      "type": "final readonly class",
+      "responsibility": "Central CQRS processor — handles StartRun, ApplyCommand, AdvanceRun, LlmStepResult, ToolCallResult. Uses per-run locking, idempotency, reducer, event commit, outbox projection, boundary hooks, and effect dispatch.",
+      "docs": "docs/RunOrchestrator.md"
+    }
+  ]
+}
