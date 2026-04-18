@@ -66,7 +66,7 @@
       "namespace": "Tool",
       "fqcn": "Ineersa\\AgentCore\\Contract\\Tool",
       "path": "Tool",
-      "description": "Tool execution contracts — platform invocation, model resolution, tool catalog, tool executor.",
+      "description": "Tool execution contracts — platform invocation, model resolution, tool catalog, tool executor, and idempotency key resolution.",
       "index": "Tool/ai-index.json"
     }
   ]

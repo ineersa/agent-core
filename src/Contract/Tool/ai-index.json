@@ -2,7 +2,7 @@
   "spec": "agent-core.ai-docs/v1",
   "namespace": "Contract\\Tool",
   "fqcn": "Ineersa\\AgentCore\\Contract\\Tool",
-  "description": "Tool execution contracts — platform invocation, model resolution, tool catalog discovery, and tool executor.",
+  "description": "Tool execution contracts — platform invocation, model resolution, tool catalog discovery, tool executor, and idempotency key resolution.",
   "files": [
     {
       "file": "PlatformInterface.php",
@@ -27,6 +27,12 @@
       "type": "interface",
       "responsibility": "Executes a single tool call, returns a ToolResult.",
       "docs": "docs/ToolExecutorInterface.md"
+    },
+    {
+      "file": "ToolIdempotencyKeyResolverInterface.php",
+      "type": "interface",
+      "responsibility": "Optional stronger idempotency key contract — resolves a deterministic idempotency key from a ToolCall for result deduplication.",
+      "docs": "docs/ToolIdempotencyKeyResolverInterface.md"
     }
   ]
 }

@@ -13,7 +13,7 @@
     {
       "file": "RunOrchestrator.php",
       "type": "final readonly class",
-      "responsibility": "Central CQRS processor — handles StartRun, ApplyCommand, AdvanceRun, LlmStepResult, ToolCallResult. Uses per-run locking, idempotency, reducer, event commit, outbox projection, boundary hooks, and effect dispatch.",
+      "responsibility": "Central CQRS processor — handles StartRun, ApplyCommand, AdvanceRun, LlmStepResult, ToolCallResult. Uses per-run locking, idempotency, reducer, event commit, outbox projection, boundary hooks, and effect dispatch. Stage 06: tool mode selection via ToolExecutionPolicyResolver, lifecycle events (TOOL_EXECUTION_START/END, MESSAGE_START/END, tool_batch_committed), interrupt → WaitingHuman transition, stale-on-cancel handling for tool results.",
       "docs": "docs/RunOrchestrator.md"
     }
   ]

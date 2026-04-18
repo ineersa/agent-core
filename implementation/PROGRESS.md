@@ -316,3 +316,57 @@ Status: **completed**
 
 - Stage 05 Symfony AI integration deliverables are implemented and passing quality gates.
 - Next implementation target: `implementation/06-tool-execution-hitl-and-parallelism.md`.
+
+## Stage 06 — Tool Execution, HITL, and Parallelism
+
+Status: **completed**
+
+### Completed
+
+- Implemented production tool execution engine in `ToolExecutor`:
+  - policy resolution by tool mode/timeout/parallelism
+  - argument schema preflight validation
+  - `beforeToolCall` block support and `afterToolCall` override semantics
+  - interrupt-mode contract payload generation (`kind=interrupt`, `question_id`, `prompt`, `schema`)
+  - cancellation-aware stale result handling for non-cooperative tools
+- Added tool policy + result plumbing:
+  - `src/Application/Handler/ToolExecutionPolicyResolver.php`
+  - `src/Domain/Tool/ToolExecutionPolicy.php`
+  - `src/Application/Handler/ToolExecutionResultStore.php`
+  - `src/Contract/Tool/ToolIdempotencyKeyResolverInterface.php` (optional stronger idempotency seam)
+- Added v1 idempotency guarantees:
+  - baseline dedupe by `(run_id, tool_call_id)`
+  - stronger reuse path by `(tool_name, tool_idempotency_key)` when key is present
+- Upgraded tool execution message/contracts:
+  - `ExecuteToolCall` now carries mode, timeout, maxParallelism, assistantMessage, and argSchema
+  - `ToolCall` now carries runtime context (run metadata, mode/timeout, idempotency key, assistant message)
+- Reworked orchestrator tool handling (`RunOrchestrator`):
+  - mode selection per tool call
+  - lifecycle emission for tool preflight + commit boundaries (`tool_execution_start`, `tool_execution_end`)
+  - synthetic tool message lifecycle markers (`message_start`/`message_end` for tool role)
+  - interrupt detection path transitions run to `waiting_human` and emits `waiting_human` event
+  - late tool results ignored when run is `cancelling`/`cancelled`
+- Reworked `ToolBatchCollector` for bounded dispatch:
+  - sequential mode executes strictly one-at-a-time in assistant order
+  - parallel mode dispatches up to max parallelism and backfills pending calls as results arrive
+  - final ordered commit remains deterministic by `order_index`
+
+### Tests Added/Updated
+
+- Added:
+  - `tests/Application/Handler/ToolExecutorTest.php`
+  - `tests/Application/Handler/ToolBatchCollectorTest.php`
+- Updated:
+  - `tests/Application/Orchestrator/RunOrchestratorTopologyTest.php`
+  - `tests/Infrastructure/SymfonyAi/SymfonyToolExecutorAdapterTest.php`
+
+### Quality/Verification
+
+- `LLM_MODE=true castor dev:check` ✅
+  - `cs-fix`: ok
+  - `phpstan`: ok
+  - `test`: ok (`53 tests`, `276 assertions`)
+
+### Stage 06 closure
+
+- Stage 06 tool execution, interrupt handling, idempotency, and bounded parallel collection are implemented and passing quality gates.

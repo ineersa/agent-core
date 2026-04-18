@@ -24,7 +24,7 @@ Immutable wrapper around `list<object>` — LLM-formatted messages. `empty()` fa
 | `AdvanceRun` | Resume/advance a run with payload |
 | `ApplyCommand` | Apply a pending command (kind, payload, options) |
 | `ExecuteLlmStep` | Execute LLM step (contextRef, toolsRef) |
-| `ExecuteToolCall` | Execute single tool call (toolCallId, toolName, args, orderIndex) |
+| `ExecuteToolCall` | Execute single tool call — toolCallId, toolName, args, orderIndex, **toolIdempotencyKey, mode, timeoutSeconds, maxParallelism, assistantMessage, argSchema** (Stage 06) |
 | `CollectToolBatch` | Collect completed tool results by IDs |
 
 ## Results

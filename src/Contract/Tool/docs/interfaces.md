@@ -49,3 +49,16 @@ Executes a single tool call and returns the result.
 | Method | Signature | Description |
 |--------|-----------|-------------|
 | `execute` | `execute(ToolCall $toolCall): ToolResult` | Run a tool call. |
+
+# ToolIdempotencyKeyResolverInterface *(Stage 06)*
+
+**File:** `ToolIdempotencyKeyResolverInterface.php`
+**Namespace:** `Ineersa\AgentCore\Contract\Tool`
+
+Optional stronger idempotency key contract. When implemented, `ToolExecutor` uses this to resolve a deterministic idempotency key from a `ToolCall` for result deduplication across runs.
+
+## Methods
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `resolveToolIdempotencyKey` | `resolveToolIdempotencyKey(ToolCall $toolCall): ?string` | Resolve an idempotency key for the given tool call. |

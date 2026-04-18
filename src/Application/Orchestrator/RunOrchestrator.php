@@ -12,11 +12,14 @@ use Ineersa\AgentCore\Application\Handler\ReplayService;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
+use Ineersa\AgentCore\Application\Handler\ToolCatalogResolver;
+use Ineersa\AgentCore\Application\Handler\ToolExecutionPolicyResolver;
 use Ineersa\AgentCore\Application\Reducer\RunReducer;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\BoundaryHookName;
+use Ineersa\AgentCore\Domain\Event\CoreLifecycleEventType;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -27,6 +30,7 @@ use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
 final readonly class RunOrchestrator
@@ -50,6 +54,8 @@ final readonly class RunOrchestrator
         private RunLockManager $runLockManager,
         private ToolBatchCollector $toolBatchCollector,
         private ?HookDispatcher $hookDispatcher = null,
+        private ?ToolExecutionPolicyResolver $toolExecutionPolicyResolver = null,
+        private ?ToolCatalogResolver $toolCatalogResolver = null,
     ) {
     }
 
@@ -321,6 +327,7 @@ final readonly class RunOrchestrator
 
             $assistantMessage = $message->assistantMessage ?? [];
             $toolCalls = $this->extractToolCalls($assistantMessage);
+            $toolSchemas = $this->resolveToolSchemas($runId, $state->turnNo, $message->stepId());
 
             $messages = $state->messages;
             $messages[] = $this->assistantMessage($assistantMessage);
@@ -330,12 +337,59 @@ final readonly class RunOrchestrator
                 $pendingToolCalls[$toolCall['id']] = false;
             }
 
+            $effects = [];
+            foreach ($toolCalls as $toolCall) {
+                $policy = $this->resolveToolPolicy($toolCall['name']);
+
+                $effects[] = new ExecuteToolCall(
+                    runId: $runId,
+                    turnNo: $state->turnNo,
+                    stepId: $message->stepId(),
+                    attempt: 1,
+                    idempotencyKey: hash('sha256', \sprintf('%s|%s|%s', $runId, $message->stepId(), $toolCall['id'])),
+                    toolCallId: $toolCall['id'],
+                    toolName: $toolCall['name'],
+                    args: $toolCall['args'],
+                    orderIndex: $toolCall['order_index'],
+                    toolIdempotencyKey: $toolCall['tool_idempotency_key'],
+                    mode: $policy['mode']->value,
+                    timeoutSeconds: $policy['timeout_seconds'],
+                    maxParallelism: $policy['max_parallelism'],
+                    assistantMessage: $assistantMessage,
+                    argSchema: $toolSchemas[$toolCall['name']] ?? null,
+                );
+            }
+
+            $eventSpecs = [[
+                'type' => 'llm_step_completed',
+                'payload' => [
+                    'step_id' => $message->stepId(),
+                    'stop_reason' => $message->stopReason,
+                    'usage' => $message->usage,
+                    'tool_calls_count' => \count($toolCalls),
+                ],
+            ]];
+
+            foreach ($effects as $effect) {
+                $eventSpecs[] = [
+                    'type' => CoreLifecycleEventType::TOOL_EXECUTION_START,
+                    'payload' => [
+                        'tool_call_id' => $effect->toolCallId,
+                        'tool_name' => $effect->toolName,
+                        'order_index' => $effect->orderIndex,
+                        'mode' => $effect->mode,
+                    ],
+                ];
+            }
+
+            $events = $this->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
+
             $nextState = new RunState(
                 runId: $state->runId,
                 status: RunStatus::Running,
                 version: $state->version + 1,
                 turnNo: $state->turnNo,
-                lastSeq: $state->lastSeq + 1,
+                lastSeq: $state->lastSeq + \count($events),
                 isStreaming: false,
                 streamingMessage: null,
                 pendingToolCalls: $pendingToolCalls,
@@ -344,44 +398,15 @@ final readonly class RunOrchestrator
                 activeStepId: $state->activeStepId,
             );
 
-            $event = $this->event(
-                runId: $runId,
-                seq: $nextState->lastSeq,
-                turnNo: $nextState->turnNo,
-                type: 'llm_step_completed',
-                payload: [
-                    'step_id' => $message->stepId(),
-                    'stop_reason' => $message->stopReason,
-                    'usage' => $message->usage,
-                    'tool_calls_count' => \count($toolCalls),
-                ],
-            );
-
-            $effects = [];
-            if ([] !== $toolCalls) {
-                foreach ($toolCalls as $toolCall) {
-                    $effects[] = new ExecuteToolCall(
-                        runId: $runId,
-                        turnNo: $state->turnNo,
-                        stepId: $message->stepId(),
-                        attempt: 1,
-                        idempotencyKey: hash('sha256', \sprintf('%s|%s|%s', $runId, $message->stepId(), $toolCall['id'])),
-                        toolCallId: $toolCall['id'],
-                        toolName: $toolCall['name'],
-                        args: $toolCall['args'],
-                        orderIndex: $toolCall['order_index'],
-                        toolIdempotencyKey: $toolCall['tool_idempotency_key'],
-                    );
-                }
-            }
-
-            if (!$this->commit($state, $nextState, [$event])) {
+            if (!$this->commit($state, $nextState, $events)) {
                 return;
             }
 
-            if ([] !== $toolCalls) {
-                $this->toolBatchCollector->registerExpectedBatch($runId, $state->turnNo, $message->stepId(), $toolCalls);
-                $this->stepDispatcher->dispatchEffects($effects);
+            if ([] !== $effects) {
+                $initialEffects = $this->toolBatchCollector->registerExpectedBatch($runId, $state->turnNo, $message->stepId(), $effects);
+                if ([] !== $initialEffects) {
+                    $this->stepDispatcher->dispatchEffects($initialEffects);
+                }
             }
 
             $this->idempotency->markHandled(self::ScopeLlmResult, $runId, $message->idempotencyKey());
@@ -400,7 +425,8 @@ final readonly class RunOrchestrator
 
             $state = $this->runStore->get($runId) ?? RunState::queued($runId);
 
-            if ($this->isStaleResult($state, $message->turnNo(), $message->stepId())) {
+            if ($this->isStaleResult($state, $message->turnNo(), $message->stepId())
+                || \in_array($state->status, [RunStatus::Cancelling, RunStatus::Cancelled], true)) {
                 $nextState = $this->incrementStateVersion($state, eventCount: 1);
                 $event = $this->event(
                     runId: $runId,
@@ -412,6 +438,7 @@ final readonly class RunOrchestrator
                         'tool_call_id' => $message->toolCallId,
                         'step_id' => $message->stepId(),
                         'turn_no' => $message->turnNo(),
+                        'status' => $state->status->value,
                     ],
                 );
 
@@ -454,18 +481,23 @@ final readonly class RunOrchestrator
                 return;
             }
 
-            $events = [
-                $this->event(
-                    runId: $runId,
-                    seq: $state->lastSeq + 1,
-                    turnNo: $state->turnNo,
-                    type: 'tool_call_result_received',
-                    payload: [
+            $eventSpecs = [
+                [
+                    'type' => 'tool_call_result_received',
+                    'payload' => [
                         'tool_call_id' => $message->toolCallId,
                         'order_index' => $message->orderIndex,
                         'is_error' => $message->isError,
                     ],
-                ),
+                ],
+                [
+                    'type' => CoreLifecycleEventType::TOOL_EXECUTION_END,
+                    'payload' => [
+                        'tool_call_id' => $message->toolCallId,
+                        'order_index' => $message->orderIndex,
+                        'is_error' => $message->isError,
+                    ],
+                ],
             ];
 
             $pendingToolCalls = $state->pendingToolCalls;
@@ -474,29 +506,57 @@ final readonly class RunOrchestrator
             }
 
             $messages = $state->messages;
-            $effects = [];
+            $effects = $outcome->effectsToDispatch;
+            $status = RunStatus::Running;
 
             if ($outcome->complete) {
+                $interruptPayload = null;
+
                 foreach ($outcome->orderedResults as $orderedResult) {
                     $messages[] = $this->toolMessage($orderedResult);
+
+                    $eventSpecs[] = [
+                        'type' => CoreLifecycleEventType::MESSAGE_START,
+                        'payload' => [
+                            'message_role' => 'tool',
+                            'tool_call_id' => $orderedResult->toolCallId,
+                        ],
+                    ];
+
+                    $eventSpecs[] = [
+                        'type' => CoreLifecycleEventType::MESSAGE_END,
+                        'payload' => [
+                            'message_role' => 'tool',
+                            'tool_call_id' => $orderedResult->toolCallId,
+                        ],
+                    ];
+
+                    $interruptPayload ??= $this->interruptPayloadFromToolResult($orderedResult);
                 }
 
-                $events[] = $this->event(
-                    runId: $runId,
-                    seq: $state->lastSeq + 2,
-                    turnNo: $state->turnNo,
-                    type: 'tool_batch_committed',
-                    payload: [
+                $eventSpecs[] = [
+                    'type' => 'tool_batch_committed',
+                    'payload' => [
                         'count' => \count($outcome->orderedResults),
                     ],
-                );
+                ];
 
                 $pendingToolCalls = [];
+
+                if (null !== $interruptPayload) {
+                    $status = RunStatus::WaitingHuman;
+                    $eventSpecs[] = [
+                        'type' => 'waiting_human',
+                        'payload' => $interruptPayload,
+                    ];
+                }
             }
+
+            $events = $this->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
 
             $nextState = new RunState(
                 runId: $state->runId,
-                status: RunStatus::Running,
+                status: $status,
                 version: $state->version + 1,
                 turnNo: $state->turnNo,
                 lastSeq: $state->lastSeq + \count($events),
@@ -508,8 +568,12 @@ final readonly class RunOrchestrator
                 activeStepId: $state->activeStepId,
             );
 
-            if (!$this->commit($state, $nextState, $events, $effects)) {
+            if (!$this->commit($state, $nextState, $events)) {
                 return;
+            }
+
+            if ([] !== $effects) {
+                $this->stepDispatcher->dispatchEffects($effects);
             }
 
             $this->idempotency->markHandled(self::ScopeToolResult, $runId, $message->idempotencyKey());
@@ -570,6 +634,117 @@ final readonly class RunOrchestrator
             type: $type,
             payload: $payload,
         );
+    }
+
+    /**
+     * @param list<array{type: string, payload: array<string, mixed>}> $eventSpecs
+     *
+     * @return list<RunEvent>
+     */
+    private function eventsFromSpecs(string $runId, int $turnNo, int $startSeq, array $eventSpecs): array
+    {
+        $events = [];
+        $seq = $startSeq;
+
+        foreach ($eventSpecs as $eventSpec) {
+            $events[] = $this->event(
+                runId: $runId,
+                seq: $seq,
+                turnNo: $turnNo,
+                type: $eventSpec['type'],
+                payload: $eventSpec['payload'],
+            );
+
+            ++$seq;
+        }
+
+        return $events;
+    }
+
+    /**
+     * @return array{mode: ToolExecutionMode, timeout_seconds: int, max_parallelism: int}
+     */
+    private function resolveToolPolicy(string $toolName): array
+    {
+        if (null === $this->toolExecutionPolicyResolver) {
+            return [
+                'mode' => ToolExecutionMode::Sequential,
+                'timeout_seconds' => 90,
+                'max_parallelism' => 1,
+            ];
+        }
+
+        $policy = $this->toolExecutionPolicyResolver->resolve($toolName);
+
+        return [
+            'mode' => $policy->mode,
+            'timeout_seconds' => $policy->timeoutSeconds,
+            'max_parallelism' => $policy->maxParallelism,
+        ];
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    private function resolveToolSchemas(string $runId, int $turnNo, string $stepId): array
+    {
+        if (null === $this->toolCatalogResolver) {
+            return [];
+        }
+
+        $schemas = [];
+
+        foreach ($this->toolCatalogResolver->resolve([
+            'run_id' => $runId,
+            'turn_no' => $turnNo,
+            'step_id' => $stepId,
+        ]) as $definition) {
+            $schemas[$definition->name] = $definition->schema ?? ['type' => 'object'];
+        }
+
+        return $schemas;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function interruptPayloadFromToolResult(ToolCallResult $result): ?array
+    {
+        if ($result->isError || !\is_array($result->result)) {
+            return null;
+        }
+
+        $details = \is_array($result->result['details'] ?? null)
+            ? $result->result['details']
+            : [];
+
+        $interrupt = null;
+
+        if ('interrupt' === ($details['kind'] ?? null)) {
+            $interrupt = $details;
+        }
+
+        if (null === $interrupt && 'interrupt' === ($result->result['kind'] ?? null)) {
+            $interrupt = $result->result;
+        }
+
+        if (null === $interrupt) {
+            return null;
+        }
+
+        $questionId = \is_string($interrupt['question_id'] ?? null)
+            ? $interrupt['question_id']
+            : $result->toolCallId;
+
+        $payload = [
+            'tool_call_id' => $result->toolCallId,
+            'tool_name' => \is_string($result->result['tool_name'] ?? null) ? $result->result['tool_name'] : null,
+            'question_id' => $questionId,
+            'prompt' => \is_string($interrupt['prompt'] ?? null) ? $interrupt['prompt'] : 'Human input required.',
+            'schema' => \is_array($interrupt['schema'] ?? null) ? $interrupt['schema'] : ['type' => 'string'],
+        ];
+
+        return array_filter($payload, static fn (mixed $value): bool => null !== $value);
     }
 
     private function isStaleResult(RunState $state, int $turnNo, string $stepId): bool

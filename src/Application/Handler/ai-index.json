@@ -2,7 +2,7 @@
   "spec": "agent-core.ai-docs/v1",
   "namespace": "Application\\Handler",
   "fqcn": "Ineersa\\AgentCore\\Application\\Handler",
-  "description": "Handler infrastructure — command routing, extension registries, LLM/tool execution workers, outbox projectors, event dispatching, step dispatch, locking, idempotency, replay, and tool batch collection.",
+  "description": "Handler infrastructure — command routing, extension registries, LLM/tool execution workers, outbox projectors, event dispatching, step dispatch, locking, idempotency, replay, tool batch collection, bounded parallel dispatch, and idempotency result store.",
   "files": [
     {
       "file": "CommandRouter.php",
@@ -42,15 +42,27 @@
     },
     {
       "file": "ExecuteToolCallWorker.php",
-      "type": "readonly class",
-      "responsibility": "Messenger handler (agent.execution.bus) — invokes ToolExecutorInterface, dispatches ToolCallResult to command bus.",
+      "type": "final readonly class",
+      "responsibility": "Messenger handler (agent.execution.bus) — hydrates enriched ToolCall VO with mode/timeout/assistantMessage/argSchema/cancelToken context from ExecuteToolCall, invokes ToolExecutorInterface, dispatches ToolCallResult to command bus.",
       "docs": "docs/ExecuteToolCallWorker.md"
     },
     {
       "file": "ToolExecutor.php",
       "type": "final class",
-      "responsibility": "Policy-aware placeholder implementing ToolExecutorInterface — resolves execution mode/timeout per tool. Real execution in stage 06.",
+      "responsibility": "Full tool execution engine (Stage 06) — resolves execution policy, checks idempotency result store, validates args, runs before/after hooks, executes via Symfony Toolbox or interrupt fallback, enforces timeout, stamps results with execution metadata.",
       "docs": "docs/ToolExecutor.md"
+    },
+    {
+      "file": "ToolExecutionPolicyResolver.php",
+      "type": "final readonly class",
+      "responsibility": "Resolves ToolExecutionPolicy per tool name — applies per-tool overrides on top of global defaults for mode, timeout, and maxParallelism.",
+      "docs": "docs/ToolExecutionPolicyResolver.md"
+    },
+    {
+      "file": "ToolExecutionResultStore.php",
+      "type": "final class",
+      "responsibility": "In-memory idempotency store for tool results — keyed by (runId, toolCallId) and (toolName, idempotencyKey) for dedup and replay protection.",
+      "docs": "docs/ToolExecutionResultStore.md"
     },
     {
       "file": "ToolCatalogResolver.php",
@@ -61,13 +73,13 @@
     {
       "file": "ToolBatchCollector.php",
       "type": "final class",
-      "responsibility": "Collects tool call results into ordered batches — registers expected, collects results, returns complete/accepted/duplicate/rejected outcomes.",
+      "responsibility": "Bounded parallel dispatch — registers expected tool call batch, gates dispatch by maxParallelism and Sequential/Interrupt mode, collects results, returns ordered complete batches with further dispatchable effects.",
       "docs": "docs/ToolBatchCollector.md"
     },
     {
       "file": "ToolBatchCollectOutcome.php",
       "type": "readonly class",
-      "responsibility": "Outcome of batch collection — rejected/duplicate/acceptedPending/acceptedComplete factory methods.",
+      "responsibility": "Outcome of batch collection — rejected/duplicate/acceptedPending(effects)/acceptedComplete(orderedResults,effects) factory methods. Carries further dispatchable ExecuteToolCall effects.",
       "docs": "docs/ToolBatchCollectOutcome.md"
     },
     {

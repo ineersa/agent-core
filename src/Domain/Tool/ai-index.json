@@ -7,11 +7,16 @@
     {
       "file": "ToolCall.php",
       "type": "readonly class",
-      "responsibility": "Represents a tool call — toolCallId, toolName, arguments, orderIndex.",
+      "responsibility": "Represents a tool call — toolCallId, toolName, arguments, orderIndex, runId, mode, timeoutSeconds, toolIdempotencyKey, assistantMessage, context.",
       "docs": "docs/ToolCall.md"
     },
     {
-      "file": "ToolDefinition.php",
+      "file": "ToolExecutionPolicy.php",
+      "type": "final readonly class",
+      "responsibility": "Execution policy value object — mode (ToolExecutionMode), timeoutSeconds, maxParallelism.",
+      "docs": "docs/ToolExecutionPolicy.md"
+    },
+    {
       "type": "readonly class",
       "responsibility": "Tool schema definition — name, description, JSON schema. toProviderPayload() for LLM format.",
       "docs": "docs/ToolDefinition.md"

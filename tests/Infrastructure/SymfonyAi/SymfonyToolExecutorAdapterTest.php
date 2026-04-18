@@ -35,7 +35,7 @@ final class SymfonyToolExecutorAdapterTest extends TestCase
         ));
 
         self::assertTrue($result->isError);
-        self::assertStringContainsString('not implemented yet', $result->content[0]['text']);
+        self::assertStringContainsString('execution is unavailable', $result->content[0]['text']);
     }
 
     public function testAdapterExecutesThroughToolboxAndAppliesHooks(): void

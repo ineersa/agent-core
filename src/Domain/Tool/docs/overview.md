@@ -5,13 +5,16 @@ Tool execution value objects for the agent loop tool system.
 ## Core Types
 
 ### ToolCall
-A tool call: `toolCallId`, `toolName`, `arguments`, `orderIndex`.
+A tool call: `toolCallId`, `toolName`, `arguments`, `orderIndex`, `runId`, `mode` (ToolExecutionMode), `timeoutSeconds`, `toolIdempotencyKey`, `assistantMessage` (AgentMessage), `context` (array). Enriched in Stage 06 with runtime execution context.
+
+### ToolExecutionPolicy *(Stage 06)*
+Execution policy value object: `mode` (ToolExecutionMode), `timeoutSeconds`, `maxParallelism`. Output of `ToolExecutionPolicyResolver`.
 
 ### ToolDefinition
 Tool schema: `name`, `description`, `schema` (JSON schema). `toProviderPayload()` outputs LLM function-calling format.
 
 ### ToolResult
-Execution result: `toolCallId`, `toolName`, `content` parts, `details`, `isError`.
+Execution result: `toolCallId`, `toolName`, `content` parts, `details`, `isError`. Stamped with execution metadata (mode, timeout, duration, idempotency info) by `ToolExecutor`.
 
 ### ToolExecutionMode
 Enum: `Sequential`, `Parallel`, `Interrupt`.

@@ -55,7 +55,7 @@
     {
       "file": "ExecuteToolCall.php",
       "type": "readonly class",
-      "responsibility": "Bus command to execute a single tool call — toolCallId, toolName, args, orderIndex.",
+      "responsibility": "Bus command to execute a single tool call — toolCallId, toolName, args, orderIndex, toolIdempotencyKey, mode, timeoutSeconds, maxParallelism, assistantMessage, argSchema.",
       "docs": "docs/ExecuteToolCall.md"
     },
     {

@@ -277,6 +277,178 @@ final class RunOrchestratorTopologyTest extends TestCase
         self::assertSame('aborted', $abortedEvents[0]->payload['stop_reason']);
     }
 
+    public function testInterruptToolResultTransitionsRunToWaitingHuman(): void
+    {
+        $fixture = $this->createFixture();
+        $runId = 'run-topology-4';
+
+        $fixture->orchestrator->onStartRun(new StartRun(
+            runId: $runId,
+            turnNo: 0,
+            stepId: 'start-1',
+            attempt: 1,
+            idempotencyKey: 'start-idemp-1',
+            payload: ['messages' => []],
+        ));
+
+        $fixture->orchestrator->onAdvanceRun(new AdvanceRun(
+            runId: $runId,
+            turnNo: 0,
+            stepId: 'turn-1-llm-1',
+            attempt: 1,
+            idempotencyKey: 'advance-idemp-1',
+        ));
+
+        $fixture->orchestrator->onLlmStepResult(new LlmStepResult(
+            runId: $runId,
+            turnNo: 1,
+            stepId: 'turn-1-llm-1',
+            attempt: 1,
+            idempotencyKey: 'llm-result-idemp-1',
+            assistantMessage: [
+                'role' => 'assistant',
+                'content' => [],
+                'tool_calls' => [
+                    [
+                        'id' => 'call-ask',
+                        'name' => 'ask_user',
+                        'arguments' => [
+                            'prompt' => 'Approve deployment?',
+                            'schema' => ['type' => 'boolean'],
+                        ],
+                        'order_index' => 0,
+                    ],
+                ],
+            ],
+            usage: ['total_tokens' => 7],
+            stopReason: 'tool_call',
+            error: null,
+        ));
+
+        $fixture->orchestrator->onToolCallResult(new ToolCallResult(
+            runId: $runId,
+            turnNo: 1,
+            stepId: 'turn-1-llm-1',
+            attempt: 1,
+            idempotencyKey: 'tool-call-ask-1',
+            toolCallId: 'call-ask',
+            orderIndex: 0,
+            result: [
+                'tool_name' => 'ask_user',
+                'content' => [['type' => 'text', 'text' => '{"kind":"interrupt"}']],
+                'details' => [
+                    'kind' => 'interrupt',
+                    'question_id' => 'q-1',
+                    'prompt' => 'Approve deployment?',
+                    'schema' => ['type' => 'boolean'],
+                ],
+            ],
+            isError: false,
+            error: null,
+        ));
+
+        $state = $fixture->runStore->get($runId);
+        self::assertNotNull($state);
+        self::assertSame(RunStatus::WaitingHuman, $state->status);
+
+        $waitingEvents = array_values(array_filter(
+            $fixture->eventStore->allFor($runId),
+            static fn (RunEvent $event): bool => 'waiting_human' === $event->type,
+        ));
+
+        self::assertCount(1, $waitingEvents);
+        self::assertSame('q-1', $waitingEvents[0]->payload['question_id']);
+    }
+
+    public function testCancellingRunIgnoresLateToolResults(): void
+    {
+        $fixture = $this->createFixture();
+        $runId = 'run-topology-5';
+
+        $fixture->orchestrator->onStartRun(new StartRun(
+            runId: $runId,
+            turnNo: 0,
+            stepId: 'start-1',
+            attempt: 1,
+            idempotencyKey: 'start-idemp-1',
+            payload: ['messages' => []],
+        ));
+
+        $fixture->orchestrator->onAdvanceRun(new AdvanceRun(
+            runId: $runId,
+            turnNo: 0,
+            stepId: 'turn-1-llm-1',
+            attempt: 1,
+            idempotencyKey: 'advance-idemp-1',
+        ));
+
+        $fixture->orchestrator->onLlmStepResult(new LlmStepResult(
+            runId: $runId,
+            turnNo: 1,
+            stepId: 'turn-1-llm-1',
+            attempt: 1,
+            idempotencyKey: 'llm-result-idemp-1',
+            assistantMessage: [
+                'role' => 'assistant',
+                'content' => [],
+                'tool_calls' => [
+                    [
+                        'id' => 'call-stale',
+                        'name' => 'web_search',
+                        'arguments' => ['query' => 'later'],
+                        'order_index' => 0,
+                    ],
+                ],
+            ],
+            usage: ['total_tokens' => 9],
+            stopReason: 'tool_call',
+            error: null,
+        ));
+
+        $fixture->orchestrator->onApplyCommand(new ApplyCommand(
+            runId: $runId,
+            turnNo: 1,
+            stepId: 'cancel-1',
+            attempt: 1,
+            idempotencyKey: 'cancel-idemp-1',
+            kind: 'cancel',
+            payload: ['reason' => 'cancel now'],
+        ));
+
+        $fixture->orchestrator->onToolCallResult(new ToolCallResult(
+            runId: $runId,
+            turnNo: 1,
+            stepId: 'turn-1-llm-1',
+            attempt: 1,
+            idempotencyKey: 'tool-call-stale-1',
+            toolCallId: 'call-stale',
+            orderIndex: 0,
+            result: ['tool_name' => 'web_search', 'content' => [['type' => 'text', 'text' => 'late']]],
+            isError: false,
+            error: null,
+        ));
+
+        $state = $fixture->runStore->get($runId);
+        self::assertNotNull($state);
+        self::assertSame(RunStatus::Cancelling, $state->status);
+
+        $toolMessages = array_values(array_filter(
+            $state->messages,
+            static fn (object $message): bool => $message instanceof \Ineersa\AgentCore\Domain\Message\AgentMessage && 'tool' === $message->role,
+        ));
+
+        self::assertCount(0, $toolMessages);
+
+        $ignored = array_values(array_filter(
+            $fixture->eventStore->allFor($runId),
+            static fn (RunEvent $event): bool => 'stale_result_ignored' === $event->type
+                && 'tool_call_result' === ($event->payload['result'] ?? null)
+                && 'cancelling' === ($event->payload['status'] ?? null),
+        ));
+
+        self::assertCount(1, $ignored);
+    }
+
     private function createFixture(): RunOrchestratorFixture
     {
         $filesystem = new Filesystem(new LocalFilesystemAdapter($this->basePath));

@@ -19,6 +19,8 @@ use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Handler\ToolCatalogResolver;
+use Ineersa\AgentCore\Application\Handler\ToolExecutionPolicyResolver;
+use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
 use Ineersa\AgentCore\Application\Orchestrator\AgentRunner;
 use Ineersa\AgentCore\Application\Orchestrator\RunOrchestrator;
@@ -42,6 +44,7 @@ use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\PlatformInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCatalogProviderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolIdempotencyKeyResolverInterface;
 use Ineersa\AgentCore\Infrastructure\Mercure\RunEventPublisher;
 use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
@@ -145,7 +148,19 @@ return static function (ContainerConfigurator $container): void {
     ;
 
     $services->set(MessageIdempotencyService::class);
-    $services->set(ToolBatchCollector::class);
+
+    $services->set(ToolExecutionPolicyResolver::class)
+        ->arg('$defaultMode', param('agent_loop.tools.defaults.mode'))
+        ->arg('$defaultTimeoutSeconds', param('agent_loop.tools.defaults.timeout_seconds'))
+        ->arg('$maxParallelism', param('agent_loop.tools.max_parallelism'))
+        ->arg('$overrides', param('agent_loop.tools.overrides'))
+    ;
+
+    $services->set(ToolExecutionResultStore::class);
+
+    $services->set(ToolBatchCollector::class)
+        ->arg('$defaultMaxParallelism', param('agent_loop.tools.max_parallelism'))
+    ;
 
     $services->set(CommandHandlerRegistry::class)
         ->arg('$handlers', tagged_iterator('agent_loop.extension.command_handler'))
@@ -189,6 +204,11 @@ return static function (ContainerConfigurator $container): void {
         ->arg('$defaultTimeoutSeconds', param('agent_loop.tools.defaults.timeout_seconds'))
         ->arg('$maxParallelism', param('agent_loop.tools.max_parallelism'))
         ->arg('$overrides', param('agent_loop.tools.overrides'))
+        ->arg('$toolbox', service('Symfony\\AI\\Agent\\Toolbox\\ToolboxInterface')->nullOnInvalid())
+        ->arg('$beforeToolCallHooks', tagged_iterator('agent_loop.hook.before_tool_call'))
+        ->arg('$afterToolCallHooks', tagged_iterator('agent_loop.hook.after_tool_call'))
+        ->arg('$resultStore', service(ToolExecutionResultStore::class))
+        ->arg('$toolIdempotencyKeyResolver', service(ToolIdempotencyKeyResolverInterface::class)->nullOnInvalid())
     ;
 
     $services->set(SymfonyToolExecutorAdapter::class)
@@ -197,7 +217,7 @@ return static function (ContainerConfigurator $container): void {
         ->arg('$beforeToolCallHooks', tagged_iterator('agent_loop.hook.before_tool_call'))
         ->arg('$afterToolCallHooks', tagged_iterator('agent_loop.hook.after_tool_call'))
     ;
-    $services->alias(ToolExecutorInterface::class, SymfonyToolExecutorAdapter::class);
+    $services->alias(ToolExecutorInterface::class, ToolExecutor::class);
 
     $services->set(ExecuteLlmStepWorker::class)
         ->arg('$commandBus', service('agent.command.bus'))

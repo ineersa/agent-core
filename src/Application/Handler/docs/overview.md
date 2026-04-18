@@ -1,6 +1,6 @@
 # Application\Handler
 
-Handler infrastructure — 19 classes covering routing, registries, workers, projectors, and utilities.
+Handler infrastructure — 21 classes covering routing, registries, workers, projectors, and utilities.
 
 ## Routing & Registries
 
@@ -17,16 +17,18 @@ Handler infrastructure — 19 classes covering routing, registries, workers, pro
 | Class | Bus | Purpose |
 |-------|-----|---------|
 | `ExecuteLlmStepWorker` | `agent.execution.bus` | Invokes Platform, normalizes response, dispatches LlmStepResult |
-| `ExecuteToolCallWorker` | `agent.execution.bus` | Invokes ToolExecutorInterface, dispatches ToolCallResult |
+| `ExecuteToolCallWorker` | `agent.execution.bus` | Hydrates enriched ToolCall VO (mode/timeout/assistantMessage/argSchema/cancelToken), invokes ToolExecutorInterface, dispatches ToolCallResult |
 
-## Tool System
+## Tool Execution Engine (Stage 06)
 
 | Class | Purpose |
 |-------|---------|
-| `ToolExecutor` | Policy-aware placeholder (stage 00). Resolves mode/timeout per tool. Real impl in stage 06 |
+| `ToolExecutor` | Full execution engine — resolves policy, checks idempotency store, validates args, runs before/after hooks, executes via Symfony Toolbox or interrupt fallback, enforces timeout, stamps results with metadata |
+| `ToolExecutionPolicyResolver` | Resolves `ToolExecutionPolicy` per tool name — per-tool overrides on global defaults for mode, timeout, maxParallelism |
+| `ToolExecutionResultStore` | In-memory idempotency store — keyed by (runId, toolCallId) and (toolName, idempotencyKey) for dedup and replay protection |
 | `ToolCatalogResolver` | Aggregates ToolCatalogProviderInterface, deduplicates, enforces schema stability |
-| `ToolBatchCollector` | Collects tool results into ordered batches with dedup |
-| `ToolBatchCollectOutcome` | Outcome value object: rejected/duplicate/acceptedPending/acceptedComplete |
+| `ToolBatchCollector` | Bounded parallel dispatch — registers expected batch, gates by maxParallelism and Sequential/Interrupt mode, collects results, returns ordered batches with further dispatchable effects |
+| `ToolBatchCollectOutcome` | Outcome VO: rejected/duplicate/acceptedPending(effects)/acceptedComplete(orderedResults, effects). Carries further dispatchable `ExecuteToolCall` effects |
 
 ## Outbox Projection
 
