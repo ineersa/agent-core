@@ -1,0 +1,26 @@
+spec: agent-core.ai-docs/v1
+namespace: "Application\\Handler"
+fqcn: "Ineersa\\AgentCore\\Application\\Handler"
+description: "Handler infrastructure — command routing, extension registries, LLM/tool execution workers, outbox projectors, event dispatching, step dispatch, locking, idempotency, replay, tool batch collection, bounded parallel dispatch, and idempotency result store."
+files[21]{file,type,responsibility,docs}:
+  CommandRouter.php,final class,"Routes ApplyCommand to core/extension/rejected — validates prefix, options, cancel-safe support.",docs/CommandRouter.md
+  CommandHandlerRegistry.php,final class,Registry of CommandHandlerInterface — finds handler by command kind.,docs/CommandHandlerRegistry.md
+  EventSubscriberRegistry.php,final class,Registry of EventSubscriberInterface — yields subscribers matching an event type.,docs/EventSubscriberRegistry.md
+  HookDispatcher.php,readonly class,Dispatches boundary hooks via Symfony EventDispatcher + HookSubscriberRegistry. Validates hook names.,docs/HookDispatcher.md
+  HookSubscriberRegistry.php,final class,Registry of HookSubscriberInterface — yields subscribers matching a hook name.,docs/HookSubscriberRegistry.md
+  ExecuteLlmStepWorker.php,readonly class,"Messenger handler (agent.execution.bus) — invokes Platform, normalizes response, dispatches LlmStepResult to command bus.",docs/ExecuteLlmStepWorker.md
+  ExecuteToolCallWorker.php,final readonly class,"Messenger handler (agent.execution.bus) — hydrates enriched ToolCall VO with mode/timeout/assistantMessage/argSchema/cancelToken context from ExecuteToolCall, invokes ToolExecutorInterface, dispatches ToolCallResult to command bus.",docs/ExecuteToolCallWorker.md
+  ToolExecutor.php,final class,"Full tool execution engine (Stage 06) — resolves execution policy, checks idempotency result store, validates args, runs before/after hooks, executes via Symfony Toolbox or interrupt fallback, enforces timeout, stamps results with execution metadata.",docs/ToolExecutor.md
+  ToolExecutionPolicyResolver.php,final readonly class,"Resolves ToolExecutionPolicy per tool name — applies per-tool overrides on top of global defaults for mode, timeout, and maxParallelism.",docs/ToolExecutionPolicyResolver.md
+  ToolExecutionResultStore.php,final class,"In-memory idempotency store for tool results — keyed by (runId, toolCallId) and (toolName, idempotencyKey) for dedup and replay protection.",docs/ToolExecutionResultStore.md
+  ToolCatalogResolver.php,final class,"Aggregates ToolCatalogProviderInterface providers, deduplicates by name, enforces schema stability across turns.",docs/ToolCatalogResolver.md
+  ToolBatchCollector.php,final class,"Bounded parallel dispatch — registers expected tool call batch, gates dispatch by maxParallelism and Sequential/Interrupt mode, collects results, returns ordered complete batches with further dispatchable effects.",docs/ToolBatchCollector.md
+  ToolBatchCollectOutcome.php,readonly class,"Outcome of batch collection — rejected/duplicate/acceptedPending(effects)/acceptedComplete(orderedResults,effects) factory methods. Carries further dispatchable ExecuteToolCall effects.",docs/ToolBatchCollectOutcome.md
+  OutboxProjector.php,readonly class,"Projects events to JSONL + Mercure outbox sinks, then runs both projectors inline.",docs/OutboxProjector.md
+  JsonlOutboxProjectorWorker.php,readonly class,"Messenger handler (agent.publisher.bus) — claims JSONL outbox entries, appends to RunLogWriter, marks processed/failed.",docs/JsonlOutboxProjectorWorker.md
+  MercureOutboxProjectorWorker.php,readonly class,"Messenger handler (agent.publisher.bus) — claims Mercure outbox entries, publishes via RunEventPublisher, marks processed/failed.",docs/MercureOutboxProjectorWorker.md
+  RunEventDispatcher.php,readonly class,Dispatches RunEvent via Symfony EventDispatcher + EventSubscriberRegistry.,docs/RunEventDispatcher.md
+  StepDispatcher.php,readonly class,Dispatches effect commands to execution bus and publisher messages to publisher bus.,docs/StepDispatcher.md
+  RunLockManager.php,readonly class,Per-run mutual exclusion using Symfony Lock — synchronized() wraps a callable with acquire/release.,docs/RunLockManager.md
+  MessageIdempotencyService.php,final class,"In-memory idempotency tracker — wasHandled/markHandled scoped by (scope, runId, idempotencyKey).",docs/MessageIdempotencyService.md
+  ReplayService.php,readonly class,"Rebuilds hot prompt state from canonical events (fallback to JSONL). Verifies sequence integrity, estimates tokens, saves to PromptStateStore.",docs/ReplayService.md

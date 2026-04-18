@@ -1,0 +1,16 @@
+spec: agent-core.ai-docs/v1
+namespace: "Domain\\Event\\Lifecycle"
+fqcn: "Ineersa\\AgentCore\\Domain\\Event\\Lifecycle"
+description: Typed lifecycle event subclasses extending AbstractLifecycleRunEvent. Each maps to a CoreLifecycleEventType constant.
+files[11]{file,type,responsibility,docs}:
+  AbstractLifecycleRunEvent.php,abstract readonly class,"Base class for all lifecycle events — auto-fills type from static::TYPE constant.",docs/AbstractLifecycleRunEvent.md
+  AgentStartEvent.php,readonly class,AGENT_START — must be the first event in the stream.,null
+  AgentEndEvent.php,readonly class,AGENT_END — must be the final event in the stream.,null
+  TurnStartEvent.php,readonly class,TURN_START — opens a new turn scope.,null
+  TurnEndEvent.php,readonly class,TURN_END — closes the current turn scope.,null
+  MessageStartEvent.php,readonly class,MESSAGE_START — begins an LLM message emission.,null
+  MessageUpdateEvent.php,readonly class,MESSAGE_UPDATE — streaming delta for an in-progress message.,null
+  MessageEndEvent.php,readonly class,"MESSAGE_END — completes a message, may indicate tool calls pending.",null
+  ToolExecutionStartEvent.php,readonly class,TOOL_EXECUTION_START — begins tool execution phase.,null
+  ToolExecutionUpdateEvent.php,readonly class,TOOL_EXECUTION_UPDATE — progress update during tool execution.,null
+  ToolExecutionEndEvent.php,readonly class,TOOL_EXECUTION_END — completes a tool execution with order_index.,null

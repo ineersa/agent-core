@@ -1,0 +1,14 @@
+spec: agent-core.ai-docs/v1
+namespace: "Infrastructure\\Storage"
+fqcn: "Ineersa\\AgentCore\\Infrastructure\\Storage"
+description: "Storage adapters — in-memory stores, Flysystem run logs, Doctrine event store, hot prompt state, local artifact store."
+files[9]{file,type,responsibility,docs}:
+  InMemoryRunStore.php,class,In-memory RunStoreInterface — map-based get/compareAndSwap for testing.,docs/InMemoryRunStore.md
+  InMemoryCommandStore.php,class,In-memory CommandStoreInterface — enqueue/markApplied/markRejected for testing.,docs/InMemoryCommandStore.md
+  InMemoryOutboxStore.php,class,In-memory OutboxStoreInterface — enqueue/claim/markProcessed/markFailed for testing.,docs/InMemoryOutboxStore.md
+  InMemoryPromptStateStore.php,class,In-memory PromptStateStoreInterface — get/save/delete for testing.,docs/InMemoryPromptStateStore.md
+  RunEventStore.php,class,Doctrine-backed EventStoreInterface — appends/retrieves RunEvents using Doctrine DBAL/ORM.,docs/RunEventStore.md
+  HotPromptStateStore.php,class,Doctrine-backed PromptStateStoreInterface — persists hot prompt state snapshots for fast replay avoidance.,docs/HotPromptStateStore.md
+  LocalArtifactStore.php,class,Local filesystem ArtifactStoreInterface — stores artifacts under a base directory using Flysystem.,docs/LocalArtifactStore.md
+  RunLogWriter.php,class,Writes RunEvents as JSONL lines to Flysystem storage — append-only run log for audit and replay fallback.,docs/RunLogWriter.md
+  RunLogReader.php,class,Reads JSONL run logs from Flysystem storage — parses lines back into RunEvent objects for replay.,docs/RunLogReader.md

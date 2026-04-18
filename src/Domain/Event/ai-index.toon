@@ -1,0 +1,13 @@
+spec: agent-core.ai-docs/v1
+namespace: "Domain\\Event"
+fqcn: "Ineersa\\AgentCore\\Domain\\Event"
+description: "Event sourcing models — base RunEvent, outbox pattern (Entry/Sink), boundary hooks, core lifecycle event types with order validation, and typed Lifecycle event subclasses."
+files[6]{file,type,responsibility,docs}:
+  RunEvent.php,readonly class,"Base event — runId, seq, turnNo, type, payload, createdAt. Factory for extension events with prefix validation.",docs/RunEvent.md
+  OutboxEntry.php,readonly class,"Outbox pattern entry — id, sink, event, attempts, availableAt.",docs/OutboxEntry.md
+  OutboxSink.php,enum,"Outbox sink targets: Jsonl, Mercure.",docs/OutboxSink.md
+  BoundaryHookEvent.php,final class,Boundary hook invocation event — hookName + mutable context array.,docs/BoundaryHookEvent.md
+  BoundaryHookName.php,final class,"Boundary hook name constants — BEFORE/AFTER_COMMAND_APPLY, BEFORE_TURN_DISPATCH, AFTER_TURN_COMMIT, BEFORE_RUN_FINALIZE + extension prefix.",docs/BoundaryHookName.md
+  CoreLifecycleEventType.php,final class,"Lifecycle event type constants, class map, and validateOrder() for structural validation of event streams.",docs/CoreLifecycleEventType.md
+subNamespaces[1]{namespace,fqcn,path,description,index}:
+  Lifecycle,"Ineersa\\AgentCore\\Domain\\Event\\Lifecycle",Lifecycle,"Typed lifecycle event subclasses — AgentStart/End, TurnStart/End, MessageStart/Update/End, ToolExecutionStart/Update/End.",Lifecycle/ai-index.toon

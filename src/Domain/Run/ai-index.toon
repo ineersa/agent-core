@@ -1,0 +1,10 @@
+spec: agent-core.ai-docs/v1
+namespace: "Domain\\Run"
+fqcn: "Ineersa\\AgentCore\\Domain\\Run"
+description: "Run lifecycle value objects — identity, state, status enum, and input DTO for starting runs."
+files[5]{file,type,responsibility,docs}:
+  RunId.php,readonly class,"Run identity — UUID v4 generation, stringable value object.",docs/RunId.md
+  RunHandle.php,readonly class,"Lightweight run reference returned by AgentRunnerInterface::start().",docs/RunHandle.md
+  RunState.php,readonly class,"Aggregate root state — runId, status, version, turnNo, messages, streaming state, pending tool calls.",docs/RunState.md
+  RunStatus.php,enum,"Run status enum: Queued, Running, WaitingHuman, Cancelling, Completed, Failed, Cancelled.",docs/RunStatus.md
+  StartRunInput.php,readonly class,"Input DTO for starting a run — systemPrompt, messages, optional runId, metadata.",docs/StartRunInput.md

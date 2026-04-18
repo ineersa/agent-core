@@ -40,21 +40,22 @@ If any of these fail, the work is **not complete**.
   - property hooks
 - Apply these features pragmatically (readability first, no novelty for novelty’s sake).
 
-## AI Documentation Index (ai-index.json)
+## AI Documentation Index (ai-index.toon)
 
-The repository uses a hierarchical `ai-index.json` + `docs/` system for codebase navigation.
-Every namespace and sub-namespace has its own `ai-index.json` and a `docs/` directory with per-file documentation.
+The repository uses a hierarchical `ai-index.toon` + `docs/` system for codebase navigation.
+Every namespace and sub-namespace has its own `ai-index.toon` and a `docs/` directory with per-file documentation.
+Indexes use TOON format (Token-Oriented Object Notation) for ~28% token reduction vs JSON.
 
 ### Reading policy (mandatory)
 
-- **Always read `ai-index.json` in the project root first** to understand the full namespace layout before exploring any code.
-- When working within a specific namespace, read its `ai-index.json` to find relevant files and their responsibilities.
+- **Always read `ai-index.toon` in the project root first** to understand the full namespace layout before exploring any code.
+- When working within a specific namespace, read its `ai-index.toon` to find relevant files and their responsibilities.
 - When exploring a file, read its corresponding `docs/*.md` for detailed documentation before reading the source code.
 - This saves context by avoiding broad source file reads — use the index to locate exactly what you need.
 
 ### Index maintenance (mandatory delegation)
 
-**The main agent MUST NOT update ai-index.json or docs directly.** All index maintenance is delegated to the **index-maintainer** subagent.
+**The main agent MUST NOT update ai-index.toon or docs directly.** All index maintenance is delegated to the **index-maintainer** subagent.
 
 The index-maintainer subagent:
 - Receives its skill (index-maintainer) pre-loaded in its system prompt
@@ -67,7 +68,7 @@ During every session, **track all namespaces, sub-namespaces, and files you crea
 
 Example task for index-maintainer:
 ```
-Update ai-index.json and docs for these paths:
+Update ai-index.toon and docs for these paths:
 - src/Application/Handler/ (modified ToolExecutor.php, added NewHandler.php)
 - src/Domain/Event/ (added CustomEvent.php)
 - src/Infrastructure/Storage/ (renamed InMemoryRunStore.php)

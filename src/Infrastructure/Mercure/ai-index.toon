@@ -1,0 +1,6 @@
+spec: agent-core.ai-docs/v1
+namespace: "Infrastructure\\Mercure"
+fqcn: "Ineersa\\AgentCore\\Infrastructure\\Mercure"
+description: Mercure integration — real-time event streaming.
+files[1]{file,type,responsibility,docs}:
+  RunEventPublisher.php,class,Publishes RunEvent via Symfony Mercure Hub. Serializes event to JSON and pushes to run-scoped topics for real-time SSE/streaming.,docs/RunEventPublisher.md

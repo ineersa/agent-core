@@ -1,0 +1,16 @@
+spec: agent-core.ai-docs/v1
+namespace: Contract
+fqcn: "Ineersa\\AgentCore\\Contract"
+description: "Stable public interfaces for the agent loop: runner API, storage abstractions, tool execution, hook system, and extension seams. Implementations live in Infrastructure/."
+files[7]{file,type,responsibility,docs}:
+  AgentRunnerInterface.php,interface,"Primary public API for the agent runner — start, continue, steer, followUp, cancel, answerHuman.",docs/AgentRunnerInterface.md
+  RunStoreInterface.php,interface,"Run state persistence — get by ID, optimistic concurrency via compareAndSwap.",docs/RunStoreInterface.md
+  EventStoreInterface.php,interface,"Event sourcing store — append single/many events, load all events for a run.",docs/EventStoreInterface.md
+  CommandStoreInterface.php,interface,"Pending command queue — enqueue, markApplied, markRejected.",docs/CommandStoreInterface.md
+  OutboxStoreInterface.php,interface,"Outbox pattern store — enqueue events to sinks, claim, markProcessed, markFailed with retry.",docs/OutboxStoreInterface.md
+  ArtifactStoreInterface.php,interface,Artifact storage — put named artifacts with metadata for a run.,docs/ArtifactStoreInterface.md
+  PromptStateStoreInterface.php,interface,"Hot prompt state persistence — get, save, delete keyed by runId.",docs/PromptStateStoreInterface.md
+subNamespaces[3]{namespace,fqcn,path,description,index}:
+  Hook,"Ineersa\\AgentCore\\Contract\\Hook",Hook,"Hook interfaces for intercepting agent loop lifecycle: context transforms, LLM conversion, tool call boundaries, cancellation tokens, message providers.",Hook/ai-index.toon
+  Extension,"Ineersa\\AgentCore\\Contract\\Extension",Extension,"Extension seam interfaces — command handlers, event subscribers, hook subscribers for third-party integrations.",Extension/ai-index.toon
+  Tool,"Ineersa\\AgentCore\\Contract\\Tool",Tool,"Tool execution contracts — platform invocation, model resolution, tool catalog, tool executor, and idempotency key resolution.",Tool/ai-index.toon

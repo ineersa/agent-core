@@ -1,0 +1,11 @@
+spec: agent-core.ai-docs/v1
+namespace: "Infrastructure\\SymfonyAi"
+fqcn: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi"
+description: "Symfony AI bridge — adapters connecting the agent loop to the Symfony AI ecosystem (platform, tool executor, message mapping, streaming)."
+files[6]{file,type,responsibility,docs}:
+  Platform.php,class,Implements PlatformInterface — wraps Symfony AI Platform for LLM invocation.,docs/Platform.md
+  SymfonyPlatformInvoker.php,class,Invokes the Symfony AI platform with tool calls and streaming support — handles the raw provider interaction.,docs/SymfonyPlatformInvoker.md
+  SymfonyToolExecutorAdapter.php,class,Adapts Symfony AI tool execution to the agent loop's ToolExecutorInterface contract.,docs/SymfonyToolExecutorAdapter.md
+  SymfonyMessageMapper.php,class,Maps between AgentMessage/MessageBag and Symfony AI message formats — bidirectional conversion.,docs/SymfonyMessageMapper.md
+  StreamDeltaReducer.php,class,Reduces streaming deltas into a coherent assistant message — accumulates text chunks during LLM streaming.,docs/StreamDeltaReducer.md
+  RunCancellationToken.php,class,Implements CancellationTokenInterface — checks RunStatus to determine if cancellation was requested for a run.,docs/RunCancellationToken.md

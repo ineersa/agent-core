@@ -1,0 +1,6 @@
+spec: agent-core.ai-docs/v1
+namespace: Command
+fqcn: "Ineersa\\AgentCore\\Command"
+description: Symfony console commands for operational management of the agent loop.
+files[1]{file,type,responsibility,docs}:
+  AgentLoopHealthCommand.php,class,"Console command `agent-loop:health` — checks agent loop subsystem health (stores, buses, connectivity).",docs/AgentLoopHealthCommand.md

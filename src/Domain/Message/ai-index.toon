@@ -1,0 +1,19 @@
+spec: agent-core.ai-docs/v1
+namespace: "Domain\\Message"
+fqcn: "Ineersa\\AgentCore\\Domain\\Message"
+description: "Message bus envelopes — AgentMessage DTO, MessageBag, bus commands, results, and outbox projection signals."
+files[14]{file,type,responsibility,docs}:
+  AgentBusMessageInterface.php,interface,"Contract for all bus messages — runId, turnNo, stepId, attempt, idempotencyKey.",docs/AgentBusMessageInterface.md
+  AbstractAgentBusMessage.php,abstract readonly class,Base implementation of AgentBusMessageInterface — shared constructor for all bus messages.,docs/AbstractAgentBusMessage.md
+  AgentMessage.php,readonly class,"Core message DTO — role, content parts, timestamp, tool metadata, details, error flag. JS-parity toArray().",docs/AgentMessage.md
+  MessageBag.php,readonly class,Immutable wrapper around a list of LLM-formatted message objects.,docs/MessageBag.md
+  StartRun.php,readonly class,Bus command to start a new run — extends AbstractAgentBusMessage with payload.,docs/StartRun.md
+  AdvanceRun.php,readonly class,Bus command to advance/resume a run — extends AbstractAgentBusMessage with payload.,docs/AdvanceRun.md
+  ApplyCommand.php,readonly class,"Bus command to apply a pending command — includes kind, payload, options.",docs/ApplyCommand.md
+  ExecuteLlmStep.php,readonly class,Bus command to execute an LLM step — includes contextRef and toolsRef.,docs/ExecuteLlmStep.md
+  ExecuteToolCall.php,readonly class,"Bus command to execute a single tool call — toolCallId, toolName, args, orderIndex, toolIdempotencyKey, mode, timeoutSeconds, maxParallelism, assistantMessage, argSchema.",docs/ExecuteToolCall.md
+  CollectToolBatch.php,readonly class,Bus command to collect completed tool call results by IDs.,docs/CollectToolBatch.md
+  LlmStepResult.php,readonly class,"Result of an LLM step — assistantMessage, usage, stopReason, error.",docs/LlmStepResult.md
+  ToolCallResult.php,readonly class,"Result of a tool call execution — toolCallId, orderIndex, result, isError, error details.",docs/ToolCallResult.md
+  ProjectJsonlOutbox.php,readonly class,"Signal to trigger JSONL outbox projection — batchSize, retryDelaySeconds.",null
+  ProjectMercureOutbox.php,readonly class,"Signal to trigger Mercure outbox projection — batchSize, retryDelaySeconds.",null

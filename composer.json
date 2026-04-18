@@ -31,7 +31,8 @@
         "league/flysystem-local": "^3.30",
         "doctrine/dbal": "^4.3",
         "doctrine/migrations": "^3.8",
-        "symfony/lock": "^8.0"
+        "symfony/lock": "^8.0",
+        "helgesverre/toon": "^3.1"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.94.2",

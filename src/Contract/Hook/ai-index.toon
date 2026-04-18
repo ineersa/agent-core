@@ -1,0 +1,14 @@
+spec: agent-core.ai-docs/v1
+namespace: "Contract\\Hook"
+fqcn: "Ineersa\\AgentCore\\Contract\\Hook"
+description: "Hook interfaces for intercepting agent loop lifecycle: context transforms, LLM conversion, tool call boundaries, cancellation, and message providers."
+files[9]{file,type,responsibility,docs}:
+  TransformContextHookInterface.php,interface,"Transform the message context before LLM call — filter, augment, or rewrite messages.",docs/TransformContextHookInterface.md
+  ConvertToLlmHookInterface.php,interface,Convert AgentMessage list into a MessageBag for LLM provider consumption.,docs/ConvertToLlmHookInterface.md
+  BeforeProviderRequestHookInterface.php,interface,Intercept before LLM provider call — can return a ProviderRequest to modify/override.,docs/BeforeProviderRequestHookInterface.md
+  BeforeToolCallHookInterface.php,interface,Intercept before tool execution — can return BeforeToolCallResult to modify/skip call.,docs/BeforeToolCallHookInterface.md
+  AfterToolCallHookInterface.php,interface,Intercept after tool execution — can return AfterToolCallResult to modify result.,docs/AfterToolCallHookInterface.md
+  CancellationTokenInterface.php,interface,Cooperative cancellation check — isCancellationRequested().,docs/CancellationTokenInterface.md
+  NullCancellationToken.php,class,No-op cancellation token — always returns false. Read-only value object.,docs/NullCancellationToken.md
+  SteeringMessagesProviderInterface.php,interface,Provides steering messages injected at start of context to guide agent behavior.,docs/SteeringMessagesProviderInterface.md
+  FollowUpMessagesProviderInterface.php,interface,Provides follow-up messages appended after the main context.,docs/FollowUpMessagesProviderInterface.md

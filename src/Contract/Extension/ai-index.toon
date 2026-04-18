@@ -1,0 +1,8 @@
+spec: agent-core.ai-docs/v1
+namespace: "Contract\\Extension"
+fqcn: "Ineersa\\AgentCore\\Contract\\Extension"
+description: "Extension seam interfaces for third-party integrations — command handlers, event subscribers, hook subscribers."
+files[3]{file,type,responsibility,docs}:
+  CommandHandlerInterface.php,interface,"Extension command handler — supports a command kind, maps payload to events. Supports cancel-safe detection.",docs/CommandHandlerInterface.md
+  EventSubscriberInterface.php,interface,"Extension event subscriber — declares subscribed event types, handles incoming events.",docs/EventSubscriberInterface.md
+  HookSubscriberInterface.php,interface,"Extension hook subscriber — declares subscribed hooks, handles hook invocations with context.",docs/HookSubscriberInterface.md

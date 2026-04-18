@@ -6,7 +6,7 @@ import { resolve, join } from "node:path";
 export default function (pi: ExtensionAPI) {
 	pi.registerCommand("index-maintainer", {
 		description:
-			"Detect changed files in src/ via git and launch the index-maintainer subagent to update ai-index.json + docs",
+			"Detect changed files in src/ via git and launch the index-maintainer subagent to update ai-index.toon + docs",
 		handler: async (_args, ctx) => {
 			const cwd = ctx.cwd;
 			const srcDir = resolve(cwd, "src");
@@ -140,7 +140,7 @@ function buildTask(paths: string[]): string {
 		"Launch the **index-maintainer** subagent with the following scoped paths. Pass these exactly as-is so the subagent knows what to update.",
 		"",
 		"```",
-		`Update ai-index.json and docs for these paths:`,
+		`Update ai-index.toon and docs for these paths:`,
 		"",
 		pathList,
 		"```",
