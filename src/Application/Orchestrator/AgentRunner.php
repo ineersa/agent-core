@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Orchestrator;
 
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
-use Ineersa\AgentCore\Domain\Message\AdvanceRun;
+use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\StartRun;
@@ -43,35 +43,28 @@ final class AgentRunner implements AgentRunnerInterface
 
     public function continue(string $runId): void
     {
-        $stepId = $this->nextStepId('continue');
-        $this->dispatch(new AdvanceRun(
-            runId: $runId,
-            turnNo: 0,
-            stepId: $stepId,
-            attempt: 1,
-            idempotencyKey: $this->idempotencyKey($runId, $stepId),
-        ));
+        $this->applyCoreCommand($runId, CoreCommandKind::Continue, []);
     }
 
     public function steer(string $runId, AgentMessage $message): void
     {
-        $this->applyCoreCommand($runId, 'steer', ['message' => $this->serializeMessage($message)]);
+        $this->applyCoreCommand($runId, CoreCommandKind::Steer, ['message' => $this->serializeMessage($message)]);
     }
 
     public function followUp(string $runId, AgentMessage $message): void
     {
-        $this->applyCoreCommand($runId, 'follow_up', ['message' => $this->serializeMessage($message)]);
+        $this->applyCoreCommand($runId, CoreCommandKind::FollowUp, ['message' => $this->serializeMessage($message)]);
     }
 
     public function cancel(string $runId, ?string $reason = null): void
     {
         $payload = null === $reason ? [] : ['reason' => $reason];
-        $this->applyCoreCommand($runId, 'cancel', $payload);
+        $this->applyCoreCommand($runId, CoreCommandKind::Cancel, $payload);
     }
 
     public function answerHuman(string $runId, string $questionId, mixed $answer): void
     {
-        $this->applyCoreCommand($runId, 'human_response', [
+        $this->applyCoreCommand($runId, CoreCommandKind::HumanResponse, [
             'question_id' => $questionId,
             'answer' => $answer,
         ]);

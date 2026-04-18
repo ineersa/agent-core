@@ -430,7 +430,7 @@ final class RunOrchestratorTopologyTest extends TestCase
 
         $state = $fixture->runStore->get($runId);
         self::assertNotNull($state);
-        self::assertSame(RunStatus::Cancelling, $state->status);
+        self::assertSame(RunStatus::Cancelled, $state->status);
 
         $toolMessages = array_values(array_filter(
             $state->messages,
@@ -447,9 +447,17 @@ final class RunOrchestratorTopologyTest extends TestCase
         ));
 
         self::assertCount(1, $ignored);
+
+        $agentEndEvents = array_values(array_filter(
+            $fixture->eventStore->allFor($runId),
+            static fn (RunEvent $event): bool => 'agent_end' === $event->type,
+        ));
+
+        self::assertCount(1, $agentEndEvents);
+        self::assertSame('cancelled', $agentEndEvents[0]->payload['reason']);
     }
 
-    private function createFixture(): RunOrchestratorFixture
+    private function createFixture(int $maxPendingCommands = 100, string $steerDrainMode = 'one_at_a_time'): RunOrchestratorFixture
     {
         $filesystem = new Filesystem(new LocalFilesystemAdapter($this->basePath));
 
@@ -464,6 +472,7 @@ final class RunOrchestratorTopologyTest extends TestCase
         $outboxProjector = new OutboxProjector($outboxStore, $runLogWriter, $runEventPublisher);
         $replayService = new ReplayService($eventStore, new RunLogReader($filesystem), new HotPromptStateStore());
 
+        $commandBus = new RecordingMessageBus();
         $executionBus = new RecordingMessageBus();
         $publisherBus = new RecordingMessageBus();
 
@@ -479,12 +488,17 @@ final class RunOrchestratorTopologyTest extends TestCase
             idempotency: new MessageIdempotencyService(),
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             toolBatchCollector: new ToolBatchCollector(),
+            maxPendingCommands: $maxPendingCommands,
+            steerDrainMode: $steerDrainMode,
+            commandBus: $commandBus,
         );
 
         return new RunOrchestratorFixture(
             orchestrator: $orchestrator,
             runStore: $runStore,
             eventStore: $eventStore,
+            commandStore: $commandStore,
+            commandBus: $commandBus,
         );
     }
 
@@ -519,6 +533,8 @@ final readonly class RunOrchestratorFixture
         public RunOrchestrator $orchestrator,
         public InMemoryRunStore $runStore,
         public RunEventStore $eventStore,
+        public InMemoryCommandStore $commandStore,
+        public RecordingMessageBus $commandBus,
     ) {
     }
 }

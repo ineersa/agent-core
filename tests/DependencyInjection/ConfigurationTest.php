@@ -30,6 +30,8 @@ final class ConfigurationTest extends TestCase
         self::assertSame(120, $config['tools']['overrides']['web_search']['timeout_seconds']);
         self::assertSame('interrupt', $config['tools']['overrides']['ask_user']['mode']);
         self::assertSame(100, $config['commands']['max_pending_per_run']);
+        self::assertSame('one_at_a_time', $config['commands']['steer_drain_mode']);
+        self::assertSame(120, $config['commands']['resume_stale_after_seconds']);
         self::assertSame('ext:', $config['commands']['custom_kind_prefix']);
         self::assertSame('ext_', $config['events']['custom_type_prefix']);
         self::assertSame(5, $config['checkpoints']['every_turns']);

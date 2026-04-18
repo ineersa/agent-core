@@ -14,6 +14,7 @@ use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Orchestrator\AgentRunner;
 use Ineersa\AgentCore\Command\AgentLoopHealthCommand;
+use Ineersa\AgentCore\Command\AgentLoopResumeStaleRunsCommand;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\DependencyInjection\AgentLoopExtension;
 use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
@@ -37,9 +38,12 @@ final class AgentLoopExtensionTest extends TestCase
         self::assertSame('mercure', $container->getParameter('agent_loop.streaming'));
         self::assertSame('gpt-4o-mini', $container->getParameter('agent_loop.llm.default_model'));
         self::assertSame('agent_loop.run_logs', $container->getParameter('agent_loop.storage.run_log.flysystem_storage'));
+        self::assertSame('one_at_a_time', $container->getParameter('agent_loop.commands.steer_drain_mode'));
+        self::assertSame(120, $container->getParameter('agent_loop.commands.resume_stale_after_seconds'));
 
         self::assertTrue($container->hasDefinition(AgentRunner::class));
         self::assertTrue($container->hasDefinition(AgentLoopHealthCommand::class));
+        self::assertTrue($container->hasDefinition(AgentLoopResumeStaleRunsCommand::class));
         self::assertTrue($container->hasDefinition('agent_loop.run_logs'));
         self::assertTrue($container->hasDefinition(RunLogReader::class));
         self::assertTrue($container->hasDefinition(HotPromptStateStore::class));

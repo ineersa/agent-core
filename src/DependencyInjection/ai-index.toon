@@ -4,7 +4,7 @@ fqcn: "Ineersa\\AgentCore\\DependencyInjection"
 description: "Symfony bundle extension: config tree definition, config validation, service loading, and framework config prepend (messenger, doctrine)."
 files[2]{file,class,responsibility,docs}:
   AgentLoopExtension.php,AgentLoopExtension,"Symfony DI extension — prepends messenger/doctrine config, processes bundle configuration into container parameters, loads services.php.",docs/AgentLoopExtension.md
-  Configuration.php,Configuration,"Defines the full configuration tree for agent_loop: runtime mode, streaming, LLM defaults, storage backends, tool execution, commands, events, checkpoints, retention.",docs/Configuration.md
+  Configuration.php,Configuration,"Defines the full configuration tree for agent_loop: runtime mode, streaming, LLM defaults, storage backends, tool execution (mode/timeout/overrides), commands (maxPending/steerDrainMode/resumeStale), events, checkpoints, retention.",docs/Configuration.md
 relatedRootFile:
   file: ../AgentLoopBundle.php
   class: AgentLoopBundle

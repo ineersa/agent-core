@@ -22,6 +22,7 @@ use Ineersa\AgentCore\Application\Orchestrator\AgentRunner;
 use Ineersa\AgentCore\Application\Orchestrator\RunOrchestrator;
 use Ineersa\AgentCore\Application\Reducer\RunReducer;
 use Ineersa\AgentCore\Command\AgentLoopHealthCommand;
+use Ineersa\AgentCore\Command\AgentLoopResumeStaleRunsCommand;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Infrastructure\Mercure\RunEventPublisher;
@@ -98,6 +99,7 @@ final class KernelIntegrationTest extends TestCase
         }
 
         self::assertTrue($container->has(AgentLoopHealthCommand::class));
+        self::assertTrue($container->has(AgentLoopResumeStaleRunsCommand::class));
         self::assertTrue($container->has('agent.command.bus'));
         self::assertTrue($container->has('agent.execution.bus'));
         self::assertTrue($container->has('agent.publisher.bus'));

@@ -26,6 +26,7 @@ use Ineersa\AgentCore\Application\Orchestrator\AgentRunner;
 use Ineersa\AgentCore\Application\Orchestrator\RunOrchestrator;
 use Ineersa\AgentCore\Application\Reducer\RunReducer;
 use Ineersa\AgentCore\Command\AgentLoopHealthCommand;
+use Ineersa\AgentCore\Command\AgentLoopResumeStaleRunsCommand;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\ArtifactStoreInterface;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
@@ -129,7 +130,11 @@ return static function (ContainerConfigurator $container): void {
     ;
     $services->alias(AgentRunnerInterface::class, AgentRunner::class);
 
-    $services->set(RunOrchestrator::class);
+    $services->set(RunOrchestrator::class)
+        ->arg('$maxPendingCommands', param('agent_loop.commands.max_pending_per_run'))
+        ->arg('$steerDrainMode', param('agent_loop.commands.steer_drain_mode'))
+        ->arg('$commandBus', service('agent.command.bus'))
+    ;
     $services->set(RunReducer::class);
 
     $services->set(StepDispatcher::class)
@@ -276,6 +281,13 @@ return static function (ContainerConfigurator $container): void {
 
     $services->set(AgentLoopHealthCommand::class)
         ->arg('$config', param('agent_loop.config'))
+        ->public()
+        ->tag('console.command')
+    ;
+
+    $services->set(AgentLoopResumeStaleRunsCommand::class)
+        ->arg('$commandBus', service('agent.command.bus'))
+        ->arg('$staleAfterSeconds', param('agent_loop.commands.resume_stale_after_seconds'))
         ->public()
         ->tag('console.command')
     ;

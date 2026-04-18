@@ -50,6 +50,8 @@ final class AgentLoopExtension extends Extension implements PrependExtensionInte
         $container->setParameter('agent_loop.tools.max_parallelism', $config['tools']['max_parallelism']);
         $container->setParameter('agent_loop.tools.overrides', $config['tools']['overrides']);
         $container->setParameter('agent_loop.commands.max_pending_per_run', $config['commands']['max_pending_per_run']);
+        $container->setParameter('agent_loop.commands.steer_drain_mode', $config['commands']['steer_drain_mode']);
+        $container->setParameter('agent_loop.commands.resume_stale_after_seconds', $config['commands']['resume_stale_after_seconds']);
         $container->setParameter('agent_loop.commands.custom_kind_prefix', $config['commands']['custom_kind_prefix']);
         $container->setParameter('agent_loop.events.custom_type_prefix', $config['events']['custom_type_prefix']);
         $container->setParameter('agent_loop.checkpoints.every_turns', $config['checkpoints']['every_turns']);

@@ -3,6 +3,6 @@ namespace: "Domain\\Command"
 fqcn: "Ineersa\\AgentCore\\Domain\\Command"
 description: "Command value objects for the agent loop — kind constants, pending queue items, and routed commands with core/extension/rejected discrimination."
 files[3]{file,type,responsibility,docs}:
-  CoreCommandKind.php,final class,"Constants for core command kinds: steer, follow_up, cancel, human_response, continue. With isCore() check.",docs/CoreCommandKind.md
-  PendingCommand.php,readonly class,"Pending command in queue — runId, kind, idempotencyKey, payload, options.",docs/PendingCommand.md
-  RoutedCommand.php,readonly class,"Routed command with status discrimination — core(), extension(), rejected() factory methods.",docs/RoutedCommand.md
+  CoreCommandKind.php,final class,"Constants for core command kinds: steer, follow_up, cancel, human_response, continue. Includes ALL list and isCore() check.",docs/CoreCommandKind.md
+  PendingCommand.php,final readonly class,"Pending command in queue — runId, kind, idempotencyKey, payload, options.",docs/PendingCommand.md
+  RoutedCommand.php,final readonly class,"Routed command with status discrimination — core(), extension(), rejected() factory methods.",docs/RoutedCommand.md

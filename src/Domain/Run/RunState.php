@@ -24,6 +24,7 @@ final readonly class RunState
         public ?string $errorMessage = null,
         public array $messages = [],
         public ?string $activeStepId = null,
+        public bool $retryableFailure = false,
     ) {
     }
 

@@ -1,7 +1,7 @@
 ---
 name: index-maintainer
 description: Maintains ai-index.toon docs system — creates/updates indexes and docs for specific namespaces and files. Receives a scoped list of paths to update, never rescans the whole repo.
-tools: read, write, edit, bash, launch_subagents
+tools: read, write, edit, bash
 model: zai/glm-5.1
 skills:
   - index-maintainer

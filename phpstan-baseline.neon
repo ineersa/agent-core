@@ -97,18 +97,6 @@ parameters:
 			path: src/Contract/ArtifactStoreInterface.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Contract\\CommandStoreInterface\:\:enqueue$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Contract/CommandStoreInterface.php
-
-		-
-			message: '#^Unused Ineersa\\AgentCore\\Contract\\Extension\\CommandHandlerInterface\:\:map$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Contract/Extension/CommandHandlerInterface.php
-
-		-
 			message: '#^Unused Ineersa\\AgentCore\\Contract\\Hook\\FollowUpMessagesProviderInterface\:\:getFollowUpMessages$#'
 			identifier: shipmonk.deadMethod
 			count: 1
@@ -133,31 +121,7 @@ parameters:
 			path: src/DependencyInjection/Configuration.php
 
 		-
-			message: '#^Property Ineersa\\AgentCore\\Domain\\Command\\PendingCommand\:\:\$kind is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/Domain/Command/PendingCommand.php
-
-		-
-			message: '#^Property Ineersa\\AgentCore\\Domain\\Command\\PendingCommand\:\:\$options is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/Domain/Command/PendingCommand.php
-
-		-
-			message: '#^Property Ineersa\\AgentCore\\Domain\\Command\\PendingCommand\:\:\$payload is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/Domain/Command/PendingCommand.php
-
-		-
 			message: '#^Property Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand\:\:\$kind is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/Domain/Command/RoutedCommand.php
-
-		-
-			message: '#^Property Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand\:\:\$options is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
 			path: src/Domain/Command/RoutedCommand.php
@@ -371,36 +335,6 @@ parameters:
 			identifier: shipmonk.deadConstant
 			count: 1
 			path: src/Infrastructure/Messenger/BusNames.php
-
-		-
-			message: '#^Property Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryCommandStore\:\:\$pending is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/Infrastructure/Storage/InMemoryCommandStore.php
-
-		-
-			message: '#^Property Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryCommandStore\:\:\$pending is never read, only written\.$#'
-			identifier: property.onlyWritten
-			count: 1
-			path: src/Infrastructure/Storage/InMemoryCommandStore.php
-
-		-
-			message: '#^Property Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryCommandStore\:\:\$statuses is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/Infrastructure/Storage/InMemoryCommandStore.php
-
-		-
-			message: '#^Property Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryCommandStore\:\:\$statuses is never read, only written\.$#'
-			identifier: property.onlyWritten
-			count: 1
-			path: src/Infrastructure/Storage/InMemoryCommandStore.php
-
-		-
-			message: '#^Unused Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryCommandStore\:\:enqueue$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Infrastructure/Storage/InMemoryCommandStore.php
 
 		-
 			message: '#^Unused Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryPromptStateStore\:\:delete$#'

@@ -11,4 +11,9 @@ interface RunStoreInterface
     public function get(string $runId): ?RunState;
 
     public function compareAndSwap(RunState $state, int $expectedVersion): bool;
+
+    /**
+     * @return list<RunState>
+     */
+    public function findRunningStaleBefore(\DateTimeImmutable $updatedBefore): array;
 }

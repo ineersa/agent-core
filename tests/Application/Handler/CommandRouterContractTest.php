@@ -91,19 +91,57 @@ final class CommandRouterContractTest extends TestCase
         $routed = $router->route($command);
 
         self::assertSame('rejected', $routed->status);
-        self::assertStringContainsString('Unknown extension command options', (string) $routed->reason);
+        self::assertStringContainsString('Unknown command options', (string) $routed->reason);
     }
 
-    public function testRejectsInvalidCancelSafeOptionType(): void
+    public function testInvalidCancelSafeOptionTypeDefaultsToFalseForExtensionCommands(): void
     {
-        $router = new CommandRouter(new CommandHandlerRegistry([]));
+        $router = new CommandRouter(new CommandHandlerRegistry([
+            new class implements CommandHandlerInterface {
+                public function supports(string $kind): bool
+                {
+                    return 'ext:compaction:compact' === $kind;
+                }
+
+                public function supportsCancelSafe(string $kind): bool
+                {
+                    return false;
+                }
+
+                public function map(string $runId, string $kind, array $payload, array $options = []): array
+                {
+                    return [];
+                }
+            },
+        ]));
 
         $command = $this->extensionCommand(kind: 'ext:compaction:compact', options: ['cancel_safe' => 'yes']);
 
         $routed = $router->route($command);
 
+        self::assertSame('extension', $routed->status);
+        self::assertSame(['cancel_safe' => false], $routed->options);
+    }
+
+    public function testRejectsCancelSafeOptionForCoreCommands(): void
+    {
+        $router = new CommandRouter(new CommandHandlerRegistry([]));
+
+        $command = new ApplyCommand(
+            runId: 'run-stage-07',
+            turnNo: 1,
+            stepId: 'step-stage-07',
+            attempt: 1,
+            idempotencyKey: 'core-cancel-safe',
+            kind: 'cancel',
+            payload: [],
+            options: ['cancel_safe' => true],
+        );
+
+        $routed = $router->route($command);
+
         self::assertSame('rejected', $routed->status);
-        self::assertStringContainsString('must be boolean', (string) $routed->reason);
+        self::assertStringContainsString('reserved for extension commands', (string) $routed->reason);
     }
 
     /**

@@ -3,8 +3,8 @@ namespace: "Infrastructure\\Storage"
 fqcn: "Ineersa\\AgentCore\\Infrastructure\\Storage"
 description: "Storage adapters — in-memory stores, Flysystem run logs, Doctrine event store, hot prompt state, local artifact store."
 files[9]{file,type,responsibility,docs}:
-  InMemoryRunStore.php,class,In-memory RunStoreInterface — map-based get/compareAndSwap for testing.,docs/InMemoryRunStore.md
-  InMemoryCommandStore.php,class,In-memory CommandStoreInterface — enqueue/markApplied/markRejected for testing.,docs/InMemoryCommandStore.md
+  InMemoryRunStore.php,class,In-memory RunStoreInterface — map-based get/compareAndSwap/findRunningStaleBefore for testing and stale-run recovery.,docs/InMemoryRunStore.md
+  InMemoryCommandStore.php,class,In-memory CommandStoreInterface — enqueue/has/countPending/pending/rejectPendingByKind/markApplied/markRejected/markSuperseded for testing.,docs/InMemoryCommandStore.md
   InMemoryOutboxStore.php,class,In-memory OutboxStoreInterface — enqueue/claim/markProcessed/markFailed for testing.,docs/InMemoryOutboxStore.md
   InMemoryPromptStateStore.php,class,In-memory PromptStateStoreInterface — get/save/delete for testing.,docs/InMemoryPromptStateStore.md
   RunEventStore.php,class,Doctrine-backed EventStoreInterface — appends/retrieves RunEvents using Doctrine DBAL/ORM.,docs/RunEventStore.md

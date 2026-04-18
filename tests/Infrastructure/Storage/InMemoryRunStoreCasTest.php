@@ -49,4 +49,30 @@ final class InMemoryRunStoreCasTest extends TestCase
         self::assertSame(2, $currentState->version);
         self::assertSame(2, $currentState->turnNo);
     }
+
+    public function testFindRunningStaleBeforeReturnsOnlyRunningRuns(): void
+    {
+        $store = new InMemoryRunStore();
+
+        self::assertTrue($store->compareAndSwap(new RunState(
+            runId: 'run-stale-running',
+            status: RunStatus::Running,
+            version: 1,
+            turnNo: 1,
+            lastSeq: 1,
+        ), expectedVersion: 0));
+
+        self::assertTrue($store->compareAndSwap(new RunState(
+            runId: 'run-stale-completed',
+            status: RunStatus::Completed,
+            version: 1,
+            turnNo: 1,
+            lastSeq: 1,
+        ), expectedVersion: 0));
+
+        $staleRuns = $store->findRunningStaleBefore((new \DateTimeImmutable())->setTimestamp(time() + 1));
+
+        self::assertCount(1, $staleRuns);
+        self::assertSame('run-stale-running', $staleRuns[0]->runId);
+    }
 }

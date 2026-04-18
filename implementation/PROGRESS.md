@@ -370,3 +370,67 @@ Status: **completed**
 ### Stage 06 closure
 
 - Stage 06 tool execution, interrupt handling, idempotency, and bounded parallel collection are implemented and passing quality gates.
+
+## Stage 07 — Steering, Cancel, Continue, and Resume
+
+Status: **completed**
+
+### Completed
+
+- Added canonical core command constants in `CoreCommandKind` for:
+  - `steer`
+  - `follow_up`
+  - `cancel`
+  - `human_response`
+  - `continue`
+- Reworked command routing policy in `CommandRouter`:
+  - reserves core command kinds from extension handlers
+  - enforces strict options schema
+  - validates/normalizes `cancel_safe` for extension commands
+- Implemented command mailbox semantics in `RunOrchestrator`:
+  - `ApplyCommand` now queues commands instead of mutating state inline
+  - idempotent enqueue and duplicate protection
+  - queue-cap rejection for non-cancel commands
+  - cancel-priority handling and deterministic rejection paths
+  - "latest steer wins" supersede behavior
+  - command draining at turn-start and stop boundaries
+  - continue-vs-cancel conflict handling (`continue` rejected while cancellation is in progress)
+- Extended retry/continue modeling in `RunState`:
+  - added retryable failure metadata (`retryableFailure`)
+  - continue flow now validates retryability and last-message role constraints
+- Added stale run recovery path:
+  - `RunStoreInterface::findRunningStaleBefore(...)`
+  - timestamp-based stale detection in `InMemoryRunStore`
+  - new console command: `AgentLoopResumeStaleRunsCommand` (`agent-loop:resume-stale-runs`)
+  - stale resume path rebuilds hot prompt state via `ReplayService` when missing, then dispatches `AdvanceRun`
+- Expanded command store contract and in-memory implementation:
+  - pending mailbox reads (`pending`, `countPending`, `has`)
+  - lifecycle markers (`markApplied`, `markRejected`, `markSuperseded`)
+  - kind-based bulk rejection (`rejectPendingByKind`)
+- Added DI/config knobs for stage behavior:
+  - `commands.steer_drain_mode`
+  - `commands.resume_stale_after_seconds`
+
+### Tests Added/Updated
+
+- Added:
+  - `tests/Application/Orchestrator/CommandMailboxPolicyTest.php`
+  - `tests/Command/AgentLoopResumeStaleRunsCommandTest.php`
+- Updated:
+  - `tests/Application/Handler/CommandRouterContractTest.php`
+  - `tests/Application/Orchestrator/RunOrchestratorTopologyTest.php`
+  - `tests/DependencyInjection/ConfigurationTest.php`
+  - `tests/DependencyInjection/AgentLoopExtensionTest.php`
+  - `tests/Infrastructure/Storage/InMemoryRunStoreCasTest.php`
+  - `tests/Integration/KernelIntegrationTest.php`
+
+### Quality/Verification
+
+- `LLM_MODE=true castor dev:check` ✅
+  - `cs-fix`: ok
+  - `phpstan`: ok
+  - `test`: ok (`60 tests`, `307 assertions`)
+
+### Stage 07 closure
+
+- Stage 07 control-plane semantics (steer/follow-up/cancel/human-response/continue) and stale-run resume recovery are implemented and passing quality gates.

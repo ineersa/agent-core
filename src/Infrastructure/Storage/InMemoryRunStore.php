@@ -12,6 +12,9 @@ final class InMemoryRunStore implements RunStoreInterface
     /** @var array<string, RunState> */
     private array $states = [];
 
+    /** @var array<string, \DateTimeImmutable> */
+    private array $updatedAtByRun = [];
+
     public function get(string $runId): ?RunState
     {
         return $this->states[$runId] ?? null;
@@ -27,7 +30,28 @@ final class InMemoryRunStore implements RunStoreInterface
         }
 
         $this->states[$state->runId] = $state;
+        $this->updatedAtByRun[$state->runId] = new \DateTimeImmutable();
 
         return true;
+    }
+
+    public function findRunningStaleBefore(\DateTimeImmutable $updatedBefore): array
+    {
+        $stale = [];
+
+        foreach ($this->states as $runId => $state) {
+            if (\Ineersa\AgentCore\Domain\Run\RunStatus::Running !== $state->status) {
+                continue;
+            }
+
+            $updatedAt = $this->updatedAtByRun[$runId] ?? null;
+            if (null === $updatedAt || $updatedAt > $updatedBefore) {
+                continue;
+            }
+
+            $stale[] = $state;
+        }
+
+        return $stale;
     }
 }

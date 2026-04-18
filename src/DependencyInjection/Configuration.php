@@ -74,6 +74,8 @@ final class Configuration implements ConfigurationInterface
                     ->addDefaultsIfNotSet()
                     ->children()
                         ->integerNode('max_pending_per_run')->min(1)->defaultValue(100)->end()
+                        ->enumNode('steer_drain_mode')->values(['one_at_a_time', 'all'])->defaultValue('one_at_a_time')->end()
+                        ->integerNode('resume_stale_after_seconds')->min(1)->defaultValue(120)->end()
                         ->scalarNode('custom_kind_prefix')->defaultValue('ext:')->cannotBeEmpty()->end()
                     ->end()
                 ->end()

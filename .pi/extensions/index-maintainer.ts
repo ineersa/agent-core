@@ -146,5 +146,9 @@ function buildTask(paths: string[]): string {
 		"```",
 		"",
 		"The subagent should read its skill (index-maintainer) for the schema and workflows, then use scout subagents to explore the code before writing any artifacts.",
+		"You **MUST** never launch more than 2 scouts at the same time, always launch 1 or 2 scouts and wait for reports.",
+		"*IMPORTANT* Each scout MUST be responsible for it's own namespace, don't ever launch scouts on same namespace twice.",
+		"**VERY IMPORTANT** Each scout MUST have it's own DEDICATED TASK and NAMESPACE, never launch scouts with the same task!",
+		"Prefer not to read full files and trust scouts, unless necessary.",
 	].join("\n");
 }
