@@ -194,4 +194,125 @@ Status: **completed**
 ### Stage 03 closure
 
 - Stage 03 persistence foundations are implemented and passing quality gates.
-- Next implementation target: `implementation/04-orchestrator-and-workers.md`.
+
+## Stage 04 — Orchestrator and Worker Topology
+
+Status: **completed**
+
+### Completed
+
+- Implemented orchestrator-owned mutation flow with lock + CAS guardrails:
+  - `src/Application/Orchestrator/RunOrchestrator.php`
+  - now handles command messages and executor result messages:
+    - `StartRun`
+    - `ApplyCommand`
+    - `AdvanceRun`
+    - `LlmStepResult`
+    - `ToolCallResult`
+  - enforces stale result checks by `turn_no` + `step_id`
+  - records `stale_result_ignored` audit events
+- Added lock manager integration using Symfony Lock:
+  - `composer.json` / `composer.lock` (added `symfony/lock`)
+  - `src/Application/Handler/RunLockManager.php`
+  - `config/services.php` (`LockFactory` + lock store wiring)
+- Added idempotency + tool-batch orchestration services:
+  - `src/Application/Handler/MessageIdempotencyService.php`
+  - `src/Application/Handler/ToolBatchCollector.php`
+  - `src/Application/Handler/ToolBatchCollectOutcome.php`
+- Added execution worker handlers (pure executors):
+  - `src/Application/Handler/ExecuteLlmStepWorker.php`
+  - `src/Application/Handler/ExecuteToolCallWorker.php`
+- Updated message contracts for worker topology:
+  - `src/Domain/Message/ExecuteLlmStep.php` (`contextRef`, `toolsRef`)
+  - `src/Domain/Message/ExecuteToolCall.php` (`args`, `toolIdempotencyKey`)
+  - `src/Domain/Message/LlmStepResult.php`
+  - `src/Domain/Message/ToolCallResult.php`
+- Updated reducer/runtime state for active step ownership and effect emission:
+  - `src/Application/Reducer/RunReducer.php`
+  - `src/Domain/Run/RunState.php` (`activeStepId`)
+- Added DB-CAS style API on run store abstraction:
+  - `src/Contract/RunStoreInterface.php`
+  - `src/Infrastructure/Storage/InMemoryRunStore.php`
+- Updated messenger topology + service graph for new workers/messages:
+  - `config/messenger.php`
+  - `config/services.php`
+
+### Tests Added/Updated
+
+- Added:
+  - `tests/Application/Handler/ExecutionWorkerTest.php`
+  - `tests/Application/Orchestrator/RunOrchestratorTopologyTest.php`
+  - `tests/Infrastructure/Storage/InMemoryRunStoreCasTest.php`
+- Updated:
+  - `tests/Config/MessengerConfigTest.php`
+  - `tests/DependencyInjection/AgentLoopExtensionTest.php`
+  - `tests/Kernel/TestKernel.php`
+  - `tests/Integration/KernelIntegrationTest.php`
+
+### Quality/Verification
+
+- `LLM_MODE=true castor dev:check` ✅
+  - `cs-fix`: ok
+  - `phpstan`: ok
+  - `test`: ok (`39 tests`, `206 assertions`)
+
+### Stage 04 closure
+
+- Stage 04 worker topology, stale-guard checks, lock coordination, and CAS-path protections are implemented and verified.
+
+## Stage 05 — Symfony AI Integration
+
+Status: **completed**
+
+### Completed
+
+- Implemented Symfony AI invocation pipeline with streaming reduction and normalized outcomes:
+  - `src/Infrastructure/SymfonyAi/Platform.php`
+  - `src/Infrastructure/SymfonyAi/SymfonyPlatformInvoker.php`
+  - `src/Infrastructure/SymfonyAi/StreamDeltaReducer.php`
+  - `src/Infrastructure/SymfonyAi/SymfonyMessageMapper.php`
+  - `src/Infrastructure/SymfonyAi/RunCancellationToken.php`
+  - `src/Domain/Tool/PlatformInvocationResult.php`
+- Added optional model-selection seam for per-turn routing:
+  - `src/Contract/Tool/ModelResolverInterface.php`
+  - `src/Domain/Tool/ResolvedModel.php`
+- Added dynamic tool-catalog seam with schema-stability guardrails:
+  - `src/Contract/Tool/ToolCatalogProviderInterface.php`
+  - `src/Application/Handler/ToolCatalogResolver.php`
+  - `src/Domain/Tool/ToolDefinition.php`
+- Added Symfony toolbox adapter for tool execution bridge:
+  - `src/Infrastructure/SymfonyAi/SymfonyToolExecutorAdapter.php`
+  - wired as `ToolExecutorInterface` default with fallback to existing policy executor
+- Integrated hook semantics:
+  - transform/convert/provider hooks in Symfony AI pipeline
+  - extension hook namespace support (`ext:*`) in `HookDispatcher`
+  - post-commit hook emission (`after_turn_commit`) from orchestrator commit path
+- Improved cancellation path:
+  - cancellation token observed during streaming
+  - aborted result mapped to `stop_reason=aborted`
+  - orchestrator now transitions cancelled runs deterministically on aborted LLM result
+- Added LLM config defaults:
+  - `agent_loop.llm.default_model` in bundle configuration + extension parameters
+
+### Tests Added/Updated
+
+- Added:
+  - `tests/Infrastructure/SymfonyAi/PlatformIntegrationTest.php`
+  - `tests/Infrastructure/SymfonyAi/SymfonyToolExecutorAdapterTest.php`
+- Updated:
+  - `tests/Application/Handler/HookDispatcherContractTest.php`
+  - `tests/Application/Orchestrator/RunOrchestratorTopologyTest.php`
+  - `tests/DependencyInjection/ConfigurationTest.php`
+  - `tests/DependencyInjection/AgentLoopExtensionTest.php`
+
+### Quality/Verification
+
+- `LLM_MODE=true castor dev:check` ✅
+  - `cs-fix`: ok
+  - `phpstan`: ok
+  - `test`: ok (`45 tests`, `236 assertions`)
+
+### Stage 05 closure
+
+- Stage 05 Symfony AI integration deliverables are implemented and passing quality gates.
+- Next implementation target: `implementation/06-tool-execution-hitl-and-parallelism.md`.

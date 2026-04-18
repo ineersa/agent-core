@@ -6,13 +6,18 @@ namespace Ineersa\AgentCore\Tests\Kernel;
 
 use Ineersa\AgentCore\AgentLoopBundle;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
+use Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker;
+use Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker;
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\JsonlOutboxProjectorWorker;
 use Ineersa\AgentCore\Application\Handler\MercureOutboxProjectorWorker;
+use Ineersa\AgentCore\Application\Handler\MessageIdempotencyService;
 use Ineersa\AgentCore\Application\Handler\OutboxProjector;
 use Ineersa\AgentCore\Application\Handler\ReplayService;
 use Ineersa\AgentCore\Application\Handler\RunEventDispatcher;
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
+use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
 use Ineersa\AgentCore\Application\Orchestrator\AgentRunner;
 use Ineersa\AgentCore\Application\Orchestrator\RunOrchestrator;
@@ -93,7 +98,12 @@ final class TestKernel extends Kernel
             'test.outbox_projector' => OutboxProjector::class,
             'test.jsonl_outbox_worker' => JsonlOutboxProjectorWorker::class,
             'test.mercure_outbox_worker' => MercureOutboxProjectorWorker::class,
+            'test.execute_llm_worker' => ExecuteLlmStepWorker::class,
+            'test.execute_tool_worker' => ExecuteToolCallWorker::class,
             'test.replay_service' => ReplayService::class,
+            'test.message_idempotency_service' => MessageIdempotencyService::class,
+            'test.run_lock_manager' => RunLockManager::class,
+            'test.tool_batch_collector' => ToolBatchCollector::class,
             'test.run_event_publisher' => RunEventPublisher::class,
             'test.command_router' => CommandRouter::class,
             'test.hook_dispatcher' => HookDispatcher::class,

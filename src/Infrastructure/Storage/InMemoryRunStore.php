@@ -17,8 +17,17 @@ final class InMemoryRunStore implements RunStoreInterface
         return $this->states[$runId] ?? null;
     }
 
-    public function save(RunState $state): void
+    public function compareAndSwap(RunState $state, int $expectedVersion): bool
     {
+        $currentState = $this->states[$state->runId] ?? null;
+        $currentVersion = null === $currentState ? 0 : $currentState->version;
+
+        if ($currentVersion !== $expectedVersion) {
+            return false;
+        }
+
         $this->states[$state->runId] = $state;
+
+        return true;
     }
 }

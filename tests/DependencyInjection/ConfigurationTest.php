@@ -20,6 +20,7 @@ final class ConfigurationTest extends TestCase
 
         self::assertSame('messenger', $config['runtime']);
         self::assertSame('mercure', $config['streaming']);
+        self::assertSame('gpt-4o-mini', $config['llm']['default_model']);
         self::assertSame('agent_loop.run_logs', $config['storage']['run_log']['flysystem_storage']);
         self::assertSame('%kernel.project_dir%/var/agent-runs', $config['storage']['run_log']['base_path']);
         self::assertSame('doctrine', $config['storage']['hot_prompt']['backend']);

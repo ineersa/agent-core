@@ -23,6 +23,7 @@ final readonly class RunState
         public array $pendingToolCalls = [],
         public ?string $errorMessage = null,
         public array $messages = [],
+        public ?string $activeStepId = null,
     ) {
     }
 

@@ -23,7 +23,10 @@ final readonly class HookDispatcher
      */
     public function dispatch(string $hookName, array $context = []): array
     {
-        if (!BoundaryHookName::isBoundary($hookName)) {
+        $isBoundaryHook = BoundaryHookName::isBoundary($hookName);
+        $isExtensionHook = BoundaryHookName::isExtensionHook($hookName);
+
+        if (!$isBoundaryHook && !$isExtensionHook) {
             throw new \InvalidArgumentException(\sprintf('Unknown boundary hook "%s". Allowed hooks: %s.', $hookName, implode(', ', BoundaryHookName::ALL)));
         }
 

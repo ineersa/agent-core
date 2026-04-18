@@ -7,7 +7,7 @@ namespace Ineersa\AgentCore\Domain\Message;
 final readonly class ExecuteToolCall extends AbstractAgentBusMessage
 {
     /**
-     * @param array<string, mixed> $arguments
+     * @param array<string, mixed> $args
      */
     public function __construct(
         string $runId,
@@ -17,8 +17,9 @@ final readonly class ExecuteToolCall extends AbstractAgentBusMessage
         string $idempotencyKey,
         public string $toolCallId,
         public string $toolName,
-        public array $arguments,
+        public array $args,
         public int $orderIndex,
+        public ?string $toolIdempotencyKey = null,
     ) {
         parent::__construct($runId, $turnNo, $stepId, $attempt, $idempotencyKey);
     }

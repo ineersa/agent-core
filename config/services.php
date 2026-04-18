@@ -5,14 +5,20 @@ declare(strict_types=1);
 use Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\EventSubscriberRegistry;
+use Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker;
+use Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker;
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\HookSubscriberRegistry;
 use Ineersa\AgentCore\Application\Handler\JsonlOutboxProjectorWorker;
 use Ineersa\AgentCore\Application\Handler\MercureOutboxProjectorWorker;
+use Ineersa\AgentCore\Application\Handler\MessageIdempotencyService;
 use Ineersa\AgentCore\Application\Handler\OutboxProjector;
 use Ineersa\AgentCore\Application\Handler\ReplayService;
 use Ineersa\AgentCore\Application\Handler\RunEventDispatcher;
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
+use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
+use Ineersa\AgentCore\Application\Handler\ToolCatalogResolver;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
 use Ineersa\AgentCore\Application\Orchestrator\AgentRunner;
 use Ineersa\AgentCore\Application\Orchestrator\RunOrchestrator;
@@ -26,9 +32,15 @@ use Ineersa\AgentCore\Contract\Extension\CommandHandlerInterface;
 use Ineersa\AgentCore\Contract\OutboxStoreInterface;
 use Ineersa\AgentCore\Contract\Extension\EventSubscriberInterface;
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
+use Ineersa\AgentCore\Contract\Hook\AfterToolCallHookInterface;
+use Ineersa\AgentCore\Contract\Hook\BeforeProviderRequestHookInterface;
+use Ineersa\AgentCore\Contract\Hook\BeforeToolCallHookInterface;
+use Ineersa\AgentCore\Contract\Hook\ConvertToLlmHookInterface;
+use Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface;
 use Ineersa\AgentCore\Contract\PromptStateStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\PlatformInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolCatalogProviderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Infrastructure\Mercure\RunEventPublisher;
 use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
@@ -41,9 +53,14 @@ use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogWriter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Platform;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\SymfonyMessageMapper;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\SymfonyPlatformInvoker;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\SymfonyToolExecutorAdapter;
 use League\Flysystem\Filesystem;
 use League\Flysystem\Local\LocalFilesystemAdapter;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\InMemoryStore;
 
 use function Symfony\Component\DependencyInjection\Loader\Configurator\param;
 use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
@@ -74,20 +91,61 @@ return static function (ContainerConfigurator $container): void {
         ->tag('agent_loop.extension.event_subscriber')
     ;
 
+    $services
+        ->instanceof(TransformContextHookInterface::class)
+        ->tag('agent_loop.hook.transform_context')
+    ;
+
+    $services
+        ->instanceof(ConvertToLlmHookInterface::class)
+        ->tag('agent_loop.hook.convert_to_llm')
+    ;
+
+    $services
+        ->instanceof(BeforeProviderRequestHookInterface::class)
+        ->tag('agent_loop.hook.before_provider_request')
+    ;
+
+    $services
+        ->instanceof(BeforeToolCallHookInterface::class)
+        ->tag('agent_loop.hook.before_tool_call')
+    ;
+
+    $services
+        ->instanceof(AfterToolCallHookInterface::class)
+        ->tag('agent_loop.hook.after_tool_call')
+    ;
+
+    $services
+        ->instanceof(ToolCatalogProviderInterface::class)
+        ->tag('agent_loop.tool_catalog_provider')
+    ;
+
     $services->set(AgentRunner::class)
         ->arg('$commandBus', service('agent.command.bus'))
     ;
     $services->alias(AgentRunnerInterface::class, AgentRunner::class);
 
-    $services->set(RunOrchestrator::class)
-        ->arg('$runLogFilesystem', service('agent_loop.run_log.storage'))
-    ;
+    $services->set(RunOrchestrator::class);
     $services->set(RunReducer::class);
 
     $services->set(StepDispatcher::class)
         ->arg('$executionBus', service('agent.execution.bus'))
         ->arg('$publisherBus', service('agent.publisher.bus'))
     ;
+
+    $services->set('agent_loop.lock.store', InMemoryStore::class);
+
+    $services->set('agent_loop.lock.factory', LockFactory::class)
+        ->arg('$store', service('agent_loop.lock.store'))
+    ;
+
+    $services->set(RunLockManager::class)
+        ->arg('$lockFactory', service('agent_loop.lock.factory'))
+    ;
+
+    $services->set(MessageIdempotencyService::class);
+    $services->set(ToolBatchCollector::class);
 
     $services->set(CommandHandlerRegistry::class)
         ->arg('$handlers', tagged_iterator('agent_loop.extension.command_handler'))
@@ -108,7 +166,22 @@ return static function (ContainerConfigurator $container): void {
     $services->set(HookDispatcher::class);
     $services->set(RunEventDispatcher::class);
 
-    $services->set(Platform::class);
+    $services->set(ToolCatalogResolver::class)
+        ->arg('$providers', tagged_iterator('agent_loop.tool_catalog_provider'))
+    ;
+
+    $services->set(SymfonyMessageMapper::class);
+
+    $services->set(SymfonyPlatformInvoker::class)
+        ->arg('$platform', service('Symfony\\AI\\Platform\\PlatformInterface')->nullOnInvalid())
+    ;
+
+    $services->set(Platform::class)
+        ->arg('$transformContextHooks', tagged_iterator('agent_loop.hook.transform_context'))
+        ->arg('$convertToLlmHooks', tagged_iterator('agent_loop.hook.convert_to_llm'))
+        ->arg('$beforeProviderRequestHooks', tagged_iterator('agent_loop.hook.before_provider_request'))
+        ->arg('$defaultModel', param('agent_loop.llm.default_model'))
+    ;
     $services->alias(PlatformInterface::class, Platform::class);
 
     $services->set(ToolExecutor::class)
@@ -117,7 +190,22 @@ return static function (ContainerConfigurator $container): void {
         ->arg('$maxParallelism', param('agent_loop.tools.max_parallelism'))
         ->arg('$overrides', param('agent_loop.tools.overrides'))
     ;
-    $services->alias(ToolExecutorInterface::class, ToolExecutor::class);
+
+    $services->set(SymfonyToolExecutorAdapter::class)
+        ->arg('$fallbackExecutor', service(ToolExecutor::class))
+        ->arg('$toolbox', service('Symfony\\AI\\Agent\\Toolbox\\ToolboxInterface')->nullOnInvalid())
+        ->arg('$beforeToolCallHooks', tagged_iterator('agent_loop.hook.before_tool_call'))
+        ->arg('$afterToolCallHooks', tagged_iterator('agent_loop.hook.after_tool_call'))
+    ;
+    $services->alias(ToolExecutorInterface::class, SymfonyToolExecutorAdapter::class);
+
+    $services->set(ExecuteLlmStepWorker::class)
+        ->arg('$commandBus', service('agent.command.bus'))
+    ;
+
+    $services->set(ExecuteToolCallWorker::class)
+        ->arg('$commandBus', service('agent.command.bus'))
+    ;
 
     $services->set('agent_loop.run_logs.adapter.local', LocalFilesystemAdapter::class)
         ->arg('$location', param('agent_loop.storage.run_log.base_path'))

@@ -3,3 +3,4 @@
 .idea/*
 composer.lock
 config/reference.php
+.php-cs-fixer.cache

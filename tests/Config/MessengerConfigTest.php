@@ -9,9 +9,11 @@ use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\CollectToolBatch;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\ProjectJsonlOutbox;
 use Ineersa\AgentCore\Domain\Message\ProjectMercureOutbox;
 use Ineersa\AgentCore\Domain\Message\StartRun;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use PHPUnit\Framework\TestCase;
 
 final class MessengerConfigTest extends TestCase
@@ -38,6 +40,8 @@ final class MessengerConfigTest extends TestCase
         self::assertSame(['agent_loop.execution'], $routing[ExecuteLlmStep::class]);
         self::assertSame(['agent_loop.execution'], $routing[ExecuteToolCall::class]);
         self::assertSame(['agent_loop.execution'], $routing[CollectToolBatch::class]);
+        self::assertSame(['agent_loop.command'], $routing[LlmStepResult::class]);
+        self::assertSame(['agent_loop.command'], $routing[ToolCallResult::class]);
 
         self::assertSame(['agent_loop.publisher'], $routing[ProjectJsonlOutbox::class]);
         self::assertSame(['agent_loop.publisher'], $routing[ProjectMercureOutbox::class]);

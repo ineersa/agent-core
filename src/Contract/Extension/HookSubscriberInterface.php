@@ -9,7 +9,7 @@ use Ineersa\AgentCore\Domain\Event\BoundaryHookName;
 interface HookSubscriberInterface
 {
     /**
-     * @return list<string> Boundary hook names from {@see BoundaryHookName::ALL}
+     * @return list<string> Hook names from {@see BoundaryHookName::ALL} or extension hooks with {@see BoundaryHookName::EXTENSION_PREFIX}
      */
     public static function subscribedHooks(): array;
 

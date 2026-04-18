@@ -4,16 +4,22 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Message;
 
-final readonly class ExecuteLlmStep extends AbstractAgentBusMessage
+final readonly class ToolCallResult extends AbstractAgentBusMessage
 {
+    /**
+     * @param array<string, mixed>|null $error
+     */
     public function __construct(
         string $runId,
         int $turnNo,
         string $stepId,
         int $attempt,
         string $idempotencyKey,
-        public string $contextRef,
-        public string $toolsRef,
+        public string $toolCallId,
+        public int $orderIndex,
+        public mixed $result = null,
+        public bool $isError = false,
+        public ?array $error = null,
     ) {
         parent::__construct($runId, $turnNo, $stepId, $attempt, $idempotencyKey);
     }

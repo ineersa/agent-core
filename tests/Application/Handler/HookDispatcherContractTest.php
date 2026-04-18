@@ -53,4 +53,16 @@ final class HookDispatcherContractTest extends TestCase
 
         $dispatcher->dispatch('before_anything');
     }
+
+    public function testUnknownNamespacedExtensionHookIsNoOp(): void
+    {
+        $dispatcher = new HookDispatcher(
+            new HookSubscriberRegistry([]),
+            new EventDispatcher(),
+        );
+
+        $context = ['run_id' => 'run-stage-05'];
+
+        self::assertSame($context, $dispatcher->dispatch('ext:custom:before_provider', $context));
+    }
 }

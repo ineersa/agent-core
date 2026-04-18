@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Application\Reducer;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
+use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -20,7 +21,7 @@ final class RunReducer
         }
 
         if ($command instanceof AdvanceRun) {
-            return new ReduceResult($this->onAdvanceRun($state), []);
+            return $this->onAdvanceRun($state, $command);
         }
 
         if ($command instanceof ApplyCommand) {
@@ -61,27 +62,44 @@ final class RunReducer
             pendingToolCalls: [],
             errorMessage: null,
             messages: $messages,
+            activeStepId: $command->stepId(),
         );
     }
 
-    private function onAdvanceRun(RunState $state): RunState
+    private function onAdvanceRun(RunState $state, AdvanceRun $command): ReduceResult
     {
         if (\in_array($state->status, [RunStatus::Completed, RunStatus::Failed, RunStatus::Cancelled], true)) {
-            return $state;
+            return new ReduceResult($state, []);
         }
 
-        return new RunState(
+        $nextTurnNo = $state->turnNo + 1;
+        $nextStepId = $command->stepId();
+
+        $nextState = new RunState(
             runId: $state->runId,
-            status: $state->status,
+            status: RunStatus::Running,
             version: $state->version + 1,
-            turnNo: $state->turnNo + 1,
+            turnNo: $nextTurnNo,
             lastSeq: $state->lastSeq + 1,
             isStreaming: false,
             streamingMessage: null,
             pendingToolCalls: $state->pendingToolCalls,
             errorMessage: $state->errorMessage,
             messages: $state->messages,
+            activeStepId: $nextStepId,
         );
+
+        $effect = new ExecuteLlmStep(
+            runId: $state->runId,
+            turnNo: $nextTurnNo,
+            stepId: $nextStepId,
+            attempt: 1,
+            idempotencyKey: hash('sha256', \sprintf('%s|llm|%d|%s', $state->runId, $nextTurnNo, $nextStepId)),
+            contextRef: \sprintf('hot:run:%s', $state->runId),
+            toolsRef: \sprintf('toolset:run:%s:turn:%d', $state->runId, $nextTurnNo),
+        );
+
+        return new ReduceResult($nextState, [$effect]);
     }
 
     private function onApplyCommand(RunState $state, ApplyCommand $command): RunState
@@ -120,6 +138,7 @@ final class RunReducer
             pendingToolCalls: $state->pendingToolCalls,
             errorMessage: $errorMessage,
             messages: $messages,
+            activeStepId: $state->activeStepId,
         );
     }
 

@@ -10,5 +10,5 @@ interface RunStoreInterface
 {
     public function get(string $runId): ?RunState;
 
-    public function save(RunState $state): void;
+    public function compareAndSwap(RunState $state, int $expectedVersion): bool;
 }

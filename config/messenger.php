@@ -7,9 +7,11 @@ use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\CollectToolBatch;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\ProjectJsonlOutbox;
 use Ineersa\AgentCore\Domain\Message\ProjectMercureOutbox;
 use Ineersa\AgentCore\Domain\Message\StartRun;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 
 return [
     'framework' => [[
@@ -49,6 +51,8 @@ return [
                 ExecuteLlmStep::class => ['agent_loop.execution'],
                 ExecuteToolCall::class => ['agent_loop.execution'],
                 CollectToolBatch::class => ['agent_loop.execution'],
+                LlmStepResult::class => ['agent_loop.command'],
+                ToolCallResult::class => ['agent_loop.command'],
                 ProjectJsonlOutbox::class => ['agent_loop.publisher'],
                 ProjectMercureOutbox::class => ['agent_loop.publisher'],
             ],

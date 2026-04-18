@@ -12,6 +12,8 @@ final class BoundaryHookName
     public const string AFTER_TURN_COMMIT = 'after_turn_commit';
     public const string BEFORE_RUN_FINALIZE = 'before_run_finalize';
 
+    public const string EXTENSION_PREFIX = 'ext:';
+
     /** @var list<string> */
     public const array ALL = [
         self::BEFORE_COMMAND_APPLY,
@@ -24,5 +26,10 @@ final class BoundaryHookName
     public static function isBoundary(string $hookName): bool
     {
         return \in_array($hookName, self::ALL, true);
+    }
+
+    public static function isExtensionHook(string $hookName, string $extensionPrefix = self::EXTENSION_PREFIX): bool
+    {
+        return str_starts_with($hookName, $extensionPrefix);
     }
 }
