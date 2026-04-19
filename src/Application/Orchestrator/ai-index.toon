@@ -2,7 +2,10 @@ spec: agent-core.ai-docs/v1
 namespace: "Application\\Orchestrator"
 fqcn: "Ineersa\\AgentCore\\Application\\Orchestrator"
 updatedAt: 2026-04-19
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
 description: Top-level orchestrators — AgentRunner is the public API facade; RunOrchestrator is the central CQRS processor handling all bus messages.
 files[2]{file,type,summary}:
-  RunOrchestrator.php,readonly final class,"The RunOrchestrator manages the lifecycle and state transitions of an AI agent run by processing commands and handling asynchronous results from LLM steps and tool executions. It coordinates with various stores and dispatchers to maintain consistency, apply pending commands, and persist state changes through event sourcing."
-  AgentRunner.php,final class,"AgentRunner orchestrates the lifecycle of agent execution runs by managing state transitions and command dispatching. It acts as a facade that coordinates between input validation, message serialization, and the underlying command bus to ensure consistent run progression."
+  AgentRunner.php,final class,"The AgentRunner class orchestrates the lifecycle of agent execution runs by translating high-level inputs into discrete, idempotent steps. It manages state transitions for starting, continuing, steering, and canceling runs while ensuring reliable message dispatch via a command bus."
+  RunOrchestrator.php,readonly final class,"The RunOrchestrator coordinates the lifecycle of an agent run by processing commands and handling step results through a reducer pattern. It manages state transitions, tool execution policies, and message hydration while persisting events and commands to their respective stores."
+sourceHash: 520627308fd2e3309f90b9b8d203bd4daef4e9060f0000cd9f374e6aca7a6404

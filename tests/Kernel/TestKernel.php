@@ -117,7 +117,6 @@ final class TestKernel extends Kernel
 
     protected function configureRoutes(RoutingConfigurator $routes): void
     {
-        unset($routes);
-        // Stage 00: no HTTP routes yet.
+        $routes->import(dirname(__DIR__, 2).'/src/Api/Http/', 'attribute');
     }
 }

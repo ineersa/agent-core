@@ -2,16 +2,20 @@ spec: agent-core.ai-docs/v1
 namespace: Contract
 fqcn: "Ineersa\\AgentCore\\Contract"
 updatedAt: 2026-04-19
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
 description: "Stable public interfaces for the agent loop: runner API, storage abstractions, tool execution, hook system, and extension seams. Implementations live in Infrastructure/."
-files[7]{file,type,summary}:
-  RunStoreInterface.php,interface,Defines the contract for persisting and managing agent run states with version control. It supports atomic updates to prevent race conditions and identifies stale running runs for cleanup.
-  CommandStoreInterface.php,interface,"Defines the contract for persisting and managing the lifecycle of pending commands within a specific run context. It provides mechanisms to store, query, and transition commands through states such as applied, rejected, or superseded."
-  PromptStateStoreInterface.php,interface,Defines the contract for persisting and retrieving agent execution state associated with specific run identifiers. It provides a standardized interface for managing the lifecycle of prompt state data across different storage implementations.
-  OutboxStoreInterface.php,interface,"Defines the contract for persisting and managing outbox entries to ensure reliable event delivery. It provides operations for queuing events, claiming batches for processing, and updating their status upon completion or failure."
-  AgentRunnerInterface.php,interface,"Defines the contract for executing and managing the lifecycle of autonomous agent runs. It provides methods to initiate, control, and terminate agent sessions while handling human-in-the-loop interactions."
-  EventStoreInterface.php,interface,Defines the contract for persisting and retrieving domain events associated with specific run identifiers. It ensures consistent storage operations for event sourcing implementations by standardizing how events are appended and queried.
-  ArtifactStoreInterface.php,interface,Defines the contract for storing binary or text artifacts associated with specific agent runs. It ensures a standardized mechanism for persisting data with optional metadata and retrieving unique identifiers for stored items.
+files[8]{file,type,summary}:
+  AgentRunnerInterface.php,interface,"Defines the contract for orchestrating the lifecycle of an agent execution run, including initialization, state transitions, and termination. It provides a unified interface for controlling agent behavior through steering, follow-ups, and human-in-the-loop interactions."
+  ArtifactStoreInterface.php,interface,"Defines the contract for persisting agent execution artifacts, such as logs or intermediate outputs, to a storage backend. It ensures consistent storage semantics across different implementations by standardizing the input parameters and return value for artifact registration."
+  CommandStoreInterface.php,interface,"Defines the contract for persisting and managing the lifecycle of pending commands within a specific run context. It provides mechanisms to enqueue new commands, query their status, and transition them through applied, rejected, or superseded states. This interface abstracts the underlying storage mechanism for command durability and idempotency checks."
+  EventStoreInterface.php,interface,Defines the contract for persisting and retrieving execution events within the Agent Core system. It abstracts the underlying storage mechanism to ensure consistent interaction with run-specific event data. This interface serves as the primary boundary for event persistence operations.
+  OutboxStoreInterface.php,interface,"Defines the contract for persisting and retrieving outbound event entries to ensure reliable delivery. It provides mechanisms to enqueue new events, claim batches for processing, and update their status upon completion or failure."
+  PromptStateStoreInterface.php,interface,"Defines the contract for persisting and retrieving agent execution state keyed by run identifiers. It provides a minimal interface for storing, fetching, and removing structured state arrays associated with specific agent runs."
+  RunAccessStoreInterface.php,interface,Defines the contract for persisting and retrieving access scopes associated with specific runs. It enables atomic storage of scope data and supports timestamp updates for access tracking. This interface abstracts the underlying storage mechanism for run access control.
+  RunStoreInterface.php,interface,"Defines the contract for persisting and managing agent run states with optimistic concurrency control. It supports retrieving individual run states, atomically updating them based on version numbers, and identifying stale running runs for cleanup."
 subNamespaces[3]{namespace,fqcn,path,description,index}:
   Hook,"Ineersa\\AgentCore\\Contract\\Hook",Hook,"Hook interfaces for intercepting agent loop lifecycle: context transforms, LLM conversion, tool call boundaries, cancellation tokens, message providers.",Hook/ai-index.toon
   Extension,"Ineersa\\AgentCore\\Contract\\Extension",Extension,"Extension seam interfaces — command handlers, event subscribers, hook subscribers for third-party integrations.",Extension/ai-index.toon
   Tool,"Ineersa\\AgentCore\\Contract\\Tool",Tool,"Tool execution contracts — platform invocation, model resolution, tool catalog, tool executor, and idempotency key resolution.",Tool/ai-index.toon
+sourceHash: e7fd4258e0bf6aeada37d32c6f2feeed6ff6a11b6418af8578f0ff5cc97df088

@@ -2,10 +2,14 @@ spec: agent-core.ai-docs/v1
 namespace: "Domain\\Run"
 fqcn: "Ineersa\\AgentCore\\Domain\\Run"
 updatedAt: 2026-04-19
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
 description: "Run lifecycle value objects — identity, state, status enum, and input DTO for starting runs."
-files[5]{file,type,summary}:
-  RunId.php,readonly final class,A value object representing a unique identifier for a run instance within the agent core domain. It encapsulates a string value to ensure type safety and immutability for run identification.
-  RunHandle.php,readonly final class,A value object representing a specific run instance identified by a unique string ID. It serves as a lightweight carrier for the run identifier within the domain layer.
-  StartRunInput.php,readonly final class,"This class serves as a value object for capturing the input parameters required to initiate an agent run. It encapsulates the system prompt, conversation history, optional run identifier, and associated metadata in a readonly structure."
-  RunState.php,readonly final class,"Represents the immutable state of a run within the agent core domain, encapsulating identifiers, status, and sequence metadata. Designed as a value object to ensure consistent state representation across the application."
-  RunStatus.php,enum,"Defines the discrete lifecycle states for an agent execution run, providing a type-safe representation of progress and completion. It serves as a value object to track the current status of a run within the domain model."
+files[6]{file,type,summary}:
+  RunAccessScope.php,readonly final class,"Defines an immutable scope for run access control, encapsulating the run identifier, optional tenant and user contexts, and session metadata. Designed as a value object to enforce strict access boundaries without mutable state."
+  RunHandle.php,readonly final class,A value object representing a unique identifier for a run within the agent core domain. It encapsulates the run ID as a strongly-typed string to enforce type safety and semantic clarity across the application.
+  RunId.php,readonly final class,A value object representing a unique identifier for a run within the agent core domain. It encapsulates a string value to ensure type safety and immutability for run identification. This class supports string conversion and programmatic generation of new identifiers.
+  RunState.php,readonly final class,"Represents the immutable state of a run within the agent core domain, encapsulating its identifier, current status, and progression metrics. This readonly value object ensures state consistency by preventing mutation after construction."
+  RunStatus.php,enum,Defines the immutable lifecycle states for a Run entity within the AgentCore domain. This enum enforces type-safe state transitions and prevents invalid status updates by restricting values to a closed set of operational phases.
+  StartRunInput.php,readonly final class,"Defines the immutable input payload for initiating a new agent run, encapsulating the system prompt, conversation history, and optional metadata. This class serves as a strict data contract for the Run domain, ensuring type safety for run configuration parameters."
+sourceHash: b33917212b5034f8a7e7dd5b6200a80bf760eb6f58ced712b744195b0b37cd11

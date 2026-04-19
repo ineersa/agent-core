@@ -2,8 +2,11 @@ spec: agent-core.ai-docs/v1
 namespace: "Domain\\Command"
 fqcn: "Ineersa\\AgentCore\\Domain\\Command"
 updatedAt: 2026-04-19
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
 description: "Command value objects for the agent loop — kind constants, pending queue items, and routed commands with core/extension/rejected discrimination."
 files[3]{file,type,summary}:
-  PendingCommand.php,readonly final class,"Represents a pending command within the agent core domain, encapsulating execution metadata and input data. This immutable value object ensures type safety and consistency for command processing workflows."
-  CoreCommandKind.php,final class,Defines a constant set of core command types within the agent domain. It provides a centralized registry for identifying commands that belong to the core system functionality. This class acts as a discriminator for command routing and validation.
-  RoutedCommand.php,readonly final class,"RoutedCommand is a value object representing a domain command with a specific status, kind, and payload. It distinguishes between core and extension commands and supports a rejected state with an optional reason. The class is immutable and provides factory methods for construction."
+  CoreCommandKind.php,final class,Defines the set of core command types recognized by the agent core system. This final class provides a static utility to validate whether a given command kind string belongs to the core domain. It serves as a strict type guard for command routing and processing.
+  PendingCommand.php,readonly final class,"PendingCommand represents a durable, immutable command record queued for asynchronous execution within the agent core domain. It encapsulates execution metadata including run identifiers, idempotency keys, and optional configuration payloads to ensure reliable processing."
+  RoutedCommand.php,readonly final class,"RoutedCommand is a readonly value object representing a command in the domain layer, distinguishing between core and extension command types. It encapsulates the command kind, payload, options, and status to provide a structured representation of domain operations."
+sourceHash: a0c7c7e689fd8d94b49573b331353767d08ea77f90f6b82dafa701b2635b46f3

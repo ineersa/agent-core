@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use Ineersa\AgentCore\Api\Http\RunApiController;
+use Ineersa\AgentCore\Api\Http\RunReadService;
+use Ineersa\AgentCore\Api\Serializer\RunEventSerializer;
 use Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\EventSubscriberRegistry;
@@ -41,16 +44,19 @@ use Ineersa\AgentCore\Contract\Hook\BeforeToolCallHookInterface;
 use Ineersa\AgentCore\Contract\Hook\ConvertToLlmHookInterface;
 use Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface;
 use Ineersa\AgentCore\Contract\PromptStateStoreInterface;
+use Ineersa\AgentCore\Contract\RunAccessStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\PlatformInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCatalogProviderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolIdempotencyKeyResolverInterface;
 use Ineersa\AgentCore\Infrastructure\Mercure\RunEventPublisher;
+use Ineersa\AgentCore\Infrastructure\Mercure\RunTopicPolicy;
 use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryOutboxStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryPromptStateStore;
+use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunAccessStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\Storage\LocalArtifactStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
@@ -129,6 +135,15 @@ return static function (ContainerConfigurator $container): void {
         ->arg('$commandBus', service('agent.command.bus'))
     ;
     $services->alias(AgentRunnerInterface::class, AgentRunner::class);
+
+    $services->set(RunEventSerializer::class);
+    $services->set(RunTopicPolicy::class);
+    $services->set(RunReadService::class);
+
+    $services->set(RunApiController::class)
+        ->arg('$commandBus', service('agent.command.bus'))
+        ->tag('controller.service_arguments')
+    ;
 
     $services->set(RunOrchestrator::class)
         ->arg('$maxPendingCommands', param('agent_loop.commands.max_pending_per_run'))
@@ -254,6 +269,9 @@ return static function (ContainerConfigurator $container): void {
     $services->set(InMemoryRunStore::class);
     $services->alias(RunStoreInterface::class, InMemoryRunStore::class);
 
+    $services->set(InMemoryRunAccessStore::class);
+    $services->alias(RunAccessStoreInterface::class, InMemoryRunAccessStore::class);
+
     $services->set(InMemoryCommandStore::class);
     $services->alias(CommandStoreInterface::class, InMemoryCommandStore::class);
 
@@ -273,6 +291,8 @@ return static function (ContainerConfigurator $container): void {
 
     $services->set(RunEventPublisher::class)
         ->arg('$hub', service('mercure.hub.default')->nullOnInvalid())
+        ->arg('$serializer', service(RunEventSerializer::class))
+        ->arg('$topicPolicy', service(RunTopicPolicy::class))
     ;
 
     $services->set(JsonlOutboxProjectorWorker::class);

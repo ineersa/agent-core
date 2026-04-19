@@ -4,14 +4,22 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Infrastructure\Mercure;
 
+use Ineersa\AgentCore\Api\Serializer\RunEventSerializer;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Symfony\Component\Mercure\HubInterface;
 use Symfony\Component\Mercure\Update;
 
-final readonly class RunEventPublisher
+final class RunEventPublisher
 {
-    public function __construct(private ?HubInterface $hub = null)
-    {
+    /** @var array<string, int> */
+    private array $lastMessageUpdatePublishedAtNsByRun = [];
+
+    public function __construct(
+        private ?HubInterface $hub = null,
+        private ?RunEventSerializer $serializer = null,
+        private ?RunTopicPolicy $topicPolicy = null,
+        private int $messageUpdateCoalesceWindowMs = 75,
+    ) {
     }
 
     public function publish(RunEvent $event): void
@@ -20,34 +28,44 @@ final readonly class RunEventPublisher
             return;
         }
 
-        $payload = json_encode([
-            'run_id' => $event->runId,
-            'seq' => $event->seq,
-            'turn_no' => $event->turnNo,
-            'type' => $event->type,
-            'payload' => $event->payload,
-            'created_at' => $event->createdAt->format(\DATE_ATOM),
-        ]);
+        if ($this->shouldCoalesce($event)) {
+            return;
+        }
+
+        $serializer = $this->serializer ?? new RunEventSerializer();
+        $payload = json_encode($serializer->normalizeRunEvent($event));
 
         if (false === $payload) {
             return;
         }
 
+        $topicPolicy = $this->topicPolicy ?? new RunTopicPolicy();
+
         $this->hub->publish(new Update(
-            topics: $this->topics($event->runId),
+            topics: $topicPolicy->topicsFor($event->runId),
             data: $payload,
             private: true,
+            id: (string) $event->seq,
+            type: $event->type,
         ));
     }
 
-    /**
-     * @return list<string>
-     */
-    private function topics(string $runId): array
+    private function shouldCoalesce(RunEvent $event): bool
     {
-        return [
-            \sprintf('/agent-loop/runs/%s/events', $runId),
-            \sprintf('/agent-loop/runs/%s/stream', $runId),
-        ];
+        if ('message_update' !== $event->type) {
+            return false;
+        }
+
+        $now = hrtime(true);
+        $lastPublishedAt = $this->lastMessageUpdatePublishedAtNsByRun[$event->runId] ?? null;
+        $this->lastMessageUpdatePublishedAtNsByRun[$event->runId] = $now;
+
+        if (null === $lastPublishedAt) {
+            return false;
+        }
+
+        $windowNs = $this->messageUpdateCoalesceWindowMs * 1_000_000;
+
+        return ($now - $lastPublishedAt) < $windowNs;
     }
 }

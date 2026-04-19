@@ -2,7 +2,10 @@ spec: agent-core.ai-docs/v1
 namespace: Command
 fqcn: "Ineersa\\AgentCore\\Command"
 updatedAt: 2026-04-19
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
 description: Symfony console commands for operational management of the agent loop.
 files[2]{file,type,summary}:
-  AgentLoopResumeStaleRunsCommand.php,final class,This command identifies and resumes agent runs that have become stale or stuck in an intermediate state. It coordinates with storage and locking mechanisms to safely transition these runs back into an active execution loop.
-  AgentLoopHealthCommand.php,final class,This class implements a Symfony console command to monitor and report the health status of an agent loop. It utilizes a provided configuration array to determine operational parameters and outputs diagnostic information to the console.
+  AgentLoopHealthCommand.php,final class,This class implements a Symfony console command to report the health status of the agent loop. It retrieves configuration details to provide operational visibility into the agent's runtime state.
+  AgentLoopResumeStaleRunsCommand.php,final class,This command identifies and resumes stale agent runs by coordinating with storage and locking mechanisms to ensure safe execution. It leverages a replay service to restore state and dispatches commands via the message bus to continue processing.
+sourceHash: 09f24dbf10e98eeb425c7a0d3366119d974af50973e133ace764f89e9d152182

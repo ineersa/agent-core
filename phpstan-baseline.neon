@@ -43,12 +43,6 @@ parameters:
 			path: src/Application/Orchestrator/AgentRunner.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner\:\:start$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Application/Orchestrator/AgentRunner.php
-
-		-
 			message: '#^Unused Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner\:\:steer$#'
 			identifier: shipmonk.deadMethod
 			count: 1
@@ -74,12 +68,6 @@ parameters:
 
 		-
 			message: '#^Unused Ineersa\\AgentCore\\Contract\\AgentRunnerInterface\:\:followUp$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Contract/AgentRunnerInterface.php
-
-		-
-			message: '#^Unused Ineersa\\AgentCore\\Contract\\AgentRunnerInterface\:\:start$#'
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/Contract/AgentRunnerInterface.php
@@ -209,12 +197,6 @@ parameters:
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/Domain/Message/MessageBag.php
-
-		-
-			message: '#^Property Ineersa\\AgentCore\\Domain\\Run\\RunHandle\:\:\$runId is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/Domain/Run/RunHandle.php
 
 		-
 			message: '#^Method Ineersa\\AgentCore\\Domain\\Run\\RunState\:\:__construct\(\) has parameter \$streamingMessage with no value type specified in iterable type array\.$#'

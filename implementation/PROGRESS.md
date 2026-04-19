@@ -434,3 +434,63 @@ Status: **completed**
 ### Stage 07 closure
 
 - Stage 07 control-plane semantics (steer/follow-up/cancel/human-response/continue) and stale-run resume recovery are implemented and passing quality gates.
+
+## Stage 08 — API Surface and Mercure Streaming
+
+Status: **completed**
+
+### Completed
+
+- Implemented HTTP API controller surface in `src/Api/Http/RunApiController.php`:
+  - `POST /agent/runs`
+  - `POST /agent/runs/{runId}/commands`
+  - `GET /agent/runs/{runId}`
+  - `GET /agent/runs/{runId}/messages`
+  - `GET /agent/runs/{runId}/events` (reconnect replay endpoint)
+- Added API read model service:
+  - `src/Api/Http/RunReadService.php`
+  - summary projection, transcript pagination, canonical-event replay + JSONL fallback
+- Added run access scoping for per-run authorization:
+  - `src/Contract/RunAccessStoreInterface.php`
+  - `src/Domain/Run/RunAccessScope.php`
+  - `src/Infrastructure/Storage/InMemoryRunAccessStore.php`
+  - endpoints now enforce tenant/user scoping via `X-Agent-Tenant-Id` + `X-Agent-User-Id`
+- Added stream event DTO and serializer:
+  - `src/Api/Dto/RunStreamEvent.php`
+  - `src/Api/Serializer/RunEventSerializer.php`
+- Upgraded Mercure publishing policy:
+  - `src/Infrastructure/Mercure/RunTopicPolicy.php`
+  - `src/Infrastructure/Mercure/RunEventPublisher.php`
+  - topic pattern aligned to `agent/runs/{runId}`
+  - Mercure update id/type now set from `seq`/event `type`
+  - payload shape now emits `ts` field
+  - `message_update` coalescing window added; terminal events remain published
+- Wired API and streaming services in DI:
+  - `config/services.php`
+- Enabled route import in test kernel:
+  - `tests/Kernel/TestKernel.php`
+- Updated architecture READMEs for new API and event-stream flow:
+  - `src/Api/Http/README.md`
+  - `src/Api/Dto/README.md`
+  - `src/Application/README.md`
+  - `src/Domain/Event/README.md`
+
+### Tests Added/Updated
+
+- Added:
+  - `tests/Api/Http/RunApiControllerTest.php`
+  - `tests/Infrastructure/Mercure/RunEventPublisherTest.php`
+- Updated:
+  - `phpstan-baseline.neon` (removed now-stale ignores after API usage made symbols reachable)
+
+### Quality/Verification
+
+- `LLM_MODE=true castor dev:check` ✅
+  - `cs-fix`: ok
+  - `phpstan`: ok
+  - `test`: ok (`66 tests`, `411 assertions`)
+- `LLM_MODE=true castor dev:index-methods` ✅ (indexes regenerated for changed/new classes)
+
+### Stage 08 closure
+
+- Stage 08 API + streaming surface is implemented with scoped authorization, replay-aware reconnect behavior, Mercure topic policy, and serializer-backed event envelopes.

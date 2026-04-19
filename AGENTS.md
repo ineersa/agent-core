@@ -50,7 +50,7 @@ All indexes use TOON format (Token-Oriented Object Notation) for ~28% token redu
 
 ### Reading policy (mandatory)
 
-**Never read an entire source file when you can target a specific range.** The index system provides line numbers for exactly this purpose.
+**Prefer targeted reads and avoid full-file reads when possible.** Full-file reads are still allowed when necessary (for cross-cutting analysis, ambiguous context, or when index metadata is missing/outdated).
 
 1. **Root first** — read `ai-index.toon` in the project root to understand the namespace layout.
 2. **Namespace index** — read the namespace's `ai-index.toon` to find classes and their summaries.
@@ -59,7 +59,10 @@ All indexes use TOON format (Token-Oriented Object Notation) for ~28% token redu
    - `signatureLine` (method signature line)
    - `symbolLine` + `symbolColumn` (1-based IDE symbol location)
    - `end` (method end line)
-4. **Targeted read** — use `read(path, offset=<commentStart>, limit=<end-commentStart+1>)` (or `signatureLine`) to read only the method(s) you need.
+4. **Symbol-first IDE navigation** — if `symbolLine` + `symbolColumn` exists, use those coordinates first for IDE semantic navigation/ref lookup before broad read/search.
+   - Recommended first tools: definition/references/implementations/super/call hierarchy.
+   - If symbol lookup fails unexpectedly, sync files and retry once before falling back.
+5. **Targeted read** — use `read(path, offset=<commentStart>, limit=<end-commentStart+1>)` (or `signatureLine`) to read only the method(s) you need.
 
 Example: the per-file index shows `execute,commentStart=47,signatureLine=47,end=208`. To read just that method:
 ```
@@ -68,7 +71,7 @@ read("src/Application/Handler/ToolExecutor.php", offset=47, limit=162)  # 208-47
 
 When using IDE symbol navigation tools, pass `symbolLine` + `symbolColumn` as-is (both are 1-based).
 
-This saves massive context compared to reading entire files.
+This saves massive context compared to unnecessary broad reads.
 
 ### Index maintenance
 
