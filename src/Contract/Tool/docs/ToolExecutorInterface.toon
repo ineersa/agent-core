@@ -1,12 +1,7 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: 1ceddbc323a4a9a33bb34034f657e1d5886c3faaef129e31ceec89ec12f110e9
 file: ToolExecutorInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Tool\\ToolExecutorInterface"
 type: interface
 summary: Defines the contract for executing tool calls within the agent core system. It abstracts the execution logic to allow for interchangeable implementations of tool handlers. This interface ensures a consistent return type for tool execution results.
-effects: none
-dependencies: none
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  execute,12,12,12,21,12,public,public,no,no,no,ToolCall $toolCall,ToolResult,"",Executes the provided tool call and returns the result,none,"ToolCall, ToolResult"
+methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  execute,15,18,18,21,18,public,public,no,no,no,ToolCall $toolCall,ToolResult,"",Executes the provided tool call and returns the result.

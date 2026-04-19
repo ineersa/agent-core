@@ -16,9 +16,14 @@ use Ineersa\AgentCore\Contract\Tool\PlatformInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\MessageBag;
 
+/**
+ * The Platform class orchestrates the execution of AI agent runs within the Symfony infrastructure, bridging high-level agent inputs with the underlying provider invoker. It manages context resolution, message transformation, and hook application to prepare requests for external AI providers. The class ensures proper lifecycle management of runs and cancellation tokens while abstracting provider-specific details.
+ */
 final readonly class Platform implements PlatformInterface
 {
     /**
+     * Initializes the platform with required infrastructure collaborators and optional context hooks.
+     *
      * @param iterable<TransformContextHookInterface>      $transformContextHooks
      * @param iterable<ConvertToLlmHookInterface>          $convertToLlmHooks
      * @param iterable<BeforeProviderRequestHookInterface> $beforeProviderRequestHooks
@@ -36,6 +41,9 @@ final readonly class Platform implements PlatformInterface
     ) {
     }
 
+    /**
+     * Executes an AI agent run with the specified model, input, and options.
+     */
     public function invoke(string $model, array $input, array $options = []): array
     {
         $runContext = $this->runContextFrom($input);
@@ -83,6 +91,8 @@ final readonly class Platform implements PlatformInterface
     }
 
     /**
+     * Constructs the run context array from the provided input payload.
+     *
      * @param array<string, mixed> $input
      *
      * @return array<string, mixed>
@@ -107,6 +117,8 @@ final readonly class Platform implements PlatformInterface
     }
 
     /**
+     * Resolves and formats context messages for the agent run using the input and optional run ID.
+     *
      * @param array<string, mixed> $input
      *
      * @return list<AgentMessage>
@@ -149,6 +161,8 @@ final readonly class Platform implements PlatformInterface
     }
 
     /**
+     * Applies registered transform hooks to messages with cancellation support.
+     *
      * @param list<AgentMessage> $messages
      *
      * @return list<AgentMessage>
@@ -165,6 +179,8 @@ final readonly class Platform implements PlatformInterface
     }
 
     /**
+     * Applies conversion hooks to messages and returns a MessageBag.
+     *
      * @param list<AgentMessage> $messages
      */
     private function applyConvertHooks(array $messages, CancellationTokenInterface $cancelToken): MessageBag
@@ -179,6 +195,8 @@ final readonly class Platform implements PlatformInterface
     }
 
     /**
+     * Executes pre-request hooks on model, input, and options with cancellation support.
+     *
      * @param array<string, mixed> $input
      * @param array<string, mixed> $options
      *
@@ -210,6 +228,8 @@ final readonly class Platform implements PlatformInterface
     }
 
     /**
+     * Transforms the agent input into the format expected by the AI provider.
+     *
      * @param array<string, mixed> $input
      *
      * @return array<string, mixed>|object
@@ -236,6 +256,8 @@ final readonly class Platform implements PlatformInterface
     }
 
     /**
+     * Filters out internal fields from options before passing to the provider.
+     *
      * @param array<string, mixed> $options
      *
      * @return array<string, mixed>
@@ -247,6 +269,9 @@ final readonly class Platform implements PlatformInterface
         return $options;
     }
 
+    /**
+     * Creates or retrieves a cancellation token based on run ID and provided value.
+     */
     private function cancellationToken(?string $runId, mixed $provided): CancellationTokenInterface
     {
         if ($provided instanceof CancellationTokenInterface) {
@@ -261,6 +286,8 @@ final readonly class Platform implements PlatformInterface
     }
 
     /**
+     * Converts a message payload array into an AgentMessage object.
+     *
      * @param array<string, mixed> $payload
      */
     private function hydrateMessage(array $payload): ?AgentMessage

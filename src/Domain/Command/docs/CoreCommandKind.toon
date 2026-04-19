@@ -1,12 +1,7 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: 18aeb0aa6b62192735c24d254c11e0c98548dd29f6c26ca9043b37872804ad55
 file: CoreCommandKind.php
 class: "Ineersa\\AgentCore\\Domain\\Command\\CoreCommandKind"
 type: final class
 summary: Defines the set of core command types recognized by the agent core system. This final class provides a static utility to validate whether a given command kind string belongs to the core domain. It serves as a strict type guard for command routing and processing.
-effects: none
-dependencies: none
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  isCore,24,24,24,28,27,static public,public,yes,no,no,string $kind,bool,"",Validates if the provided command kind string is a recognized core command type,none,none
+methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  isCore,27,30,30,28,33,static public,public,yes,no,no,string $kind,bool,"",Validates if the provided command kind string is a recognized core command type.

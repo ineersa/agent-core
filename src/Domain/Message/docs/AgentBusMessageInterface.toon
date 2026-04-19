@@ -1,16 +1,11 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: 4e530b6adc146733e81d93a71c55c8166f68d7b096c1c335abe873a48427d4af
 file: AgentBusMessageInterface.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\AgentBusMessageInterface"
 type: interface
 summary: "Defines the contract for domain messages dispatched via the agent bus, ensuring consistent metadata for execution tracking. It enforces the presence of unique identifiers and sequence numbers required for reliable event processing and state management."
-effects: none
-dependencies: none
-methods[5]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  runId,9,9,9,21,9,public,public,no,no,no,"",string,"",Returns the unique identifier for the current agent run,none,none
-  turnNo,11,11,11,21,11,public,public,no,no,no,"",int,"",Returns the sequential turn number within the agent run,none,none
-  stepId,13,13,13,21,13,public,public,no,no,no,"",string,"",Returns the unique identifier for the specific execution step,none,none
-  attempt,15,15,15,21,15,public,public,no,no,no,"",int,"",Returns the current retry attempt count for the operation,none,none
-  idempotencyKey,17,17,17,21,17,public,public,no,no,no,"",string,"",Returns the unique key used to ensure idempotent message processing,none,none
+methods[5]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  runId,12,15,15,21,15,public,public,no,no,no,"",string,"",Returns the unique identifier for the current agent run.
+  turnNo,17,20,20,21,20,public,public,no,no,no,"",int,"",Returns the sequential turn number within the agent run.
+  stepId,22,25,25,21,25,public,public,no,no,no,"",string,"",Returns the unique identifier for the specific execution step.
+  attempt,27,30,30,21,30,public,public,no,no,no,"",int,"",Returns the current retry attempt count for the operation.
+  idempotencyKey,32,35,35,21,35,public,public,no,no,no,"",string,"",Returns the unique key used to ensure idempotent message processing.

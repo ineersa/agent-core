@@ -10,8 +10,14 @@ use Symfony\Component\DependencyInjection\Extension\Extension;
 use Symfony\Component\DependencyInjection\Extension\PrependExtensionInterface;
 use Symfony\Component\DependencyInjection\Loader\PhpFileLoader;
 
+/**
+ * Registers default configuration values for the Agent Loop bundle into the Symfony container before user configuration is processed. It ensures consistent baseline settings for the agent core subsystem by merging predefined defaults with the provided configuration array.
+ */
 final class AgentLoopExtension extends Extension implements PrependExtensionInterface
 {
+    /**
+     * Registers default bundle configuration into the container builder.
+     */
     public function prepend(ContainerBuilder $container): void
     {
         foreach (['messenger.php', 'doctrine.php'] as $configFile) {
@@ -31,6 +37,8 @@ final class AgentLoopExtension extends Extension implements PrependExtensionInte
     }
 
     /**
+     * Processes configuration arrays and loads bundle services into the container.
+     *
      * @param array<mixed> $configs
      */
     public function load(array $configs, ContainerBuilder $container): void

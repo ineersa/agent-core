@@ -42,56 +42,51 @@ If any of these fail, the work is **not complete**.
 
 ## AI Documentation Index
 
-The repository uses a two-level documentation system:
-1. **Namespace indexes** (`ai-index.toon`) — per-namespace files listing classes with summaries
-2. **Per-file indexes** (`docs/<File>.toon`) — per-class method listings with line numbers and one-line summaries
+This repository uses a two-level AI index for token-efficient code navigation:
+1. **Namespace indexes** (`src/**/ai-index.toon`) — per-namespace class listings with summaries.
+2. **Per-file indexes** (`src/**/docs/<Class>.toon`) — method metadata with line numbers, symbol coordinates, and summaries.
 
-All indexes use TOON format (Token-Oriented Object Notation) for ~28% token reduction vs JSON.
+All indexes are generated from source docblocks (no LLM calls).
+
+For the full operational guide and summary-authoring prompts, load:
+- `.agents/skills/ai-index/SKILL.md`
+
+### Summary policy (mandatory)
+
+**Every class and every method must have a docblock summary as the first description line** (before any blank line or `@tag`).
+
+- Class docblock: `/** <summary> */` (tags may follow)
+- Method docblock: `/** <summary> */` (tags may follow)
+- The first sentence of the description is extracted as the summary
+- Missing summary = `castor dev:index-methods --strict` failure (and `castor dev:check` failure)
+
+When adding or editing classes/methods, keep summaries present and accurate.
 
 ### Reading policy (mandatory)
 
-**Prefer targeted reads and avoid full-file reads when possible.** Full-file reads are still allowed when necessary (for cross-cutting analysis, ambiguous context, or when index metadata is missing/outdated).
+**Prefer targeted reads; avoid whole-file reads when possible.**
 
-1. **Root first** — read `ai-index.toon` in the project root to understand the namespace layout.
-2. **Namespace index** — read the namespace's `ai-index.toon` to find classes and their summaries.
-3. **Per-file index** — read `docs/<File>.toon` to get method metadata:
-   - `commentStart` (PHPDoc start)
-   - `signatureLine` (method signature line)
-   - `symbolLine` + `symbolColumn` (1-based IDE symbol location)
-   - `end` (method end line)
-4. **Symbol-first IDE navigation** — if `symbolLine` + `symbolColumn` exists, use those coordinates first for IDE semantic navigation/ref lookup before broad read/search.
-   - Recommended first tools: definition/references/implementations/super/call hierarchy.
-   - If symbol lookup fails unexpectedly, sync files and retry once before falling back.
-5. **Targeted read** — use `read(path, offset=<commentStart>, limit=<end-commentStart+1>)` (or `signatureLine`) to read only the method(s) you need.
+1. Read root `ai-index.toon` to choose namespace.
+2. Read namespace `ai-index.toon` to choose class.
+3. Read `docs/<Class>.toon` for method metadata (`commentStart`, `signatureLine`, `symbolLine`, `symbolColumn`, `end`).
+4. Use `symbolLine` + `symbolColumn` first for IDE semantic navigation tools.
+5. Read only needed slices via `read(path, offset, limit)`.
 
-Example: the per-file index shows `execute,commentStart=47,signatureLine=47,end=208`. To read just that method:
-```
-read("src/Application/Handler/ToolExecutor.php", offset=47, limit=162)  # 208-47+1
-```
-
-When using IDE symbol navigation tools, pass `symbolLine` + `symbolColumn` as-is (both are 1-based).
-
-This saves massive context compared to unnecessary broad reads.
+Example: if index has `commentStart=47` and `end=208`, read method window with `offset=47`, `limit=162`.
 
 ### Index maintenance
 
-Indexes are maintained via `castor dev:index-methods`. This command:
-- Extracts method signatures via PHP-Parser AST
-- Sends them to a local LLM for structured summaries
-- Writes per-file `.toon` indexes and regenerates namespace `ai-index.toon` files
+Indexes are generated via `castor dev:index-methods`.
 
-Usage:
-- `castor dev:index-methods` — process git-changed files
-- `php scripts/generate-method-index.php --all --force` — full regeneration
-- `php scripts/generate-method-index.php --dry-run` — preview without writing
+Common commands:
+- `castor dev:index-methods` — changed files
+- `castor dev:index-methods --all --force` — full regeneration
+- `castor dev:index-methods --strict --all` — read-only validation
+- `castor dev:index-methods --migrate --all` — one-time migration from existing `.toon` summaries into source docblocks
 
-#### When to run
+After code changes, regenerate indexes for changed files.
 
-- **At session end** — after code changes are complete, run `castor dev:index-methods` to update indexes for changed files.
-- **On demand** — when the user asks to regenerate indexes.
-- **After index regeneration** — refresh the repository root `ai-index.toon` so package-level summaries, namespace descriptions, and metadata (`updatedAt`, `indexedAt`, `indexedCommit`, `sourceHash`) stay aligned with the generated `src/**/ai-index.toon` files.
-
-**The main agent MUST NOT edit generated `src/**/ai-index.toon` or `docs/*.toon` files manually.** Always regenerate those via `castor dev:index-methods` (or the underlying script for full runs). The repository root `ai-index.toon` is curated and should be updated intentionally after regeneration.
+**Never edit generated `src/**/ai-index.toon` or `src/**/docs/*.toon` manually.** Regenerate via Castor. The repository root `ai-index.toon` is curated and should be updated intentionally.
 
 ## Architecture notes (README-driven, mandatory)
 

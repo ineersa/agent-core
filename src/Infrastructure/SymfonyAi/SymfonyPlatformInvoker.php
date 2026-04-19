@@ -8,14 +8,22 @@ use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Domain\Tool\PlatformInvocationResult;
 
+/**
+ * SymfonyPlatformInvoker acts as an adapter for the Symfony AI platform, translating generic agent inputs into platform-specific invocations. It handles the execution of model calls and extracts structured usage metadata from the platform's deferred results.
+ */
 final readonly class SymfonyPlatformInvoker
 {
+    /**
+     * Initializes the invoker with an optional Symfony AI platform instance.
+     */
     public function __construct(
         private ?object $platform = null,
     ) {
     }
 
     /**
+     * Invokes the specified model with input, tools, and cancellation support.
+     *
      * @param array<string, mixed>       $options
      * @param list<array<string, mixed>> $toolDefinitions
      */
@@ -81,6 +89,8 @@ final readonly class SymfonyPlatformInvoker
     }
 
     /**
+     * Streams results from a deferred platform result object.
+     *
      * @return iterable<mixed>
      */
     private function streamFrom(object $deferredResult): iterable
@@ -103,6 +113,8 @@ final readonly class SymfonyPlatformInvoker
     }
 
     /**
+     * Extracts usage metrics from a deferred platform result object.
+     *
      * @return array<string, int|float>
      */
     private function extractUsage(object $deferredResult): array
@@ -140,6 +152,8 @@ final readonly class SymfonyPlatformInvoker
     }
 
     /**
+     * Extracts metadata from a deferred platform result object.
+     *
      * @return array<string, mixed>|object|null
      */
     private function metadataFrom(object $deferredResult): array|object|null
@@ -158,6 +172,9 @@ final readonly class SymfonyPlatformInvoker
         return null;
     }
 
+    /**
+     * Retrieves a numeric value from a platform result using a method name.
+     */
     private function numericFrom(object $value, string $method): int|float|null
     {
         if (!method_exists($value, $method)) {

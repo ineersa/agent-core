@@ -9,8 +9,14 @@ use Ineersa\AgentCore\Contract\PromptStateStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
 
+/**
+ * ReplayService reconstructs agent run state by replaying historical events from the event store and run logs. It verifies data integrity and rebuilds prompt state to ensure consistency across sequences.
+ */
 final readonly class ReplayService
 {
+    /**
+     * initializes dependencies for event replay and state reconstruction.
+     */
     public function __construct(
         private EventStoreInterface $eventStore,
         private RunLogReader $runLogReader,
@@ -19,15 +25,17 @@ final readonly class ReplayService
     }
 
     /**
+     * reconstructs current prompt state for a given run by replaying events.
+     *
      * @return array{
-     *   run_id: string,
-     *   source: 'canonical_events'|'jsonl_fallback',
-     *   event_count: int,
-     *   last_seq: int,
-     *   missing_sequences: list<int>,
-     *   is_contiguous: bool,
-     *   token_estimate: int,
-     *   messages: list<array<string, mixed>>
+     * run_id: string,
+     * source: 'canonical_events'|'jsonl_fallback',
+     * event_count: int,
+     * last_seq: int,
+     * missing_sequences: list<int>,
+     * is_contiguous: bool,
+     * token_estimate: int,
+     * messages: list<array<string, mixed>>
      * }
      */
     public function rebuildHotPromptState(string $runId): array
@@ -54,13 +62,15 @@ final readonly class ReplayService
     }
 
     /**
+     * validates event sequence integrity and identifies missing sequences for a run.
+     *
      * @return array{
-     *   run_id: string,
-     *   source: 'canonical_events'|'jsonl_fallback',
-     *   event_count: int,
-     *   last_seq: int,
-     *   missing_sequences: list<int>,
-     *   is_contiguous: bool
+     * run_id: string,
+     * source: 'canonical_events'|'jsonl_fallback',
+     * event_count: int,
+     * last_seq: int,
+     * missing_sequences: list<int>,
+     * is_contiguous: bool
      * }
      */
     public function verifyIntegrity(string $runId): array
@@ -79,6 +89,8 @@ final readonly class ReplayService
     }
 
     /**
+     * fetches and sorts events required for replaying a specific run.
+     *
      * @return array{0: list<RunEvent>, 1: 'canonical_events'|'jsonl_fallback'}
      */
     private function eventsForReplay(string $runId): array
@@ -92,6 +104,8 @@ final readonly class ReplayService
     }
 
     /**
+     * orders events by their sequence number to ensure correct replay order.
+     *
      * @param list<RunEvent> $events
      *
      * @return list<RunEvent>
@@ -104,6 +118,8 @@ final readonly class ReplayService
     }
 
     /**
+     * processes events to generate replayed message history.
+     *
      * @param list<RunEvent> $events
      *
      * @return list<array<string, mixed>>
@@ -146,6 +162,8 @@ final readonly class ReplayService
     }
 
     /**
+     * identifies gaps in event sequences for a given set of events.
+     *
      * @param list<RunEvent> $events
      *
      * @return list<int>
@@ -172,6 +190,8 @@ final readonly class ReplayService
     }
 
     /**
+     * calculates approximate token count for a list of messages.
+     *
      * @param list<array<string, mixed>> $messages
      */
     private function estimateTokens(array $messages): int

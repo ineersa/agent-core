@@ -1,12 +1,7 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: dbeca3b3046f822d5ed120196bf55fc0eccb4445df102e49e3120ecba96ef50a
 file: PendingCommand.php
 class: "Ineersa\\AgentCore\\Domain\\Command\\PendingCommand"
 type: readonly final class
 summary: "PendingCommand represents a durable, immutable command record queued for asynchronous execution within the agent core domain. It encapsulates execution metadata including run identifiers, idempotency keys, and optional configuration payloads to ensure reliable processing."
-effects: none
-dependencies: none
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  __construct,9,13,13,21,20,public,public,no,no,no,"string $runId, string $kind, string $idempotencyKey, array $payload = [], array $options = []","","","Initializes the command with run ID, kind, idempotency key, and optional payload and options",none,none
+methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  __construct,12,18,18,21,25,public,public,no,no,no,"string $runId, string $kind, string $idempotencyKey, array $payload = [], array $options = []","","","Initializes the command with run ID, kind, idempotency key, and optional payload and options."

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 
+/**
+ * StreamDeltaReducer aggregates incremental streaming deltas from an AI assistant into a coherent final message structure, including text content and tool call executions. It parses partial JSON arguments for tool calls and merges token usage statistics from the stream. The class maintains internal state to reconstruct the complete assistant response and associated metadata.
+ */
 final class StreamDeltaReducer
 {
     private string $text = '';
@@ -24,6 +27,9 @@ final class StreamDeltaReducer
     /** @var array<string, int|float> */
     private array $usage = [];
 
+    /**
+     * Processes a single streaming delta object to update internal state.
+     */
     public function consume(mixed $delta): void
     {
         if (\is_string($delta)) {
@@ -120,6 +126,8 @@ final class StreamDeltaReducer
     }
 
     /**
+     * Returns the accumulated array of raw delta objects.
+     *
      * @return list<array<string, mixed>>
      */
     public function deltas(): array
@@ -128,6 +136,8 @@ final class StreamDeltaReducer
     }
 
     /**
+     * Returns the merged token usage statistics array.
+     *
      * @return array<string, int|float>
      */
     public function usage(): array
@@ -136,6 +146,8 @@ final class StreamDeltaReducer
     }
 
     /**
+     * Returns the reconstructed assistant message array with text and tool calls.
+     *
      * @return array<string, mixed>
      */
     public function assistantMessage(): array
@@ -168,11 +180,17 @@ final class StreamDeltaReducer
         return $payload;
     }
 
+    /**
+     * Checks if any tool calls were registered during consumption.
+     */
     public function hasToolCalls(): bool
     {
         return [] !== $this->toolCalls;
     }
 
+    /**
+     * Appends text content to the current assistant message buffer.
+     */
     private function appendText(string $text): void
     {
         if ('' === $text) {
@@ -186,6 +204,9 @@ final class StreamDeltaReducer
         ];
     }
 
+    /**
+     * Initializes a new tool call entry with its ID and name.
+     */
     private function registerToolCallStart(string $id, string $name): void
     {
         if ('' === $id || '' === $name) {
@@ -208,6 +229,9 @@ final class StreamDeltaReducer
         ];
     }
 
+    /**
+     * Accumulates partial JSON arguments for an active tool call.
+     */
     private function registerToolInputDelta(string $id, string $name, string $partialJson): void
     {
         if ('' === $id || '' === $name) {
@@ -236,6 +260,9 @@ final class StreamDeltaReducer
         ];
     }
 
+    /**
+     * Finalizes a tool call by parsing and storing its complete arguments.
+     */
     private function registerToolCallComplete(object $delta): void
     {
         $toolCalls = method_exists($delta, 'getToolCalls') ? $delta->getToolCalls() : null;
@@ -269,6 +296,8 @@ final class StreamDeltaReducer
     }
 
     /**
+     * Adds token usage counts from a delta to the total usage accumulator.
+     *
      * @param array<string, int|float> $usage
      */
     private function mergeUsage(array $usage): void
@@ -278,6 +307,9 @@ final class StreamDeltaReducer
         }
     }
 
+    /**
+     * Determines if a delta object contains token usage statistics.
+     */
     private function looksLikeTokenUsage(object $delta): bool
     {
         return method_exists($delta, 'getTotalTokens')
@@ -286,6 +318,8 @@ final class StreamDeltaReducer
     }
 
     /**
+     * Extracts and normalizes token usage counts from a delta object.
+     *
      * @return array<string, int|float>
      */
     private function usageFromTokenUsage(object $delta): array
@@ -305,6 +339,8 @@ final class StreamDeltaReducer
     }
 
     /**
+     * Returns the list of tool calls sorted by their registration order.
+     *
      * @return list<array<string, mixed>>
      */
     private function orderedToolCalls(): array
@@ -333,6 +369,8 @@ final class StreamDeltaReducer
     }
 
     /**
+     * Extracts a string value from an object using a list of method names.
+     *
      * @param array<int, string> $methods
      */
     private function stringFrom(object $value, array $methods): string
@@ -360,6 +398,8 @@ final class StreamDeltaReducer
     }
 
     /**
+     * Extracts a numeric value from an object using a list of method names.
+     *
      * @param array<int, string> $methods
      */
     private function numericFrom(object $value, array $methods): int|float|null
@@ -379,6 +419,8 @@ final class StreamDeltaReducer
     }
 
     /**
+     * Parses a JSON string into an associative array or returns null.
+     *
      * @return array<string, mixed>|null
      */
     private function parseArguments(string $json): ?array
@@ -395,6 +437,9 @@ final class StreamDeltaReducer
         return $decoded;
     }
 
+    /**
+     * Extracts the short class name from a fully qualified class name.
+     */
     private function shortClass(string $fqcn): string
     {
         $parts = explode('\\', $fqcn);

@@ -6,17 +6,29 @@ namespace Ineersa\AgentCore\Domain\Run;
 
 use Random\RandomException;
 
+/**
+ * A value object representing a unique identifier for a run within the agent core domain. It encapsulates a string value to ensure type safety and immutability for run identification. This class supports string conversion and programmatic generation of new identifiers.
+ */
 final readonly class RunId
 {
+    /**
+     * Initializes the run identifier with a given string value.
+     */
     public function __construct(public string $value)
     {
     }
 
+    /**
+     * Returns the string representation of the run identifier.
+     */
     public function __toString(): string
     {
         return $this->value;
     }
 
+    /**
+     * Creates and returns a new RunId instance with a generated unique value.
+     */
     public static function generate(): self
     {
         try {

@@ -1,13 +1,8 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: 8826855a52baac8279a6538c1a0444d5f8411ff9e3167621f80ac8d950039114
 file: EventSubscriberRegistry.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\EventSubscriberRegistry"
 type: final class
 summary: The EventSubscriberRegistry acts as a centralized registry for managing event subscribers within the application's handler layer. It stores a collection of subscribers and provides a mechanism to retrieve them based on specific event types. This design facilitates decoupled event handling by allowing components to query for relevant subscribers dynamically.
-effects: none
-dependencies: iterable collection of subscriber instances
-methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  __construct,14,17,17,21,20,public,public,no,no,no,iterable $subscribers,"","",Initializes the registry with a collection of event subscribers,stores subscriber collection in instance state,none
-  subscribersFor,22,25,25,21,34,public,public,no,no,no,string $eventType,iterable,"",Retrieves subscribers matching the specified event type,none,accesses stored subscriber collection
+methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  __construct,17,22,22,21,25,public,public,no,no,no,iterable $subscribers,"","",Initializes the registry with a collection of event subscribers.
+  subscribersFor,27,32,32,21,41,public,public,no,no,no,string $eventType,iterable,"",Retrieves subscribers matching the specified event type.

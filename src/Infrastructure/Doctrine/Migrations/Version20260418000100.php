@@ -8,13 +8,22 @@ use Doctrine\DBAL\Schema\Schema;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\Migrations\AbstractMigration;
 
+/**
+ * This class defines a Doctrine migration to modify the database schema for the Agent Core infrastructure. It implements the standard up and down methods to apply or revert structural changes using the Doctrine Schema abstraction.
+ */
 final class Version20260418000100 extends AbstractMigration
 {
+    /**
+     * Returns the human-readable description of this migration.
+     */
     public function getDescription(): string
     {
         return 'Create agent loop stage-03 persistence schema (runs, commands, events, outbox, hot prompt, tool jobs).';
     }
 
+    /**
+     * Applies the database schema changes defined in this migration.
+     */
     public function up(Schema $schema): void
     {
         if (!$schema->hasTable('agent_runs')) {
@@ -142,6 +151,9 @@ final class Version20260418000100 extends AbstractMigration
         }
     }
 
+    /**
+     * Reverts the database schema changes applied by the up method.
+     */
     public function down(Schema $schema): void
     {
         foreach (['agent_tool_jobs', 'agent_outbox', 'agent_run_events', 'agent_turn_index', 'agent_hot_prompt_state', 'agent_commands', 'agent_runs'] as $tableName) {

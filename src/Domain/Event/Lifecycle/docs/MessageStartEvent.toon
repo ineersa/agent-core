@@ -1,10 +1,5 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: 3ed393ea489df3a755eb6f2dac9ce92291ce1967f7d6b614572310985624d660
 file: MessageStartEvent.php
 class: "Ineersa\\AgentCore\\Domain\\Event\\Lifecycle\\MessageStartEvent"
 type: readonly final class
 summary: Represents a domain event signaling the initiation of message processing within the lifecycle. This immutable value object encapsulates the context required to track the start of a message operation. It serves as a structural marker for event sourcing and domain audit trails.
-effects: none
-dependencies: none

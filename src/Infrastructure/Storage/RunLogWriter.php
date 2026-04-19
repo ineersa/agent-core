@@ -7,12 +7,21 @@ namespace Ineersa\AgentCore\Infrastructure\Storage;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use League\Flysystem\FilesystemOperator;
 
+/**
+ * The RunLogWriter class provides a mechanism for persisting RunEvent instances to the filesystem. It formats event data into structured files based on run identifiers and timestamps, ensuring durable storage of agent execution logs.
+ */
 final readonly class RunLogWriter
 {
+    /**
+     * initializes the writer with a filesystem operator for storage operations.
+     */
     public function __construct(private FilesystemOperator $filesystem)
     {
     }
 
+    /**
+     * persists a RunEvent to the filesystem using a generated path based on run ID and timestamp.
+     */
     public function append(RunEvent $event): void
     {
         $path = $this->pathForRun($event->runId, $event->createdAt);
@@ -45,6 +54,9 @@ final readonly class RunLogWriter
         }
     }
 
+    /**
+     * generates a unique filesystem path for a run using its ID and creation timestamp.
+     */
     private function pathForRun(string $runId, \DateTimeImmutable $at): string
     {
         return \sprintf('%s/%s/%s.jsonl', $at->format('Y'), $at->format('m'), $runId);

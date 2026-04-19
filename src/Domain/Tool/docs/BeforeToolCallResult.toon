@@ -1,14 +1,9 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: 80208d6d4bc97f709e27f40c4addc627bea44fb46d6bf1da9d7c9a54f78bdfac
 file: BeforeToolCallResult.php
 class: "Ineersa\\AgentCore\\Domain\\Tool\\BeforeToolCallResult"
 type: readonly final class
 summary: Represents the outcome of a pre-execution validation check for a tool call within the agent domain. It encapsulates whether the call is permitted or blocked along with an optional reason for denial. This immutable value object facilitates clear decision-making before tool invocation.
-effects: none
-dependencies: none
-methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  __construct,9,9,9,21,13,public,public,no,no,no,"bool $block = false, ?string $reason = null","","",Initializes the result with block status and optional reason,none,none
-  allow,15,15,15,28,18,static public,public,yes,no,no,"",self,"",Creates a new instance indicating the tool call is permitted,none,none
-  blocked,20,20,20,28,23,static public,public,yes,no,no,?string $reason = null,self,"",Creates a new instance indicating the tool call is denied with a reason,none,none
+methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  __construct,12,15,15,21,19,public,public,no,no,no,"bool $block = false, ?string $reason = null","","",Initializes the result with block status and optional reason.
+  allow,21,24,24,28,27,static public,public,yes,no,no,"",self,"",Creates a new instance indicating the tool call is permitted.
+  blocked,29,32,32,28,35,static public,public,yes,no,no,?string $reason = null,self,"",Creates a new instance indicating the tool call is denied with a reason.

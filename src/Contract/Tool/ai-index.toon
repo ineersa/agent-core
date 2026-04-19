@@ -2,8 +2,6 @@ spec: agent-core.ai-docs/v1
 namespace: "Contract\\Tool"
 fqcn: "Ineersa\\AgentCore\\Contract\\Tool"
 updatedAt: 2026-04-19
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
 description: "Tool execution contracts — platform invocation, model resolution, tool catalog discovery, tool executor, and idempotency key resolution."
 files[5]{file,type,summary}:
   ModelResolverInterface.php,interface,Defines the contract for resolving AI model configurations based on incoming message context and default settings. It abstracts the decision logic for selecting the appropriate model to process a given set of messages.
@@ -11,4 +9,3 @@ files[5]{file,type,summary}:
   ToolCatalogProviderInterface.php,interface,Defines the contract for resolving tool catalogs within the AgentCore framework. Implementations provide a mechanism to retrieve available tools based on a provided context array. This interface abstracts the source of tool definitions to allow for flexible catalog resolution strategies.
   ToolExecutorInterface.php,interface,Defines the contract for executing tool calls within the agent core system. It abstracts the execution logic to allow for interchangeable implementations of tool handlers. This interface ensures a consistent return type for tool execution results.
   ToolIdempotencyKeyResolverInterface.php,interface,Defines the contract for resolving idempotency keys for tool calls within the AgentCore system. This interface ensures that repeated executions of the same tool call can be identified and handled consistently. It serves as a boundary for decoupling idempotency logic from the core tool execution flow.
-sourceHash: 288dbeb498b29ef8cc85d316ff937770954b8d5d339696a782ec8b08941e7588

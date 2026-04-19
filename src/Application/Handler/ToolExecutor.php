@@ -18,6 +18,9 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionPolicy;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 
+/**
+ * The ToolExecutor class orchestrates the execution of tool calls within an agent core, handling policy resolution, argument validation, and result caching. It integrates with the Symfony Toolbox for tool invocation and manages execution metadata, including timeouts, parallelism, and cancellation. The class ensures consistent tool result formatting and applies post-execution hooks to the assistant message context.
+ */
 final class ToolExecutor implements ToolExecutorInterface
 {
     private ToolExecutionPolicyResolver $policyResolver;
@@ -25,6 +28,8 @@ final class ToolExecutor implements ToolExecutorInterface
     private ToolExecutionResultStore $resultStore;
 
     /**
+     * Initializes executor with default mode, timeout, parallelism, overrides, and optional toolbox.
+     *
      * @param array<string, array{mode?: string|null, timeout_seconds?: int|null}> $overrides
      * @param iterable<BeforeToolCallHookInterface>                                $beforeToolCallHooks
      * @param iterable<AfterToolCallHookInterface>                                 $afterToolCallHooks
@@ -44,6 +49,9 @@ final class ToolExecutor implements ToolExecutorInterface
         $this->resultStore = $resultStore ?? new ToolExecutionResultStore();
     }
 
+    /**
+     * Executes a tool call by resolving policy, validating arguments, and invoking the tool.
+     */
     public function execute(ToolCall $toolCall): ToolResult
     {
         $policy = $this->resolvePolicy($toolCall);
@@ -207,6 +215,9 @@ final class ToolExecutor implements ToolExecutorInterface
         );
     }
 
+    /**
+     * Performs the actual tool invocation with policy enforcement and metadata tracking.
+     */
     private function executeToolCall(ToolCall $toolCall, ToolExecutionPolicy $policy): ToolResult
     {
         if (ToolExecutionMode::Interrupt === $policy->mode || 'ask_user' === $toolCall->toolName) {
@@ -259,6 +270,9 @@ final class ToolExecutor implements ToolExecutorInterface
         );
     }
 
+    /**
+     * Determines the execution policy for a tool call based on overrides and defaults.
+     */
     private function resolvePolicy(ToolCall $toolCall): ToolExecutionPolicy
     {
         $resolved = $this->policyResolver->resolve($toolCall->toolName);
@@ -270,6 +284,9 @@ final class ToolExecutor implements ToolExecutorInterface
         );
     }
 
+    /**
+     * Attaches execution metadata and idempotency keys to the tool result.
+     */
     private function rememberAndReturn(
         ToolCall $toolCall,
         ToolExecutionPolicy $policy,
@@ -287,6 +304,9 @@ final class ToolExecutor implements ToolExecutorInterface
         return $normalized;
     }
 
+    /**
+     * Returns a cached result if idempotency key matches and policy allows reuse.
+     */
     private function reuseResult(
         ToolCall $toolCall,
         ToolResult $existing,
@@ -305,6 +325,9 @@ final class ToolExecutor implements ToolExecutorInterface
         return $this->withExecutionMetadata($reused, $policy, $toolIdempotencyKey, null, $reason);
     }
 
+    /**
+     * Augments a tool result with execution metadata such as duration and reuse reason.
+     */
     private function withExecutionMetadata(
         ToolResult $result,
         ToolExecutionPolicy $policy,
@@ -343,6 +366,8 @@ final class ToolExecutor implements ToolExecutorInterface
     }
 
     /**
+     * Executes registered after-hooks with the assistant message, tool call, and result context.
+     *
      * @param array<string, mixed> $context
      */
     private function applyAfterHooks(
@@ -381,6 +406,8 @@ final class ToolExecutor implements ToolExecutorInterface
     }
 
     /**
+     * Validates tool arguments against a JSON schema and returns error message if invalid.
+     *
      * @param array<string, mixed>      $arguments
      * @param array<string, mixed>|null $schema
      */
@@ -429,6 +456,9 @@ final class ToolExecutor implements ToolExecutorInterface
         return null;
     }
 
+    /**
+     * Checks if a value matches the expected JSON schema type string.
+     */
     private function matchesType(mixed $value, string $expectedType): bool
     {
         return match ($expectedType) {
@@ -443,6 +473,8 @@ final class ToolExecutor implements ToolExecutorInterface
     }
 
     /**
+     * Constructs the context array passed to after-hooks from tool call and policy.
+     *
      * @return array<string, mixed>
      */
     private function contextForHooks(ToolCall $toolCall, ToolExecutionPolicy $policy, ?string $toolIdempotencyKey): array
@@ -462,6 +494,9 @@ final class ToolExecutor implements ToolExecutorInterface
         return $context;
     }
 
+    /**
+     * Extracts the run ID from a tool call's metadata if present.
+     */
     private function runId(ToolCall $toolCall): ?string
     {
         if (null !== $toolCall->runId && '' !== $toolCall->runId) {
@@ -473,6 +508,9 @@ final class ToolExecutor implements ToolExecutorInterface
         return \is_string($runId) && '' !== $runId ? $runId : null;
     }
 
+    /**
+     * Retrieves the cancellation token from a tool call's metadata or returns a default.
+     */
     private function cancellationToken(ToolCall $toolCall): CancellationTokenInterface
     {
         $token = $toolCall->context['cancel_token'] ?? null;
@@ -480,6 +518,9 @@ final class ToolExecutor implements ToolExecutorInterface
         return $token instanceof CancellationTokenInterface ? $token : new NullCancellationToken();
     }
 
+    /**
+     * Checks if the Symfony Toolbox is available for tool execution.
+     */
     private function canUseSymfonyToolbox(): bool
     {
         return null !== $this->toolbox
@@ -487,6 +528,9 @@ final class ToolExecutor implements ToolExecutorInterface
             && class_exists('Symfony\\AI\\Platform\\Result\\ToolCall');
     }
 
+    /**
+     * Converts an internal ToolCall object into a Symfony Toolbox-compatible tool call.
+     */
     private function toSymfonyToolCall(ToolCall $toolCall): object
     {
         $toolCallClass = 'Symfony\\AI\\Platform\\Result\\ToolCall';
@@ -502,6 +546,9 @@ final class ToolExecutor implements ToolExecutorInterface
         );
     }
 
+    /**
+     * Creates a ToolResult indicating the tool call was interrupted.
+     */
     private function interruptResult(ToolCall $toolCall): ToolResult
     {
         $questionId = \is_string($toolCall->arguments['question_id'] ?? null)
@@ -543,6 +590,8 @@ final class ToolExecutor implements ToolExecutorInterface
     }
 
     /**
+     * Creates a ToolResult representing a tool execution error with details.
+     *
      * @param array<string, mixed> $details
      */
     private function errorResult(string $toolCallId, string $toolName, string $message, array $details = []): ToolResult
@@ -559,6 +608,9 @@ final class ToolExecutor implements ToolExecutorInterface
         );
     }
 
+    /**
+     * Converts a mixed value to a string representation for logging or display.
+     */
     private function stringify(mixed $value): string
     {
         if (null === $value) {

@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Tool;
 
+/**
+ * A readonly value object representing a tool provider request with model, input, and options parameters. It provides a method to apply these parameters onto a specific model context, returning the resulting configuration array.
+ */
 final readonly class ProviderRequest
 {
     /**
+     * Initializes the request with optional model, input, and options parameters.
+     *
      * @param array<string, mixed>|null $input
      * @param array<string, mixed>|null $options
      */
@@ -18,6 +23,8 @@ final readonly class ProviderRequest
     }
 
     /**
+     * Applies the stored request parameters onto the specified model and returns the resulting array.
+     *
      * @param array<string, mixed> $input
      * @param array<string, mixed> $options
      *

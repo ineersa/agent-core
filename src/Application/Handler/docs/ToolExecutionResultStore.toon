@@ -1,16 +1,11 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: 6a7344c3082757d9aa975b4df4a8a450a086bb408cc6c9bf2f4246fe7b5bc19a
 file: ToolExecutionResultStore.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore"
 type: final class
 summary: "This class provides a caching layer for tool execution results, enabling efficient retrieval of previously computed outputs. It supports lookup by run and tool call identifiers, as well as by tool name and idempotency keys to prevent redundant execution."
-effects: none
-dependencies: none
-methods[5]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  findByRunToolCall,17,17,17,21,20,public,public,no,no,no,"string $runId, string $toolCallId",?ToolResult,"",Retrieves a cached ToolResult by run ID and tool call ID,none,none
-  findByToolAndIdempotencyKey,22,22,22,21,25,public,public,no,no,no,"string $toolName, string $toolIdempotencyKey",?ToolResult,"",Retrieves a cached ToolResult by tool name and idempotency key,none,none
-  remember,27,27,27,21,36,public,public,no,no,no,"string $runId, string $toolCallId, string $toolName, ?string $toolIdempotencyKey, ToolResult $result",void,"",Stores a ToolResult in the cache using run and tool identifiers,state write,none
-  runToolCallKey,38,38,38,22,41,private,private,no,no,no,"string $runId, string $toolCallId",string,"",Generates a composite cache key from run ID and tool call ID,none,none
-  toolIdempotencyKey,43,43,43,22,46,private,private,no,no,no,"string $toolName, string $toolIdempotencyKey",string,"",Generates a composite cache key from tool name and idempotency key,none,none
+methods[5]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  findByRunToolCall,20,23,23,21,26,public,public,no,no,no,"string $runId, string $toolCallId",?ToolResult,"",Retrieves a cached ToolResult by run ID and tool call ID.
+  findByToolAndIdempotencyKey,28,31,31,21,34,public,public,no,no,no,"string $toolName, string $toolIdempotencyKey",?ToolResult,"",Retrieves a cached ToolResult by tool name and idempotency key.
+  remember,36,39,39,21,48,public,public,no,no,no,"string $runId, string $toolCallId, string $toolName, ?string $toolIdempotencyKey, ToolResult $result",void,"",Stores a ToolResult in the cache using run and tool identifiers.
+  runToolCallKey,50,53,53,22,56,private,private,no,no,no,"string $runId, string $toolCallId",string,"",Generates a composite cache key from run ID and tool call ID.
+  toolIdempotencyKey,58,61,61,22,64,private,private,no,no,no,"string $toolName, string $toolIdempotencyKey",string,"",Generates a composite cache key from tool name and idempotency key.

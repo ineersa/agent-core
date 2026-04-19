@@ -2,8 +2,6 @@ spec: agent-core.ai-docs/v1
 namespace: "Application\\Handler"
 fqcn: "Ineersa\\AgentCore\\Application\\Handler"
 updatedAt: 2026-04-19
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
 description: "Handler infrastructure — command routing, extension registries, LLM/tool execution workers, outbox projectors, event dispatching, step dispatch, locking, idempotency, replay, tool batch collection, bounded parallel dispatch, and idempotency result store."
 files[21]{file,type,summary}:
   CommandHandlerRegistry.php,final class,The CommandHandlerRegistry acts as a central lookup mechanism for resolving command handlers by their specific kind. It maintains a registry of handler instances to facilitate efficient dispatching within the application's command handling pipeline.
@@ -27,4 +25,3 @@ files[21]{file,type,summary}:
   ToolExecutionPolicyResolver.php,readonly final class,"Resolves execution policies for tools by combining a default configuration with specific overrides. It determines the operational mode, timeout, and parallelism constraints for a given tool name."
   ToolExecutionResultStore.php,final class,"This class provides a caching layer for tool execution results, enabling efficient retrieval of previously computed outputs. It supports lookup by run and tool call identifiers, as well as by tool name and idempotency keys to prevent redundant execution."
   ToolExecutor.php,final class,"The ToolExecutor class orchestrates the execution of tool calls within an agent core, handling policy resolution, argument validation, and result caching. It integrates with the Symfony Toolbox for tool invocation and manages execution metadata, including timeouts, parallelism, and cancellation. The class ensures consistent tool result formatting and applies post-execution hooks to the assistant message context."
-sourceHash: ee03660318f9462d4c724fb3185b8ac3cb99c3a2e6bd7c402961a129f2157c35

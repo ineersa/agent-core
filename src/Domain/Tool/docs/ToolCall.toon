@@ -1,12 +1,7 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: 5be1405a3d4c4f4f18a9e623ae6d4978b865ad31ea1eb9e6bbcca9aa289ce1ce
 file: ToolCall.php
 class: "Ineersa\\AgentCore\\Domain\\Tool\\ToolCall"
 type: readonly final class
 summary: "Represents a discrete tool invocation within an agent's execution flow, capturing the identifier, target tool name, and serialized arguments. It serves as a value object to track the sequence and context of tool calls during runtime."
-effects: none
-dependencies: none
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  __construct,11,15,15,21,27,public,public,no,no,no,"string $toolCallId, string $toolName, array $arguments, int $orderIndex, ?string $runId = null, ?ToolExecutionMode $mode = null, ?int $timeoutSeconds = null, ?string $toolIdempotencyKey = null, ?AgentMessage $assistantMessage = null, array $context = []","","","Initializes a tool call instance with its unique ID, name, arguments, and execution order",none,none
+methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  __construct,14,20,20,21,32,public,public,no,no,no,"string $toolCallId, string $toolName, array $arguments, int $orderIndex, ?string $runId = null, ?ToolExecutionMode $mode = null, ?int $timeoutSeconds = null, ?string $toolIdempotencyKey = null, ?AgentMessage $assistantMessage = null, array $context = []","","","Initializes a tool call instance with its unique ID, name, arguments, and execution order."

@@ -1,13 +1,8 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: 46077fc3127b2d980fa12fcfd342445f7bd3be77cc4ae31a32dc804a3f45a6b5
 file: HookDispatcher.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\HookDispatcher"
 type: readonly final class
 summary: The HookDispatcher class orchestrates the execution of registered hook subscribers by mapping hook names to their corresponding handlers. It leverages a subscriber registry to identify relevant hooks and an event dispatcher to trigger the associated logic with provided context data.
-effects: none
-dependencies: "HookSubscriberRegistry, EventDispatcherInterface"
-methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  __construct,13,13,13,21,17,public,public,no,no,no,"HookSubscriberRegistry $registry, EventDispatcherInterface $eventDispatcher","","",Initializes the dispatcher with a subscriber registry and event dispatcher,none,"HookSubscriberRegistry, EventDispatcherInterface"
-  dispatch,19,24,24,21,41,public,public,no,no,no,"string $hookName, array $context = []",array,InvalidArgumentException,Executes registered subscribers for a given hook name with context,dispatches events via EventDispatcherInterface,"HookSubscriberRegistry, EventDispatcherInterface"
+methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  __construct,16,19,19,21,23,public,public,no,no,no,"HookSubscriberRegistry $registry, EventDispatcherInterface $eventDispatcher","","",Initializes the dispatcher with a subscriber registry and event dispatcher.
+  dispatch,25,32,32,21,49,public,public,no,no,no,"string $hookName, array $context = []",array,InvalidArgumentException,Executes registered subscribers for a given hook name with context.

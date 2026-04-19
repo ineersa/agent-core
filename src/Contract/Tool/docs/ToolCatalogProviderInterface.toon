@@ -1,12 +1,7 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: 2e234d7048eb578c66482f0a1795959b5a585a9f1ffcee0f62eb910329f6e311
 file: ToolCatalogProviderInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Tool\\ToolCatalogProviderInterface"
 type: interface
 summary: Defines the contract for resolving tool catalogs within the AgentCore framework. Implementations provide a mechanism to retrieve available tools based on a provided context array. This interface abstracts the source of tool definitions to allow for flexible catalog resolution strategies.
-effects: none
-dependencies: none
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  resolveToolCatalog,11,16,16,21,16,public,public,no,no,no,"array $context = []",array,"",Resolves and returns the tool catalog based on the provided context,returns array,none
+methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  resolveToolCatalog,14,21,21,21,21,public,public,no,no,no,"array $context = []",array,"",Resolves and returns the tool catalog based on the provided context.

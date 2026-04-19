@@ -7,9 +7,14 @@ namespace Ineersa\AgentCore\Application\Handler;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 
+/**
+ * A readonly value object representing the outcome of a tool batch execution within the agent core application. It encapsulates execution status flags, ordered results, and side-effect payloads for downstream processing. Designed to provide a structured, immutable contract for communicating batch processing states.
+ */
 final readonly class ToolBatchCollectOutcome
 {
     /**
+     * Initializes the outcome with acceptance, duplicate, and completion flags along with results and effects.
+     *
      * @param list<ToolCallResult>  $orderedResults
      * @param list<ExecuteToolCall> $effectsToDispatch
      */
@@ -22,17 +27,25 @@ final readonly class ToolBatchCollectOutcome
     ) {
     }
 
+    /**
+     * Creates a static instance representing a rejected batch outcome.
+     */
     public static function rejected(): self
     {
         return new self(accepted: false, duplicate: false, complete: false);
     }
 
+    /**
+     * Creates a static instance representing a duplicate batch outcome.
+     */
     public static function duplicate(): self
     {
         return new self(accepted: true, duplicate: true, complete: false);
     }
 
     /**
+     * Creates a static instance for an accepted batch awaiting completion with optional effects.
+     *
      * @param list<ExecuteToolCall> $effectsToDispatch
      */
     public static function acceptedPending(array $effectsToDispatch = []): self
@@ -41,6 +54,8 @@ final readonly class ToolBatchCollectOutcome
     }
 
     /**
+     * Creates a static instance for a fully completed batch with results and effects to dispatch.
+     *
      * @param list<ToolCallResult>  $orderedResults
      * @param list<ExecuteToolCall> $effectsToDispatch
      */

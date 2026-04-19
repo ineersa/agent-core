@@ -1,13 +1,8 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: c5dc408a0920919a91dce19b97843f906b9f6ee4969e91188d36510fac66fd8f
 file: CommandHandlerRegistry.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\CommandHandlerRegistry"
 type: final class
 summary: The CommandHandlerRegistry acts as a central lookup mechanism for resolving command handlers by their specific kind. It maintains a registry of handler instances to facilitate efficient dispatching within the application's command handling pipeline.
-effects: none
-dependencies: iterable $handlers (CommandHandlerInterface instances)
-methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  __construct,14,17,17,21,20,public,public,no,no,no,iterable $handlers,"","",Initializes the registry with a collection of command handlers,stores handler references,iterable $handlers
-  find,22,22,22,21,31,public,public,no,no,no,string $kind,?CommandHandlerInterface,"",Retrieves the command handler matching the specified kind,none,none
+methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  __construct,17,22,22,21,25,public,public,no,no,no,iterable $handlers,"","",Initializes the registry with a collection of command handlers.
+  find,27,30,30,21,39,public,public,no,no,no,string $kind,?CommandHandlerInterface,"",Retrieves the command handler matching the specified kind.

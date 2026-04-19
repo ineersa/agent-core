@@ -1,14 +1,9 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: 3a79a95a33b157457a2f308cc6f96511e5465d1864650058dfd9a77c18104ef3
 file: Version20260418000100.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Doctrine\\Migrations\\Version20260418000100"
 type: final class
 summary: This class defines a Doctrine migration to modify the database schema for the Agent Core infrastructure. It implements the standard up and down methods to apply or revert structural changes using the Doctrine Schema abstraction.
-effects: none
-dependencies: Doctrine DBAL Schema
-methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  getDescription,13,13,13,21,16,public,public,no,no,no,"",string,"",Returns the human-readable description of this migration,none,none
-  up,18,18,18,21,143,public,public,no,no,no,Schema $schema,void,"",Applies the database schema changes defined in this migration,writes to database schema,Doctrine DBAL Schema
-  down,145,145,145,21,152,public,public,no,no,no,Schema $schema,void,"",Reverts the database schema changes applied by the up method,writes to database schema,Doctrine DBAL Schema
+methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  getDescription,16,19,19,21,22,public,public,no,no,no,"",string,"",Returns the human-readable description of this migration.
+  up,24,27,27,21,152,public,public,no,no,no,Schema $schema,void,"",Applies the database schema changes defined in this migration.
+  down,154,157,157,21,164,public,public,no,no,no,Schema $schema,void,"",Reverts the database schema changes applied by the up method.

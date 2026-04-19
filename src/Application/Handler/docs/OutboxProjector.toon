@@ -1,13 +1,8 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: fa5d2c9de45eada7a8b45e269e46efa97d43b8ef27c43edf8b54ef6bf135efef
 file: OutboxProjector.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\OutboxProjector"
 type: readonly final class
 summary: The OutboxProjector class processes a batch of domain events by persisting execution logs and publishing corresponding runtime events. It acts as a bridge between the outbox storage mechanism and external consumers via the event publisher.
-effects: writes to RunLogWriter and dispatches events via RunEventPublisher
-dependencies: "OutboxStoreInterface, RunLogWriter, RunEventPublisher"
-methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  __construct,17,17,17,21,22,public,public,no,no,no,"OutboxStoreInterface $outboxStore, RunLogWriter $runLogWriter, RunEventPublisher $runEventPublisher","","","initializes the projector with required outbox, logging, and publishing collaborators",none,"OutboxStoreInterface, RunLogWriter, RunEventPublisher"
-  project,24,27,27,21,39,public,public,no,no,no,array $events,void,"",processes an array of events by writing run logs and publishing run events,writes to RunLogWriter and dispatches events via RunEventPublisher,"RunLogWriter, RunEventPublisher"
+methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  __construct,20,23,23,21,28,public,public,no,no,no,"OutboxStoreInterface $outboxStore, RunLogWriter $runLogWriter, RunEventPublisher $runEventPublisher","","","initializes the projector with required outbox, logging, and publishing collaborators."
+  project,30,35,35,21,47,public,public,no,no,no,array $events,void,"",processes an array of events by writing run logs and publishing run events.

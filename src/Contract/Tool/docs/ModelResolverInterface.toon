@@ -1,12 +1,7 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: b333982f227fecf31dc3803d1f91a2db7da36c33c617250ee319b7f6d8ed5c4b
 file: ModelResolverInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Tool\\ModelResolverInterface"
 type: interface
 summary: Defines the contract for resolving AI model configurations based on incoming message context and default settings. It abstracts the decision logic for selecting the appropriate model to process a given set of messages.
-effects: none
-dependencies: none
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  resolve,12,16,16,21,16,public,public,no,no,no,"string $defaultModel, MessageBag $messages, array $context = [], array $options = []",ResolvedModel,"","Resolves the target model using default settings, messages, context, and options",none,none
+methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  resolve,15,21,21,21,21,public,public,no,no,no,"string $defaultModel, MessageBag $messages, array $context = [], array $options = []",ResolvedModel,"","Resolves the target model using default settings, messages, context, and options."

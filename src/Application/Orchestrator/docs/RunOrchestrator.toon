@@ -1,43 +1,38 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: de0fa1e0d10cd38da85614e6cf97276fce0473dc42f64e9becf528cc4de6a63a
 file: RunOrchestrator.php
 class: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator"
 type: readonly final class
 summary: "The RunOrchestrator coordinates the lifecycle of an agent run by processing commands and handling step results through a reducer pattern. It manages state transitions, tool execution policies, and message hydration while persisting events and commands to their respective stores."
-effects: "Writes RunState, RunEvent, and Command entities to RunStore, EventStore, and CommandStore respectively."
-dependencies: "RunStoreInterface, EventStoreInterface, CommandStoreInterface, RunReducer, StepDispatcher, agent.command.bus"
-methods[32]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  __construct,51,51,51,21,70,public,public,no,no,no,"RunStoreInterface $runStore, EventStoreInterface $eventStore, CommandStoreInterface $commandStore, RunReducer $reducer, StepDispatcher $stepDispatcher, CommandRouter $commandRouter, OutboxProjector $outboxProjector, ReplayService $replayService, MessageIdempotencyService $idempotency, RunLockManager $runLockManager, ToolBatchCollector $toolBatchCollector, int $maxPendingCommands = 100, string $steerDrainMode = self::SteerDrainOneAtATime, ?MessageBusInterface $commandBus = null, ?HookDispatcher $hookDispatcher = null, ?ToolExecutionPolicyResolver $toolExecutionPolicyResolver = null, ?ToolCatalogResolver $toolCatalogResolver = null","","","Initializes the orchestrator with required stores, reducer, and dispatcher",none,"RunStoreInterface, EventStoreInterface, CommandStoreInterface, RunReducer, StepDispatcher"
-  onStartRun,72,72,73,21,108,public,public,no,no,no,StartRun $message,void,"",Handles StartRun message to initialize a new agent run,dispatches initial commands via reducer,"RunReducer, agent.command.bus"
-  onApplyCommand,110,110,111,21,210,public,public,no,no,no,ApplyCommand $message,void,"",Processes ApplyCommand message to modify run state,dispatches commands via reducer,"RunReducer, agent.command.bus"
-  onAdvanceRun,212,212,213,21,316,public,public,no,no,no,AdvanceRun $message,void,"",Handles AdvanceRun message to trigger next step execution,dispatches advance event,StepDispatcher
-  onLlmStepResult,318,318,319,21,571,public,public,no,no,no,LlmStepResult $message,void,"",Processes LlmStepResult message to update run state with LLM output,updates state and persists events,"RunReducer, commit"
-  onToolCallResult,573,573,574,21,775,public,public,no,no,no,ToolCallResult $message,void,"",Handles ToolCallResult message to process tool execution outcomes,updates state and persists events,"RunReducer, commit"
-  rejectCommand,777,777,777,22,805,private,private,no,no,no,"RunState $state, ApplyCommand $message, string $reason",void,"",Rejects a command with a specified reason,none,none
-  applyCancelCommand,807,810,810,22,860,private,private,no,no,no,"RunState $state, ApplyCommand $message, array $options",void,"",Applies cancel command to terminate the run,updates state to cancelled,RunState
-  applyContinueCommand,862,865,865,22,903,private,private,no,no,no,"RunState $state, ApplyCommand $message, array $options",void,"",Applies continue command to resume the run,updates state to running,RunState
-  applyHumanResponseCommand,905,908,908,22,957,private,private,no,no,no,"RunState $state, ApplyCommand $message, array $options",void,"",Applies human response command to inject user input,updates state with human message,"RunState, hydrateMessage"
-  applyPendingTurnStartCommands,959,962,962,22,1046,private,private,no,no,no,RunState $state,array,"",Processes pending commands that start a new turn,returns processed commands,RunState
-  applyPendingStopBoundaryCommands,1048,1051,1051,22,1134,private,private,no,no,no,RunState $state,array,"",Processes pending commands that stop the current turn,returns processed commands,RunState
-  isCancelSafeExtensionCommand,1136,1139,1139,22,1143,private,private,no,no,no,"string $kind, array $options",bool,"",Checks if an extension command is safe to cancel,none,none
-  applyExtensionCommand,1145,1148,1148,22,1202,private,private,no,no,no,"RunState $state, PendingCommand $command",array,"",Applies an extension command to the run state,updates state,"RunState, PendingCommand"
-  supersededSteerKeys,1204,1209,1209,22,1236,private,private,no,no,no,array $pendingCommands,array,"",Identifies steer keys superseded by pending commands,none,PendingCommand
-  continueRejectionReason,1238,1238,1238,22,1261,private,private,no,no,no,RunState $state,?string,"",Determines if continuing the run is rejected and why,none,RunState
-  humanResponseMessage,1263,1266,1266,22,1291,private,private,no,no,no,array $payload,?AgentMessage,"",Hydrates a human response message from payload,none,hydrateMessage
-  lastMessageRole,1293,1293,1293,22,1302,private,private,no,no,no,RunState $state,?string,"",Retrieves the role of the last message in the run state,none,RunState
-  dispatchAdvance,1304,1304,1304,22,1323,private,private,no,no,no,"string $runId, string $prefix",void,RuntimeException,Dispatches an advance event for a run,dispatches event,StepDispatcher
-  copyState,1325,1328,1328,22,1350,private,private,no,no,no,"RunState $state, array $overrides = []",RunState,"",Creates a copy of the run state with optional overrides,none,RunState
-  commit,1352,1356,1356,22,1392,private,private,no,no,no,"RunState $state, RunState $nextState, array $events, array $effects = []",bool,"",Persists state changes and events to stores,"writes to RunStore, EventStore, CommandStore","RunStoreInterface, EventStoreInterface, CommandStoreInterface"
-  event,1394,1397,1397,22,1406,private,private,no,no,no,"string $runId, int $seq, int $turnNo, string $type, array $payload = []",RunEvent,"",Constructs a RunEvent with specified parameters,none,none
-  eventsFromSpecs,1408,1413,1413,22,1435,private,private,no,no,no,"string $runId, int $turnNo, int $startSeq, array $eventSpecs",array,"",Generates multiple RunEvents from event specifications,none,event
-  resolveToolPolicy,1437,1440,1440,22,1457,private,private,no,no,no,string $toolName,array,"",Resolves the execution policy for a specific tool,none,none
-  resolveToolSchemas,1459,1462,1462,22,1479,private,private,no,no,no,"string $runId, int $turnNo, string $stepId",array,"",Resolves tool schemas for a specific step,none,none
-  interruptPayloadFromToolResult,1481,1484,1484,22,1521,private,private,no,no,no,ToolCallResult $result,?array,"",Extracts interrupt payload from a tool call result,none,ToolCallResult
-  isStaleResult,1523,1523,1523,22,1530,private,private,no,no,no,"RunState $state, int $turnNo, string $stepId",bool,"",Checks if a tool result is stale relative to current state,none,RunState
-  incrementStateVersion,1532,1532,1532,22,1538,private,private,no,no,no,"RunState $state, int $eventCount",RunState,"",Increments the state version based on event count,none,RunState
-  hydrateMessage,1540,1543,1543,22,1580,private,private,no,no,no,array $payload,?AgentMessage,"",Hydrates an AgentMessage from a payload array,none,AgentMessage
-  assistantMessage,1582,1585,1585,22,1617,private,private,no,no,no,array $assistantMessage,AgentMessage,"",Constructs an AgentMessage from assistant message data,none,AgentMessage
-  toolMessage,1619,1619,1619,22,1647,private,private,no,no,no,ToolCallResult $result,AgentMessage,"",Constructs an AgentMessage from a tool call result,none,"AgentMessage, ToolCallResult"
-  extractToolCalls,1649,1660,1660,22,1691,private,private,no,no,no,array $assistantMessage,array,"",Extracts tool calls from an assistant message,none,none
+methods[32]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  __construct,54,57,57,21,76,public,public,no,no,no,"RunStoreInterface $runStore, EventStoreInterface $eventStore, CommandStoreInterface $commandStore, RunReducer $reducer, StepDispatcher $stepDispatcher, CommandRouter $commandRouter, OutboxProjector $outboxProjector, ReplayService $replayService, MessageIdempotencyService $idempotency, RunLockManager $runLockManager, ToolBatchCollector $toolBatchCollector, int $maxPendingCommands = 100, string $steerDrainMode = self::SteerDrainOneAtATime, ?MessageBusInterface $commandBus = null, ?HookDispatcher $hookDispatcher = null, ?ToolExecutionPolicyResolver $toolExecutionPolicyResolver = null, ?ToolCatalogResolver $toolCatalogResolver = null","","","Initializes the orchestrator with required stores, reducer, and dispatcher."
+  onStartRun,78,81,82,21,117,public,public,no,no,no,StartRun $message,void,"",Handles StartRun message to initialize a new agent run.
+  onApplyCommand,119,122,123,21,222,public,public,no,no,no,ApplyCommand $message,void,"",Processes ApplyCommand message to modify run state.
+  onAdvanceRun,224,227,228,21,331,public,public,no,no,no,AdvanceRun $message,void,"",Handles AdvanceRun message to trigger next step execution.
+  onLlmStepResult,333,336,337,21,589,public,public,no,no,no,LlmStepResult $message,void,"",Processes LlmStepResult message to update run state with LLM output.
+  onToolCallResult,591,594,595,21,796,public,public,no,no,no,ToolCallResult $message,void,"",Handles ToolCallResult message to process tool execution outcomes.
+  rejectCommand,798,801,801,22,829,private,private,no,no,no,"RunState $state, ApplyCommand $message, string $reason",void,"",Rejects a command with a specified reason.
+  applyCancelCommand,831,836,836,22,886,private,private,no,no,no,"RunState $state, ApplyCommand $message, array $options",void,"",Applies cancel command to terminate the run.
+  applyContinueCommand,888,893,893,22,931,private,private,no,no,no,"RunState $state, ApplyCommand $message, array $options",void,"",Applies continue command to resume the run.
+  applyHumanResponseCommand,933,938,938,22,987,private,private,no,no,no,"RunState $state, ApplyCommand $message, array $options",void,"",Applies human response command to inject user input.
+  applyPendingTurnStartCommands,989,994,994,22,1078,private,private,no,no,no,RunState $state,array,"",Processes pending commands that start a new turn.
+  applyPendingStopBoundaryCommands,1080,1085,1085,22,1168,private,private,no,no,no,RunState $state,array,"",Processes pending commands that stop the current turn.
+  isCancelSafeExtensionCommand,1170,1175,1175,22,1179,private,private,no,no,no,"string $kind, array $options",bool,"",Checks if an extension command is safe to cancel.
+  applyExtensionCommand,1181,1186,1186,22,1240,private,private,no,no,no,"RunState $state, PendingCommand $command",array,"",Applies an extension command to the run state.
+  supersededSteerKeys,1242,1249,1249,22,1276,private,private,no,no,no,array $pendingCommands,array,"",Identifies steer keys superseded by pending commands.
+  continueRejectionReason,1278,1281,1281,22,1304,private,private,no,no,no,RunState $state,?string,"",Determines if continuing the run is rejected and why.
+  humanResponseMessage,1306,1311,1311,22,1336,private,private,no,no,no,array $payload,?AgentMessage,"",Hydrates a human response message from payload.
+  lastMessageRole,1338,1341,1341,22,1350,private,private,no,no,no,RunState $state,?string,"",Retrieves the role of the last message in the run state.
+  dispatchAdvance,1352,1355,1355,22,1374,private,private,no,no,no,"string $runId, string $prefix",void,RuntimeException,Dispatches an advance event for a run.
+  copyState,1376,1381,1381,22,1403,private,private,no,no,no,"RunState $state, array $overrides = []",RunState,"",Creates a copy of the run state with optional overrides.
+  commit,1405,1411,1411,22,1447,private,private,no,no,no,"RunState $state, RunState $nextState, array $events, array $effects = []",bool,"",Persists state changes and events to stores.
+  event,1449,1454,1454,22,1463,private,private,no,no,no,"string $runId, int $seq, int $turnNo, string $type, array $payload = []",RunEvent,"",Constructs a RunEvent with specified parameters.
+  eventsFromSpecs,1465,1472,1472,22,1494,private,private,no,no,no,"string $runId, int $turnNo, int $startSeq, array $eventSpecs",array,"",Generates multiple RunEvents from event specifications.
+  resolveToolPolicy,1496,1501,1501,22,1518,private,private,no,no,no,string $toolName,array,"",Resolves the execution policy for a specific tool.
+  resolveToolSchemas,1520,1525,1525,22,1542,private,private,no,no,no,"string $runId, int $turnNo, string $stepId",array,"",Resolves tool schemas for a specific step.
+  interruptPayloadFromToolResult,1544,1549,1549,22,1586,private,private,no,no,no,ToolCallResult $result,?array,"",Extracts interrupt payload from a tool call result.
+  isStaleResult,1588,1591,1591,22,1598,private,private,no,no,no,"RunState $state, int $turnNo, string $stepId",bool,"",Checks if a tool result is stale relative to current state.
+  incrementStateVersion,1600,1603,1603,22,1609,private,private,no,no,no,"RunState $state, int $eventCount",RunState,"",Increments the state version based on event count.
+  hydrateMessage,1611,1616,1616,22,1653,private,private,no,no,no,array $payload,?AgentMessage,"",Hydrates an AgentMessage from a payload array.
+  assistantMessage,1655,1660,1660,22,1692,private,private,no,no,no,array $assistantMessage,AgentMessage,"",Constructs an AgentMessage from assistant message data.
+  toolMessage,1694,1697,1697,22,1725,private,private,no,no,no,ToolCallResult $result,AgentMessage,"",Constructs an AgentMessage from a tool call result.
+  extractToolCalls,1727,1740,1740,22,1771,private,private,no,no,no,array $assistantMessage,array,"",Extracts tool calls from an assistant message.

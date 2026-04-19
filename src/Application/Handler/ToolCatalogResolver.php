@@ -7,12 +7,17 @@ namespace Ineersa\AgentCore\Application\Handler;
 use Ineersa\AgentCore\Contract\Tool\ToolCatalogProviderInterface;
 use Ineersa\AgentCore\Domain\Tool\ToolDefinition;
 
+/**
+ * Resolves tool catalog definitions by iterating over registered providers and aggregating their payloads. Ensures schema stability for each tool definition by computing and verifying a deterministic fingerprint.
+ */
 final class ToolCatalogResolver
 {
     /** @var array<string, string> */
     private array $schemaFingerprintByName = [];
 
     /**
+     * Injects provider iterable for tool catalog resolution.
+     *
      * @param iterable<ToolCatalogProviderInterface> $providers
      */
     public function __construct(
@@ -21,6 +26,8 @@ final class ToolCatalogResolver
     }
 
     /**
+     * Aggregates tool definitions from all registered providers.
+     *
      * @param array<string, mixed> $context
      *
      * @return list<ToolDefinition>
@@ -41,6 +48,8 @@ final class ToolCatalogResolver
     }
 
     /**
+     * Retrieves and validates payload from a single provider.
+     *
      * @param array<string, mixed> $context
      *
      * @return list<array<string, mixed>>
@@ -53,6 +62,9 @@ final class ToolCatalogResolver
         );
     }
 
+    /**
+     * Verifies schema fingerprint consistency for a tool definition.
+     */
     private function assertSchemaStability(ToolDefinition $definition): void
     {
         $fingerprint = $this->schemaFingerprint($definition->schema);
@@ -72,6 +84,8 @@ final class ToolCatalogResolver
     }
 
     /**
+     * Computes deterministic hash of a tool schema array.
+     *
      * @param array<string, mixed>|null $schema
      */
     private function schemaFingerprint(?array $schema): string

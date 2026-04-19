@@ -7,9 +7,14 @@ namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\MessageBag;
 
+/**
+ * SymfonyMessageMapper translates between internal AgentMessage objects and provider-specific message formats for AI integration. It normalizes content structures and handles tool call serialization to ensure compatibility with external AI service APIs.
+ */
 final class SymfonyMessageMapper
 {
     /**
+     * Converts an array of provider messages into a MessageBag instance.
+     *
      * @param list<AgentMessage|object> $messages
      */
     public function toMessageBag(array $messages): MessageBag
@@ -32,6 +37,8 @@ final class SymfonyMessageMapper
     }
 
     /**
+     * Transforms a MessageBag into a provider-compatible array or object.
+     *
      * @return array<string, mixed>|object
      */
     public function toProviderInput(MessageBag $messageBag): array|object
@@ -62,6 +69,9 @@ final class SymfonyMessageMapper
         ];
     }
 
+    /**
+     * Maps an AgentMessage to a provider-specific object format.
+     */
     private function convertAgentMessage(AgentMessage $message): object
     {
         if (!$this->supportsNativeMessageApi()) {
@@ -83,6 +93,9 @@ final class SymfonyMessageMapper
         };
     }
 
+    /**
+     * Constructs a native tool call message object from agent message content.
+     */
     private function toNativeToolCallMessage(AgentMessage $message, string $textContent): object
     {
         /** @var class-string $messageFactory */
@@ -110,6 +123,8 @@ final class SymfonyMessageMapper
     }
 
     /**
+     * Extracts tool call data from an agent message if present.
+     *
      * @return list<object>|null
      */
     private function assistantToolCalls(AgentMessage $message): ?array
@@ -152,6 +167,9 @@ final class SymfonyMessageMapper
         return [] === $toolCalls ? null : $toolCalls;
     }
 
+    /**
+     * Creates a generic message object representation from an agent message.
+     */
     private function toGenericMessageObject(AgentMessage $message): object
     {
         $payload = [
@@ -179,17 +197,26 @@ final class SymfonyMessageMapper
         return (object) $payload;
     }
 
+    /**
+     * Checks if the current provider supports native message API formats.
+     */
     private function supportsNativeMessageApi(): bool
     {
         return class_exists('Symfony\\AI\\Platform\\Message\\Message')
             && class_exists('Symfony\\AI\\Platform\\Message\\MessageBag');
     }
 
+    /**
+     * Determines if a message object conforms to the native message bag structure.
+     */
     private function isNativeMessageBag(object $message): bool
     {
         return 'Symfony\\AI\\Platform\\Message\\MessageBag' === $message::class;
     }
 
+    /**
+     * Extracts plain text content from an agent message for user role.
+     */
     private function userText(AgentMessage $message, string $textContent): string
     {
         if ($message->isCustomRole()) {
@@ -200,6 +227,8 @@ final class SymfonyMessageMapper
     }
 
     /**
+     * Converts a content array into a single plain text string.
+     *
      * @param array<int, array<string, mixed>> $content
      */
     private function contentToText(array $content): string
@@ -223,6 +252,8 @@ final class SymfonyMessageMapper
     }
 
     /**
+     * Normalizes a provider message object into a standardized array structure.
+     *
      * @return array<string, mixed>
      */
     private function normalizeProviderMessage(object $message): array
@@ -258,6 +289,9 @@ final class SymfonyMessageMapper
         return ['raw' => $this->stringify($message)];
     }
 
+    /**
+     * Normalizes mixed content types into a consistent format.
+     */
     private function normalizeContent(mixed $content): mixed
     {
         if (\is_scalar($content) || null === $content) {
@@ -275,6 +309,9 @@ final class SymfonyMessageMapper
         return $this->stringify($content);
     }
 
+    /**
+     * Converts a mixed value into its string representation.
+     */
     private function stringify(mixed $value): string
     {
         if (\is_string($value)) {

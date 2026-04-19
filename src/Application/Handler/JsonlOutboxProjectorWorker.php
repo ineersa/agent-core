@@ -10,15 +10,24 @@ use Ineersa\AgentCore\Domain\Message\ProjectJsonlOutbox;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogWriter;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
+/**
+ * The JsonlOutboxProjectorWorker consumes ProjectJsonlOutbox messages to persist event data into a JSONL outbox store. It coordinates the projection of domain events by writing to the outbox and logging execution details via a run log writer.
+ */
 #[AsMessageHandler(bus: 'agent.publisher.bus')]
 final readonly class JsonlOutboxProjectorWorker
 {
+    /**
+     * initializes the worker with outbox store and run log writer dependencies.
+     */
     public function __construct(
         private OutboxStoreInterface $outboxStore,
         private RunLogWriter $runLogWriter,
     ) {
     }
 
+    /**
+     * processes ProjectJsonlOutbox message by persisting data to outbox and logging run details.
+     */
     public function __invoke(ProjectJsonlOutbox $message): void
     {
         $batchSize = max(1, $message->batchSize);

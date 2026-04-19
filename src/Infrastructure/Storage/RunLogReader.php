@@ -9,13 +9,21 @@ use League\Flysystem\FileAttributes;
 use League\Flysystem\FilesystemException;
 use League\Flysystem\FilesystemOperator;
 
+/**
+ * Reads run log files from the filesystem to reconstruct event sequences for a specific run. It parses JSON lines into domain events, providing a read-only view of historical run data.
+ */
 final readonly class RunLogReader
 {
+    /**
+     * initializes the reader with a filesystem operator.
+     */
     public function __construct(private FilesystemOperator $filesystem)
     {
     }
 
     /**
+     * returns all events for a given run ID by reading log files.
+     *
      * @return list<RunEvent>
      */
     public function allFor(string $runId): array
@@ -45,6 +53,8 @@ final readonly class RunLogReader
     }
 
     /**
+     * generates file paths for a specific run ID.
+     *
      * @return list<string>
      */
     private function runLogPaths(string $runId): array
@@ -75,6 +85,9 @@ final readonly class RunLogReader
         return $paths;
     }
 
+    /**
+     * parses a JSON line string into a RunEvent object.
+     */
     private function eventFromJsonLine(string $runId, string $line): ?RunEvent
     {
         $trimmedLine = trim($line);

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Command;
 
+/**
+ * Defines the set of core command types recognized by the agent core system. This final class provides a static utility to validate whether a given command kind string belongs to the core domain. It serves as a strict type guard for command routing and processing.
+ */
 final class CoreCommandKind
 {
     public const string Steer = 'steer';
@@ -21,6 +24,9 @@ final class CoreCommandKind
         self::Continue,
     ];
 
+    /**
+     * Validates if the provided command kind string is a recognized core command type.
+     */
     public static function isCore(string $kind): bool
     {
         return \in_array($kind, self::ALL, true);

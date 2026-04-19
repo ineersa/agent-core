@@ -1,14 +1,9 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: 7d7620dc75cd272a73192f86768bd50d6e0ccf00036690a4979e13957bcabb32
 file: InMemoryRunAccessStore.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunAccessStore"
 type: final class
 summary: InMemoryRunAccessStore provides an in-memory implementation for persisting and retrieving RunAccessScope entities keyed by run ID. It serves as a transient storage layer for run access metadata within the agent core infrastructure.
-effects: none
-dependencies: none
-methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  save,15,15,15,21,18,public,public,no,no,no,RunAccessScope $scope,void,"",Stores a RunAccessScope in memory keyed by its run ID,writes to internal memory store,none
-  get,20,20,20,21,23,public,public,no,no,no,string $runId,?RunAccessScope,"",Retrieves a RunAccessScope by run ID or returns null if not found,reads from internal memory store,none
-  touch,25,25,25,21,33,public,public,no,no,no,"string $runId, ?DateTimeImmutable $updatedAt = null",void,"",Updates the updatedAt timestamp of an existing RunAccessScope,writes to internal memory store,none
+methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  save,18,21,21,21,24,public,public,no,no,no,RunAccessScope $scope,void,"",Stores a RunAccessScope in memory keyed by its run ID.
+  get,26,29,29,21,32,public,public,no,no,no,string $runId,?RunAccessScope,"",Retrieves a RunAccessScope by run ID or returns null if not found.
+  touch,34,37,37,21,45,public,public,no,no,no,"string $runId, ?DateTimeImmutable $updatedAt = null",void,"",Updates the updatedAt timestamp of an existing RunAccessScope.

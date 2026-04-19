@@ -1,10 +1,5 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: ec2f0344f87195e4d8662276d3d0a267b6d4b746aed10e0a77b1313694864061
 file: ToolExecutionEndEvent.php
 class: "Ineersa\\AgentCore\\Domain\\Event\\Lifecycle\\ToolExecutionEndEvent"
 type: readonly final class
 summary: "Represents the completion of a tool execution within an agent's lifecycle, capturing the outcome and any resulting state changes. This event serves as a domain signal for downstream processing of tool results."
-effects: none
-dependencies: none

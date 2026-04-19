@@ -2,8 +2,6 @@ spec: agent-core.ai-docs/v1
 namespace: "Domain\\Event"
 fqcn: "Ineersa\\AgentCore\\Domain\\Event"
 updatedAt: 2026-04-19
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
 description: "Event sourcing models — base RunEvent, outbox pattern (Entry/Sink), boundary hooks, core lifecycle event types with order validation, and typed Lifecycle event subclasses."
 files[6]{file,type,summary}:
   BoundaryHookEvent.php,final class,Defines a domain event representing the execution of a named boundary hook within the agent core. It encapsulates the hook identifier and an optional context array to provide metadata for downstream processing.
@@ -14,4 +12,3 @@ files[6]{file,type,summary}:
   RunEvent.php,readonly class,"Represents a domain event for a specific run execution, capturing sequence and turn metadata alongside a typed payload. Designed as a readonly value object to ensure immutability and safe propagation of run state changes within the domain layer."
 subNamespaces[1]{namespace,fqcn,path,description,index}:
   Lifecycle,"Ineersa\\AgentCore\\Domain\\Event\\Lifecycle",Lifecycle,"Typed lifecycle event subclasses — AgentStart/End, TurnStart/End, MessageStart/Update/End, ToolExecutionStart/Update/End.",Lifecycle/ai-index.toon
-sourceHash: f132c9219cd8ecafc8263a36d67edd07eecdd2be33649bb698fe5a5dc3c47db1

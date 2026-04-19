@@ -1,17 +1,12 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: 6fc081c57f5cb158f1c34de1223ad1657a72332a16d4665250b0a680563cea65
 file: AbstractAgentBusMessage.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage"
 type: readonly abstract class
 summary: "AbstractAgentBusMessage serves as a base value object for agent execution events, encapsulating core execution context such as run identifiers, turn numbers, and step metadata. It provides immutable accessors for these fields to ensure consistent data structure across agent bus messages. The class enforces immutability through readonly properties and final getter methods."
-effects: none
-dependencies: none
-methods[6]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  __construct,9,9,9,21,16,public,public,no,no,no,"string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey","","","Initializes the message with run, turn, step, attempt, and idempotency context",none,none
-  runId,18,18,18,21,21,public,public,no,no,no,"",string,"",Returns the unique identifier for the agent run,none,none
-  turnNo,23,23,23,21,26,public,public,no,no,no,"",int,"",Returns the sequential turn number within the agent run,none,none
-  stepId,28,28,28,21,31,public,public,no,no,no,"",string,"",Returns the unique identifier for the current execution step,none,none
-  attempt,33,33,33,21,36,public,public,no,no,no,"",int,"",Returns the current attempt count for the step execution,none,none
-  idempotencyKey,38,38,38,21,41,public,public,no,no,no,"",string,"",Returns the idempotency key to prevent duplicate processing,none,none
+methods[6]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  __construct,12,15,15,21,22,public,public,no,no,no,"string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey","","","Initializes the message with run, turn, step, attempt, and idempotency context."
+  runId,24,27,27,21,30,public,public,no,no,no,"",string,"",Returns the unique identifier for the agent run.
+  turnNo,32,35,35,21,38,public,public,no,no,no,"",int,"",Returns the sequential turn number within the agent run.
+  stepId,40,43,43,21,46,public,public,no,no,no,"",string,"",Returns the unique identifier for the current execution step.
+  attempt,48,51,51,21,54,public,public,no,no,no,"",int,"",Returns the current attempt count for the step execution.
+  idempotencyKey,56,59,59,21,62,public,public,no,no,no,"",string,"",Returns the idempotency key to prevent duplicate processing.

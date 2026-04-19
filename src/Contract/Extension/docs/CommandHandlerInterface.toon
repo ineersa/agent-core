@@ -1,14 +1,9 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: c8bfcdd7ea63e03df84fa6ed4c64157bd1f3c6ef25d77cc6243c70c5909baeac
 file: CommandHandlerInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Extension\\CommandHandlerInterface"
 type: interface
 summary: "Defines the contract for command handlers within the AgentCore extension system, enabling type-safe dispatch and transformation of command payloads. It ensures that handlers can validate command kinds and safely map execution contexts to structured results."
-effects: none
-dependencies: none
-methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  supports,9,9,9,21,9,public,public,no,no,no,string $kind,bool,"",Checks if the handler supports the specified command kind,none,none
-  supportsCancelSafe,11,11,11,21,11,public,public,no,no,no,string $kind,bool,"",Verifies if the command kind supports safe cancellation semantics,none,none
-  map,13,19,19,21,19,public,public,no,no,no,"string $runId, string $kind, array $payload, array $options = []",array,"",Maps a command payload and options to a structured result array for the given run and kind,returns transformed data,none
+methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  supports,12,15,15,21,15,public,public,no,no,no,string $kind,bool,"",Checks if the handler supports the specified command kind.
+  supportsCancelSafe,17,20,20,21,20,public,public,no,no,no,string $kind,bool,"",Verifies if the command kind supports safe cancellation semantics.
+  map,22,30,30,21,30,public,public,no,no,no,"string $runId, string $kind, array $payload, array $options = []",array,"",Maps a command payload and options to a structured result array for the given run and kind.

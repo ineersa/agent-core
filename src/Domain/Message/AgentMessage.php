@@ -10,6 +10,8 @@ namespace Ineersa\AgentCore\Domain\Message;
 final readonly class AgentMessage
 {
     /**
+     * Initializes the message with role, content, and optional metadata fields.
+     *
      * @param array<int, array<string, mixed>> $content
      * @param array<string, mixed>             $metadata
      */
@@ -26,12 +28,17 @@ final readonly class AgentMessage
     ) {
     }
 
+    /**
+     * Checks if the message role is not a standard system, user, or assistant type.
+     */
     public function isCustomRole(): bool
     {
         return !\in_array($this->role, ['system', 'user', 'assistant', 'tool'], true);
     }
 
     /**
+     * Converts the message instance into a plain array representation.
+     *
      * @return array<string, mixed>
      */
     public function toArray(): array

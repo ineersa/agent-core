@@ -2,10 +2,7 @@ spec: agent-core.ai-docs/v1
 namespace: DependencyInjection
 fqcn: "Ineersa\\AgentCore\\DependencyInjection"
 updatedAt: 2026-04-19
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
 description: "Symfony bundle extension: config tree definition, config validation, service loading, and framework config prepend (messenger, doctrine)."
 files[2]{file,type,summary}:
   AgentLoopExtension.php,final class,Registers default configuration values for the Agent Loop bundle into the Symfony container before user configuration is processed. It ensures consistent baseline settings for the agent core subsystem by merging predefined defaults with the provided configuration array.
   Configuration.php,final class,Configures the Ineersa AgentCore bundle's configuration schema using Symfony's configuration tree builder. It defines the hierarchical structure and validation rules for the bundle's settings within the application container.
-sourceHash: ba8130dc70ca54d2ab62dcf94d211fc0f9dd17ac75f974718d1f2bc3c6b52ebd

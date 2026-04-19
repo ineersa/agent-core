@@ -6,12 +6,17 @@ namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
 
+/**
+ * The HookSubscriberRegistry maintains a registry of hook subscribers to facilitate event-driven dispatching within the application. It provides a lookup mechanism to retrieve specific subscribers associated with a given hook name.
+ */
 final class HookSubscriberRegistry
 {
     /** @var iterable<HookSubscriberInterface> */
     private iterable $subscribers;
 
     /**
+     * Initializes the registry with a collection of hook subscribers.
+     *
      * @param iterable<HookSubscriberInterface> $subscribers
      */
     public function __construct(iterable $subscribers)
@@ -20,6 +25,8 @@ final class HookSubscriberRegistry
     }
 
     /**
+     * Retrieves subscribers registered for a specific hook name.
+     *
      * @return iterable<HookSubscriberInterface>
      */
     public function subscribersFor(string $hookName): iterable

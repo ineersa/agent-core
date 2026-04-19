@@ -1,12 +1,7 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: dbd23f0182f6fb1f181a71358ce867961e7236ca39f40c327cce1bfa0c6d32ef
 file: AbstractLifecycleRunEvent.php
 class: "Ineersa\\AgentCore\\Domain\\Event\\Lifecycle\\AbstractLifecycleRunEvent"
 type: readonly abstract class
 summary: "Abstract base class for lifecycle run events within the AgentCore domain, providing a structured foundation for event data. It encapsulates core execution metadata such as run identifiers, sequence numbers, and turn counts. This class ensures consistent event structure across concrete lifecycle implementations."
-effects: none
-dependencies: none
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  __construct,13,16,16,27,31,final public,public,no,yes,no,"string $runId, int $seq, int $turnNo, array $payload = [], ?DateTimeImmutable $createdAt = null","","","Initializes lifecycle run event with run ID, sequence, turn number, payload, and creation timestamp",none,none
+methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  __construct,16,21,21,27,36,final public,public,no,yes,no,"string $runId, int $seq, int $turnNo, array $payload = [], ?DateTimeImmutable $createdAt = null","","","Initializes lifecycle run event with run ID, sequence, turn number, payload, and creation timestamp."

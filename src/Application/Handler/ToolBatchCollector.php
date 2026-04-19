@@ -8,6 +8,9 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 
+/**
+ * The ToolBatchCollector aggregates individual tool calls into batches based on run, turn, and step identifiers, enforcing a configurable maximum parallelism limit. It tracks expected batches and collects results to determine when a batch is complete and ready for dispatch.
+ */
 final class ToolBatchCollector
 {
     /**
@@ -23,12 +26,17 @@ final class ToolBatchCollector
      */
     private array $batches = [];
 
+    /**
+     * Initializes the collector with a default maximum parallelism limit.
+     */
     public function __construct(
         private readonly int $defaultMaxParallelism = 4,
     ) {
     }
 
     /**
+     * Registers a new batch of tool calls identified by run, turn, and step IDs.
+     *
      * @param list<ExecuteToolCall> $toolCalls
      *
      * @return list<ExecuteToolCall>
@@ -69,6 +77,9 @@ final class ToolBatchCollector
         return $initialDispatch;
     }
 
+    /**
+     * Collects a tool call result and returns the batch collection outcome.
+     */
     public function collect(ToolCallResult $result): ToolBatchCollectOutcome
     {
         $batchKey = $this->batchKey($result->runId(), $result->turnNo(), $result->stepId());
@@ -114,14 +125,16 @@ final class ToolBatchCollector
     }
 
     /**
+     * Identifies and extracts tool calls from a batch that are ready for dispatch.
+     *
      * @param array{
-     *   expected_order: array<string, int>,
-     *   calls: array<string, ExecuteToolCall>,
-     *   pending_queue: list<string>,
-     *   in_flight: array<string, true>,
-     *   results: array<string, ToolCallResult>,
-     *   finalized: bool,
-     *   max_parallelism: int
+     * expected_order: array<string, int>,
+     * calls: array<string, ExecuteToolCall>,
+     * pending_queue: list<string>,
+     * in_flight: array<string, true>,
+     * results: array<string, ToolCallResult>,
+     * finalized: bool,
+     * max_parallelism: int
      * } $batch
      *
      * @return list<ExecuteToolCall>
@@ -172,6 +185,9 @@ final class ToolBatchCollector
         return $dispatch;
     }
 
+    /**
+     * Generates a unique composite key from run, turn, and step identifiers.
+     */
     private function batchKey(string $runId, int $turnNo, string $stepId): string
     {
         return \sprintf('%s|%d|%s', $runId, $turnNo, $stepId);

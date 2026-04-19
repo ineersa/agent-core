@@ -1,12 +1,7 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: 7853ebdc4ad7ead4ecb658ca6f6514ccb01ca1924e30f7bdd3a3c763e5e26a9c
 file: NullCancellationToken.php
 class: "Ineersa\\AgentCore\\Contract\\Hook\\NullCancellationToken"
 type: readonly final class
 summary: NullCancellationToken implements the cancellation token contract by providing a non-cancelable instance. It serves as a safe default for scenarios where cancellation support is not required or applicable.
-effects: none
-dependencies: none
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  isCancellationRequested,9,9,9,21,12,public,public,no,no,no,"",bool,"",Returns false to indicate the cancellation has not been requested,none,none
+methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  isCancellationRequested,12,15,15,21,18,public,public,no,no,no,"",bool,"",Returns false to indicate the cancellation has not been requested.

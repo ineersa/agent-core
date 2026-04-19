@@ -1,15 +1,10 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: 83438c318aa0732ca22436929c3e3fe3ddc1a150f35706a06516c087efaec51d
 file: ExecuteToolCallWorker.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker"
 type: readonly final class
 summary: "This class acts as a message handler for the agent execution bus, processing tool call commands by delegating execution to a dedicated tool executor. It coordinates the invocation of external tools and manages the resulting state updates within the agent's runtime context."
-effects: dispatches messages to 'agent.execution.bus' and writes state via RunStoreInterface
-dependencies: "ToolExecutorInterface, MessageBusInterface, RunStoreInterface"
-methods[4]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  __construct,22,22,22,21,27,public,public,no,no,no,"ToolExecutorInterface $toolExecutor, MessageBusInterface $commandBus, ?RunStoreInterface $runStore = null","","",initializes dependencies for tool execution and message bus interaction,none,"ToolExecutorInterface, MessageBusInterface, RunStoreInterface"
-  __invoke,29,29,30,21,39,public,public,no,no,no,ExecuteToolCall $message,void,RuntimeException,handles ExecuteToolCall messages on the agent.execution.bus,dispatches messages to agent.execution.bus,"MessageBusInterface, execute method"
-  execute,41,41,41,22,121,private,private,no,no,no,ExecuteToolCall $message,ToolCallResult,"",invokes the tool executor and returns the resulting tool call outcome,calls ToolExecutorInterface,"ToolExecutorInterface, ExecuteToolCall"
-  hydrateAssistantMessage,123,126,126,22,145,private,private,no,no,no,?array $payload,?AgentMessage,"",constructs an AgentMessage object from a raw payload array,none,AgentMessage
+methods[4]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  __construct,25,28,28,21,33,public,public,no,no,no,"ToolExecutorInterface $toolExecutor, MessageBusInterface $commandBus, ?RunStoreInterface $runStore = null","","",initializes dependencies for tool execution and message bus interaction.
+  __invoke,35,38,39,21,48,public,public,no,no,no,ExecuteToolCall $message,void,RuntimeException,handles ExecuteToolCall messages on the agent.execution.bus.
+  execute,50,53,53,22,133,private,private,no,no,no,ExecuteToolCall $message,ToolCallResult,"",invokes the tool executor and returns the resulting tool call outcome.
+  hydrateAssistantMessage,135,140,140,22,159,private,private,no,no,no,?array $payload,?AgentMessage,"",constructs an AgentMessage object from a raw payload array.

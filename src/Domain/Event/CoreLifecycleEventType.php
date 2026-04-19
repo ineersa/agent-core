@@ -15,6 +15,9 @@ use Ineersa\AgentCore\Domain\Event\Lifecycle\ToolExecutionUpdateEvent;
 use Ineersa\AgentCore\Domain\Event\Lifecycle\TurnEndEvent;
 use Ineersa\AgentCore\Domain\Event\Lifecycle\TurnStartEvent;
 
+/**
+ * CoreLifecycleEventType provides static utility methods for identifying and validating core lifecycle event types within the agent domain. It serves as a central registry for mapping event types to their corresponding class implementations and enforcing ordering constraints.
+ */
 final class CoreLifecycleEventType
 {
     public const string AGENT_START = 'agent_start';
@@ -42,12 +45,17 @@ final class CoreLifecycleEventType
         self::AGENT_END,
     ];
 
+    /**
+     * Determines if a given event type string is a registered core lifecycle event.
+     */
     public static function isCore(string $type): bool
     {
         return \in_array($type, self::ALL, true);
     }
 
     /**
+     * Returns the associative array mapping event type strings to their PHP class names.
+     *
      * @return array<string, class-string<RunEvent>>
      */
     public static function eventClassMap(): array
@@ -67,6 +75,8 @@ final class CoreLifecycleEventType
     }
 
     /**
+     * Validates the chronological order of events and returns sorted array with extension prefix.
+     *
      * @param list<RunEvent> $events
      *
      * @return list<string>

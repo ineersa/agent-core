@@ -15,9 +15,14 @@ use Ineersa\AgentCore\Domain\Tool\BeforeToolCallContext;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 
+/**
+ * SymfonyToolExecutorAdapter bridges the AgentCore tool execution model with the Symfony ecosystem by delegating calls to a fallback executor or a Symfony-specific toolbox. It manages the lifecycle of tool invocations through configurable before and after hooks, ensuring consistent result formatting and progress tracking.
+ */
 final readonly class SymfonyToolExecutorAdapter implements ToolExecutorInterface
 {
     /**
+     * initializes adapter with fallback executor and optional toolbox with hooks.
+     *
      * @param iterable<BeforeToolCallHookInterface> $beforeToolCallHooks
      * @param iterable<AfterToolCallHookInterface>  $afterToolCallHooks
      */
@@ -29,6 +34,9 @@ final readonly class SymfonyToolExecutorAdapter implements ToolExecutorInterface
     ) {
     }
 
+    /**
+     * executes tool call via fallback executor or Symfony toolbox and returns result.
+     */
     public function execute(ToolCall $toolCall): ToolResult
     {
         if (!$this->canUseSymfonyToolbox()) {
@@ -134,6 +142,8 @@ final readonly class SymfonyToolExecutorAdapter implements ToolExecutorInterface
     }
 
     /**
+     * converts tool call and result into a standardized message payload array.
+     *
      * @return array<string, mixed>
      */
     public function toToolCallMessagePayload(ToolCall $toolCall, ToolResult $result): array
@@ -161,6 +171,8 @@ final readonly class SymfonyToolExecutorAdapter implements ToolExecutorInterface
     }
 
     /**
+     * formats tool call ID, name, message, and progress into a progress update array.
+     *
      * @return array<string, mixed>
      */
     public function toProgressUpdate(string $toolCallId, string $toolName, string $message, int $progress): array
@@ -174,6 +186,9 @@ final readonly class SymfonyToolExecutorAdapter implements ToolExecutorInterface
         ];
     }
 
+    /**
+     * checks if Symfony toolbox is available and usable for the current context.
+     */
     private function canUseSymfonyToolbox(): bool
     {
         return null !== $this->toolbox
@@ -181,6 +196,9 @@ final readonly class SymfonyToolExecutorAdapter implements ToolExecutorInterface
             && class_exists('Symfony\\AI\\Platform\\Result\\ToolCall');
     }
 
+    /**
+     * transforms generic ToolCall into a Symfony-specific tool call object.
+     */
     private function toSymfonyToolCall(ToolCall $toolCall): object
     {
         /** @var class-string $toolCallClass */
@@ -193,6 +211,9 @@ final readonly class SymfonyToolExecutorAdapter implements ToolExecutorInterface
         );
     }
 
+    /**
+     * converts mixed value to its string representation.
+     */
     private function stringify(mixed $value): string
     {
         if (null === $value) {

@@ -2,8 +2,6 @@ spec: agent-core.ai-docs/v1
 namespace: "Domain\\Tool"
 fqcn: "Ineersa\\AgentCore\\Domain\\Tool"
 updatedAt: 2026-04-19
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
 description: "Tool execution value objects — call representation, definition schema, results, execution modes, provider request/result, and before/after hook contexts."
 files[12]{file,type,summary}:
   AfterToolCallContext.php,readonly final class,"This readonly final class encapsulates the immutable context required after a tool execution, bundling the assistant's message, the specific tool call, its arguments, and the resulting outcome. It serves as a structured data carrier for propagating tool interaction details within the agent domain."
@@ -18,4 +16,3 @@ files[12]{file,type,summary}:
   ToolExecutionMode.php,enum,Defines the execution modes for tools within the agent core domain. This enum provides a type-safe way to distinguish between different operational contexts for tool invocation. It serves as a value object to enforce strict typing for execution behavior.
   ToolExecutionPolicy.php,readonly final class,"ToolExecutionPolicy defines immutable configuration constraints for tool execution, including mode, timeout, and parallelism limits. It serves as a value object to enforce execution boundaries within the agent core domain."
   ToolResult.php,readonly final class,"ToolResult is a readonly value object that encapsulates the outcome of a tool execution within the agent domain. It stores the tool identifier, name, structured content, and optional error details to represent a complete execution result."
-sourceHash: 065104c305cae81b6af754425845b4510c5998266ce4acb543a0276da02b4d22

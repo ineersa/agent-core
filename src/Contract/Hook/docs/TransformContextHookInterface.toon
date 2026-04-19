@@ -1,12 +1,7 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: 8329c243a31eaf3198fccbb1d8a564e2d805d72140af9ce1a23e765a2d3daf98
 file: TransformContextHookInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Hook\\TransformContextHookInterface"
 type: interface
 summary: Defines the contract for hook implementations that transform message payloads within the agent core. It provides a standardized entry point for processing message arrays with optional cancellation support.
-effects: none
-dependencies: none
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  transformContext,11,16,16,21,16,public,public,no,no,no,"array $messages, ?CancellationTokenInterface $cancelToken = null",array,"",Transforms an array of messages with optional cancellation support,returns transformed message array,CancellationTokenInterface
+methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  transformContext,14,21,21,21,21,public,public,no,no,no,"array $messages, ?CancellationTokenInterface $cancelToken = null",array,"",Transforms an array of messages with optional cancellation support.

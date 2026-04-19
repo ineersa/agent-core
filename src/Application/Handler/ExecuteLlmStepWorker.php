@@ -11,14 +11,23 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
+/**
+ * This class serves as a message handler for executing LLM steps within the agent execution domain. It coordinates with the platform to perform the step logic and dispatches the resulting state updates via a dedicated command bus.
+ */
 final readonly class ExecuteLlmStepWorker
 {
+    /**
+     * Injects platform and command bus dependencies.
+     */
     public function __construct(
         private PlatformInterface $platform,
         private MessageBusInterface $commandBus,
     ) {
     }
 
+    /**
+     * Handles ExecuteLlmStep message by delegating to execute method.
+     */
     #[AsMessageHandler(bus: 'agent.execution.bus')]
     public function __invoke(ExecuteLlmStep $message): void
     {
@@ -31,6 +40,9 @@ final readonly class ExecuteLlmStepWorker
         }
     }
 
+    /**
+     * Executes the LLM step logic and returns the result.
+     */
     private function execute(ExecuteLlmStep $message): LlmStepResult
     {
         try {

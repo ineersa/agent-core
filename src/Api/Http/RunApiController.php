@@ -24,10 +24,16 @@ use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Attribute\Route;
 
+/**
+ * Ineersa\AgentCore\Api\Http\RunApiController is a final HTTP controller that exposes RESTful endpoints for managing agent run lifecycles, including starting runs, sending commands, and retrieving summaries or transcripts. It enforces access control and validates input payloads before delegating execution to domain services and message buses.
+ */
 #[AsController]
 #[Route('/agent/runs')]
 final class RunApiController
 {
+    /**
+     * Injects domain services and infrastructure dependencies into the controller.
+     */
     public function __construct(
         private AgentRunnerInterface $runner,
         private MessageBusInterface $commandBus,
@@ -39,6 +45,9 @@ final class RunApiController
     ) {
     }
 
+    /**
+     * Creates a new agent run by processing POST request payload and returning the created run ID.
+     */
     #[Route('', name: 'agent_loop_api_run_start', methods: ['POST'])]
     public function startRun(Request $request): JsonResponse
     {
@@ -111,6 +120,9 @@ final class RunApiController
         ], Response::HTTP_ACCEPTED);
     }
 
+    /**
+     * Sends a command to an existing run identified by runId from POST request payload.
+     */
     #[Route('/{runId}/commands', name: 'agent_loop_api_run_command', methods: ['POST'])]
     public function sendCommand(string $runId, Request $request): JsonResponse
     {
@@ -196,6 +208,9 @@ final class RunApiController
         ], Response::HTTP_ACCEPTED);
     }
 
+    /**
+     * Retrieves summary details for a run identified by runId via GET request.
+     */
     #[Route('/{runId}', name: 'agent_loop_api_run_summary', methods: ['GET'])]
     public function runSummary(string $runId, Request $request): JsonResponse
     {
@@ -214,6 +229,9 @@ final class RunApiController
         return new JsonResponse($summary);
     }
 
+    /**
+     * Returns a paginated transcript of messages for a run identified by runId via GET request.
+     */
     #[Route('/{runId}/messages', name: 'agent_loop_api_run_messages', methods: ['GET'])]
     public function transcriptPage(string $runId, Request $request): JsonResponse
     {
@@ -233,6 +251,9 @@ final class RunApiController
         return new JsonResponse($page);
     }
 
+    /**
+     * Streams events for a run identified by runId via GET request, supporting cursor-based pagination.
+     */
     #[Route('/{runId}/events', name: 'agent_loop_api_run_events', methods: ['GET'])]
     public function replayEvents(string $runId, Request $request): JsonResponse
     {
@@ -278,6 +299,9 @@ final class RunApiController
         ]);
     }
 
+    /**
+     * Validates user access to a specific run by checking runId and request credentials.
+     */
     private function authorizeRun(string $runId, Request $request): ?JsonResponse
     {
         $scope = $this->runAccessStore->get($runId);
@@ -294,6 +318,8 @@ final class RunApiController
     }
 
     /**
+     * Extracts actor identity and context from the HTTP request headers or body.
+     *
      * @return array{tenant_id: ?string, user_id: ?string}
      */
     private function requestActor(Request $request): array
@@ -305,6 +331,8 @@ final class RunApiController
     }
 
     /**
+     * Parses and returns the JSON body from the HTTP request as an associative array.
+     *
      * @return array<string, mixed>
      */
     private function jsonBody(Request $request): array
@@ -327,6 +355,9 @@ final class RunApiController
         return $decoded;
     }
 
+    /**
+     * Validates and converts a value to a non-negative integer for a given field name.
+     */
     private function parseNonNegativeInt(mixed $value, string $fieldName): int
     {
         if (\is_int($value)) {
@@ -344,6 +375,9 @@ final class RunApiController
         return (int) $value;
     }
 
+    /**
+     * Trims and normalizes a string value, returning null if empty or invalid.
+     */
     private function normalizeString(mixed $value): ?string
     {
         if (!\is_string($value)) {
@@ -355,6 +389,9 @@ final class RunApiController
         return '' === $normalized ? null : $normalized;
     }
 
+    /**
+     * Constructs and returns a standardized JSON error response with the given message and status code.
+     */
     private function error(string $message, int $status): JsonResponse
     {
         return new JsonResponse(['error' => $message], $status);

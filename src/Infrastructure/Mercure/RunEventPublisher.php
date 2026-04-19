@@ -9,11 +9,17 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Symfony\Component\Mercure\HubInterface;
 use Symfony\Component\Mercure\Update;
 
+/**
+ * The RunEventPublisher class publishes domain RunEvent instances to a Mercure hub using configurable serialization and topic policies. It implements a coalescing mechanism to batch rapid updates within a defined time window, reducing unnecessary network traffic.
+ */
 final class RunEventPublisher
 {
     /** @var array<string, int> */
     private array $lastMessageUpdatePublishedAtNsByRun = [];
 
+    /**
+     * Initializes publisher with hub, serializer, topic policy, and coalesce window.
+     */
     public function __construct(
         private ?HubInterface $hub = null,
         private ?RunEventSerializer $serializer = null,
@@ -22,6 +28,9 @@ final class RunEventPublisher
     ) {
     }
 
+    /**
+     * Publishes a RunEvent to the Mercure hub if not coalesced.
+     */
     public function publish(RunEvent $event): void
     {
         if (null === $this->hub) {
@@ -50,6 +59,9 @@ final class RunEventPublisher
         ));
     }
 
+    /**
+     * Determines if the event should be coalesced with previous updates.
+     */
     private function shouldCoalesce(RunEvent $event): bool
     {
         if ('message_update' !== $event->type) {

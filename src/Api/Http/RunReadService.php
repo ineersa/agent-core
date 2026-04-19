@@ -12,8 +12,14 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
 
+/**
+ * This class provides HTTP-read access to run data and event transcripts by coordinating between run metadata stores and event storage. It retrieves summaries, paginated transcripts, and replayable event sequences while enforcing access control via the run access store.
+ */
 final readonly class RunReadService
 {
+    /**
+     * Injects run and event stores along with the log reader.
+     */
     public function __construct(
         private RunStoreInterface $runStore,
         private RunAccessStoreInterface $runAccessStore,
@@ -23,14 +29,16 @@ final readonly class RunReadService
     }
 
     /**
+     * Retrieves the latest summary for a specific run ID.
+     *
      * @return array{
-     *   run_id: string,
-     *   status: string,
-     *   turn_count: int,
-     *   created_at: string,
-     *   updated_at: string,
-     *   latest_summary: ?string,
-     *   waiting_flags: array{waiting_human: bool, cancelling: bool, retryable_failure: bool}
+     * run_id: string,
+     * status: string,
+     * turn_count: int,
+     * created_at: string,
+     * updated_at: string,
+     * latest_summary: ?string,
+     * waiting_flags: array{waiting_human: bool, cancelling: bool, retryable_failure: bool}
      * }|null
      */
     public function summary(string $runId): ?array
@@ -71,13 +79,15 @@ final readonly class RunReadService
     }
 
     /**
+     * Returns a paginated page of transcript messages using cursor and limit.
+     *
      * @return array{
-     *   run_id: string,
-     *   cursor: string,
-     *   next_cursor: ?string,
-     *   has_more: bool,
-     *   total: int,
-     *   items: list<array{cursor: string, role: string, summary: ?string, message: array<string, mixed>}>
+     * run_id: string,
+     * cursor: string,
+     * next_cursor: ?string,
+     * has_more: bool,
+     * total: int,
+     * items: list<array{cursor: string, role: string, summary: ?string, message: array<string, mixed>}>
      * }|null
      */
     public function transcriptPage(string $runId, int $cursor, int $limit): ?array
@@ -121,12 +131,14 @@ final readonly class RunReadService
     }
 
     /**
+     * Fetches events occurring after a given sequence number for a run.
+     *
      * @return array{
-     *   run_id: string,
-     *   source: 'canonical_events'|'jsonl_fallback',
-     *   resync_required: bool,
-     *   missing_sequences: list<int>,
-     *   events: list<RunEvent>
+     * run_id: string,
+     * source: 'canonical_events'|'jsonl_fallback',
+     * resync_required: bool,
+     * missing_sequences: list<int>,
+     * events: list<RunEvent>
      * }|null
      */
     public function replayAfter(string $runId, int $afterSeq): ?array
@@ -158,6 +170,8 @@ final readonly class RunReadService
     }
 
     /**
+     * Fetches all events associated with a specific run ID.
+     *
      * @return array{0: list<RunEvent>, 1: 'canonical_events'|'jsonl_fallback'}
      */
     private function eventsForRun(string $runId): array
@@ -171,6 +185,8 @@ final readonly class RunReadService
     }
 
     /**
+     * Sorts an array of events by their sequence number.
+     *
      * @param list<RunEvent> $events
      *
      * @return list<RunEvent>
@@ -183,6 +199,8 @@ final readonly class RunReadService
     }
 
     /**
+     * Extracts the most recent summary string from a list of messages.
+     *
      * @param list<AgentMessage> $messages
      */
     private function latestSummary(array $messages): ?string
@@ -199,6 +217,9 @@ final readonly class RunReadService
         return null;
     }
 
+    /**
+     * Generates a summary string from a single agent message.
+     */
     private function messageSummary(AgentMessage $message): ?string
     {
         $chunks = [];
@@ -220,6 +241,8 @@ final readonly class RunReadService
     }
 
     /**
+     * Identifies gaps in event sequences starting from an expected start value.
+     *
      * @param list<RunEvent> $events
      *
      * @return list<int>

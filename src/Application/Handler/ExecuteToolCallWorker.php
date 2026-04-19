@@ -17,8 +17,14 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
+/**
+ * This class acts as a message handler for the agent execution bus, processing tool call commands by delegating execution to a dedicated tool executor. It coordinates the invocation of external tools and manages the resulting state updates within the agent's runtime context.
+ */
 final readonly class ExecuteToolCallWorker
 {
+    /**
+     * initializes dependencies for tool execution and message bus interaction.
+     */
     public function __construct(
         private ToolExecutorInterface $toolExecutor,
         private MessageBusInterface $commandBus,
@@ -26,6 +32,9 @@ final readonly class ExecuteToolCallWorker
     ) {
     }
 
+    /**
+     * handles ExecuteToolCall messages on the agent.execution.bus.
+     */
     #[AsMessageHandler(bus: 'agent.execution.bus')]
     public function __invoke(ExecuteToolCall $message): void
     {
@@ -38,6 +47,9 @@ final readonly class ExecuteToolCallWorker
         }
     }
 
+    /**
+     * invokes the tool executor and returns the resulting tool call outcome.
+     */
     private function execute(ExecuteToolCall $message): ToolCallResult
     {
         $cancelToken = null !== $this->runStore
@@ -121,6 +133,8 @@ final readonly class ExecuteToolCallWorker
     }
 
     /**
+     * constructs an AgentMessage object from a raw payload array.
+     *
      * @param array<string, mixed>|null $payload
      */
     private function hydrateAssistantMessage(?array $payload): ?AgentMessage

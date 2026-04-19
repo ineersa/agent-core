@@ -1,14 +1,9 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: f38fb9748fb7c8ecb8362c4c1dd924b6203df9080490c87340d61b4f1bb81a6c
 file: RunEventPublisher.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunEventPublisher"
 type: final class
 summary: "The RunEventPublisher class publishes domain RunEvent instances to a Mercure hub using configurable serialization and topic policies. It implements a coalescing mechanism to batch rapid updates within a defined time window, reducing unnecessary network traffic."
-effects: Dispatches serialized event payloads to the Mercure hub via HubInterface.
-dependencies: "HubInterface, RunEventSerializer, RunTopicPolicy."
-methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  __construct,17,17,17,21,23,public,public,no,no,no,"?HubInterface $hub = null, ?RunEventSerializer $serializer = null, ?RunTopicPolicy $topicPolicy = null, int $messageUpdateCoalesceWindowMs = 75","","","Initializes publisher with hub, serializer, topic policy, and coalesce window",none,"HubInterface, RunEventSerializer, RunTopicPolicy"
-  publish,25,25,25,21,51,public,public,no,no,no,RunEvent $event,void,"",Publishes a RunEvent to the Mercure hub if not coalesced,Dispatches event to Mercure hub,"HubInterface, RunEventSerializer, RunTopicPolicy"
-  shouldCoalesce,53,53,53,22,70,private,private,no,no,no,RunEvent $event,bool,"",Determines if the event should be coalesced with previous updates,none,none
+methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  __construct,20,23,23,21,29,public,public,no,no,no,"?HubInterface $hub = null, ?RunEventSerializer $serializer = null, ?RunTopicPolicy $topicPolicy = null, int $messageUpdateCoalesceWindowMs = 75","","","Initializes publisher with hub, serializer, topic policy, and coalesce window."
+  publish,31,34,34,21,60,public,public,no,no,no,RunEvent $event,void,"",Publishes a RunEvent to the Mercure hub if not coalesced.
+  shouldCoalesce,62,65,65,22,82,private,private,no,no,no,RunEvent $event,bool,"",Determines if the event should be coalesced with previous updates.

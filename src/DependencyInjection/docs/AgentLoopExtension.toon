@@ -1,13 +1,8 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: 013cdc69042fd945a89df6172ff8805497e85d6d3a3be95eac98b498de7b61d0
 file: AgentLoopExtension.php
 class: "Ineersa\\AgentCore\\DependencyInjection\\AgentLoopExtension"
 type: final class
 summary: Registers default configuration values for the Agent Loop bundle into the Symfony container before user configuration is processed. It ensures consistent baseline settings for the agent core subsystem by merging predefined defaults with the provided configuration array.
-effects: none
-dependencies: Symfony DependencyInjection ContainerBuilder
-methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  prepend,15,15,15,21,31,public,public,no,no,no,ContainerBuilder $container,void,"",Registers default bundle configuration into the container builder,writes container configuration parameters,ContainerBuilder
-  load,33,36,36,21,69,public,public,no,no,no,"array $configs, ContainerBuilder $container",void,"",Processes configuration arrays and loads bundle services into the container,writes container services and parameters,ContainerBuilder
+methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  prepend,18,21,21,21,37,public,public,no,no,no,ContainerBuilder $container,void,"",Registers default bundle configuration into the container builder.
+  load,39,44,44,21,77,public,public,no,no,no,"array $configs, ContainerBuilder $container",void,"",Processes configuration arrays and loads bundle services into the container.

@@ -12,8 +12,14 @@ use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 
+/**
+ * The RunReducer applies domain commands to a RunState to produce a new state or reduction result, enforcing the state transition logic for agent runs. It acts as the central reducer within the application layer, coordinating state mutations based on specific command types.
+ */
 final class RunReducer
 {
+    /**
+     * Dispatches command handling to specific handlers based on command type.
+     */
     public function reduce(RunState $state, object $command): ReduceResult
     {
         if ($command instanceof StartRun) {
@@ -31,6 +37,9 @@ final class RunReducer
         return new ReduceResult($state, []);
     }
 
+    /**
+     * Initializes a new RunState from a StartRun command.
+     */
     private function onStartRun(RunState $state, StartRun $command): RunState
     {
         $messages = $state->messages;
@@ -66,6 +75,9 @@ final class RunReducer
         );
     }
 
+    /**
+     * Processes an AdvanceRun command to update run progress.
+     */
     private function onAdvanceRun(RunState $state, AdvanceRun $command): ReduceResult
     {
         if (\in_array($state->status, [RunStatus::Completed, RunStatus::Failed, RunStatus::Cancelled], true)) {
@@ -102,6 +114,9 @@ final class RunReducer
         return new ReduceResult($nextState, [$effect]);
     }
 
+    /**
+     * Applies an ApplyCommand to the current RunState.
+     */
     private function onApplyCommand(RunState $state, ApplyCommand $command): RunState
     {
         $status = $state->status;
@@ -143,6 +158,8 @@ final class RunReducer
     }
 
     /**
+     * Deserializes a payload array into an AgentMessage instance.
+     *
      * @param array<string, mixed> $payload
      */
     private function hydrateMessage(array $payload): ?AgentMessage

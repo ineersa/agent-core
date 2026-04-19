@@ -38,6 +38,9 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
+/**
+ * The RunOrchestrator coordinates the lifecycle of an agent run by processing commands and handling step results through a reducer pattern. It manages state transitions, tool execution policies, and message hydration while persisting events and commands to their respective stores.
+ */
 final readonly class RunOrchestrator
 {
     private const string ScopeStartRun = 'command.start';
@@ -48,6 +51,9 @@ final readonly class RunOrchestrator
     private const string SteerDrainOneAtATime = 'one_at_a_time';
     private const string SteerDrainAll = 'all';
 
+    /**
+     * Initializes the orchestrator with required stores, reducer, and dispatcher.
+     */
     public function __construct(
         private RunStoreInterface $runStore,
         private EventStoreInterface $eventStore,
@@ -69,6 +75,9 @@ final readonly class RunOrchestrator
     ) {
     }
 
+    /**
+     * Handles StartRun message to initialize a new agent run.
+     */
     #[AsMessageHandler(bus: 'agent.command.bus')]
     public function onStartRun(StartRun $message): void
     {
@@ -107,6 +116,9 @@ final readonly class RunOrchestrator
         });
     }
 
+    /**
+     * Processes ApplyCommand message to modify run state.
+     */
     #[AsMessageHandler(bus: 'agent.command.bus')]
     public function onApplyCommand(ApplyCommand $message): void
     {
@@ -209,6 +221,9 @@ final readonly class RunOrchestrator
         });
     }
 
+    /**
+     * Handles AdvanceRun message to trigger next step execution.
+     */
     #[AsMessageHandler(bus: 'agent.command.bus')]
     public function onAdvanceRun(AdvanceRun $message): void
     {
@@ -315,6 +330,9 @@ final readonly class RunOrchestrator
         });
     }
 
+    /**
+     * Processes LlmStepResult message to update run state with LLM output.
+     */
     #[AsMessageHandler(bus: 'agent.command.bus')]
     public function onLlmStepResult(LlmStepResult $message): void
     {
@@ -570,6 +588,9 @@ final readonly class RunOrchestrator
         });
     }
 
+    /**
+     * Handles ToolCallResult message to process tool execution outcomes.
+     */
     #[AsMessageHandler(bus: 'agent.command.bus')]
     public function onToolCallResult(ToolCallResult $message): void
     {
@@ -774,6 +795,9 @@ final readonly class RunOrchestrator
         });
     }
 
+    /**
+     * Rejects a command with a specified reason.
+     */
     private function rejectCommand(RunState $state, ApplyCommand $message, string $reason): void
     {
         $runId = $message->runId();
@@ -805,6 +829,8 @@ final readonly class RunOrchestrator
     }
 
     /**
+     * Applies cancel command to terminate the run.
+     *
      * @param array<string, mixed> $options
      */
     private function applyCancelCommand(RunState $state, ApplyCommand $message, array $options): void
@@ -860,6 +886,8 @@ final readonly class RunOrchestrator
     }
 
     /**
+     * Applies continue command to resume the run.
+     *
      * @param array<string, mixed> $options
      */
     private function applyContinueCommand(RunState $state, ApplyCommand $message, array $options): void
@@ -903,6 +931,8 @@ final readonly class RunOrchestrator
     }
 
     /**
+     * Applies human response command to inject user input.
+     *
      * @param array<string, mixed> $options
      */
     private function applyHumanResponseCommand(RunState $state, ApplyCommand $message, array $options): void
@@ -957,6 +987,8 @@ final readonly class RunOrchestrator
     }
 
     /**
+     * Processes pending commands that start a new turn.
+     *
      * @return array{0: RunState, 1: list<array{type: string, payload: array<string, mixed>}>}
      */
     private function applyPendingTurnStartCommands(RunState $state): array
@@ -1046,6 +1078,8 @@ final readonly class RunOrchestrator
     }
 
     /**
+     * Processes pending commands that stop the current turn.
+     *
      * @return array{0: RunState, 1: list<array{type: string, payload: array<string, mixed>}>, 2: bool}
      */
     private function applyPendingStopBoundaryCommands(RunState $state): array
@@ -1134,6 +1168,8 @@ final readonly class RunOrchestrator
     }
 
     /**
+     * Checks if an extension command is safe to cancel.
+     *
      * @param array<string, mixed> $options
      */
     private function isCancelSafeExtensionCommand(string $kind, array $options): bool
@@ -1143,6 +1179,8 @@ final readonly class RunOrchestrator
     }
 
     /**
+     * Applies an extension command to the run state.
+     *
      * @return list<array{type: string, payload: array<string, mixed>}>
      */
     private function applyExtensionCommand(RunState $state, PendingCommand $command): array
@@ -1202,6 +1240,8 @@ final readonly class RunOrchestrator
     }
 
     /**
+     * Identifies steer keys superseded by pending commands.
+     *
      * @param list<PendingCommand> $pendingCommands
      *
      * @return array<string, true>
@@ -1235,6 +1275,9 @@ final readonly class RunOrchestrator
         return $superseded;
     }
 
+    /**
+     * Determines if continuing the run is rejected and why.
+     */
     private function continueRejectionReason(RunState $state): ?string
     {
         if (\in_array($state->status, [RunStatus::Running, RunStatus::Completed, RunStatus::Cancelled, RunStatus::Cancelling], true)) {
@@ -1261,6 +1304,8 @@ final readonly class RunOrchestrator
     }
 
     /**
+     * Hydrates a human response message from payload.
+     *
      * @param array<string, mixed> $payload
      */
     private function humanResponseMessage(array $payload): ?AgentMessage
@@ -1290,6 +1335,9 @@ final readonly class RunOrchestrator
         );
     }
 
+    /**
+     * Retrieves the role of the last message in the run state.
+     */
     private function lastMessageRole(RunState $state): ?string
     {
         if ([] === $state->messages) {
@@ -1301,6 +1349,9 @@ final readonly class RunOrchestrator
         return $lastMessage instanceof AgentMessage ? $lastMessage->role : null;
     }
 
+    /**
+     * Dispatches an advance event for a run.
+     */
     private function dispatchAdvance(string $runId, string $prefix): void
     {
         if (null === $this->commandBus) {
@@ -1323,6 +1374,8 @@ final readonly class RunOrchestrator
     }
 
     /**
+     * Creates a copy of the run state with optional overrides.
+     *
      * @param array<string, mixed> $overrides
      */
     private function copyState(RunState $state, array $overrides = []): RunState
@@ -1350,6 +1403,8 @@ final readonly class RunOrchestrator
     }
 
     /**
+     * Persists state changes and events to stores.
+     *
      * @param list<RunEvent> $events
      * @param list<object>   $effects
      */
@@ -1392,6 +1447,8 @@ final readonly class RunOrchestrator
     }
 
     /**
+     * Constructs a RunEvent with specified parameters.
+     *
      * @param array<string, mixed> $payload
      */
     private function event(string $runId, int $seq, int $turnNo, string $type, array $payload = []): RunEvent
@@ -1406,6 +1463,8 @@ final readonly class RunOrchestrator
     }
 
     /**
+     * Generates multiple RunEvents from event specifications.
+     *
      * @param list<array{type: string, payload: array<string, mixed>, turn_no?: int}> $eventSpecs
      *
      * @return list<RunEvent>
@@ -1435,6 +1494,8 @@ final readonly class RunOrchestrator
     }
 
     /**
+     * Resolves the execution policy for a specific tool.
+     *
      * @return array{mode: ToolExecutionMode, timeout_seconds: int, max_parallelism: int}
      */
     private function resolveToolPolicy(string $toolName): array
@@ -1457,6 +1518,8 @@ final readonly class RunOrchestrator
     }
 
     /**
+     * Resolves tool schemas for a specific step.
+     *
      * @return array<string, array<string, mixed>>
      */
     private function resolveToolSchemas(string $runId, int $turnNo, string $stepId): array
@@ -1479,6 +1542,8 @@ final readonly class RunOrchestrator
     }
 
     /**
+     * Extracts interrupt payload from a tool call result.
+     *
      * @return array<string, mixed>|null
      */
     private function interruptPayloadFromToolResult(ToolCallResult $result): ?array
@@ -1520,6 +1585,9 @@ final readonly class RunOrchestrator
         return array_filter($payload, static fn (mixed $value): bool => null !== $value);
     }
 
+    /**
+     * Checks if a tool result is stale relative to current state.
+     */
     private function isStaleResult(RunState $state, int $turnNo, string $stepId): bool
     {
         if ($state->turnNo !== $turnNo) {
@@ -1529,6 +1597,9 @@ final readonly class RunOrchestrator
         return null !== $state->activeStepId && $state->activeStepId !== $stepId;
     }
 
+    /**
+     * Increments the state version based on event count.
+     */
     private function incrementStateVersion(RunState $state, int $eventCount): RunState
     {
         return $this->copyState($state, [
@@ -1538,6 +1609,8 @@ final readonly class RunOrchestrator
     }
 
     /**
+     * Hydrates an AgentMessage from a payload array.
+     *
      * @param array<string, mixed> $payload
      */
     private function hydrateMessage(array $payload): ?AgentMessage
@@ -1580,6 +1653,8 @@ final readonly class RunOrchestrator
     }
 
     /**
+     * Constructs an AgentMessage from assistant message data.
+     *
      * @param array<string, mixed> $assistantMessage
      */
     private function assistantMessage(array $assistantMessage): AgentMessage
@@ -1616,6 +1691,9 @@ final readonly class RunOrchestrator
         );
     }
 
+    /**
+     * Constructs an AgentMessage from a tool call result.
+     */
     private function toolMessage(ToolCallResult $result): AgentMessage
     {
         $text = json_encode([
@@ -1647,14 +1725,16 @@ final readonly class RunOrchestrator
     }
 
     /**
+     * Extracts tool calls from an assistant message.
+     *
      * @param array<string, mixed> $assistantMessage
      *
      * @return list<array{
-     *   id: string,
-     *   name: string,
-     *   args: array<string, mixed>,
-     *   order_index: int,
-     *   tool_idempotency_key: string|null
+     * id: string,
+     * name: string,
+     * args: array<string, mixed>,
+     * order_index: int,
+     * tool_idempotency_key: string|null
      * }>
      */
     private function extractToolCalls(array $assistantMessage): array

@@ -1,17 +1,12 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: 1654029153d7ab62306952d9b662fc07d0b10d0004e35d2108faca279c1c8bcf
 file: SymfonyPlatformInvoker.php
 class: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyPlatformInvoker"
 type: readonly final class
 summary: "SymfonyPlatformInvoker acts as an adapter for the Symfony AI platform, translating generic agent inputs into platform-specific invocations. It handles the execution of model calls and extracts structured usage metadata from the platform's deferred results."
-effects: none
-dependencies: Symfony AI platform object
-methods[6]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  __construct,13,13,13,21,16,public,public,no,no,no,?object $platform = null,"","",Initializes the invoker with an optional Symfony AI platform instance,none,Symfony AI platform object
-  invoke,18,22,22,21,81,public,public,no,no,no,"string $model, array|string|object $input, array $toolDefinitions = [], array $options = [], ?CancellationTokenInterface $cancelToken = null",PlatformInvocationResult,RuntimeException,"Invokes the specified model with input, tools, and cancellation support",dispatches model execution via platform,Symfony AI platform object
-  streamFrom,83,86,86,22,103,private,private,no,no,no,object $deferredResult,iterable,RuntimeException,Streams results from a deferred platform result object,none,Symfony AI platform deferred result
-  extractUsage,105,108,108,22,140,private,private,no,no,no,object $deferredResult,array,"",Extracts usage metrics from a deferred platform result object,none,Symfony AI platform deferred result
-  metadataFrom,142,145,145,22,159,private,private,no,no,no,object $deferredResult,array|object|null,"",Extracts metadata from a deferred platform result object,none,Symfony AI platform deferred result
-  numericFrom,161,161,161,22,174,private,private,no,no,no,"object $value, string $method",int|float|null,"",Retrieves a numeric value from a platform result using a method name,none,Symfony AI platform result value
+methods[6]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  __construct,16,19,19,21,22,public,public,no,no,no,?object $platform = null,"","",Initializes the invoker with an optional Symfony AI platform instance.
+  invoke,24,30,30,21,89,public,public,no,no,no,"string $model, array|string|object $input, array $toolDefinitions = [], array $options = [], ?CancellationTokenInterface $cancelToken = null",PlatformInvocationResult,RuntimeException,"Invokes the specified model with input, tools, and cancellation support."
+  streamFrom,91,96,96,22,113,private,private,no,no,no,object $deferredResult,iterable,RuntimeException,Streams results from a deferred platform result object.
+  extractUsage,115,120,120,22,152,private,private,no,no,no,object $deferredResult,array,"",Extracts usage metrics from a deferred platform result object.
+  metadataFrom,154,159,159,22,173,private,private,no,no,no,object $deferredResult,array|object|null,"",Extracts metadata from a deferred platform result object.
+  numericFrom,175,178,178,22,191,private,private,no,no,no,"object $value, string $method",int|float|null,"",Retrieves a numeric value from a platform result using a method name.

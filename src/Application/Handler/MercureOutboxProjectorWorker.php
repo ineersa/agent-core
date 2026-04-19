@@ -10,15 +10,24 @@ use Ineersa\AgentCore\Domain\Message\ProjectMercureOutbox;
 use Ineersa\AgentCore\Infrastructure\Mercure\RunEventPublisher;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
+/**
+ * This class acts as a worker that processes Mercure outbox projection messages by retrieving pending events from the outbox store. It publishes these events via the run event publisher to ensure consistent delivery to Mercure subscribers.
+ */
 #[AsMessageHandler(bus: 'agent.publisher.bus')]
 final readonly class MercureOutboxProjectorWorker
 {
+    /**
+     * initializes the worker with outbox store and event publisher dependencies.
+     */
     public function __construct(
         private OutboxStoreInterface $outboxStore,
         private RunEventPublisher $runEventPublisher,
     ) {
     }
 
+    /**
+     * processes the Mercure outbox projection message by retrieving and publishing events.
+     */
     public function __invoke(ProjectMercureOutbox $message): void
     {
         $batchSize = max(1, $message->batchSize);

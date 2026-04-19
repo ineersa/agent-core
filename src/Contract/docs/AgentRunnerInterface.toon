@@ -1,17 +1,12 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: efed01f941b792664a1212cffc4cbe91014c18bc0b5d3910d56d78ff35c0637d
 file: AgentRunnerInterface.php
 class: "Ineersa\\AgentCore\\Contract\\AgentRunnerInterface"
 type: interface
 summary: "Defines the contract for orchestrating the lifecycle of an agent execution run, including initialization, state transitions, and termination. It provides a unified interface for controlling agent behavior through steering, follow-ups, and human-in-the-loop interactions."
-effects: none
-dependencies: none
-methods[6]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  start,13,13,13,21,13,public,public,no,no,no,StartRunInput $input,RunHandle,"",Initializes a new agent run with input parameters and returns a handle,returns RunHandle,StartRunInput
-  continue,15,15,15,21,15,public,public,no,no,no,string $runId,void,"",Resumes execution for an existing run identified by runId,none,runId
-  steer,17,17,17,21,17,public,public,no,no,no,"string $runId, AgentMessage $message",void,"",Injects a directive message into an active run to guide behavior,none,"runId, AgentMessage"
-  followUp,19,19,19,21,19,public,public,no,no,no,"string $runId, AgentMessage $message",void,"",Provides additional context or response to an active run,none,"runId, AgentMessage"
-  cancel,21,21,21,21,21,public,public,no,no,no,"string $runId, ?string $reason = null",void,"",Terminates an active run with an optional reason,none,"runId, reason"
-  answerHuman,23,23,23,21,23,public,public,no,no,no,"string $runId, string $questionId, mixed $answer",void,"",Submits a human response to a specific question within a run,none,"runId, questionId, answer"
+methods[6]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  start,16,19,19,21,19,public,public,no,no,no,StartRunInput $input,RunHandle,"",Initializes a new agent run with input parameters and returns a handle.
+  continue,21,24,24,21,24,public,public,no,no,no,string $runId,void,"",Resumes execution for an existing run identified by runId.
+  steer,26,29,29,21,29,public,public,no,no,no,"string $runId, AgentMessage $message",void,"",Injects a directive message into an active run to guide behavior.
+  followUp,31,34,34,21,34,public,public,no,no,no,"string $runId, AgentMessage $message",void,"",Provides additional context or response to an active run.
+  cancel,36,39,39,21,39,public,public,no,no,no,"string $runId, ?string $reason = null",void,"",Terminates an active run with an optional reason.
+  answerHuman,41,44,44,21,44,public,public,no,no,no,"string $runId, string $questionId, mixed $answer",void,"",Submits a human response to a specific question within a run.

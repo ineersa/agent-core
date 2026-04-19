@@ -7,11 +7,16 @@ namespace Ineersa\AgentCore\Application\Handler;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionPolicy;
 
+/**
+ * Resolves execution policies for tools by combining a default configuration with specific overrides. It determines the operational mode, timeout, and parallelism constraints for a given tool name.
+ */
 final readonly class ToolExecutionPolicyResolver
 {
     private ToolExecutionMode $defaultMode;
 
     /**
+     * Initializes default mode, timeout, parallelism, and override configurations.
+     *
      * @param array<string, array{mode?: string|null, timeout_seconds?: int|null}> $overrides
      */
     public function __construct(
@@ -23,6 +28,9 @@ final readonly class ToolExecutionPolicyResolver
         $this->defaultMode = ToolExecutionMode::tryFrom($defaultMode) ?? ToolExecutionMode::Sequential;
     }
 
+    /**
+     * Returns the ToolExecutionPolicy for the specified tool name using overrides or defaults.
+     */
     public function resolve(string $toolName): ToolExecutionPolicy
     {
         $override = $this->overrides[$toolName] ?? [];

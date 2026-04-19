@@ -1,12 +1,7 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: 445fdbcc62bc0e550efc13bfc54dedbe94f6c945bd9912425fe93694057ef8f2
 file: CollectToolBatch.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\CollectToolBatch"
 type: readonly final class
 summary: "CollectToolBatch is a domain message representing a batch of tool executions within a specific agent run. It encapsulates execution context such as turn number, step ID, and attempt count to ensure proper sequencing and tracking. The class uses an idempotency key to prevent duplicate processing of the same batch."
-effects: none
-dependencies: none
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  __construct,9,12,12,21,21,public,public,no,no,no,"string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey, array $toolCallIds","","",Initializes the batch with run context and idempotency key,none,none
+methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  __construct,12,17,17,21,26,public,public,no,no,no,"string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey, array $toolCallIds","","",Initializes the batch with run context and idempotency key.

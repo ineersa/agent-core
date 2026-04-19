@@ -6,9 +6,14 @@ namespace Ineersa\AgentCore\Domain\Run;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 
+/**
+ * Represents the immutable state of a run within the agent core domain, encapsulating its identifier, current status, and progression metrics. This readonly value object ensures state consistency by preventing mutation after construction.
+ */
 final readonly class RunState
 {
     /**
+     * Initializes run state with identifier, status, and progression counters.
+     *
      * @param list<AgentMessage>  $messages
      * @param array<string, bool> $pendingToolCalls
      */
@@ -28,6 +33,9 @@ final readonly class RunState
     ) {
     }
 
+    /**
+     * Creates a new run state instance initialized to queued status.
+     */
     public static function queued(string $runId): self
     {
         return new self(runId: $runId, status: RunStatus::Queued);

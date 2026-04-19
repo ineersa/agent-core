@@ -10,10 +10,15 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
+/**
+ * This class implements a Symfony console command to report the health status of the agent loop. It retrieves configuration details to provide operational visibility into the agent's runtime state.
+ */
 #[AsCommand(name: 'agent-loop:health', description: 'Show Agent Loop bundle health and effective runtime settings.')]
 final class AgentLoopHealthCommand extends Command
 {
     /**
+     * initializes the command with agent loop configuration.
+     *
      * @param array<string, mixed> $config
      */
     public function __construct(private readonly array $config)
@@ -21,6 +26,9 @@ final class AgentLoopHealthCommand extends Command
         parent::__construct();
     }
 
+    /**
+     * displays agent loop health status to the console.
+     */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $io = new SymfonyStyle($input, $output);

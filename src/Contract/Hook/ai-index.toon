@@ -2,8 +2,6 @@ spec: agent-core.ai-docs/v1
 namespace: "Contract\\Hook"
 fqcn: "Ineersa\\AgentCore\\Contract\\Hook"
 updatedAt: 2026-04-19
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
 description: "Hook interfaces for intercepting agent loop lifecycle: context transforms, LLM conversion, tool call boundaries, cancellation, and message providers."
 files[9]{file,type,summary}:
   AfterToolCallHookInterface.php,interface,Defines the contract for processing events after a tool execution completes within the agent core. It enables decoupled post-processing logic by providing context and cancellation support for the result.
@@ -15,4 +13,3 @@ files[9]{file,type,summary}:
   NullCancellationToken.php,readonly final class,NullCancellationToken implements the cancellation token contract by providing a non-cancelable instance. It serves as a safe default for scenarios where cancellation support is not required or applicable.
   SteeringMessagesProviderInterface.php,interface,Defines the contract for retrieving steering messages within the AgentCore hook system. This interface abstracts the source of configuration or routing directives used to steer agent behavior. It serves as a dependency injection point for components requiring dynamic message resolution.
   TransformContextHookInterface.php,interface,Defines the contract for hook implementations that transform message payloads within the agent core. It provides a standardized entry point for processing message arrays with optional cancellation support.
-sourceHash: 598fbc8782279b6727e17abbf9888a20df78b57284071cb23f28cea358c140c3

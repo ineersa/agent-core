@@ -1,14 +1,9 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: aace2bfd335fee4533abc36205eed68704d5defacab38aa3632413691c71603b
 file: EventStoreInterface.php
 class: "Ineersa\\AgentCore\\Contract\\EventStoreInterface"
 type: interface
 summary: Defines the contract for persisting and retrieving execution events within the Agent Core system. It abstracts the underlying storage mechanism to ensure consistent interaction with run-specific event data. This interface serves as the primary boundary for event persistence operations.
-effects: none
-dependencies: none
-methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  append,11,11,11,21,11,public,public,no,no,no,RunEvent $event,void,"",Persists a single RunEvent to the store,writes event to storage,RunEvent instance
-  appendMany,13,16,16,21,16,public,public,no,no,no,array $events,void,"",Persists an array of RunEvents to the store,writes multiple events to storage,array of RunEvent instances
-  allFor,18,21,21,21,21,public,public,no,no,no,string $runId,array,"",Retrieves all events associated with a specific run ID,reads events from storage,runId string
+methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  append,14,17,17,21,17,public,public,no,no,no,RunEvent $event,void,"",Persists a single RunEvent to the store.
+  appendMany,19,24,24,21,24,public,public,no,no,no,array $events,void,"",Persists an array of RunEvents to the store.
+  allFor,26,31,31,21,31,public,public,no,no,no,string $runId,array,"",Retrieves all events associated with a specific run ID.

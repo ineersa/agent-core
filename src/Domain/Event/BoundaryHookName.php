@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Event;
 
+/**
+ * Provides static utility methods to classify event hook names based on their semantic role within the domain. It distinguishes between boundary hooks and extension hooks by evaluating string prefixes against defined constants.
+ */
 final class BoundaryHookName
 {
     public const string BEFORE_COMMAND_APPLY = 'before_command_apply';
@@ -23,11 +26,17 @@ final class BoundaryHookName
         self::BEFORE_RUN_FINALIZE,
     ];
 
+    /**
+     * Determines if a hook name represents a boundary hook.
+     */
     public static function isBoundary(string $hookName): bool
     {
         return \in_array($hookName, self::ALL, true);
     }
 
+    /**
+     * Determines if a hook name matches the extension prefix.
+     */
     public static function isExtensionHook(string $hookName, string $extensionPrefix = self::EXTENSION_PREFIX): bool
     {
         return str_starts_with($hookName, $extensionPrefix);

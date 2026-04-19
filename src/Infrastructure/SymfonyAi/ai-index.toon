@@ -2,8 +2,6 @@ spec: agent-core.ai-docs/v1
 namespace: "Infrastructure\\SymfonyAi"
 fqcn: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi"
 updatedAt: 2026-04-19
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
 description: "Symfony AI bridge — adapters connecting the agent loop to the Symfony AI ecosystem (platform, tool executor, message mapping, streaming)."
 files[6]{file,type,summary}:
   Platform.php,readonly final class,"The Platform class orchestrates the execution of AI agent runs within the Symfony infrastructure, bridging high-level agent inputs with the underlying provider invoker. It manages context resolution, message transformation, and hook application to prepare requests for external AI providers. The class ensures proper lifecycle management of runs and cancellation tokens while abstracting provider-specific details."
@@ -12,4 +10,3 @@ files[6]{file,type,summary}:
   SymfonyMessageMapper.php,final class,SymfonyMessageMapper translates between internal AgentMessage objects and provider-specific message formats for AI integration. It normalizes content structures and handles tool call serialization to ensure compatibility with external AI service APIs.
   SymfonyPlatformInvoker.php,readonly final class,"SymfonyPlatformInvoker acts as an adapter for the Symfony AI platform, translating generic agent inputs into platform-specific invocations. It handles the execution of model calls and extracts structured usage metadata from the platform's deferred results."
   SymfonyToolExecutorAdapter.php,readonly final class,"SymfonyToolExecutorAdapter bridges the AgentCore tool execution model with the Symfony ecosystem by delegating calls to a fallback executor or a Symfony-specific toolbox. It manages the lifecycle of tool invocations through configurable before and after hooks, ensuring consistent result formatting and progress tracking."
-sourceHash: e28239b93d8329c4085537172de61f38cbac5e7b6fd23773d36acba52cebd0c9

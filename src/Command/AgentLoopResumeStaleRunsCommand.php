@@ -18,9 +18,15 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
+/**
+ * This command identifies and resumes stale agent runs by coordinating with storage and locking mechanisms to ensure safe execution. It leverages a replay service to restore state and dispatches commands via the message bus to continue processing.
+ */
 #[AsCommand(name: 'agent-loop:resume-stale-runs', description: 'Resume stale running runs after worker restart.')]
 final class AgentLoopResumeStaleRunsCommand extends Command
 {
+    /**
+     * Injects required stores, services, and bus for stale run resumption.
+     */
     public function __construct(
         private readonly RunStoreInterface $runStore,
         private readonly PromptStateStoreInterface $promptStateStore,
@@ -32,6 +38,9 @@ final class AgentLoopResumeStaleRunsCommand extends Command
         parent::__construct();
     }
 
+    /**
+     * Identifies stale runs, resumes them via replay service, and dispatches commands.
+     */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $io = new SymfonyStyle($input, $output);

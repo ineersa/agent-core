@@ -1,14 +1,9 @@
 spec: agent-core.file-index/v1
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: 80d975d6e1e5ec586db6697d9289f20e60a3e63ff64799c04ff8304166ee2ad9
 file: RunEventSerializer.php
 class: "Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer"
 type: readonly final class
 summary: The RunEventSerializer converts between domain RunEvent and RunStreamEvent objects and their array representations for API transport. It provides bidirectional normalization to support serialization boundaries without leaking domain structure.
-effects: none
-dependencies: "RunEvent, RunStreamEvent"
-methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
-  normalizeRunEvent,12,15,15,21,18,public,public,no,no,no,RunEvent $event,array,"",Converts a RunEvent domain object into a normalized array payload,none,RunEvent
-  fromRunEvent,20,20,20,21,30,public,public,no,no,no,RunEvent $event,RunStreamEvent,"",Transforms a RunEvent domain object into a RunStreamEvent instance,none,"RunEvent, RunStreamEvent"
-  normalizeStreamEvent,32,35,35,21,45,public,public,no,no,no,RunStreamEvent $event,array,"",Converts a RunStreamEvent object into a normalized array payload,none,RunStreamEvent
+methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  normalizeRunEvent,15,20,20,21,23,public,public,no,no,no,RunEvent $event,array,"",Converts a RunEvent domain object into a normalized array payload.
+  fromRunEvent,25,28,28,21,38,public,public,no,no,no,RunEvent $event,RunStreamEvent,"",Transforms a RunEvent domain object into a RunStreamEvent instance.
+  normalizeStreamEvent,40,45,45,21,55,public,public,no,no,no,RunStreamEvent $event,array,"",Converts a RunStreamEvent object into a normalized array payload.

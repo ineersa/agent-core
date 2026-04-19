@@ -16,6 +16,7 @@ use function CastorTasks\run_quiet_command;
 use function CastorTasks\summarize_junit_xml;
 use function CastorTasks\summarize_php_cs_fixer_json;
 use function CastorTasks\summarize_phpstan_json;
+use function CastorTasks\summarize_summaries_log;
 use function CastorTasks\write_empty_junit_report;
 
 #[AsTask(description: 'Run composer command')]
@@ -139,7 +140,7 @@ function phpstan(): void
     ).\PHP_EOL;
 }
 
-#[AsTask(description: 'Run cs-fix, phpstan, and tests with aggregate status')]
+#[AsTask(description: 'Run cs-fix, phpstan, tests, and strict summary validation')]
 function check(): void
 {
     $failures = [];
@@ -153,6 +154,9 @@ function check(): void
         },
         'test' => static function (): void {
             test();
+        },
+        'summaries' => static function (): void {
+            summaries();
         },
     ] as $step => $runner) {
         try {
@@ -175,15 +179,47 @@ function quality(): void
     check();
 }
 
-#[AsTask(description: 'Generate per-file method indexes via AST + LLM (options: --all, --changed, --force, --dry-run, --endpoint=URL, --model=NAME)')]
-function index_methods(): void
+/**
+ * Generate per-file method indexes from docblock summaries.
+ *
+ * Options: --all, --changed, --force, --dry-run, --strict, --migrate, --skip-namespace
+ * Pass specific files/dirs as arguments to process only those.
+ *
+ * @param list<string> $extraArgs
+ */
+#[AsTask(description: 'Generate per-file method indexes from docblock summaries (no LLM)')]
+function index_methods(array $extraArgs = []): void
 {
     $command = 'php scripts/generate-method-index.php';
 
-    $args = \array_slice($_SERVER['argv'], 2);
+    $args = [] !== $extraArgs ? $extraArgs : \array_slice($_SERVER['argv'], 2);
     if ([] !== $args) {
         $command .= ' '.implode(' ', array_map('escapeshellarg', $args));
     }
 
     dev_php_exec($command);
+}
+
+/** Validate that all classes and methods have docblock summaries. */
+#[AsTask(description: 'Check docblock summary coverage (read-only)')]
+function summaries(): void
+{
+    $command = 'php scripts/generate-method-index.php --strict --all';
+
+    if (!is_llm_mode()) {
+        dev_php_exec($command);
+
+        return;
+    }
+
+    $process = run_quiet_command($command);
+    persist_process_output($process, 'summaries.log');
+
+    $missing = summarize_summaries_log(trim($process->getOutput()));
+
+    if (0 !== $process->getExitCode()) {
+        throw new \RuntimeException(\sprintf('summaries failed (%s); report=%s', $missing, relative_report_path('summaries.log')));
+    }
+
+    echo \sprintf('summaries: ok (%s)', $missing).\PHP_EOL;
 }
