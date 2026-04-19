@@ -1,0 +1,10 @@
+spec: agent-core.file-index/v1
+file: AgentLoopRunTailCommand.php
+class: "Ineersa\\AgentCore\\Command\\AgentLoopRunTailCommand"
+type: final class
+summary: This command prints the latest persisted events for a run.
+methods[4]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  __construct,24,27,27,21,38,public,public,no,no,no,"RunDebugService $runDebugService, RunEventSerializer $runEventSerializer","","",Injects tail-read dependencies.
+  execute,40,43,43,24,100,protected,protected,no,no,no,"InputInterface $input, OutputInterface $output",int,"",Prints a tail window of recent run events.
+  encodeJson,102,107,107,22,112,private,private,no,no,no,array $payload,string,"",Encodes a payload as readable JSON for command output.
+  payloadPreview,114,117,117,22,129,private,private,no,no,no,mixed $payload,string,"",Builds a compact payload preview for tabular output.

@@ -1,0 +1,18 @@
+spec: agent-core.file-index/v1
+file: RunMetrics.php
+class: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics"
+type: final class
+summary: This class collects in-process runtime metrics for run orchestration and workers.
+methods[12]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  __construct,47,50,50,21,59,public,public,no,no,no,"","","",Initializes metric histograms with stable latency buckets.
+  recordRunStatusTransition,61,64,64,21,75,public,public,no,no,no,"RunStatus $from, RunStatus $to",void,"",Updates active run gauges after a status transition.
+  setCommandQueueLag,77,80,80,21,83,public,public,no,no,no,"string $runId, int $pendingCount",void,"",Records the latest command mailbox lag for a run.
+  recordTurnStarted,85,88,88,21,95,public,public,no,no,no,"string $runId, int $turnNo",void,"",Marks the start timestamp for a run turn duration measurement.
+  recordTurnCompleted,97,100,100,21,117,public,public,no,no,no,"string $runId, int $turnNo",void,"",Records turn duration when a tracked turn reaches a completion boundary.
+  recordLlmLatency,119,122,122,21,130,public,public,no,no,no,"float $durationMs, bool $isError",void,"",Records LLM invocation latency and updates error totals.
+  recordToolLatency,132,135,135,21,148,public,public,no,no,no,"float $durationMs, bool $isError, bool $isTimeout",void,"",Records tool execution latency and tracks error/timeout counters.
+  incrementStaleResultCount,150,153,153,21,160,public,public,no,no,no,int $by = 1,void,"",Increments stale result counter when stale executor outcomes are ignored.
+  incrementReplayRebuildCount,162,165,165,21,169,public,public,no,no,no,string $source,void,"",Increments rebuild counter grouped by replay source category.
+  snapshot,171,185,185,21,216,public,public,no,no,no,"",array,"",Returns a snapshot consumable by debug tooling and dashboards.
+  turnKey,218,221,221,22,224,private,private,no,no,no,"string $runId, int $turnNo",string,"",Builds a deterministic key for a run/turn pair.
+  rate,226,229,229,22,236,private,private,no,no,no,"int $numerator, int $denominator",float,"",Computes a rounded ratio while guarding against division by zero.

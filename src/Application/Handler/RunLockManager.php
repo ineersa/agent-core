@@ -17,6 +17,7 @@ final readonly class RunLockManager
     public function __construct(
         private LockFactory $lockFactory,
         private float $ttlSeconds = 30.0,
+        private float $acquireTimeoutSeconds = 5.0,
     ) {
     }
 
@@ -33,8 +34,14 @@ final readonly class RunLockManager
     {
         $lock = $this->lockFactory->createLock($this->lockKey($runId), $this->ttlSeconds, autoRelease: false);
 
-        if (!$lock->acquire(blocking: true)) {
-            throw new \RuntimeException(\sprintf('Failed to acquire run lock for "%s".', $runId));
+        $acquireUntil = microtime(true) + max(0.001, $this->acquireTimeoutSeconds);
+
+        while (!$lock->acquire()) {
+            if (microtime(true) >= $acquireUntil) {
+                throw new \RuntimeException(\sprintf('Failed to acquire run lock for "%s" within %.3f seconds.', $runId, $this->acquireTimeoutSeconds));
+            }
+
+            usleep(20_000);
         }
 
         try {

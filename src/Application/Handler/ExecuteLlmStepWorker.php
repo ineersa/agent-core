@@ -22,6 +22,8 @@ final readonly class ExecuteLlmStepWorker
     public function __construct(
         private PlatformInterface $platform,
         private MessageBusInterface $commandBus,
+        private ?RunMetrics $metrics = null,
+        private ?RunTracer $tracer = null,
     ) {
     }
 
@@ -31,13 +33,28 @@ final readonly class ExecuteLlmStepWorker
     #[AsMessageHandler(bus: 'agent.execution.bus')]
     public function __invoke(ExecuteLlmStep $message): void
     {
-        $result = $this->execute($message);
+        $execute = function () use ($message): void {
+            $result = $this->execute($message);
 
-        try {
-            $this->commandBus->dispatch($result);
-        } catch (ExceptionInterface $exception) {
-            throw new \RuntimeException('Failed to dispatch LLM result to command bus.', previous: $exception);
+            try {
+                $this->commandBus->dispatch($result);
+            } catch (ExceptionInterface $exception) {
+                throw new \RuntimeException('Failed to dispatch LLM result to command bus.', previous: $exception);
+            }
+        };
+
+        if (null === $this->tracer) {
+            $execute();
+
+            return;
         }
+
+        $this->tracer->inSpan('turn.execution.llm_worker', [
+            'run_id' => $message->runId(),
+            'turn_no' => $message->turnNo(),
+            'step_id' => $message->stepId(),
+            'worker' => 'llm',
+        ], $execute, root: true);
     }
 
     /**
@@ -45,14 +62,28 @@ final readonly class ExecuteLlmStepWorker
      */
     private function execute(ExecuteLlmStep $message): LlmStepResult
     {
+        $startedAt = hrtime(true);
+
         try {
-            $response = $this->platform->invoke('default', [
+            $invoke = fn (): array => $this->platform->invoke('default', [
                 'run_id' => $message->runId(),
                 'turn_no' => $message->turnNo(),
                 'step_id' => $message->stepId(),
                 'context_ref' => $message->contextRef,
                 'tools_ref' => $message->toolsRef,
             ]);
+
+            $response = null === $this->tracer
+                ? $invoke()
+                : $this->tracer->inSpan('llm.call', [
+                    'run_id' => $message->runId(),
+                    'turn_no' => $message->turnNo(),
+                    'step_id' => $message->stepId(),
+                ], $invoke)
+            ;
+
+            $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
+            $this->metrics?->recordLlmLatency($durationMs, \is_array($response['error'] ?? null));
 
             $assistantMessage = null;
             if (\is_array($response['assistant_message'] ?? null)) {
@@ -87,6 +118,9 @@ final readonly class ExecuteLlmStepWorker
                 error: \is_array($response['error'] ?? null) ? $response['error'] : null,
             );
         } catch (\Throwable $exception) {
+            $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
+            $this->metrics?->recordLlmLatency($durationMs, true);
+
             return new LlmStepResult(
                 runId: $message->runId(),
                 turnNo: $message->turnNo(),

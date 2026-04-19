@@ -1,0 +1,9 @@
+spec: agent-core.file-index/v1
+file: AgentLoopRunRebuildHotStateCommand.php
+class: "Ineersa\\AgentCore\\Command\\AgentLoopRunRebuildHotStateCommand"
+type: final class
+summary: This command rebuilds hot prompt state from persisted run events.
+methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  __construct,22,25,25,21,33,public,public,no,no,no,RunDebugService $runDebugService,"","",Injects the debug service used to rebuild prompt state.
+  execute,35,38,38,24,69,protected,protected,no,no,no,"InputInterface $input, OutputInterface $output",int,"",Replays events and persists rebuilt prompt state.
+  encodeJson,71,76,76,22,81,private,private,no,no,no,array $payload,string,"",Encodes a payload as readable JSON for command output.

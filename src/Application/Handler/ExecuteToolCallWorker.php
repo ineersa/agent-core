@@ -29,6 +29,8 @@ final readonly class ExecuteToolCallWorker
         private ToolExecutorInterface $toolExecutor,
         private MessageBusInterface $commandBus,
         private ?RunStoreInterface $runStore = null,
+        private ?RunMetrics $metrics = null,
+        private ?RunTracer $tracer = null,
     ) {
     }
 
@@ -38,13 +40,30 @@ final readonly class ExecuteToolCallWorker
     #[AsMessageHandler(bus: 'agent.execution.bus')]
     public function __invoke(ExecuteToolCall $message): void
     {
-        $result = $this->execute($message);
+        $execute = function () use ($message): void {
+            $result = $this->execute($message);
 
-        try {
-            $this->commandBus->dispatch($result);
-        } catch (ExceptionInterface $exception) {
-            throw new \RuntimeException('Failed to dispatch tool result to command bus.', previous: $exception);
+            try {
+                $this->commandBus->dispatch($result);
+            } catch (ExceptionInterface $exception) {
+                throw new \RuntimeException('Failed to dispatch tool result to command bus.', previous: $exception);
+            }
+        };
+
+        if (null === $this->tracer) {
+            $execute();
+
+            return;
         }
+
+        $this->tracer->inSpan('turn.execution.tool_worker', [
+            'run_id' => $message->runId(),
+            'turn_no' => $message->turnNo(),
+            'step_id' => $message->stepId(),
+            'tool_call_id' => $message->toolCallId,
+            'tool_name' => $message->toolName,
+            'worker' => 'tool',
+        ], $execute, root: true);
     }
 
     /**
@@ -76,8 +95,25 @@ final readonly class ExecuteToolCallWorker
             ],
         );
 
+        $startedAt = hrtime(true);
+
         try {
-            $toolResult = $this->toolExecutor->execute($toolCall);
+            $executeTool = fn () => $this->toolExecutor->execute($toolCall);
+
+            $toolResult = null === $this->tracer
+                ? $executeTool()
+                : $this->tracer->inSpan('tool.call', [
+                    'run_id' => $message->runId(),
+                    'turn_no' => $message->turnNo(),
+                    'step_id' => $message->stepId(),
+                    'tool_call_id' => $message->toolCallId,
+                    'tool_name' => $message->toolName,
+                ], $executeTool)
+            ;
+
+            $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
+            $timedOut = \is_array($toolResult->details) && true === ($toolResult->details['timed_out'] ?? false);
+            $this->metrics?->recordToolLatency($durationMs, $toolResult->isError, $timedOut);
 
             $toolIdempotencyKey = \is_array($toolResult->details)
                 && \is_string($toolResult->details['tool_idempotency_key'] ?? null)
@@ -103,6 +139,9 @@ final readonly class ExecuteToolCallWorker
                 error: null,
             );
         } catch (\Throwable $exception) {
+            $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
+            $this->metrics?->recordToolLatency($durationMs, true, false);
+
             return new ToolCallResult(
                 runId: $message->runId(),
                 turnNo: $message->turnNo(),

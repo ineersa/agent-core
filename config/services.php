@@ -17,8 +17,11 @@ use Ineersa\AgentCore\Application\Handler\MercureOutboxProjectorWorker;
 use Ineersa\AgentCore\Application\Handler\MessageIdempotencyService;
 use Ineersa\AgentCore\Application\Handler\OutboxProjector;
 use Ineersa\AgentCore\Application\Handler\ReplayService;
+use Ineersa\AgentCore\Application\Handler\RunDebugService;
 use Ineersa\AgentCore\Application\Handler\RunEventDispatcher;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\RunMetrics;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Handler\ToolCatalogResolver;
@@ -30,6 +33,10 @@ use Ineersa\AgentCore\Application\Orchestrator\RunOrchestrator;
 use Ineersa\AgentCore\Application\Reducer\RunReducer;
 use Ineersa\AgentCore\Command\AgentLoopHealthCommand;
 use Ineersa\AgentCore\Command\AgentLoopResumeStaleRunsCommand;
+use Ineersa\AgentCore\Command\AgentLoopRunInspectCommand;
+use Ineersa\AgentCore\Command\AgentLoopRunRebuildHotStateCommand;
+use Ineersa\AgentCore\Command\AgentLoopRunReplayCommand;
+use Ineersa\AgentCore\Command\AgentLoopRunTailCommand;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\ArtifactStoreInterface;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
@@ -168,6 +175,8 @@ return static function (ContainerConfigurator $container): void {
     ;
 
     $services->set(MessageIdempotencyService::class);
+    $services->set(RunMetrics::class);
+    $services->set(RunTracer::class);
 
     $services->set(ToolExecutionPolicyResolver::class)
         ->arg('$defaultMode', param('agent_loop.tools.defaults.mode'))
@@ -298,6 +307,7 @@ return static function (ContainerConfigurator $container): void {
     $services->set(JsonlOutboxProjectorWorker::class);
     $services->set(MercureOutboxProjectorWorker::class);
     $services->set(ReplayService::class);
+    $services->set(RunDebugService::class);
 
     $services->set(AgentLoopHealthCommand::class)
         ->arg('$config', param('agent_loop.config'))
@@ -308,6 +318,26 @@ return static function (ContainerConfigurator $container): void {
     $services->set(AgentLoopResumeStaleRunsCommand::class)
         ->arg('$commandBus', service('agent.command.bus'))
         ->arg('$staleAfterSeconds', param('agent_loop.commands.resume_stale_after_seconds'))
+        ->public()
+        ->tag('console.command')
+    ;
+
+    $services->set(AgentLoopRunInspectCommand::class)
+        ->public()
+        ->tag('console.command')
+    ;
+
+    $services->set(AgentLoopRunReplayCommand::class)
+        ->public()
+        ->tag('console.command')
+    ;
+
+    $services->set(AgentLoopRunRebuildHotStateCommand::class)
+        ->public()
+        ->tag('console.command')
+    ;
+
+    $services->set(AgentLoopRunTailCommand::class)
         ->public()
         ->tag('console.command')
     ;

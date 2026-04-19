@@ -16,6 +16,7 @@ use Ineersa\AgentCore\Infrastructure\Storage\InMemoryOutboxStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogWriter;
 use League\Flysystem\Filesystem;
+use League\Flysystem\FilesystemOperator;
 use League\Flysystem\Local\LocalFilesystemAdapter;
 use PHPUnit\Framework\TestCase;
 
@@ -75,6 +76,36 @@ final class OutboxProjectionWorkerTest extends TestCase
         $mercureWorker->__invoke(new ProjectMercureOutbox());
 
         self::assertCount(1, $reader->allFor('run-outbox-1'));
+    }
+
+    public function testJsonlWorkerSchedulesRetryWhenRunLogAppendFails(): void
+    {
+        $outboxStore = new InMemoryOutboxStore();
+
+        $failingFilesystem = $this->createMock(FilesystemOperator::class);
+        $failingFilesystem->method('fileExists')->willReturn(false);
+        $failingFilesystem->method('write')->willThrowException(new \RuntimeException('disk full'));
+
+        $jsonlWorker = new JsonlOutboxProjectorWorker($outboxStore, new RunLogWriter($failingFilesystem));
+
+        $event = new RunEvent(
+            runId: 'run-outbox-failure-1',
+            seq: 1,
+            turnNo: 0,
+            type: 'run_started',
+            payload: ['step_id' => 'start-1'],
+        );
+
+        $outboxStore->enqueue($event, OutboxSink::Jsonl);
+        $jsonlWorker->__invoke(new ProjectJsonlOutbox(batchSize: 10, retryDelaySeconds: 1));
+
+        $immediateClaim = $outboxStore->claim(OutboxSink::Jsonl, limit: 10, now: new \DateTimeImmutable());
+        self::assertSame([], $immediateClaim);
+
+        $future = (new \DateTimeImmutable())->setTimestamp(time() + 5);
+        $retryClaim = $outboxStore->claim(OutboxSink::Jsonl, limit: 10, now: $future);
+        self::assertCount(1, $retryClaim);
+        self::assertSame(2, $retryClaim[0]->attempts);
     }
 
     private function deleteDirectory(string $path): void

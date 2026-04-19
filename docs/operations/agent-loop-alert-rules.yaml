@@ -1,0 +1,47 @@
+groups:
+  - name: agent_loop
+    rules:
+      - alert: AgentLoopStuckRunningRun
+        expr: agent_loop_active_runs_running > 0 and agent_loop_command_queue_lag_max > 0
+        for: 15m
+        labels:
+          severity: page
+        annotations:
+          summary: "Agent loop has potentially stuck running runs"
+          description: "Running runs are present while queue lag is not draining. Use the runbook to inspect and resume stale runs."
+
+      - alert: AgentLoopHighStaleResultRate
+        expr: rate(agent_loop_stale_result_count_total[10m]) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent loop stale result rate is elevated"
+          description: "Executor results are being ignored frequently. Verify step_id/turn_no drift and worker retry behavior."
+
+      - alert: AgentLoopLlmErrorRateHigh
+        expr: rate(agent_loop_llm_errors_total[10m]) / clamp_min(rate(agent_loop_llm_calls_total[10m]), 1) > 0.1
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: "Agent loop LLM error rate is above threshold"
+          description: "LLM worker failures exceed 10% over 10 minutes. Inspect provider status and recent deploys."
+
+      - alert: AgentLoopToolTimeoutRateHigh
+        expr: rate(agent_loop_tool_timeouts_total[10m]) / clamp_min(rate(agent_loop_tool_calls_total[10m]), 1) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent loop tool timeout rate is above threshold"
+          description: "Tool calls are timing out frequently. Review tool execution policy and downstream dependencies."
+
+      - alert: AgentLoopReplayFallbackSpike
+        expr: rate(agent_loop_replay_rebuild_jsonl_fallback_total[15m]) > 0.1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Replay service is frequently falling back to JSONL"
+          description: "Canonical event-store reads may be degraded. Validate event-store availability and integrity."

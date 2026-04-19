@@ -4,6 +4,6 @@ class: "Ineersa\\AgentCore\\Application\\Handler\\RunLockManager"
 type: readonly final class
 summary: "The RunLockManager provides a mechanism to execute critical sections of code exclusively for a specific run ID using distributed locking. It leverages a LockFactory to acquire locks with a configurable time-to-live, ensuring thread-safe or process-safe execution of run-specific logic."
 methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,14,17,17,21,21,public,public,no,no,no,"LockFactory $lockFactory, float $ttlSeconds = 30.0","","",Initializes the manager with a lock factory and default TTL.
-  synchronized,23,32,32,21,47,public,public,no,no,no,"string $runId, callable $criticalSection",mixed,RuntimeException,Acquires a lock for the run ID and executes the critical section.
-  lockKey,49,52,52,22,55,private,private,no,no,no,string $runId,string,"",Generates a unique string key for the given run ID.
+  __construct,14,17,17,21,22,public,public,no,no,no,"LockFactory $lockFactory, float $ttlSeconds = 30.0, float $acquireTimeoutSeconds = 5.0","","",Initializes the manager with a lock factory and default TTL.
+  synchronized,24,33,33,21,54,public,public,no,no,no,"string $runId, callable $criticalSection",mixed,RuntimeException,Acquires a lock for the run ID and executes the critical section.
+  lockKey,56,59,59,22,62,private,private,no,no,no,string $runId,string,"",Generates a unique string key for the given run ID.

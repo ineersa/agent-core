@@ -494,3 +494,130 @@ Status: **completed**
 ### Stage 08 closure
 
 - Stage 08 API + streaming surface is implemented with scoped authorization, replay-aware reconnect behavior, Mercure topic policy, and serializer-backed event envelopes.
+
+## Stage 09 — Testing, Observability, and Debugging
+
+Status: **completed** (split into parts; parts 1-3 completed)
+
+### Completed in part 1
+
+- Added debug read-model service:
+  - `src/Application/Handler/RunDebugService.php`
+  - supports consolidated inspect snapshots, replay windows, tail windows, and hot-state rebuild entrypoint.
+- Added debug CLI tooling:
+  - `agent-loop:run-inspect`
+  - `agent-loop:run-replay`
+  - `agent-loop:run-rebuild-hot-state`
+  - `agent-loop:run-tail`
+  - implemented in:
+    - `src/Command/AgentLoopRunInspectCommand.php`
+    - `src/Command/AgentLoopRunReplayCommand.php`
+    - `src/Command/AgentLoopRunRebuildHotStateCommand.php`
+    - `src/Command/AgentLoopRunTailCommand.php`
+- Added structured event logging in orchestrator commit path:
+  - `src/Application/Orchestrator/RunOrchestrator.php`
+  - each committed event now logs required fields:
+    - `run_id`, `turn_no`, `step_id`, `seq`, `status`, `worker_id`, `attempt`
+- Expanded unit/contract coverage for stage goals:
+  - `tests/Application/Reducer/RunReducerTransitionTest.php` (reducer transition table + command application)
+  - `tests/Application/Orchestrator/RunOrchestratorStructuredLoggingTest.php` (structured log context contract)
+  - `tests/Command/AgentLoopRunDebugCommandsTest.php` (new debug command behaviors)
+- Updated DI/kernel verification for new services/commands:
+  - `tests/DependencyInjection/AgentLoopExtensionTest.php`
+  - `tests/Integration/KernelIntegrationTest.php`
+
+### Quality/Verification (part 1)
+
+- `LLM_MODE=true castor dev:check` ✅
+  - `cs-fix`: ok
+  - `phpstan`: ok
+  - `test`: ok (`75 tests`, `487 assertions`)
+- `LLM_MODE=true castor dev:index-methods` ✅
+
+### Completed in part 2
+
+- Added in-process metrics primitives and histogram support:
+  - `src/Application/Handler/LatencyHistogram.php`
+  - `src/Application/Handler/RunMetrics.php`
+- Added lightweight trace span instrumentation:
+  - `src/Application/Handler/RunTracer.php`
+  - root spans for command/turn processing in orchestrator and execution workers
+  - child spans for `llm.call`, `tool.call`, command-boundary application, and `persistence.commit`
+- Wired observability collection through runtime services:
+  - `RunOrchestrator` now records:
+    - active-runs-by-status transitions
+    - command queue lag
+    - stale-result count
+    - turn completion durations
+  - `ExecuteLlmStepWorker` now records LLM latency + error rate
+  - `ExecuteToolCallWorker` now records tool latency + timeout/error rates
+  - `ReplayService` now records replay rebuild counters and spans
+- Exposed metrics through debug tooling:
+  - `RunDebugService::inspect()` now includes `metrics`
+  - `agent-loop:run-inspect` renders an “Observability metrics” section when available
+- Updated architecture notes for observability wiring:
+  - `src/Application/README.md`
+
+### Tests added/updated in part 2
+
+- Added:
+  - `tests/Application/Handler/RunMetricsTest.php`
+  - `tests/Application/Orchestrator/RunOrchestratorObservabilityTest.php`
+- Updated:
+  - `tests/Application/Handler/ExecutionWorkerTest.php` (worker metrics + tracing assertions)
+  - `tests/DependencyInjection/AgentLoopExtensionTest.php`
+  - `tests/Integration/KernelIntegrationTest.php`
+  - `tests/Kernel/TestKernel.php`
+
+### Quality/Verification (part 2)
+
+- `LLM_MODE=true castor dev:check` ✅
+  - `cs-fix`: ok
+  - `phpstan`: ok
+  - `test`: ok (`79 tests`, `519 assertions`)
+  - `summaries`: ok
+- `LLM_MODE=true castor dev:index-methods` ✅
+
+### Completed in part 3
+
+- Added soak/load/failure-drill automation coverage:
+  - `tests/Application/Orchestrator/RunOrchestratorSoakFailureDrillTest.php`
+    - 1000 synthetic run soak scenario
+    - duplicate-delivery stress on tool results with idempotent commit validation
+    - transient event-store commit failure drill with rollback + retry validation
+  - `tests/Application/Handler/ExecutionFailureDrillTest.php`
+    - worker dispatch crash drills (LLM + tool worker) with successful retry path
+  - `tests/Application/Handler/RunLockManagerTest.php`
+    - lock manager execution + bounded acquisition timeout behavior
+  - `tests/Application/Handler/OutboxProjectionWorkerTest.php`
+    - JSONL append failure retry scheduling path
+- Added fake provider/tool fixtures library for deterministic integration-style tests:
+  - `tests/Support/Fake/FakePlatform.php`
+  - `tests/Support/Fake/FakeToolExecutor.php`
+- Hardened orchestrator commit path for failure drills:
+  - `src/Application/Orchestrator/RunOrchestrator.php`
+  - event-store persistence failures now trigger rollback attempt and structured warning logs
+  - outbox projection, hot-state rebuild, effect dispatch, and after-commit hook failures are isolated with structured warnings
+- Hardened lock acquisition behavior to avoid indefinite deadlocks during contention:
+  - `src/Application/Handler/RunLockManager.php`
+  - bounded non-blocking acquisition loop with configurable timeout
+- Added ops artifacts for production operability:
+  - `docs/operations/agent-loop-observability-dashboard.md`
+  - `docs/operations/agent-loop-alert-rules.yaml`
+  - `docs/operations/agent-loop-oncall-runbook.md`
+  - referenced from root `README.md`
+- Updated architecture notes for commit-failure observability:
+  - `src/Application/README.md`
+
+### Quality/Verification (part 3)
+
+- `LLM_MODE=true castor dev:check` ✅
+  - `cs-fix`: ok
+  - `phpstan`: ok
+  - `test`: ok (`87 tests`, `7553 assertions`)
+  - `summaries`: ok
+- `LLM_MODE=true castor dev:index-methods` ✅
+
+### Stage 09 closure
+
+- Stage 09 acceptance goals are implemented, including soak/load + failure drills, fake test doubles library, observability/ops artifacts, and debug recovery runbook support.

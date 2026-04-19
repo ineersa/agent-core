@@ -4,11 +4,11 @@ class: "Ineersa\\AgentCore\\Application\\Handler\\ReplayService"
 type: readonly final class
 summary: ReplayService reconstructs agent run state by replaying historical events from the event store and run logs. It verifies data integrity and rebuilds prompt state to ensure consistency across sequences.
 methods[8]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,17,20,20,21,25,public,public,no,no,no,"EventStoreInterface $eventStore, RunLogReader $runLogReader, PromptStateStoreInterface $promptStateStore","","",initializes dependencies for event replay and state reconstruction.
-  rebuildHotPromptState,27,41,41,21,62,public,public,no,no,no,string $runId,array,"",reconstructs current prompt state for a given run by replaying events.
-  verifyIntegrity,64,76,76,21,89,public,public,no,no,no,string $runId,array,"",validates event sequence integrity and identifies missing sequences for a run.
-  eventsForReplay,91,96,96,22,104,private,private,no,no,no,string $runId,array,"",fetches and sorts events required for replaying a specific run.
-  sortBySequence,106,113,113,22,118,private,private,no,no,no,array $events,array,"",orders events by their sequence number to ensure correct replay order.
-  replayMessages,120,127,127,22,162,private,private,no,no,no,array $events,array,"",processes events to generate replayed message history.
-  missingSequences,164,171,171,22,190,private,private,no,no,no,array $events,array,"",identifies gaps in event sequences for a given set of events.
-  estimateTokens,192,197,197,22,206,private,private,no,no,no,array $messages,int,"",calculates approximate token count for a list of messages.
+  __construct,17,20,20,21,27,public,public,no,no,no,"EventStoreInterface $eventStore, RunLogReader $runLogReader, PromptStateStoreInterface $promptStateStore, ?RunMetrics $metrics = null, ?RunTracer $tracer = null","","",initializes dependencies for event replay and state reconstruction.
+  rebuildHotPromptState,29,43,43,21,75,public,public,no,no,no,string $runId,array,"",reconstructs current prompt state for a given run by replaying events.
+  verifyIntegrity,77,89,89,21,102,public,public,no,no,no,string $runId,array,"",validates event sequence integrity and identifies missing sequences for a run.
+  eventsForReplay,104,109,109,22,117,private,private,no,no,no,string $runId,array,"",fetches and sorts events required for replaying a specific run.
+  sortBySequence,119,126,126,22,131,private,private,no,no,no,array $events,array,"",orders events by their sequence number to ensure correct replay order.
+  replayMessages,133,140,140,22,175,private,private,no,no,no,array $events,array,"",processes events to generate replayed message history.
+  missingSequences,177,184,184,22,203,private,private,no,no,no,array $events,array,"",identifies gaps in event sequences for a given set of events.
+  estimateTokens,205,210,210,22,219,private,private,no,no,no,array $messages,int,"",calculates approximate token count for a list of messages.

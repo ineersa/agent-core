@@ -21,6 +21,8 @@ final readonly class ReplayService
         private EventStoreInterface $eventStore,
         private RunLogReader $runLogReader,
         private PromptStateStoreInterface $promptStateStore,
+        private ?RunMetrics $metrics = null,
+        private ?RunTracer $tracer = null,
     ) {
     }
 
@@ -40,25 +42,36 @@ final readonly class ReplayService
      */
     public function rebuildHotPromptState(string $runId): array
     {
-        [$events, $source] = $this->eventsForReplay($runId);
+        $rebuild = function () use ($runId): array {
+            [$events, $source] = $this->eventsForReplay($runId);
 
-        $messages = $this->replayMessages($events);
-        $integrity = $this->verifyIntegrity($runId);
+            $messages = $this->replayMessages($events);
+            $integrity = $this->verifyIntegrity($runId);
 
-        $state = [
+            $state = [
+                'run_id' => $runId,
+                'source' => $source,
+                'event_count' => $integrity['event_count'],
+                'last_seq' => $integrity['last_seq'],
+                'missing_sequences' => $integrity['missing_sequences'],
+                'is_contiguous' => $integrity['is_contiguous'],
+                'token_estimate' => $this->estimateTokens($messages),
+                'messages' => $messages,
+            ];
+
+            $this->promptStateStore->save($runId, $state);
+            $this->metrics?->incrementReplayRebuildCount($source);
+
+            return $state;
+        };
+
+        if (null === $this->tracer) {
+            return $rebuild();
+        }
+
+        return $this->tracer->inSpan('replay.rebuild_hot_prompt_state', [
             'run_id' => $runId,
-            'source' => $source,
-            'event_count' => $integrity['event_count'],
-            'last_seq' => $integrity['last_seq'],
-            'missing_sequences' => $integrity['missing_sequences'],
-            'is_contiguous' => $integrity['is_contiguous'],
-            'token_estimate' => $this->estimateTokens($messages),
-            'messages' => $messages,
-        ];
-
-        $this->promptStateStore->save($runId, $state);
-
-        return $state;
+        ], $rebuild);
     }
 
     /**

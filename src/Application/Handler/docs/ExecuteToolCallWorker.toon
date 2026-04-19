@@ -4,7 +4,7 @@ class: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker"
 type: readonly final class
 summary: "This class acts as a message handler for the agent execution bus, processing tool call commands by delegating execution to a dedicated tool executor. It coordinates the invocation of external tools and manages the resulting state updates within the agent's runtime context."
 methods[4]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,25,28,28,21,33,public,public,no,no,no,"ToolExecutorInterface $toolExecutor, MessageBusInterface $commandBus, ?RunStoreInterface $runStore = null","","",initializes dependencies for tool execution and message bus interaction.
-  __invoke,35,38,39,21,48,public,public,no,no,no,ExecuteToolCall $message,void,RuntimeException,handles ExecuteToolCall messages on the agent.execution.bus.
-  execute,50,53,53,22,133,private,private,no,no,no,ExecuteToolCall $message,ToolCallResult,"",invokes the tool executor and returns the resulting tool call outcome.
-  hydrateAssistantMessage,135,140,140,22,159,private,private,no,no,no,?array $payload,?AgentMessage,"",constructs an AgentMessage object from a raw payload array.
+  __construct,25,28,28,21,35,public,public,no,no,no,"ToolExecutorInterface $toolExecutor, MessageBusInterface $commandBus, ?RunStoreInterface $runStore = null, ?RunMetrics $metrics = null, ?RunTracer $tracer = null","","",initializes dependencies for tool execution and message bus interaction.
+  __invoke,37,40,41,21,67,public,public,no,no,no,ExecuteToolCall $message,void,RuntimeException,handles ExecuteToolCall messages on the agent.execution.bus.
+  execute,69,72,72,22,172,private,private,no,no,no,ExecuteToolCall $message,ToolCallResult,"",invokes the tool executor and returns the resulting tool call outcome.
+  hydrateAssistantMessage,174,179,179,22,198,private,private,no,no,no,?array $payload,?AgentMessage,"",constructs an AgentMessage object from a raw payload array.

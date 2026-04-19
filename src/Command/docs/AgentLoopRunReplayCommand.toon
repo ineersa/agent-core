@@ -1,0 +1,10 @@
+spec: agent-core.file-index/v1
+file: AgentLoopRunReplayCommand.php
+class: "Ineersa\\AgentCore\\Command\\AgentLoopRunReplayCommand"
+type: final class
+summary: This command replays persisted run events after a sequence cursor.
+methods[4]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  __construct,24,27,27,21,39,public,public,no,no,no,"RunDebugService $runDebugService, RunEventSerializer $runEventSerializer","","",Injects debug replay dependencies.
+  execute,41,44,44,24,106,protected,protected,no,no,no,"InputInterface $input, OutputInterface $output",int,"",Prints replay windows for operational debugging.
+  encodeJson,108,113,113,22,118,private,private,no,no,no,array $payload,string,"",Encodes a payload as readable JSON for command output.
+  payloadPreview,120,123,123,22,135,private,private,no,no,no,mixed $payload,string,"",Builds a compact payload preview for tabular output.

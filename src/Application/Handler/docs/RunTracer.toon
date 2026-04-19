@@ -1,0 +1,8 @@
+spec: agent-core.file-index/v1
+file: RunTracer.php
+class: "Ineersa\\AgentCore\\Application\\Handler\\RunTracer"
+type: final class
+summary: This class emits lightweight structured tracing spans for run processing paths.
+methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
+  __construct,19,22,22,21,24,public,public,no,no,no,?LoggerInterface $logger = null,"","",Initializes tracer with optional logger sink.
+  inSpan,26,36,36,21,72,public,public,no,no,no,"string $name, array $attributes, callable $operation, bool $root = false",mixed,"",Executes an operation inside a span and emits start/finish trace records.

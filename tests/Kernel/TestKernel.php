@@ -16,6 +16,8 @@ use Ineersa\AgentCore\Application\Handler\OutboxProjector;
 use Ineersa\AgentCore\Application\Handler\ReplayService;
 use Ineersa\AgentCore\Application\Handler\RunEventDispatcher;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\RunMetrics;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
@@ -103,6 +105,8 @@ final class TestKernel extends Kernel
             'test.replay_service' => ReplayService::class,
             'test.message_idempotency_service' => MessageIdempotencyService::class,
             'test.run_lock_manager' => RunLockManager::class,
+            'test.run_metrics' => RunMetrics::class,
+            'test.run_tracer' => RunTracer::class,
             'test.tool_batch_collector' => ToolBatchCollector::class,
             'test.run_event_publisher' => RunEventPublisher::class,
             'test.command_router' => CommandRouter::class,

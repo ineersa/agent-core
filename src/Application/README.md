@@ -50,6 +50,15 @@ Note: `CollectToolBatch` is routed to `agent.execution.bus` in `config/messenger
 - In-process event dispatch goes through `RunEventDispatcher` + `EventSubscriberRegistry`.
 - Extension event listeners are provided through `agent_loop.extension.event_subscriber` tagged services.
 
+## Observability wiring
+
+- `RunOrchestrator` wraps command and turn processing in `RunTracer` spans (`command.*`, `turn.*`) and emits `persistence.commit` child spans during durable commit.
+- Commit persistence failures are surfaced through structured warnings (`agent_loop.commit.*`) and state rollback is attempted when event persistence fails before commit finalization.
+- `ExecuteLlmStepWorker` and `ExecuteToolCallWorker` emit execution spans (`llm.call`, `tool.call`) and feed latency/error metrics.
+- `RunMetrics` tracks active runs by status, turn-duration histogram, LLM/tool latency/error rates, command queue lag, stale-result count, and replay rebuild counters.
+- `ReplayService` increments rebuild counters and contributes replay tracing for hot-state rebuild operations.
+- `RunDebugService` exposes the current metrics snapshot for `agent-loop:run-inspect` output.
+
 ## Maintenance rule
 
 When routing, handlers, projector flow, or subscriber contracts change, update this file in the same change.

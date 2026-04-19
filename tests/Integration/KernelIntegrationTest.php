@@ -15,6 +15,8 @@ use Ineersa\AgentCore\Application\Handler\OutboxProjector;
 use Ineersa\AgentCore\Application\Handler\ReplayService;
 use Ineersa\AgentCore\Application\Handler\RunEventDispatcher;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\RunMetrics;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
@@ -23,6 +25,10 @@ use Ineersa\AgentCore\Application\Orchestrator\RunOrchestrator;
 use Ineersa\AgentCore\Application\Reducer\RunReducer;
 use Ineersa\AgentCore\Command\AgentLoopHealthCommand;
 use Ineersa\AgentCore\Command\AgentLoopResumeStaleRunsCommand;
+use Ineersa\AgentCore\Command\AgentLoopRunInspectCommand;
+use Ineersa\AgentCore\Command\AgentLoopRunRebuildHotStateCommand;
+use Ineersa\AgentCore\Command\AgentLoopRunReplayCommand;
+use Ineersa\AgentCore\Command\AgentLoopRunTailCommand;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Infrastructure\Mercure\RunEventPublisher;
@@ -86,6 +92,8 @@ final class KernelIntegrationTest extends TestCase
             'test.replay_service' => ReplayService::class,
             'test.message_idempotency_service' => MessageIdempotencyService::class,
             'test.run_lock_manager' => RunLockManager::class,
+            'test.run_metrics' => RunMetrics::class,
+            'test.run_tracer' => RunTracer::class,
             'test.tool_batch_collector' => ToolBatchCollector::class,
             'test.run_event_publisher' => RunEventPublisher::class,
             'test.command_router' => CommandRouter::class,
@@ -100,6 +108,10 @@ final class KernelIntegrationTest extends TestCase
 
         self::assertTrue($container->has(AgentLoopHealthCommand::class));
         self::assertTrue($container->has(AgentLoopResumeStaleRunsCommand::class));
+        self::assertTrue($container->has(AgentLoopRunInspectCommand::class));
+        self::assertTrue($container->has(AgentLoopRunReplayCommand::class));
+        self::assertTrue($container->has(AgentLoopRunRebuildHotStateCommand::class));
+        self::assertTrue($container->has(AgentLoopRunTailCommand::class));
         self::assertTrue($container->has('agent.command.bus'));
         self::assertTrue($container->has('agent.execution.bus'));
         self::assertTrue($container->has('agent.publisher.bus'));

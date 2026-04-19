@@ -3,6 +3,10 @@ namespace: Command
 fqcn: "Ineersa\\AgentCore\\Command"
 updatedAt: 2026-04-19
 description: Symfony console commands for operational management of the agent loop.
-files[2]{file,type,summary}:
+files[6]{file,type,summary}:
   AgentLoopHealthCommand.php,final class,This class implements a Symfony console command to report the health status of the agent loop. It retrieves configuration details to provide operational visibility into the agent's runtime state.
   AgentLoopResumeStaleRunsCommand.php,final class,This command identifies and resumes stale agent runs by coordinating with storage and locking mechanisms to ensure safe execution. It leverages a replay service to restore state and dispatches commands via the message bus to continue processing.
+  AgentLoopRunInspectCommand.php,final class,This command prints a consolidated diagnostic snapshot for a run.
+  AgentLoopRunRebuildHotStateCommand.php,final class,This command rebuilds hot prompt state from persisted run events.
+  AgentLoopRunReplayCommand.php,final class,This command replays persisted run events after a sequence cursor.
+  AgentLoopRunTailCommand.php,final class,This command prints the latest persisted events for a run.
