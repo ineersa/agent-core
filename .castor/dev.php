@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace dev;
 
+use Castor\Attribute\AsArgument;
+use Castor\Attribute\AsOption;
 use Castor\Attribute\AsTask;
 
 use function CastorTasks\dev_php_exec;
@@ -182,19 +184,54 @@ function quality(): void
 /**
  * Generate per-file method indexes from docblock summaries.
  *
- * Options: --all, --changed, --force, --dry-run, --strict, --migrate, --skip-namespace
- * Pass specific files/dirs as arguments to process only those.
+ * Defaults to changed files when no targets/options are provided.
  *
- * @param list<string> $extraArgs
+ * @param list<string> $targets
  */
 #[AsTask(description: 'Generate per-file method indexes from docblock summaries (no LLM)')]
-function index_methods(array $extraArgs = []): void
-{
+function index_methods(
+    #[AsArgument(description: 'Optional PHP files/directories to process')]
+    array $targets = [],
+    #[AsOption(description: 'Process all PHP files under src/')]
+    bool $all = false,
+    #[AsOption(description: 'Process only git-changed files')]
+    bool $changed = false,
+    #[AsOption(description: 'Show planned writes without modifying files')]
+    bool $dryRun = false,
+    #[AsOption(description: 'Regenerate even when generated indexes are newer than source')]
+    bool $force = false,
+    #[AsOption(description: 'Fail when class/method docblock summaries are missing (read-only)')]
+    bool $strict = false,
+    #[AsOption(description: 'Migrate .toon summaries back into source docblocks')]
+    bool $migrate = false,
+    #[AsOption(description: 'Skip namespace index regeneration')]
+    bool $skipNamespace = false,
+): void {
     $command = 'php scripts/generate-method-index.php';
 
-    $args = [] !== $extraArgs ? $extraArgs : \array_slice($_SERVER['argv'], 2);
-    if ([] !== $args) {
-        $command .= ' '.implode(' ', array_map('escapeshellarg', $args));
+    if ($all) {
+        $command .= ' --all';
+    }
+    if ($changed) {
+        $command .= ' --changed';
+    }
+    if ($dryRun) {
+        $command .= ' --dry-run';
+    }
+    if ($force) {
+        $command .= ' --force';
+    }
+    if ($strict) {
+        $command .= ' --strict';
+    }
+    if ($migrate) {
+        $command .= ' --migrate';
+    }
+    if ($skipNamespace) {
+        $command .= ' --skip-namespace';
+    }
+    if ([] !== $targets) {
+        $command .= ' '.implode(' ', array_map('escapeshellarg', $targets));
     }
 
     dev_php_exec($command);
