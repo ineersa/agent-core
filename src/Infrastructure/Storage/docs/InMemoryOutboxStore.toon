@@ -1,0 +1,16 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: 3e88256ce53a40f50242b67f0ee1cee738633e2a327dec2ed5043996a9df2b5f
+file: InMemoryOutboxStore.php
+class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryOutboxStore"
+type: final class
+summary: InMemoryOutboxStore provides an in-memory implementation of the outbox pattern for buffering domain events before publication. It ensures event durability within the current process lifecycle by managing entry states and preventing duplicate submissions via sink-based deduplication.
+effects: none
+dependencies: none
+methods[5]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  enqueue,32,32,32,21,50,public,public,no,no,no,"RunEvent $event, OutboxSink $sink",void,"",Adds a RunEvent to the outbox buffer using the OutboxSink for deduplication,writes to internal state,none
+  claim,52,52,52,21,89,public,public,no,no,no,"OutboxSink $sink, int $limit = 100, ?DateTimeImmutable $now = null",array,"",Retrieves up to limit pending events for processing with optional timestamp override,reads from internal state,none
+  markProcessed,91,91,91,21,99,public,public,no,no,no,"int $entryId, ?DateTimeImmutable $processedAt = null",void,"",Marks a specific outbox entry as successfully processed with optional timestamp,writes to internal state,none
+  markFailed,101,101,101,21,112,public,public,no,no,no,"int $entryId, int $retryAfterSeconds = 30, ?DateTimeImmutable $now = null",void,"",Marks a specific outbox entry as failed with retry delay and optional timestamp,writes to internal state,none
+  dedupeKey,114,114,114,22,117,private,private,no,no,no,"OutboxSink $sink, RunEvent $event",string,"",Generates a unique string identifier for an event and sink combination,none,none

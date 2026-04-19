@@ -1,0 +1,12 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: 5bd048620b30cc0e15facc1f07bb9ae61e3f83c5d1c533def641d96e6d2b68f5
+file: ProjectJsonlOutbox.php
+class: "Ineersa\\AgentCore\\Domain\\Message\\ProjectJsonlOutbox"
+type: readonly final class
+summary: ProjectJsonlOutbox configures batch and retry parameters for persisting domain events to a JSON Lines file. It serves as a configuration holder for the outbox mechanism without performing I/O operations itself.
+effects: none
+dependencies: none
+methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  __construct,9,9,9,21,13,public,public,no,no,no,"int $batchSize = 100, int $retryDelaySeconds = 30","","",Initializes batch size and retry delay configuration values,none,none

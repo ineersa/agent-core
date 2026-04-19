@@ -1,0 +1,19 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: 96a505aba786e5ac822c63044401f63682f25b9e1ffb7dba8a7afed683455825
+file: CommandStoreInterface.php
+class: "Ineersa\\AgentCore\\Contract\\CommandStoreInterface"
+type: interface
+summary: "Defines the contract for persisting and managing the lifecycle of pending commands within a specific run context. It provides mechanisms to enqueue new commands, query their status, and transition them through applied, rejected, or superseded states. This interface abstracts the underlying storage mechanism for command durability and idempotency checks."
+effects: none
+dependencies: none
+methods[8]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  enqueue,11,11,11,21,11,public,public,no,no,no,PendingCommand $command,bool,"",Persists a pending command and returns success status,state write,PendingCommand
+  has,13,13,13,21,13,public,public,no,no,no,"string $runId, string $idempotencyKey",bool,"",Checks for the existence of a command by run ID and idempotency key,none,none
+  pending,15,18,18,21,18,public,public,no,no,no,string $runId,array,"",Retrieves all pending commands for a specific run ID,none,none
+  countPending,20,20,20,21,20,public,public,no,no,no,string $runId,int,"",Returns the number of pending commands for a specific run ID,none,none
+  rejectPendingByKind,22,25,25,21,25,public,public,no,no,no,"string $runId, string $kind, string $reason",array,"",Marks pending commands of a specific kind as rejected with a reason,state write,none
+  markApplied,27,27,27,21,27,public,public,no,no,no,"string $runId, string $idempotencyKey",void,"",Marks a specific command as applied using its run ID and idempotency key,state write,none
+  markRejected,29,29,29,21,29,public,public,no,no,no,"string $runId, string $idempotencyKey, string $reason",void,"",Marks a specific command as rejected with a reason using its run ID and idempotency key,state write,none
+  markSuperseded,31,31,31,21,31,public,public,no,no,no,"string $runId, string $idempotencyKey, string $reason",void,"",Marks a specific command as superseded with a reason using its run ID and idempotency key,state write,none

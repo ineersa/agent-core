@@ -1,0 +1,12 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: 719c6d1dc58ac636133f64a8b2479ebeafa026e24192426ed026a802ac0b2ab3
+file: LlmStepResult.php
+class: "Ineersa\\AgentCore\\Domain\\Message\\LlmStepResult"
+type: readonly final class
+summary: "Represents the immutable result of a single LLM agent step within a multi-turn conversation. It encapsulates execution metadata including run identifiers, turn sequence, and idempotency keys to ensure reliable processing. This value object serves as a core domain entity for tracking agent execution state."
+effects: none
+dependencies: none
+methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  __construct,9,14,14,21,26,public,public,no,no,no,"string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey, ?array $assistantMessage = null, array $usage = [], ?string $stopReason = null, ?array $error = null","","","Initializes LLM step result with run, turn, step, attempt, and idempotency metadata",none,none

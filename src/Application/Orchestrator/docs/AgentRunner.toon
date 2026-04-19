@@ -1,0 +1,23 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: 710c6b6d96de1e86a60e942be04334d37cd46350909cebbe6854b878eb46243f
+file: AgentRunner.php
+class: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner"
+type: final class
+summary: "The AgentRunner class orchestrates the lifecycle of agent execution runs by translating high-level inputs into discrete, idempotent steps. It manages state transitions for starting, continuing, steering, and canceling runs while ensuring reliable message dispatch via a command bus."
+effects: dispatches command messages to the MessageBusInterface
+dependencies: MessageBusInterface
+methods[12]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  __construct,20,20,20,21,22,public,public,no,no,no,MessageBusInterface $commandBus,"","",Injects the command bus for dispatching core commands,none,MessageBusInterface
+  start,24,24,24,21,42,public,public,no,no,no,StartRunInput $input,RunHandle,"",Initiates a new agent run and returns a handle,dispatches start command,MessageBusInterface
+  continue,44,44,44,21,47,public,public,no,no,no,string $runId,void,"",Resumes execution for an existing run ID,dispatches continue command,MessageBusInterface
+  steer,49,49,49,21,52,public,public,no,no,no,"string $runId, AgentMessage $message",void,"",Injects steering message into a specific run,dispatches steer command,MessageBusInterface
+  followUp,54,54,54,21,57,public,public,no,no,no,"string $runId, AgentMessage $message",void,"",Processes follow-up message for a specific run,dispatches follow-up command,MessageBusInterface
+  cancel,59,59,59,21,63,public,public,no,no,no,"string $runId, ?string $reason = null",void,"",Cancels a run with an optional reason,dispatches cancel command,MessageBusInterface
+  answerHuman,65,65,65,21,71,public,public,no,no,no,"string $runId, string $questionId, mixed $answer",void,"",Submits human answer for a specific question ID,dispatches answer command,MessageBusInterface
+  applyCoreCommand,73,76,76,22,88,private,private,no,no,no,"string $runId, string $kind, array $payload",void,"",Serializes and dispatches a core command message,dispatches serialized message,MessageBusInterface
+  serializeMessage,90,93,93,22,96,private,private,no,no,no,AgentMessage $message,array,"",Converts agent message to serializable array,none,none
+  nextStepId,98,98,98,22,101,private,private,no,no,no,string $prefix,string,"",Generates unique step ID with given prefix,none,none
+  idempotencyKey,103,103,103,22,106,private,private,no,no,no,"string $runId, string $stepId",string,"",Constructs idempotency key from run and step IDs,none,none
+  dispatch,108,108,108,22,115,private,private,no,no,no,object $message,void,RuntimeException,Sends message to the command bus,dispatches message to bus,MessageBusInterface

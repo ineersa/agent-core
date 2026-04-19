@@ -1,0 +1,19 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: 9e8d007f41bdae69bdb9627f6731c2d1fd77782f62d8f3ce84d16e9361acc7ca
+file: ReplayService.php
+class: "Ineersa\\AgentCore\\Application\\Handler\\ReplayService"
+type: readonly final class
+summary: ReplayService reconstructs agent run state by replaying historical events from the event store and run logs. It verifies data integrity and rebuilds prompt state to ensure consistency across sequences.
+effects: "reads from event store and run log reader, writes to prompt state store"
+dependencies: "EventStoreInterface, RunLogReader, PromptStateStoreInterface"
+methods[8]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  __construct,14,14,14,21,19,public,public,no,no,no,"EventStoreInterface $eventStore, RunLogReader $runLogReader, PromptStateStoreInterface $promptStateStore","","",initializes dependencies for event replay and state reconstruction,none,"EventStoreInterface, RunLogReader, PromptStateStoreInterface"
+  rebuildHotPromptState,21,33,33,21,54,public,public,no,no,no,string $runId,array,"",reconstructs current prompt state for a given run by replaying events,writes to prompt state store,"PromptStateStoreInterface, eventsForReplay, replayMessages"
+  verifyIntegrity,56,66,66,21,79,public,public,no,no,no,string $runId,array,"",validates event sequence integrity and identifies missing sequences for a run,none,"eventsForReplay, missingSequences"
+  eventsForReplay,81,84,84,22,92,private,private,no,no,no,string $runId,array,"",fetches and sorts events required for replaying a specific run,none,"EventStoreInterface, RunLogReader, sortBySequence"
+  sortBySequence,94,99,99,22,104,private,private,no,no,no,array $events,array,"",orders events by their sequence number to ensure correct replay order,none,none
+  replayMessages,106,111,111,22,146,private,private,no,no,no,array $events,array,"",processes events to generate replayed message history,none,none
+  missingSequences,148,153,153,22,172,private,private,no,no,no,array $events,array,"",identifies gaps in event sequences for a given set of events,none,none
+  estimateTokens,174,177,177,22,186,private,private,no,no,no,array $messages,int,"",calculates approximate token count for a list of messages,none,none

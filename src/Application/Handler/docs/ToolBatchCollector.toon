@@ -1,0 +1,16 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: 475f0da6624a9699195872bb32ae2c358c63e712ceb051011b5737738eaf436c
+file: ToolBatchCollector.php
+class: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector"
+type: final class
+summary: "The ToolBatchCollector aggregates individual tool calls into batches based on run, turn, and step identifiers, enforcing a configurable maximum parallelism limit. It tracks expected batches and collects results to determine when a batch is complete and ready for dispatch."
+effects: none
+dependencies: none
+methods[5]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  __construct,26,26,26,21,29,public,public,no,no,no,int $defaultMaxParallelism = 4,"","",Initializes the collector with a default maximum parallelism limit,none,none
+  registerExpectedBatch,31,36,36,21,70,public,public,no,no,no,"string $runId, int $turnNo, string $stepId, array $toolCalls",array,"","Registers a new batch of tool calls identified by run, turn, and step IDs",writes internal state,none
+  collect,72,72,72,21,114,public,public,no,no,no,ToolCallResult $result,ToolBatchCollectOutcome,"",Collects a tool call result and returns the batch collection outcome,writes internal state,none
+  dispatchableCalls,116,129,129,22,173,private,private,no,no,no,array & $batch,array,"",Identifies and extracts tool calls from a batch that are ready for dispatch,none,none
+  batchKey,175,175,175,22,178,private,private,no,no,no,"string $runId, int $turnNo, string $stepId",string,"","Generates a unique composite key from run, turn, and step identifiers",none,none

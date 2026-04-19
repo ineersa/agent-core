@@ -1,0 +1,14 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: 9ad11d7c0322b4f34eee28dcaa66817cdf92b550d46164d8b9578cfc1e899bf0
+file: InMemoryRunStore.php
+class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunStore"
+type: final class
+summary: "InMemoryRunStore provides an in-memory implementation of the RunState persistence layer, designed for testing or ephemeral runtime contexts. It manages the lifecycle of agent run states using versioned optimistic locking to ensure consistency during concurrent updates."
+effects: none
+dependencies: none
+methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  get,18,18,18,21,21,public,public,no,no,no,string $runId,?RunState,"",Retrieves the current RunState for a given run ID or returns null if not found,reads in-memory state,none
+  compareAndSwap,23,23,23,21,36,public,public,no,no,no,"RunState $state, int $expectedVersion",bool,"","Updates RunState if the provided version matches the expected version, ensuring optimistic concurrency control",writes in-memory state,none
+  findRunningStaleBefore,38,38,38,21,56,public,public,no,no,no,DateTimeImmutable $updatedBefore,array,"",Identifies running RunStates that have not been updated since the specified timestamp,reads in-memory state,none

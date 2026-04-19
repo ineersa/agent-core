@@ -1,0 +1,13 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: a6854c7013aeb7bdc68e3dc03fd6e1663b9e8f1338df5eaffeb7fd38a55a72cd
+file: HookSubscriberInterface.php
+class: "Ineersa\\AgentCore\\Contract\\Extension\\HookSubscriberInterface"
+type: interface
+summary: Defines the contract for components that subscribe to and process specific system hooks within the AgentCore extension system. Implementations declare their target hook names and provide logic to process incoming hook events with associated context data.
+effects: none
+dependencies: none
+methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  subscribedHooks,11,14,14,28,14,static public,public,yes,no,no,"",array,"",Returns an array of hook names this subscriber is interested in,none,none
+  handle,16,21,21,21,21,public,public,no,no,no,"string $hookName, array $context",array,"",Processes a specific hook event with the provided context and returns the result,returns processed data array,none

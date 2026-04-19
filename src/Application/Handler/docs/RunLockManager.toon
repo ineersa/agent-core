@@ -1,0 +1,14 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: 12f1e771e2827b358cda06bdd920e259fd6817ed3e739e03fd86c7aff9599180
+file: RunLockManager.php
+class: "Ineersa\\AgentCore\\Application\\Handler\\RunLockManager"
+type: readonly final class
+summary: "The RunLockManager provides a mechanism to execute critical sections of code exclusively for a specific run ID using distributed locking. It leverages a LockFactory to acquire locks with a configurable time-to-live, ensuring thread-safe or process-safe execution of run-specific logic."
+effects: none
+dependencies: LockFactory
+methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  __construct,11,11,11,21,15,public,public,no,no,no,"LockFactory $lockFactory, float $ttlSeconds = 30.0","","",Initializes the manager with a lock factory and default TTL,none,LockFactory
+  synchronized,17,24,24,21,39,public,public,no,no,no,"string $runId, callable $criticalSection",mixed,RuntimeException,Acquires a lock for the run ID and executes the critical section,dispatches lock acquisition via LockFactory,LockFactory
+  lockKey,41,41,41,22,44,private,private,no,no,no,string $runId,string,"",Generates a unique string key for the given run ID,none,none

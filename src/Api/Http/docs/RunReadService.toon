@@ -1,0 +1,20 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: 2f2420708cd34900ae13f42bcaf3774b76f41981858adde012d1b9ab29ba84bb
+file: RunReadService.php
+class: "Ineersa\\AgentCore\\Api\\Http\\RunReadService"
+type: readonly final class
+summary: "This class provides HTTP-read access to run data and event transcripts by coordinating between run metadata stores and event storage. It retrieves summaries, paginated transcripts, and replayable event sequences while enforcing access control via the run access store."
+effects: none
+dependencies: "RunStoreInterface, RunAccessStoreInterface, EventStoreInterface, RunLogReader"
+methods[9]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  __construct,17,17,17,21,23,public,public,no,no,no,"RunStoreInterface $runStore, RunAccessStoreInterface $runAccessStore, EventStoreInterface $eventStore, RunLogReader $runLogReader","","",Injects run and event stores along with the log reader,none,"RunStoreInterface, RunAccessStoreInterface, EventStoreInterface, RunLogReader"
+  summary,25,36,36,21,71,public,public,no,no,no,string $runId,?array,"",Retrieves the latest summary for a specific run ID,reads run store and access store,"RunStoreInterface, RunAccessStoreInterface"
+  transcriptPage,73,83,83,21,121,public,public,no,no,no,"string $runId, int $cursor, int $limit",?array,"",Returns a paginated page of transcript messages using cursor and limit,reads event store and access store,"EventStoreInterface, RunAccessStoreInterface"
+  replayAfter,123,132,132,21,158,public,public,no,no,no,"string $runId, int $afterSeq",?array,"",Fetches events occurring after a given sequence number for a run,reads event store and access store,"EventStoreInterface, RunAccessStoreInterface"
+  eventsForRun,160,163,163,22,171,private,private,no,no,no,string $runId,array,"",Fetches all events associated with a specific run ID,reads event store,EventStoreInterface
+  sortBySequence,173,178,178,22,183,private,private,no,no,no,array $events,array,"",Sorts an array of events by their sequence number,none,none
+  latestSummary,185,188,188,22,200,private,private,no,no,no,array $messages,?string,"",Extracts the most recent summary string from a list of messages,none,none
+  messageSummary,202,202,202,22,220,private,private,no,no,no,AgentMessage $message,?string,"",Generates a summary string from a single agent message,none,none
+  missingSequences,222,227,227,22,246,private,private,no,no,no,"array $events, int $expectedStart",array,"",Identifies gaps in event sequences starting from an expected start value,none,none

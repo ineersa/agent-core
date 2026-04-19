@@ -1,0 +1,12 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: eaf53a7df45088a2d637b8f386e616d0dbcefdea8ec6b0c159053efeaf710700
+file: AfterToolCallHookInterface.php
+class: "Ineersa\\AgentCore\\Contract\\Hook\\AfterToolCallHookInterface"
+type: interface
+summary: Defines the contract for processing events after a tool execution completes within the agent core. It enables decoupled post-processing logic by providing context and cancellation support for the result.
+effects: none
+dependencies: none
+methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  afterToolCall,12,12,12,21,12,public,public,no,no,no,"AfterToolCallContext $context, ?CancellationTokenInterface $cancelToken = null",?AfterToolCallResult,"",Processes the result of a tool call using the provided context and optional cancellation token,none,"AfterToolCallContext, CancellationTokenInterface, AfterToolCallResult"

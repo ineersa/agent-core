@@ -1,0 +1,12 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: 5491e12d413f67462d4fe67319796d30280793f296cef3c9b1f33be38c119281
+file: BeforeToolCallContext.php
+class: "Ineersa\\AgentCore\\Domain\\Tool\\BeforeToolCallContext"
+type: readonly final class
+summary: "This readonly final class encapsulates the immutable context required before a tool execution, bundling the assistant's message, the specific tool call, and its arguments. It serves as a structured data carrier to pass execution state through the agent's processing pipeline without exposing mutable state."
+effects: none
+dependencies: "Ineersa\\AgentCore\\Domain\\AgentMessage, Ineersa\\AgentCore\\Domain\\ToolCall"
+methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  __construct,11,11,11,21,17,public,public,no,no,no,"AgentMessage $assistantMessage, ToolCall $toolCall, mixed $args, mixed $context","","","Initializes the context with assistant message, tool call, arguments, and generic context data",none,"AgentMessage, ToolCall"

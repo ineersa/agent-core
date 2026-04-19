@@ -1,0 +1,14 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: f888798668c75f6301b4913ac7a1642b2a4704f9df291d71d9626115a322ae49
+file: AgentMessage.php
+class: "Ineersa\\AgentCore\\Domain\\Message\\AgentMessage"
+type: readonly final class
+summary: "Represents a single message within an agent conversation, encapsulating role, content, and optional metadata like name or tool call identifiers. Designed as a readonly value object to ensure immutability and consistent serialization of chat history."
+effects: none
+dependencies: none
+methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  __construct,12,16,16,21,27,public,public,no,no,no,"string $role, array $content, ?DateTimeImmutable $timestamp = null, ?string $name = null, ?string $toolCallId = null, ?string $toolName = null, mixed $details = null, bool $isError = false, array $metadata = []","","","Initializes the message with role, content, and optional metadata fields",none,none
+  isCustomRole,29,29,29,21,32,public,public,no,no,no,"",bool,"","Checks if the message role is not a standard system, user, or assistant type",none,none
+  toArray,34,37,37,21,70,public,public,no,no,no,"",array,"",Converts the message instance into a plain array representation,none,none

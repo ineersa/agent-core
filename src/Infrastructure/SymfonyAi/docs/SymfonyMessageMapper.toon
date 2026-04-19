@@ -1,0 +1,24 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: 5098f91fb6eb7a7e84edc57c97e6e5f66842488442631ba0dfe12d46940b898e
+file: SymfonyMessageMapper.php
+class: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper"
+type: final class
+summary: SymfonyMessageMapper translates between internal AgentMessage objects and provider-specific message formats for AI integration. It normalizes content structures and handles tool call serialization to ensure compatibility with external AI service APIs.
+effects: none
+dependencies: "Ineersa\\AgentCore\\Domain\\Model\\AgentMessage, Symfony\\Component\\Messenger\\MessageBag"
+methods[13]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  toMessageBag,12,15,15,21,32,public,public,no,no,no,array $messages,MessageBag,"",Converts an array of provider messages into a MessageBag instance,none,MessageBag
+  toProviderInput,34,37,37,21,63,public,public,no,no,no,MessageBag $messageBag,array|object,"",Transforms a MessageBag into a provider-compatible array or object,none,"convertAgentMessage, toGenericMessageObject, toNativeToolCallMessage"
+  convertAgentMessage,65,65,65,22,84,private,private,no,no,no,AgentMessage $message,object,"",Maps an AgentMessage to a provider-specific object format,none,"assistantToolCalls, toGenericMessageObject, toNativeToolCallMessage"
+  toNativeToolCallMessage,86,86,86,22,110,private,private,no,no,no,"AgentMessage $message, string $textContent",object,"",Constructs a native tool call message object from agent message content,none,stringify
+  assistantToolCalls,112,115,115,22,153,private,private,no,no,no,AgentMessage $message,?array,"",Extracts tool call data from an agent message if present,none,contentToText
+  toGenericMessageObject,155,155,155,22,180,private,private,no,no,no,AgentMessage $message,object,"",Creates a generic message object representation from an agent message,none,"userText, contentToText"
+  supportsNativeMessageApi,182,182,182,22,186,private,private,no,no,no,"",bool,"",Checks if the current provider supports native message API formats,none,none
+  isNativeMessageBag,188,188,188,22,191,private,private,no,no,no,object $message,bool,"",Determines if a message object conforms to the native message bag structure,none,none
+  userText,193,193,193,22,200,private,private,no,no,no,"AgentMessage $message, string $textContent",string,"",Extracts plain text content from an agent message for user role,none,contentToText
+  contentToText,202,205,205,22,223,private,private,no,no,no,array $content,string,"",Converts a content array into a single plain text string,none,stringify
+  normalizeProviderMessage,225,228,228,22,259,private,private,no,no,no,object $message,array,"",Normalizes a provider message object into a standardized array structure,none,normalizeContent
+  normalizeContent,261,261,261,22,276,private,private,no,no,no,mixed $content,mixed,"",Normalizes mixed content types into a consistent format,none,stringify
+  stringify,278,278,278,22,295,private,private,no,no,no,mixed $value,string,"",Converts a mixed value into its string representation,none,none

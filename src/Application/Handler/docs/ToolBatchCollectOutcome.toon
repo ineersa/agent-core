@@ -1,0 +1,16 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: 920492f977dc3c1edce06b1c87eb627c9f2b1e5aaadcb19008fc7ada9ea34481
+file: ToolBatchCollectOutcome.php
+class: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollectOutcome"
+type: readonly final class
+summary: "A readonly value object representing the outcome of a tool batch execution within the agent core application. It encapsulates execution status flags, ordered results, and side-effect payloads for downstream processing. Designed to provide a structured, immutable contract for communicating batch processing states."
+effects: none
+dependencies: none
+methods[5]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  __construct,12,16,16,21,23,public,public,no,no,no,"bool $accepted, bool $duplicate, bool $complete, array $orderedResults = [], array $effectsToDispatch = []","","","Initializes the outcome with acceptance, duplicate, and completion flags along with results and effects",none,none
+  rejected,25,25,25,28,28,static public,public,yes,no,no,"",self,"",Creates a static instance representing a rejected batch outcome,none,none
+  duplicate,30,30,30,28,33,static public,public,yes,no,no,"",self,"",Creates a static instance representing a duplicate batch outcome,none,none
+  acceptedPending,35,38,38,28,41,static public,public,yes,no,no,"array $effectsToDispatch = []",self,"",Creates a static instance for an accepted batch awaiting completion with optional effects,none,none
+  acceptedComplete,43,47,47,28,56,static public,public,yes,no,no,"array $orderedResults, array $effectsToDispatch = []",self,"",Creates a static instance for a fully completed batch with results and effects to dispatch,none,none

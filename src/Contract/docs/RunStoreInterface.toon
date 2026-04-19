@@ -1,0 +1,14 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: f93b4e98ee2531a1adb75c36ac1639d28f42e07aa67ca2b5442adc0387c6d78b
+file: RunStoreInterface.php
+class: "Ineersa\\AgentCore\\Contract\\RunStoreInterface"
+type: interface
+summary: "Defines the contract for persisting and managing agent run states with optimistic concurrency control. It supports retrieving individual run states, atomically updating them based on version numbers, and identifying stale running runs for cleanup."
+effects: none
+dependencies: none
+methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  get,11,11,11,21,11,public,public,no,no,no,string $runId,?RunState,"",Retrieves the current RunState for a given run ID,none,none
+  compareAndSwap,13,13,13,21,13,public,public,no,no,no,"RunState $state, int $expectedVersion",bool,"",Atomically updates a RunState if the current version matches the expected version,none,none
+  findRunningStaleBefore,15,18,18,21,18,public,public,no,no,no,DateTimeImmutable $updatedBefore,array,"",Finds running runs that have not been updated since the specified timestamp,none,none

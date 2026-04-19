@@ -1,0 +1,15 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: 651a6a7b474ee63d29d206cd010a1ea08151410d48b521bf714a67eaa3bf50a8
+file: CommandRouter.php
+class: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter"
+type: final class
+summary: "The CommandRouter class acts as a central dispatcher for ApplyCommand instances, routing them to appropriate handlers based on command kind. It leverages a CommandHandlerRegistry to resolve specific handler implementations and validates command options before routing."
+effects: none
+dependencies: "CommandHandlerRegistry, CommandHandlerInterface, ApplyCommand, RoutedCommand"
+methods[4]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  __construct,14,14,14,21,18,public,public,no,no,no,"CommandHandlerRegistry $registry, string $extensionPrefix = 'ext:'","","",Initializes the router with a handler registry and optional extension prefix,none,CommandHandlerRegistry
+  route,20,20,20,21,59,public,public,no,no,no,ApplyCommand $command,RoutedCommand,"",Routes an ApplyCommand to its corresponding handler and returns a RoutedCommand,dispatches handler resolution,"CommandHandlerRegistry, ApplyCommand, RoutedCommand"
+  handlerFor,61,61,61,21,64,public,public,no,no,no,string $kind,?CommandHandlerInterface,"",Retrieves a CommandHandlerInterface instance for a given command kind,none,CommandHandlerRegistry
+  validateOptionKeys,66,66,66,22,83,private,private,no,no,no,ApplyCommand $command,?string,"",Validates option keys within an ApplyCommand and returns error message if invalid,none,ApplyCommand

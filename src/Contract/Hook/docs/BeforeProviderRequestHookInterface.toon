@@ -1,0 +1,12 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: 9d6f2cbc3c777a2e710a573e43ea3c586a03bd7a247925849737819d3b0920e7
+file: BeforeProviderRequestHookInterface.php
+class: "Ineersa\\AgentCore\\Contract\\Hook\\BeforeProviderRequestHookInterface"
+type: interface
+summary: "Defines a hook interface for intercepting provider requests before they are dispatched. It allows modifying or canceling the request based on the model, input, and options provided."
+effects: none
+dependencies: none
+methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  beforeProviderRequest,11,15,15,21,20,public,public,no,no,no,"string $model, array $input, array $options, ?CancellationTokenInterface $cancelToken = null",?ProviderRequest,"",Intercepts provider request creation to allow modification or cancellation,returns null to cancel or a ProviderRequest instance,"CancellationTokenInterface, ProviderRequest"

@@ -1,0 +1,23 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: a2698bca2cb9b4661f68c382caea0872dff141225c1dc2d449fe02e45b9ed01d
+file: RunApiController.php
+class: "Ineersa\\AgentCore\\Api\\Http\\RunApiController"
+type: final class
+summary: "Ineersa\\AgentCore\\Api\\Http\\RunApiController is a final HTTP controller that exposes RESTful endpoints for managing agent run lifecycles, including starting runs, sending commands, and retrieving summaries or transcripts. It enforces access control and validates input payloads before delegating execution to domain services and message buses."
+effects: "Dispatches commands via MessageBus, writes/reads run state via RunStore and RunAccessStore, and returns HTTP JSON responses."
+dependencies: "AgentRunnerInterface, MessageBusInterface, RunStoreInterface, RunAccessStoreInterface, RunReadService, Symfony Request/Response components."
+methods[12]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  __construct,31,31,31,21,40,public,public,no,no,no,"AgentRunnerInterface $runner, MessageBusInterface $commandBus, RunStoreInterface $runStore, RunAccessStoreInterface $runAccessStore, RunReadService $runReadService, RunEventSerializer $eventSerializer, RunTopicPolicy $topicPolicy","","",Injects domain services and infrastructure dependencies into the controller,none,"AgentRunnerInterface, MessageBusInterface, RunStoreInterface, RunAccessStoreInterface, RunReadService"
+  startRun,42,42,43,21,112,public,public,no,no,no,Request $request,JsonResponse,"",Creates a new agent run by processing POST request payload and returning the created run ID,"Dispatches start command via MessageBus, writes run state via RunStore","AgentRunnerInterface, MessageBusInterface, RunStoreInterface, Request"
+  sendCommand,114,114,115,21,197,public,public,no,no,no,"string $runId, Request $request",JsonResponse,RuntimeException,Sends a command to an existing run identified by runId from POST request payload,"Dispatches command via MessageBus, reads run access via RunAccessStore","MessageBusInterface, RunAccessStoreInterface, Request"
+  runSummary,199,199,200,21,215,public,public,no,no,no,"string $runId, Request $request",JsonResponse,"",Retrieves summary details for a run identified by runId via GET request,Reads run data via RunReadService,"RunReadService, RunAccessStoreInterface"
+  transcriptPage,217,217,218,21,234,public,public,no,no,no,"string $runId, Request $request",JsonResponse,"",Returns a paginated transcript of messages for a run identified by runId via GET request,Reads transcript data via RunReadService,"RunReadService, RunAccessStoreInterface"
+  replayEvents,236,236,237,21,279,public,public,no,no,no,"string $runId, Request $request",JsonResponse,"","Streams events for a run identified by runId via GET request, supporting cursor-based pagination",Reads event data via RunReadService,"RunReadService, RunAccessStoreInterface"
+  authorizeRun,281,281,281,22,294,private,private,no,no,no,"string $runId, Request $request",?JsonResponse,"",Validates user access to a specific run by checking runId and request credentials,Reads access permissions via RunAccessStore,"RunAccessStoreInterface, Request"
+  requestActor,296,299,299,22,305,private,private,no,no,no,Request $request,array,"",Extracts actor identity and context from the HTTP request headers or body,none,Request
+  jsonBody,307,310,310,22,328,private,private,no,no,no,Request $request,array,BadRequestHttpException,Parses and returns the JSON body from the HTTP request as an associative array,none,Request
+  parseNonNegativeInt,330,330,330,22,345,private,private,no,no,no,"mixed $value, string $fieldName",int,BadRequestHttpException,Validates and converts a value to a non-negative integer for a given field name,none,none
+  normalizeString,347,347,347,22,356,private,private,no,no,no,mixed $value,?string,"","Trims and normalizes a string value, returning null if empty or invalid",none,none
+  error,358,358,358,22,361,private,private,no,no,no,"string $message, int $status",JsonResponse,"",Constructs and returns a standardized JSON error response with the given message and status code,none,none

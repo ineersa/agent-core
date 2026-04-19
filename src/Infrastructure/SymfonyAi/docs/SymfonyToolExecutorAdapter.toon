@@ -1,0 +1,18 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: fb9a3fa655bebe6ca3d6e165e3f457eb8fd6e6a17e7110f05e815219fbf9862a
+file: SymfonyToolExecutorAdapter.php
+class: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyToolExecutorAdapter"
+type: readonly final class
+summary: "SymfonyToolExecutorAdapter bridges the AgentCore tool execution model with the Symfony ecosystem by delegating calls to a fallback executor or a Symfony-specific toolbox. It manages the lifecycle of tool invocations through configurable before and after hooks, ensuring consistent result formatting and progress tracking."
+effects: "invokes fallback executor or toolbox methods, executes before/after hooks, returns ToolResult"
+dependencies: "ToolExecutor, Symfony toolbox instance, beforeToolCallHooks, afterToolCallHooks"
+methods[7]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  __construct,20,24,24,21,30,public,public,no,no,no,"ToolExecutor $fallbackExecutor, ?object $toolbox = null, iterable $beforeToolCallHooks = [], iterable $afterToolCallHooks = []","","",initializes adapter with fallback executor and optional toolbox with hooks,none,"ToolExecutor, toolbox, beforeToolCallHooks, afterToolCallHooks"
+  execute,32,32,32,21,134,public,public,no,no,no,ToolCall $toolCall,ToolResult,"",executes tool call via fallback executor or Symfony toolbox and returns result,"invokes executor or toolbox, executes hooks","fallbackExecutor, toolbox, beforeToolCallHooks, afterToolCallHooks"
+  toToolCallMessagePayload,136,139,139,21,161,public,public,no,no,no,"ToolCall $toolCall, ToolResult $result",array,"",converts tool call and result into a standardized message payload array,none,none
+  toProgressUpdate,163,166,166,21,175,public,public,no,no,no,"string $toolCallId, string $toolName, string $message, int $progress",array,"","formats tool call ID, name, message, and progress into a progress update array",none,none
+  canUseSymfonyToolbox,177,177,177,22,182,private,private,no,no,no,"",bool,"",checks if Symfony toolbox is available and usable for the current context,none,toolbox
+  toSymfonyToolCall,184,184,184,22,194,private,private,no,no,no,ToolCall $toolCall,object,"",transforms generic ToolCall into a Symfony-specific tool call object,none,none
+  stringify,196,196,196,22,217,private,private,no,no,no,mixed $value,string,"",converts mixed value to its string representation,none,none

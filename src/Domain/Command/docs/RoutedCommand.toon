@@ -1,0 +1,16 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: b27559f01bab77d6b616bec6d9c0341765234054a1bcde826b87f0048402f860
+file: RoutedCommand.php
+class: "Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand"
+type: readonly final class
+summary: "RoutedCommand is a readonly value object representing a command in the domain layer, distinguishing between core and extension command types. It encapsulates the command kind, payload, options, and status to provide a structured representation of domain operations."
+effects: none
+dependencies: none
+methods[5]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  __construct,9,13,13,22,20,private,private,no,no,no,"string $status, string $kind, array $payload = [], array $options = [], ?string $reason = null","","","Initializes the command with status, kind, payload, options, and optional reason",none,none
+  core,22,26,26,28,29,static public,public,yes,no,no,"string $kind, array $payload, array $options",self,"","Creates a core command instance with the specified kind, payload, and options",none,none
+  extension,31,35,35,28,38,static public,public,yes,no,no,"string $kind, array $payload, array $options",self,"","Creates an extension command instance with the specified kind, payload, and options",none,none
+  rejected,40,40,40,28,43,static public,public,yes,no,no,"string $kind, string $reason",self,"",Creates a rejected command instance with the specified kind and reason,none,none
+  isRejected,45,45,45,21,48,public,public,no,no,no,"",bool,"",Returns true if the command status indicates rejection,none,none

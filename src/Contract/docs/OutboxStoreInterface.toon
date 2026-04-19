@@ -1,0 +1,15 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: a3e59a02dda9084f8b43055fc68891431a6e801cd1723d9994d2ff79d7558315
+file: OutboxStoreInterface.php
+class: "Ineersa\\AgentCore\\Contract\\OutboxStoreInterface"
+type: interface
+summary: "Defines the contract for persisting and retrieving outbound event entries to ensure reliable delivery. It provides mechanisms to enqueue new events, claim batches for processing, and update their status upon completion or failure."
+effects: "persists event entries, updates processing status, and manages retry scheduling"
+dependencies: none
+methods[4]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  enqueue,13,13,13,21,13,public,public,no,no,no,"RunEvent $event, OutboxSink $sink",void,"",persists a RunEvent into the outbox store with the specified sink,writes event entry to storage,OutboxSink
+  claim,15,18,18,21,18,public,public,no,no,no,"OutboxSink $sink, int $limit = 100, ?DateTimeImmutable $now = null",array,"",retrieves up to limit unprocessed entries for the given sink,reads entries from storage,OutboxSink
+  markProcessed,20,20,20,21,20,public,public,no,no,no,"int $entryId, ?DateTimeImmutable $processedAt = null",void,"",marks an entry as successfully processed with an optional timestamp,updates entry status to processed,none
+  markFailed,22,22,22,21,22,public,public,no,no,no,"int $entryId, int $retryAfterSeconds = 30, ?DateTimeImmutable $now = null",void,"",marks an entry as failed and schedules retry after specified seconds,updates entry status to failed and sets retry time,none

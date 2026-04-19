@@ -1,0 +1,16 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: be271fc10c106d2e66001636491740dab69ac36b77e92bc79d23d86ecf22598b
+file: ToolCatalogResolver.php
+class: "Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver"
+type: final class
+summary: Resolves tool catalog definitions by iterating over registered providers and aggregating their payloads. Ensures schema stability for each tool definition by computing and verifying a deterministic fingerprint.
+effects: none
+dependencies: iterable of ToolDefinition providers
+methods[5]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  __construct,15,18,18,21,21,public,public,no,no,no,iterable $providers,"","",Injects provider iterable for tool catalog resolution,none,none
+  resolve,23,28,28,21,41,public,public,no,no,no,"array $context = []",array,"",Aggregates tool definitions from all registered providers,none,providers
+  resolveProviderPayload,43,48,48,21,54,public,public,no,no,no,"array $context = []",array,"",Retrieves and validates payload from a single provider,none,providers
+  assertSchemaStability,56,56,56,22,72,private,private,no,no,no,ToolDefinition $definition,void,LogicException,Verifies schema fingerprint consistency for a tool definition,none,none
+  schemaFingerprint,74,77,77,22,85,private,private,no,no,no,?array $schema,string,"",Computes deterministic hash of a tool schema array,none,none

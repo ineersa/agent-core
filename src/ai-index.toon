@@ -1,0 +1,9 @@
+spec: agent-core.ai-docs/v1
+namespace: src
+fqcn: "Ineersa\\AgentCore"
+updatedAt: 2026-04-19
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+files[1]{file,type,summary}:
+  AgentLoopBundle.php,final class,"The AgentLoopBundle class serves as the Symfony bundle entry point for the AgentCore library, facilitating its integration into the application container. It provides the standard mechanism for registering the bundle's configuration and services within the Symfony framework."
+sourceHash: 69409bb228c7d9d0756cee519a6925ab094f9f3169a667a52408a5d66cc87ec6

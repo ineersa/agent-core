@@ -1,0 +1,12 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: aff324c62ec7fb9944dce4846176c3924685f4781cfb50ff878f408c68bcda68
+file: ApplyCommand.php
+class: "Ineersa\\AgentCore\\Domain\\Message\\ApplyCommand"
+type: readonly final class
+summary: "The ApplyCommand class represents a domain event for applying a command within a specific execution step. It encapsulates the necessary context such as run ID, turn number, and step ID to ensure proper sequencing and identification of the operation."
+effects: none
+dependencies: none
+methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  __construct,9,13,13,21,24,public,public,no,no,no,"string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey, string $kind, array $payload = [], array $options = []","","","Initializes the command with run, turn, step, attempt, and idempotency context",none,none

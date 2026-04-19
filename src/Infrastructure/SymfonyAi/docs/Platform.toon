@@ -1,0 +1,22 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: e14225835adcbc736ea8cbae3f8afedce1c22913237cd49ce87967f3bc9c1bf1
+file: Platform.php
+class: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform"
+type: readonly final class
+summary: "The Platform class orchestrates the execution of AI agent runs within the Symfony infrastructure, bridging high-level agent inputs with the underlying provider invoker. It manages context resolution, message transformation, and hook application to prepare requests for external AI providers. The class ensures proper lifecycle management of runs and cancellation tokens while abstracting provider-specific details."
+effects: "Writes run context to RunStoreInterface, dispatches cancellation signals via CancellationTokenInterface, and invokes external AI providers through SymfonyPlatformInvoker."
+dependencies: "SymfonyPlatformInvoker, RunStoreInterface, ToolCatalogResolver, SymfonyMessageMapper, and external AI provider APIs."
+methods[11]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  __construct,21,26,26,21,37,public,public,no,no,no,"SymfonyPlatformInvoker $invoker, RunStoreInterface $runStore, ToolCatalogResolver $toolCatalogResolver, SymfonyMessageMapper $messageMapper, iterable $transformContextHooks = [], iterable $convertToLlmHooks = [], iterable $beforeProviderRequestHooks = [], ?ModelResolverInterface $modelResolver = null, string $defaultModel = 'gpt-4o-mini'","","",Initializes the platform with required infrastructure collaborators and optional context hooks,none,"SymfonyPlatformInvoker, RunStoreInterface, ToolCatalogResolver, SymfonyMessageMapper, transformContextHooks"
+  invoke,39,39,39,21,83,public,public,no,no,no,"string $model, array $input, array $options = []",array,"","Executes an AI agent run with the specified model, input, and options","Writes run context to RunStoreInterface, invokes external AI provider, returns provider response","SymfonyPlatformInvoker, RunStoreInterface, ToolCatalogResolver, SymfonyMessageMapper"
+  runContextFrom,85,90,90,22,107,private,private,no,no,no,array $input,array,"",Constructs the run context array from the provided input payload,none,none
+  resolveContextMessages,109,114,114,22,149,private,private,no,no,no,"array $input, ?string $runId",array,"",Resolves and formats context messages for the agent run using the input and optional run ID,none,SymfonyMessageMapper
+  applyTransformHooks,151,156,156,22,165,private,private,no,no,no,"array $messages, CancellationTokenInterface $cancelToken",array,"",Applies registered transform hooks to messages with cancellation support,"Modifies message array via hooks, respects CancellationTokenInterface","transformContextHooks, CancellationTokenInterface"
+  applyConvertHooks,167,170,170,22,179,private,private,no,no,no,"array $messages, CancellationTokenInterface $cancelToken",MessageBag,"",Applies conversion hooks to messages and returns a MessageBag,"Returns MessageBag, respects CancellationTokenInterface","convert hooks (implicit), CancellationTokenInterface"
+  applyBeforeProviderRequestHooks,181,187,187,22,210,private,private,no,no,no,"string $model, array $input, array $options, CancellationTokenInterface $cancelToken",array,"","Executes pre-request hooks on model, input, and options with cancellation support","Modifies input/options via hooks, respects CancellationTokenInterface","beforeProviderRequest hooks (implicit), CancellationTokenInterface"
+  providerInputFrom,212,217,217,22,236,private,private,no,no,no,array $input,array|object,"",Transforms the agent input into the format expected by the AI provider,none,none
+  optionsWithoutInternalFields,238,243,243,22,248,private,private,no,no,no,array $options,array,"",Filters out internal fields from options before passing to the provider,none,none
+  cancellationToken,250,250,250,22,261,private,private,no,no,no,"?string $runId, mixed $provided",CancellationTokenInterface,"",Creates or retrieves a cancellation token based on run ID and provided value,none,CancellationTokenInterface
+  hydrateMessage,263,266,266,22,295,private,private,no,no,no,array $payload,?AgentMessage,"",Converts a message payload array into an AgentMessage object,none,AgentMessage

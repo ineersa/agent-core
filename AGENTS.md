@@ -82,15 +82,16 @@ Indexes are maintained via `castor dev:index-methods`. This command:
 
 Usage:
 - `castor dev:index-methods` — process git-changed files
-- `castor dev:index-methods --all --force` — full regeneration
-- `castor dev:index-methods --dry-run` — preview without writing
+- `php scripts/generate-method-index.php --all --force` — full regeneration
+- `php scripts/generate-method-index.php --dry-run` — preview without writing
 
 #### When to run
 
 - **At session end** — after code changes are complete, run `castor dev:index-methods` to update indexes for changed files.
 - **On demand** — when the user asks to regenerate indexes.
+- **After index regeneration** — refresh the repository root `ai-index.toon` so package-level summaries, namespace descriptions, and metadata (`updatedAt`, `indexedAt`, `indexedCommit`, `sourceHash`) stay aligned with the generated `src/**/ai-index.toon` files.
 
-**The main agent MUST NOT edit `ai-index.toon` or `docs/*.toon` files manually.** Always use `castor dev:index-methods`.
+**The main agent MUST NOT edit generated `src/**/ai-index.toon` or `docs/*.toon` files manually.** Always regenerate those via `castor dev:index-methods` (or the underlying script for full runs). The repository root `ai-index.toon` is curated and should be updated intentionally after regeneration.
 
 ## Architecture notes (README-driven, mandatory)
 
@@ -116,6 +117,6 @@ The `ai-index.toon` system is for **navigation indexes** (class/method lookup), 
 - `Ineersa\AgentCore\Infrastructure`
   - Concrete adapters/integrations (Flysystem run logs, Mercure publisher, in-memory stores, Symfony AI bridge).
 - `Ineersa\AgentCore\Api`
-  - Public transport-facing API contracts/controllers/DTOs (planned in later stages).
+  - Public transport-facing API controllers/DTOs/serializers for run start/commands/read/replay and stream payloads.
 - `Ineersa\AgentCore\Command`
   - Console operational commands (`agent-loop:health`, etc.).

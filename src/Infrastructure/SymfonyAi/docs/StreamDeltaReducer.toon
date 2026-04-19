@@ -1,0 +1,28 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: 8e028a2a682545d4a040ae263a410fbd9c159c2a4fd337a11c6301ed52e2c405
+file: StreamDeltaReducer.php
+class: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer"
+type: final class
+summary: "StreamDeltaReducer aggregates incremental streaming deltas from an AI assistant into a coherent final message structure, including text content and tool call executions. It parses partial JSON arguments for tool calls and merges token usage statistics from the stream. The class maintains internal state to reconstruct the complete assistant response and associated metadata."
+effects: none
+dependencies: none
+methods[17]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  consume,27,27,27,21,120,public,public,no,no,no,mixed $delta,void,"",Processes a single streaming delta object to update internal state,writes internal state,none
+  deltas,122,125,125,21,128,public,public,no,no,no,"",array,"",Returns the accumulated array of raw delta objects,none,none
+  usage,130,133,133,21,136,public,public,no,no,no,"",array,"",Returns the merged token usage statistics array,none,none
+  assistantMessage,138,141,141,21,169,public,public,no,no,no,"",array,"",Returns the reconstructed assistant message array with text and tool calls,none,none
+  hasToolCalls,171,171,171,21,174,public,public,no,no,no,"",bool,"",Checks if any tool calls were registered during consumption,none,none
+  appendText,176,176,176,22,187,private,private,no,no,no,string $text,void,"",Appends text content to the current assistant message buffer,writes internal state,none
+  registerToolCallStart,189,189,189,22,209,private,private,no,no,no,"string $id, string $name",void,"",Initializes a new tool call entry with its ID and name,writes internal state,none
+  registerToolInputDelta,211,211,211,22,237,private,private,no,no,no,"string $id, string $name, string $partialJson",void,"",Accumulates partial JSON arguments for an active tool call,writes internal state,none
+  registerToolCallComplete,239,239,239,22,269,private,private,no,no,no,object $delta,void,"",Finalizes a tool call by parsing and storing its complete arguments,writes internal state,none
+  mergeUsage,271,274,274,22,279,private,private,no,no,no,array $usage,void,"",Adds token usage counts from a delta to the total usage accumulator,writes internal state,none
+  looksLikeTokenUsage,281,281,281,22,286,private,private,no,no,no,object $delta,bool,"",Determines if a delta object contains token usage statistics,none,none
+  usageFromTokenUsage,288,291,291,22,305,private,private,no,no,no,object $delta,array,"",Extracts and normalizes token usage counts from a delta object,none,none
+  orderedToolCalls,307,310,310,22,333,private,private,no,no,no,"",array,"",Returns the list of tool calls sorted by their registration order,none,none
+  stringFrom,335,338,338,22,360,private,private,no,no,no,"object $value, array $methods",string,"",Extracts a string value from an object using a list of method names,none,none
+  numericFrom,362,365,365,22,379,private,private,no,no,no,"object $value, array $methods",int|float|null,"",Extracts a numeric value from an object using a list of method names,none,none
+  parseArguments,381,384,384,22,396,private,private,no,no,no,string $json,?array,"",Parses a JSON string into an associative array or returns null,none,none
+  shortClass,398,398,398,22,403,private,private,no,no,no,string $fqcn,string,"",Extracts the short class name from a fully qualified class name,none,none

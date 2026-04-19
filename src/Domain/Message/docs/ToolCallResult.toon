@@ -1,0 +1,12 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: e732c14725203c03b843598b8cc1a8d2519104229cef70c78da99dec49e9ff7a
+file: ToolCallResult.php
+class: "Ineersa\\AgentCore\\Domain\\Message\\ToolCallResult"
+type: readonly final class
+summary: "Represents the result of a tool execution within an agent run, capturing execution context and identity metadata. This immutable value object serves as a domain event or message payload for tracking tool call outcomes."
+effects: none
+dependencies: none
+methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  __construct,9,12,12,21,25,public,public,no,no,no,"string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey, string $toolCallId, int $orderIndex, mixed $result = null, bool $isError = false, ?array $error = null","","","Initializes tool call result with run, turn, step, attempt, and idempotency metadata",none,none

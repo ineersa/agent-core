@@ -1,0 +1,12 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: 094324b83e8824bbb9e2e9bf40235de6e63417725effb3a61a9f675f72d61bfd
+file: ConvertToLlmHookInterface.php
+class: "Ineersa\\AgentCore\\Contract\\Hook\\ConvertToLlmHookInterface"
+type: interface
+summary: Defines the contract for converting raw message arrays into a structured MessageBag for Large Language Model processing. This interface allows implementations to transform and normalize input data while supporting cancellation via a CancellationToken.
+effects: none
+dependencies: none
+methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  convertToLlm,12,15,15,21,15,public,public,no,no,no,"array $messages, ?CancellationTokenInterface $cancelToken = null",MessageBag,"",Transforms an array of messages into a MessageBag with optional cancellation support,returns MessageBag,CancellationTokenInterface

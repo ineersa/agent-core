@@ -1,0 +1,14 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: 622214d614e1ccd624238aca813c93aa2dc61ebf84ffe8cfe5fa97590ecbe81d
+file: MessageBag.php
+class: "Ineersa\\AgentCore\\Domain\\Message\\MessageBag"
+type: readonly final class
+summary: MessageBag is a readonly value object that encapsulates a collection of domain messages. It provides a simple interface to retrieve the contained messages or instantiate an empty instance.
+effects: none
+dependencies: none
+methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  __construct,9,12,12,21,14,public,public,no,no,no,array $messages,"","",Initializes the message bag with the provided array of messages,none,none
+  all,16,19,19,21,22,public,public,no,no,no,"",array,"",Returns the complete array of stored messages,none,none
+  empty,24,24,24,28,27,static public,public,yes,no,no,"",self,"",Creates and returns a new empty MessageBag instance,none,none

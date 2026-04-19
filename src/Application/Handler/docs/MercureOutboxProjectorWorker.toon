@@ -1,0 +1,13 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: 0406064aa8683f7bb61f34d3acaab553ed06b49398778f4d496388926c187d87
+file: MercureOutboxProjectorWorker.php
+class: "Ineersa\\AgentCore\\Application\\Handler\\MercureOutboxProjectorWorker"
+type: readonly final class
+summary: This class acts as a worker that processes Mercure outbox projection messages by retrieving pending events from the outbox store. It publishes these events via the run event publisher to ensure consistent delivery to Mercure subscribers.
+effects: "reads from outbox store, publishes events via run event publisher"
+dependencies: "OutboxStoreInterface, RunEventPublisher"
+methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  __construct,16,16,16,21,20,public,public,no,no,no,"OutboxStoreInterface $outboxStore, RunEventPublisher $runEventPublisher","","",initializes the worker with outbox store and event publisher dependencies,none,"OutboxStoreInterface, RunEventPublisher"
+  __invoke,22,22,22,21,41,public,public,no,no,no,ProjectMercureOutbox $message,void,"",processes the Mercure outbox projection message by retrieving and publishing events,"reads from outbox store, publishes events via run event publisher","OutboxStoreInterface, RunEventPublisher"

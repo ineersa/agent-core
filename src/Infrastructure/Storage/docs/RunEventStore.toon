@@ -1,0 +1,14 @@
+spec: agent-core.file-index/v1
+indexedAt: "2026-04-19T02:23:45Z"
+indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
+sourceHash: ab271b14c442eff053cfbb9bfcaed5df95b8056c9002d1af199a30f10b8beb7b
+file: RunEventStore.php
+class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunEventStore"
+type: final class
+summary: The RunEventStore provides a persistence layer for RunEvent entities within the infrastructure storage boundary. It abstracts the underlying storage mechanism to allow appending individual or batched events and retrieving the complete event history for a specific run. This class serves as the primary interface for run-related event data access and mutation.
+effects: writes events to persistent storage
+dependencies: none
+methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary,effects,dependencies}:
+  append,15,15,15,21,19,public,public,no,no,no,RunEvent $event,void,"",persists a single RunEvent to storage,writes event to storage,none
+  appendMany,21,21,21,21,26,public,public,no,no,no,array $events,void,"",persists an array of RunEvents to storage,writes events to storage,none
+  allFor,28,31,31,21,38,public,public,no,no,no,string $runId,array,"",retrieves all RunEvents associated with a specific runId,reads events from storage,none
