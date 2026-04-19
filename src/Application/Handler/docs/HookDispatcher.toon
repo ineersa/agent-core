@@ -3,6 +3,6 @@ file: HookDispatcher.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\HookDispatcher"
 type: readonly final class
 summary: The HookDispatcher class orchestrates the execution of registered hook subscribers by mapping hook names to their corresponding handlers. It leverages a subscriber registry to identify relevant hooks and an event dispatcher to trigger the associated logic with provided context data.
-methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,16,19,19,21,23,public,public,no,no,no,"HookSubscriberRegistry $registry, EventDispatcherInterface $eventDispatcher","","",Initializes the dispatcher with a subscriber registry and event dispatcher.
-  dispatch,25,32,32,21,49,public,public,no,no,no,"string $hookName, array $context = []",array,InvalidArgumentException,Executes registered subscribers for a given hook name with context.
+methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,16,23,8,19,21,"public function __construct(HookSubscriberRegistry $registry, EventDispatcherInterface $eventDispatcher)"
+  dispatch,25,49,25,32,21,"public function dispatch(string $hookName, array $context = []): array"

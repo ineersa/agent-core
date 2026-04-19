@@ -3,7 +3,7 @@ file: AgentLoopRunInspectCommand.php
 class: "Ineersa\\AgentCore\\Command\\AgentLoopRunInspectCommand"
 type: final class
 summary: This command prints a consolidated diagnostic snapshot for a run.
-methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,22,25,25,21,33,public,public,no,no,no,RunDebugService $runDebugService,"","",Injects the debug read service used to gather run diagnostics.
-  execute,35,38,38,24,143,protected,protected,no,no,no,"InputInterface $input, OutputInterface $output",int,"",Renders run debug details for operators.
-  encodeJson,145,150,150,22,155,private,private,no,no,no,array $payload,string,"",Encodes a payload as readable JSON for command output.
+methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,22,33,12,25,21,public function __construct(RunDebugService $runDebugService)
+  execute,35,143,109,38,24,"protected function execute(InputInterface $input, OutputInterface $output): int"
+  encodeJson,145,155,11,150,22,"private function encodeJson(array $payload): string"

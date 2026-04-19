@@ -3,7 +3,7 @@ file: AgentMessage.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\AgentMessage"
 type: readonly final class
 summary: Bundle-level message DTO with JS parity fields.
-methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,12,18,18,21,29,public,public,no,no,no,"string $role, array $content, ?DateTimeImmutable $timestamp = null, ?string $name = null, ?string $toolCallId = null, ?string $toolName = null, mixed $details = null, bool $isError = false, array $metadata = []","","","Initializes the message with role, content, and optional metadata fields."
-  isCustomRole,31,34,34,21,37,public,public,no,no,no,"",bool,"","Checks if the message role is not a standard system, user, or assistant type."
-  toArray,39,44,44,21,77,public,public,no,no,no,"",array,"",Converts the message instance into a plain array representation.
+methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,12,29,18,18,21,"public function __construct(string $role, array $content, ?DateTimeImmutable $timestamp = null, ?string $name = null, ?string $toolCallId = null, ?string $toolName = null, mixed $details = null, bool $isError = false, array $metadata = [])"
+  isCustomRole,31,37,7,34,21,"public function isCustomRole(): bool"
+  toArray,39,77,39,44,21,"public function toArray(): array"

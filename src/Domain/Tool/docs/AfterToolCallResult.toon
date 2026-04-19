@@ -3,8 +3,8 @@ file: AfterToolCallResult.php
 class: "Ineersa\\AgentCore\\Domain\\Tool\\AfterToolCallResult"
 type: readonly final class
 summary: "The AfterToolCallResult class represents the immutable outcome of a tool execution within the agent domain, encapsulating content, details, and error status. It provides a fluent interface for constructing result instances with optional overrides for content and details."
-methods[4]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,12,17,17,21,24,public,public,no,no,no,"bool $hasContentOverride = false, array $content = [], bool $hasDetailsOverride = false, mixed $details = null, ?bool $isError = null","","","Initializes the result with content, details, and error state flags."
-  withContent,26,31,31,28,37,static public,public,yes,no,no,array $content,self,"",Creates a new instance with the specified content array.
-  withDetails,39,42,42,28,48,static public,public,yes,no,no,mixed $details,self,"",Creates a new instance with the specified details payload.
-  withIsError,50,53,53,21,62,public,public,no,no,no,bool $isError,self,"",Creates a new instance with the specified error status flag.
+methods[4]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,12,24,13,17,21,"public function __construct(bool $hasContentOverride = false, array $content = [], bool $hasDetailsOverride = false, mixed $details = null, ?bool $isError = null)"
+  withContent,26,37,12,31,28,"static public function withContent(array $content): self"
+  withDetails,39,48,10,42,28,"static public function withDetails(mixed $details): self"
+  withIsError,50,62,13,53,21,"public function withIsError(bool $isError): self"

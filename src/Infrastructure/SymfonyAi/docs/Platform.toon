@@ -3,15 +3,15 @@ file: Platform.php
 class: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform"
 type: readonly final class
 summary: "The Platform class orchestrates the execution of AI agent runs within the Symfony infrastructure, bridging high-level agent inputs with the underlying provider invoker. It manages context resolution, message transformation, and hook application to prepare requests for external AI providers. The class ensures proper lifecycle management of runs and cancellation tokens while abstracting provider-specific details."
-methods[11]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,24,31,31,21,42,public,public,no,no,no,"SymfonyPlatformInvoker $invoker, RunStoreInterface $runStore, ToolCatalogResolver $toolCatalogResolver, SymfonyMessageMapper $messageMapper, iterable $transformContextHooks = [], iterable $convertToLlmHooks = [], iterable $beforeProviderRequestHooks = [], ?ModelResolverInterface $modelResolver = null, string $defaultModel = 'gpt-4o-mini'","","",Initializes the platform with required infrastructure collaborators and optional context hooks.
-  invoke,44,47,47,21,91,public,public,no,no,no,"string $model, array $input, array $options = []",array,"","Executes an AI agent run with the specified model, input, and options."
-  runContextFrom,93,100,100,22,117,private,private,no,no,no,array $input,array,"",Constructs the run context array from the provided input payload.
-  resolveContextMessages,119,126,126,22,161,private,private,no,no,no,"array $input, ?string $runId",array,"",Resolves and formats context messages for the agent run using the input and optional run ID.
-  applyTransformHooks,163,170,170,22,179,private,private,no,no,no,"array $messages, CancellationTokenInterface $cancelToken",array,"",Applies registered transform hooks to messages with cancellation support.
-  applyConvertHooks,181,186,186,22,195,private,private,no,no,no,"array $messages, CancellationTokenInterface $cancelToken",MessageBag,"",Applies conversion hooks to messages and returns a MessageBag.
-  applyBeforeProviderRequestHooks,197,205,205,22,228,private,private,no,no,no,"string $model, array $input, array $options, CancellationTokenInterface $cancelToken",array,"","Executes pre-request hooks on model, input, and options with cancellation support."
-  providerInputFrom,230,237,237,22,256,private,private,no,no,no,array $input,array|object,"",Transforms the agent input into the format expected by the AI provider.
-  optionsWithoutInternalFields,258,265,265,22,270,private,private,no,no,no,array $options,array,"",Filters out internal fields from options before passing to the provider.
-  cancellationToken,272,275,275,22,286,private,private,no,no,no,"?string $runId, mixed $provided",CancellationTokenInterface,"",Creates or retrieves a cancellation token based on run ID and provided value.
-  hydrateMessage,288,293,293,22,322,private,private,no,no,no,array $payload,?AgentMessage,"",Converts a message payload array into an AgentMessage object.
+methods[11]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,24,42,19,31,21,"public function __construct(SymfonyPlatformInvoker $invoker, RunStoreInterface $runStore, ToolCatalogResolver $toolCatalogResolver, SymfonyMessageMapper $messageMapper, iterable $transformContextHooks = [], iterable $convertToLlmHooks = [], iterable $beforeProviderRequestHooks = [], ?ModelResolverInterface $modelResolver = null, string $defaultModel = 'gpt-4o-mini')"
+  invoke,44,91,48,47,21,"public function invoke(string $model, array $input, array $options = []): array"
+  runContextFrom,93,117,25,100,22,"private function runContextFrom(array $input): array"
+  resolveContextMessages,119,161,43,126,22,"private function resolveContextMessages(array $input, ?string $runId): array"
+  applyTransformHooks,163,179,17,170,22,"private function applyTransformHooks(array $messages, CancellationTokenInterface $cancelToken): array"
+  applyConvertHooks,181,195,15,186,22,"private function applyConvertHooks(array $messages, CancellationTokenInterface $cancelToken): MessageBag"
+  applyBeforeProviderRequestHooks,197,228,32,205,22,"private function applyBeforeProviderRequestHooks(string $model, array $input, array $options, CancellationTokenInterface $cancelToken): array"
+  providerInputFrom,230,256,27,237,22,"private function providerInputFrom(array $input): array|object"
+  optionsWithoutInternalFields,258,270,13,265,22,"private function optionsWithoutInternalFields(array $options): array"
+  cancellationToken,272,286,15,275,22,"private function cancellationToken(?string $runId, mixed $provided): CancellationTokenInterface"
+  hydrateMessage,288,322,35,293,22,"private function hydrateMessage(array $payload): ?AgentMessage"

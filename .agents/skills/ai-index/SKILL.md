@@ -4,7 +4,7 @@ description: Defines the AI index workflow for this repository, including docblo
 license: MIT
 metadata:
   author: agent-core
-  version: "1.2"
+  version: "1.3"
 ---
 
 # AI Documentation Index
@@ -18,7 +18,8 @@ castor dev:index-methods
 ## Core rules
 
 - Source of truth is **PHP docblock summaries in source files**.
-- Every class and method must have a summary in the first description sentence.
+- Every class must have a summary in the first description sentence (enforced by `--strict`).
+- Method summaries are not indexed — use IDE tools or targeted reads for method understanding.
 - Extraction stops before the first blank line or any `@tag`.
 - Generated files must not be edited manually:
   - `src/**/ai-index.toon`
@@ -29,9 +30,9 @@ castor dev:index-methods
 
 1. Read root `ai-index.toon`.
 2. Read namespace `ai-index.toon`.
-3. Read class `docs/<Class>.toon`.
+3. Read class `docs/<Class>.toon` for method coordinates (`start`, `end`, `limit`, `symbolLine`, `symbolColumn`).
 4. Use `symbolLine` + `symbolColumn` with IDE semantic tools first.
-5. Read targeted source windows only (`read(path, offset, limit)`).
+5. Read targeted source windows using `offset=start, limit=limit`.
 
 ## Maintenance workflow
 
@@ -78,30 +79,9 @@ Weak:
 
 ---
 
-## 3) Method summary prompt
-
-```text
-Given a PHP method, write its docblock summary line.
-Start with an action verb and describe the method's observable outcome.
-Mention important constraints (idempotency, ordering, validation, side-effect boundary) when relevant.
-```
-
-### Method examples
-
-Good:
-- `Builds a paginated transcript slice and returns the next cursor when more items remain.`
-- `Resolves execution policy for a tool call and falls back to default mode when unspecified.`
-
-Weak:
-- `Gets data.`
-- `Runs the method.`
-
----
-
 ## Validation checklist
 
 - [ ] Every class has a docblock summary.
-- [ ] Every method has a docblock summary.
 - [ ] Summaries are specific and behavior-focused.
 - [ ] Tags remain valid for PHPStan.
 

@@ -3,5 +3,5 @@ file: ToolExecutionPolicy.php
 class: "Ineersa\\AgentCore\\Domain\\Tool\\ToolExecutionPolicy"
 type: readonly final class
 summary: "ToolExecutionPolicy defines immutable configuration constraints for tool execution, including mode, timeout, and parallelism limits. It serves as a value object to enforce execution boundaries within the agent core domain."
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,12,15,15,21,20,public,public,no,no,no,"ToolExecutionMode $mode, int $timeoutSeconds, int $maxParallelism","","","Initializes policy with execution mode, timeout, and parallelism settings."
+methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,12,20,9,15,21,"public function __construct(ToolExecutionMode $mode, int $timeoutSeconds, int $maxParallelism)"

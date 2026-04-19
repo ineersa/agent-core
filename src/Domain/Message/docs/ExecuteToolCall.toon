@@ -3,5 +3,5 @@ file: ExecuteToolCall.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\ExecuteToolCall"
 type: readonly final class
 summary: "Represents a domain event signaling the execution of a tool call within an agent run. It encapsulates the necessary context such as run identifiers, turn sequence, and idempotency keys to ensure reliable processing. This class serves as a structured payload for internal event bus communication."
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,12,19,19,21,37,public,public,no,no,no,"string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey, string $toolCallId, string $toolName, array $args, int $orderIndex, ?string $toolIdempotencyKey = null, ?string $mode = null, ?int $timeoutSeconds = null, ?int $maxParallelism = null, ?array $assistantMessage = null, ?array $argSchema = null","","","Initializes the tool call execution event with run, turn, step, attempt, and idempotency context."
+methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,12,37,26,19,21,"public function __construct(string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey, string $toolCallId, string $toolName, array $args, int $orderIndex, ?string $toolIdempotencyKey = null, ?string $mode = null, ?int $timeoutSeconds = null, ?int $maxParallelism = null, ?array $assistantMessage = null, ?array $argSchema = null)"

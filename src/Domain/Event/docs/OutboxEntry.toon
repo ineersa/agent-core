@@ -3,5 +3,5 @@ file: OutboxEntry.php
 class: "Ineersa\\AgentCore\\Domain\\Event\\OutboxEntry"
 type: readonly final class
 summary: "Represents a durable record for an event pending delivery to an external sink. It encapsulates the event payload, target sink, and retry metadata to support reliable outbox pattern implementation."
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,12,15,15,21,22,public,public,no,no,no,"int $id, OutboxSink $sink, RunEvent $event, int $attempts, DateTimeImmutable $availableAt","","","Initializes outbox entry with id, sink, event, attempts, and availability timestamp."
+methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,12,22,11,15,21,"public function __construct(int $id, OutboxSink $sink, RunEvent $event, int $attempts, DateTimeImmutable $availableAt)"

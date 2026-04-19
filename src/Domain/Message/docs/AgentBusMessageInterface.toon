@@ -3,9 +3,9 @@ file: AgentBusMessageInterface.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\AgentBusMessageInterface"
 type: interface
 summary: "Defines the contract for domain messages dispatched via the agent bus, ensuring consistent metadata for execution tracking. It enforces the presence of unique identifiers and sequence numbers required for reliable event processing and state management."
-methods[5]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  runId,12,15,15,21,15,public,public,no,no,no,"",string,"",Returns the unique identifier for the current agent run.
-  turnNo,17,20,20,21,20,public,public,no,no,no,"",int,"",Returns the sequential turn number within the agent run.
-  stepId,22,25,25,21,25,public,public,no,no,no,"",string,"",Returns the unique identifier for the specific execution step.
-  attempt,27,30,30,21,30,public,public,no,no,no,"",int,"",Returns the current retry attempt count for the operation.
-  idempotencyKey,32,35,35,21,35,public,public,no,no,no,"",string,"",Returns the unique key used to ensure idempotent message processing.
+methods[5]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  runId,12,15,4,15,21,"public function runId(): string"
+  turnNo,17,20,4,20,21,"public function turnNo(): int"
+  stepId,22,25,4,25,21,"public function stepId(): string"
+  attempt,27,30,4,30,21,"public function attempt(): int"
+  idempotencyKey,32,35,4,35,21,"public function idempotencyKey(): string"

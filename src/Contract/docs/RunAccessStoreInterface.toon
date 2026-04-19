@@ -3,7 +3,7 @@ file: RunAccessStoreInterface.php
 class: "Ineersa\\AgentCore\\Contract\\RunAccessStoreInterface"
 type: interface
 summary: Defines the contract for persisting and retrieving access scopes associated with specific runs. It enables atomic storage of scope data and supports timestamp updates for access tracking. This interface abstracts the underlying storage mechanism for run access control.
-methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  save,14,17,17,21,17,public,public,no,no,no,RunAccessScope $scope,void,"",persists a run access scope to storage.
-  get,19,22,22,21,22,public,public,no,no,no,string $runId,?RunAccessScope,"",retrieves a run access scope by run ID.
-  touch,24,27,27,21,27,public,public,no,no,no,"string $runId, ?DateTimeImmutable $updatedAt = null",void,"",updates the access timestamp for a run.
+methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  save,14,17,4,17,21,"public function save(RunAccessScope $scope): void"
+  get,19,22,4,22,21,"public function get(string $runId): ?RunAccessScope"
+  touch,24,27,4,27,21,"public function touch(string $runId, ?DateTimeImmutable $updatedAt = null): void"

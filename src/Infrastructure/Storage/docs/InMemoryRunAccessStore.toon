@@ -3,7 +3,7 @@ file: InMemoryRunAccessStore.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunAccessStore"
 type: final class
 summary: InMemoryRunAccessStore provides an in-memory implementation for persisting and retrieving RunAccessScope entities keyed by run ID. It serves as a transient storage layer for run access metadata within the agent core infrastructure.
-methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  save,18,21,21,21,24,public,public,no,no,no,RunAccessScope $scope,void,"",Stores a RunAccessScope in memory keyed by its run ID.
-  get,26,29,29,21,32,public,public,no,no,no,string $runId,?RunAccessScope,"",Retrieves a RunAccessScope by run ID or returns null if not found.
-  touch,34,37,37,21,45,public,public,no,no,no,"string $runId, ?DateTimeImmutable $updatedAt = null",void,"",Updates the updatedAt timestamp of an existing RunAccessScope.
+methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  save,18,24,7,21,21,"public function save(RunAccessScope $scope): void"
+  get,26,32,7,29,21,"public function get(string $runId): ?RunAccessScope"
+  touch,34,45,12,37,21,"public function touch(string $runId, ?DateTimeImmutable $updatedAt = null): void"

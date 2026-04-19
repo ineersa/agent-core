@@ -3,5 +3,5 @@ file: SteeringMessagesProviderInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Hook\\SteeringMessagesProviderInterface"
 type: interface
 summary: Defines the contract for retrieving steering messages within the AgentCore hook system. This interface abstracts the source of configuration or routing directives used to steer agent behavior. It serves as a dependency injection point for components requiring dynamic message resolution.
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  getSteeringMessages,14,19,19,21,19,public,public,no,no,no,"",array,"",Returns an array of steering messages for agent configuration.
+methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  getSteeringMessages,14,19,6,19,21,"public function getSteeringMessages(): array"

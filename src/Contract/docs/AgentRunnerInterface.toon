@@ -3,10 +3,10 @@ file: AgentRunnerInterface.php
 class: "Ineersa\\AgentCore\\Contract\\AgentRunnerInterface"
 type: interface
 summary: "Defines the contract for orchestrating the lifecycle of an agent execution run, including initialization, state transitions, and termination. It provides a unified interface for controlling agent behavior through steering, follow-ups, and human-in-the-loop interactions."
-methods[6]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  start,16,19,19,21,19,public,public,no,no,no,StartRunInput $input,RunHandle,"",Initializes a new agent run with input parameters and returns a handle.
-  continue,21,24,24,21,24,public,public,no,no,no,string $runId,void,"",Resumes execution for an existing run identified by runId.
-  steer,26,29,29,21,29,public,public,no,no,no,"string $runId, AgentMessage $message",void,"",Injects a directive message into an active run to guide behavior.
-  followUp,31,34,34,21,34,public,public,no,no,no,"string $runId, AgentMessage $message",void,"",Provides additional context or response to an active run.
-  cancel,36,39,39,21,39,public,public,no,no,no,"string $runId, ?string $reason = null",void,"",Terminates an active run with an optional reason.
-  answerHuman,41,44,44,21,44,public,public,no,no,no,"string $runId, string $questionId, mixed $answer",void,"",Submits a human response to a specific question within a run.
+methods[6]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  start,16,19,4,19,21,"public function start(StartRunInput $input): RunHandle"
+  continue,21,24,4,24,21,"public function continue(string $runId): void"
+  steer,26,29,4,29,21,"public function steer(string $runId, AgentMessage $message): void"
+  followUp,31,34,4,34,21,"public function followUp(string $runId, AgentMessage $message): void"
+  cancel,36,39,4,39,21,"public function cancel(string $runId, ?string $reason = null): void"
+  answerHuman,41,44,4,44,21,"public function answerHuman(string $runId, string $questionId, mixed $answer): void"

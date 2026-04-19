@@ -3,5 +3,5 @@ file: FollowUpMessagesProviderInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Hook\\FollowUpMessagesProviderInterface"
 type: interface
 summary: "Defines the contract for retrieving follow-up messages within the AgentCore hook system. This interface abstracts the source of contextual messages, allowing implementations to provide dynamic responses based on the current agent state."
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  getFollowUpMessages,14,19,19,21,19,public,public,no,no,no,"",array,"",Retrieves an array of follow-up messages for the current context.
+methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  getFollowUpMessages,14,19,6,19,21,"public function getFollowUpMessages(): array"

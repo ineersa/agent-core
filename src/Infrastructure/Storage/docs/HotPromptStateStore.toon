@@ -3,7 +3,7 @@ file: HotPromptStateStore.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\HotPromptStateStore"
 type: final class
 summary: "HotPromptStateStore provides a lightweight, in-memory cache for transient prompt execution states keyed by run ID. It is designed for high-speed access during active agent runs but does not guarantee persistence across restarts."
-methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  get,17,20,20,21,23,public,public,no,no,no,string $runId,?array,"",Retrieves the cached state array for a specific run ID or returns null if not found.
-  save,25,28,28,21,39,public,public,no,no,no,"string $runId, array $state",void,"",Stores the provided state array in the cache under the specified run ID.
-  delete,41,44,44,21,47,public,public,no,no,no,string $runId,void,"",Removes the cached state entry for the specified run ID from the cache.
+methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  get,17,23,7,20,21,"public function get(string $runId): ?array"
+  save,25,39,15,28,21,"public function save(string $runId, array $state): void"
+  delete,41,47,7,44,21,"public function delete(string $runId): void"

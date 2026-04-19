@@ -3,6 +3,6 @@ file: RunState.php
 class: "Ineersa\\AgentCore\\Domain\\Run\\RunState"
 type: readonly final class
 summary: "Represents the immutable state of a run within the agent core domain, encapsulating its identifier, current status, and progression metrics. This readonly value object ensures state consistency by preventing mutation after construction."
-methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,14,20,20,21,34,public,public,no,no,no,"string $runId, RunStatus $status, int $version = 0, int $turnNo = 0, int $lastSeq = 0, bool $isStreaming = false, ?array $streamingMessage = null, array $pendingToolCalls = [], ?string $errorMessage = null, array $messages = [], ?string $activeStepId = null, bool $retryableFailure = false","","","Initializes run state with identifier, status, and progression counters."
-  queued,36,39,39,28,42,static public,public,yes,no,no,string $runId,self,"",Creates a new run state instance initialized to queued status.
+methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,14,34,21,20,21,"public function __construct(string $runId, RunStatus $status, int $version = 0, int $turnNo = 0, int $lastSeq = 0, bool $isStreaming = false, ?array $streamingMessage = null, array $pendingToolCalls = [], ?string $errorMessage = null, array $messages = [], ?string $activeStepId = null, bool $retryableFailure = false)"
+  queued,36,42,7,39,28,"static public function queued(string $runId): self"

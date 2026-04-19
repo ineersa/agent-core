@@ -3,11 +3,11 @@ file: SymfonyToolExecutorAdapter.php
 class: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyToolExecutorAdapter"
 type: readonly final class
 summary: "SymfonyToolExecutorAdapter bridges the AgentCore tool execution model with the Symfony ecosystem by delegating calls to a fallback executor or a Symfony-specific toolbox. It manages the lifecycle of tool invocations through configurable before and after hooks, ensuring consistent result formatting and progress tracking."
-methods[7]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,23,29,29,21,35,public,public,no,no,no,"ToolExecutor $fallbackExecutor, ?object $toolbox = null, iterable $beforeToolCallHooks = [], iterable $afterToolCallHooks = []","","",initializes adapter with fallback executor and optional toolbox with hooks.
-  execute,37,40,40,21,142,public,public,no,no,no,ToolCall $toolCall,ToolResult,"",executes tool call via fallback executor or Symfony toolbox and returns result.
-  toToolCallMessagePayload,144,149,149,21,171,public,public,no,no,no,"ToolCall $toolCall, ToolResult $result",array,"",converts tool call and result into a standardized message payload array.
-  toProgressUpdate,173,178,178,21,187,public,public,no,no,no,"string $toolCallId, string $toolName, string $message, int $progress",array,"","formats tool call ID, name, message, and progress into a progress update array."
-  canUseSymfonyToolbox,189,192,192,22,197,private,private,no,no,no,"",bool,"",checks if Symfony toolbox is available and usable for the current context.
-  toSymfonyToolCall,199,202,202,22,212,private,private,no,no,no,ToolCall $toolCall,object,"",transforms generic ToolCall into a Symfony-specific tool call object.
-  stringify,214,217,217,22,238,private,private,no,no,no,mixed $value,string,"",converts mixed value to its string representation.
+methods[7]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,23,35,13,29,21,"public function __construct(ToolExecutor $fallbackExecutor, ?object $toolbox = null, iterable $beforeToolCallHooks = [], iterable $afterToolCallHooks = [])"
+  execute,37,142,106,40,21,"public function execute(ToolCall $toolCall): ToolResult"
+  toToolCallMessagePayload,144,171,28,149,21,"public function toToolCallMessagePayload(ToolCall $toolCall, ToolResult $result): array"
+  toProgressUpdate,173,187,15,178,21,"public function toProgressUpdate(string $toolCallId, string $toolName, string $message, int $progress): array"
+  canUseSymfonyToolbox,189,197,9,192,22,"private function canUseSymfonyToolbox(): bool"
+  toSymfonyToolCall,199,212,14,202,22,"private function toSymfonyToolCall(ToolCall $toolCall): object"
+  stringify,214,238,25,217,22,"private function stringify(mixed $value): string"

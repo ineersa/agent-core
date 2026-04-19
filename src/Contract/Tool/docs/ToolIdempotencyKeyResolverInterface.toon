@@ -3,5 +3,5 @@ file: ToolIdempotencyKeyResolverInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Tool\\ToolIdempotencyKeyResolverInterface"
 type: interface
 summary: Defines the contract for resolving idempotency keys for tool calls within the AgentCore system. This interface ensures that repeated executions of the same tool call can be identified and handled consistently. It serves as a boundary for decoupling idempotency logic from the core tool execution flow.
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  resolveToolIdempotencyKey,14,17,17,21,17,public,public,no,no,no,ToolCall $toolCall,?string,"",Resolves the idempotency key for a given tool call.
+methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  resolveToolIdempotencyKey,14,17,4,17,21,"public function resolveToolIdempotencyKey(ToolCall $toolCall): ?string"

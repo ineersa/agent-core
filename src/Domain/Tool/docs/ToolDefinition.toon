@@ -3,6 +3,6 @@ file: ToolDefinition.php
 class: "Ineersa\\AgentCore\\Domain\\Tool\\ToolDefinition"
 type: readonly final class
 summary: "Defines the immutable structure and metadata for an agent tool, including its name, description, and JSON schema. This class serves as the domain model for tool configuration within the AgentCore system."
-methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,12,17,17,21,22,public,public,no,no,no,"string $name, string $description, ?array $schema = null","","","Initializes the tool definition with name, description, and optional schema."
-  toProviderPayload,24,36,36,21,51,public,public,no,no,no,"",array,"",Converts the tool definition into a provider-compatible array payload.
+methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,12,22,11,17,21,"public function __construct(string $name, string $description, ?array $schema = null)"
+  toProviderPayload,24,51,28,36,21,"public function toProviderPayload(): array"

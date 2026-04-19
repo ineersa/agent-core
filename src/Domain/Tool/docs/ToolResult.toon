@@ -3,5 +3,5 @@ file: ToolResult.php
 class: "Ineersa\\AgentCore\\Domain\\Tool\\ToolResult"
 type: readonly final class
 summary: "ToolResult is a readonly value object that encapsulates the outcome of a tool execution within the agent domain. It stores the tool identifier, name, structured content, and optional error details to represent a complete execution result."
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,12,17,17,21,24,public,public,no,no,no,"string $toolCallId, string $toolName, array $content, mixed $details = null, bool $isError = false","","","Initializes the tool result with call ID, name, content, details, and error status."
+methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,12,24,13,17,21,"public function __construct(string $toolCallId, string $toolName, array $content, mixed $details = null, bool $isError = false)"

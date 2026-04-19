@@ -3,5 +3,5 @@ file: ToolExecutorInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Tool\\ToolExecutorInterface"
 type: interface
 summary: Defines the contract for executing tool calls within the agent core system. It abstracts the execution logic to allow for interchangeable implementations of tool handlers. This interface ensures a consistent return type for tool execution results.
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  execute,15,18,18,21,18,public,public,no,no,no,ToolCall $toolCall,ToolResult,"",Executes the provided tool call and returns the result.
+methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  execute,15,18,4,18,21,"public function execute(ToolCall $toolCall): ToolResult"

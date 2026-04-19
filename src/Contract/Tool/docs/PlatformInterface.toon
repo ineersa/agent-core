@@ -3,5 +3,5 @@ file: PlatformInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Tool\\PlatformInterface"
 type: interface
 summary: Defines the contract for executing AI model invocations within the Agent Core platform. It standardizes the interface for sending input payloads and receiving structured responses from various model providers. This abstraction allows the system to interact with different backend services through a unified method signature.
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  invoke,12,20,20,21,20,public,public,no,no,no,"string $model, array $input, array $options = []",array,"",Executes a model request with input data and optional configuration parameters.
+methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  invoke,12,20,9,20,21,"public function invoke(string $model, array $input, array $options = []): array"

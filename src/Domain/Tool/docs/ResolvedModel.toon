@@ -3,5 +3,5 @@ file: ResolvedModel.php
 class: "Ineersa\\AgentCore\\Domain\\Tool\\ResolvedModel"
 type: readonly final class
 summary: A readonly value object representing a resolved AI model configuration with its associated options. It encapsulates the model identifier and any specific parameters required for instantiation. This class serves as a data carrier for model resolution within the domain layer.
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,12,17,17,21,21,public,public,no,no,no,"string $model, array $options = []","","",Initializes the resolved model with its identifier and optional configuration parameters.
+methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,12,21,10,17,21,"public function __construct(string $model, array $options = [])"

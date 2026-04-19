@@ -3,7 +3,7 @@ file: BeforeToolCallResult.php
 class: "Ineersa\\AgentCore\\Domain\\Tool\\BeforeToolCallResult"
 type: readonly final class
 summary: Represents the outcome of a pre-execution validation check for a tool call within the agent domain. It encapsulates whether the call is permitted or blocked along with an optional reason for denial. This immutable value object facilitates clear decision-making before tool invocation.
-methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,12,15,15,21,19,public,public,no,no,no,"bool $block = false, ?string $reason = null","","",Initializes the result with block status and optional reason.
-  allow,21,24,24,28,27,static public,public,yes,no,no,"",self,"",Creates a new instance indicating the tool call is permitted.
-  blocked,29,32,32,28,35,static public,public,yes,no,no,?string $reason = null,self,"",Creates a new instance indicating the tool call is denied with a reason.
+methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,12,19,8,15,21,"public function __construct(bool $block = false, ?string $reason = null)"
+  allow,21,27,7,24,28,"static public function allow(): self"
+  blocked,29,35,7,32,28,"static public function blocked(?string $reason = null): self"

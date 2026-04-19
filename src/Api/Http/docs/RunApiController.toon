@@ -3,16 +3,16 @@ file: RunApiController.php
 class: "Ineersa\\AgentCore\\Api\\Http\\RunApiController"
 type: final class
 summary: "Ineersa\\AgentCore\\Api\\Http\\RunApiController is a final HTTP controller that exposes RESTful endpoints for managing agent run lifecycles, including starting runs, sending commands, and retrieving summaries or transcripts. It enforces access control and validates input payloads before delegating execution to domain services and message buses."
-methods[12]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,34,37,37,21,46,public,public,no,no,no,"AgentRunnerInterface $runner, MessageBusInterface $commandBus, RunStoreInterface $runStore, RunAccessStoreInterface $runAccessStore, RunReadService $runReadService, RunEventSerializer $eventSerializer, RunTopicPolicy $topicPolicy","","",Injects domain services and infrastructure dependencies into the controller.
-  startRun,48,51,52,21,121,public,public,no,no,no,Request $request,JsonResponse,"",Creates a new agent run by processing POST request payload and returning the created run ID.
-  sendCommand,123,126,127,21,209,public,public,no,no,no,"string $runId, Request $request",JsonResponse,RuntimeException,Sends a command to an existing run identified by runId from POST request payload.
-  runSummary,211,214,215,21,230,public,public,no,no,no,"string $runId, Request $request",JsonResponse,"",Retrieves summary details for a run identified by runId via GET request.
-  transcriptPage,232,235,236,21,252,public,public,no,no,no,"string $runId, Request $request",JsonResponse,"",Returns a paginated transcript of messages for a run identified by runId via GET request.
-  replayEvents,254,257,258,21,300,public,public,no,no,no,"string $runId, Request $request",JsonResponse,"","Streams events for a run identified by runId via GET request, supporting cursor-based pagination."
-  authorizeRun,302,305,305,22,318,private,private,no,no,no,"string $runId, Request $request",?JsonResponse,"",Validates user access to a specific run by checking runId and request credentials.
-  requestActor,320,325,325,22,331,private,private,no,no,no,Request $request,array,"",Extracts actor identity and context from the HTTP request headers or body.
-  jsonBody,333,338,338,22,356,private,private,no,no,no,Request $request,array,BadRequestHttpException,Parses and returns the JSON body from the HTTP request as an associative array.
-  parseNonNegativeInt,358,361,361,22,376,private,private,no,no,no,"mixed $value, string $fieldName",int,BadRequestHttpException,Validates and converts a value to a non-negative integer for a given field name.
-  normalizeString,378,381,381,22,390,private,private,no,no,no,mixed $value,?string,"","Trims and normalizes a string value, returning null if empty or invalid."
-  error,392,395,395,22,398,private,private,no,no,no,"string $message, int $status",JsonResponse,"",Constructs and returns a standardized JSON error response with the given message and status code.
+methods[12]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,34,46,13,37,21,"public function __construct(AgentRunnerInterface $runner, MessageBusInterface $commandBus, RunStoreInterface $runStore, RunAccessStoreInterface $runAccessStore, RunReadService $runReadService, RunEventSerializer $eventSerializer, RunTopicPolicy $topicPolicy)"
+  startRun,48,121,74,52,21,"public function startRun(Request $request): JsonResponse"
+  sendCommand,123,209,87,127,21,"public function sendCommand(string $runId, Request $request): JsonResponse"
+  runSummary,211,230,20,215,21,"public function runSummary(string $runId, Request $request): JsonResponse"
+  transcriptPage,232,252,21,236,21,"public function transcriptPage(string $runId, Request $request): JsonResponse"
+  replayEvents,254,300,47,258,21,"public function replayEvents(string $runId, Request $request): JsonResponse"
+  authorizeRun,302,318,17,305,22,"private function authorizeRun(string $runId, Request $request): ?JsonResponse"
+  requestActor,320,331,12,325,22,"private function requestActor(Request $request): array"
+  jsonBody,333,356,24,338,22,"private function jsonBody(Request $request): array"
+  parseNonNegativeInt,358,376,19,361,22,"private function parseNonNegativeInt(mixed $value, string $fieldName): int"
+  normalizeString,378,390,13,381,22,"private function normalizeString(mixed $value): ?string"
+  error,392,398,7,395,22,"private function error(string $message, int $status): JsonResponse"

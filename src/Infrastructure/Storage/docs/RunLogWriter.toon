@@ -3,7 +3,7 @@ file: RunLogWriter.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogWriter"
 type: readonly final class
 summary: "The RunLogWriter class provides a mechanism for persisting RunEvent instances to the filesystem. It formats event data into structured files based on run identifiers and timestamps, ensuring durable storage of agent execution logs."
-methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,15,18,18,21,20,public,public,no,no,no,FilesystemOperator $filesystem,"","",initializes the writer with a filesystem operator for storage operations.
-  append,22,25,25,21,55,public,public,no,no,no,RunEvent $event,void,RuntimeException,persists a RunEvent to the filesystem using a generated path based on run ID and timestamp.
-  pathForRun,57,60,60,22,63,private,private,no,no,no,"string $runId, DateTimeImmutable $at",string,"",generates a unique filesystem path for a run using its ID and creation timestamp.
+methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,15,20,6,18,21,public function __construct(FilesystemOperator $filesystem)
+  append,22,55,34,25,21,"public function append(RunEvent $event): void"
+  pathForRun,57,63,7,60,22,"private function pathForRun(string $runId, DateTimeImmutable $at): string"

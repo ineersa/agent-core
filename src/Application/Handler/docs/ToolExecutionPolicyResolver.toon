@@ -3,6 +3,6 @@ file: ToolExecutionPolicyResolver.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionPolicyResolver"
 type: readonly final class
 summary: "Resolves execution policies for tools by combining a default configuration with specific overrides. It determines the operational mode, timeout, and parallelism constraints for a given tool name."
-methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,17,22,22,21,29,public,public,no,no,no,"string $defaultMode, int $defaultTimeoutSeconds, int $maxParallelism, array $overrides = []","","","Initializes default mode, timeout, parallelism, and override configurations."
-  resolve,31,34,34,21,46,public,public,no,no,no,string $toolName,ToolExecutionPolicy,"",Returns the ToolExecutionPolicy for the specified tool name using overrides or defaults.
+methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,17,29,13,22,21,"public function __construct(string $defaultMode, int $defaultTimeoutSeconds, int $maxParallelism, array $overrides = [])"
+  resolve,31,46,16,34,21,"public function resolve(string $toolName): ToolExecutionPolicy"

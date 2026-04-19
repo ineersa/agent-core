@@ -3,5 +3,5 @@ file: ProjectMercureOutbox.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\ProjectMercureOutbox"
 type: readonly final class
 summary: "ProjectMercureOutbox configures the publishing parameters for the Mercure transport boundary, specifically defining batch sizes and retry delays for event dispatch. It serves as a configuration holder for the outbox mechanism without performing state mutations or I/O operations itself."
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,12,15,15,21,19,public,public,no,no,no,"int $batchSize = 100, int $retryDelaySeconds = 30","","",Initializes batch size and retry delay configuration for Mercure outbox publishing.
+methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,12,19,8,15,21,"public function __construct(int $batchSize = 100, int $retryDelaySeconds = 30)"

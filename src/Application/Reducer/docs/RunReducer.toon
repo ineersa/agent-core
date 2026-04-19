@@ -3,9 +3,9 @@ file: RunReducer.php
 class: "Ineersa\\AgentCore\\Application\\Reducer\\RunReducer"
 type: final class
 summary: "The RunReducer applies domain commands to a RunState to produce a new state or reduction result, enforcing the state transition logic for agent runs. It acts as the central reducer within the application layer, coordinating state mutations based on specific command types."
-methods[5]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  reduce,20,23,23,21,38,public,public,no,no,no,"RunState $state, object $command",ReduceResult,"",Dispatches command handling to specific handlers based on command type.
-  onStartRun,40,43,43,22,76,private,private,no,no,no,"RunState $state, StartRun $command",RunState,"",Initializes a new RunState from a StartRun command.
-  onAdvanceRun,78,81,81,22,115,private,private,no,no,no,"RunState $state, AdvanceRun $command",ReduceResult,"",Processes an AdvanceRun command to update run progress.
-  onApplyCommand,117,120,120,22,158,private,private,no,no,no,"RunState $state, ApplyCommand $command",RunState,"",Applies an ApplyCommand to the current RunState.
-  hydrateMessage,160,165,165,22,202,private,private,no,no,no,array $payload,?AgentMessage,"",Deserializes a payload array into an AgentMessage instance.
+methods[5]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  reduce,20,38,19,23,21,"public function reduce(RunState $state, object $command): ReduceResult"
+  onStartRun,40,76,37,43,22,"private function onStartRun(RunState $state, StartRun $command): RunState"
+  onAdvanceRun,78,115,38,81,22,"private function onAdvanceRun(RunState $state, AdvanceRun $command): ReduceResult"
+  onApplyCommand,117,158,42,120,22,"private function onApplyCommand(RunState $state, ApplyCommand $command): RunState"
+  hydrateMessage,160,202,43,165,22,"private function hydrateMessage(array $payload): ?AgentMessage"

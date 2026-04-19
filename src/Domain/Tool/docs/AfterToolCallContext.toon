@@ -3,5 +3,5 @@ file: AfterToolCallContext.php
 class: "Ineersa\\AgentCore\\Domain\\Tool\\AfterToolCallContext"
 type: readonly final class
 summary: "This readonly final class encapsulates the immutable context required after a tool execution, bundling the assistant's message, the specific tool call, its arguments, and the resulting outcome. It serves as a structured data carrier for propagating tool interaction details within the agent domain."
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,14,17,17,21,25,public,public,no,no,no,"AgentMessage $assistantMessage, ToolCall $toolCall, mixed $args, ToolResult $result, bool $isError, mixed $context","","","Initializes the context with assistant message, tool call, arguments, result, and error status."
+methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,14,25,12,17,21,"public function __construct(AgentMessage $assistantMessage, ToolCall $toolCall, mixed $args, ToolResult $result, bool $isError, mixed $context)"

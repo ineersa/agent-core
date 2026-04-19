@@ -3,9 +3,9 @@ file: ToolCatalogResolver.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver"
 type: final class
 summary: Resolves tool catalog definitions by iterating over registered providers and aggregating their payloads. Ensures schema stability for each tool definition by computing and verifying a deterministic fingerprint.
-methods[5]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,18,23,23,21,26,public,public,no,no,no,iterable $providers,"","",Injects provider iterable for tool catalog resolution.
-  resolve,28,35,35,21,48,public,public,no,no,no,"array $context = []",array,"",Aggregates tool definitions from all registered providers.
-  resolveProviderPayload,50,57,57,21,63,public,public,no,no,no,"array $context = []",array,"",Retrieves and validates payload from a single provider.
-  assertSchemaStability,65,68,68,22,84,private,private,no,no,no,ToolDefinition $definition,void,LogicException,Verifies schema fingerprint consistency for a tool definition.
-  schemaFingerprint,86,91,91,22,99,private,private,no,no,no,?array $schema,string,"",Computes deterministic hash of a tool schema array.
+methods[5]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,18,26,9,23,21,public function __construct(iterable $providers)
+  resolve,28,48,21,35,21,"public function resolve(array $context = []): array"
+  resolveProviderPayload,50,63,14,57,21,"public function resolveProviderPayload(array $context = []): array"
+  assertSchemaStability,65,84,20,68,22,"private function assertSchemaStability(ToolDefinition $definition): void"
+  schemaFingerprint,86,99,14,91,22,"private function schemaFingerprint(?array $schema): string"

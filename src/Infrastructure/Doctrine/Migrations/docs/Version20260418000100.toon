@@ -3,7 +3,7 @@ file: Version20260418000100.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Doctrine\\Migrations\\Version20260418000100"
 type: final class
 summary: This class defines a Doctrine migration to modify the database schema for the Agent Core infrastructure. It implements the standard up and down methods to apply or revert structural changes using the Doctrine Schema abstraction.
-methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  getDescription,16,19,19,21,22,public,public,no,no,no,"",string,"",Returns the human-readable description of this migration.
-  up,24,27,27,21,152,public,public,no,no,no,Schema $schema,void,"",Applies the database schema changes defined in this migration.
-  down,154,157,157,21,164,public,public,no,no,no,Schema $schema,void,"",Reverts the database schema changes applied by the up method.
+methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  getDescription,16,22,7,19,21,"public function getDescription(): string"
+  up,24,152,129,27,21,"public function up(Schema $schema): void"
+  down,154,164,11,157,21,"public function down(Schema $schema): void"

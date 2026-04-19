@@ -3,7 +3,7 @@ file: ExecuteLlmStepWorker.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteLlmStepWorker"
 type: readonly final class
 summary: This class serves as a message handler for executing LLM steps within the agent execution domain. It coordinates with the platform to perform the step logic and dispatches the resulting state updates via a dedicated command bus.
-methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,19,22,22,21,28,public,public,no,no,no,"PlatformInterface $platform, MessageBusInterface $commandBus, ?RunMetrics $metrics = null, ?RunTracer $tracer = null","","",Injects platform and command bus dependencies.
-  __invoke,30,33,34,21,58,public,public,no,no,no,ExecuteLlmStep $message,void,RuntimeException,Handles ExecuteLlmStep message by delegating to execute method.
-  execute,60,63,63,22,139,private,private,no,no,no,ExecuteLlmStep $message,LlmStepResult,"",Executes the LLM step logic and returns the result.
+methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,19,28,10,22,21,"public function __construct(PlatformInterface $platform, MessageBusInterface $commandBus, ?RunMetrics $metrics = null, ?RunTracer $tracer = null)"
+  __invoke,30,58,29,34,21,"public function __invoke(ExecuteLlmStep $message): void"
+  execute,60,139,80,63,22,"private function execute(ExecuteLlmStep $message): LlmStepResult"

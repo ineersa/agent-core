@@ -3,5 +3,5 @@ file: AgentLoopBundle.php
 class: "Ineersa\\AgentCore\\AgentLoopBundle"
 type: final class
 summary: "The AgentLoopBundle class serves as the Symfony bundle entry point for the AgentCore library, facilitating its integration into the application container. It provides the standard mechanism for registering the bundle's configuration and services within the Symfony framework."
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  getContainerExtension,16,19,19,21,26,public,public,no,no,no,"",?ExtensionInterface,"",Retrieves the bundle's dependency injection extension instance.
+methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  getContainerExtension,16,26,11,19,21,"public function getContainerExtension(): ?ExtensionInterface"

@@ -3,6 +3,6 @@ file: AgentLoopResumeStaleRunsCommand.php
 class: "Ineersa\\AgentCore\\Command\\AgentLoopResumeStaleRunsCommand"
 type: final class
 summary: This command identifies and resumes stale agent runs by coordinating with storage and locking mechanisms to ensure safe execution. It leverages a replay service to restore state and dispatches commands via the message bus to continue processing.
-methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,27,30,30,21,39,public,public,no,no,no,"RunStoreInterface $runStore, PromptStateStoreInterface $promptStateStore, ReplayService $replayService, RunLockManager $runLockManager, MessageBusInterface $commandBus, int $staleAfterSeconds = 120","","","Injects required stores, services, and bus for stale run resumption."
-  execute,41,44,44,24,102,protected,protected,no,no,no,"InputInterface $input, OutputInterface $output",int,RuntimeException,"Identifies stale runs, resumes them via replay service, and dispatches commands."
+methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,27,39,13,30,21,"public function __construct(RunStoreInterface $runStore, PromptStateStoreInterface $promptStateStore, ReplayService $replayService, RunLockManager $runLockManager, MessageBusInterface $commandBus, int $staleAfterSeconds = 120)"
+  execute,41,102,62,44,24,"protected function execute(InputInterface $input, OutputInterface $output): int"

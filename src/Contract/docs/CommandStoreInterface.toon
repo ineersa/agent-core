@@ -3,12 +3,12 @@ file: CommandStoreInterface.php
 class: "Ineersa\\AgentCore\\Contract\\CommandStoreInterface"
 type: interface
 summary: "Defines the contract for persisting and managing the lifecycle of pending commands within a specific run context. It provides mechanisms to enqueue new commands, query their status, and transition them through applied, rejected, or superseded states. This interface abstracts the underlying storage mechanism for command durability and idempotency checks."
-methods[8]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  enqueue,14,17,17,21,17,public,public,no,no,no,PendingCommand $command,bool,"",Persists a pending command and returns success status.
-  has,19,22,22,21,22,public,public,no,no,no,"string $runId, string $idempotencyKey",bool,"",Checks for the existence of a command by run ID and idempotency key.
-  pending,24,29,29,21,29,public,public,no,no,no,string $runId,array,"",Retrieves all pending commands for a specific run ID.
-  countPending,31,34,34,21,34,public,public,no,no,no,string $runId,int,"",Returns the number of pending commands for a specific run ID.
-  rejectPendingByKind,36,41,41,21,41,public,public,no,no,no,"string $runId, string $kind, string $reason",array,"",Marks pending commands of a specific kind as rejected with a reason.
-  markApplied,43,46,46,21,46,public,public,no,no,no,"string $runId, string $idempotencyKey",void,"",Marks a specific command as applied using its run ID and idempotency key.
-  markRejected,48,51,51,21,51,public,public,no,no,no,"string $runId, string $idempotencyKey, string $reason",void,"",Marks a specific command as rejected with a reason using its run ID and idempotency key.
-  markSuperseded,53,56,56,21,56,public,public,no,no,no,"string $runId, string $idempotencyKey, string $reason",void,"",Marks a specific command as superseded with a reason using its run ID and idempotency key.
+methods[8]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  enqueue,14,17,4,17,21,"public function enqueue(PendingCommand $command): bool"
+  has,19,22,4,22,21,"public function has(string $runId, string $idempotencyKey): bool"
+  pending,24,29,6,29,21,"public function pending(string $runId): array"
+  countPending,31,34,4,34,21,"public function countPending(string $runId): int"
+  rejectPendingByKind,36,41,6,41,21,"public function rejectPendingByKind(string $runId, string $kind, string $reason): array"
+  markApplied,43,46,4,46,21,"public function markApplied(string $runId, string $idempotencyKey): void"
+  markRejected,48,51,4,51,21,"public function markRejected(string $runId, string $idempotencyKey, string $reason): void"
+  markSuperseded,53,56,4,56,21,"public function markSuperseded(string $runId, string $idempotencyKey, string $reason): void"

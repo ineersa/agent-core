@@ -3,17 +3,17 @@ file: SymfonyMessageMapper.php
 class: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper"
 type: final class
 summary: SymfonyMessageMapper translates between internal AgentMessage objects and provider-specific message formats for AI integration. It normalizes content structures and handles tool call serialization to ensure compatibility with external AI service APIs.
-methods[13]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  toMessageBag,15,20,20,21,37,public,public,no,no,no,array $messages,MessageBag,"",Converts an array of provider messages into a MessageBag instance.
-  toProviderInput,39,44,44,21,70,public,public,no,no,no,MessageBag $messageBag,array|object,"",Transforms a MessageBag into a provider-compatible array or object.
-  convertAgentMessage,72,75,75,22,94,private,private,no,no,no,AgentMessage $message,object,"",Maps an AgentMessage to a provider-specific object format.
-  toNativeToolCallMessage,96,99,99,22,123,private,private,no,no,no,"AgentMessage $message, string $textContent",object,"",Constructs a native tool call message object from agent message content.
-  assistantToolCalls,125,130,130,22,168,private,private,no,no,no,AgentMessage $message,?array,"",Extracts tool call data from an agent message if present.
-  toGenericMessageObject,170,173,173,22,198,private,private,no,no,no,AgentMessage $message,object,"",Creates a generic message object representation from an agent message.
-  supportsNativeMessageApi,200,203,203,22,207,private,private,no,no,no,"",bool,"",Checks if the current provider supports native message API formats.
-  isNativeMessageBag,209,212,212,22,215,private,private,no,no,no,object $message,bool,"",Determines if a message object conforms to the native message bag structure.
-  userText,217,220,220,22,227,private,private,no,no,no,"AgentMessage $message, string $textContent",string,"",Extracts plain text content from an agent message for user role.
-  contentToText,229,234,234,22,252,private,private,no,no,no,array $content,string,"",Converts a content array into a single plain text string.
-  normalizeProviderMessage,254,259,259,22,290,private,private,no,no,no,object $message,array,"",Normalizes a provider message object into a standardized array structure.
-  normalizeContent,292,295,295,22,310,private,private,no,no,no,mixed $content,mixed,"",Normalizes mixed content types into a consistent format.
-  stringify,312,315,315,22,332,private,private,no,no,no,mixed $value,string,"",Converts a mixed value into its string representation.
+methods[13]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  toMessageBag,15,37,23,20,21,"public function toMessageBag(array $messages): MessageBag"
+  toProviderInput,39,70,32,44,21,"public function toProviderInput(MessageBag $messageBag): array|object"
+  convertAgentMessage,72,94,23,75,22,"private function convertAgentMessage(AgentMessage $message): object"
+  toNativeToolCallMessage,96,123,28,99,22,"private function toNativeToolCallMessage(AgentMessage $message, string $textContent): object"
+  assistantToolCalls,125,168,44,130,22,"private function assistantToolCalls(AgentMessage $message): ?array"
+  toGenericMessageObject,170,198,29,173,22,"private function toGenericMessageObject(AgentMessage $message): object"
+  supportsNativeMessageApi,200,207,8,203,22,"private function supportsNativeMessageApi(): bool"
+  isNativeMessageBag,209,215,7,212,22,"private function isNativeMessageBag(object $message): bool"
+  userText,217,227,11,220,22,"private function userText(AgentMessage $message, string $textContent): string"
+  contentToText,229,252,24,234,22,"private function contentToText(array $content): string"
+  normalizeProviderMessage,254,290,37,259,22,"private function normalizeProviderMessage(object $message): array"
+  normalizeContent,292,310,19,295,22,"private function normalizeContent(mixed $content): mixed"
+  stringify,312,332,21,315,22,"private function stringify(mixed $value): string"

@@ -3,10 +3,10 @@ file: AbstractAgentBusMessage.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage"
 type: readonly abstract class
 summary: "AbstractAgentBusMessage serves as a base value object for agent execution events, encapsulating core execution context such as run identifiers, turn numbers, and step metadata. It provides immutable accessors for these fields to ensure consistent data structure across agent bus messages. The class enforces immutability through readonly properties and final getter methods."
-methods[6]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,12,15,15,21,22,public,public,no,no,no,"string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey","","","Initializes the message with run, turn, step, attempt, and idempotency context."
-  runId,24,27,27,21,30,public,public,no,no,no,"",string,"",Returns the unique identifier for the agent run.
-  turnNo,32,35,35,21,38,public,public,no,no,no,"",int,"",Returns the sequential turn number within the agent run.
-  stepId,40,43,43,21,46,public,public,no,no,no,"",string,"",Returns the unique identifier for the current execution step.
-  attempt,48,51,51,21,54,public,public,no,no,no,"",int,"",Returns the current attempt count for the step execution.
-  idempotencyKey,56,59,59,21,62,public,public,no,no,no,"",string,"",Returns the idempotency key to prevent duplicate processing.
+methods[6]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,12,22,11,15,21,"public function __construct(string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey)"
+  runId,24,30,7,27,21,"public function runId(): string"
+  turnNo,32,38,7,35,21,"public function turnNo(): int"
+  stepId,40,46,7,43,21,"public function stepId(): string"
+  attempt,48,54,7,51,21,"public function attempt(): int"
+  idempotencyKey,56,62,7,59,21,"public function idempotencyKey(): string"

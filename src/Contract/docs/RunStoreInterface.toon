@@ -3,7 +3,7 @@ file: RunStoreInterface.php
 class: "Ineersa\\AgentCore\\Contract\\RunStoreInterface"
 type: interface
 summary: "Defines the contract for persisting and managing agent run states with optimistic concurrency control. It supports retrieving individual run states, atomically updating them based on version numbers, and identifying stale running runs for cleanup."
-methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  get,14,17,17,21,17,public,public,no,no,no,string $runId,?RunState,"",Retrieves the current RunState for a given run ID.
-  compareAndSwap,19,22,22,21,22,public,public,no,no,no,"RunState $state, int $expectedVersion",bool,"",Atomically updates a RunState if the current version matches the expected version.
-  findRunningStaleBefore,24,29,29,21,29,public,public,no,no,no,DateTimeImmutable $updatedBefore,array,"",Finds running runs that have not been updated since the specified timestamp.
+methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  get,14,17,4,17,21,"public function get(string $runId): ?RunState"
+  compareAndSwap,19,22,4,22,21,"public function compareAndSwap(RunState $state, int $expectedVersion): bool"
+  findRunningStaleBefore,24,29,6,29,21,"public function findRunningStaleBefore(DateTimeImmutable $updatedBefore): array"

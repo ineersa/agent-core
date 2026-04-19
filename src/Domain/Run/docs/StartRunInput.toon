@@ -3,5 +3,5 @@ file: StartRunInput.php
 class: "Ineersa\\AgentCore\\Domain\\Run\\StartRunInput"
 type: readonly final class
 summary: "Defines the immutable input payload for initiating a new agent run, encapsulating the system prompt, conversation history, and optional metadata. This class serves as a strict data contract for the Run domain, ensuring type safety for run configuration parameters."
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,14,20,20,21,26,public,public,no,no,no,"string $systemPrompt, array $messages = [], ?string $runId = null, array $metadata = []","","","Initializes the run input with system prompt, messages, optional run ID, and metadata."
+methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,14,26,13,20,21,"public function __construct(string $systemPrompt, array $messages = [], ?string $runId = null, array $metadata = [])"

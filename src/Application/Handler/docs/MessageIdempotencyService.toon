@@ -3,7 +3,7 @@ file: MessageIdempotencyService.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService"
 type: final class
 summary: Ensures message idempotency by tracking processed execution keys within specific scopes and run contexts. It prevents duplicate processing of identical idempotency keys for the same logical operation.
-methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  wasHandled,15,18,18,21,21,public,public,no,no,no,"string $scope, string $runId, string $idempotencyKey",bool,"",Checks if an idempotency key has already been processed for the given scope and run ID.
-  markHandled,23,26,26,21,29,public,public,no,no,no,"string $scope, string $runId, string $idempotencyKey",void,"",Records an idempotency key as processed for the specified scope and run ID.
-  index,31,34,34,22,37,private,private,no,no,no,"string $scope, string $runId, string $idempotencyKey",string,"","Generates a composite index key from scope, run ID, and idempotency key."
+methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  wasHandled,15,21,7,18,21,"public function wasHandled(string $scope, string $runId, string $idempotencyKey): bool"
+  markHandled,23,29,7,26,21,"public function markHandled(string $scope, string $runId, string $idempotencyKey): void"
+  index,31,37,7,34,22,"private function index(string $scope, string $runId, string $idempotencyKey): string"

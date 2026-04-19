@@ -3,8 +3,8 @@ file: OutboxStoreInterface.php
 class: "Ineersa\\AgentCore\\Contract\\OutboxStoreInterface"
 type: interface
 summary: "Defines the contract for persisting and retrieving outbound event entries to ensure reliable delivery. It provides mechanisms to enqueue new events, claim batches for processing, and update their status upon completion or failure."
-methods[4]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  enqueue,16,19,19,21,19,public,public,no,no,no,"RunEvent $event, OutboxSink $sink",void,"",persists a RunEvent into the outbox store with the specified sink.
-  claim,21,26,26,21,26,public,public,no,no,no,"OutboxSink $sink, int $limit = 100, ?DateTimeImmutable $now = null",array,"",retrieves up to limit unprocessed entries for the given sink.
-  markProcessed,28,31,31,21,31,public,public,no,no,no,"int $entryId, ?DateTimeImmutable $processedAt = null",void,"",marks an entry as successfully processed with an optional timestamp.
-  markFailed,33,36,36,21,36,public,public,no,no,no,"int $entryId, int $retryAfterSeconds = 30, ?DateTimeImmutable $now = null",void,"",marks an entry as failed and schedules retry after specified seconds.
+methods[4]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  enqueue,16,19,4,19,21,"public function enqueue(RunEvent $event, OutboxSink $sink): void"
+  claim,21,26,6,26,21,"public function claim(OutboxSink $sink, int $limit = 100, ?DateTimeImmutable $now = null): array"
+  markProcessed,28,31,4,31,21,"public function markProcessed(int $entryId, ?DateTimeImmutable $processedAt = null): void"
+  markFailed,33,36,4,36,21,"public function markFailed(int $entryId, int $retryAfterSeconds = 30, ?DateTimeImmutable $now = null): void"

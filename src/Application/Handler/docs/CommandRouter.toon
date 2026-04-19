@@ -3,8 +3,8 @@ file: CommandRouter.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter"
 type: final class
 summary: "The CommandRouter class acts as a central dispatcher for ApplyCommand instances, routing them to appropriate handlers based on command kind. It leverages a CommandHandlerRegistry to resolve specific handler implementations and validates command options before routing."
-methods[4]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,17,20,20,21,24,public,public,no,no,no,"CommandHandlerRegistry $registry, string $extensionPrefix = 'ext:'","","",Initializes the router with a handler registry and optional extension prefix.
-  route,26,29,29,21,68,public,public,no,no,no,ApplyCommand $command,RoutedCommand,"",Routes an ApplyCommand to its corresponding handler and returns a RoutedCommand.
-  handlerFor,70,73,73,21,76,public,public,no,no,no,string $kind,?CommandHandlerInterface,"",Retrieves a CommandHandlerInterface instance for a given command kind.
-  validateOptionKeys,78,81,81,22,98,private,private,no,no,no,ApplyCommand $command,?string,"",Validates option keys within an ApplyCommand and returns error message if invalid.
+methods[4]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,17,24,8,20,21,"public function __construct(CommandHandlerRegistry $registry, string $extensionPrefix = 'ext:')"
+  route,26,68,43,29,21,"public function route(ApplyCommand $command): RoutedCommand"
+  handlerFor,70,76,7,73,21,"public function handlerFor(string $kind): ?CommandHandlerInterface"
+  validateOptionKeys,78,98,21,81,22,"private function validateOptionKeys(ApplyCommand $command): ?string"

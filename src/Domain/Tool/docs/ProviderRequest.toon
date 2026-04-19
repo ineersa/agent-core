@@ -3,6 +3,6 @@ file: ProviderRequest.php
 class: "Ineersa\\AgentCore\\Domain\\Tool\\ProviderRequest"
 type: readonly final class
 summary: "A readonly value object representing a tool provider request with model, input, and options parameters. It provides a method to apply these parameters onto a specific model context, returning the resulting configuration array."
-methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,12,18,18,21,23,public,public,no,no,no,"?string $model = null, ?array $input = null, ?array $options = null","","","Initializes the request with optional model, input, and options parameters."
-  applyOn,25,33,33,21,40,public,public,no,no,no,"string $model, array $input, array $options",array,"",Applies the stored request parameters onto the specified model and returns the resulting array.
+methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,12,23,12,18,21,"public function __construct(?string $model = null, ?array $input = null, ?array $options = null)"
+  applyOn,25,40,16,33,21,"public function applyOn(string $model, array $input, array $options): array"

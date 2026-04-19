@@ -3,5 +3,5 @@ file: RunHandle.php
 class: "Ineersa\\AgentCore\\Domain\\Run\\RunHandle"
 type: readonly final class
 summary: A value object representing a unique identifier for a run within the agent core domain. It encapsulates the run ID as a strongly-typed string to enforce type safety and semantic clarity across the application.
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,12,15,15,21,17,public,public,no,no,no,string $runId,"","",Initializes the run handle with a specific run ID string.
+methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,12,17,6,15,21,public function __construct(string $runId)

@@ -3,5 +3,5 @@ file: StartRun.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\StartRun"
 type: readonly final class
 summary: A domain event representing the initiation of a specific execution run within the agent core. It encapsulates the unique identifiers and sequence metadata required to track the lifecycle of a single run instance. This class serves as a value object for conveying run start context across domain boundaries.
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,12,17,17,21,26,public,public,no,no,no,"string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey, array $payload = []","","","Initializes the run start event with run ID, turn number, step ID, attempt count, and idempotency key."
+methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,12,26,15,17,21,"public function __construct(string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey, array $payload = [])"

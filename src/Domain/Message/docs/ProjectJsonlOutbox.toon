@@ -3,5 +3,5 @@ file: ProjectJsonlOutbox.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\ProjectJsonlOutbox"
 type: readonly final class
 summary: ProjectJsonlOutbox configures batch and retry parameters for persisting domain events to a JSON Lines file. It serves as a configuration holder for the outbox mechanism without performing I/O operations itself.
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,12,15,15,21,19,public,public,no,no,no,"int $batchSize = 100, int $retryDelaySeconds = 30","","",Initializes batch size and retry delay configuration values.
+methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,12,19,8,15,21,"public function __construct(int $batchSize = 100, int $retryDelaySeconds = 30)"

@@ -3,5 +3,5 @@ file: ArtifactStoreInterface.php
 class: "Ineersa\\AgentCore\\Contract\\ArtifactStoreInterface"
 type: interface
 summary: "Defines the contract for persisting agent execution artifacts, such as logs or intermediate outputs, to a storage backend. It ensures consistent storage semantics across different implementations by standardizing the input parameters and return value for artifact registration."
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  put,12,17,17,21,17,public,public,no,no,no,"string $runId, string $artifactName, string $content, array $metadata = []",string,"","persists an artifact with given run ID, name, content, and optional metadata."
+methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  put,12,17,6,17,21,"public function put(string $runId, string $artifactName, string $content, array $metadata = []): string"

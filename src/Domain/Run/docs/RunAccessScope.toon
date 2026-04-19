@@ -3,6 +3,6 @@ file: RunAccessScope.php
 class: "Ineersa\\AgentCore\\Domain\\Run\\RunAccessScope"
 type: readonly final class
 summary: "Defines an immutable scope for run access control, encapsulating the run identifier, optional tenant and user contexts, and session metadata. Designed as a value object to enforce strict access boundaries without mutable state."
-methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,12,17,17,21,25,public,public,no,no,no,"string $runId, ?string $tenantId, ?string $userId, array $sessionMetadata = [], DateTimeImmutable $createdAt = new \\DateTimeImmutable(), DateTimeImmutable $updatedAt = new \\DateTimeImmutable()","","","Initializes run access scope with run ID, optional tenant/user IDs, session metadata, and creation timestamp."
-  withUpdatedAt,27,30,30,21,40,public,public,no,no,no,?DateTimeImmutable $updatedAt = null,self,"","Returns a new instance with the updated timestamp, preserving existing scope data."
+methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,12,25,14,17,21,"public function __construct(string $runId, ?string $tenantId, ?string $userId, array $sessionMetadata = [], DateTimeImmutable $createdAt = new \\DateTimeImmutable(), DateTimeImmutable $updatedAt = new \\DateTimeImmutable())"
+  withUpdatedAt,27,40,14,30,21,"public function withUpdatedAt(?DateTimeImmutable $updatedAt = null): self"

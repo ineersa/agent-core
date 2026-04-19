@@ -3,5 +3,5 @@ file: CollectToolBatch.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\CollectToolBatch"
 type: readonly final class
 summary: "CollectToolBatch is a domain message representing a batch of tool executions within a specific agent run. It encapsulates execution context such as turn number, step ID, and attempt count to ensure proper sequencing and tracking. The class uses an idempotency key to prevent duplicate processing of the same batch."
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,12,17,17,21,26,public,public,no,no,no,"string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey, array $toolCallIds","","",Initializes the batch with run context and idempotency key.
+methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,12,26,15,17,21,"public function __construct(string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey, array $toolCallIds)"

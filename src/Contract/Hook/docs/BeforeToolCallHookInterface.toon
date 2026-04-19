@@ -3,5 +3,5 @@ file: BeforeToolCallHookInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Hook\\BeforeToolCallHookInterface"
 type: interface
 summary: Defines the contract for intercepting tool invocations before execution begins. It allows external systems to inspect the tool call context and optionally abort the operation via a cancellation token. This interface serves as a pre-execution hook within the agent core workflow.
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  beforeToolCall,15,18,18,21,18,public,public,no,no,no,"BeforeToolCallContext $context, ?CancellationTokenInterface $cancelToken = null",?BeforeToolCallResult,"",Intercepts tool call execution to allow pre-validation or cancellation.
+methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  beforeToolCall,15,18,4,18,21,"public function beforeToolCall(BeforeToolCallContext $context, ?CancellationTokenInterface $cancelToken = null): ?BeforeToolCallResult"

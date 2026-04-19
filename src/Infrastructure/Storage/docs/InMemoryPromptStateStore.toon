@@ -3,7 +3,7 @@ file: InMemoryPromptStateStore.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryPromptStateStore"
 type: final class
 summary: "InMemoryPromptStateStore provides an ephemeral, in-memory storage mechanism for persisting prompt state associated with specific agent run IDs. It implements a simple key-value interface using an internal array to map run identifiers to their corresponding state arrays."
-methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  get,17,20,20,21,23,public,public,no,no,no,string $runId,?array,"",Retrieves the prompt state array for a given run ID or returns null if not found.
-  save,25,28,28,21,31,public,public,no,no,no,"string $runId, array $state",void,"",Stores the provided state array under the specified run ID in the internal storage.
-  delete,33,36,36,21,39,public,public,no,no,no,string $runId,void,"",Removes the prompt state entry associated with the specified run ID from storage.
+methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  get,17,23,7,20,21,"public function get(string $runId): ?array"
+  save,25,31,7,28,21,"public function save(string $runId, array $state): void"
+  delete,33,39,7,36,21,"public function delete(string $runId): void"

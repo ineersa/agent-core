@@ -3,6 +3,6 @@ file: PlatformInvocationResult.php
 class: "Ineersa\\AgentCore\\Domain\\Tool\\PlatformInvocationResult"
 type: readonly final class
 summary: "Represents the immutable result of a platform tool invocation, capturing assistant message deltas, usage statistics, and stop reasons. Designed as a readonly value object to ensure data integrity across the domain layer."
-methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,12,20,20,21,27,public,public,no,no,no,"?array $assistantMessage, array $deltas = [], array $usage = [], ?string $stopReason = null, ?array $error = null","","","Initializes the invocation result with assistant message, deltas, usage, stop reason, and error data."
-  toArray,29,34,34,21,43,public,public,no,no,no,"",array,"",Converts the invocation result into a plain array representation.
+methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,12,27,16,20,21,"public function __construct(?array $assistantMessage, array $deltas = [], array $usage = [], ?string $stopReason = null, ?array $error = null)"
+  toArray,29,43,15,34,21,"public function toArray(): array"

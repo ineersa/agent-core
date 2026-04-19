@@ -53,14 +53,14 @@ For the full operational guide and summary-authoring prompts, load:
 
 ### Summary policy (mandatory)
 
-**Every class and every method must have a docblock summary as the first description line** (before any blank line or `@tag`).
+**Every class must have a docblock summary as the first description line** (before any blank line or `@tag`).
 
 - Class docblock: `/** <summary> */` (tags may follow)
-- Method docblock: `/** <summary> */` (tags may follow)
 - The first sentence of the description is extracted as the summary
-- Missing summary = `castor dev:index-methods --strict` failure (and `castor dev:check` failure)
+- Missing class summary = `castor dev:index-methods --strict` failure (and `castor dev:check` failure)
+- Method summaries are not indexed and not enforced — use IDE tools or targeted reads for method understanding.
 
-When adding or editing classes/methods, keep summaries present and accurate.
+When adding or editing classes, keep class summaries present and accurate.
 
 ### Reading policy (mandatory)
 
@@ -68,11 +68,11 @@ When adding or editing classes/methods, keep summaries present and accurate.
 
 1. Read root `ai-index.toon` to choose namespace.
 2. Read namespace `ai-index.toon` to choose class.
-3. Read `docs/<Class>.toon` for method metadata (`commentStart`, `signatureLine`, `symbolLine`, `symbolColumn`, `end`).
+3. Read `docs/<Class>.toon` for method metadata (`start`, `end`, `limit`, `symbolLine`, `symbolColumn`).
 4. Use `symbolLine` + `symbolColumn` first for IDE semantic navigation tools.
 5. Read only needed slices via `read(path, offset, limit)`.
 
-Example: if index has `commentStart=47` and `end=208`, read method window with `offset=47`, `limit=162`.
+Example: if index has `start=47` and `limit=162`, read method window with `offset=47`, `limit=162`.
 
 ### Index maintenance
 

@@ -3,21 +3,21 @@ file: StreamDeltaReducer.php
 class: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer"
 type: final class
 summary: "StreamDeltaReducer aggregates incremental streaming deltas from an AI assistant into a coherent final message structure, including text content and tool call executions. It parses partial JSON arguments for tool calls and merges token usage statistics from the stream. The class maintains internal state to reconstruct the complete assistant response and associated metadata."
-methods[17]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  consume,30,33,33,21,126,public,public,no,no,no,mixed $delta,void,"",Processes a single streaming delta object to update internal state.
-  deltas,128,133,133,21,136,public,public,no,no,no,"",array,"",Returns the accumulated array of raw delta objects.
-  usage,138,143,143,21,146,public,public,no,no,no,"",array,"",Returns the merged token usage statistics array.
-  assistantMessage,148,153,153,21,181,public,public,no,no,no,"",array,"",Returns the reconstructed assistant message array with text and tool calls.
-  hasToolCalls,183,186,186,21,189,public,public,no,no,no,"",bool,"",Checks if any tool calls were registered during consumption.
-  appendText,191,194,194,22,205,private,private,no,no,no,string $text,void,"",Appends text content to the current assistant message buffer.
-  registerToolCallStart,207,210,210,22,230,private,private,no,no,no,"string $id, string $name",void,"",Initializes a new tool call entry with its ID and name.
-  registerToolInputDelta,232,235,235,22,261,private,private,no,no,no,"string $id, string $name, string $partialJson",void,"",Accumulates partial JSON arguments for an active tool call.
-  registerToolCallComplete,263,266,266,22,296,private,private,no,no,no,object $delta,void,"",Finalizes a tool call by parsing and storing its complete arguments.
-  mergeUsage,298,303,303,22,308,private,private,no,no,no,array $usage,void,"",Adds token usage counts from a delta to the total usage accumulator.
-  looksLikeTokenUsage,310,313,313,22,318,private,private,no,no,no,object $delta,bool,"",Determines if a delta object contains token usage statistics.
-  usageFromTokenUsage,320,325,325,22,339,private,private,no,no,no,object $delta,array,"",Extracts and normalizes token usage counts from a delta object.
-  orderedToolCalls,341,346,346,22,369,private,private,no,no,no,"",array,"",Returns the list of tool calls sorted by their registration order.
-  stringFrom,371,376,376,22,398,private,private,no,no,no,"object $value, array $methods",string,"",Extracts a string value from an object using a list of method names.
-  numericFrom,400,405,405,22,419,private,private,no,no,no,"object $value, array $methods",int|float|null,"",Extracts a numeric value from an object using a list of method names.
-  parseArguments,421,426,426,22,438,private,private,no,no,no,string $json,?array,"",Parses a JSON string into an associative array or returns null.
-  shortClass,440,443,443,22,448,private,private,no,no,no,string $fqcn,string,"",Extracts the short class name from a fully qualified class name.
+methods[17]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  consume,30,126,97,33,21,"public function consume(mixed $delta): void"
+  deltas,128,136,9,133,21,"public function deltas(): array"
+  usage,138,146,9,143,21,"public function usage(): array"
+  assistantMessage,148,181,34,153,21,"public function assistantMessage(): array"
+  hasToolCalls,183,189,7,186,21,"public function hasToolCalls(): bool"
+  appendText,191,205,15,194,22,"private function appendText(string $text): void"
+  registerToolCallStart,207,230,24,210,22,"private function registerToolCallStart(string $id, string $name): void"
+  registerToolInputDelta,232,261,30,235,22,"private function registerToolInputDelta(string $id, string $name, string $partialJson): void"
+  registerToolCallComplete,263,296,34,266,22,"private function registerToolCallComplete(object $delta): void"
+  mergeUsage,298,308,11,303,22,"private function mergeUsage(array $usage): void"
+  looksLikeTokenUsage,310,318,9,313,22,"private function looksLikeTokenUsage(object $delta): bool"
+  usageFromTokenUsage,320,339,20,325,22,"private function usageFromTokenUsage(object $delta): array"
+  orderedToolCalls,341,369,29,346,22,"private function orderedToolCalls(): array"
+  stringFrom,371,398,28,376,22,"private function stringFrom(object $value, array $methods): string"
+  numericFrom,400,419,20,405,22,"private function numericFrom(object $value, array $methods): int|float|null"
+  parseArguments,421,438,18,426,22,"private function parseArguments(string $json): ?array"
+  shortClass,440,448,9,443,22,"private function shortClass(string $fqcn): string"

@@ -3,8 +3,8 @@ file: RunLogReader.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader"
 type: readonly final class
 summary: "Reads run log files from the filesystem to reconstruct event sequences for a specific run. It parses JSON lines into domain events, providing a read-only view of historical run data."
-methods[4]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,17,20,20,21,22,public,public,no,no,no,FilesystemOperator $filesystem,"","",initializes the reader with a filesystem operator.
-  allFor,24,29,29,21,53,public,public,no,no,no,string $runId,array,RuntimeException,returns all events for a given run ID by reading log files.
-  runLogPaths,55,60,60,22,86,private,private,no,no,no,string $runId,array,RuntimeException,generates file paths for a specific run ID.
-  eventFromJsonLine,88,91,91,22,131,private,private,no,no,no,"string $runId, string $line",?RunEvent,"",parses a JSON line string into a RunEvent object.
+methods[4]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,17,22,6,20,21,public function __construct(FilesystemOperator $filesystem)
+  allFor,24,53,30,29,21,"public function allFor(string $runId): array"
+  runLogPaths,55,86,32,60,22,"private function runLogPaths(string $runId): array"
+  eventFromJsonLine,88,131,44,91,22,"private function eventFromJsonLine(string $runId, string $line): ?RunEvent"

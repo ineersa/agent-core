@@ -3,9 +3,9 @@ file: RoutedCommand.php
 class: "Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand"
 type: readonly final class
 summary: "RoutedCommand is a readonly value object representing a command in the domain layer, distinguishing between core and extension command types. It encapsulates the command kind, payload, options, and status to provide a structured representation of domain operations."
-methods[5]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,12,18,18,22,25,private,private,no,no,no,"string $status, string $kind, array $payload = [], array $options = [], ?string $reason = null","","","Initializes the command with status, kind, payload, options, and optional reason."
-  core,27,33,33,28,36,static public,public,yes,no,no,"string $kind, array $payload, array $options",self,"","Creates a core command instance with the specified kind, payload, and options."
-  extension,38,44,44,28,47,static public,public,yes,no,no,"string $kind, array $payload, array $options",self,"","Creates an extension command instance with the specified kind, payload, and options."
-  rejected,49,52,52,28,55,static public,public,yes,no,no,"string $kind, string $reason",self,"",Creates a rejected command instance with the specified kind and reason.
-  isRejected,57,60,60,21,63,public,public,no,no,no,"",bool,"",Returns true if the command status indicates rejection.
+methods[5]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,12,25,14,18,22,"private function __construct(string $status, string $kind, array $payload = [], array $options = [], ?string $reason = null)"
+  core,27,36,10,33,28,"static public function core(string $kind, array $payload, array $options): self"
+  extension,38,47,10,44,28,"static public function extension(string $kind, array $payload, array $options): self"
+  rejected,49,55,7,52,28,"static public function rejected(string $kind, string $reason): self"
+  isRejected,57,63,7,60,21,"public function isRejected(): bool"

@@ -17,7 +17,7 @@ declare(strict_types=1);
  *   --changed         Process only git-changed PHP files (default if no targets given)
  *   --dry-run         Show what would be done without writing
  *   --force           Regenerate even if index is newer than source file
- *   --strict          Error if any class or method is missing a docblock summary
+ *   --strict          Error if any class is missing a docblock summary
  *   --migrate         Write existing .toon summaries back into source file docblocks
  *   --skip-namespace  Skip namespace index regeneration
  */
@@ -548,12 +548,7 @@ foreach ($phpFiles as $phpFile) {
                 $stats['missing_summaries']++;
             }
 
-            foreach ($classInfo['methods'] as $m) {
-                if ('' === trim($m['summary'])) {
-                    $strictErrors[] = "{$relPath}:{$fqcn}::{$m['name']}() — missing method docblock summary";
-                    $stats['missing_summaries']++;
-                }
-            }
+
         }
         continue;
     }
@@ -572,22 +567,19 @@ foreach ($phpFiles as $phpFile) {
 
         $methodEntries = [];
         foreach ($classInfo['methods'] as $m) {
+            $signature = trim($m['modifiers'] . ' function ' . $m['name'] . '(' . $m['params'] . ')');
+            if ('' !== $m['returnType']) {
+                $signature .= ': ' . $m['returnType'];
+            }
+
             $methodEntries[] = [
                 'method' => $m['name'],
-                'commentStart' => $m['docStartLine'],
-                'signatureLine' => $m['signatureLine'],
+                'start' => $m['docStartLine'],
+                'end' => $m['endLine'],
+                'limit' => $m['endLine'] - $m['docStartLine'] + 1,
                 'symbolLine' => $m['symbolLine'],
                 'symbolColumn' => $m['symbolColumn'],
-                'end' => $m['endLine'],
-                'modifiers' => $m['modifiers'],
-                'visibility' => $m['visibility'],
-                'static' => $m['static'] ? 'yes' : 'no',
-                'final' => $m['final'] ? 'yes' : 'no',
-                'abstract' => $m['abstract'] ? 'yes' : 'no',
-                'params' => $m['params'],
-                'returns' => $m['returnType'],
-                'throws' => $m['throws'],
-                'summary' => '' !== trim($m['summary']) ? $m['summary'] : '—',
+                'signature' => $signature,
             ];
         }
 

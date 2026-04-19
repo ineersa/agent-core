@@ -3,12 +3,12 @@ file: ReplayService.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ReplayService"
 type: readonly final class
 summary: ReplayService reconstructs agent run state by replaying historical events from the event store and run logs. It verifies data integrity and rebuilds prompt state to ensure consistency across sequences.
-methods[8]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,17,20,20,21,27,public,public,no,no,no,"EventStoreInterface $eventStore, RunLogReader $runLogReader, PromptStateStoreInterface $promptStateStore, ?RunMetrics $metrics = null, ?RunTracer $tracer = null","","",initializes dependencies for event replay and state reconstruction.
-  rebuildHotPromptState,29,43,43,21,75,public,public,no,no,no,string $runId,array,"",reconstructs current prompt state for a given run by replaying events.
-  verifyIntegrity,77,89,89,21,102,public,public,no,no,no,string $runId,array,"",validates event sequence integrity and identifies missing sequences for a run.
-  eventsForReplay,104,109,109,22,117,private,private,no,no,no,string $runId,array,"",fetches and sorts events required for replaying a specific run.
-  sortBySequence,119,126,126,22,131,private,private,no,no,no,array $events,array,"",orders events by their sequence number to ensure correct replay order.
-  replayMessages,133,140,140,22,175,private,private,no,no,no,array $events,array,"",processes events to generate replayed message history.
-  missingSequences,177,184,184,22,203,private,private,no,no,no,array $events,array,"",identifies gaps in event sequences for a given set of events.
-  estimateTokens,205,210,210,22,219,private,private,no,no,no,array $messages,int,"",calculates approximate token count for a list of messages.
+methods[8]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,17,27,11,20,21,"public function __construct(EventStoreInterface $eventStore, RunLogReader $runLogReader, PromptStateStoreInterface $promptStateStore, ?RunMetrics $metrics = null, ?RunTracer $tracer = null)"
+  rebuildHotPromptState,29,75,47,43,21,"public function rebuildHotPromptState(string $runId): array"
+  verifyIntegrity,77,102,26,89,21,"public function verifyIntegrity(string $runId): array"
+  eventsForReplay,104,117,14,109,22,"private function eventsForReplay(string $runId): array"
+  sortBySequence,119,131,13,126,22,"private function sortBySequence(array $events): array"
+  replayMessages,133,175,43,140,22,"private function replayMessages(array $events): array"
+  missingSequences,177,203,27,184,22,"private function missingSequences(array $events): array"
+  estimateTokens,205,219,15,210,22,"private function estimateTokens(array $messages): int"

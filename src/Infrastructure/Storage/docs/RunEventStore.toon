@@ -3,7 +3,7 @@ file: RunEventStore.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunEventStore"
 type: final class
 summary: The RunEventStore provides a persistence layer for RunEvent entities within the infrastructure storage boundary. It abstracts the underlying storage mechanism to allow appending individual or batched events and retrieving the complete event history for a specific run. This class serves as the primary interface for run-related event data access and mutation.
-methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  append,18,21,21,21,25,public,public,no,no,no,RunEvent $event,void,"",persists a single RunEvent to storage.
-  appendMany,27,30,30,21,35,public,public,no,no,no,array $events,void,"",persists an array of RunEvents to storage.
-  allFor,37,42,42,21,49,public,public,no,no,no,string $runId,array,"",retrieves all RunEvents associated with a specific runId.
+methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  append,18,25,8,21,21,"public function append(RunEvent $event): void"
+  appendMany,27,35,9,30,21,"public function appendMany(array $events): void"
+  allFor,37,49,13,42,21,"public function allFor(string $runId): array"

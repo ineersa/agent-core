@@ -3,9 +3,9 @@ file: ToolExecutionResultStore.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore"
 type: final class
 summary: "This class provides a caching layer for tool execution results, enabling efficient retrieval of previously computed outputs. It supports lookup by run and tool call identifiers, as well as by tool name and idempotency keys to prevent redundant execution."
-methods[5]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  findByRunToolCall,20,23,23,21,26,public,public,no,no,no,"string $runId, string $toolCallId",?ToolResult,"",Retrieves a cached ToolResult by run ID and tool call ID.
-  findByToolAndIdempotencyKey,28,31,31,21,34,public,public,no,no,no,"string $toolName, string $toolIdempotencyKey",?ToolResult,"",Retrieves a cached ToolResult by tool name and idempotency key.
-  remember,36,39,39,21,48,public,public,no,no,no,"string $runId, string $toolCallId, string $toolName, ?string $toolIdempotencyKey, ToolResult $result",void,"",Stores a ToolResult in the cache using run and tool identifiers.
-  runToolCallKey,50,53,53,22,56,private,private,no,no,no,"string $runId, string $toolCallId",string,"",Generates a composite cache key from run ID and tool call ID.
-  toolIdempotencyKey,58,61,61,22,64,private,private,no,no,no,"string $toolName, string $toolIdempotencyKey",string,"",Generates a composite cache key from tool name and idempotency key.
+methods[5]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  findByRunToolCall,20,26,7,23,21,"public function findByRunToolCall(string $runId, string $toolCallId): ?ToolResult"
+  findByToolAndIdempotencyKey,28,34,7,31,21,"public function findByToolAndIdempotencyKey(string $toolName, string $toolIdempotencyKey): ?ToolResult"
+  remember,36,48,13,39,21,"public function remember(string $runId, string $toolCallId, string $toolName, ?string $toolIdempotencyKey, ToolResult $result): void"
+  runToolCallKey,50,56,7,53,22,"private function runToolCallKey(string $runId, string $toolCallId): string"
+  toolIdempotencyKey,58,64,7,61,22,"private function toolIdempotencyKey(string $toolName, string $toolIdempotencyKey): string"

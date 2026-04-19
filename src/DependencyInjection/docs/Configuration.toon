@@ -3,5 +3,5 @@ file: Configuration.php
 class: "Ineersa\\AgentCore\\DependencyInjection\\Configuration"
 type: final class
 summary: Configures the Ineersa AgentCore bundle's configuration schema using Symfony's configuration tree builder. It defines the hierarchical structure and validation rules for the bundle's settings within the application container.
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  getConfigTreeBuilder,16,19,19,21,119,public,public,no,no,no,"",TreeBuilder,"",Constructs and returns the configuration tree builder for the bundle.
+methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  getConfigTreeBuilder,16,119,104,19,21,"public function getConfigTreeBuilder(): TreeBuilder"

@@ -3,7 +3,7 @@ file: CoreLifecycleEventType.php
 class: "Ineersa\\AgentCore\\Domain\\Event\\CoreLifecycleEventType"
 type: final class
 summary: CoreLifecycleEventType provides static utility methods for identifying and validating core lifecycle event types within the agent domain. It serves as a central registry for mapping event types to their corresponding class implementations and enforcing ordering constraints.
-methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  isCore,48,51,51,28,54,static public,public,yes,no,no,string $type,bool,"",Determines if a given event type string is a registered core lifecycle event.
-  eventClassMap,56,61,61,28,75,static public,public,yes,no,no,"",array,"",Returns the associative array mapping event type strings to their PHP class names.
-  validateOrder,77,84,84,28,221,static public,public,yes,no,no,"array $events, string $extensionPrefix = 'ext_'",array,"",Validates the chronological order of events and returns sorted array with extension prefix.
+methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  isCore,48,54,7,51,28,"static public function isCore(string $type): bool"
+  eventClassMap,56,75,20,61,28,"static public function eventClassMap(): array"
+  validateOrder,77,221,145,84,28,"static public function validateOrder(array $events, string $extensionPrefix = 'ext_'): array"

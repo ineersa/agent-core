@@ -3,6 +3,6 @@ file: HookSubscriberRegistry.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\HookSubscriberRegistry"
 type: final class
 summary: The HookSubscriberRegistry maintains a registry of hook subscribers to facilitate event-driven dispatching within the application. It provides a lookup mechanism to retrieve specific subscribers associated with a given hook name.
-methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,17,22,22,21,25,public,public,no,no,no,iterable $subscribers,"","",Initializes the registry with a collection of hook subscribers.
-  subscribersFor,27,32,32,21,41,public,public,no,no,no,string $hookName,iterable,"",Retrieves subscribers registered for a specific hook name.
+methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,17,25,9,22,21,public function __construct(iterable $subscribers)
+  subscribersFor,27,41,15,32,21,"public function subscribersFor(string $hookName): iterable"

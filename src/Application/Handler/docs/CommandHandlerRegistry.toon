@@ -3,6 +3,6 @@ file: CommandHandlerRegistry.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\CommandHandlerRegistry"
 type: final class
 summary: The CommandHandlerRegistry acts as a central lookup mechanism for resolving command handlers by their specific kind. It maintains a registry of handler instances to facilitate efficient dispatching within the application's command handling pipeline.
-methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,17,22,22,21,25,public,public,no,no,no,iterable $handlers,"","",Initializes the registry with a collection of command handlers.
-  find,27,30,30,21,39,public,public,no,no,no,string $kind,?CommandHandlerInterface,"",Retrieves the command handler matching the specified kind.
+methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,17,25,9,22,21,public function __construct(iterable $handlers)
+  find,27,39,13,30,21,"public function find(string $kind): ?CommandHandlerInterface"

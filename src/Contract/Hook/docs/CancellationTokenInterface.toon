@@ -3,5 +3,5 @@ file: CancellationTokenInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Hook\\CancellationTokenInterface"
 type: interface
 summary: Defines the contract for a cancellation token used to signal intent to abort long-running or asynchronous hook operations. It provides a mechanism for cooperative cancellation without requiring external state management.
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  isCancellationRequested,12,15,15,21,15,public,public,no,no,no,"",bool,"",Checks if cancellation has been requested.
+methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  isCancellationRequested,12,15,4,15,21,"public function isCancellationRequested(): bool"

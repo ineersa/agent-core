@@ -3,6 +3,6 @@ file: EventSubscriberRegistry.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\EventSubscriberRegistry"
 type: final class
 summary: The EventSubscriberRegistry acts as a centralized registry for managing event subscribers within the application's handler layer. It stores a collection of subscribers and provides a mechanism to retrieve them based on specific event types. This design facilitates decoupled event handling by allowing components to query for relevant subscribers dynamically.
-methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,17,22,22,21,25,public,public,no,no,no,iterable $subscribers,"","",Initializes the registry with a collection of event subscribers.
-  subscribersFor,27,32,32,21,41,public,public,no,no,no,string $eventType,iterable,"",Retrieves subscribers matching the specified event type.
+methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,17,25,9,22,21,public function __construct(iterable $subscribers)
+  subscribersFor,27,41,15,32,21,"public function subscribersFor(string $eventType): iterable"

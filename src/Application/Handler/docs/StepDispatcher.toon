@@ -3,7 +3,7 @@ file: StepDispatcher.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\StepDispatcher"
 type: readonly final class
 summary: The StepDispatcher class orchestrates the execution of agent steps by routing effects and messages to distinct message buses. It decouples side-effect processing from publishing logic by delegating to separate MessageBusInterface instances.
-methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,15,18,18,21,22,public,public,no,no,no,"MessageBusInterface $executionBus, MessageBusInterface $publisherBus","","",initializes dispatcher with execution and publisher message buses.
-  dispatchEffects,24,29,29,21,38,public,public,no,no,no,array $effects,void,RuntimeException,dispatches an array of effect messages to the execution bus.
-  publish,40,43,43,21,50,public,public,no,no,no,object $message,void,RuntimeException,publishes a single message object to the publisher bus.
+methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,15,22,8,18,21,"public function __construct(MessageBusInterface $executionBus, MessageBusInterface $publisherBus)"
+  dispatchEffects,24,38,15,29,21,"public function dispatchEffects(array $effects): void"
+  publish,40,50,11,43,21,"public function publish(object $message): void"

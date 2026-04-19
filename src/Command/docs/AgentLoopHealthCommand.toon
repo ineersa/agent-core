@@ -3,6 +3,6 @@ file: AgentLoopHealthCommand.php
 class: "Ineersa\\AgentCore\\Command\\AgentLoopHealthCommand"
 type: final class
 summary: This class implements a Symfony console command to report the health status of the agent loop. It retrieves configuration details to provide operational visibility into the agent's runtime state.
-methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,19,24,24,21,27,public,public,no,no,no,array $config,"","",initializes the command with agent loop configuration.
-  execute,29,32,32,24,49,protected,protected,no,no,no,"InputInterface $input, OutputInterface $output",int,"",displays agent loop health status to the console.
+methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,19,27,9,24,21,public function __construct(array $config)
+  execute,29,49,21,32,24,"protected function execute(InputInterface $input, OutputInterface $output): int"

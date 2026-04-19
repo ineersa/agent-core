@@ -3,6 +3,6 @@ file: JsonlOutboxProjectorWorker.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\JsonlOutboxProjectorWorker"
 type: readonly final class
 summary: The JsonlOutboxProjectorWorker consumes ProjectJsonlOutbox messages to persist event data into a JSONL outbox store. It coordinates the projection of domain events by writing to the outbox and logging execution details via a run log writer.
-methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,19,22,22,21,26,public,public,no,no,no,"OutboxStoreInterface $outboxStore, RunLogWriter $runLogWriter","","",initializes the worker with outbox store and run log writer dependencies.
-  __invoke,28,31,31,21,50,public,public,no,no,no,ProjectJsonlOutbox $message,void,"",processes ProjectJsonlOutbox message by persisting data to outbox and logging run details.
+methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,19,26,8,22,21,"public function __construct(OutboxStoreInterface $outboxStore, RunLogWriter $runLogWriter)"
+  __invoke,28,50,23,31,21,"public function __invoke(ProjectJsonlOutbox $message): void"

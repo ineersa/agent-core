@@ -3,8 +3,8 @@ file: ExecuteToolCallWorker.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker"
 type: readonly final class
 summary: "This class acts as a message handler for the agent execution bus, processing tool call commands by delegating execution to a dedicated tool executor. It coordinates the invocation of external tools and manages the resulting state updates within the agent's runtime context."
-methods[4]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,25,28,28,21,35,public,public,no,no,no,"ToolExecutorInterface $toolExecutor, MessageBusInterface $commandBus, ?RunStoreInterface $runStore = null, ?RunMetrics $metrics = null, ?RunTracer $tracer = null","","",initializes dependencies for tool execution and message bus interaction.
-  __invoke,37,40,41,21,67,public,public,no,no,no,ExecuteToolCall $message,void,RuntimeException,handles ExecuteToolCall messages on the agent.execution.bus.
-  execute,69,72,72,22,172,private,private,no,no,no,ExecuteToolCall $message,ToolCallResult,"",invokes the tool executor and returns the resulting tool call outcome.
-  hydrateAssistantMessage,174,179,179,22,198,private,private,no,no,no,?array $payload,?AgentMessage,"",constructs an AgentMessage object from a raw payload array.
+methods[4]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,25,35,11,28,21,"public function __construct(ToolExecutorInterface $toolExecutor, MessageBusInterface $commandBus, ?RunStoreInterface $runStore = null, ?RunMetrics $metrics = null, ?RunTracer $tracer = null)"
+  __invoke,37,67,31,41,21,"public function __invoke(ExecuteToolCall $message): void"
+  execute,69,172,104,72,22,"private function execute(ExecuteToolCall $message): ToolCallResult"
+  hydrateAssistantMessage,174,198,25,179,22,"private function hydrateAssistantMessage(?array $payload): ?AgentMessage"

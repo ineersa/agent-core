@@ -3,6 +3,6 @@ file: LocalArtifactStore.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\LocalArtifactStore"
 type: readonly final class
 summary: "LocalArtifactStore persists binary or text artifacts to the local filesystem using a configurable base directory. It organizes files by run ID and artifact name, ensuring isolated storage for agent execution outputs."
-methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,14,17,17,21,19,public,public,no,no,no,string $basePath,"","",initializes the store with the specified base directory path.
-  put,21,24,24,21,44,public,public,no,no,no,"string $runId, string $artifactName, string $content, array $metadata = []",string,RuntimeException,writes artifact content to a file within the run-specific directory and returns the file path.
+methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,14,19,6,17,21,public function __construct(string $basePath)
+  put,21,44,24,24,21,"public function put(string $runId, string $artifactName, string $content, array $metadata = []): string"

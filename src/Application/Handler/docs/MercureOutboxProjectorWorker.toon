@@ -3,6 +3,6 @@ file: MercureOutboxProjectorWorker.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\MercureOutboxProjectorWorker"
 type: readonly final class
 summary: This class acts as a worker that processes Mercure outbox projection messages by retrieving pending events from the outbox store. It publishes these events via the run event publisher to ensure consistent delivery to Mercure subscribers.
-methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,19,22,22,21,26,public,public,no,no,no,"OutboxStoreInterface $outboxStore, RunEventPublisher $runEventPublisher","","",initializes the worker with outbox store and event publisher dependencies.
-  __invoke,28,31,31,21,50,public,public,no,no,no,ProjectMercureOutbox $message,void,"",processes the Mercure outbox projection message by retrieving and publishing events.
+methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,19,26,8,22,21,"public function __construct(OutboxStoreInterface $outboxStore, RunEventPublisher $runEventPublisher)"
+  __invoke,28,50,23,31,21,"public function __invoke(ProjectMercureOutbox $message): void"

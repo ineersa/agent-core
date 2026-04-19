@@ -3,13 +3,13 @@ file: RunReadService.php
 class: "Ineersa\\AgentCore\\Api\\Http\\RunReadService"
 type: readonly final class
 summary: "This class provides HTTP-read access to run data and event transcripts by coordinating between run metadata stores and event storage. It retrieves summaries, paginated transcripts, and replayable event sequences while enforcing access control via the run access store."
-methods[9]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,20,23,23,21,29,public,public,no,no,no,"RunStoreInterface $runStore, RunAccessStoreInterface $runAccessStore, EventStoreInterface $eventStore, RunLogReader $runLogReader","","",Injects run and event stores along with the log reader.
-  summary,31,44,44,21,79,public,public,no,no,no,string $runId,?array,"",Retrieves the latest summary for a specific run ID.
-  transcriptPage,81,93,93,21,131,public,public,no,no,no,"string $runId, int $cursor, int $limit",?array,"",Returns a paginated page of transcript messages using cursor and limit.
-  replayAfter,133,144,144,21,170,public,public,no,no,no,"string $runId, int $afterSeq",?array,"",Fetches events occurring after a given sequence number for a run.
-  eventsForRun,172,177,177,22,185,private,private,no,no,no,string $runId,array,"",Fetches all events associated with a specific run ID.
-  sortBySequence,187,194,194,22,199,private,private,no,no,no,array $events,array,"",Sorts an array of events by their sequence number.
-  latestSummary,201,206,206,22,218,private,private,no,no,no,array $messages,?string,"",Extracts the most recent summary string from a list of messages.
-  messageSummary,220,223,223,22,241,private,private,no,no,no,AgentMessage $message,?string,"",Generates a summary string from a single agent message.
-  missingSequences,243,250,250,22,269,private,private,no,no,no,"array $events, int $expectedStart",array,"",Identifies gaps in event sequences starting from an expected start value.
+methods[9]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,20,29,10,23,21,"public function __construct(RunStoreInterface $runStore, RunAccessStoreInterface $runAccessStore, EventStoreInterface $eventStore, RunLogReader $runLogReader)"
+  summary,31,79,49,44,21,"public function summary(string $runId): ?array"
+  transcriptPage,81,131,51,93,21,"public function transcriptPage(string $runId, int $cursor, int $limit): ?array"
+  replayAfter,133,170,38,144,21,"public function replayAfter(string $runId, int $afterSeq): ?array"
+  eventsForRun,172,185,14,177,22,"private function eventsForRun(string $runId): array"
+  sortBySequence,187,199,13,194,22,"private function sortBySequence(array $events): array"
+  latestSummary,201,218,18,206,22,"private function latestSummary(array $messages): ?string"
+  messageSummary,220,241,22,223,22,"private function messageSummary(AgentMessage $message): ?string"
+  missingSequences,243,269,27,250,22,"private function missingSequences(array $events, int $expectedStart): array"

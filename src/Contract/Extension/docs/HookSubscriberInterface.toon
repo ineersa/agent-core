@@ -3,6 +3,6 @@ file: HookSubscriberInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Extension\\HookSubscriberInterface"
 type: interface
 summary: Defines the contract for components that subscribe to and process specific system hooks within the AgentCore extension system. Implementations declare their target hook names and provide logic to process incoming hook events with associated context data.
-methods[2]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  subscribedHooks,14,19,19,28,19,static public,public,yes,no,no,"",array,"",Returns an array of hook names this subscriber is interested in.
-  handle,21,28,28,21,28,public,public,no,no,no,"string $hookName, array $context",array,"",Processes a specific hook event with the provided context and returns the result.
+methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  subscribedHooks,14,19,6,19,28,"static public function subscribedHooks(): array"
+  handle,21,28,8,28,21,"public function handle(string $hookName, array $context): array"

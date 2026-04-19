@@ -3,9 +3,9 @@ file: InMemoryOutboxStore.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryOutboxStore"
 type: final class
 summary: InMemoryOutboxStore provides an in-memory implementation of the outbox pattern for buffering domain events before publication. It ensures event durability within the current process lifecycle by managing entry states and preventing duplicate submissions via sink-based deduplication.
-methods[5]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  enqueue,35,38,38,21,56,public,public,no,no,no,"RunEvent $event, OutboxSink $sink",void,"",Adds a RunEvent to the outbox buffer using the OutboxSink for deduplication.
-  claim,58,61,61,21,98,public,public,no,no,no,"OutboxSink $sink, int $limit = 100, ?DateTimeImmutable $now = null",array,"",Retrieves up to limit pending events for processing with optional timestamp override.
-  markProcessed,100,103,103,21,111,public,public,no,no,no,"int $entryId, ?DateTimeImmutable $processedAt = null",void,"",Marks a specific outbox entry as successfully processed with optional timestamp.
-  markFailed,113,116,116,21,127,public,public,no,no,no,"int $entryId, int $retryAfterSeconds = 30, ?DateTimeImmutable $now = null",void,"",Marks a specific outbox entry as failed with retry delay and optional timestamp.
-  dedupeKey,129,132,132,22,135,private,private,no,no,no,"OutboxSink $sink, RunEvent $event",string,"",Generates a unique string identifier for an event and sink combination.
+methods[5]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  enqueue,35,56,22,38,21,"public function enqueue(RunEvent $event, OutboxSink $sink): void"
+  claim,58,98,41,61,21,"public function claim(OutboxSink $sink, int $limit = 100, ?DateTimeImmutable $now = null): array"
+  markProcessed,100,111,12,103,21,"public function markProcessed(int $entryId, ?DateTimeImmutable $processedAt = null): void"
+  markFailed,113,127,15,116,21,"public function markFailed(int $entryId, int $retryAfterSeconds = 30, ?DateTimeImmutable $now = null): void"
+  dedupeKey,129,135,7,132,22,"private function dedupeKey(OutboxSink $sink, RunEvent $event): string"

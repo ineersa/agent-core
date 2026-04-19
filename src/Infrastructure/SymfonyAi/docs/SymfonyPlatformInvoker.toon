@@ -3,10 +3,10 @@ file: SymfonyPlatformInvoker.php
 class: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyPlatformInvoker"
 type: readonly final class
 summary: "SymfonyPlatformInvoker acts as an adapter for the Symfony AI platform, translating generic agent inputs into platform-specific invocations. It handles the execution of model calls and extracts structured usage metadata from the platform's deferred results."
-methods[6]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,16,19,19,21,22,public,public,no,no,no,?object $platform = null,"","",Initializes the invoker with an optional Symfony AI platform instance.
-  invoke,24,30,30,21,89,public,public,no,no,no,"string $model, array|string|object $input, array $toolDefinitions = [], array $options = [], ?CancellationTokenInterface $cancelToken = null",PlatformInvocationResult,RuntimeException,"Invokes the specified model with input, tools, and cancellation support."
-  streamFrom,91,96,96,22,113,private,private,no,no,no,object $deferredResult,iterable,RuntimeException,Streams results from a deferred platform result object.
-  extractUsage,115,120,120,22,152,private,private,no,no,no,object $deferredResult,array,"",Extracts usage metrics from a deferred platform result object.
-  metadataFrom,154,159,159,22,173,private,private,no,no,no,object $deferredResult,array|object|null,"",Extracts metadata from a deferred platform result object.
-  numericFrom,175,178,178,22,191,private,private,no,no,no,"object $value, string $method",int|float|null,"",Retrieves a numeric value from a platform result using a method name.
+methods[6]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,16,22,7,19,21,public function __construct(?object $platform = null)
+  invoke,24,89,66,30,21,"public function invoke(string $model, array|string|object $input, array $toolDefinitions = [], array $options = [], ?CancellationTokenInterface $cancelToken = null): PlatformInvocationResult"
+  streamFrom,91,113,23,96,22,"private function streamFrom(object $deferredResult): iterable"
+  extractUsage,115,152,38,120,22,"private function extractUsage(object $deferredResult): array"
+  metadataFrom,154,173,20,159,22,"private function metadataFrom(object $deferredResult): array|object|null"
+  numericFrom,175,191,17,178,22,"private function numericFrom(object $value, string $method): int|float|null"

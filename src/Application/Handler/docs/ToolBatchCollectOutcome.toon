@@ -3,9 +3,9 @@ file: ToolBatchCollectOutcome.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollectOutcome"
 type: readonly final class
 summary: "A readonly value object representing the outcome of a tool batch execution within the agent core application. It encapsulates execution status flags, ordered results, and side-effect payloads for downstream processing. Designed to provide a structured, immutable contract for communicating batch processing states."
-methods[5]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,15,21,21,21,28,public,public,no,no,no,"bool $accepted, bool $duplicate, bool $complete, array $orderedResults = [], array $effectsToDispatch = []","","","Initializes the outcome with acceptance, duplicate, and completion flags along with results and effects."
-  rejected,30,33,33,28,36,static public,public,yes,no,no,"",self,"",Creates a static instance representing a rejected batch outcome.
-  duplicate,38,41,41,28,44,static public,public,yes,no,no,"",self,"",Creates a static instance representing a duplicate batch outcome.
-  acceptedPending,46,51,51,28,54,static public,public,yes,no,no,"array $effectsToDispatch = []",self,"",Creates a static instance for an accepted batch awaiting completion with optional effects.
-  acceptedComplete,56,62,62,28,71,static public,public,yes,no,no,"array $orderedResults, array $effectsToDispatch = []",self,"",Creates a static instance for a fully completed batch with results and effects to dispatch.
+methods[5]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,15,28,14,21,21,"public function __construct(bool $accepted, bool $duplicate, bool $complete, array $orderedResults = [], array $effectsToDispatch = [])"
+  rejected,30,36,7,33,28,"static public function rejected(): self"
+  duplicate,38,44,7,41,28,"static public function duplicate(): self"
+  acceptedPending,46,54,9,51,28,"static public function acceptedPending(array $effectsToDispatch = []): self"
+  acceptedComplete,56,71,16,62,28,"static public function acceptedComplete(array $orderedResults, array $effectsToDispatch = []): self"

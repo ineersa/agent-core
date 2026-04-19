@@ -3,5 +3,5 @@ file: RunStreamEvent.php
 class: "Ineersa\\AgentCore\\Api\\Dto\\RunStreamEvent"
 type: readonly final class
 summary: "Represents a single event emitted during a run stream, carrying sequence and turn metadata alongside a typed payload. This immutable DTO structures data for transport across the API boundary without enforcing business logic."
-methods[1]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,12,17,17,21,25,public,public,no,no,no,"string $runId, int $seq, int $turnNo, string $type, array $payload = [], DateTimeImmutable $ts = new \\DateTimeImmutable()","","","Initializes the event with run ID, sequence number, turn number, type, and optional payload."
+methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,12,25,14,17,21,"public function __construct(string $runId, int $seq, int $turnNo, string $type, array $payload = [], DateTimeImmutable $ts = new \\DateTimeImmutable())"

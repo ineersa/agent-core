@@ -3,7 +3,7 @@ file: RunEvent.php
 class: "Ineersa\\AgentCore\\Domain\\Event\\RunEvent"
 type: readonly class
 summary: "Represents a domain event for a specific run execution, capturing sequence and turn metadata alongside a typed payload. Designed as a readonly value object to ensure immutability and safe propagation of run state changes within the domain layer."
-methods[3]{method,commentStart,signatureLine,symbolLine,symbolColumn,end,modifiers,visibility,static,final,abstract,params,returns,throws,summary}:
-  __construct,12,17,17,21,25,public,public,no,no,no,"string $runId, int $seq, int $turnNo, string $type, array $payload = [], DateTimeImmutable $createdAt = new \\DateTimeImmutable()","","","Initializes the run event with run ID, sequence, turn number, type, and optional payload."
-  isExtensionEvent,27,30,30,21,33,public,public,no,no,no,string $prefix = 'ext_',bool,"",Checks if the event type starts with the specified extension prefix.
-  extension,35,40,40,28,61,static public,public,yes,no,no,"string $runId, int $seq, int $turnNo, string $type, array $payload = [], string $prefix = 'ext_', ?DateTimeImmutable $createdAt = null",self,InvalidArgumentException,Factory method creating a new RunEvent instance with the provided parameters.
+methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,12,25,14,17,21,"public function __construct(string $runId, int $seq, int $turnNo, string $type, array $payload = [], DateTimeImmutable $createdAt = new \\DateTimeImmutable())"
+  isExtensionEvent,27,33,7,30,21,"public function isExtensionEvent(string $prefix = 'ext_'): bool"
+  extension,35,61,27,40,28,"static public function extension(string $runId, int $seq, int $turnNo, string $type, array $payload = [], string $prefix = 'ext_', ?DateTimeImmutable $createdAt = null): self"
