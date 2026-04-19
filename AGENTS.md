@@ -40,52 +40,65 @@ If any of these fail, the work is **not complete**.
   - property hooks
 - Apply these features pragmatically (readability first, no novelty for novelty’s sake).
 
-## AI Documentation Index (ai-index.toon)
+## AI Documentation Index
 
-The repository uses a hierarchical `ai-index.toon` + `docs/` system for codebase navigation.
-Every namespace and sub-namespace has its own `ai-index.toon` and a `docs/` directory with per-file documentation.
-Indexes use TOON format (Token-Oriented Object Notation) for ~28% token reduction vs JSON.
+The repository uses a two-level documentation system:
+1. **Namespace indexes** (`ai-index.toon`) — per-namespace files listing classes with summaries
+2. **Per-file indexes** (`docs/<File>.toon`) — per-class method listings with line numbers and one-line summaries
+
+All indexes use TOON format (Token-Oriented Object Notation) for ~28% token reduction vs JSON.
 
 ### Reading policy (mandatory)
 
-- **Always read `ai-index.toon` in the project root first** to understand the full namespace layout before exploring any code.
-- When working within a specific namespace, read its `ai-index.toon` to find relevant files and their responsibilities.
-- When exploring a file, read its corresponding `docs/*.md` for detailed documentation before reading the source code.
-- This saves context by avoiding broad source file reads — use the index to locate exactly what you need.
+**Never read an entire source file when you can target a specific range.** The index system provides line numbers for exactly this purpose.
 
-### Index maintenance (mandatory delegation)
+1. **Root first** — read `ai-index.toon` in the project root to understand the namespace layout.
+2. **Namespace index** — read the namespace's `ai-index.toon` to find classes and their summaries.
+3. **Per-file index** — read `docs/<File>.toon` to get method metadata:
+   - `commentStart` (PHPDoc start)
+   - `signatureLine` (method signature line)
+   - `symbolLine` + `symbolColumn` (1-based IDE symbol location)
+   - `end` (method end line)
+4. **Targeted read** — use `read(path, offset=<commentStart>, limit=<end-commentStart+1>)` (or `signatureLine`) to read only the method(s) you need.
 
-**The main agent MUST NOT update ai-index.toon or docs directly.** All index maintenance is delegated to the **index-maintainer** subagent.
-
-The index-maintainer subagent:
-- Receives its skill (index-maintainer) pre-loaded in its system prompt
-- Uses scout subagents internally for code exploration
-- Only processes the specific paths you give it — never rescans the whole repo
-
-#### Session tracking (mandatory)
-
-During every session, **track all namespaces, sub-namespaces, and files you create, modify, or rename** in `src/`. At the end of the session (after all user-requested work is done), launch the index-maintainer subagent with the full list of touched paths.
-
-Example task for index-maintainer:
+Example: the per-file index shows `execute,commentStart=47,signatureLine=47,end=208`. To read just that method:
 ```
-Update ai-index.toon and docs for these paths:
-- src/Application/Handler/ (modified ToolExecutor.php, added NewHandler.php)
-- src/Domain/Event/ (added CustomEvent.php)
-- src/Infrastructure/Storage/ (renamed InMemoryRunStore.php)
+read("src/Application/Handler/ToolExecutor.php", offset=47, limit=162)  # 208-47+1
 ```
 
-#### When to run index-maintainer
+When using IDE symbol navigation tools, pass `symbolLine` + `symbolColumn` as-is (both are 1-based).
 
-- **Always once at session end** — after all code changes are complete, before claiming done.
-- **On demand** — when the user explicitly asks to update docs/fix indexes, or runs `/index-maintainer`.
-- **Never mid-task** — let the main agent finish code changes first, then delegate cleanup.
+This saves massive context compared to reading entire files.
 
-#### What index-maintainer expects
+### Index maintenance
 
-You must pass:
-1. The list of namespaces/sub-namespaces/files that changed
-2. What changed (added, modified, renamed, removed)
-3. Enough context for it to launch scouts effectively
+Indexes are maintained via `castor dev:index-methods`. This command:
+- Extracts method signatures via PHP-Parser AST
+- Sends them to a local LLM for structured summaries
+- Writes per-file `.toon` indexes and regenerates namespace `ai-index.toon` files
+
+Usage:
+- `castor dev:index-methods` — process git-changed files
+- `castor dev:index-methods --all --force` — full regeneration
+- `castor dev:index-methods --dry-run` — preview without writing
+
+#### When to run
+
+- **At session end** — after code changes are complete, run `castor dev:index-methods` to update indexes for changed files.
+- **On demand** — when the user asks to regenerate indexes.
+
+**The main agent MUST NOT edit `ai-index.toon` or `docs/*.toon` files manually.** Always use `castor dev:index-methods`.
+
+## Architecture notes (README-driven, mandatory)
+
+The `ai-index.toon` system is for **navigation indexes** (class/method lookup), not for architectural relationship maps.
+
+- Keep architecture maps in nested `README.md` files near the code (for example `src/Application/README.md`, `src/Domain/Event/README.md`, `src/Domain/Message/README.md`).
+- These nested READMEs should document relationship views such as:
+  - command -> handler
+  - event -> projector/listener
+  - message -> dispatched-by / handled-by
+- When code changes alter those relationships, the agent must update the affected nested `README.md` files in the same change.
 
 ## Namespace responsibilities
 

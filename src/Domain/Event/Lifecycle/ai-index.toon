@@ -1,16 +1,17 @@
 spec: agent-core.ai-docs/v1
 namespace: "Domain\\Event\\Lifecycle"
 fqcn: "Ineersa\\AgentCore\\Domain\\Event\\Lifecycle"
+updatedAt: 2026-04-19
 description: Typed lifecycle event subclasses extending AbstractLifecycleRunEvent. Each maps to a CoreLifecycleEventType constant.
-files[11]{file,type,responsibility,docs}:
-  AbstractLifecycleRunEvent.php,abstract readonly class,"Base class for all lifecycle events — auto-fills type from static::TYPE constant.",docs/AbstractLifecycleRunEvent.md
-  AgentStartEvent.php,readonly class,AGENT_START — must be the first event in the stream.,null
-  AgentEndEvent.php,readonly class,AGENT_END — must be the final event in the stream.,null
-  TurnStartEvent.php,readonly class,TURN_START — opens a new turn scope.,null
-  TurnEndEvent.php,readonly class,TURN_END — closes the current turn scope.,null
-  MessageStartEvent.php,readonly class,MESSAGE_START — begins an LLM message emission.,null
-  MessageUpdateEvent.php,readonly class,MESSAGE_UPDATE — streaming delta for an in-progress message.,null
-  MessageEndEvent.php,readonly class,"MESSAGE_END — completes a message, may indicate tool calls pending.",null
-  ToolExecutionStartEvent.php,readonly class,TOOL_EXECUTION_START — begins tool execution phase.,null
-  ToolExecutionUpdateEvent.php,readonly class,TOOL_EXECUTION_UPDATE — progress update during tool execution.,null
-  ToolExecutionEndEvent.php,readonly class,TOOL_EXECUTION_END — completes a tool execution with order_index.,null
+files[11]{file,type,summary}:
+  MessageStartEvent.php,readonly final class,Represents a domain event signaling the initiation of a message processing lifecycle within the agent core. This immutable value object encapsulates the context required to track the start of asynchronous or synchronous message handling operations.
+  AbstractLifecycleRunEvent.php,readonly abstract class,"Represents an immutable event capturing the state of a lifecycle run within the agent core domain. It encapsulates essential metadata such as run identification, sequence numbering, and turn context to ensure event integrity."
+  AgentStartEvent.php,readonly final class,Represents a domain event signaling the initiation of an agent's lifecycle. This immutable value object captures the context required to track when and where an agent begins execution. It serves as a durable record for event sourcing and audit trails.
+  ToolExecutionEndEvent.php,readonly final class,A value object representing the completion of a tool execution within an agent's lifecycle. It encapsulates the result data and metadata required to transition the agent state after a tool call finishes. This event serves as a immutable record for downstream processing or logging.
+  TurnStartEvent.php,readonly final class,Represents a domain event signaling the commencement of a new turn within an agent's lifecycle. This immutable value object encapsulates the timestamp and context required to coordinate turn-based processing.
+  AgentEndEvent.php,readonly final class,Represents a domain event signaling the termination of an agent's lifecycle. This immutable value object captures the context required to process agent completion within the event-driven architecture.
+  ToolExecutionStartEvent.php,readonly final class,A value object representing the start of a tool execution within an agent's lifecycle. It captures the context required to track when a specific tool begins processing a request. This event serves as a marker for timing and state transitions in the agent's execution flow.
+  TurnEndEvent.php,readonly final class,A value object representing the conclusion of a single turn within an agent's lifecycle. It encapsulates immutable data regarding the turn's outcome and context to facilitate event-driven state transitions.
+  ToolExecutionUpdateEvent.php,readonly final class,Represents a domain event signaling an update to the execution state of a tool within an agent's lifecycle. This immutable value object captures the context required to track tool execution progress without modifying system state directly.
+  MessageEndEvent.php,readonly final class,Represents a domain event signaling the completion of a message processing lifecycle within an agent system. This immutable value object encapsulates the context required to track and react to message termination events.
+  MessageUpdateEvent.php,readonly final class,Represents a domain event triggered when a message within an agent's lifecycle is updated. This immutable value object encapsulates the context of the change to facilitate event-driven architecture patterns.

@@ -1,19 +1,20 @@
 spec: agent-core.ai-docs/v1
 namespace: "Domain\\Message"
 fqcn: "Ineersa\\AgentCore\\Domain\\Message"
+updatedAt: 2026-04-19
 description: "Message bus envelopes — AgentMessage DTO, MessageBag, bus commands, results, and outbox projection signals."
-files[14]{file,type,responsibility,docs}:
-  AgentBusMessageInterface.php,interface,"Contract for all bus messages — runId, turnNo, stepId, attempt, idempotencyKey.",docs/AgentBusMessageInterface.md
-  AbstractAgentBusMessage.php,abstract readonly class,Base implementation of AgentBusMessageInterface — shared constructor for all bus messages.,docs/AbstractAgentBusMessage.md
-  AgentMessage.php,readonly class,"Core message DTO — role, content parts, timestamp, tool metadata, details, error flag. JS-parity toArray().",docs/AgentMessage.md
-  MessageBag.php,readonly class,Immutable wrapper around a list of LLM-formatted message objects.,docs/MessageBag.md
-  StartRun.php,readonly class,Bus command to start a new run — extends AbstractAgentBusMessage with payload.,docs/StartRun.md
-  AdvanceRun.php,readonly class,Bus command to advance/resume a run — extends AbstractAgentBusMessage with payload.,docs/AdvanceRun.md
-  ApplyCommand.php,readonly class,"Bus command to apply a pending command — includes kind, payload, options.",docs/ApplyCommand.md
-  ExecuteLlmStep.php,readonly class,Bus command to execute an LLM step — includes contextRef and toolsRef.,docs/ExecuteLlmStep.md
-  ExecuteToolCall.php,readonly class,"Bus command to execute a single tool call — toolCallId, toolName, args, orderIndex, toolIdempotencyKey, mode, timeoutSeconds, maxParallelism, assistantMessage, argSchema.",docs/ExecuteToolCall.md
-  CollectToolBatch.php,readonly class,Bus command to collect completed tool call results by IDs.,docs/CollectToolBatch.md
-  LlmStepResult.php,readonly class,"Result of an LLM step — assistantMessage, usage, stopReason, error.",docs/LlmStepResult.md
-  ToolCallResult.php,readonly class,"Result of a tool call execution — toolCallId, orderIndex, result, isError, error details.",docs/ToolCallResult.md
-  ProjectJsonlOutbox.php,readonly class,"Signal to trigger JSONL outbox projection — batchSize, retryDelaySeconds.",null
-  ProjectMercureOutbox.php,readonly class,"Signal to trigger Mercure outbox projection — batchSize, retryDelaySeconds.",null
+files[14]{file,type,summary}:
+  ProjectMercureOutbox.php,readonly final class,"This class serves as a configuration container for the Project Mercure Outbox mechanism, defining operational parameters for message batching and retry logic. It encapsulates immutable settings required to manage the lifecycle of outbound messages to the Mercure hub."
+  AdvanceRun.php,readonly final class,"This class represents an immutable domain event signaling the progression of a run to the next step. It encapsulates the essential context required to track execution state, including the run identifier, current turn, and step details. Designed as a value object, it ensures data integrity through strict type constraints and immutability."
+  AgentMessage.php,readonly final class,"Represents a single message within an agent conversation, encapsulating role, content, and optional metadata like timestamps or tool call identifiers. Designed as an immutable value object to ensure data integrity throughout the agent's lifecycle."
+  ExecuteToolCall.php,readonly final class,"This class represents a domain event for executing a tool call within an agent's workflow. It encapsulates the necessary context such as run identifiers, turn numbers, and idempotency keys to ensure reliable and traceable execution. The class is designed as a lightweight, immutable data carrier for message passing."
+  AgentBusMessageInterface.php,interface,"Defines the contract for immutable message objects representing discrete steps within an agent's execution run. It ensures consistent access to execution context identifiers such as run, turn, step, and attempt numbers. This interface facilitates type-safe handling of agent events across the domain layer."
+  MessageBag.php,readonly final class,MessageBag is a readonly value object that encapsulates a collection of messages for immutable access. It provides a simple interface to retrieve all contained messages or instantiate an empty collection.
+  ToolCallResult.php,readonly final class,"This class represents an immutable value object encapsulating the result of a tool execution within an agent's workflow. It aggregates essential context identifiers such as run, turn, step, and attempt numbers to uniquely identify the event. The design ensures data integrity by being readonly and final."
+  StartRun.php,readonly final class,"This class represents a domain event signaling the initiation of a new execution run within the agent core. It encapsulates immutable metadata required to track the run's identity, progression, and idempotency. The structure ensures type safety and consistency for downstream event processing."
+  ProjectJsonlOutbox.php,readonly final class,ProjectJsonlOutbox configures the batching and retry parameters for persisting project messages to a JSONL outbox. It serves as a configuration container that defines how message batches are sized and how long the system waits before retrying failed operations.
+  ApplyCommand.php,readonly final class,"This class represents an immutable value object encapsulating the context required to apply a command within the agent core domain. It aggregates execution identifiers such as run ID, turn number, and step ID to ensure precise tracking of command application attempts."
+  AbstractAgentBusMessage.php,readonly abstract class,"Abstract base class defining the immutable structure for agent bus messages within the domain layer. It encapsulates execution context metadata such as run identifiers, turn numbers, and step details to ensure consistent message formatting across the system."
+  CollectToolBatch.php,readonly final class,CollectToolBatch is a value object that encapsulates the context required to batch tool execution results for a specific agent run step. It ensures immutability and type safety by storing identifiers and metadata necessary for tracking and idempotency.
+  ExecuteLlmStep.php,readonly final class,"This class represents a value object encapsulating the context required to execute a specific Large Language Model step within an agent run. It aggregates immutable identifiers and metadata such as run ID, turn number, step ID, attempt count, and idempotency key. The design ensures type safety and immutability for distributed task tracking."
+  LlmStepResult.php,readonly final class,"Represents the immutable result of a single LLM processing step within a multi-turn agent execution. It encapsulates critical identifiers and metadata required for tracking, idempotency, and replaying specific steps in the conversation flow."

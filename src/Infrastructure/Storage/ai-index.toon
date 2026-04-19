@@ -1,14 +1,15 @@
 spec: agent-core.ai-docs/v1
 namespace: "Infrastructure\\Storage"
 fqcn: "Ineersa\\AgentCore\\Infrastructure\\Storage"
+updatedAt: 2026-04-19
 description: "Storage adapters — in-memory stores, Flysystem run logs, Doctrine event store, hot prompt state, local artifact store."
-files[9]{file,type,responsibility,docs}:
-  InMemoryRunStore.php,class,In-memory RunStoreInterface — map-based get/compareAndSwap/findRunningStaleBefore for testing and stale-run recovery.,docs/InMemoryRunStore.md
-  InMemoryCommandStore.php,class,In-memory CommandStoreInterface — enqueue/has/countPending/pending/rejectPendingByKind/markApplied/markRejected/markSuperseded for testing.,docs/InMemoryCommandStore.md
-  InMemoryOutboxStore.php,class,In-memory OutboxStoreInterface — enqueue/claim/markProcessed/markFailed for testing.,docs/InMemoryOutboxStore.md
-  InMemoryPromptStateStore.php,class,In-memory PromptStateStoreInterface — get/save/delete for testing.,docs/InMemoryPromptStateStore.md
-  RunEventStore.php,class,Doctrine-backed EventStoreInterface — appends/retrieves RunEvents using Doctrine DBAL/ORM.,docs/RunEventStore.md
-  HotPromptStateStore.php,class,Doctrine-backed PromptStateStoreInterface — persists hot prompt state snapshots for fast replay avoidance.,docs/HotPromptStateStore.md
-  LocalArtifactStore.php,class,Local filesystem ArtifactStoreInterface — stores artifacts under a base directory using Flysystem.,docs/LocalArtifactStore.md
-  RunLogWriter.php,class,Writes RunEvents as JSONL lines to Flysystem storage — append-only run log for audit and replay fallback.,docs/RunLogWriter.md
-  RunLogReader.php,class,Reads JSONL run logs from Flysystem storage — parses lines back into RunEvent objects for replay.,docs/RunLogReader.md
+files[9]{file,type,summary}:
+  InMemoryRunStore.php,final class,"InMemoryRunStore provides an in-memory implementation of the run state persistence layer, utilizing an internal array to store RunState objects keyed by their unique identifiers. It supports basic CRUD operations and optimistic concurrency control for managing agent run states within a single process context."
+  HotPromptStateStore.php,final class,"This class provides a concrete implementation for persisting and retrieving transient prompt state associated with specific agent runs. It acts as a dedicated storage layer for hot prompt data, ensuring isolation from other state types."
+  InMemoryOutboxStore.php,final class,"An in-memory implementation of the outbox store that buffers events for eventual delivery. It ensures idempotency by deduplicating events before storage and provides mechanisms to claim, process, or fail pending entries."
+  InMemoryPromptStateStore.php,final class,"InMemoryPromptStateStore provides an ephemeral, in-memory storage mechanism for managing prompt states associated with specific agent runs. It utilizes a simple array-based structure to hold state data, offering fast access and modification without external persistence dependencies."
+  InMemoryCommandStore.php,final class,"InMemoryCommandStore provides an ephemeral, in-memory implementation of the command persistence interface for managing pending commands during a single execution run. It stores PendingCommand objects indexed by run ID and idempotency key, enabling fast lookups and state transitions without external storage dependencies."
+  RunLogReader.php,readonly final class,Reads and parses run log files from the filesystem to reconstruct a sequence of events for a specific run. It leverages the Flysystem interface to locate log files and deserialize JSON lines into domain event objects.
+  RunEventStore.php,final class,This class implements a persistent storage mechanism for domain events associated with specific run contexts. It provides methods to record new events and retrieve historical event sequences for a given run identifier.
+  LocalArtifactStore.php,readonly final class,"LocalArtifactStore provides a file-system-based persistence layer for storing agent artifacts as discrete files within a designated base directory. It manages the creation of subdirectories per run and writes artifact content with optional metadata, ensuring isolated storage for each execution context."
+  RunLogWriter.php,readonly final class,This class is responsible for persisting run event data to the file system. It formats events into structured files organized by run ID and timestamp.

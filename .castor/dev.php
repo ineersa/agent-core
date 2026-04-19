@@ -169,44 +169,21 @@ function check(): void
     echo 'quality: ok'.\PHP_EOL;
 }
 
-#[AsTask(description: 'Convert all ai-index.json to ai-index.toon and validate')]
-function index_toon(): void
-{
-    dev_php_exec('php scripts/convert-index-to-toon.php');
-    index_validate();
-}
-
-#[AsTask(description: 'Validate ai-index.toon files (optional: specific file or directory)')]
-function index_validate(string $path = ''): void
-{
-    $command = 'php scripts/validate-index-toon.php';
-    if ('' !== $path) {
-        $command .= ' '.escapeshellarg($path);
-    }
-
-    if (!is_llm_mode()) {
-        dev_php_exec($command);
-
-        return;
-    }
-
-    $process = run_quiet_command($command);
-    $output = trim($process->getOutput());
-
-    if (0 !== $process->getExitCode()) {
-        throw new \RuntimeException(\sprintf("index-validate failed:\n%s", $output));
-    }
-
-    // Summarize: count valid files
-    if (preg_match('/Valid: (\d+\/\d+ files)/', $output, $matches)) {
-        echo \sprintf('index-validate: ok (%s)', $matches[1]).\PHP_EOL;
-    } else {
-        echo 'index-validate: ok'.\PHP_EOL;
-    }
-}
-
 #[AsTask(description: 'Alias of dev:check')]
 function quality(): void
 {
     check();
+}
+
+#[AsTask(description: 'Generate per-file method indexes via AST + LLM (options: --all, --changed, --force, --dry-run, --endpoint=URL, --model=NAME)')]
+function index_methods(): void
+{
+    $command = 'php scripts/generate-method-index.php';
+
+    $args = \array_slice($_SERVER['argv'], 2);
+    if ([] !== $args) {
+        $command .= ' '.implode(' ', array_map('escapeshellarg', $args));
+    }
+
+    dev_php_exec($command);
 }

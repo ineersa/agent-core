@@ -1,7 +1,8 @@
 spec: agent-core.ai-docs/v1
 namespace: "Application\\Reducer"
 fqcn: "Ineersa\\AgentCore\\Application\\Reducer"
+updatedAt: 2026-04-19
 description: "Pure state reducer — transforms RunState given bus commands (StartRun, AdvanceRun, ApplyCommand), returns new state + effects."
-files[2]{file,type,responsibility,docs}:
-  RunReducer.php,final class,"Pure reducer: maps (RunState, command) → ReduceResult(new state, effects). Handles StartRun (hydrate messages), AdvanceRun (bump turn, emit ExecuteLlmStep), ApplyCommand (cancel/steer/follow_up/human_response).",docs/RunReducer.md
-  ReduceResult.php,readonly class,Reducer output — new RunState + list of effect commands to dispatch.,docs/ReduceResult.md
+files[2]{file,type,summary}:
+  RunReducer.php,final class,"This class implements the reducer pattern for managing the lifecycle of an agent run, transitioning between states based on incoming commands. It processes specific event types to update the run state and handle message hydration."
+  ReduceResult.php,readonly final class,"ReduceResult is a readonly value object that encapsulates the outcome of a reduction operation, storing the resulting application state and a list of side effects. It serves as an immutable container to ensure data integrity when passing reduction results through the application layer."

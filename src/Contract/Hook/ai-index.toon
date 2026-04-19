@@ -1,14 +1,15 @@
 spec: agent-core.ai-docs/v1
 namespace: "Contract\\Hook"
 fqcn: "Ineersa\\AgentCore\\Contract\\Hook"
+updatedAt: 2026-04-19
 description: "Hook interfaces for intercepting agent loop lifecycle: context transforms, LLM conversion, tool call boundaries, cancellation, and message providers."
-files[9]{file,type,responsibility,docs}:
-  TransformContextHookInterface.php,interface,"Transform the message context before LLM call — filter, augment, or rewrite messages.",docs/TransformContextHookInterface.md
-  ConvertToLlmHookInterface.php,interface,Convert AgentMessage list into a MessageBag for LLM provider consumption.,docs/ConvertToLlmHookInterface.md
-  BeforeProviderRequestHookInterface.php,interface,Intercept before LLM provider call — can return a ProviderRequest to modify/override.,docs/BeforeProviderRequestHookInterface.md
-  BeforeToolCallHookInterface.php,interface,Intercept before tool execution — can return BeforeToolCallResult to modify/skip call.,docs/BeforeToolCallHookInterface.md
-  AfterToolCallHookInterface.php,interface,Intercept after tool execution — can return AfterToolCallResult to modify result.,docs/AfterToolCallHookInterface.md
-  CancellationTokenInterface.php,interface,Cooperative cancellation check — isCancellationRequested().,docs/CancellationTokenInterface.md
-  NullCancellationToken.php,class,No-op cancellation token — always returns false. Read-only value object.,docs/NullCancellationToken.md
-  SteeringMessagesProviderInterface.php,interface,Provides steering messages injected at start of context to guide agent behavior.,docs/SteeringMessagesProviderInterface.md
-  FollowUpMessagesProviderInterface.php,interface,Provides follow-up messages appended after the main context.,docs/FollowUpMessagesProviderInterface.md
+files[9]{file,type,summary}:
+  AfterToolCallHookInterface.php,interface,"Defines the contract for hooks that execute after a tool call completes within the agent core. It allows external systems to observe, modify, or react to the outcome of tool execution without coupling to specific tool implementations."
+  FollowUpMessagesProviderInterface.php,interface,Defines the contract for providers that supply follow-up message suggestions within the agent core. Implementations are responsible for generating an array of relevant message options based on the current context.
+  NullCancellationToken.php,readonly final class,NullCancellationToken implements the cancellation token contract by providing a non-cancelable token that always indicates no cancellation is requested. It serves as a safe default or placeholder when a cancellation token is required but no actual cancellation logic is needed.
+  BeforeProviderRequestHookInterface.php,interface,"This interface defines a contract for intercepting provider requests before they are dispatched. It allows implementations to inspect, modify, or cancel the request based on the model, input data, and provided options. The hook serves as a pre-processing gate for provider interactions."
+  TransformContextHookInterface.php,interface,"Defines the contract for hooks that transform message sequences within an agent's processing pipeline. Implementations receive raw messages and a cancellation token, returning modified messages to alter the context flow."
+  SteeringMessagesProviderInterface.php,interface,Defines the contract for components that provide steering messages to the agent core. Implementations are responsible for returning an array of messages that guide the agent's behavior or decision-making process.
+  ConvertToLlmHookInterface.php,interface,Defines the contract for converting raw message arrays into a structured LLM-compatible message bag. This interface enables decoupled message transformation logic within the agent core pipeline. Implementations handle the specific formatting required by downstream language model providers.
+  BeforeToolCallHookInterface.php,interface,Defines the contract for hooks that execute before a tool is invoked by an agent. It allows external systems to inspect the context or cancel the operation prior to execution.
+  CancellationTokenInterface.php,interface,Defines the contract for objects that signal the cancellation of an ongoing operation. It provides a mechanism for cooperative cancellation by exposing a status check method.

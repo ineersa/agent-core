@@ -1,10 +1,11 @@
 spec: agent-core.ai-docs/v1
 namespace: "Contract\\Tool"
 fqcn: "Ineersa\\AgentCore\\Contract\\Tool"
+updatedAt: 2026-04-19
 description: "Tool execution contracts — platform invocation, model resolution, tool catalog discovery, tool executor, and idempotency key resolution."
-files[5]{file,type,responsibility,docs}:
-  PlatformInterface.php,interface,"LLM platform adapter — invoke a model with input/options, return raw response array.",docs/PlatformInterface.md
-  ModelResolverInterface.php,interface,"Resolves which model to use — given default model, message bag, context, and options.",docs/ModelResolverInterface.md
-  ToolCatalogProviderInterface.php,interface,Provides available tool definitions for a given context — the tool catalog.,docs/ToolCatalogProviderInterface.md
-  ToolExecutorInterface.php,interface,"Executes a single tool call, returns a ToolResult.",docs/ToolExecutorInterface.md
-  ToolIdempotencyKeyResolverInterface.php,interface,Optional stronger idempotency key contract — resolves a deterministic idempotency key from a ToolCall for result deduplication.,docs/ToolIdempotencyKeyResolverInterface.md
+files[5]{file,type,summary}:
+  PlatformInterface.php,interface,"Defines the contract for platform-specific tool execution within the agent core. It standardizes how external tools are invoked with model context, input data, and configuration options. Implementations must provide concrete logic for interacting with specific platform APIs."
+  ModelResolverInterface.php,interface,Defines the contract for resolving the appropriate AI model based on conversation context and configuration. Implementations analyze message history and provided options to determine the optimal model for processing.
+  ToolIdempotencyKeyResolverInterface.php,interface,This interface defines the contract for resolving unique idempotency keys for tool calls within the agent core. It ensures that repeated executions of the same tool call can be identified and handled consistently. Implementations are responsible for deriving a stable key from the provided tool call data.
+  ToolCatalogProviderInterface.php,interface,Defines the contract for resolving tool catalogs within the agent core system. Implementations provide a standardized mechanism to retrieve available tools based on a given context. This interface ensures consistent tool discovery across different provider implementations.
+  ToolExecutorInterface.php,interface,Defines the contract for executing tool calls within the agent core system. It standardizes the interface for processing tool requests and returning structured results. This interface ensures consistent behavior across different tool implementations.

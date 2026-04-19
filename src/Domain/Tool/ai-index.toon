@@ -1,52 +1,18 @@
 spec: agent-core.ai-docs/v1
 namespace: "Domain\\Tool"
 fqcn: "Ineersa\\AgentCore\\Domain\\Tool"
+updatedAt: 2026-04-19
 description: "Tool execution value objects — call representation, definition schema, results, execution modes, provider request/result, and before/after hook contexts."
-files[12]:
-  - file: ToolCall.php
-    type: readonly class
-    responsibility: "Represents a tool call — toolCallId, toolName, arguments, orderIndex, runId, mode, timeoutSeconds, toolIdempotencyKey, assistantMessage, context."
-    docs: docs/ToolCall.md
-  - file: ToolExecutionPolicy.php
-    type: final readonly class
-    responsibility: "Execution policy value object — mode (ToolExecutionMode), timeoutSeconds, maxParallelism."
-    docs: docs/ToolExecutionPolicy.md
-  - type: readonly class
-    responsibility: "Tool schema definition — name, description, JSON schema. toProviderPayload() for LLM format."
-    docs: docs/ToolDefinition.md
-  - file: ToolResult.php
-    type: readonly class
-    responsibility: "Tool execution result — toolCallId, toolName, content parts, details, error flag."
-    docs: docs/ToolResult.md
-  - file: ToolExecutionMode.php
-    type: enum
-    responsibility: "Execution mode: Sequential, Parallel, Interrupt."
-    docs: docs/ToolExecutionMode.md
-  - file: ProviderRequest.php
-    type: readonly class
-    responsibility: "LLM provider request override — model, input, options. applyOn() for partial overrides."
-    docs: docs/ProviderRequest.md
-  - file: ResolvedModel.php
-    type: readonly class
-    responsibility: Resolved model for a request — model name and options.
-    docs: docs/ResolvedModel.md
-  - file: PlatformInvocationResult.php
-    type: readonly class
-    responsibility: "Raw platform invocation result — assistantMessage, deltas, usage, stopReason, error."
-    docs: docs/PlatformInvocationResult.md
-  - file: BeforeToolCallContext.php
-    type: readonly class
-    responsibility: "Context for before-tool-call hook — assistantMessage, toolCall, args, context."
-    docs: docs/BeforeToolCallContext.md
-  - file: BeforeToolCallResult.php
-    type: readonly class
-    responsibility: Result of before-tool-call hook — allow() or blocked(reason) factory methods.
-    docs: docs/BeforeToolCallResult.md
-  - file: AfterToolCallContext.php
-    type: readonly class
-    responsibility: "Context for after-tool-call hook — assistantMessage, toolCall, args, result, isError, context."
-    docs: docs/AfterToolCallContext.md
-  - file: AfterToolCallResult.php
-    type: readonly class
-    responsibility: Result of after-tool-call hook — content/details/error overrides via factory methods.
-    docs: docs/AfterToolCallResult.md
+files[12]{file,type,summary}:
+  BeforeToolCallResult.php,readonly final class,"This class represents the result of a pre-execution check for a tool call, determining whether the operation should proceed or be halted. It encapsulates the decision state along with an optional reason for blocking, providing a clear contract for tool execution policies."
+  ToolResult.php,readonly final class,"ToolResult is a readonly value object that encapsulates the outcome of a tool execution within the agent core. It stores the tool identifier, name, content payload, and optional error details to provide a structured representation of tool interactions."
+  AfterToolCallContext.php,readonly final class,"This readonly final class encapsulates the immutable context resulting from a tool execution within the agent loop. It aggregates the assistant's message, the specific tool call details, input arguments, and the execution outcome. This structure ensures type-safe propagation of tool interaction state to subsequent processing stages."
+  PlatformInvocationResult.php,readonly final class,"This class represents the immutable result of a platform tool invocation, encapsulating assistant messages, usage statistics, and error details. It provides a structured data container for LLM interaction outcomes within the agent core domain."
+  ToolCall.php,readonly final class,"Represents a specific invocation of a tool within the agent's execution flow, encapsulating the unique identifier, target tool name, and input arguments. This immutable value object ensures that tool call metadata remains consistent and thread-safe throughout the agent's lifecycle."
+  ResolvedModel.php,readonly final class,ResolvedModel is a readonly value object that encapsulates a specific AI model identifier and its associated configuration options. It serves as an immutable data carrier to ensure consistent model selection and parameter passing throughout the agent core.
+  AfterToolCallResult.php,readonly final class,"This class represents an immutable result object for tool execution within the agent core domain. It encapsulates optional content, details, and error status to facilitate fluent construction of tool call outcomes."
+  ToolExecutionMode.php,enum,Defines the execution strategy for tools within the agent core domain. It distinguishes between synchronous execution for immediate results and asynchronous execution for background processing. This enum ensures type-safe selection of execution modes across the application.
+  ProviderRequest.php,readonly final class,"The ProviderRequest class encapsulates the configuration and parameters required to invoke an external AI model provider. It serves as a value object that aggregates model selection, input data, and execution options into a single immutable structure. This design ensures consistent parameter passing across different tool implementations."
+  BeforeToolCallContext.php,readonly final class,"This readonly final class encapsulates the immutable context required before a tool is executed by an agent. It bundles the assistant's message, the specific tool call, and associated arguments into a single data structure. This design ensures that all necessary pre-execution data is passed together safely."
+  ToolDefinition.php,readonly final class,"ToolDefinition is a readonly value object that encapsulates the metadata and JSON schema required to define a tool for an AI agent. It provides a standardized structure for tool names, descriptions, and input parameters. The class ensures immutability and type safety for tool configuration data."
+  ToolExecutionPolicy.php,readonly final class,"This class defines the execution constraints for tools within the agent core domain. It encapsulates configuration parameters such as execution mode, timeout duration, and parallelism limits. The class is immutable and serves as a value object for policy enforcement."

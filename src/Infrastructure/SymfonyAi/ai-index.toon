@@ -1,11 +1,12 @@
 spec: agent-core.ai-docs/v1
 namespace: "Infrastructure\\SymfonyAi"
 fqcn: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi"
+updatedAt: 2026-04-19
 description: "Symfony AI bridge — adapters connecting the agent loop to the Symfony AI ecosystem (platform, tool executor, message mapping, streaming)."
-files[6]{file,type,responsibility,docs}:
-  Platform.php,class,Implements PlatformInterface — wraps Symfony AI Platform for LLM invocation.,docs/Platform.md
-  SymfonyPlatformInvoker.php,class,Invokes the Symfony AI platform with tool calls and streaming support — handles the raw provider interaction.,docs/SymfonyPlatformInvoker.md
-  SymfonyToolExecutorAdapter.php,class,Adapts Symfony AI tool execution to the agent loop's ToolExecutorInterface contract.,docs/SymfonyToolExecutorAdapter.md
-  SymfonyMessageMapper.php,class,Maps between AgentMessage/MessageBag and Symfony AI message formats — bidirectional conversion.,docs/SymfonyMessageMapper.md
-  StreamDeltaReducer.php,class,Reduces streaming deltas into a coherent assistant message — accumulates text chunks during LLM streaming.,docs/StreamDeltaReducer.md
-  RunCancellationToken.php,class,Implements CancellationTokenInterface — checks RunStatus to determine if cancellation was requested for a run.,docs/RunCancellationToken.md
+files[6]{file,type,summary}:
+  SymfonyToolExecutorAdapter.php,readonly final class,"SymfonyToolExecutorAdapter bridges the AgentCore tool execution interface with the Symfony Toolbox, enabling seamless integration of Symfony-specific tools into the agent workflow. It manages the lifecycle of tool calls by applying pre- and post-execution hooks and handling the conversion between internal tool representations and Symfony-compatible formats."
+  RunCancellationToken.php,readonly final class,This class encapsulates the cancellation state for a specific AI agent run by delegating to a persistent store. It provides a synchronous check to determine if a cancellation signal has been recorded for the given run ID.
+  SymfonyPlatformInvoker.php,readonly final class,"SymfonyPlatformInvoker acts as a bridge between the AgentCore infrastructure and the Symfony AI platform, handling the invocation of AI models and processing their responses. It encapsulates the logic for converting inputs, managing tool definitions, and extracting structured data from platform-specific result objects."
+  StreamDeltaReducer.php,final class,"This class aggregates streaming AI response deltas into a coherent assistant message and structured tool call history. It processes incremental text and tool usage data, maintaining internal state to reconstruct the final output and track function call arguments."
+  Platform.php,readonly final class,"This class orchestrates the execution of AI agent runs by managing context resolution, message transformation, and provider invocation. It acts as a central coordinator that prepares input data, applies necessary hooks, and delegates the actual API call to a platform invoker while persisting run state."
+  SymfonyMessageMapper.php,final class,"SymfonyMessageMapper transforms internal AgentMessage objects into provider-specific input formats for AI service integration. It handles the conversion of text, tool calls, and message bags into structures compatible with various LLM providers. The class ensures consistent serialization of agent interactions regardless of the underlying provider API."

@@ -1,6 +1,7 @@
 spec: agent-core.ai-docs/v1
 namespace: "Infrastructure\\Messenger"
 fqcn: "Ineersa\\AgentCore\\Infrastructure\\Messenger"
+updatedAt: 2026-04-19
 description: Messenger bus configuration — bus name constants.
-files[1]{file,type,responsibility,docs}:
-  BusNames.php,final class,"Bus name constants: COMMAND_BUS, EXECUTION_BUS, PUBLISHER_BUS — central reference for all messenger wiring.",docs/BusNames.md
+files[1]{file,type,summary}:
+  BusNames.php,final class,Provides a centralized registry of string constants representing message bus identifiers used within the agent core infrastructure. This class ensures consistent naming conventions across the messaging system by exposing static constants for various bus types.

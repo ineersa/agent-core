@@ -1,8 +1,9 @@
 spec: agent-core.ai-docs/v1
 namespace: "Contract\\Extension"
 fqcn: "Ineersa\\AgentCore\\Contract\\Extension"
+updatedAt: 2026-04-19
 description: "Extension seam interfaces for third-party integrations — command handlers, event subscribers, hook subscribers."
-files[3]{file,type,responsibility,docs}:
-  CommandHandlerInterface.php,interface,"Extension command handler — supports a command kind, maps payload to events. Supports cancel-safe detection.",docs/CommandHandlerInterface.md
-  EventSubscriberInterface.php,interface,"Extension event subscriber — declares subscribed event types, handles incoming events.",docs/EventSubscriberInterface.md
-  HookSubscriberInterface.php,interface,"Extension hook subscriber — declares subscribed hooks, handles hook invocations with context.",docs/HookSubscriberInterface.md
+files[3]{file,type,summary}:
+  EventSubscriberInterface.php,interface,Defines the contract for components that react to specific runtime events within the agent core. Implementers declare which event types they observe and provide the logic to process those events when they occur.
+  CommandHandlerInterface.php,interface,Defines the contract for command handlers within the agent core extension system. It specifies how handlers identify supported command types and map raw payloads into structured execution contexts. This interface ensures consistent command processing across different extension implementations.
+  HookSubscriberInterface.php,interface,Defines the contract for components that register specific event hooks and process associated context data. It enables a decoupled event-driven architecture by standardizing how subscribers declare their interests and react to dispatched events.

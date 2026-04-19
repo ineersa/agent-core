@@ -1,6 +1,10 @@
+// @ts-ignore
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+// @ts-ignore
 import { execSync } from "node:child_process";
+// @ts-ignore
 import { readdirSync } from "node:fs";
+// @ts-ignore
 import { resolve, join } from "node:path";
 
 export default function (pi: ExtensionAPI) {

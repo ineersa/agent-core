@@ -1,10 +1,11 @@
 spec: agent-core.ai-docs/v1
 namespace: "Domain\\Run"
 fqcn: "Ineersa\\AgentCore\\Domain\\Run"
+updatedAt: 2026-04-19
 description: "Run lifecycle value objects — identity, state, status enum, and input DTO for starting runs."
-files[5]{file,type,responsibility,docs}:
-  RunId.php,final readonly class,"Run identity — UUID v4 generation, stringable value object.",docs/RunId.md
-  RunHandle.php,final readonly class,"Lightweight run reference returned by AgentRunnerInterface::start().",docs/RunHandle.md
-  RunState.php,final readonly class,"Aggregate root state — runId, status, version, turnNo, lastSeq, messages, streaming state, pending tool calls, error/retryable tracking, activeStepId.",docs/RunState.md
-  RunStatus.php,enum,"Run status enum: Queued, Running, WaitingHuman, Cancelling, Completed, Failed, Cancelled.",docs/RunStatus.md
-  StartRunInput.php,final readonly class,"Input DTO for starting a run — systemPrompt, messages, optional runId, metadata.",docs/StartRunInput.md
+files[5]{file,type,summary}:
+  RunId.php,readonly final class,A value object representing a unique identifier for a run instance within the agent core domain. It encapsulates a string value to ensure type safety and immutability for run identification.
+  RunHandle.php,readonly final class,A value object representing a specific run instance identified by a unique string ID. It serves as a lightweight carrier for the run identifier within the domain layer.
+  StartRunInput.php,readonly final class,"This class serves as a value object for capturing the input parameters required to initiate an agent run. It encapsulates the system prompt, conversation history, optional run identifier, and associated metadata in a readonly structure."
+  RunState.php,readonly final class,"Represents the immutable state of a run within the agent core domain, encapsulating identifiers, status, and sequence metadata. Designed as a value object to ensure consistent state representation across the application."
+  RunStatus.php,enum,"Defines the discrete lifecycle states for an agent execution run, providing a type-safe representation of progress and completion. It serves as a value object to track the current status of a run within the domain model."

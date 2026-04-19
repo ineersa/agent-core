@@ -2,5 +2,6 @@ spec: agent-core.ai-docs/v1
 namespace: "Infrastructure\\Doctrine"
 fqcn: "Ineersa\\AgentCore\\Infrastructure\\Doctrine"
 description: Doctrine integration — migrations for agent-loop persistence tables.
-files[1]{file,type,responsibility,docs}:
-  Migrations/Version20260418000100.php,class,"Initial migration creating 7 tables: agent_run_event, agent_command, agent_run, agent_outbox, agent_prompt_state, agent_artifact, and related indexes.",docs/Version20260418000100.md
+files[1]{file,type,responsibility}:
+  Migrations/Version20260418000100.php,class,"Initial migration creating 7 tables: agent_run_event, agent_command, agent_run, agent_outbox, agent_prompt_state, agent_artifact, and related indexes."
+updatedAt: 2026-04-19

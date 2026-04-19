@@ -8,3 +8,4 @@ subNamespaces[5]{namespace,fqcn,path,description,index}:
   Event,"Ineersa\\AgentCore\\Domain\\Event",Event,"Event sourcing models — RunEvent, Outbox pattern (Entry/Sink), BoundaryHookEvent/Name, CoreLifecycleEventType with validation, Lifecycle sub-namespace for typed events.",Event/ai-index.toon
   Message,"Ineersa\\AgentCore\\Domain\\Message",Message,"Message bus envelopes — AgentMessage, MessageBag, bus commands (StartRun, AdvanceRun, ApplyCommand, ExecuteLlmStep, ExecuteToolCall, CollectToolBatch), results (LlmStepResult, ToolCallResult), outbox projections.",Message/ai-index.toon
   Tool,"Ineersa\\AgentCore\\Domain\\Tool",Tool,"Tool execution value objects — ToolCall, ToolDefinition, ToolResult, execution modes, provider request/result, before/after hook contexts and results, model resolution.",Tool/ai-index.toon
+updatedAt: 2026-04-19

@@ -1,13 +1,14 @@
 spec: agent-core.ai-docs/v1
 namespace: "Domain\\Event"
 fqcn: "Ineersa\\AgentCore\\Domain\\Event"
+updatedAt: 2026-04-19
 description: "Event sourcing models — base RunEvent, outbox pattern (Entry/Sink), boundary hooks, core lifecycle event types with order validation, and typed Lifecycle event subclasses."
-files[6]{file,type,responsibility,docs}:
-  RunEvent.php,readonly class,"Base event — runId, seq, turnNo, type, payload, createdAt. Factory for extension events with prefix validation.",docs/RunEvent.md
-  OutboxEntry.php,readonly class,"Outbox pattern entry — id, sink, event, attempts, availableAt.",docs/OutboxEntry.md
-  OutboxSink.php,enum,"Outbox sink targets: Jsonl, Mercure.",docs/OutboxSink.md
-  BoundaryHookEvent.php,final class,Boundary hook invocation event — hookName + mutable context array.,docs/BoundaryHookEvent.md
-  BoundaryHookName.php,final class,"Boundary hook name constants — BEFORE/AFTER_COMMAND_APPLY, BEFORE_TURN_DISPATCH, AFTER_TURN_COMMIT, BEFORE_RUN_FINALIZE + extension prefix.",docs/BoundaryHookName.md
-  CoreLifecycleEventType.php,final class,"Lifecycle event type constants, class map, and validateOrder() for structural validation of event streams.",docs/CoreLifecycleEventType.md
+files[6]{file,type,summary}:
+  BoundaryHookEvent.php,final class,This class represents a domain event triggered by a boundary hook within the agent core system. It encapsulates the name of the hook and an associated context array to provide necessary data for event consumers. The design ensures immutability of the hook name while allowing flexible context data.
+  RunEvent.php,readonly class,"A readonly value object representing a discrete event within an agent's execution run. It encapsulates metadata such as run identifier, sequence number, and turn context alongside a type-specific payload. This structure serves as an immutable record for event sourcing or logging purposes."
+  CoreLifecycleEventType.php,final class,"This class defines constants and validation logic for core lifecycle events within the agent system. It provides utility methods to identify core event types, retrieve their associated class mappings, and enforce a strict ordering constraint on event sequences."
+  OutboxSink.php,enum,OutboxSink defines the available persistence targets for domain events within the outbox pattern. It serves as a type-safe enumeration to distinguish between different storage backends for event dispatching.
+  OutboxEntry.php,readonly final class,"Represents a single event record in the outbox pattern, encapsulating the event payload, delivery target, and retry metadata. This immutable value object ensures that event dispatching state is tracked explicitly through attempt counts and availability timestamps."
+  BoundaryHookName.php,final class,This final class provides utility methods for validating and categorizing hook names within the agent core domain. It distinguishes between boundary hooks and extension-specific hooks based on naming conventions.
 subNamespaces[1]{namespace,fqcn,path,description,index}:
   Lifecycle,"Ineersa\\AgentCore\\Domain\\Event\\Lifecycle",Lifecycle,"Typed lifecycle event subclasses — AgentStart/End, TurnStart/End, MessageStart/Update/End, ToolExecutionStart/Update/End.",Lifecycle/ai-index.toon
