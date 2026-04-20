@@ -3,7 +3,28 @@ file: AgentMessage.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\AgentMessage"
 type: readonly final class
 summary: Bundle-level message DTO with JS parity fields.
-methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,12,29,18,18,21,"public function __construct(string $role, array $content, ?DateTimeImmutable $timestamp = null, ?string $name = null, ?string $toolCallId = null, ?string $toolName = null, mixed $details = null, bool $isError = false, array $metadata = [])"
-  isCustomRole,31,37,7,34,21,"public function isCustomRole(): bool"
-  toArray,39,77,39,44,21,"public function toArray(): array"
+methods[3]:
+  - method: __construct
+    start: 12
+    end: 29
+    limit: 18
+    symbolLine: 18
+    symbolColumn: 21
+    signature: "public function __construct(string $role, array $content, ?DateTimeImmutable $timestamp = null, ?string $name = null, ?string $toolCallId = null, ?string $toolName = null, mixed $details = null, bool $isError = false, array $metadata = [])"
+  - method: isCustomRole
+    start: 31
+    end: 37
+    limit: 7
+    symbolLine: 34
+    symbolColumn: 21
+    signature: "public function isCustomRole(): bool"
+    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::userText"
+  - method: toArray
+    start: 39
+    end: 77
+    limit: 39
+    symbolLine: 44
+    symbolColumn: 21
+    signature: "public function toArray(): array"
+    callees[1]: "DateTimeImmutable::format"
+    callers[2]: "Ineersa\\AgentCore\\Api\\Http\\RunReadService::transcriptPage","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::serializeMessage"

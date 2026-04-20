@@ -3,7 +3,27 @@ file: PromptStateStoreInterface.php
 class: "Ineersa\\AgentCore\\Contract\\PromptStateStoreInterface"
 type: interface
 summary: "Defines the contract for persisting and retrieving agent execution state keyed by run identifiers. It provides a minimal interface for storing, fetching, and removing structured state arrays associated with specific agent runs."
-methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  get,12,17,6,17,21,"public function get(string $runId): ?array"
-  save,19,24,6,24,21,"public function save(string $runId, array $state): void"
-  delete,26,29,4,29,21,"public function delete(string $runId): void"
+methods[3]:
+  - method: get
+    start: 12
+    end: 17
+    limit: 6
+    symbolLine: 17
+    symbolColumn: 21
+    signature: "public function get(string $runId): ?array"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::inspect","Ineersa\\AgentCore\\Command\\AgentLoopResumeStaleRunsCommand::execute"
+  - method: save
+    start: 19
+    end: 24
+    limit: 6
+    symbolLine: 24
+    symbolColumn: 21
+    signature: "public function save(string $runId, array $state): void"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ReplayService::rebuildHotPromptState"
+  - method: delete
+    start: 26
+    end: 29
+    limit: 4
+    symbolLine: 29
+    symbolColumn: 21
+    signature: "public function delete(string $runId): void"

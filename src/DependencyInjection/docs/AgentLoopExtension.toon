@@ -3,6 +3,20 @@ file: AgentLoopExtension.php
 class: "Ineersa\\AgentCore\\DependencyInjection\\AgentLoopExtension"
 type: final class
 summary: Registers default configuration values for the Agent Loop bundle into the Symfony container before user configuration is processed. It ensures consistent baseline settings for the agent core subsystem by merging predefined defaults with the provided configuration array.
-methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  prepend,18,37,20,21,21,"public function prepend(ContainerBuilder $container): void"
-  load,39,77,39,44,21,"public function load(array $configs, ContainerBuilder $container): void"
+methods[2]:
+  - method: prepend
+    start: 18
+    end: 37
+    limit: 20
+    symbolLine: 21
+    symbolColumn: 21
+    signature: "public function prepend(ContainerBuilder $container): void"
+    callees[2]: "Symfony\\Component\\DependencyInjection\\ContainerBuilder::hasExtension","Symfony\\Component\\DependencyInjection\\ContainerBuilder::prependExtensionConfig"
+  - method: load
+    start: 39
+    end: 77
+    limit: 39
+    symbolLine: 44
+    symbolColumn: 21
+    signature: "public function load(array $configs, ContainerBuilder $container): void"
+    callees[5]: "Symfony\\Component\\DependencyInjection\\Extension\\Extension::processConfiguration","Symfony\\Component\\DependencyInjection\\Container::setParameter","Symfony\\Component\\DependencyInjection\\Loader\\PhpFileLoader::load","Symfony\\Component\\DependencyInjection\\Alias::setPublic","Symfony\\Component\\DependencyInjection\\ContainerBuilder::setAlias"

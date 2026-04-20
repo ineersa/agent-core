@@ -3,5 +3,12 @@ file: BeforeProviderRequestHookInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Hook\\BeforeProviderRequestHookInterface"
 type: interface
 summary: "Defines a hook interface for intercepting provider requests before they are dispatched. It allows modifying or canceling the request based on the model, input, and options provided."
-methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  beforeProviderRequest,14,25,12,20,21,"public function beforeProviderRequest(string $model, array $input, array $options, ?CancellationTokenInterface $cancelToken = null): ?ProviderRequest"
+methods[1]:
+  - method: beforeProviderRequest
+    start: 14
+    end: 25
+    limit: 12
+    symbolLine: 20
+    symbolColumn: 21
+    signature: "public function beforeProviderRequest(string $model, array $input, array $options, ?CancellationTokenInterface $cancelToken = null): ?ProviderRequest"
+    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::applyBeforeProviderRequestHooks"

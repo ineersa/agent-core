@@ -3,7 +3,28 @@ file: EventStoreInterface.php
 class: "Ineersa\\AgentCore\\Contract\\EventStoreInterface"
 type: interface
 summary: Defines the contract for persisting and retrieving execution events within the Agent Core system. It abstracts the underlying storage mechanism to ensure consistent interaction with run-specific event data. This interface serves as the primary boundary for event persistence operations.
-methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  append,14,17,4,17,21,"public function append(RunEvent $event): void"
-  appendMany,19,24,6,24,21,"public function appendMany(array $events): void"
-  allFor,26,31,6,31,21,"public function allFor(string $runId): array"
+methods[3]:
+  - method: append
+    start: 14
+    end: 17
+    limit: 4
+    symbolLine: 17
+    symbolColumn: 21
+    signature: "public function append(RunEvent $event): void"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::commit"
+  - method: appendMany
+    start: 19
+    end: 24
+    limit: 6
+    symbolLine: 24
+    symbolColumn: 21
+    signature: "public function appendMany(array $events): void"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::commit"
+  - method: allFor
+    start: 26
+    end: 31
+    limit: 6
+    symbolLine: 31
+    symbolColumn: 21
+    signature: "public function allFor(string $runId): array"
+    callers[3]: "Ineersa\\AgentCore\\Api\\Http\\RunReadService::eventsForRun","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::eventsForReplay","Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::eventsForRun"

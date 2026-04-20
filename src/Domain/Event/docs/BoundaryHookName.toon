@@ -3,6 +3,20 @@ file: BoundaryHookName.php
 class: "Ineersa\\AgentCore\\Domain\\Event\\BoundaryHookName"
 type: final class
 summary: Provides static utility methods to classify event hook names based on their semantic role within the domain. It distinguishes between boundary hooks and extension hooks by evaluating string prefixes against defined constants.
-methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  isBoundary,29,35,7,32,28,"static public function isBoundary(string $hookName): bool"
-  isExtensionHook,37,43,7,40,28,"static public function isExtensionHook(string $hookName, string $extensionPrefix = self::EXTENSION_PREFIX): bool"
+methods[2]:
+  - method: isBoundary
+    start: 29
+    end: 35
+    limit: 7
+    symbolLine: 32
+    symbolColumn: 28
+    signature: "static public function isBoundary(string $hookName): bool"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\HookDispatcher::dispatch"
+  - method: isExtensionHook
+    start: 37
+    end: 43
+    limit: 7
+    symbolLine: 40
+    symbolColumn: 28
+    signature: "static public function isExtensionHook(string $hookName, string $extensionPrefix = self::EXTENSION_PREFIX): bool"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\HookDispatcher::dispatch"

@@ -3,7 +3,28 @@ file: StepDispatcher.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\StepDispatcher"
 type: readonly final class
 summary: The StepDispatcher class orchestrates the execution of agent steps by routing effects and messages to distinct message buses. It decouples side-effect processing from publishing logic by delegating to separate MessageBusInterface instances.
-methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,15,22,8,18,21,"public function __construct(MessageBusInterface $executionBus, MessageBusInterface $publisherBus)"
-  dispatchEffects,24,38,15,29,21,"public function dispatchEffects(array $effects): void"
-  publish,40,50,11,43,21,"public function publish(object $message): void"
+methods[3]:
+  - method: __construct
+    start: 15
+    end: 22
+    limit: 8
+    symbolLine: 18
+    symbolColumn: 21
+    signature: "public function __construct(MessageBusInterface $executionBus, MessageBusInterface $publisherBus)"
+  - method: dispatchEffects
+    start: 24
+    end: 38
+    limit: 15
+    symbolLine: 29
+    symbolColumn: 21
+    signature: "public function dispatchEffects(array $effects): void"
+    callees[1]: "Symfony\\Component\\Messenger\\MessageBusInterface::dispatch"
+    callers[3]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onLlmStepResult","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onToolCallResult","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::commit"
+  - method: publish
+    start: 40
+    end: 50
+    limit: 11
+    symbolLine: 43
+    symbolColumn: 21
+    signature: "public function publish(object $message): void"
+    callees[1]: "Symfony\\Component\\Messenger\\MessageBusInterface::dispatch"

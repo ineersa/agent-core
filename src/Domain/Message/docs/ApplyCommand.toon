@@ -3,5 +3,12 @@ file: ApplyCommand.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\ApplyCommand"
 type: readonly final class
 summary: "The ApplyCommand class represents a domain event for applying a command within a specific execution step. It encapsulates the necessary context such as run ID, turn number, and step ID to ensure proper sequencing and identification of the operation."
-methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,12,29,18,18,21,"public function __construct(string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey, string $kind, array $payload = [], array $options = [])"
+methods[1]:
+  - method: __construct
+    start: 12
+    end: 29
+    limit: 18
+    symbolLine: 18
+    symbolColumn: 21
+    signature: "public function __construct(string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey, string $kind, array $payload = [], array $options = [])"
+    callees[1]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::__construct"

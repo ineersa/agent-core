@@ -3,6 +3,20 @@ file: AgentLoopResumeStaleRunsCommand.php
 class: "Ineersa\\AgentCore\\Command\\AgentLoopResumeStaleRunsCommand"
 type: final class
 summary: This command identifies and resumes stale agent runs by coordinating with storage and locking mechanisms to ensure safe execution. It leverages a replay service to restore state and dispatches commands via the message bus to continue processing.
-methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,27,39,13,30,21,"public function __construct(RunStoreInterface $runStore, PromptStateStoreInterface $promptStateStore, ReplayService $replayService, RunLockManager $runLockManager, MessageBusInterface $commandBus, int $staleAfterSeconds = 120)"
-  execute,41,102,62,44,24,"protected function execute(InputInterface $input, OutputInterface $output): int"
+methods[2]:
+  - method: __construct
+    start: 27
+    end: 39
+    limit: 13
+    symbolLine: 30
+    symbolColumn: 21
+    signature: "public function __construct(RunStoreInterface $runStore, PromptStateStoreInterface $promptStateStore, ReplayService $replayService, RunLockManager $runLockManager, MessageBusInterface $commandBus, int $staleAfterSeconds = 120)"
+    callees[1]: "Symfony\\Component\\Console\\Command\\Command::__construct"
+  - method: execute
+    start: 41
+    end: 102
+    limit: 62
+    symbolLine: 44
+    symbolColumn: 24
+    signature: "protected function execute(InputInterface $input, OutputInterface $output): int"
+    callees[9]: "DateTimeImmutable::setTimestamp","Ineersa\\AgentCore\\Contract\\RunStoreInterface::findRunningStaleBefore","Ineersa\\AgentCore\\Application\\Handler\\RunLockManager::synchronized","Ineersa\\AgentCore\\Contract\\RunStoreInterface::get","Ineersa\\AgentCore\\Contract\\PromptStateStoreInterface::get","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::rebuildHotPromptState","Symfony\\Component\\Messenger\\MessageBusInterface::dispatch","Symfony\\Component\\Console\\Style\\SymfonyStyle::definitionList","Symfony\\Component\\Console\\Style\\SymfonyStyle::success"

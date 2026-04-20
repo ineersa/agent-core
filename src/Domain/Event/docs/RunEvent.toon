@@ -3,7 +3,26 @@ file: RunEvent.php
 class: "Ineersa\\AgentCore\\Domain\\Event\\RunEvent"
 type: readonly class
 summary: "Represents a domain event for a specific run execution, capturing sequence and turn metadata alongside a typed payload. Designed as a readonly value object to ensure immutability and safe propagation of run state changes within the domain layer."
-methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,12,25,14,17,21,"public function __construct(string $runId, int $seq, int $turnNo, string $type, array $payload = [], DateTimeImmutable $createdAt = new \\DateTimeImmutable())"
-  isExtensionEvent,27,33,7,30,21,"public function isExtensionEvent(string $prefix = 'ext_'): bool"
-  extension,35,61,27,40,28,"static public function extension(string $runId, int $seq, int $turnNo, string $type, array $payload = [], string $prefix = 'ext_', ?DateTimeImmutable $createdAt = null): self"
+methods[3]:
+  - method: __construct
+    start: 12
+    end: 25
+    limit: 14
+    symbolLine: 17
+    symbolColumn: 21
+    signature: "public function __construct(string $runId, int $seq, int $turnNo, string $type, array $payload = [], DateTimeImmutable $createdAt = new \\DateTimeImmutable())"
+    callers[1]: "Ineersa\\AgentCore\\Domain\\Event\\Lifecycle\\AbstractLifecycleRunEvent::__construct"
+  - method: isExtensionEvent
+    start: 27
+    end: 33
+    limit: 7
+    symbolLine: 30
+    symbolColumn: 21
+    signature: "public function isExtensionEvent(string $prefix = 'ext_'): bool"
+  - method: extension
+    start: 35
+    end: 61
+    limit: 27
+    symbolLine: 40
+    symbolColumn: 28
+    signature: "static public function extension(string $runId, int $seq, int $turnNo, string $type, array $payload = [], string $prefix = 'ext_', ?DateTimeImmutable $createdAt = null): self"

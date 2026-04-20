@@ -3,13 +3,80 @@ file: RunReadService.php
 class: "Ineersa\\AgentCore\\Api\\Http\\RunReadService"
 type: readonly final class
 summary: "This class provides HTTP-read access to run data and event transcripts by coordinating between run metadata stores and event storage. It retrieves summaries, paginated transcripts, and replayable event sequences while enforcing access control via the run access store."
-methods[9]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,20,29,10,23,21,"public function __construct(RunStoreInterface $runStore, RunAccessStoreInterface $runAccessStore, EventStoreInterface $eventStore, RunLogReader $runLogReader)"
-  summary,31,79,49,44,21,"public function summary(string $runId): ?array"
-  transcriptPage,81,131,51,93,21,"public function transcriptPage(string $runId, int $cursor, int $limit): ?array"
-  replayAfter,133,170,38,144,21,"public function replayAfter(string $runId, int $afterSeq): ?array"
-  eventsForRun,172,185,14,177,22,"private function eventsForRun(string $runId): array"
-  sortBySequence,187,199,13,194,22,"private function sortBySequence(array $events): array"
-  latestSummary,201,218,18,206,22,"private function latestSummary(array $messages): ?string"
-  messageSummary,220,241,22,223,22,"private function messageSummary(AgentMessage $message): ?string"
-  missingSequences,243,269,27,250,22,"private function missingSequences(array $events, int $expectedStart): array"
+methods[9]:
+  - method: __construct
+    start: 20
+    end: 29
+    limit: 10
+    symbolLine: 23
+    symbolColumn: 21
+    signature: "public function __construct(RunStoreInterface $runStore, RunAccessStoreInterface $runAccessStore, EventStoreInterface $eventStore, RunLogReader $runLogReader)"
+  - method: summary
+    start: 31
+    end: 79
+    limit: 49
+    symbolLine: 44
+    symbolColumn: 21
+    signature: "public function summary(string $runId): ?array"
+    callees[5]: "Ineersa\\AgentCore\\Contract\\RunAccessStoreInterface::get","Ineersa\\AgentCore\\Contract\\RunStoreInterface::get","Ineersa\\AgentCore\\Api\\Http\\RunReadService::eventsForRun","DateTimeImmutable::format","Ineersa\\AgentCore\\Api\\Http\\RunReadService::latestSummary"
+    callers[1]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::runSummary"
+  - method: transcriptPage
+    start: 81
+    end: 131
+    limit: 51
+    symbolLine: 93
+    symbolColumn: 21
+    signature: "public function transcriptPage(string $runId, int $cursor, int $limit): ?array"
+    callees[4]: "Ineersa\\AgentCore\\Contract\\RunAccessStoreInterface::get","Ineersa\\AgentCore\\Contract\\RunStoreInterface::get","Ineersa\\AgentCore\\Api\\Http\\RunReadService::messageSummary","Ineersa\\AgentCore\\Domain\\Message\\AgentMessage::toArray"
+    callers[1]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::transcriptPage"
+  - method: replayAfter
+    start: 133
+    end: 170
+    limit: 38
+    symbolLine: 144
+    symbolColumn: 21
+    signature: "public function replayAfter(string $runId, int $afterSeq): ?array"
+    callees[3]: "Ineersa\\AgentCore\\Contract\\RunAccessStoreInterface::get","Ineersa\\AgentCore\\Api\\Http\\RunReadService::eventsForRun","Ineersa\\AgentCore\\Api\\Http\\RunReadService::missingSequences"
+    callers[1]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::replayEvents"
+  - method: eventsForRun
+    start: 172
+    end: 185
+    limit: 14
+    symbolLine: 177
+    symbolColumn: 22
+    signature: "private function eventsForRun(string $runId): array"
+    callees[3]: "Ineersa\\AgentCore\\Contract\\EventStoreInterface::allFor","Ineersa\\AgentCore\\Api\\Http\\RunReadService::sortBySequence","Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader::allFor"
+    callers[2]: "Ineersa\\AgentCore\\Api\\Http\\RunReadService::summary","Ineersa\\AgentCore\\Api\\Http\\RunReadService::replayAfter"
+  - method: sortBySequence
+    start: 187
+    end: 199
+    limit: 13
+    symbolLine: 194
+    symbolColumn: 22
+    signature: "private function sortBySequence(array $events): array"
+    callers[1]: "Ineersa\\AgentCore\\Api\\Http\\RunReadService::eventsForRun"
+  - method: latestSummary
+    start: 201
+    end: 218
+    limit: 18
+    symbolLine: 206
+    symbolColumn: 22
+    signature: "private function latestSummary(array $messages): ?string"
+    callees[1]: "Ineersa\\AgentCore\\Api\\Http\\RunReadService::messageSummary"
+    callers[1]: "Ineersa\\AgentCore\\Api\\Http\\RunReadService::summary"
+  - method: messageSummary
+    start: 220
+    end: 241
+    limit: 22
+    symbolLine: 223
+    symbolColumn: 22
+    signature: "private function messageSummary(AgentMessage $message): ?string"
+    callers[2]: "Ineersa\\AgentCore\\Api\\Http\\RunReadService::transcriptPage","Ineersa\\AgentCore\\Api\\Http\\RunReadService::latestSummary"
+  - method: missingSequences
+    start: 243
+    end: 269
+    limit: 27
+    symbolLine: 250
+    symbolColumn: 22
+    signature: "private function missingSequences(array $events, int $expectedStart): array"
+    callers[1]: "Ineersa\\AgentCore\\Api\\Http\\RunReadService::replayAfter"

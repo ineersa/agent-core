@@ -3,7 +3,28 @@ file: CommandHandlerInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Extension\\CommandHandlerInterface"
 type: interface
 summary: "Defines the contract for command handlers within the AgentCore extension system, enabling type-safe dispatch and transformation of command payloads. It ensures that handlers can validate command kinds and safely map execution contexts to structured results."
-methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  supports,12,15,4,15,21,"public function supports(string $kind): bool"
-  supportsCancelSafe,17,20,4,20,21,"public function supportsCancelSafe(string $kind): bool"
-  map,22,30,9,30,21,"public function map(string $runId, string $kind, array $payload, array $options = []): array"
+methods[3]:
+  - method: supports
+    start: 12
+    end: 15
+    limit: 4
+    symbolLine: 15
+    symbolColumn: 21
+    signature: "public function supports(string $kind): bool"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\CommandHandlerRegistry::find"
+  - method: supportsCancelSafe
+    start: 17
+    end: 20
+    limit: 4
+    symbolLine: 20
+    symbolColumn: 21
+    signature: "public function supportsCancelSafe(string $kind): bool"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::route"
+  - method: map
+    start: 22
+    end: 30
+    limit: 9
+    symbolLine: 30
+    symbolColumn: 21
+    signature: "public function map(string $runId, string $kind, array $payload, array $options = []): array"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyExtensionCommand"

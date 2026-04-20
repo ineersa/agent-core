@@ -3,6 +3,20 @@ file: OutboxProjector.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\OutboxProjector"
 type: readonly final class
 summary: The OutboxProjector class processes a batch of domain events by persisting execution logs and publishing corresponding runtime events. It acts as a bridge between the outbox storage mechanism and external consumers via the event publisher.
-methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,20,28,9,23,21,"public function __construct(OutboxStoreInterface $outboxStore, RunLogWriter $runLogWriter, RunEventPublisher $runEventPublisher)"
-  project,30,47,18,35,21,"public function project(array $events): void"
+methods[2]:
+  - method: __construct
+    start: 20
+    end: 28
+    limit: 9
+    symbolLine: 23
+    symbolColumn: 21
+    signature: "public function __construct(OutboxStoreInterface $outboxStore, RunLogWriter $runLogWriter, RunEventPublisher $runEventPublisher)"
+  - method: project
+    start: 30
+    end: 47
+    limit: 18
+    symbolLine: 35
+    symbolColumn: 21
+    signature: "public function project(array $events): void"
+    callees[1]: "Ineersa\\AgentCore\\Contract\\OutboxStoreInterface::enqueue"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::commit"

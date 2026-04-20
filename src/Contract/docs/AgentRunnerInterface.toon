@@ -3,10 +3,47 @@ file: AgentRunnerInterface.php
 class: "Ineersa\\AgentCore\\Contract\\AgentRunnerInterface"
 type: interface
 summary: "Defines the contract for orchestrating the lifecycle of an agent execution run, including initialization, state transitions, and termination. It provides a unified interface for controlling agent behavior through steering, follow-ups, and human-in-the-loop interactions."
-methods[6]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  start,16,19,4,19,21,"public function start(StartRunInput $input): RunHandle"
-  continue,21,24,4,24,21,"public function continue(string $runId): void"
-  steer,26,29,4,29,21,"public function steer(string $runId, AgentMessage $message): void"
-  followUp,31,34,4,34,21,"public function followUp(string $runId, AgentMessage $message): void"
-  cancel,36,39,4,39,21,"public function cancel(string $runId, ?string $reason = null): void"
-  answerHuman,41,44,4,44,21,"public function answerHuman(string $runId, string $questionId, mixed $answer): void"
+methods[6]:
+  - method: start
+    start: 16
+    end: 19
+    limit: 4
+    symbolLine: 19
+    symbolColumn: 21
+    signature: "public function start(StartRunInput $input): RunHandle"
+    callers[1]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::startRun"
+  - method: continue
+    start: 21
+    end: 24
+    limit: 4
+    symbolLine: 24
+    symbolColumn: 21
+    signature: "public function continue(string $runId): void"
+  - method: steer
+    start: 26
+    end: 29
+    limit: 4
+    symbolLine: 29
+    symbolColumn: 21
+    signature: "public function steer(string $runId, AgentMessage $message): void"
+  - method: followUp
+    start: 31
+    end: 34
+    limit: 4
+    symbolLine: 34
+    symbolColumn: 21
+    signature: "public function followUp(string $runId, AgentMessage $message): void"
+  - method: cancel
+    start: 36
+    end: 39
+    limit: 4
+    symbolLine: 39
+    symbolColumn: 21
+    signature: "public function cancel(string $runId, ?string $reason = null): void"
+  - method: answerHuman
+    start: 41
+    end: 44
+    limit: 4
+    symbolLine: 44
+    symbolColumn: 21
+    signature: "public function answerHuman(string $runId, string $questionId, mixed $answer): void"

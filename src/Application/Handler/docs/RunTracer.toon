@@ -3,6 +3,20 @@ file: RunTracer.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\RunTracer"
 type: final class
 summary: This class emits lightweight structured tracing spans for run processing paths.
-methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,19,24,6,22,21,public function __construct(?LoggerInterface $logger = null)
-  inSpan,26,72,47,36,21,"public function inSpan(string $name, array $attributes, callable $operation, bool $root = false): mixed"
+methods[2]:
+  - method: __construct
+    start: 19
+    end: 24
+    limit: 6
+    symbolLine: 22
+    symbolColumn: 21
+    signature: public function __construct(?LoggerInterface $logger = null)
+  - method: inSpan
+    start: 26
+    end: 72
+    limit: 47
+    symbolLine: 36
+    symbolColumn: 21
+    signature: "public function inSpan(string $name, array $attributes, callable $operation, bool $root = false): mixed"
+    callees[1]: "Psr\\Log\\LoggerInterface::info"
+    callers[11]: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteLlmStepWorker::__invoke","Ineersa\\AgentCore\\Application\\Handler\\ExecuteLlmStepWorker::execute","Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker::__invoke","Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker::execute","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::rebuildHotPromptState","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onStartRun","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onApplyCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onAdvanceRun","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onLlmStepResult","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onToolCallResult","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::commit"

@@ -1,7 +1,7 @@
 spec: agent-core.ai-docs/v1
 namespace: "Contract\\Hook"
 fqcn: "Ineersa\\AgentCore\\Contract\\Hook"
-updatedAt: 2026-04-19
+updatedAt: 2026-04-20
 description: "Hook interfaces for intercepting agent loop lifecycle: context transforms, LLM conversion, tool call boundaries, cancellation, and message providers."
 files[9]{file,type,summary}:
   AfterToolCallHookInterface.php,interface,Defines the contract for processing events after a tool execution completes within the agent core. It enables decoupled post-processing logic by providing context and cancellation support for the result.

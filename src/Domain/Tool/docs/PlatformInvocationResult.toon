@@ -3,6 +3,19 @@ file: PlatformInvocationResult.php
 class: "Ineersa\\AgentCore\\Domain\\Tool\\PlatformInvocationResult"
 type: readonly final class
 summary: "Represents the immutable result of a platform tool invocation, capturing assistant message deltas, usage statistics, and stop reasons. Designed as a readonly value object to ensure data integrity across the domain layer."
-methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,12,27,16,20,21,"public function __construct(?array $assistantMessage, array $deltas = [], array $usage = [], ?string $stopReason = null, ?array $error = null)"
-  toArray,29,43,15,34,21,"public function toArray(): array"
+methods[2]:
+  - method: __construct
+    start: 12
+    end: 27
+    limit: 16
+    symbolLine: 20
+    symbolColumn: 21
+    signature: "public function __construct(?array $assistantMessage, array $deltas = [], array $usage = [], ?string $stopReason = null, ?array $error = null)"
+  - method: toArray
+    start: 29
+    end: 43
+    limit: 15
+    symbolLine: 34
+    symbolColumn: 21
+    signature: "public function toArray(): array"
+    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::invoke"

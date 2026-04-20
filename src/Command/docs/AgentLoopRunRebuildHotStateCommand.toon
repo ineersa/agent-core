@@ -3,7 +3,28 @@ file: AgentLoopRunRebuildHotStateCommand.php
 class: "Ineersa\\AgentCore\\Command\\AgentLoopRunRebuildHotStateCommand"
 type: final class
 summary: This command rebuilds hot prompt state from persisted run events.
-methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,22,33,12,25,21,public function __construct(RunDebugService $runDebugService)
-  execute,35,69,35,38,24,"protected function execute(InputInterface $input, OutputInterface $output): int"
-  encodeJson,71,81,11,76,22,"private function encodeJson(array $payload): string"
+methods[3]:
+  - method: __construct
+    start: 22
+    end: 33
+    limit: 12
+    symbolLine: 25
+    symbolColumn: 21
+    signature: public function __construct(RunDebugService $runDebugService)
+    callees[3]: "Symfony\\Component\\Console\\Command\\Command::__construct","Symfony\\Component\\Console\\Command\\Command::addArgument","Symfony\\Component\\Console\\Command\\Command::addOption"
+  - method: execute
+    start: 35
+    end: 69
+    limit: 35
+    symbolLine: 38
+    symbolColumn: 24
+    signature: "protected function execute(InputInterface $input, OutputInterface $output): int"
+    callees[9]: "Symfony\\Component\\Console\\Input\\InputInterface::getArgument","Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::rebuildHotPromptState","Symfony\\Component\\Console\\Input\\InputInterface::getOption","Ineersa\\AgentCore\\Command\\AgentLoopRunRebuildHotStateCommand::encodeJson","Symfony\\Component\\Console\\Output\\OutputInterface::writeln","Symfony\\Component\\Console\\Style\\SymfonyStyle::title","Symfony\\Component\\Console\\Style\\SymfonyStyle::definitionList","Symfony\\Component\\Console\\Style\\SymfonyStyle::warning","Symfony\\Component\\Console\\Style\\SymfonyStyle::success"
+  - method: encodeJson
+    start: 71
+    end: 81
+    limit: 11
+    symbolLine: 76
+    symbolColumn: 22
+    signature: "private function encodeJson(array $payload): string"
+    callers[1]: "Ineersa\\AgentCore\\Command\\AgentLoopRunRebuildHotStateCommand::execute"

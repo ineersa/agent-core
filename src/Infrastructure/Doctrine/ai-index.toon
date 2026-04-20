@@ -4,7 +4,7 @@ fqcn: "Ineersa\\AgentCore\\Infrastructure\\Doctrine"
 description: Doctrine integration — migrations for agent-loop persistence tables.
 files[1]{file,type,responsibility}:
   Migrations/Version20260418000100.php,class,"Initial migration creating 7 tables: agent_run_event, agent_command, agent_run, agent_outbox, agent_prompt_state, agent_artifact, and related indexes."
-updatedAt: 2026-04-19
+updatedAt: 2026-04-20
 indexedAt: "2026-04-19T02:23:45Z"
 indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
 sourceHash: 4fde2c9925215ebdc25c1cfbd5e4b9567b78d61f06e7288e1cc53baf0b613274

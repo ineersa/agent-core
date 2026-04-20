@@ -3,9 +3,46 @@ file: ToolBatchCollector.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector"
 type: final class
 summary: "The ToolBatchCollector aggregates individual tool calls into batches based on run, turn, and step identifiers, enforcing a configurable maximum parallelism limit. It tracks expected batches and collects results to determine when a batch is complete and ready for dispatch."
-methods[5]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,29,35,7,32,21,public function __construct(int $defaultMaxParallelism = 4)
-  registerExpectedBatch,37,78,42,44,21,"public function registerExpectedBatch(string $runId, int $turnNo, string $stepId, array $toolCalls): array"
-  collect,80,125,46,83,21,"public function collect(ToolCallResult $result): ToolBatchCollectOutcome"
-  dispatchableCalls,127,186,60,142,22,"private function dispatchableCalls(array & $batch): array"
-  batchKey,188,194,7,191,22,"private function batchKey(string $runId, int $turnNo, string $stepId): string"
+methods[5]:
+  - method: __construct
+    start: 29
+    end: 35
+    limit: 7
+    symbolLine: 32
+    symbolColumn: 21
+    signature: public function __construct(int $defaultMaxParallelism = 4)
+  - method: registerExpectedBatch
+    start: 37
+    end: 78
+    limit: 42
+    symbolLine: 44
+    symbolColumn: 21
+    signature: "public function registerExpectedBatch(string $runId, int $turnNo, string $stepId, array $toolCalls): array"
+    callees[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::dispatchableCalls","Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::batchKey"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onLlmStepResult"
+  - method: collect
+    start: 80
+    end: 125
+    limit: 46
+    symbolLine: 83
+    symbolColumn: 21
+    signature: "public function collect(ToolCallResult $result): ToolBatchCollectOutcome"
+    callees[9]: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::batchKey","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollectOutcome::rejected","Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollectOutcome::duplicate","Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::dispatchableCalls","Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollectOutcome::acceptedPending","Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollectOutcome::acceptedComplete"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onToolCallResult"
+  - method: dispatchableCalls
+    start: 127
+    end: 186
+    limit: 60
+    symbolLine: 142
+    symbolColumn: 22
+    signature: "private function dispatchableCalls(array & $batch): array"
+    callees[1]: "Ineersa\\AgentCore\\Domain\\Tool\\ToolExecutionMode::tryFrom"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::registerExpectedBatch","Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::collect"
+  - method: batchKey
+    start: 188
+    end: 194
+    limit: 7
+    symbolLine: 191
+    symbolColumn: 22
+    signature: "private function batchKey(string $runId, int $turnNo, string $stepId): string"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::registerExpectedBatch","Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::collect"

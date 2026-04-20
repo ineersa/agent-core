@@ -3,7 +3,29 @@ file: RunLogWriter.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogWriter"
 type: readonly final class
 summary: "The RunLogWriter class provides a mechanism for persisting RunEvent instances to the filesystem. It formats event data into structured files based on run identifiers and timestamps, ensuring durable storage of agent execution logs."
-methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,15,20,6,18,21,public function __construct(FilesystemOperator $filesystem)
-  append,22,55,34,25,21,"public function append(RunEvent $event): void"
-  pathForRun,57,63,7,60,22,"private function pathForRun(string $runId, DateTimeImmutable $at): string"
+methods[3]:
+  - method: __construct
+    start: 15
+    end: 20
+    limit: 6
+    symbolLine: 18
+    symbolColumn: 21
+    signature: public function __construct(FilesystemOperator $filesystem)
+  - method: append
+    start: 22
+    end: 55
+    limit: 34
+    symbolLine: 25
+    symbolColumn: 21
+    signature: "public function append(RunEvent $event): void"
+    callees[5]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogWriter::pathForRun","DateTimeImmutable::format","League\\Flysystem\\FilesystemReader::fileExists","League\\Flysystem\\FilesystemReader::read","League\\Flysystem\\FilesystemWriter::write"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\JsonlOutboxProjectorWorker::__invoke"
+  - method: pathForRun
+    start: 57
+    end: 63
+    limit: 7
+    symbolLine: 60
+    symbolColumn: 22
+    signature: "private function pathForRun(string $runId, DateTimeImmutable $at): string"
+    callees[1]: "DateTimeImmutable::format"
+    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogWriter::append"

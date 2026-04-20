@@ -3,16 +3,105 @@ file: RunMetrics.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics"
 type: final class
 summary: This class collects in-process runtime metrics for run orchestration and workers.
-methods[12]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,47,59,13,50,21,public function __construct()
-  recordRunStatusTransition,61,75,15,64,21,"public function recordRunStatusTransition(RunStatus $from, RunStatus $to): void"
-  setCommandQueueLag,77,83,7,80,21,"public function setCommandQueueLag(string $runId, int $pendingCount): void"
-  recordTurnStarted,85,95,11,88,21,"public function recordTurnStarted(string $runId, int $turnNo): void"
-  recordTurnCompleted,97,117,21,100,21,"public function recordTurnCompleted(string $runId, int $turnNo): void"
-  recordLlmLatency,119,130,12,122,21,"public function recordLlmLatency(float $durationMs, bool $isError): void"
-  recordToolLatency,132,148,17,135,21,"public function recordToolLatency(float $durationMs, bool $isError, bool $isTimeout): void"
-  incrementStaleResultCount,150,160,11,153,21,"public function incrementStaleResultCount(int $by = 1): void"
-  incrementReplayRebuildCount,162,169,8,165,21,"public function incrementReplayRebuildCount(string $source): void"
-  snapshot,171,216,46,185,21,"public function snapshot(): array"
-  turnKey,218,224,7,221,22,"private function turnKey(string $runId, int $turnNo): string"
-  rate,226,236,11,229,22,"private function rate(int $numerator, int $denominator): float"
+methods[12]:
+  - method: __construct
+    start: 47
+    end: 59
+    limit: 13
+    symbolLine: 50
+    symbolColumn: 21
+    signature: public function __construct()
+    callees[1]: "Ineersa\\AgentCore\\Domain\\Run\\RunStatus::cases"
+  - method: recordRunStatusTransition
+    start: 61
+    end: 75
+    limit: 15
+    symbolLine: 64
+    symbolColumn: 21
+    signature: "public function recordRunStatusTransition(RunStatus $from, RunStatus $to): void"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::trackCommitMetrics"
+  - method: setCommandQueueLag
+    start: 77
+    end: 83
+    limit: 7
+    symbolLine: 80
+    symbolColumn: 21
+    signature: "public function setCommandQueueLag(string $runId, int $pendingCount): void"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::trackCommitMetrics"
+  - method: recordTurnStarted
+    start: 85
+    end: 95
+    limit: 11
+    symbolLine: 88
+    symbolColumn: 21
+    signature: "public function recordTurnStarted(string $runId, int $turnNo): void"
+    callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::turnKey"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onAdvanceRun"
+  - method: recordTurnCompleted
+    start: 97
+    end: 117
+    limit: 21
+    symbolLine: 100
+    symbolColumn: 21
+    signature: "public function recordTurnCompleted(string $runId, int $turnNo): void"
+    callees[2]: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::turnKey","Ineersa\\AgentCore\\Application\\Handler\\LatencyHistogram::observe"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onLlmStepResult","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onToolCallResult"
+  - method: recordLlmLatency
+    start: 119
+    end: 130
+    limit: 12
+    symbolLine: 122
+    symbolColumn: 21
+    signature: "public function recordLlmLatency(float $durationMs, bool $isError): void"
+    callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\LatencyHistogram::observe"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteLlmStepWorker::execute"
+  - method: recordToolLatency
+    start: 132
+    end: 148
+    limit: 17
+    symbolLine: 135
+    symbolColumn: 21
+    signature: "public function recordToolLatency(float $durationMs, bool $isError, bool $isTimeout): void"
+    callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\LatencyHistogram::observe"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker::execute"
+  - method: incrementStaleResultCount
+    start: 150
+    end: 160
+    limit: 11
+    symbolLine: 153
+    symbolColumn: 21
+    signature: "public function incrementStaleResultCount(int $by = 1): void"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::trackCommitMetrics"
+  - method: incrementReplayRebuildCount
+    start: 162
+    end: 169
+    limit: 8
+    symbolLine: 165
+    symbolColumn: 21
+    signature: "public function incrementReplayRebuildCount(string $source): void"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ReplayService::rebuildHotPromptState"
+  - method: snapshot
+    start: 171
+    end: 216
+    limit: 46
+    symbolLine: 185
+    symbolColumn: 21
+    signature: "public function snapshot(): array"
+    callees[2]: "Ineersa\\AgentCore\\Application\\Handler\\LatencyHistogram::snapshot","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::rate"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::inspect"
+  - method: turnKey
+    start: 218
+    end: 224
+    limit: 7
+    symbolLine: 221
+    symbolColumn: 22
+    signature: "private function turnKey(string $runId, int $turnNo): string"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordTurnStarted","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordTurnCompleted"
+  - method: rate
+    start: 226
+    end: 236
+    limit: 11
+    symbolLine: 229
+    symbolColumn: 22
+    signature: "private function rate(int $numerator, int $denominator): float"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::snapshot"

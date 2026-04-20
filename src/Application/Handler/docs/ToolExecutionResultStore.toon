@@ -3,9 +3,47 @@ file: ToolExecutionResultStore.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore"
 type: final class
 summary: "This class provides a caching layer for tool execution results, enabling efficient retrieval of previously computed outputs. It supports lookup by run and tool call identifiers, as well as by tool name and idempotency keys to prevent redundant execution."
-methods[5]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  findByRunToolCall,20,26,7,23,21,"public function findByRunToolCall(string $runId, string $toolCallId): ?ToolResult"
-  findByToolAndIdempotencyKey,28,34,7,31,21,"public function findByToolAndIdempotencyKey(string $toolName, string $toolIdempotencyKey): ?ToolResult"
-  remember,36,48,13,39,21,"public function remember(string $runId, string $toolCallId, string $toolName, ?string $toolIdempotencyKey, ToolResult $result): void"
-  runToolCallKey,50,56,7,53,22,"private function runToolCallKey(string $runId, string $toolCallId): string"
-  toolIdempotencyKey,58,64,7,61,22,"private function toolIdempotencyKey(string $toolName, string $toolIdempotencyKey): string"
+methods[5]:
+  - method: findByRunToolCall
+    start: 20
+    end: 26
+    limit: 7
+    symbolLine: 23
+    symbolColumn: 21
+    signature: "public function findByRunToolCall(string $runId, string $toolCallId): ?ToolResult"
+    callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore::runToolCallKey"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::execute"
+  - method: findByToolAndIdempotencyKey
+    start: 28
+    end: 34
+    limit: 7
+    symbolLine: 31
+    symbolColumn: 21
+    signature: "public function findByToolAndIdempotencyKey(string $toolName, string $toolIdempotencyKey): ?ToolResult"
+    callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore::toolIdempotencyKey"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::execute"
+  - method: remember
+    start: 36
+    end: 48
+    limit: 13
+    symbolLine: 39
+    symbolColumn: 21
+    signature: "public function remember(string $runId, string $toolCallId, string $toolName, ?string $toolIdempotencyKey, ToolResult $result): void"
+    callees[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore::runToolCallKey","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore::toolIdempotencyKey"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::execute","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::rememberAndReturn"
+  - method: runToolCallKey
+    start: 50
+    end: 56
+    limit: 7
+    symbolLine: 53
+    symbolColumn: 22
+    signature: "private function runToolCallKey(string $runId, string $toolCallId): string"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore::findByRunToolCall","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore::remember"
+  - method: toolIdempotencyKey
+    start: 58
+    end: 64
+    limit: 7
+    symbolLine: 61
+    symbolColumn: 22
+    signature: "private function toolIdempotencyKey(string $toolName, string $toolIdempotencyKey): string"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore::findByToolAndIdempotencyKey","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore::remember"

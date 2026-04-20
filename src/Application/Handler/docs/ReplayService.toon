@@ -3,12 +3,70 @@ file: ReplayService.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ReplayService"
 type: readonly final class
 summary: ReplayService reconstructs agent run state by replaying historical events from the event store and run logs. It verifies data integrity and rebuilds prompt state to ensure consistency across sequences.
-methods[8]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,17,27,11,20,21,"public function __construct(EventStoreInterface $eventStore, RunLogReader $runLogReader, PromptStateStoreInterface $promptStateStore, ?RunMetrics $metrics = null, ?RunTracer $tracer = null)"
-  rebuildHotPromptState,29,75,47,43,21,"public function rebuildHotPromptState(string $runId): array"
-  verifyIntegrity,77,102,26,89,21,"public function verifyIntegrity(string $runId): array"
-  eventsForReplay,104,117,14,109,22,"private function eventsForReplay(string $runId): array"
-  sortBySequence,119,131,13,126,22,"private function sortBySequence(array $events): array"
-  replayMessages,133,175,43,140,22,"private function replayMessages(array $events): array"
-  missingSequences,177,203,27,184,22,"private function missingSequences(array $events): array"
-  estimateTokens,205,219,15,210,22,"private function estimateTokens(array $messages): int"
+methods[8]:
+  - method: __construct
+    start: 17
+    end: 27
+    limit: 11
+    symbolLine: 20
+    symbolColumn: 21
+    signature: "public function __construct(EventStoreInterface $eventStore, RunLogReader $runLogReader, PromptStateStoreInterface $promptStateStore, ?RunMetrics $metrics = null, ?RunTracer $tracer = null)"
+  - method: rebuildHotPromptState
+    start: 29
+    end: 75
+    limit: 47
+    symbolLine: 43
+    symbolColumn: 21
+    signature: "public function rebuildHotPromptState(string $runId): array"
+    callees[7]: "Ineersa\\AgentCore\\Application\\Handler\\ReplayService::eventsForReplay","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::replayMessages","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::verifyIntegrity","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::estimateTokens","Ineersa\\AgentCore\\Contract\\PromptStateStoreInterface::save","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::incrementReplayRebuildCount","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan"
+    callers[3]: "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::rebuildHotPromptState","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::commit","Ineersa\\AgentCore\\Command\\AgentLoopResumeStaleRunsCommand::execute"
+  - method: verifyIntegrity
+    start: 77
+    end: 102
+    limit: 26
+    symbolLine: 89
+    symbolColumn: 21
+    signature: "public function verifyIntegrity(string $runId): array"
+    callees[2]: "Ineersa\\AgentCore\\Application\\Handler\\ReplayService::eventsForReplay","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::missingSequences"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\ReplayService::rebuildHotPromptState","Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::inspect"
+  - method: eventsForReplay
+    start: 104
+    end: 117
+    limit: 14
+    symbolLine: 109
+    symbolColumn: 22
+    signature: "private function eventsForReplay(string $runId): array"
+    callees[3]: "Ineersa\\AgentCore\\Contract\\EventStoreInterface::allFor","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::sortBySequence","Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader::allFor"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\ReplayService::rebuildHotPromptState","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::verifyIntegrity"
+  - method: sortBySequence
+    start: 119
+    end: 131
+    limit: 13
+    symbolLine: 126
+    symbolColumn: 22
+    signature: "private function sortBySequence(array $events): array"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ReplayService::eventsForReplay"
+  - method: replayMessages
+    start: 133
+    end: 175
+    limit: 43
+    symbolLine: 140
+    symbolColumn: 22
+    signature: "private function replayMessages(array $events): array"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ReplayService::rebuildHotPromptState"
+  - method: missingSequences
+    start: 177
+    end: 203
+    limit: 27
+    symbolLine: 184
+    symbolColumn: 22
+    signature: "private function missingSequences(array $events): array"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ReplayService::verifyIntegrity"
+  - method: estimateTokens
+    start: 205
+    end: 219
+    limit: 15
+    symbolLine: 210
+    symbolColumn: 22
+    signature: "private function estimateTokens(array $messages): int"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ReplayService::rebuildHotPromptState"

@@ -3,7 +3,27 @@ file: Version20260418000100.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Doctrine\\Migrations\\Version20260418000100"
 type: final class
 summary: This class defines a Doctrine migration to modify the database schema for the Agent Core infrastructure. It implements the standard up and down methods to apply or revert structural changes using the Doctrine Schema abstraction.
-methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  getDescription,16,22,7,19,21,"public function getDescription(): string"
-  up,24,152,129,27,21,"public function up(Schema $schema): void"
-  down,154,164,11,157,21,"public function down(Schema $schema): void"
+methods[3]:
+  - method: getDescription
+    start: 16
+    end: 22
+    limit: 7
+    symbolLine: 19
+    symbolColumn: 21
+    signature: "public function getDescription(): string"
+  - method: up
+    start: 24
+    end: 152
+    limit: 129
+    symbolLine: 27
+    symbolColumn: 21
+    signature: "public function up(Schema $schema): void"
+    callees[7]: "Doctrine\\DBAL\\Schema\\Schema::hasTable","Doctrine\\DBAL\\Schema\\Schema::createTable","Doctrine\\DBAL\\Schema\\Table::addColumn","Doctrine\\DBAL\\Schema\\Table::setPrimaryKey","Doctrine\\DBAL\\Schema\\Table::addUniqueIndex","Doctrine\\DBAL\\Schema\\Table::addIndex","Doctrine\\DBAL\\Schema\\Table::addForeignKeyConstraint"
+  - method: down
+    start: 154
+    end: 164
+    limit: 11
+    symbolLine: 157
+    symbolColumn: 21
+    signature: "public function down(Schema $schema): void"
+    callees[2]: "Doctrine\\DBAL\\Schema\\Schema::hasTable","Doctrine\\DBAL\\Schema\\Schema::dropTable"

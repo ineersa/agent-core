@@ -3,7 +3,28 @@ file: RunLockManager.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\RunLockManager"
 type: readonly final class
 summary: "The RunLockManager provides a mechanism to execute critical sections of code exclusively for a specific run ID using distributed locking. It leverages a LockFactory to acquire locks with a configurable time-to-live, ensuring thread-safe or process-safe execution of run-specific logic."
-methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,14,22,9,17,21,"public function __construct(LockFactory $lockFactory, float $ttlSeconds = 30.0, float $acquireTimeoutSeconds = 5.0)"
-  synchronized,24,54,31,33,21,"public function synchronized(string $runId, callable $criticalSection): mixed"
-  lockKey,56,62,7,59,22,"private function lockKey(string $runId): string"
+methods[3]:
+  - method: __construct
+    start: 14
+    end: 22
+    limit: 9
+    symbolLine: 17
+    symbolColumn: 21
+    signature: "public function __construct(LockFactory $lockFactory, float $ttlSeconds = 30.0, float $acquireTimeoutSeconds = 5.0)"
+  - method: synchronized
+    start: 24
+    end: 54
+    limit: 31
+    symbolLine: 33
+    symbolColumn: 21
+    signature: "public function synchronized(string $runId, callable $criticalSection): mixed"
+    callees[5]: "Ineersa\\AgentCore\\Application\\Handler\\RunLockManager::lockKey","Symfony\\Component\\Lock\\LockFactory::createLock","Symfony\\Component\\Lock\\LockInterface::acquire","Symfony\\Component\\Lock\\LockInterface::isAcquired","Symfony\\Component\\Lock\\LockInterface::release"
+    callers[6]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onStartRun","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onApplyCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onAdvanceRun","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onLlmStepResult","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onToolCallResult","Ineersa\\AgentCore\\Command\\AgentLoopResumeStaleRunsCommand::execute"
+  - method: lockKey
+    start: 56
+    end: 62
+    limit: 7
+    symbolLine: 59
+    symbolColumn: 22
+    signature: "private function lockKey(string $runId): string"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\RunLockManager::synchronized"

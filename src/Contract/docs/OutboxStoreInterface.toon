@@ -3,8 +3,36 @@ file: OutboxStoreInterface.php
 class: "Ineersa\\AgentCore\\Contract\\OutboxStoreInterface"
 type: interface
 summary: "Defines the contract for persisting and retrieving outbound event entries to ensure reliable delivery. It provides mechanisms to enqueue new events, claim batches for processing, and update their status upon completion or failure."
-methods[4]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  enqueue,16,19,4,19,21,"public function enqueue(RunEvent $event, OutboxSink $sink): void"
-  claim,21,26,6,26,21,"public function claim(OutboxSink $sink, int $limit = 100, ?DateTimeImmutable $now = null): array"
-  markProcessed,28,31,4,31,21,"public function markProcessed(int $entryId, ?DateTimeImmutable $processedAt = null): void"
-  markFailed,33,36,4,36,21,"public function markFailed(int $entryId, int $retryAfterSeconds = 30, ?DateTimeImmutable $now = null): void"
+methods[4]:
+  - method: enqueue
+    start: 16
+    end: 19
+    limit: 4
+    symbolLine: 19
+    symbolColumn: 21
+    signature: "public function enqueue(RunEvent $event, OutboxSink $sink): void"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\OutboxProjector::project"
+  - method: claim
+    start: 21
+    end: 26
+    limit: 6
+    symbolLine: 26
+    symbolColumn: 21
+    signature: "public function claim(OutboxSink $sink, int $limit = 100, ?DateTimeImmutable $now = null): array"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\JsonlOutboxProjectorWorker::__invoke","Ineersa\\AgentCore\\Application\\Handler\\MercureOutboxProjectorWorker::__invoke"
+  - method: markProcessed
+    start: 28
+    end: 31
+    limit: 4
+    symbolLine: 31
+    symbolColumn: 21
+    signature: "public function markProcessed(int $entryId, ?DateTimeImmutable $processedAt = null): void"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\JsonlOutboxProjectorWorker::__invoke","Ineersa\\AgentCore\\Application\\Handler\\MercureOutboxProjectorWorker::__invoke"
+  - method: markFailed
+    start: 33
+    end: 36
+    limit: 4
+    symbolLine: 36
+    symbolColumn: 21
+    signature: "public function markFailed(int $entryId, int $retryAfterSeconds = 30, ?DateTimeImmutable $now = null): void"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\JsonlOutboxProjectorWorker::__invoke","Ineersa\\AgentCore\\Application\\Handler\\MercureOutboxProjectorWorker::__invoke"

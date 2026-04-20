@@ -3,9 +3,43 @@ file: ToolBatchCollectOutcome.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollectOutcome"
 type: readonly final class
 summary: "A readonly value object representing the outcome of a tool batch execution within the agent core application. It encapsulates execution status flags, ordered results, and side-effect payloads for downstream processing. Designed to provide a structured, immutable contract for communicating batch processing states."
-methods[5]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,15,28,14,21,21,"public function __construct(bool $accepted, bool $duplicate, bool $complete, array $orderedResults = [], array $effectsToDispatch = [])"
-  rejected,30,36,7,33,28,"static public function rejected(): self"
-  duplicate,38,44,7,41,28,"static public function duplicate(): self"
-  acceptedPending,46,54,9,51,28,"static public function acceptedPending(array $effectsToDispatch = []): self"
-  acceptedComplete,56,71,16,62,28,"static public function acceptedComplete(array $orderedResults, array $effectsToDispatch = []): self"
+methods[5]:
+  - method: __construct
+    start: 15
+    end: 28
+    limit: 14
+    symbolLine: 21
+    symbolColumn: 21
+    signature: "public function __construct(bool $accepted, bool $duplicate, bool $complete, array $orderedResults = [], array $effectsToDispatch = [])"
+  - method: rejected
+    start: 30
+    end: 36
+    limit: 7
+    symbolLine: 33
+    symbolColumn: 28
+    signature: "static public function rejected(): self"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::collect"
+  - method: duplicate
+    start: 38
+    end: 44
+    limit: 7
+    symbolLine: 41
+    symbolColumn: 28
+    signature: "static public function duplicate(): self"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::collect"
+  - method: acceptedPending
+    start: 46
+    end: 54
+    limit: 9
+    symbolLine: 51
+    symbolColumn: 28
+    signature: "static public function acceptedPending(array $effectsToDispatch = []): self"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::collect"
+  - method: acceptedComplete
+    start: 56
+    end: 71
+    limit: 16
+    symbolLine: 62
+    symbolColumn: 28
+    signature: "static public function acceptedComplete(array $orderedResults, array $effectsToDispatch = []): self"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::collect"

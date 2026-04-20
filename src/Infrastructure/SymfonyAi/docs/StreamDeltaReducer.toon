@@ -3,21 +3,145 @@ file: StreamDeltaReducer.php
 class: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer"
 type: final class
 summary: "StreamDeltaReducer aggregates incremental streaming deltas from an AI assistant into a coherent final message structure, including text content and tool call executions. It parses partial JSON arguments for tool calls and merges token usage statistics from the stream. The class maintains internal state to reconstruct the complete assistant response and associated metadata."
-methods[17]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  consume,30,126,97,33,21,"public function consume(mixed $delta): void"
-  deltas,128,136,9,133,21,"public function deltas(): array"
-  usage,138,146,9,143,21,"public function usage(): array"
-  assistantMessage,148,181,34,153,21,"public function assistantMessage(): array"
-  hasToolCalls,183,189,7,186,21,"public function hasToolCalls(): bool"
-  appendText,191,205,15,194,22,"private function appendText(string $text): void"
-  registerToolCallStart,207,230,24,210,22,"private function registerToolCallStart(string $id, string $name): void"
-  registerToolInputDelta,232,261,30,235,22,"private function registerToolInputDelta(string $id, string $name, string $partialJson): void"
-  registerToolCallComplete,263,296,34,266,22,"private function registerToolCallComplete(object $delta): void"
-  mergeUsage,298,308,11,303,22,"private function mergeUsage(array $usage): void"
-  looksLikeTokenUsage,310,318,9,313,22,"private function looksLikeTokenUsage(object $delta): bool"
-  usageFromTokenUsage,320,339,20,325,22,"private function usageFromTokenUsage(object $delta): array"
-  orderedToolCalls,341,369,29,346,22,"private function orderedToolCalls(): array"
-  stringFrom,371,398,28,376,22,"private function stringFrom(object $value, array $methods): string"
-  numericFrom,400,419,20,405,22,"private function numericFrom(object $value, array $methods): int|float|null"
-  parseArguments,421,438,18,426,22,"private function parseArguments(string $json): ?array"
-  shortClass,440,448,9,443,22,"private function shortClass(string $fqcn): string"
+methods[17]:
+  - method: consume
+    start: 30
+    end: 126
+    limit: 97
+    symbolLine: 33
+    symbolColumn: 21
+    signature: "public function consume(mixed $delta): void"
+    callees[9]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::appendText","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::shortClass","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::stringFrom","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::registerToolCallStart","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::registerToolInputDelta","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::registerToolCallComplete","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::looksLikeTokenUsage","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::mergeUsage","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::usageFromTokenUsage"
+    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyPlatformInvoker::invoke"
+  - method: deltas
+    start: 128
+    end: 136
+    limit: 9
+    symbolLine: 133
+    symbolColumn: 21
+    signature: "public function deltas(): array"
+    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyPlatformInvoker::invoke"
+  - method: usage
+    start: 138
+    end: 146
+    limit: 9
+    symbolLine: 143
+    symbolColumn: 21
+    signature: "public function usage(): array"
+    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyPlatformInvoker::invoke"
+  - method: assistantMessage
+    start: 148
+    end: 181
+    limit: 34
+    symbolLine: 153
+    symbolColumn: 21
+    signature: "public function assistantMessage(): array"
+    callees[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::orderedToolCalls"
+    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyPlatformInvoker::invoke"
+  - method: hasToolCalls
+    start: 183
+    end: 189
+    limit: 7
+    symbolLine: 186
+    symbolColumn: 21
+    signature: "public function hasToolCalls(): bool"
+    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyPlatformInvoker::invoke"
+  - method: appendText
+    start: 191
+    end: 205
+    limit: 15
+    symbolLine: 194
+    symbolColumn: 22
+    signature: "private function appendText(string $text): void"
+    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::consume"
+  - method: registerToolCallStart
+    start: 207
+    end: 230
+    limit: 24
+    symbolLine: 210
+    symbolColumn: 22
+    signature: "private function registerToolCallStart(string $id, string $name): void"
+    callers[3]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::consume","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::registerToolInputDelta","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::registerToolCallComplete"
+  - method: registerToolInputDelta
+    start: 232
+    end: 261
+    limit: 30
+    symbolLine: 235
+    symbolColumn: 22
+    signature: "private function registerToolInputDelta(string $id, string $name, string $partialJson): void"
+    callees[2]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::registerToolCallStart","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::parseArguments"
+    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::consume"
+  - method: registerToolCallComplete
+    start: 263
+    end: 296
+    limit: 34
+    symbolLine: 266
+    symbolColumn: 22
+    signature: "private function registerToolCallComplete(object $delta): void"
+    callees[5]: "stdClass::getToolCalls","stdClass::getId","stdClass::getName","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::registerToolCallStart","stdClass::getArguments"
+    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::consume"
+  - method: mergeUsage
+    start: 298
+    end: 308
+    limit: 11
+    symbolLine: 303
+    symbolColumn: 22
+    signature: "private function mergeUsage(array $usage): void"
+    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::consume"
+  - method: looksLikeTokenUsage
+    start: 310
+    end: 318
+    limit: 9
+    symbolLine: 313
+    symbolColumn: 22
+    signature: "private function looksLikeTokenUsage(object $delta): bool"
+    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::consume"
+  - method: usageFromTokenUsage
+    start: 320
+    end: 339
+    limit: 20
+    symbolLine: 325
+    symbolColumn: 22
+    signature: "private function usageFromTokenUsage(object $delta): array"
+    callees[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::numericFrom"
+    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::consume"
+  - method: orderedToolCalls
+    start: 341
+    end: 369
+    limit: 29
+    symbolLine: 346
+    symbolColumn: 22
+    signature: "private function orderedToolCalls(): array"
+    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::assistantMessage"
+  - method: stringFrom
+    start: 371
+    end: 398
+    limit: 28
+    symbolLine: 376
+    symbolColumn: 22
+    signature: "private function stringFrom(object $value, array $methods): string"
+    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::consume"
+  - method: numericFrom
+    start: 400
+    end: 419
+    limit: 20
+    symbolLine: 405
+    symbolColumn: 22
+    signature: "private function numericFrom(object $value, array $methods): int|float|null"
+    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::usageFromTokenUsage"
+  - method: parseArguments
+    start: 421
+    end: 438
+    limit: 18
+    symbolLine: 426
+    symbolColumn: 22
+    signature: "private function parseArguments(string $json): ?array"
+    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::registerToolInputDelta"
+  - method: shortClass
+    start: 440
+    end: 448
+    limit: 9
+    symbolLine: 443
+    symbolColumn: 22
+    signature: "private function shortClass(string $fqcn): string"
+    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::consume"

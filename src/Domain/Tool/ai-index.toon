@@ -1,7 +1,7 @@
 spec: agent-core.ai-docs/v1
 namespace: "Domain\\Tool"
 fqcn: "Ineersa\\AgentCore\\Domain\\Tool"
-updatedAt: 2026-04-19
+updatedAt: 2026-04-20
 description: "Tool execution value objects — call representation, definition schema, results, execution modes, provider request/result, and before/after hook contexts."
 files[12]{file,type,summary}:
   AfterToolCallContext.php,readonly final class,"This readonly final class encapsulates the immutable context required after a tool execution, bundling the assistant's message, the specific tool call, its arguments, and the resulting outcome. It serves as a structured data carrier for propagating tool interaction details within the agent domain."

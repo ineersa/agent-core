@@ -3,5 +3,12 @@ file: ToolCallResult.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\ToolCallResult"
 type: readonly final class
 summary: "Represents the result of a tool execution within an agent run, capturing execution context and identity metadata. This immutable value object serves as a domain event or message payload for tracking tool call outcomes."
-methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,12,30,19,17,21,"public function __construct(string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey, string $toolCallId, int $orderIndex, mixed $result = null, bool $isError = false, ?array $error = null)"
+methods[1]:
+  - method: __construct
+    start: 12
+    end: 30
+    limit: 19
+    symbolLine: 17
+    symbolColumn: 21
+    signature: "public function __construct(string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey, string $toolCallId, int $orderIndex, mixed $result = null, bool $isError = false, ?array $error = null)"
+    callees[1]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::__construct"

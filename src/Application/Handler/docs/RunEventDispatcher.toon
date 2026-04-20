@@ -3,6 +3,19 @@ file: RunEventDispatcher.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\RunEventDispatcher"
 type: readonly final class
 summary: The RunEventDispatcher class acts as an application-level facade for routing RunEvent instances to registered subscribers. It leverages an EventSubscriberRegistry to identify relevant handlers and delegates execution to a standard EventDispatcherInterface. This design decouples the specific event type from the underlying dispatching mechanism.
-methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,15,22,8,18,21,"public function __construct(EventSubscriberRegistry $registry, EventDispatcherInterface $eventDispatcher)"
-  dispatch,24,34,11,27,21,"public function dispatch(RunEvent $event): void"
+methods[2]:
+  - method: __construct
+    start: 15
+    end: 22
+    limit: 8
+    symbolLine: 18
+    symbolColumn: 21
+    signature: "public function __construct(EventSubscriberRegistry $registry, EventDispatcherInterface $eventDispatcher)"
+  - method: dispatch
+    start: 24
+    end: 34
+    limit: 11
+    symbolLine: 27
+    symbolColumn: 21
+    signature: "public function dispatch(RunEvent $event): void"
+    callees[3]: "Symfony\\Contracts\\EventDispatcher\\EventDispatcherInterface::dispatch","Ineersa\\AgentCore\\Application\\Handler\\EventSubscriberRegistry::subscribersFor","Ineersa\\AgentCore\\Contract\\Extension\\EventSubscriberInterface::onEvent"

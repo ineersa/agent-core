@@ -3,7 +3,28 @@ file: HotPromptStateStore.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\HotPromptStateStore"
 type: final class
 summary: "HotPromptStateStore provides a lightweight, in-memory cache for transient prompt execution states keyed by run ID. It is designed for high-speed access during active agent runs but does not guarantee persistence across restarts."
-methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  get,17,23,7,20,21,"public function get(string $runId): ?array"
-  save,25,39,15,28,21,"public function save(string $runId, array $state): void"
-  delete,41,47,7,44,21,"public function delete(string $runId): void"
+methods[3]:
+  - method: get
+    start: 17
+    end: 23
+    limit: 7
+    symbolLine: 20
+    symbolColumn: 21
+    signature: "public function get(string $runId): ?array"
+    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\HotPromptStateStore::save"
+  - method: save
+    start: 25
+    end: 39
+    limit: 15
+    symbolLine: 28
+    symbolColumn: 21
+    signature: "public function save(string $runId, array $state): void"
+    callees[3]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\HotPromptStateStore::get","Ineersa\\AgentCore\\Infrastructure\\Storage\\HotPromptStateStore::delete","DateTimeImmutable::format"
+  - method: delete
+    start: 41
+    end: 47
+    limit: 7
+    symbolLine: 44
+    symbolColumn: 21
+    signature: "public function delete(string $runId): void"
+    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\HotPromptStateStore::save"

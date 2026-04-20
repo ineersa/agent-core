@@ -3,7 +3,27 @@ file: LatencyHistogram.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\LatencyHistogram"
 type: final class
 summary: This class records latency observations and exposes histogram-style snapshots.
-methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,23,43,21,28,21,public function __construct(array $bucketBoundsMs)
-  observe,45,68,24,48,21,"public function observe(float $durationMs): void"
-  snapshot,70,97,28,75,21,"public function snapshot(): array"
+methods[3]:
+  - method: __construct
+    start: 23
+    end: 43
+    limit: 21
+    symbolLine: 28
+    symbolColumn: 21
+    signature: public function __construct(array $bucketBoundsMs)
+  - method: observe
+    start: 45
+    end: 68
+    limit: 24
+    symbolLine: 48
+    symbolColumn: 21
+    signature: "public function observe(float $durationMs): void"
+    callers[3]: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordTurnCompleted","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordLlmLatency","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordToolLatency"
+  - method: snapshot
+    start: 70
+    end: 97
+    limit: 28
+    symbolLine: 75
+    symbolColumn: 21
+    signature: "public function snapshot(): array"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::snapshot"

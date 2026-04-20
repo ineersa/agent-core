@@ -3,6 +3,20 @@ file: HookDispatcher.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\HookDispatcher"
 type: readonly final class
 summary: The HookDispatcher class orchestrates the execution of registered hook subscribers by mapping hook names to their corresponding handlers. It leverages a subscriber registry to identify relevant hooks and an event dispatcher to trigger the associated logic with provided context data.
-methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,16,23,8,19,21,"public function __construct(HookSubscriberRegistry $registry, EventDispatcherInterface $eventDispatcher)"
-  dispatch,25,49,25,32,21,"public function dispatch(string $hookName, array $context = []): array"
+methods[2]:
+  - method: __construct
+    start: 16
+    end: 23
+    limit: 8
+    symbolLine: 19
+    symbolColumn: 21
+    signature: "public function __construct(HookSubscriberRegistry $registry, EventDispatcherInterface $eventDispatcher)"
+  - method: dispatch
+    start: 25
+    end: 49
+    limit: 25
+    symbolLine: 32
+    symbolColumn: 21
+    signature: "public function dispatch(string $hookName, array $context = []): array"
+    callees[5]: "Ineersa\\AgentCore\\Domain\\Event\\BoundaryHookName::isBoundary","Ineersa\\AgentCore\\Domain\\Event\\BoundaryHookName::isExtensionHook","Symfony\\Contracts\\EventDispatcher\\EventDispatcherInterface::dispatch","Ineersa\\AgentCore\\Application\\Handler\\HookSubscriberRegistry::subscribersFor","Ineersa\\AgentCore\\Contract\\Extension\\HookSubscriberInterface::handle"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::commit"

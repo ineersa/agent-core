@@ -240,6 +240,58 @@ function extractDocblockSummary(?Doc $doc): string
 }
 
 /**
+ * Load callgraph.json and build a map of [class][method] => {callers, callees}.
+ *
+ * Filters out plain functions, vendor classes, and unresolved edges.
+ * Only includes callers/callees within the project namespace.
+ *
+ * @return array<string, array<string, array{callers: list<string>, callees: list<string>}>>
+ */
+function loadCallGraph(string $path): array
+{
+    if (!file_exists($path)) {
+        return [];
+    }
+
+    $json = json_decode(file_get_contents($path), true, 512, JSON_THROW_ON_ERROR);
+    $edges = $json['edges'] ?? [];
+
+    $map = [];
+    foreach ($edges as $edge) {
+        // Skip plain functions
+        if (($edge['calleeKind'] ?? '') === 'function' || ($edge['callerKind'] ?? '') === 'function') {
+            continue;
+        }
+
+        // Skip unresolved calls
+        if ($edge['unresolved'] ?? false) {
+            continue;
+        }
+
+        $callerClass = $edge['callerClass'] ?? '';
+        $callerMethod = $edge['callerMember'] ?? '';
+        $calleeClass = $edge['calleeClass'] ?? '';
+        $calleeMethod = $edge['calleeMember'] ?? '';
+
+        // Record callee from caller's perspective
+        if ('' !== $callerClass && '' !== $callerMethod && '' !== $calleeClass && '' !== $calleeMethod) {
+            $map[$callerClass][$callerMethod]['callees'][] = $calleeClass . '::' . $calleeMethod;
+            $map[$calleeClass][$calleeMethod]['callers'][] = $callerClass . '::' . $callerMethod;
+        }
+    }
+
+    // Deduplicate
+    foreach ($map as &$methods) {
+        foreach ($methods as &$entry) {
+            $entry['callers'] = array_values(array_unique($entry['callers'] ?? []));
+            $entry['callees'] = array_values(array_unique($entry['callees'] ?? []));
+        }
+    }
+
+    return $map;
+}
+
+/**
  * @return list<Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_|Node\Stmt\Interface_>
  */
 function findClassLikeNodes(array $ast): array
@@ -427,6 +479,23 @@ function replaceDocblockInCode(string $code, ?Doc $existingDoc, string $newDocbl
 $stats = ['generated' => 0, 'migrated' => 0, 'skipped' => 0, 'failed' => 0, 'missing_summaries' => 0];
 $strictErrors = [];
 
+// ── Load call graph ────────────────────────────────────────────────────
+
+$callGraphPath = $projectRoot . '/callgraph.json';
+$callgraphNeon = $projectRoot . '/vendor/ineersa/call-graph/callgraph.neon';
+if (file_exists($callgraphNeon)) {
+    $phpstanBin = $projectRoot . '/vendor/bin/phpstan';
+    if (file_exists($phpstanBin)) {
+        echo "Generating call graph...\n";
+        passthru(escapeshellarg($phpstanBin) . ' analyse -c ' . escapeshellarg($callgraphNeon) . ' ./src --no-progress --no-ansi 2>/dev/null', $cgExit);
+        if (0 !== $cgExit && !file_exists($callGraphPath)) {
+            echo "  warning: call graph generation failed (exit={$cgExit}), proceeding without call data\n";
+        }
+    }
+}
+
+$callGraph = loadCallGraph($callGraphPath);
+
 foreach ($phpFiles as $phpFile) {
     $relPath = substr($phpFile, strlen($projectRoot) + 1);
     $code = file_get_contents($phpFile);
@@ -572,7 +641,7 @@ foreach ($phpFiles as $phpFile) {
                 $signature .= ': ' . $m['returnType'];
             }
 
-            $methodEntries[] = [
+            $entry = [
                 'method' => $m['name'],
                 'start' => $m['docStartLine'],
                 'end' => $m['endLine'],
@@ -581,6 +650,17 @@ foreach ($phpFiles as $phpFile) {
                 'symbolColumn' => $m['symbolColumn'],
                 'signature' => $signature,
             ];
+
+            $callees = $callGraph[$fqcn][$m['name']]['callees'] ?? [];
+            $callers = $callGraph[$fqcn][$m['name']]['callers'] ?? [];
+            if (!empty($callees)) {
+                $entry['callees'] = $callees;
+            }
+            if (!empty($callers)) {
+                $entry['callers'] = $callers;
+            }
+
+            $methodEntries[] = $entry;
         }
 
         $classType = trim($classInfo['classModifiers'] . ' ' . $classInfo['classType']);

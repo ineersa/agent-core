@@ -3,5 +3,12 @@ file: LlmStepResult.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\LlmStepResult"
 type: readonly final class
 summary: "Represents the immutable result of a single LLM agent step within a multi-turn conversation. It encapsulates execution metadata including run identifiers, turn sequence, and idempotency keys to ensure reliable processing. This value object serves as a core domain entity for tracking agent execution state."
-methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,12,31,20,19,21,"public function __construct(string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey, ?array $assistantMessage = null, array $usage = [], ?string $stopReason = null, ?array $error = null)"
+methods[1]:
+  - method: __construct
+    start: 12
+    end: 31
+    limit: 20
+    symbolLine: 19
+    symbolColumn: 21
+    signature: "public function __construct(string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey, ?array $assistantMessage = null, array $usage = [], ?string $stopReason = null, ?array $error = null)"
+    callees[1]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::__construct"

@@ -3,7 +3,30 @@ file: RunEventSerializer.php
 class: "Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer"
 type: readonly final class
 summary: The RunEventSerializer converts between domain RunEvent and RunStreamEvent objects and their array representations for API transport. It provides bidirectional normalization to support serialization boundaries without leaking domain structure.
-methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  normalizeRunEvent,15,23,9,20,21,"public function normalizeRunEvent(RunEvent $event): array"
-  fromRunEvent,25,38,14,28,21,"public function fromRunEvent(RunEvent $event): RunStreamEvent"
-  normalizeStreamEvent,40,55,16,45,21,"public function normalizeStreamEvent(RunStreamEvent $event): array"
+methods[3]:
+  - method: normalizeRunEvent
+    start: 15
+    end: 23
+    limit: 9
+    symbolLine: 20
+    symbolColumn: 21
+    signature: "public function normalizeRunEvent(RunEvent $event): array"
+    callees[2]: "Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer::fromRunEvent","Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer::normalizeStreamEvent"
+    callers[4]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::replayEvents","Ineersa\\AgentCore\\Command\\AgentLoopRunReplayCommand::execute","Ineersa\\AgentCore\\Command\\AgentLoopRunTailCommand::execute","Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunEventPublisher::publish"
+  - method: fromRunEvent
+    start: 25
+    end: 38
+    limit: 14
+    symbolLine: 28
+    symbolColumn: 21
+    signature: "public function fromRunEvent(RunEvent $event): RunStreamEvent"
+    callers[1]: "Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer::normalizeRunEvent"
+  - method: normalizeStreamEvent
+    start: 40
+    end: 55
+    limit: 16
+    symbolLine: 45
+    symbolColumn: 21
+    signature: "public function normalizeStreamEvent(RunStreamEvent $event): array"
+    callees[1]: "DateTimeImmutable::format"
+    callers[2]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::replayEvents","Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer::normalizeRunEvent"

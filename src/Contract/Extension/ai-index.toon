@@ -1,7 +1,7 @@
 spec: agent-core.ai-docs/v1
 namespace: "Contract\\Extension"
 fqcn: "Ineersa\\AgentCore\\Contract\\Extension"
-updatedAt: 2026-04-19
+updatedAt: 2026-04-20
 description: "Extension seam interfaces for third-party integrations — command handlers, event subscribers, hook subscribers."
 files[3]{file,type,summary}:
   CommandHandlerInterface.php,interface,"Defines the contract for command handlers within the AgentCore extension system, enabling type-safe dispatch and transformation of command payloads. It ensures that handlers can validate command kinds and safely map execution contexts to structured results."

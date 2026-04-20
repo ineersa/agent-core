@@ -3,9 +3,46 @@ file: ToolCatalogResolver.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver"
 type: final class
 summary: Resolves tool catalog definitions by iterating over registered providers and aggregating their payloads. Ensures schema stability for each tool definition by computing and verifying a deterministic fingerprint.
-methods[5]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,18,26,9,23,21,public function __construct(iterable $providers)
-  resolve,28,48,21,35,21,"public function resolve(array $context = []): array"
-  resolveProviderPayload,50,63,14,57,21,"public function resolveProviderPayload(array $context = []): array"
-  assertSchemaStability,65,84,20,68,22,"private function assertSchemaStability(ToolDefinition $definition): void"
-  schemaFingerprint,86,99,14,91,22,"private function schemaFingerprint(?array $schema): string"
+methods[5]:
+  - method: __construct
+    start: 18
+    end: 26
+    limit: 9
+    symbolLine: 23
+    symbolColumn: 21
+    signature: public function __construct(iterable $providers)
+  - method: resolve
+    start: 28
+    end: 48
+    limit: 21
+    symbolLine: 35
+    symbolColumn: 21
+    signature: "public function resolve(array $context = []): array"
+    callees[2]: "Ineersa\\AgentCore\\Contract\\Tool\\ToolCatalogProviderInterface::resolveToolCatalog","Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver::assertSchemaStability"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver::resolveProviderPayload","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::resolveToolSchemas"
+  - method: resolveProviderPayload
+    start: 50
+    end: 63
+    limit: 14
+    symbolLine: 57
+    symbolColumn: 21
+    signature: "public function resolveProviderPayload(array $context = []): array"
+    callees[2]: "Ineersa\\AgentCore\\Domain\\Tool\\ToolDefinition::toProviderPayload","Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver::resolve"
+    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::invoke"
+  - method: assertSchemaStability
+    start: 65
+    end: 84
+    limit: 20
+    symbolLine: 68
+    symbolColumn: 22
+    signature: "private function assertSchemaStability(ToolDefinition $definition): void"
+    callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver::schemaFingerprint"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver::resolve"
+  - method: schemaFingerprint
+    start: 86
+    end: 99
+    limit: 14
+    symbolLine: 91
+    symbolColumn: 22
+    signature: "private function schemaFingerprint(?array $schema): string"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver::assertSchemaStability"

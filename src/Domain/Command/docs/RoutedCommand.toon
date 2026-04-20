@@ -3,9 +3,43 @@ file: RoutedCommand.php
 class: "Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand"
 type: readonly final class
 summary: "RoutedCommand is a readonly value object representing a command in the domain layer, distinguishing between core and extension command types. It encapsulates the command kind, payload, options, and status to provide a structured representation of domain operations."
-methods[5]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,12,25,14,18,22,"private function __construct(string $status, string $kind, array $payload = [], array $options = [], ?string $reason = null)"
-  core,27,36,10,33,28,"static public function core(string $kind, array $payload, array $options): self"
-  extension,38,47,10,44,28,"static public function extension(string $kind, array $payload, array $options): self"
-  rejected,49,55,7,52,28,"static public function rejected(string $kind, string $reason): self"
-  isRejected,57,63,7,60,21,"public function isRejected(): bool"
+methods[5]:
+  - method: __construct
+    start: 12
+    end: 25
+    limit: 14
+    symbolLine: 18
+    symbolColumn: 22
+    signature: "private function __construct(string $status, string $kind, array $payload = [], array $options = [], ?string $reason = null)"
+  - method: core
+    start: 27
+    end: 36
+    limit: 10
+    symbolLine: 33
+    symbolColumn: 28
+    signature: "static public function core(string $kind, array $payload, array $options): self"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::route"
+  - method: extension
+    start: 38
+    end: 47
+    limit: 10
+    symbolLine: 44
+    symbolColumn: 28
+    signature: "static public function extension(string $kind, array $payload, array $options): self"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::route"
+  - method: rejected
+    start: 49
+    end: 55
+    limit: 7
+    symbolLine: 52
+    symbolColumn: 28
+    signature: "static public function rejected(string $kind, string $reason): self"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::route"
+  - method: isRejected
+    start: 57
+    end: 63
+    limit: 7
+    symbolLine: 60
+    symbolColumn: 21
+    signature: "public function isRejected(): bool"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onApplyCommand"

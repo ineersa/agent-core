@@ -3,5 +3,12 @@ file: CoreCommandKind.php
 class: "Ineersa\\AgentCore\\Domain\\Command\\CoreCommandKind"
 type: final class
 summary: Defines the set of core command types recognized by the agent core system. This final class provides a static utility to validate whether a given command kind string belongs to the core domain. It serves as a strict type guard for command routing and processing.
-methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  isCore,27,33,7,30,28,"static public function isCore(string $kind): bool"
+methods[1]:
+  - method: isCore
+    start: 27
+    end: 33
+    limit: 7
+    symbolLine: 30
+    symbolColumn: 28
+    signature: "static public function isCore(string $kind): bool"
+    callers[5]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::sendCommand","Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::route","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingStopBoundaryCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::isCancelSafeExtensionCommand"

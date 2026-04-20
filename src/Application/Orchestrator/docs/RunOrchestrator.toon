@@ -3,41 +3,316 @@ file: RunOrchestrator.php
 class: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator"
 type: readonly final class
 summary: "The RunOrchestrator coordinates the lifecycle of an agent run by processing commands and handling step results through a reducer pattern. It manages state transitions, tool execution policies, and message hydration while persisting events and commands to their respective stores."
-methods[37]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,57,82,26,60,21,"public function __construct(RunStoreInterface $runStore, EventStoreInterface $eventStore, CommandStoreInterface $commandStore, RunReducer $reducer, StepDispatcher $stepDispatcher, CommandRouter $commandRouter, OutboxProjector $outboxProjector, ReplayService $replayService, MessageIdempotencyService $idempotency, RunLockManager $runLockManager, ToolBatchCollector $toolBatchCollector, int $maxPendingCommands = 100, string $steerDrainMode = self::SteerDrainOneAtATime, ?MessageBusInterface $commandBus = null, ?HookDispatcher $hookDispatcher = null, ?ToolExecutionPolicyResolver $toolExecutionPolicyResolver = null, ?ToolCatalogResolver $toolCatalogResolver = null, ?LoggerInterface $logger = null, ?RunMetrics $metrics = null, ?RunTracer $tracer = null)"
-  onStartRun,84,137,54,88,21,"public function onStartRun(StartRun $message): void"
-  onApplyCommand,139,257,119,143,21,"public function onApplyCommand(ApplyCommand $message): void"
-  onAdvanceRun,259,388,130,263,21,"public function onAdvanceRun(AdvanceRun $message): void"
-  onLlmStepResult,390,671,282,394,21,"public function onLlmStepResult(LlmStepResult $message): void"
-  onToolCallResult,673,898,226,677,21,"public function onToolCallResult(ToolCallResult $message): void"
-  rejectCommand,900,931,32,903,22,"private function rejectCommand(RunState $state, ApplyCommand $message, string $reason): void"
-  applyCancelCommand,933,988,56,938,22,"private function applyCancelCommand(RunState $state, ApplyCommand $message, array $options): void"
-  applyContinueCommand,990,1033,44,995,22,"private function applyContinueCommand(RunState $state, ApplyCommand $message, array $options): void"
-  applyHumanResponseCommand,1035,1089,55,1040,22,"private function applyHumanResponseCommand(RunState $state, ApplyCommand $message, array $options): void"
-  applyPendingTurnStartCommands,1091,1180,90,1096,22,"private function applyPendingTurnStartCommands(RunState $state): array"
-  applyPendingStopBoundaryCommands,1182,1270,89,1187,22,"private function applyPendingStopBoundaryCommands(RunState $state): array"
-  isCancelSafeExtensionCommand,1272,1281,10,1277,22,"private function isCancelSafeExtensionCommand(string $kind, array $options): bool"
-  applyExtensionCommand,1283,1342,60,1288,22,"private function applyExtensionCommand(RunState $state, PendingCommand $command): array"
-  supersededSteerKeys,1344,1378,35,1351,22,"private function supersededSteerKeys(array $pendingCommands): array"
-  continueRejectionReason,1380,1406,27,1383,22,"private function continueRejectionReason(RunState $state): ?string"
-  humanResponseMessage,1408,1438,31,1413,22,"private function humanResponseMessage(array $payload): ?AgentMessage"
-  lastMessageRole,1440,1452,13,1443,22,"private function lastMessageRole(RunState $state): ?string"
-  dispatchAdvance,1454,1476,23,1457,22,"private function dispatchAdvance(string $runId, string $prefix): void"
-  copyState,1478,1505,28,1483,22,"private function copyState(RunState $state, array $overrides = []): RunState"
-  commit,1507,1640,134,1513,22,"private function commit(RunState $state, RunState $nextState, array $events, array $effects = []): bool"
-  trackCommitMetrics,1642,1669,28,1647,22,"private function trackCommitMetrics(RunState $state, RunState $nextState, array $events): void"
-  logCommittedEvents,1671,1693,23,1676,22,"private function logCommittedEvents(RunState $state, array $events): void"
-  eventStepId,1695,1709,15,1698,22,"private function eventStepId(RunEvent $event, RunState $state): ?string"
-  eventWorkerId,1711,1721,11,1714,22,"private function eventWorkerId(RunEvent $event): string"
-  eventAttempt,1723,1739,17,1726,22,"private function eventAttempt(RunEvent $event): ?int"
-  event,1741,1755,15,1746,22,"private function event(string $runId, int $seq, int $turnNo, string $type, array $payload = []): RunEvent"
-  eventsFromSpecs,1757,1786,30,1764,22,"private function eventsFromSpecs(string $runId, int $turnNo, int $startSeq, array $eventSpecs): array"
-  resolveToolPolicy,1788,1810,23,1793,22,"private function resolveToolPolicy(string $toolName): array"
-  resolveToolSchemas,1812,1834,23,1817,22,"private function resolveToolSchemas(string $runId, int $turnNo, string $stepId): array"
-  interruptPayloadFromToolResult,1836,1878,43,1841,22,"private function interruptPayloadFromToolResult(ToolCallResult $result): ?array"
-  isStaleResult,1880,1890,11,1883,22,"private function isStaleResult(RunState $state, int $turnNo, string $stepId): bool"
-  incrementStateVersion,1892,1901,10,1895,22,"private function incrementStateVersion(RunState $state, int $eventCount): RunState"
-  hydrateMessage,1903,1945,43,1908,22,"private function hydrateMessage(array $payload): ?AgentMessage"
-  assistantMessage,1947,1984,38,1952,22,"private function assistantMessage(array $assistantMessage): AgentMessage"
-  toolMessage,1986,2017,32,1989,22,"private function toolMessage(ToolCallResult $result): AgentMessage"
-  extractToolCalls,2019,2063,45,2032,22,"private function extractToolCalls(array $assistantMessage): array"
+methods[37]:
+  - method: __construct
+    start: 57
+    end: 82
+    limit: 26
+    symbolLine: 60
+    symbolColumn: 21
+    signature: "public function __construct(RunStoreInterface $runStore, EventStoreInterface $eventStore, CommandStoreInterface $commandStore, RunReducer $reducer, StepDispatcher $stepDispatcher, CommandRouter $commandRouter, OutboxProjector $outboxProjector, ReplayService $replayService, MessageIdempotencyService $idempotency, RunLockManager $runLockManager, ToolBatchCollector $toolBatchCollector, int $maxPendingCommands = 100, string $steerDrainMode = self::SteerDrainOneAtATime, ?MessageBusInterface $commandBus = null, ?HookDispatcher $hookDispatcher = null, ?ToolExecutionPolicyResolver $toolExecutionPolicyResolver = null, ?ToolCatalogResolver $toolCatalogResolver = null, ?LoggerInterface $logger = null, ?RunMetrics $metrics = null, ?RunTracer $tracer = null)"
+  - method: onStartRun
+    start: 84
+    end: 137
+    limit: 54
+    symbolLine: 88
+    symbolColumn: 21
+    signature: "public function onStartRun(StartRun $message): void"
+    callees[13]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Application\\Handler\\RunLockManager::synchronized","Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService::wasHandled","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Contract\\RunStoreInterface::get","Ineersa\\AgentCore\\Domain\\Run\\RunState::queued","Ineersa\\AgentCore\\Application\\Reducer\\RunReducer::reduce","Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService::markHandled","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::event","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::commit","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo"
+  - method: onApplyCommand
+    start: 139
+    end: 257
+    limit: 119
+    symbolLine: 143
+    symbolColumn: 21
+    signature: "public function onApplyCommand(ApplyCommand $message): void"
+    callees[23]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Application\\Handler\\RunLockManager::synchronized","Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService::wasHandled","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::has","Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService::markHandled","Ineersa\\AgentCore\\Contract\\RunStoreInterface::get","Ineersa\\AgentCore\\Domain\\Run\\RunState::queued","Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::route","Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand::isRejected","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::rejectCommand","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::countPending","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::isCancelSafeExtensionCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyCancelCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyContinueCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyHumanResponseCommand","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::enqueue","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::copyState","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::event","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::commit","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId"
+  - method: onAdvanceRun
+    start: 259
+    end: 388
+    limit: 130
+    symbolLine: 263
+    symbolColumn: 21
+    signature: "public function onAdvanceRun(AdvanceRun $message): void"
+    callees[15]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Application\\Handler\\RunLockManager::synchronized","Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService::wasHandled","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Contract\\RunStoreInterface::get","Ineersa\\AgentCore\\Domain\\Run\\RunState::queued","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::eventsFromSpecs","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::copyState","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::commit","Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService::markHandled","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordTurnStarted","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo"
+  - method: onLlmStepResult
+    start: 390
+    end: 671
+    limit: 282
+    symbolLine: 394
+    symbolColumn: 21
+    signature: "public function onLlmStepResult(LlmStepResult $message): void"
+    callees[25]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Application\\Handler\\RunLockManager::synchronized","Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService::wasHandled","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Contract\\RunStoreInterface::get","Ineersa\\AgentCore\\Domain\\Run\\RunState::queued","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::isStaleResult","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::incrementStateVersion","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::event","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::commit","Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService::markHandled","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::assistantMessage","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::eventsFromSpecs","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::copyState","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordTurnCompleted","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::extractToolCalls","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::resolveToolSchemas","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::resolveToolPolicy","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingStopBoundaryCommands","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::dispatchAdvance","Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::registerExpectedBatch","Ineersa\\AgentCore\\Application\\Handler\\StepDispatcher::dispatchEffects"
+  - method: onToolCallResult
+    start: 673
+    end: 898
+    limit: 226
+    symbolLine: 677
+    symbolColumn: 21
+    signature: "public function onToolCallResult(ToolCallResult $message): void"
+    callees[21]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Application\\Handler\\RunLockManager::synchronized","Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService::wasHandled","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Contract\\RunStoreInterface::get","Ineersa\\AgentCore\\Domain\\Run\\RunState::queued","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::isStaleResult","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::incrementStateVersion","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::event","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::commit","Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService::markHandled","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::eventsFromSpecs","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::copyState","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordTurnCompleted","Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::collect","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::toolMessage","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::interruptPayloadFromToolResult","Ineersa\\AgentCore\\Application\\Handler\\StepDispatcher::dispatchEffects","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan"
+  - method: rejectCommand
+    start: 900
+    end: 931
+    limit: 32
+    symbolLine: 903
+    symbolColumn: 22
+    signature: "private function rejectCommand(RunState $state, ApplyCommand $message, string $reason): void"
+    callees[7]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markRejected","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::copyState","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::event","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::commit","Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService::markHandled"
+    callers[3]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onApplyCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyContinueCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyHumanResponseCommand"
+  - method: applyCancelCommand
+    start: 933
+    end: 988
+    limit: 56
+    symbolLine: 938
+    symbolColumn: 22
+    signature: "private function applyCancelCommand(RunState $state, ApplyCommand $message, array $options): void"
+    callees[8]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markApplied","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::rejectPendingByKind","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::eventsFromSpecs","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::copyState","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::commit","Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService::markHandled"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onApplyCommand"
+  - method: applyContinueCommand
+    start: 990
+    end: 1033
+    limit: 44
+    symbolLine: 995
+    symbolColumn: 22
+    signature: "private function applyContinueCommand(RunState $state, ApplyCommand $message, array $options): void"
+    callees[10]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::continueRejectionReason","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::rejectCommand","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markApplied","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::copyState","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::event","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::commit","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::dispatchAdvance","Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService::markHandled"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onApplyCommand"
+  - method: applyHumanResponseCommand
+    start: 1035
+    end: 1089
+    limit: 55
+    symbolLine: 1040
+    symbolColumn: 22
+    signature: "private function applyHumanResponseCommand(RunState $state, ApplyCommand $message, array $options): void"
+    callees[10]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::rejectCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::humanResponseMessage","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markApplied","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::copyState","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::event","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::commit","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::dispatchAdvance","Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService::markHandled"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onApplyCommand"
+  - method: applyPendingTurnStartCommands
+    start: 1091
+    end: 1180
+    limit: 90
+    symbolLine: 1096
+    symbolColumn: 22
+    signature: "private function applyPendingTurnStartCommands(RunState $state): array"
+    callees[9]: "Ineersa\\AgentCore\\Contract\\CommandStoreInterface::pending","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::supersededSteerKeys","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markSuperseded","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markRejected","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::hydrateMessage","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markApplied","Ineersa\\AgentCore\\Domain\\Command\\CoreCommandKind::isCore","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyExtensionCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::copyState"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onAdvanceRun"
+  - method: applyPendingStopBoundaryCommands
+    start: 1182
+    end: 1270
+    limit: 89
+    symbolLine: 1187
+    symbolColumn: 22
+    signature: "private function applyPendingStopBoundaryCommands(RunState $state): array"
+    callees[9]: "Ineersa\\AgentCore\\Contract\\CommandStoreInterface::pending","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::supersededSteerKeys","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markSuperseded","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markRejected","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::hydrateMessage","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markApplied","Ineersa\\AgentCore\\Domain\\Command\\CoreCommandKind::isCore","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyExtensionCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::copyState"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onLlmStepResult"
+  - method: isCancelSafeExtensionCommand
+    start: 1272
+    end: 1281
+    limit: 10
+    symbolLine: 1277
+    symbolColumn: 22
+    signature: "private function isCancelSafeExtensionCommand(string $kind, array $options): bool"
+    callees[1]: "Ineersa\\AgentCore\\Domain\\Command\\CoreCommandKind::isCore"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onApplyCommand"
+  - method: applyExtensionCommand
+    start: 1283
+    end: 1342
+    limit: 60
+    symbolLine: 1288
+    symbolColumn: 22
+    signature: "private function applyExtensionCommand(RunState $state, PendingCommand $command): array"
+    callees[5]: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::handlerFor","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markRejected","Ineersa\\AgentCore\\Contract\\Extension\\CommandHandlerInterface::map","Throwable::getMessage","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markApplied"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingStopBoundaryCommands"
+  - method: supersededSteerKeys
+    start: 1344
+    end: 1378
+    limit: 35
+    symbolLine: 1351
+    symbolColumn: 22
+    signature: "private function supersededSteerKeys(array $pendingCommands): array"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingStopBoundaryCommands"
+  - method: continueRejectionReason
+    start: 1380
+    end: 1406
+    limit: 27
+    symbolLine: 1383
+    symbolColumn: 22
+    signature: "private function continueRejectionReason(RunState $state): ?string"
+    callees[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::lastMessageRole"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyContinueCommand"
+  - method: humanResponseMessage
+    start: 1408
+    end: 1438
+    limit: 31
+    symbolLine: 1413
+    symbolColumn: 22
+    signature: "private function humanResponseMessage(array $payload): ?AgentMessage"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyHumanResponseCommand"
+  - method: lastMessageRole
+    start: 1440
+    end: 1452
+    limit: 13
+    symbolLine: 1443
+    symbolColumn: 22
+    signature: "private function lastMessageRole(RunState $state): ?string"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::continueRejectionReason"
+  - method: dispatchAdvance
+    start: 1454
+    end: 1476
+    limit: 23
+    symbolLine: 1457
+    symbolColumn: 22
+    signature: "private function dispatchAdvance(string $runId, string $prefix): void"
+    callees[1]: "Symfony\\Component\\Messenger\\MessageBusInterface::dispatch"
+    callers[3]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onLlmStepResult","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyContinueCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyHumanResponseCommand"
+  - method: copyState
+    start: 1478
+    end: 1505
+    limit: 28
+    symbolLine: 1483
+    symbolColumn: 22
+    signature: "private function copyState(RunState $state, array $overrides = []): RunState"
+    callers[11]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onApplyCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onAdvanceRun","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onLlmStepResult","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onToolCallResult","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::rejectCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyCancelCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyContinueCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyHumanResponseCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingStopBoundaryCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::incrementStateVersion"
+  - method: commit
+    start: 1507
+    end: 1640
+    limit: 134
+    symbolLine: 1513
+    symbolColumn: 22
+    signature: "private function commit(RunState $state, RunState $nextState, array $events, array $effects = []): bool"
+    callees[12]: "Ineersa\\AgentCore\\Contract\\RunStoreInterface::compareAndSwap","Ineersa\\AgentCore\\Contract\\EventStoreInterface::append","Ineersa\\AgentCore\\Contract\\EventStoreInterface::appendMany","Throwable::getMessage","Psr\\Log\\LoggerInterface::warning","Ineersa\\AgentCore\\Application\\Handler\\OutboxProjector::project","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::rebuildHotPromptState","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::logCommittedEvents","Ineersa\\AgentCore\\Application\\Handler\\StepDispatcher::dispatchEffects","Ineersa\\AgentCore\\Application\\Handler\\HookDispatcher::dispatch","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::trackCommitMetrics"
+    callers[9]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onStartRun","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onApplyCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onAdvanceRun","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onLlmStepResult","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onToolCallResult","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::rejectCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyCancelCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyContinueCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyHumanResponseCommand"
+  - method: trackCommitMetrics
+    start: 1642
+    end: 1669
+    limit: 28
+    symbolLine: 1647
+    symbolColumn: 22
+    signature: "private function trackCommitMetrics(RunState $state, RunState $nextState, array $events): void"
+    callees[4]: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordRunStatusTransition","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::setCommandQueueLag","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::countPending","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::incrementStaleResultCount"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::commit"
+  - method: logCommittedEvents
+    start: 1671
+    end: 1693
+    limit: 23
+    symbolLine: 1676
+    symbolColumn: 22
+    signature: "private function logCommittedEvents(RunState $state, array $events): void"
+    callees[4]: "Psr\\Log\\LoggerInterface::info","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::eventStepId","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::eventWorkerId","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::eventAttempt"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::commit"
+  - method: eventStepId
+    start: 1695
+    end: 1709
+    limit: 15
+    symbolLine: 1698
+    symbolColumn: 22
+    signature: "private function eventStepId(RunEvent $event, RunState $state): ?string"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::logCommittedEvents"
+  - method: eventWorkerId
+    start: 1711
+    end: 1721
+    limit: 11
+    symbolLine: 1714
+    symbolColumn: 22
+    signature: "private function eventWorkerId(RunEvent $event): string"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::logCommittedEvents"
+  - method: eventAttempt
+    start: 1723
+    end: 1739
+    limit: 17
+    symbolLine: 1726
+    symbolColumn: 22
+    signature: "private function eventAttempt(RunEvent $event): ?int"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::logCommittedEvents"
+  - method: event
+    start: 1741
+    end: 1755
+    limit: 15
+    symbolLine: 1746
+    symbolColumn: 22
+    signature: "private function event(string $runId, int $seq, int $turnNo, string $type, array $payload = []): RunEvent"
+    callers[8]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onStartRun","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onApplyCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onLlmStepResult","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onToolCallResult","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::rejectCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyContinueCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyHumanResponseCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::eventsFromSpecs"
+  - method: eventsFromSpecs
+    start: 1757
+    end: 1786
+    limit: 30
+    symbolLine: 1764
+    symbolColumn: 22
+    signature: "private function eventsFromSpecs(string $runId, int $turnNo, int $startSeq, array $eventSpecs): array"
+    callees[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::event"
+    callers[4]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onAdvanceRun","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onLlmStepResult","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onToolCallResult","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyCancelCommand"
+  - method: resolveToolPolicy
+    start: 1788
+    end: 1810
+    limit: 23
+    symbolLine: 1793
+    symbolColumn: 22
+    signature: "private function resolveToolPolicy(string $toolName): array"
+    callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionPolicyResolver::resolve"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onLlmStepResult"
+  - method: resolveToolSchemas
+    start: 1812
+    end: 1834
+    limit: 23
+    symbolLine: 1817
+    symbolColumn: 22
+    signature: "private function resolveToolSchemas(string $runId, int $turnNo, string $stepId): array"
+    callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver::resolve"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onLlmStepResult"
+  - method: interruptPayloadFromToolResult
+    start: 1836
+    end: 1878
+    limit: 43
+    symbolLine: 1841
+    symbolColumn: 22
+    signature: "private function interruptPayloadFromToolResult(ToolCallResult $result): ?array"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onToolCallResult"
+  - method: isStaleResult
+    start: 1880
+    end: 1890
+    limit: 11
+    symbolLine: 1883
+    symbolColumn: 22
+    signature: "private function isStaleResult(RunState $state, int $turnNo, string $stepId): bool"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onLlmStepResult","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onToolCallResult"
+  - method: incrementStateVersion
+    start: 1892
+    end: 1901
+    limit: 10
+    symbolLine: 1895
+    symbolColumn: 22
+    signature: "private function incrementStateVersion(RunState $state, int $eventCount): RunState"
+    callees[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::copyState"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onLlmStepResult","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onToolCallResult"
+  - method: hydrateMessage
+    start: 1903
+    end: 1945
+    limit: 43
+    symbolLine: 1908
+    symbolColumn: 22
+    signature: "private function hydrateMessage(array $payload): ?AgentMessage"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingStopBoundaryCommands"
+  - method: assistantMessage
+    start: 1947
+    end: 1984
+    limit: 38
+    symbolLine: 1952
+    symbolColumn: 22
+    signature: "private function assistantMessage(array $assistantMessage): AgentMessage"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onLlmStepResult"
+  - method: toolMessage
+    start: 1986
+    end: 2017
+    limit: 32
+    symbolLine: 1989
+    symbolColumn: 22
+    signature: "private function toolMessage(ToolCallResult $result): AgentMessage"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onToolCallResult"
+  - method: extractToolCalls
+    start: 2019
+    end: 2063
+    limit: 45
+    symbolLine: 2032
+    symbolColumn: 22
+    signature: "private function extractToolCalls(array $assistantMessage): array"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onLlmStepResult"

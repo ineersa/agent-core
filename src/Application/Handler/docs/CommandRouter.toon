@@ -3,8 +3,37 @@ file: CommandRouter.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter"
 type: final class
 summary: "The CommandRouter class acts as a central dispatcher for ApplyCommand instances, routing them to appropriate handlers based on command kind. It leverages a CommandHandlerRegistry to resolve specific handler implementations and validates command options before routing."
-methods[4]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,17,24,8,20,21,"public function __construct(CommandHandlerRegistry $registry, string $extensionPrefix = 'ext:')"
-  route,26,68,43,29,21,"public function route(ApplyCommand $command): RoutedCommand"
-  handlerFor,70,76,7,73,21,"public function handlerFor(string $kind): ?CommandHandlerInterface"
-  validateOptionKeys,78,98,21,81,22,"private function validateOptionKeys(ApplyCommand $command): ?string"
+methods[4]:
+  - method: __construct
+    start: 17
+    end: 24
+    limit: 8
+    symbolLine: 20
+    symbolColumn: 21
+    signature: "public function __construct(CommandHandlerRegistry $registry, string $extensionPrefix = 'ext:')"
+  - method: route
+    start: 26
+    end: 68
+    limit: 43
+    symbolLine: 29
+    symbolColumn: 21
+    signature: "public function route(ApplyCommand $command): RoutedCommand"
+    callees[7]: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::validateOptionKeys","Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand::rejected","Ineersa\\AgentCore\\Domain\\Command\\CoreCommandKind::isCore","Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand::core","Ineersa\\AgentCore\\Application\\Handler\\CommandHandlerRegistry::find","Ineersa\\AgentCore\\Contract\\Extension\\CommandHandlerInterface::supportsCancelSafe","Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand::extension"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onApplyCommand"
+  - method: handlerFor
+    start: 70
+    end: 76
+    limit: 7
+    symbolLine: 73
+    symbolColumn: 21
+    signature: "public function handlerFor(string $kind): ?CommandHandlerInterface"
+    callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\CommandHandlerRegistry::find"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyExtensionCommand"
+  - method: validateOptionKeys
+    start: 78
+    end: 98
+    limit: 21
+    symbolLine: 81
+    symbolColumn: 22
+    signature: "private function validateOptionKeys(ApplyCommand $command): ?string"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::route"

@@ -3,5 +3,12 @@ file: ModelResolverInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Tool\\ModelResolverInterface"
 type: interface
 summary: Defines the contract for resolving AI model configurations based on incoming message context and default settings. It abstracts the decision logic for selecting the appropriate model to process a given set of messages.
-methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  resolve,15,21,7,21,21,"public function resolve(string $defaultModel, MessageBag $messages, array $context = [], array $options = []): ResolvedModel"
+methods[1]:
+  - method: resolve
+    start: 15
+    end: 21
+    limit: 7
+    symbolLine: 21
+    symbolColumn: 21
+    signature: "public function resolve(string $defaultModel, MessageBag $messages, array $context = [], array $options = []): ResolvedModel"
+    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::invoke"

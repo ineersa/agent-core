@@ -3,16 +3,102 @@ file: AgentRunner.php
 class: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner"
 type: final class
 summary: "The AgentRunner class orchestrates the lifecycle of agent execution runs by translating high-level inputs into discrete, idempotent steps. It manages state transitions for starting, continuing, steering, and canceling runs while ensuring reliable message dispatch via a command bus."
-methods[12]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,23,28,6,26,21,public function __construct(MessageBusInterface $commandBus)
-  start,30,51,22,33,21,"public function start(StartRunInput $input): RunHandle"
-  continue,53,59,7,56,21,"public function continue(string $runId): void"
-  steer,61,67,7,64,21,"public function steer(string $runId, AgentMessage $message): void"
-  followUp,69,75,7,72,21,"public function followUp(string $runId, AgentMessage $message): void"
-  cancel,77,84,8,80,21,"public function cancel(string $runId, ?string $reason = null): void"
-  answerHuman,86,95,10,89,21,"public function answerHuman(string $runId, string $questionId, mixed $answer): void"
-  applyCoreCommand,97,114,18,102,22,"private function applyCoreCommand(string $runId, string $kind, array $payload): void"
-  serializeMessage,116,124,9,121,22,"private function serializeMessage(AgentMessage $message): array"
-  nextStepId,126,132,7,129,22,"private function nextStepId(string $prefix): string"
-  idempotencyKey,134,140,7,137,22,"private function idempotencyKey(string $runId, string $stepId): string"
-  dispatch,142,152,11,145,22,"private function dispatch(object $message): void"
+methods[12]:
+  - method: __construct
+    start: 23
+    end: 28
+    limit: 6
+    symbolLine: 26
+    symbolColumn: 21
+    signature: public function __construct(MessageBusInterface $commandBus)
+  - method: start
+    start: 30
+    end: 51
+    limit: 22
+    symbolLine: 33
+    symbolColumn: 21
+    signature: "public function start(StartRunInput $input): RunHandle"
+    callees[4]: "Ineersa\\AgentCore\\Domain\\Run\\RunId::generate","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::nextStepId","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::dispatch","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::idempotencyKey"
+  - method: continue
+    start: 53
+    end: 59
+    limit: 7
+    symbolLine: 56
+    symbolColumn: 21
+    signature: "public function continue(string $runId): void"
+    callees[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::applyCoreCommand"
+  - method: steer
+    start: 61
+    end: 67
+    limit: 7
+    symbolLine: 64
+    symbolColumn: 21
+    signature: "public function steer(string $runId, AgentMessage $message): void"
+    callees[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::applyCoreCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::serializeMessage"
+  - method: followUp
+    start: 69
+    end: 75
+    limit: 7
+    symbolLine: 72
+    symbolColumn: 21
+    signature: "public function followUp(string $runId, AgentMessage $message): void"
+    callees[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::applyCoreCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::serializeMessage"
+  - method: cancel
+    start: 77
+    end: 84
+    limit: 8
+    symbolLine: 80
+    symbolColumn: 21
+    signature: "public function cancel(string $runId, ?string $reason = null): void"
+    callees[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::applyCoreCommand"
+  - method: answerHuman
+    start: 86
+    end: 95
+    limit: 10
+    symbolLine: 89
+    symbolColumn: 21
+    signature: "public function answerHuman(string $runId, string $questionId, mixed $answer): void"
+    callees[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::applyCoreCommand"
+  - method: applyCoreCommand
+    start: 97
+    end: 114
+    limit: 18
+    symbolLine: 102
+    symbolColumn: 22
+    signature: "private function applyCoreCommand(string $runId, string $kind, array $payload): void"
+    callees[3]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::nextStepId","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::dispatch","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::idempotencyKey"
+    callers[5]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::continue","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::steer","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::followUp","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::cancel","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::answerHuman"
+  - method: serializeMessage
+    start: 116
+    end: 124
+    limit: 9
+    symbolLine: 121
+    symbolColumn: 22
+    signature: "private function serializeMessage(AgentMessage $message): array"
+    callees[1]: "Ineersa\\AgentCore\\Domain\\Message\\AgentMessage::toArray"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::steer","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::followUp"
+  - method: nextStepId
+    start: 126
+    end: 132
+    limit: 7
+    symbolLine: 129
+    symbolColumn: 22
+    signature: "private function nextStepId(string $prefix): string"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::start","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::applyCoreCommand"
+  - method: idempotencyKey
+    start: 134
+    end: 140
+    limit: 7
+    symbolLine: 137
+    symbolColumn: 22
+    signature: "private function idempotencyKey(string $runId, string $stepId): string"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::start","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::applyCoreCommand"
+  - method: dispatch
+    start: 142
+    end: 152
+    limit: 11
+    symbolLine: 145
+    symbolColumn: 22
+    signature: "private function dispatch(object $message): void"
+    callees[1]: "Symfony\\Component\\Messenger\\MessageBusInterface::dispatch"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::start","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::applyCoreCommand"

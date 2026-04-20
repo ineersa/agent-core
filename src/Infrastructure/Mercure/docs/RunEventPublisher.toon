@@ -3,7 +3,28 @@ file: RunEventPublisher.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunEventPublisher"
 type: final class
 summary: "The RunEventPublisher class publishes domain RunEvent instances to a Mercure hub using configurable serialization and topic policies. It implements a coalescing mechanism to batch rapid updates within a defined time window, reducing unnecessary network traffic."
-methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,20,29,10,23,21,"public function __construct(?HubInterface $hub = null, ?RunEventSerializer $serializer = null, ?RunTopicPolicy $topicPolicy = null, int $messageUpdateCoalesceWindowMs = 75)"
-  publish,31,60,30,34,21,"public function publish(RunEvent $event): void"
-  shouldCoalesce,62,82,21,65,22,"private function shouldCoalesce(RunEvent $event): bool"
+methods[3]:
+  - method: __construct
+    start: 20
+    end: 29
+    limit: 10
+    symbolLine: 23
+    symbolColumn: 21
+    signature: "public function __construct(?HubInterface $hub = null, ?RunEventSerializer $serializer = null, ?RunTopicPolicy $topicPolicy = null, int $messageUpdateCoalesceWindowMs = 75)"
+  - method: publish
+    start: 31
+    end: 60
+    limit: 30
+    symbolLine: 34
+    symbolColumn: 21
+    signature: "public function publish(RunEvent $event): void"
+    callees[4]: "Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunEventPublisher::shouldCoalesce","Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer::normalizeRunEvent","Symfony\\Component\\Mercure\\HubInterface::publish","Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunTopicPolicy::topicsFor"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\MercureOutboxProjectorWorker::__invoke"
+  - method: shouldCoalesce
+    start: 62
+    end: 82
+    limit: 21
+    symbolLine: 65
+    symbolColumn: 22
+    signature: "private function shouldCoalesce(RunEvent $event): bool"
+    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunEventPublisher::publish"

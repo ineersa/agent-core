@@ -3,9 +3,42 @@ file: InMemoryOutboxStore.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryOutboxStore"
 type: final class
 summary: InMemoryOutboxStore provides an in-memory implementation of the outbox pattern for buffering domain events before publication. It ensures event durability within the current process lifecycle by managing entry states and preventing duplicate submissions via sink-based deduplication.
-methods[5]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  enqueue,35,56,22,38,21,"public function enqueue(RunEvent $event, OutboxSink $sink): void"
-  claim,58,98,41,61,21,"public function claim(OutboxSink $sink, int $limit = 100, ?DateTimeImmutable $now = null): array"
-  markProcessed,100,111,12,103,21,"public function markProcessed(int $entryId, ?DateTimeImmutable $processedAt = null): void"
-  markFailed,113,127,15,116,21,"public function markFailed(int $entryId, int $retryAfterSeconds = 30, ?DateTimeImmutable $now = null): void"
-  dedupeKey,129,135,7,132,22,"private function dedupeKey(OutboxSink $sink, RunEvent $event): string"
+methods[5]:
+  - method: enqueue
+    start: 35
+    end: 56
+    limit: 22
+    symbolLine: 38
+    symbolColumn: 21
+    signature: "public function enqueue(RunEvent $event, OutboxSink $sink): void"
+    callees[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryOutboxStore::dedupeKey"
+  - method: claim
+    start: 58
+    end: 98
+    limit: 41
+    symbolLine: 61
+    symbolColumn: 21
+    signature: "public function claim(OutboxSink $sink, int $limit = 100, ?DateTimeImmutable $now = null): array"
+  - method: markProcessed
+    start: 100
+    end: 111
+    limit: 12
+    symbolLine: 103
+    symbolColumn: 21
+    signature: "public function markProcessed(int $entryId, ?DateTimeImmutable $processedAt = null): void"
+  - method: markFailed
+    start: 113
+    end: 127
+    limit: 15
+    symbolLine: 116
+    symbolColumn: 21
+    signature: "public function markFailed(int $entryId, int $retryAfterSeconds = 30, ?DateTimeImmutable $now = null): void"
+    callees[2]: "DateTimeImmutable::getTimestamp","DateTimeImmutable::setTimestamp"
+  - method: dedupeKey
+    start: 129
+    end: 135
+    limit: 7
+    symbolLine: 132
+    symbolColumn: 22
+    signature: "private function dedupeKey(OutboxSink $sink, RunEvent $event): string"
+    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryOutboxStore::enqueue"

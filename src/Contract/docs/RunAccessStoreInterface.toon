@@ -3,7 +3,28 @@ file: RunAccessStoreInterface.php
 class: "Ineersa\\AgentCore\\Contract\\RunAccessStoreInterface"
 type: interface
 summary: Defines the contract for persisting and retrieving access scopes associated with specific runs. It enables atomic storage of scope data and supports timestamp updates for access tracking. This interface abstracts the underlying storage mechanism for run access control.
-methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  save,14,17,4,17,21,"public function save(RunAccessScope $scope): void"
-  get,19,22,4,22,21,"public function get(string $runId): ?RunAccessScope"
-  touch,24,27,4,27,21,"public function touch(string $runId, ?DateTimeImmutable $updatedAt = null): void"
+methods[3]:
+  - method: save
+    start: 14
+    end: 17
+    limit: 4
+    symbolLine: 17
+    symbolColumn: 21
+    signature: "public function save(RunAccessScope $scope): void"
+    callers[1]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::startRun"
+  - method: get
+    start: 19
+    end: 22
+    limit: 4
+    symbolLine: 22
+    symbolColumn: 21
+    signature: "public function get(string $runId): ?RunAccessScope"
+    callers[4]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::authorizeRun","Ineersa\\AgentCore\\Api\\Http\\RunReadService::summary","Ineersa\\AgentCore\\Api\\Http\\RunReadService::transcriptPage","Ineersa\\AgentCore\\Api\\Http\\RunReadService::replayAfter"
+  - method: touch
+    start: 24
+    end: 27
+    limit: 4
+    symbolLine: 27
+    symbolColumn: 21
+    signature: "public function touch(string $runId, ?DateTimeImmutable $updatedAt = null): void"
+    callers[1]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::sendCommand"

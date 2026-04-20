@@ -3,6 +3,20 @@ file: EventSubscriberInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Extension\\EventSubscriberInterface"
 type: interface
 summary: Defines the contract for components that react to specific domain events within the AgentCore system. Implementers declare which event types they observe and provide the logic to process those events when they occur.
-methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  subscribedEventTypes,14,19,6,19,28,"static public function subscribedEventTypes(): array"
-  onEvent,21,24,4,24,21,"public function onEvent(RunEvent $event): void"
+methods[2]:
+  - method: subscribedEventTypes
+    start: 14
+    end: 19
+    limit: 6
+    symbolLine: 19
+    symbolColumn: 28
+    signature: "static public function subscribedEventTypes(): array"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\EventSubscriberRegistry::subscribersFor"
+  - method: onEvent
+    start: 21
+    end: 24
+    limit: 4
+    symbolLine: 24
+    symbolColumn: 21
+    signature: "public function onEvent(RunEvent $event): void"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\RunEventDispatcher::dispatch"

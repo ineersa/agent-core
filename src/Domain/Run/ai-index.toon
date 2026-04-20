@@ -1,7 +1,7 @@
 spec: agent-core.ai-docs/v1
 namespace: "Domain\\Run"
 fqcn: "Ineersa\\AgentCore\\Domain\\Run"
-updatedAt: 2026-04-19
+updatedAt: 2026-04-20
 description: "Run lifecycle value objects — identity, state, status enum, and input DTO for starting runs."
 files[6]{file,type,summary}:
   RunAccessScope.php,readonly final class,"Defines an immutable scope for run access control, encapsulating the run identifier, optional tenant and user contexts, and session metadata. Designed as a value object to enforce strict access boundaries without mutable state."

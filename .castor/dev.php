@@ -160,6 +160,9 @@ function check(): void
         'summaries' => static function (): void {
             summaries();
         },
+        'index' => static function (): void {
+            index_methods(all: true, force: true, skipNamespace: false);
+        },
     ] as $step => $runner) {
         try {
             $runner();
@@ -259,4 +262,27 @@ function summaries(): void
     }
 
     echo \sprintf('summaries: ok (%s)', $missing).\PHP_EOL;
+}
+
+/** Generate callgraph.json via PHPStan call-graph extension. */
+#[AsTask(description: 'Generate callgraph.json from PHPStan call-graph analysis')]
+function callgraph(): void
+{
+    $command = 'vendor/bin/phpstan analyse -c vendor/ineersa/call-graph/callgraph.neon ./src';
+
+    if (!is_llm_mode()) {
+        dev_php_exec($command);
+
+        return;
+    }
+
+    $process = run_quiet_command($command);
+    persist_process_output($process, 'callgraph.log');
+
+    if (0 !== $process->getExitCode()) {
+        throw new \RuntimeException(\sprintf('callgraph failed; log=%s', relative_report_path('callgraph.log')));
+    }
+
+    $generated = file_exists('callgraph.json') ? 'yes' : 'no';
+    echo \sprintf('callgraph: ok (generated=%s)', $generated).\PHP_EOL;
 }

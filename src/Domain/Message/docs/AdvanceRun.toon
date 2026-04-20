@@ -3,5 +3,12 @@ file: AdvanceRun.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\AdvanceRun"
 type: readonly final class
 summary: "Represents a domain event signaling the progression of a specific run step within an agent execution. It encapsulates the unique identifiers for the run, turn, and step, along with attempt tracking and idempotency guarantees. This immutable value object ensures consistent state representation for run advancement logic."
-methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,12,26,15,17,21,"public function __construct(string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey, array $payload = [])"
+methods[1]:
+  - method: __construct
+    start: 12
+    end: 26
+    limit: 15
+    symbolLine: 17
+    symbolColumn: 21
+    signature: "public function __construct(string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey, array $payload = [])"
+    callees[1]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::__construct"

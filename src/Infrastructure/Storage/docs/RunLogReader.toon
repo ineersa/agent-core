@@ -3,8 +3,37 @@ file: RunLogReader.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader"
 type: readonly final class
 summary: "Reads run log files from the filesystem to reconstruct event sequences for a specific run. It parses JSON lines into domain events, providing a read-only view of historical run data."
-methods[4]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,17,22,6,20,21,public function __construct(FilesystemOperator $filesystem)
-  allFor,24,53,30,29,21,"public function allFor(string $runId): array"
-  runLogPaths,55,86,32,60,22,"private function runLogPaths(string $runId): array"
-  eventFromJsonLine,88,131,44,91,22,"private function eventFromJsonLine(string $runId, string $line): ?RunEvent"
+methods[4]:
+  - method: __construct
+    start: 17
+    end: 22
+    limit: 6
+    symbolLine: 20
+    symbolColumn: 21
+    signature: public function __construct(FilesystemOperator $filesystem)
+  - method: allFor
+    start: 24
+    end: 53
+    limit: 30
+    symbolLine: 29
+    symbolColumn: 21
+    signature: "public function allFor(string $runId): array"
+    callees[3]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader::runLogPaths","League\\Flysystem\\FilesystemReader::read","Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader::eventFromJsonLine"
+    callers[3]: "Ineersa\\AgentCore\\Api\\Http\\RunReadService::eventsForRun","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::eventsForReplay","Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::eventsForRun"
+  - method: runLogPaths
+    start: 55
+    end: 86
+    limit: 32
+    symbolLine: 60
+    symbolColumn: 22
+    signature: "private function runLogPaths(string $runId): array"
+    callees[2]: "League\\Flysystem\\FilesystemReader::listContents","League\\Flysystem\\FileAttributes::path"
+    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader::allFor"
+  - method: eventFromJsonLine
+    start: 88
+    end: 131
+    limit: 44
+    symbolLine: 91
+    symbolColumn: 22
+    signature: "private function eventFromJsonLine(string $runId, string $line): ?RunEvent"
+    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader::allFor"

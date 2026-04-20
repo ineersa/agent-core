@@ -1,7 +1,7 @@
 spec: agent-core.ai-docs/v1
 namespace: "Infrastructure\\SymfonyAi"
 fqcn: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi"
-updatedAt: 2026-04-19
+updatedAt: 2026-04-20
 description: "Symfony AI bridge — adapters connecting the agent loop to the Symfony AI ecosystem (platform, tool executor, message mapping, streaming)."
 files[6]{file,type,summary}:
   Platform.php,readonly final class,"The Platform class orchestrates the execution of AI agent runs within the Symfony infrastructure, bridging high-level agent inputs with the underlying provider invoker. It manages context resolution, message transformation, and hook application to prepare requests for external AI providers. The class ensures proper lifecycle management of runs and cancellation tokens while abstracting provider-specific details."

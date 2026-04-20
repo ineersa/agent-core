@@ -3,16 +3,102 @@ file: RunApiController.php
 class: "Ineersa\\AgentCore\\Api\\Http\\RunApiController"
 type: final class
 summary: "Ineersa\\AgentCore\\Api\\Http\\RunApiController is a final HTTP controller that exposes RESTful endpoints for managing agent run lifecycles, including starting runs, sending commands, and retrieving summaries or transcripts. It enforces access control and validates input payloads before delegating execution to domain services and message buses."
-methods[12]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,34,46,13,37,21,"public function __construct(AgentRunnerInterface $runner, MessageBusInterface $commandBus, RunStoreInterface $runStore, RunAccessStoreInterface $runAccessStore, RunReadService $runReadService, RunEventSerializer $eventSerializer, RunTopicPolicy $topicPolicy)"
-  startRun,48,121,74,52,21,"public function startRun(Request $request): JsonResponse"
-  sendCommand,123,209,87,127,21,"public function sendCommand(string $runId, Request $request): JsonResponse"
-  runSummary,211,230,20,215,21,"public function runSummary(string $runId, Request $request): JsonResponse"
-  transcriptPage,232,252,21,236,21,"public function transcriptPage(string $runId, Request $request): JsonResponse"
-  replayEvents,254,300,47,258,21,"public function replayEvents(string $runId, Request $request): JsonResponse"
-  authorizeRun,302,318,17,305,22,"private function authorizeRun(string $runId, Request $request): ?JsonResponse"
-  requestActor,320,331,12,325,22,"private function requestActor(Request $request): array"
-  jsonBody,333,356,24,338,22,"private function jsonBody(Request $request): array"
-  parseNonNegativeInt,358,376,19,361,22,"private function parseNonNegativeInt(mixed $value, string $fieldName): int"
-  normalizeString,378,390,13,381,22,"private function normalizeString(mixed $value): ?string"
-  error,392,398,7,395,22,"private function error(string $message, int $status): JsonResponse"
+methods[12]:
+  - method: __construct
+    start: 34
+    end: 46
+    limit: 13
+    symbolLine: 37
+    symbolColumn: 21
+    signature: "public function __construct(AgentRunnerInterface $runner, MessageBusInterface $commandBus, RunStoreInterface $runStore, RunAccessStoreInterface $runAccessStore, RunReadService $runReadService, RunEventSerializer $eventSerializer, RunTopicPolicy $topicPolicy)"
+  - method: startRun
+    start: 48
+    end: 121
+    limit: 74
+    symbolLine: 52
+    symbolColumn: 21
+    signature: "public function startRun(Request $request): JsonResponse"
+    callees[7]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::jsonBody","Ineersa\\AgentCore\\Api\\Http\\RunApiController::normalizeString","Ineersa\\AgentCore\\Api\\Http\\RunApiController::error","Ineersa\\AgentCore\\Api\\Http\\RunApiController::requestActor","Ineersa\\AgentCore\\Contract\\AgentRunnerInterface::start","Ineersa\\AgentCore\\Contract\\RunAccessStoreInterface::save","Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunTopicPolicy::topicFor"
+  - method: sendCommand
+    start: 123
+    end: 209
+    limit: 87
+    symbolLine: 127
+    symbolColumn: 21
+    signature: "public function sendCommand(string $runId, Request $request): JsonResponse"
+    callees[8]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::authorizeRun","Ineersa\\AgentCore\\Api\\Http\\RunApiController::jsonBody","Ineersa\\AgentCore\\Api\\Http\\RunApiController::normalizeString","Ineersa\\AgentCore\\Api\\Http\\RunApiController::error","Ineersa\\AgentCore\\Domain\\Command\\CoreCommandKind::isCore","Ineersa\\AgentCore\\Contract\\RunStoreInterface::get","Symfony\\Component\\Messenger\\MessageBusInterface::dispatch","Ineersa\\AgentCore\\Contract\\RunAccessStoreInterface::touch"
+  - method: runSummary
+    start: 211
+    end: 230
+    limit: 20
+    symbolLine: 215
+    symbolColumn: 21
+    signature: "public function runSummary(string $runId, Request $request): JsonResponse"
+    callees[4]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::authorizeRun","Ineersa\\AgentCore\\Api\\Http\\RunReadService::summary","Ineersa\\AgentCore\\Api\\Http\\RunApiController::error","Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunTopicPolicy::topicFor"
+  - method: transcriptPage
+    start: 232
+    end: 252
+    limit: 21
+    symbolLine: 236
+    symbolColumn: 21
+    signature: "public function transcriptPage(string $runId, Request $request): JsonResponse"
+    callees[5]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::authorizeRun","Ineersa\\AgentCore\\Api\\Http\\RunApiController::parseNonNegativeInt","Symfony\\Component\\HttpFoundation\\InputBag::get","Ineersa\\AgentCore\\Api\\Http\\RunReadService::transcriptPage","Ineersa\\AgentCore\\Api\\Http\\RunApiController::error"
+  - method: replayEvents
+    start: 254
+    end: 300
+    limit: 47
+    symbolLine: 258
+    symbolColumn: 21
+    signature: "public function replayEvents(string $runId, Request $request): JsonResponse"
+    callees[8]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::authorizeRun","Symfony\\Component\\HttpFoundation\\HeaderBag::get","Symfony\\Component\\HttpFoundation\\InputBag::get","Ineersa\\AgentCore\\Api\\Http\\RunApiController::parseNonNegativeInt","Ineersa\\AgentCore\\Api\\Http\\RunReadService::replayAfter","Ineersa\\AgentCore\\Api\\Http\\RunApiController::error","Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer::normalizeRunEvent","Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer::normalizeStreamEvent"
+  - method: authorizeRun
+    start: 302
+    end: 318
+    limit: 17
+    symbolLine: 305
+    symbolColumn: 22
+    signature: "private function authorizeRun(string $runId, Request $request): ?JsonResponse"
+    callees[3]: "Ineersa\\AgentCore\\Contract\\RunAccessStoreInterface::get","Ineersa\\AgentCore\\Api\\Http\\RunApiController::error","Ineersa\\AgentCore\\Api\\Http\\RunApiController::requestActor"
+    callers[4]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::sendCommand","Ineersa\\AgentCore\\Api\\Http\\RunApiController::runSummary","Ineersa\\AgentCore\\Api\\Http\\RunApiController::transcriptPage","Ineersa\\AgentCore\\Api\\Http\\RunApiController::replayEvents"
+  - method: requestActor
+    start: 320
+    end: 331
+    limit: 12
+    symbolLine: 325
+    symbolColumn: 22
+    signature: "private function requestActor(Request $request): array"
+    callees[2]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::normalizeString","Symfony\\Component\\HttpFoundation\\HeaderBag::get"
+    callers[2]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::startRun","Ineersa\\AgentCore\\Api\\Http\\RunApiController::authorizeRun"
+  - method: jsonBody
+    start: 333
+    end: 356
+    limit: 24
+    symbolLine: 338
+    symbolColumn: 22
+    signature: "private function jsonBody(Request $request): array"
+    callees[1]: "Symfony\\Component\\HttpFoundation\\Request::getContent"
+    callers[2]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::startRun","Ineersa\\AgentCore\\Api\\Http\\RunApiController::sendCommand"
+  - method: parseNonNegativeInt
+    start: 358
+    end: 376
+    limit: 19
+    symbolLine: 361
+    symbolColumn: 22
+    signature: "private function parseNonNegativeInt(mixed $value, string $fieldName): int"
+    callers[2]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::transcriptPage","Ineersa\\AgentCore\\Api\\Http\\RunApiController::replayEvents"
+  - method: normalizeString
+    start: 378
+    end: 390
+    limit: 13
+    symbolLine: 381
+    symbolColumn: 22
+    signature: "private function normalizeString(mixed $value): ?string"
+    callers[3]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::startRun","Ineersa\\AgentCore\\Api\\Http\\RunApiController::sendCommand","Ineersa\\AgentCore\\Api\\Http\\RunApiController::requestActor"
+  - method: error
+    start: 392
+    end: 398
+    limit: 7
+    symbolLine: 395
+    symbolColumn: 22
+    signature: "private function error(string $message, int $status): JsonResponse"
+    callers[6]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::startRun","Ineersa\\AgentCore\\Api\\Http\\RunApiController::sendCommand","Ineersa\\AgentCore\\Api\\Http\\RunApiController::runSummary","Ineersa\\AgentCore\\Api\\Http\\RunApiController::transcriptPage","Ineersa\\AgentCore\\Api\\Http\\RunApiController::replayEvents","Ineersa\\AgentCore\\Api\\Http\\RunApiController::authorizeRun"

@@ -10,7 +10,7 @@ const CASTOR_ENV_EXPORTS = [
 	"export CLICOLOR=0",
 ].join("\n");
 
-const INDEX_COMMAND_BASE = "castor dev:index-methods --no-ansi";
+const STRICT_COMMAND = "castor dev:index-methods --no-ansi --strict --all";
 const MISSING_PREFIX = "MISSING:";
 
 function wrapSystemReminder(content: string): string {
@@ -52,20 +52,11 @@ function extractMissingEntries(output: string): string[] {
 		.filter((line) => line.length > 0);
 }
 
-function shellEscape(value: string): string {
-	return `'${value.replace(/'/g, `'"'"'`)}'`;
-}
-
-function buildIndexCommand(relativePath: string, strict: boolean): string {
-	const strictFlag = strict ? " --strict" : "";
-	return `${INDEX_COMMAND_BASE}${strictFlag} -- ${shellEscape(relativePath)}`;
-}
-
-function buildMissingSummaryReminder(relativePath: string, missingEntries: string[]): string {
+function buildMissingSummaryReminder(missingEntries: string[]): string {
 	return wrapSystemReminder([
 		"AI Index summary reminder:",
-		`- Missing class/method docblock summaries were detected in ${relativePath}.`,
-		"- Add one clear sentence as the first docblock description line for every listed class/method.",
+		"- Missing class docblock summaries were detected.",
+		"- Add one clear sentence as the first docblock description line for every listed class.",
 		"",
 		"<missing-summaries>",
 		...missingEntries.map((entry) => `- ${entry}`),
@@ -114,27 +105,23 @@ export default function aiIndexNudgeExtension(pi: ExtensionAPI): void {
 		inFlight.add(relativePath);
 
 		try {
-			const indexResult = await runCastor(pi, ctx.cwd, buildIndexCommand(relativePath, false));
-			if (indexResult.code !== 0 && ctx.hasUI) {
-				ctx.ui.notify(`⚠ Failed to regenerate AI index for ${relativePath}`, "warning");
-			}
-
-			const strictResult = await runCastor(pi, ctx.cwd, buildIndexCommand(relativePath, true));
+			const strictResult = await runCastor(pi, ctx.cwd, STRICT_COMMAND);
 			if (strictResult.code !== 0 && ctx.hasUI) {
-				ctx.ui.notify(`⚠ AI summary validation reported issues in ${relativePath}`, "warning");
+				ctx.ui.notify(`⚠ AI summary validation reported issues`, "warning");
 			}
 
+			// Only check class-level missing summaries (method summaries are not enforced)
 			const missingEntries = extractMissingEntries(`${strictResult.stdout}\n${strictResult.stderr}`)
-				.filter((entry) => entry.startsWith(`${relativePath}:`));
+				.filter((entry) => !entry.includes("::")); // skip method entries
 			if (missingEntries.length === 0) {
 				return;
 			}
 
 			if (ctx.hasUI) {
-				ctx.ui.notify(`⚠ Missing AI index summaries in ${relativePath}`, "warning");
+				ctx.ui.notify(`⚠ Missing AI index class summaries (${missingEntries.length})`, "warning");
 			}
 
-			const reminder = buildMissingSummaryReminder(relativePath, missingEntries);
+			const reminder = buildMissingSummaryReminder(missingEntries);
 			return {
 				content: [...event.content, { type: "text" as const, text: reminder }],
 			};
