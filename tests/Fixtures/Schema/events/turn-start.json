@@ -1,0 +1,9 @@
+{
+  "schema_version": "1.0",
+  "run_id": "d2f2f4ab-8d80-4c6f-84bc-96db31207c72",
+  "seq": 21,
+  "turn_no": 3,
+  "type": "turn_start",
+  "payload": {},
+  "ts": "2026-04-12T12:12:12+00:00"
+}

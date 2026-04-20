@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0",
+  "type": "ExecuteLlmStep",
+  "run_id": "d2f2f4ab-8d80-4c6f-84bc-96db31207c72",
+  "turn_no": 3,
+  "step_id": "turn-3-llm-1",
+  "attempt": 1,
+  "context_ref": "hot:run:d2f2f4ab",
+  "tools_ref": "toolset:tenant:acme:turn:3"
+}

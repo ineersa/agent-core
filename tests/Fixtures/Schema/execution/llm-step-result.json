@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0",
+  "type": "LlmStepResult",
+  "run_id": "d2f2f4ab-8d80-4c6f-84bc-96db31207c72",
+  "turn_no": 3,
+  "step_id": "turn-3-llm-1",
+  "assistant_message": {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "call_tc_1",
+        "name": "web_search",
+        "arguments": {
+          "query": "symfony workflow"
+        }
+      }
+    ],
+    "stop_reason": "tool_call",
+    "timestamp": 1770001234
+  },
+  "usage": {
+    "input_tokens": 1234,
+    "output_tokens": 345,
+    "total_tokens": 1579
+  },
+  "stop_reason": "tool_call",
+  "error": null
+}

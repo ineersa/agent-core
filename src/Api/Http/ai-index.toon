@@ -3,5 +3,5 @@ namespace: Http
 fqcn: "Ineersa\\AgentCore\\Api\\Http"
 updatedAt: 2026-04-20
 files[2]{file,type,summary}:
-  RunApiController.php,final class,"Ineersa\\AgentCore\\Api\\Http\\RunApiController is a final HTTP controller that exposes RESTful endpoints for managing agent run lifecycles, including starting runs, sending commands, and retrieving summaries or transcripts. It enforces access control and validates input payloads before delegating execution to domain services and message buses."
+  RunApiController.php,final class,"Exposes HTTP endpoints for starting runs, submitting commands, and reading run summaries, transcripts, and replay events with scoped access checks and payload validation."
   RunReadService.php,readonly final class,"This class provides HTTP-read access to run data and event transcripts by coordinating between run metadata stores and event storage. It retrieves summaries, paginated transcripts, and replayable event sequences while enforcing access control via the run access store."

@@ -6,12 +6,20 @@ namespace Ineersa\AgentCore\Api\Serializer;
 
 use Ineersa\AgentCore\Api\Dto\RunStreamEvent;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 
 /**
  * The RunEventSerializer converts between domain RunEvent and RunStreamEvent objects and their array representations for API transport. It provides bidirectional normalization to support serialization boundaries without leaking domain structure.
  */
 final readonly class RunEventSerializer
 {
+    private EventPayloadNormalizer $eventPayloadNormalizer;
+
+    public function __construct(?EventPayloadNormalizer $eventPayloadNormalizer = null)
+    {
+        $this->eventPayloadNormalizer = $eventPayloadNormalizer ?? new EventPayloadNormalizer();
+    }
+
     /**
      * Converts a RunEvent domain object into a normalized array payload.
      *
@@ -19,7 +27,7 @@ final readonly class RunEventSerializer
      */
     public function normalizeRunEvent(RunEvent $event): array
     {
-        return $this->normalizeStreamEvent($this->fromRunEvent($event));
+        return $this->eventPayloadNormalizer->normalizeRunEvent($event);
     }
 
     public function fromRunEvent(RunEvent $event): RunStreamEvent
@@ -28,7 +36,7 @@ final readonly class RunEventSerializer
             runId: $event->runId,
             seq: $event->seq,
             turnNo: $event->turnNo,
-            type: $event->type,
+            type: $this->eventPayloadNormalizer->toPublicType($event->type),
             payload: $event->payload,
             ts: $event->createdAt,
         );
@@ -41,13 +49,13 @@ final readonly class RunEventSerializer
      */
     public function normalizeStreamEvent(RunStreamEvent $event): array
     {
-        return [
-            'run_id' => $event->runId,
-            'seq' => $event->seq,
-            'turn_no' => $event->turnNo,
-            'type' => $event->type,
-            'payload' => $event->payload,
-            'ts' => $event->ts->format(\DATE_ATOM),
-        ];
+        return $this->eventPayloadNormalizer->normalize(
+            runId: $event->runId,
+            seq: $event->seq,
+            turnNo: $event->turnNo,
+            type: $event->type,
+            payload: $event->payload,
+            ts: $event->ts,
+        );
     }
 }

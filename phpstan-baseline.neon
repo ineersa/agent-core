@@ -383,3 +383,21 @@ parameters:
 			identifier: nullsafe.neverNull
 			count: 1
 			path: src/Infrastructure/SymfonyAi/SymfonyToolExecutorAdapter.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer\:\:fromRunEvent$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Api/Serializer/RunEventSerializer.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer\:\:normalize$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Schema/CommandPayloadNormalizer.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Schema\\EventNameMap\:\:mapping$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Schema/EventNameMap.php

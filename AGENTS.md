@@ -52,6 +52,8 @@ All indexes are auto-generated from source code (no LLM calls). `castor dev:chec
 
 **Every class must have a docblock summary as the first description line.** Missing class summary = `dev:check` failure. Method summaries are not indexed.
 
+**If you encounter a weak summary (vague, inaccurate, or excessively verbose/FQCN-heavy) in any file you touch, you MUST improve it in the same change.**
+
 ### Key rules
 
 - **Never edit** generated `src/**/ai-index.toon` or `src/**/docs/*.toon` manually.
@@ -78,6 +80,8 @@ Architecture maps live in nested `AGENTS.md` files near the code (e.g. `src/Appl
   - Concrete adapters/integrations (Flysystem run logs, Mercure publisher, in-memory stores, Symfony AI bridge).
 - `Ineersa\AgentCore\Api`
   - Public transport-facing API controllers/DTOs/serializers for run start/commands/read/replay and stream payloads.
+- `Ineersa\AgentCore\Schema`
+  - Shared payload contract schemas, event-name mapping, and command/event normalizers for API and worker boundaries.
 - `Ineersa\AgentCore\Command`
   - Console operational commands (`agent-loop:health`, etc.).
 

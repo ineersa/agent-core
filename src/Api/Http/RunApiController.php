@@ -25,7 +25,7 @@ use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Attribute\Route;
 
 /**
- * Ineersa\AgentCore\Api\Http\RunApiController is a final HTTP controller that exposes RESTful endpoints for managing agent run lifecycles, including starting runs, sending commands, and retrieving summaries or transcripts. It enforces access control and validates input payloads before delegating execution to domain services and message buses.
+ * Exposes HTTP endpoints for starting runs, submitting commands, and reading run summaries, transcripts, and replay events with scoped access checks and payload validation.
  */
 #[AsController]
 #[Route('/agent/runs')]

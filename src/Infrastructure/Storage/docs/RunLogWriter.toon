@@ -5,26 +5,26 @@ type: readonly final class
 summary: "The RunLogWriter class provides a mechanism for persisting RunEvent instances to the filesystem. It formats event data into structured files based on run identifiers and timestamps, ensuring durable storage of agent execution logs."
 methods[3]:
   - method: __construct
-    start: 15
-    end: 17
-    limit: 3
-    symbolLine: 15
+    start: 18
+    end: 23
+    limit: 6
+    symbolLine: 18
     symbolColumn: 21
-    signature: public function __construct(FilesystemOperator $filesystem)
+    signature: "public function __construct(FilesystemOperator $filesystem, ?EventPayloadNormalizer $eventPayloadNormalizer = null)"
   - method: append
-    start: 19
-    end: 49
-    limit: 31
-    symbolLine: 19
+    start: 25
+    end: 47
+    limit: 23
+    symbolLine: 25
     symbolColumn: 21
     signature: "public function append(RunEvent $event): void"
-    callees[5]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogWriter::pathForRun","DateTimeImmutable::format","League\\Flysystem\\FilesystemReader::fileExists","League\\Flysystem\\FilesystemReader::read","League\\Flysystem\\FilesystemWriter::write"
+    callees[5]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogWriter::pathForRun","Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer::normalizeRunEvent","League\\Flysystem\\FilesystemReader::fileExists","League\\Flysystem\\FilesystemReader::read","League\\Flysystem\\FilesystemWriter::write"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\JsonlOutboxProjectorWorker::__invoke"
   - method: pathForRun
-    start: 51
-    end: 54
+    start: 49
+    end: 52
     limit: 4
-    symbolLine: 51
+    symbolLine: 49
     symbolColumn: 22
     signature: "private function pathForRun(string $runId, DateTimeImmutable $at): string"
     callees[1]: "DateTimeImmutable::format"

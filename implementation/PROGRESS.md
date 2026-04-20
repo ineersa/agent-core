@@ -621,3 +621,49 @@ Status: **completed** (split into parts; parts 1-3 completed)
 ### Stage 09 closure
 
 - Stage 09 acceptance goals are implemented, including soak/load + failure drills, fake test doubles library, observability/ops artifacts, and debug recovery runbook support.
+
+## Stage 11 — Reference Schemas and Event Examples
+
+Status: **completed**
+
+### Completed
+
+- Added shared payload schema package under `src/Schema`:
+  - `src/Schema/SchemaVersion.php`
+  - `src/Schema/EventNameMap.php`
+  - `src/Schema/EventPayloadNormalizer.php`
+  - `src/Schema/CommandPayloadNormalizer.php`
+- Added schema-versioned event normalization reuse across API + log boundaries:
+  - `src/Api/Serializer/RunEventSerializer.php` now delegates normalization to `EventPayloadNormalizer`
+  - `src/Infrastructure/Storage/RunLogWriter.php` now writes schema-versioned event envelopes
+  - `src/Infrastructure/Storage/RunLogReader.php` now denormalizes via shared event schema logic with compatibility guard
+- Added representative golden payload fixtures from stage examples:
+  - `tests/Fixtures/Schema/commands/*.json`
+  - `tests/Fixtures/Schema/execution/*.json`
+  - `tests/Fixtures/Schema/events/*.json`
+- Added golden-file tests to catch payload shape drift:
+  - `tests/Schema/CommandPayloadNormalizerGoldenTest.php`
+  - `tests/Schema/EventPayloadNormalizerGoldenTest.php`
+- Updated existing transport/storage tests for schema contract assertions:
+  - `tests/Infrastructure/Mercure/RunEventPublisherTest.php` now asserts `schema_version`
+  - `tests/Infrastructure/Storage/RunLogStorageTest.php` now asserts persisted JSONL entries include `schema_version`
+- Added dead-code baseline entries for intentionally kept reference mapping/normalization helpers:
+  - `RunEventSerializer::fromRunEvent`
+  - `CommandPayloadNormalizer::normalize`
+  - `EventNameMap::mapping`
+- Updated architecture docs/index metadata for the new schema namespace:
+  - `AGENTS.md` namespace responsibilities
+  - root `ai-index.toon` namespace list
+
+### Quality/Verification
+
+- `LLM_MODE=true castor dev:check` ✅
+  - `cs-fix`: ok
+  - `phpstan`: ok
+  - `test`: ok (`99 tests`, `7596 assertions`)
+  - `summaries`: ok
+  - `index`: ok
+
+### Stage 11 closure
+
+- Stage 11 reference command/event schema contracts are implemented with shared normalizers and golden-file protection against accidental payload drift.

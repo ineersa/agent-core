@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "command": "ApplyExtensionCommand",
+  "run_id": "d2f2f4ab-8d80-4c6f-84bc-96db31207c72",
+  "kind": "ext:cleanup:flush",
+  "idempotency_key": "ext-cleanup-1",
+  "options": {
+    "cancel_safe": true
+  },
+  "payload": {
+    "reason": "run_cancelled"
+  }
+}

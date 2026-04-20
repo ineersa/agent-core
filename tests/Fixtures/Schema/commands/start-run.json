@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "command": "StartRun",
+  "run_id": "d2f2f4ab-8d80-4c6f-84bc-96db31207c72",
+  "idempotency_key": "start:d2f2f4ab",
+  "user_id": "9fe6dfab-5e88-4c8f-89fa-72fe8dd57c08",
+  "initial_message": {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "Analyze repo"
+      }
+    ],
+    "timestamp": 1770000000
+  }
+}

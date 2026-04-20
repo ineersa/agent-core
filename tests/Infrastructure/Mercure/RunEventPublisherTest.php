@@ -77,6 +77,7 @@ final class RunEventPublisherTest extends TestCase
         $firstPayload = json_decode($hub->updates[0]->getData(), true);
         self::assertIsArray($firstPayload);
         self::assertSame('run-mercure-1', $firstPayload['run_id'] ?? null);
+        self::assertSame('1.0', $firstPayload['schema_version'] ?? null);
         self::assertArrayHasKey('ts', $firstPayload);
         self::assertArrayNotHasKey('created_at', $firstPayload);
 

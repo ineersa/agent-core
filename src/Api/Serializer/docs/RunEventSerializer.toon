@@ -3,30 +3,37 @@ file: RunEventSerializer.php
 class: "Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer"
 type: readonly final class
 summary: The RunEventSerializer converts between domain RunEvent and RunStreamEvent objects and their array representations for API transport. It provides bidirectional normalization to support serialization boundaries without leaking domain structure.
-methods[3]:
+methods[4]:
+  - method: __construct
+    start: 18
+    end: 21
+    limit: 4
+    symbolLine: 18
+    symbolColumn: 21
+    signature: public function __construct(?EventPayloadNormalizer $eventPayloadNormalizer = null)
   - method: normalizeRunEvent
-    start: 15
-    end: 23
+    start: 23
+    end: 31
     limit: 9
-    symbolLine: 20
+    symbolLine: 28
     symbolColumn: 21
     signature: "public function normalizeRunEvent(RunEvent $event): array"
-    callees[2]: "Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer::fromRunEvent","Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer::normalizeStreamEvent"
+    callees[1]: "Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer::normalizeRunEvent"
     callers[4]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::replayEvents","Ineersa\\AgentCore\\Command\\AgentLoopRunReplayCommand::execute","Ineersa\\AgentCore\\Command\\AgentLoopRunTailCommand::execute","Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunEventPublisher::publish"
   - method: fromRunEvent
-    start: 25
-    end: 35
+    start: 33
+    end: 43
     limit: 11
-    symbolLine: 25
+    symbolLine: 33
     symbolColumn: 21
     signature: "public function fromRunEvent(RunEvent $event): RunStreamEvent"
-    callers[1]: "Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer::normalizeRunEvent"
+    callees[1]: "Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer::toPublicType"
   - method: normalizeStreamEvent
-    start: 37
-    end: 52
+    start: 45
+    end: 60
     limit: 16
-    symbolLine: 42
+    symbolLine: 50
     symbolColumn: 21
     signature: "public function normalizeStreamEvent(RunStreamEvent $event): array"
-    callees[1]: "DateTimeImmutable::format"
-    callers[2]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::replayEvents","Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer::normalizeRunEvent"
+    callees[1]: "Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer::normalize"
+    callers[1]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::replayEvents"

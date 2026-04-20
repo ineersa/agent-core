@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Infrastructure\Storage;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use League\Flysystem\FilesystemOperator;
 
 /**
@@ -12,22 +13,19 @@ use League\Flysystem\FilesystemOperator;
  */
 final readonly class RunLogWriter
 {
-    public function __construct(private FilesystemOperator $filesystem)
-    {
+    private EventPayloadNormalizer $eventPayloadNormalizer;
+
+    public function __construct(
+        private FilesystemOperator $filesystem,
+        ?EventPayloadNormalizer $eventPayloadNormalizer = null,
+    ) {
+        $this->eventPayloadNormalizer = $eventPayloadNormalizer ?? new EventPayloadNormalizer();
     }
 
     public function append(RunEvent $event): void
     {
         $path = $this->pathForRun($event->runId, $event->createdAt);
-
-        $entry = [
-            'seq' => $event->seq,
-            'ts' => $event->createdAt->format(\DATE_ATOM),
-            'run_id' => $event->runId,
-            'turn_no' => $event->turnNo,
-            'type' => $event->type,
-            'payload' => $event->payload,
-        ];
+        $entry = $this->eventPayloadNormalizer->normalizeRunEvent($event);
 
         $json = json_encode($entry);
         if (false === $json) {

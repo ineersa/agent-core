@@ -52,6 +52,14 @@ final class RunLogStorageTest extends TestCase
             createdAt: new \DateTimeImmutable('2026-01-30T10:00:00+00:00'),
         ));
 
+        try {
+            $februaryLog = $filesystem->read('2026/02/'.$runId.'.jsonl');
+        } catch (\Throwable $exception) {
+            self::fail('Failed to read February run log: '.$exception->getMessage());
+        }
+
+        self::assertStringContainsString('"schema_version":"1.0"', $februaryLog);
+
         $events = $reader->allFor($runId);
 
         self::assertCount(2, $events);

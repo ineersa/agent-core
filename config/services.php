@@ -70,6 +70,9 @@ use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogWriter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Platform;
+use Ineersa\AgentCore\Schema\CommandPayloadNormalizer;
+use Ineersa\AgentCore\Schema\EventNameMap;
+use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\SymfonyMessageMapper;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\SymfonyPlatformInvoker;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\SymfonyToolExecutorAdapter;
@@ -143,7 +146,12 @@ return static function (ContainerConfigurator $container): void {
     ;
     $services->alias(AgentRunnerInterface::class, AgentRunner::class);
 
-    $services->set(RunEventSerializer::class);
+    $services->set(EventNameMap::class);
+    $services->set(EventPayloadNormalizer::class);
+    $services->set(CommandPayloadNormalizer::class);
+    $services->set(RunEventSerializer::class)
+        ->arg('$eventPayloadNormalizer', service(EventPayloadNormalizer::class))
+    ;
     $services->set(RunTopicPolicy::class);
     $services->set(RunReadService::class);
 
@@ -266,10 +274,12 @@ return static function (ContainerConfigurator $container): void {
 
     $services->set(RunLogWriter::class)
         ->arg('$filesystem', service('agent_loop.run_log.storage'))
+        ->arg('$eventPayloadNormalizer', service(EventPayloadNormalizer::class))
     ;
 
     $services->set(RunLogReader::class)
         ->arg('$filesystem', service('agent_loop.run_log.storage'))
+        ->arg('$eventPayloadNormalizer', service(EventPayloadNormalizer::class))
     ;
 
     $services->set(RunEventStore::class);

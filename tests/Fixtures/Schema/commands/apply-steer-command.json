@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "command": "ApplySteerCommand",
+  "run_id": "d2f2f4ab-8d80-4c6f-84bc-96db31207c72",
+  "idempotency_key": "steer:42",
+  "message": {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "Stop and summarize first"
+      }
+    ],
+    "timestamp": 1770001111
+  }
+}

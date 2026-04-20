@@ -11,4 +11,4 @@ methods[1]:
     symbolLine: 27
     symbolColumn: 28
     signature: "static public function isCore(string $kind): bool"
-    callers[5]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::sendCommand","Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::route","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingStopBoundaryCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::isCancelSafeExtensionCommand"
+    callers[6]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::sendCommand","Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::route","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingStopBoundaryCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::isCancelSafeExtensionCommand","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeApplyCommand"

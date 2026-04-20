@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Infrastructure\Storage;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use League\Flysystem\FileAttributes;
 use League\Flysystem\FilesystemException;
 use League\Flysystem\FilesystemOperator;
@@ -14,8 +15,13 @@ use League\Flysystem\FilesystemOperator;
  */
 final readonly class RunLogReader
 {
-    public function __construct(private FilesystemOperator $filesystem)
-    {
+    private EventPayloadNormalizer $eventPayloadNormalizer;
+
+    public function __construct(
+        private FilesystemOperator $filesystem,
+        ?EventPayloadNormalizer $eventPayloadNormalizer = null,
+    ) {
+        $this->eventPayloadNormalizer = $eventPayloadNormalizer ?? new EventPayloadNormalizer();
     }
 
     /**
@@ -89,38 +95,22 @@ final readonly class RunLogReader
             return null;
         }
 
-        /** @var array<string, mixed>|null $payload */
-        $payload = json_decode($trimmedLine, true);
-        if (!\is_array($payload)) {
+        try {
+            /** @var array<string, mixed> $payload */
+            $payload = json_decode($trimmedLine, true, 512, \JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
             return null;
         }
 
-        if (($payload['run_id'] ?? null) !== $runId) {
+        $event = $this->eventPayloadNormalizer->denormalizeRunEvent($payload);
+        if (null === $event) {
             return null;
         }
 
-        if (!\is_int($payload['seq'] ?? null)
-            || !\is_int($payload['turn_no'] ?? null)
-            || !\is_string($payload['type'] ?? null)
-            || !\is_array($payload['payload'] ?? null)) {
+        if ($event->runId !== $runId) {
             return null;
         }
 
-        $createdAt = null;
-        if (\is_string($payload['ts'] ?? null)) {
-            try {
-                $createdAt = new \DateTimeImmutable($payload['ts']);
-            } catch (\Throwable) {
-            }
-        }
-
-        return new RunEvent(
-            runId: $runId,
-            seq: $payload['seq'],
-            turnNo: $payload['turn_no'],
-            type: $payload['type'],
-            payload: $payload['payload'],
-            createdAt: $createdAt ?? new \DateTimeImmutable(),
-        );
+        return $event;
     }
 }
