@@ -2,155 +2,122 @@ spec: agent-core.file-index/v1
 file: ToolExecutor.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor"
 type: final class
-summary: "The ToolExecutor class orchestrates the execution of tool calls within an agent core, handling policy resolution, argument validation, and result caching. It integrates with the Symfony Toolbox for tool invocation and manages execution metadata, including timeouts, parallelism, and cancellation. The class ensures consistent tool result formatting and applies post-execution hooks to the assistant message context."
-methods[18]:
+summary: "Executes tool calls with policy resolution, idempotent result reuse, cancellation checks, and Symfony Toolbox invocation."
+methods[14]:
   - method: __construct
-    start: 30
-    end: 50
-    limit: 21
-    symbolLine: 37
+    start: 32
+    end: 47
+    limit: 16
+    symbolLine: 35
     symbolColumn: 21
-    signature: "public function __construct(string $defaultMode, int $defaultTimeoutSeconds, int $maxParallelism, array $overrides = [], ?object $toolbox = null, iterable $beforeToolCallHooks = [], iterable $afterToolCallHooks = [], ?ToolExecutionResultStore $resultStore = null, ?ToolIdempotencyKeyResolverInterface $toolIdempotencyKeyResolver = null)"
+    signature: "public function __construct(string $defaultMode, int $defaultTimeoutSeconds, int $maxParallelism, array $overrides = [], ?ToolboxInterface $toolbox = null, ?ToolExecutionResultStore $resultStore = null, ?ToolIdempotencyKeyResolverInterface $toolIdempotencyKeyResolver = null)"
   - method: execute
-    start: 52
-    end: 213
-    limit: 162
-    symbolLine: 52
+    start: 49
+    end: 147
+    limit: 99
+    symbolLine: 49
     symbolColumn: 21
     signature: "public function execute(ToolCall $toolCall): ToolResult"
-    callees[17]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::resolvePolicy","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::runId","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::cancellationToken","Ineersa\\AgentCore\\Contract\\Tool\\ToolIdempotencyKeyResolverInterface::resolveToolIdempotencyKey","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore::findByRunToolCall","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::reuseResult","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore::findByToolAndIdempotencyKey","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore::remember","Ineersa\\AgentCore\\Contract\\Hook\\CancellationTokenInterface::isCancellationRequested","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::rememberAndReturn","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::errorResult","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::validateArguments","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::applyAfterHooks","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::contextForHooks","Ineersa\\AgentCore\\Contract\\Hook\\BeforeToolCallHookInterface::beforeToolCall","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::executeToolCall","Throwable::getMessage"
-    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyToolExecutorAdapter::execute"
+    callees[13]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::resolvePolicy","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::runId","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::cancellationToken","Ineersa\\AgentCore\\Contract\\Tool\\ToolIdempotencyKeyResolverInterface::resolveToolIdempotencyKey","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore::findByRunToolCall","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::reuseResult","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore::findByToolAndIdempotencyKey","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore::remember","Ineersa\\AgentCore\\Contract\\Hook\\CancellationTokenInterface::isCancellationRequested","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::rememberAndReturn","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::errorResult","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::executeToolCall","Throwable::getMessage"
   - method: executeToolCall
-    start: 215
-    end: 265
-    limit: 51
-    symbolLine: 215
+    start: 149
+    end: 178
+    limit: 30
+    symbolLine: 149
     symbolColumn: 22
     signature: "private function executeToolCall(ToolCall $toolCall, ToolExecutionPolicy $policy): ToolResult"
-    callees[7]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::interruptResult","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::canUseSymfonyToolbox","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::toSymfonyToolCall","stdClass::getResult","stdClass::getSources","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::stringify","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::errorResult"
+    callees[4]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::interruptResult","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::errorResult","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::toDomainResult","Symfony\\AI\\Agent\\Toolbox\\FaultTolerantToolbox::execute"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::execute"
   - method: resolvePolicy
-    start: 267
-    end: 276
+    start: 180
+    end: 189
     limit: 10
-    symbolLine: 267
+    symbolLine: 180
     symbolColumn: 22
     signature: "private function resolvePolicy(ToolCall $toolCall): ToolExecutionPolicy"
     callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionPolicyResolver::resolve"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::execute"
   - method: rememberAndReturn
-    start: 278
-    end: 293
+    start: 191
+    end: 206
     limit: 16
-    symbolLine: 278
+    symbolLine: 191
     symbolColumn: 22
     signature: "private function rememberAndReturn(ToolCall $toolCall, ToolExecutionPolicy $policy, ?string $toolIdempotencyKey, ToolResult $result, ?float $durationMs = null): ToolResult"
     callees[3]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::withExecutionMetadata","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::runId","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore::remember"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::execute"
   - method: reuseResult
-    start: 295
-    end: 311
+    start: 208
+    end: 224
     limit: 17
-    symbolLine: 295
+    symbolLine: 208
     symbolColumn: 22
     signature: "private function reuseResult(ToolCall $toolCall, ToolResult $existing, ToolExecutionPolicy $policy, ?string $toolIdempotencyKey, string $reason): ToolResult"
     callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::withExecutionMetadata"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::execute"
   - method: withExecutionMetadata
-    start: 313
-    end: 348
+    start: 226
+    end: 261
     limit: 36
-    symbolLine: 313
+    symbolLine: 226
     symbolColumn: 22
     signature: "private function withExecutionMetadata(ToolResult $result, ToolExecutionPolicy $policy, ?string $toolIdempotencyKey, ?float $durationMs, ?string $reusedReason = null): ToolResult"
     callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::rememberAndReturn","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::reuseResult"
-  - method: applyAfterHooks
-    start: 350
-    end: 388
-    limit: 39
-    symbolLine: 355
+  - method: toDomainResult
+    start: 263
+    end: 290
+    limit: 28
+    symbolLine: 263
     symbolColumn: 22
-    signature: "private function applyAfterHooks(AgentMessage $assistantMessage, ToolCall $toolCall, ToolResult $result, CancellationTokenInterface $cancelToken, array $context): ToolResult"
-    callees[1]: "Ineersa\\AgentCore\\Contract\\Hook\\AfterToolCallHookInterface::afterToolCall"
-    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::execute"
-  - method: validateArguments
-    start: 390
-    end: 439
-    limit: 50
-    symbolLine: 396
+    signature: "private function toDomainResult(ToolCall $toolCall, SymfonyToolResult $toolboxResult): ToolResult"
+    callees[4]: "Symfony\\AI\\Agent\\Toolbox\\ToolResult::getResult","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::normalizeSources","Symfony\\AI\\Agent\\Toolbox\\ToolResult::getSources","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::normalizeResultText"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::executeToolCall"
+  - method: normalizeSources
+    start: 292
+    end: 311
+    limit: 20
+    symbolLine: 295
     symbolColumn: 22
-    signature: "private function validateArguments(array $arguments, ?array $schema): ?string"
-    callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::matchesType"
-    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::execute"
-  - method: matchesType
-    start: 441
-    end: 452
-    limit: 12
-    symbolLine: 441
-    symbolColumn: 22
-    signature: "private function matchesType(mixed $value, string $expectedType): bool"
-    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::validateArguments"
-  - method: contextForHooks
-    start: 454
-    end: 474
-    limit: 21
-    symbolLine: 459
-    symbolColumn: 22
-    signature: "private function contextForHooks(ToolCall $toolCall, ToolExecutionPolicy $policy, ?string $toolIdempotencyKey): array"
-    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::execute"
+    signature: "private function normalizeSources(?SourceCollection $sources): array"
+    callees[4]: "Symfony\\AI\\Agent\\Toolbox\\Source\\SourceCollection::all","Symfony\\AI\\Agent\\Toolbox\\Source\\Source::getName","Symfony\\AI\\Agent\\Toolbox\\Source\\Source::getReference","Symfony\\AI\\Agent\\Toolbox\\Source\\Source::getContent"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::toDomainResult"
   - method: runId
-    start: 476
-    end: 485
+    start: 313
+    end: 322
     limit: 10
-    symbolLine: 476
+    symbolLine: 313
     symbolColumn: 22
     signature: "private function runId(ToolCall $toolCall): ?string"
     callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::execute","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::rememberAndReturn"
   - method: cancellationToken
-    start: 487
-    end: 492
+    start: 324
+    end: 329
     limit: 6
-    symbolLine: 487
+    symbolLine: 324
     symbolColumn: 22
     signature: "private function cancellationToken(ToolCall $toolCall): CancellationTokenInterface"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::execute"
-  - method: canUseSymfonyToolbox
-    start: 494
-    end: 499
-    limit: 6
-    symbolLine: 494
-    symbolColumn: 22
-    signature: "private function canUseSymfonyToolbox(): bool"
-    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::executeToolCall"
-  - method: toSymfonyToolCall
-    start: 501
-    end: 514
-    limit: 14
-    symbolLine: 501
-    symbolColumn: 22
-    signature: "private function toSymfonyToolCall(ToolCall $toolCall): object"
-    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::executeToolCall"
   - method: interruptResult
-    start: 516
-    end: 554
+    start: 331
+    end: 369
     limit: 39
-    symbolLine: 516
+    symbolLine: 331
     symbolColumn: 22
     signature: "private function interruptResult(ToolCall $toolCall): ToolResult"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::executeToolCall"
   - method: errorResult
-    start: 556
-    end: 573
-    limit: 18
-    symbolLine: 561
+    start: 371
+    end: 386
+    limit: 16
+    symbolLine: 374
     symbolColumn: 22
     signature: "private function errorResult(string $toolCallId, string $toolName, string $message, array $details = []): ToolResult"
     callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::execute","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::executeToolCall"
-  - method: stringify
-    start: 575
-    end: 596
+  - method: normalizeResultText
+    start: 388
+    end: 409
     limit: 22
-    symbolLine: 575
+    symbolLine: 388
     symbolColumn: 22
-    signature: "private function stringify(mixed $value): string"
-    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::executeToolCall"
+    signature: "private function normalizeResultText(mixed $result): string"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::toDomainResult"

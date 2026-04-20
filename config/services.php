@@ -45,9 +45,7 @@ use Ineersa\AgentCore\Contract\Extension\CommandHandlerInterface;
 use Ineersa\AgentCore\Contract\OutboxStoreInterface;
 use Ineersa\AgentCore\Contract\Extension\EventSubscriberInterface;
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
-use Ineersa\AgentCore\Contract\Hook\AfterToolCallHookInterface;
 use Ineersa\AgentCore\Contract\Hook\BeforeProviderRequestHookInterface;
-use Ineersa\AgentCore\Contract\Hook\BeforeToolCallHookInterface;
 use Ineersa\AgentCore\Contract\Hook\ConvertToLlmHookInterface;
 use Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface;
 use Ineersa\AgentCore\Contract\PromptStateStoreInterface;
@@ -75,8 +73,8 @@ use Ineersa\AgentCore\Schema\EventNameMap;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\SymfonyMessageMapper;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\SymfonyPlatformInvoker;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\SymfonyToolExecutorAdapter;
 use League\Flysystem\Filesystem;
+use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use League\Flysystem\Local\LocalFilesystemAdapter;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\Lock\LockFactory;
@@ -124,16 +122,6 @@ return static function (ContainerConfigurator $container): void {
     $services
         ->instanceof(BeforeProviderRequestHookInterface::class)
         ->tag('agent_loop.hook.before_provider_request')
-    ;
-
-    $services
-        ->instanceof(BeforeToolCallHookInterface::class)
-        ->tag('agent_loop.hook.before_tool_call')
-    ;
-
-    $services
-        ->instanceof(AfterToolCallHookInterface::class)
-        ->tag('agent_loop.hook.after_tool_call')
     ;
 
     $services
@@ -241,18 +229,9 @@ return static function (ContainerConfigurator $container): void {
         ->arg('$defaultTimeoutSeconds', param('agent_loop.tools.defaults.timeout_seconds'))
         ->arg('$maxParallelism', param('agent_loop.tools.max_parallelism'))
         ->arg('$overrides', param('agent_loop.tools.overrides'))
-        ->arg('$toolbox', service('Symfony\\AI\\Agent\\Toolbox\\ToolboxInterface')->nullOnInvalid())
-        ->arg('$beforeToolCallHooks', tagged_iterator('agent_loop.hook.before_tool_call'))
-        ->arg('$afterToolCallHooks', tagged_iterator('agent_loop.hook.after_tool_call'))
+        ->arg('$toolbox', service(ToolboxInterface::class)->nullOnInvalid())
         ->arg('$resultStore', service(ToolExecutionResultStore::class))
         ->arg('$toolIdempotencyKeyResolver', service(ToolIdempotencyKeyResolverInterface::class)->nullOnInvalid())
-    ;
-
-    $services->set(SymfonyToolExecutorAdapter::class)
-        ->arg('$fallbackExecutor', service(ToolExecutor::class))
-        ->arg('$toolbox', service('Symfony\\AI\\Agent\\Toolbox\\ToolboxInterface')->nullOnInvalid())
-        ->arg('$beforeToolCallHooks', tagged_iterator('agent_loop.hook.before_tool_call'))
-        ->arg('$afterToolCallHooks', tagged_iterator('agent_loop.hook.after_tool_call'))
     ;
     $services->alias(ToolExecutorInterface::class, ToolExecutor::class);
 

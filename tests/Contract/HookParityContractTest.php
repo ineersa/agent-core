@@ -4,22 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Contract;
 
-use Ineersa\AgentCore\Contract\Hook\AfterToolCallHookInterface;
 use Ineersa\AgentCore\Contract\Hook\BeforeProviderRequestHookInterface;
-use Ineersa\AgentCore\Contract\Hook\BeforeToolCallHookInterface;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\ConvertToLlmHookInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\MessageBag;
-use Ineersa\AgentCore\Domain\Tool\AfterToolCallContext;
-use Ineersa\AgentCore\Domain\Tool\AfterToolCallResult;
-use Ineersa\AgentCore\Domain\Tool\BeforeToolCallContext;
-use Ineersa\AgentCore\Domain\Tool\BeforeToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ProviderRequest;
-use Ineersa\AgentCore\Domain\Tool\ToolCall;
-use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use PHPUnit\Framework\TestCase;
 
 final class HookParityContractTest extends TestCase
@@ -86,49 +78,10 @@ final class HookParityContractTest extends TestCase
         self::assertCount(1, $payload['llm_messages']->all());
     }
 
-    public function testToolHooksHaveDocumentedCallOrder(): void
-    {
-        $recorder = new HookCallRecorder();
-
-        $before = new class($recorder) implements BeforeToolCallHookInterface {
-            public function __construct(private readonly HookCallRecorder $recorder)
-            {
-            }
-
-            public function beforeToolCall(
-                BeforeToolCallContext $context,
-                ?CancellationTokenInterface $cancelToken = null,
-            ): ?BeforeToolCallResult {
-                $this->recorder->record('before_tool_call');
-
-                return BeforeToolCallResult::allow();
-            }
-        };
-
-        $after = new class($recorder) implements AfterToolCallHookInterface {
-            public function __construct(private readonly HookCallRecorder $recorder)
-            {
-            }
-
-            public function afterToolCall(
-                AfterToolCallContext $context,
-                ?CancellationTokenInterface $cancelToken = null,
-            ): ?AfterToolCallResult {
-                $this->recorder->record('after_tool_call');
-
-                return AfterToolCallResult::withDetails(['status' => 'ok']);
-            }
-        };
-
-        $this->runToolHookChain($before, $after);
-
-        self::assertSame(['before_tool_call', 'after_tool_call'], $recorder->calls);
-    }
-
     /**
-     * @param list<AgentMessage>     $messages
-     * @param array<string, mixed>   $input
-     * @param array<string, mixed>   $options
+     * @param list<AgentMessage>   $messages
+     * @param array<string, mixed> $input
+     * @param array<string, mixed> $options
      *
      * @return array{
      *     llm_messages: MessageBag,
@@ -154,37 +107,6 @@ final class HookParityContractTest extends TestCase
             'llm_messages' => $llmMessages,
             'request' => ($providerRequest ?? new ProviderRequest())->applyOn($model, $input, $options),
         ];
-    }
-
-    private function runToolHookChain(BeforeToolCallHookInterface $before, AfterToolCallHookInterface $after): void
-    {
-        $assistantMessage = new AgentMessage('assistant', [['type' => 'text', 'text' => 'working']]);
-        $toolCall = new ToolCall('tool-call-1', 'web_search', ['query' => 'symfony'], 0);
-        $toolResult = new ToolResult('tool-call-1', 'web_search', [['type' => 'text', 'text' => 'ok']], details: ['status' => 'ok']);
-        $cancelToken = new NullCancellationToken();
-
-        $beforeContext = new BeforeToolCallContext(
-            assistantMessage: $assistantMessage,
-            toolCall: $toolCall,
-            args: ['query' => 'symfony'],
-            context: ['run_id' => 'run-stage-01'],
-        );
-
-        $beforeResult = $before->beforeToolCall($beforeContext, $cancelToken);
-        if ($beforeResult?->block ?? false) {
-            self::fail('beforeToolCall unexpectedly blocked tool execution in contract test.');
-        }
-
-        $afterContext = new AfterToolCallContext(
-            assistantMessage: $assistantMessage,
-            toolCall: $toolCall,
-            args: ['query' => 'symfony'],
-            result: $toolResult,
-            isError: false,
-            context: ['run_id' => 'run-stage-01'],
-        );
-
-        $after->afterToolCall($afterContext, $cancelToken);
     }
 }
 

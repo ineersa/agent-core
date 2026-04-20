@@ -1129,7 +1129,7 @@ final readonly class RunOrchestrator
                     continue;
                 }
 
-                $hydratedMessage = $this->hydrateMessage($messagePayload);
+                $hydratedMessage = AgentMessage::fromPayload($messagePayload);
                 if (null === $hydratedMessage) {
                     $this->commandStore->markRejected($state->runId, $pendingCommand->idempotencyKey, 'Invalid steer payload: malformed message envelope.');
                     $eventSpecs[] = [
@@ -1221,7 +1221,7 @@ final readonly class RunOrchestrator
                     continue;
                 }
 
-                $hydratedMessage = $this->hydrateMessage($messagePayload);
+                $hydratedMessage = AgentMessage::fromPayload($messagePayload);
                 if (null === $hydratedMessage) {
                     $this->commandStore->markRejected($state->runId, $pendingCommand->idempotencyKey, 'Invalid command payload: malformed message envelope.');
                     $eventSpecs[] = [
@@ -1868,50 +1868,6 @@ final readonly class RunOrchestrator
             'version' => $state->version + 1,
             'lastSeq' => $state->lastSeq + $eventCount,
         ]);
-    }
-
-    /**
-     * Hydrates an AgentMessage from a payload array.
-     *
-     * @param array<string, mixed> $payload
-     */
-    private function hydrateMessage(array $payload): ?AgentMessage
-    {
-        $role = $payload['role'] ?? null;
-        $rawContent = $payload['content'] ?? null;
-
-        if (!\is_string($role) || !\is_array($rawContent)) {
-            return null;
-        }
-
-        $content = [];
-        foreach ($rawContent as $contentPart) {
-            if (!\is_array($contentPart)) {
-                continue;
-            }
-
-            $content[] = $contentPart;
-        }
-
-        $timestamp = null;
-        if (\is_string($payload['timestamp'] ?? null)) {
-            try {
-                $timestamp = new \DateTimeImmutable($payload['timestamp']);
-            } catch (\Throwable) {
-            }
-        }
-
-        return new AgentMessage(
-            role: $role,
-            content: $content,
-            timestamp: $timestamp,
-            name: \is_string($payload['name'] ?? null) ? $payload['name'] : null,
-            toolCallId: \is_string($payload['tool_call_id'] ?? null) ? $payload['tool_call_id'] : null,
-            toolName: \is_string($payload['tool_name'] ?? null) ? $payload['tool_name'] : null,
-            details: $payload['details'] ?? null,
-            isError: \is_bool($payload['is_error'] ?? null) ? $payload['is_error'] : false,
-            metadata: \is_array($payload['metadata'] ?? null) ? $payload['metadata'] : [],
-        );
     }
 
     /**

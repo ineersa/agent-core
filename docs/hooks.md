@@ -1,6 +1,6 @@
 # Hooks Map
 
-The Agent Core provides a hook system to intercept, modify, or cancel operations at key lifecycle boundaries.
+Agent Core exposes provider-boundary hooks and delegates tool lifecycle interception to Symfony AI Toolbox events.
 
 ## Available Hooks
 
@@ -8,19 +8,23 @@ The Agent Core provides a hook system to intercept, modify, or cancel operations
    - **Purpose**: Modifies or formats messages right before they are sent to the LLM.
 2. **`TransformContextHookInterface`**
    - **Purpose**: Allows modifying the agent's context or system prompt dynamically.
-3. **`BeforeToolCallHookInterface`**
-   - **Purpose**: Intercepts a tool call before execution. Can be used for validation, logging, or short-circuiting the call with a cached response.
-4. **`AfterToolCallHookInterface`**
-   - **Purpose**: Intercepts the result of a tool call before it's fed back into the agent's context. Useful for masking sensitive data or summarizing large outputs.
-5. **`BeforeProviderRequestHookInterface`**
-   - **Purpose**: Low-level hook right before the HTTP request to the LLM provider is made.
-6. **`SteeringMessagesProviderInterface` / `FollowUpMessagesProviderInterface`**
+3. **`BeforeProviderRequestHookInterface`**
+   - **Purpose**: Low-level hook right before the provider request is dispatched.
+4. **`SteeringMessagesProviderInterface` / `FollowUpMessagesProviderInterface`**
    - **Purpose**: Provide dynamic steering or follow-up messages mid-run.
+5. **Symfony AI Toolbox events** (`ToolCallRequested`, `ToolCallSucceeded`, `ToolCallFailed`)
+   - **Purpose**: Intercept, deny, short-circuit, or observe tool execution through standard Symfony event listeners (`#[AsEventListener]` or tagged listeners).
 
 ## Implementation Flow
 
-Hooks are registered via the `HookSubscriberRegistry` and invoked by the `HookDispatcher` inside the Orchestrator and Workers.
+Provider hooks are registered through `HookSubscriberRegistry` and invoked by `HookDispatcher`:
 
 ```text
-Worker -> HookDispatcher -> [Registered Hooks] -> (Modified Payload) -> Execution
+RunOrchestrator/Platform -> HookDispatcher -> [Registered Hook Subscribers] -> (Modified Payload) -> Provider Invocation
+```
+
+Tool lifecycle hooks are handled by Symfony AI's Toolbox event dispatcher:
+
+```text
+ToolExecutor -> Toolbox::execute() -> Symfony EventDispatcher -> [ToolCallRequested / ToolCallSucceeded / ToolCallFailed listeners]
 ```

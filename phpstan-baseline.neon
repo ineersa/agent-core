@@ -79,6 +79,42 @@ parameters:
 			path: src/Contract/AgentRunnerInterface.php
 
 		-
+			message: '#^Unused Ineersa\\AgentCore\\Command\\AgentLoopHealthCommand\:\:execute$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Command/AgentLoopHealthCommand.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Command\\AgentLoopResumeStaleRunsCommand\:\:execute$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Command/AgentLoopResumeStaleRunsCommand.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Command\\AgentLoopRunInspectCommand\:\:execute$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Command/AgentLoopRunInspectCommand.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Command\\AgentLoopRunRebuildHotStateCommand\:\:execute$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Command/AgentLoopRunRebuildHotStateCommand.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Command\\AgentLoopRunReplayCommand\:\:execute$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Command/AgentLoopRunReplayCommand.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Command\\AgentLoopRunTailCommand\:\:execute$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Command/AgentLoopRunTailCommand.php
+
+		-
 			message: '#^Unused Ineersa\\AgentCore\\Contract\\ArtifactStoreInterface\:\:put$#'
 			identifier: shipmonk.deadMethod
 			count: 1
@@ -205,94 +241,10 @@ parameters:
 			path: src/Domain/Run/RunState.php
 
 		-
-			message: '#^Property Ineersa\\AgentCore\\Domain\\Tool\\AfterToolCallContext\:\:\$args is never read$#'
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Tool\\ToolCall\:\:\$assistantMessage is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
-			path: src/Domain/Tool/AfterToolCallContext.php
-
-		-
-			message: '#^Property Ineersa\\AgentCore\\Domain\\Tool\\AfterToolCallContext\:\:\$assistantMessage is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/Domain/Tool/AfterToolCallContext.php
-
-		-
-			message: '#^Property Ineersa\\AgentCore\\Domain\\Tool\\AfterToolCallContext\:\:\$context is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/Domain/Tool/AfterToolCallContext.php
-
-		-
-			message: '#^Property Ineersa\\AgentCore\\Domain\\Tool\\AfterToolCallContext\:\:\$isError is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/Domain/Tool/AfterToolCallContext.php
-
-		-
-			message: '#^Property Ineersa\\AgentCore\\Domain\\Tool\\AfterToolCallContext\:\:\$result is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/Domain/Tool/AfterToolCallContext.php
-
-		-
-			message: '#^Property Ineersa\\AgentCore\\Domain\\Tool\\AfterToolCallContext\:\:\$toolCall is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/Domain/Tool/AfterToolCallContext.php
-
-		-
-			message: '#^Unused Ineersa\\AgentCore\\Domain\\Tool\\AfterToolCallResult\:\:withContent$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Domain/Tool/AfterToolCallResult.php
-
-		-
-			message: '#^Unused Ineersa\\AgentCore\\Domain\\Tool\\AfterToolCallResult\:\:withDetails$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Domain/Tool/AfterToolCallResult.php
-
-		-
-			message: '#^Unused Ineersa\\AgentCore\\Domain\\Tool\\AfterToolCallResult\:\:withIsError$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Domain/Tool/AfterToolCallResult.php
-
-		-
-			message: '#^Property Ineersa\\AgentCore\\Domain\\Tool\\BeforeToolCallContext\:\:\$args is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/Domain/Tool/BeforeToolCallContext.php
-
-		-
-			message: '#^Property Ineersa\\AgentCore\\Domain\\Tool\\BeforeToolCallContext\:\:\$assistantMessage is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/Domain/Tool/BeforeToolCallContext.php
-
-		-
-			message: '#^Property Ineersa\\AgentCore\\Domain\\Tool\\BeforeToolCallContext\:\:\$context is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/Domain/Tool/BeforeToolCallContext.php
-
-		-
-			message: '#^Property Ineersa\\AgentCore\\Domain\\Tool\\BeforeToolCallContext\:\:\$toolCall is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/Domain/Tool/BeforeToolCallContext.php
-
-		-
-			message: '#^Unused Ineersa\\AgentCore\\Domain\\Tool\\BeforeToolCallResult\:\:allow$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Domain/Tool/BeforeToolCallResult.php
-
-		-
-			message: '#^Unused Ineersa\\AgentCore\\Domain\\Tool\\BeforeToolCallResult\:\:blocked$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Domain/Tool/BeforeToolCallResult.php
+			path: src/Domain/Tool/ToolCall.php
 
 		-
 			message: '#^Property Ineersa\\AgentCore\\Domain\\Tool\\ToolCall\:\:\$orderIndex is never read$#'
@@ -337,18 +289,6 @@ parameters:
 			path: src/Infrastructure/SymfonyAi/StreamDeltaReducer.php
 
 		-
-			message: '#^PHPDoc tag @var with type class\-string is not subtype of native type ''Symfony\\\\AI\\\\Platform…''\.$#'
-			identifier: varTag.nativeType
-			count: 5
-			path: src/Infrastructure/SymfonyAi/SymfonyMessageMapper.php
-
-		-
-			message: '#^Strict comparison using \=\=\= between ''Symfony\\\\AI\\\\Platform\\\\Message\\\\MessageBag'' and class\-string&literal\-string will always evaluate to false\.$#'
-			identifier: identical.alwaysFalse
-			count: 1
-			path: src/Infrastructure/SymfonyAi/SymfonyMessageMapper.php
-
-		-
 			message: '#^Method Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyPlatformInvoker\:\:invoke\(\) has parameter \$input with no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
@@ -359,30 +299,6 @@ parameters:
 			identifier: method.dynamicName
 			count: 1
 			path: src/Infrastructure/SymfonyAi/SymfonyPlatformInvoker.php
-
-		-
-			message: '#^PHPDoc tag @var with type class\-string is not subtype of native type ''Symfony\\\\AI\\\\Platform…''\.$#'
-			identifier: varTag.nativeType
-			count: 1
-			path: src/Infrastructure/SymfonyAi/SymfonyToolExecutorAdapter.php
-
-		-
-			message: '#^Unused Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyToolExecutorAdapter\:\:toProgressUpdate$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Infrastructure/SymfonyAi/SymfonyToolExecutorAdapter.php
-
-		-
-			message: '#^Unused Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyToolExecutorAdapter\:\:toToolCallMessagePayload$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Infrastructure/SymfonyAi/SymfonyToolExecutorAdapter.php
-
-		-
-			message: '#^Using nullsafe property access "\?\-\>block" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
-			identifier: nullsafe.neverNull
-			count: 1
-			path: src/Infrastructure/SymfonyAi/SymfonyToolExecutorAdapter.php
 
 		-
 			message: '#^Unused Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer\:\:fromRunEvent$#'

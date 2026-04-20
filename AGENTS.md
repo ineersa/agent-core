@@ -89,6 +89,7 @@ Architecture maps live in nested `AGENTS.md` files near the code (e.g. `src/Appl
 
 ### Workflow: Edit existing code
 When making modifications to existing classes or methods:
+Before reading code, resolve target coordinates via `.toon` (`symbolLine`/`start`/`end`); any read window >200 lines requires explicit justification in the assistant response.
 1. Locate the target class in the `ai-index.toon` files.
 2. Read `docs/<Class>.toon` to find the exact method coordinates (`start`, `limit`).
 3. Check the `callers`/`callees` lists within the `.toon` file to understand the impact of your change.

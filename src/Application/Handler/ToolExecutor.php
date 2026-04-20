@@ -4,22 +4,22 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Handler;
 
-use Ineersa\AgentCore\Contract\Hook\AfterToolCallHookInterface;
-use Ineersa\AgentCore\Contract\Hook\BeforeToolCallHookInterface;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolIdempotencyKeyResolverInterface;
-use Ineersa\AgentCore\Domain\Message\AgentMessage;
-use Ineersa\AgentCore\Domain\Tool\AfterToolCallContext;
-use Ineersa\AgentCore\Domain\Tool\BeforeToolCallContext;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionPolicy;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
+use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
+use Symfony\AI\Agent\Toolbox\Source\SourceCollection;
+use Symfony\AI\Agent\Toolbox\ToolboxInterface;
+use Symfony\AI\Agent\Toolbox\ToolResult as SymfonyToolResult;
+use Symfony\AI\Platform\Result\ToolCall as SymfonyToolCall;
 
 /**
- * The ToolExecutor class orchestrates the execution of tool calls within an agent core, handling policy resolution, argument validation, and result caching. It integrates with the Symfony Toolbox for tool invocation and manages execution metadata, including timeouts, parallelism, and cancellation. The class ensures consistent tool result formatting and applies post-execution hooks to the assistant message context.
+ * Executes tool calls with policy resolution, idempotent result reuse, cancellation checks, and Symfony Toolbox invocation.
  */
 final class ToolExecutor implements ToolExecutorInterface
 {
@@ -27,33 +27,29 @@ final class ToolExecutor implements ToolExecutorInterface
 
     private ToolExecutionResultStore $resultStore;
 
+    private ?FaultTolerantToolbox $faultTolerantToolbox;
+
     /**
-     * Initializes executor with default mode, timeout, parallelism, overrides, and optional toolbox.
-     *
      * @param array<string, array{mode?: string|null, timeout_seconds?: int|null}> $overrides
-     * @param iterable<BeforeToolCallHookInterface>                                $beforeToolCallHooks
-     * @param iterable<AfterToolCallHookInterface>                                 $afterToolCallHooks
      */
     public function __construct(
         string $defaultMode,
         int $defaultTimeoutSeconds,
         int $maxParallelism,
         array $overrides = [],
-        private readonly ?object $toolbox = null,
-        private readonly iterable $beforeToolCallHooks = [],
-        private readonly iterable $afterToolCallHooks = [],
+        ?ToolboxInterface $toolbox = null,
         ?ToolExecutionResultStore $resultStore = null,
         private readonly ?ToolIdempotencyKeyResolverInterface $toolIdempotencyKeyResolver = null,
     ) {
         $this->policyResolver = new ToolExecutionPolicyResolver($defaultMode, $defaultTimeoutSeconds, $maxParallelism, $overrides);
         $this->resultStore = $resultStore ?? new ToolExecutionResultStore();
+        $this->faultTolerantToolbox = null !== $toolbox ? new FaultTolerantToolbox($toolbox) : null;
     }
 
     public function execute(ToolCall $toolCall): ToolResult
     {
         $policy = $this->resolvePolicy($toolCall);
         $runId = $this->runId($toolCall);
-        $assistantMessage = $toolCall->assistantMessage ?? new AgentMessage('assistant', []);
         $cancelToken = $this->cancellationToken($toolCall);
         $toolIdempotencyKey = $toolCall->toolIdempotencyKey ?? $this->toolIdempotencyKeyResolver?->resolveToolIdempotencyKey($toolCall);
 
@@ -103,88 +99,34 @@ final class ToolExecutor implements ToolExecutorInterface
             );
         }
 
-        $validationError = $this->validateArguments($toolCall->arguments, $toolCall->context['arg_schema'] ?? $toolCall->context['schema'] ?? null);
-        if (null !== $validationError) {
-            $validationResult = $this->errorResult(
-                toolCallId: $toolCall->toolCallId,
-                toolName: $toolCall->toolName,
-                message: $validationError,
-                details: ['validation_error' => true],
-            );
+        $startedAt = hrtime(true);
 
-            $validationResult = $this->applyAfterHooks(
-                assistantMessage: $assistantMessage,
-                toolCall: $toolCall,
-                result: $validationResult,
-                cancelToken: $cancelToken,
-                context: $this->contextForHooks($toolCall, $policy, $toolIdempotencyKey),
-            );
-
-            return $this->rememberAndReturn(
-                toolCall: $toolCall,
-                policy: $policy,
-                toolIdempotencyKey: $toolIdempotencyKey,
-                result: $validationResult,
-            );
-        }
-
-        $hookContext = $this->contextForHooks($toolCall, $policy, $toolIdempotencyKey);
-
-        $blockedMessage = null;
-        foreach ($this->beforeToolCallHooks as $hook) {
-            $before = $hook->beforeToolCall(new BeforeToolCallContext(
-                assistantMessage: $assistantMessage,
-                toolCall: $toolCall,
-                args: $toolCall->arguments,
-                context: $hookContext,
-            ), $cancelToken);
-
-            if (null !== $before && $before->block) {
-                $blockedMessage = $before->reason ?? \sprintf('Execution of tool "%s" was blocked by before_tool_call hook.', $toolCall->toolName);
-                break;
-            }
-        }
-
-        $durationMs = null;
-
-        if (null !== $blockedMessage) {
+        try {
+            $result = $this->executeToolCall($toolCall, $policy);
+        } catch (\Throwable $exception) {
             $result = $this->errorResult(
                 toolCallId: $toolCall->toolCallId,
                 toolName: $toolCall->toolName,
-                message: $blockedMessage,
-                details: ['blocked' => true],
+                message: $exception->getMessage(),
+                details: ['error_type' => $exception::class],
             );
-        } else {
-            $startedAt = hrtime(true);
-
-            try {
-                $result = $this->executeToolCall($toolCall, $policy);
-            } catch (\Throwable $exception) {
-                $result = $this->errorResult(
-                    toolCallId: $toolCall->toolCallId,
-                    toolName: $toolCall->toolName,
-                    message: $exception->getMessage(),
-                    details: ['error_type' => $exception::class],
-                );
-            }
-
-            $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
-
-            if ($durationMs > $policy->timeoutSeconds * 1000) {
-                $result = $this->errorResult(
-                    toolCallId: $toolCall->toolCallId,
-                    toolName: $toolCall->toolName,
-                    message: \sprintf('Tool "%s" timed out after %d second(s).', $toolCall->toolName, $policy->timeoutSeconds),
-                    details: [
-                        'timed_out' => true,
-                        'timeout_seconds' => $policy->timeoutSeconds,
-                    ],
-                );
-            }
         }
 
-        $postExecutionCancellationToken = $this->cancellationToken($toolCall);
-        if ($postExecutionCancellationToken->isCancellationRequested()) {
+        $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
+
+        if ($durationMs > $policy->timeoutSeconds * 1000) {
+            $result = $this->errorResult(
+                toolCallId: $toolCall->toolCallId,
+                toolName: $toolCall->toolName,
+                message: \sprintf('Tool "%s" timed out after %d second(s).', $toolCall->toolName, $policy->timeoutSeconds),
+                details: [
+                    'timed_out' => true,
+                    'timeout_seconds' => $policy->timeoutSeconds,
+                ],
+            );
+        }
+
+        if ($this->cancellationToken($toolCall)->isCancellationRequested()) {
             $result = $this->errorResult(
                 toolCallId: $toolCall->toolCallId,
                 toolName: $toolCall->toolName,
@@ -194,14 +136,6 @@ final class ToolExecutor implements ToolExecutorInterface
                 ],
             );
         }
-
-        $result = $this->applyAfterHooks(
-            assistantMessage: $assistantMessage,
-            toolCall: $toolCall,
-            result: $result,
-            cancelToken: $cancelToken,
-            context: $hookContext,
-        );
 
         return $this->rememberAndReturn(
             toolCall: $toolCall,
@@ -218,49 +152,28 @@ final class ToolExecutor implements ToolExecutorInterface
             return $this->interruptResult($toolCall);
         }
 
-        if ($this->canUseSymfonyToolbox()) {
-            $symfonyToolCall = $this->toSymfonyToolCall($toolCall);
-            $toolboxResult = $this->toolbox->execute($symfonyToolCall);
-
-            $rawResult = method_exists($toolboxResult, 'getResult')
-                ? $toolboxResult->getResult()
-                : null;
-
-            $details = [
-                'raw_result' => $rawResult,
-            ];
-
-            if (method_exists($toolboxResult, 'getSources')) {
-                $details['sources'] = $toolboxResult->getSources();
-            }
-
-            if (\is_array($rawResult) && 'interrupt' === ($rawResult['kind'] ?? null)) {
-                $details = array_replace($details, $rawResult);
-            }
-
-            return new ToolResult(
+        if (null === $this->faultTolerantToolbox) {
+            return $this->errorResult(
                 toolCallId: $toolCall->toolCallId,
                 toolName: $toolCall->toolName,
-                content: [[
-                    'type' => 'text',
-                    'text' => $this->stringify($rawResult),
-                ]],
-                details: $details,
-                isError: false,
+                message: \sprintf(
+                    'Tool "%s" execution is unavailable (mode=%s). Configure Symfony Toolbox integration.',
+                    $toolCall->toolName,
+                    $policy->mode->value,
+                ),
+                details: [
+                    'unavailable' => true,
+                ],
             );
         }
 
-        return $this->errorResult(
-            toolCallId: $toolCall->toolCallId,
-            toolName: $toolCall->toolName,
-            message: \sprintf(
-                'Tool "%s" execution is unavailable (mode=%s). Configure Symfony Toolbox integration.',
+        return $this->toDomainResult(
+            $toolCall,
+            $this->faultTolerantToolbox->execute(new SymfonyToolCall(
+                $toolCall->toolCallId,
                 $toolCall->toolName,
-                $policy->mode->value,
-            ),
-            details: [
-                'unavailable' => true,
-            ],
+                $toolCall->arguments,
+            )),
         );
     }
 
@@ -347,130 +260,54 @@ final class ToolExecutor implements ToolExecutorInterface
         );
     }
 
-    /**
-     * Executes registered after-hooks with the assistant message, tool call, and result context.
-     *
-     * @param array<string, mixed> $context
-     */
-    private function applyAfterHooks(
-        AgentMessage $assistantMessage,
-        ToolCall $toolCall,
-        ToolResult $result,
-        CancellationTokenInterface $cancelToken,
-        array $context,
-    ): ToolResult {
-        $resolved = $result;
+    private function toDomainResult(ToolCall $toolCall, SymfonyToolResult $toolboxResult): ToolResult
+    {
+        $rawResult = $toolboxResult->getResult();
 
-        foreach ($this->afterToolCallHooks as $hook) {
-            $after = $hook->afterToolCall(new AfterToolCallContext(
-                assistantMessage: $assistantMessage,
-                toolCall: $toolCall,
-                args: $toolCall->arguments,
-                result: $resolved,
-                isError: $resolved->isError,
-                context: $context,
-            ), $cancelToken);
+        $details = [
+            'raw_result' => $rawResult,
+        ];
 
-            if (null === $after) {
-                continue;
-            }
-
-            $resolved = new ToolResult(
-                toolCallId: $resolved->toolCallId,
-                toolName: $resolved->toolName,
-                content: $after->hasContentOverride ? $after->content : $resolved->content,
-                details: $after->hasDetailsOverride ? $after->details : $resolved->details,
-                isError: $after->isError ?? $resolved->isError,
-            );
+        $sources = $this->normalizeSources($toolboxResult->getSources());
+        if ([] !== $sources) {
+            $details['sources'] = $sources;
         }
 
-        return $resolved;
+        if (\is_array($rawResult) && 'interrupt' === ($rawResult['kind'] ?? null)) {
+            $details = array_replace($details, $rawResult);
+        }
+
+        return new ToolResult(
+            toolCallId: $toolCall->toolCallId,
+            toolName: $toolCall->toolName,
+            content: [[
+                'type' => 'text',
+                'text' => $this->normalizeResultText($rawResult),
+            ]],
+            details: $details,
+            isError: false,
+        );
     }
 
     /**
-     * Validates tool arguments against a JSON schema and returns error message if invalid.
-     *
-     * @param array<string, mixed>      $arguments
-     * @param array<string, mixed>|null $schema
+     * @return list<array{name: string, reference: string, content: string}>
      */
-    private function validateArguments(array $arguments, ?array $schema): ?string
+    private function normalizeSources(?SourceCollection $sources): array
     {
-        if (null === $schema) {
-            return null;
+        if (null === $sources) {
+            return [];
         }
 
-        if ('object' !== ($schema['type'] ?? 'object')) {
-            return null;
+        $normalized = [];
+        foreach ($sources->all() as $source) {
+            $normalized[] = [
+                'name' => $source->getName(),
+                'reference' => $source->getReference(),
+                'content' => $source->getContent(),
+            ];
         }
 
-        $required = \is_array($schema['required'] ?? null) ? $schema['required'] : [];
-
-        foreach ($required as $requiredField) {
-            if (!\is_string($requiredField)) {
-                continue;
-            }
-
-            if (!\array_key_exists($requiredField, $arguments)) {
-                return \sprintf('Invalid tool arguments: missing required field "%s".', $requiredField);
-            }
-        }
-
-        $properties = \is_array($schema['properties'] ?? null) ? $schema['properties'] : [];
-        foreach ($properties as $propertyName => $propertySchema) {
-            if (!\is_string($propertyName) || !\is_array($propertySchema)) {
-                continue;
-            }
-
-            if (!\array_key_exists($propertyName, $arguments)) {
-                continue;
-            }
-
-            $expectedType = \is_string($propertySchema['type'] ?? null) ? $propertySchema['type'] : null;
-            if (null === $expectedType) {
-                continue;
-            }
-
-            if (!$this->matchesType($arguments[$propertyName], $expectedType)) {
-                return \sprintf('Invalid tool arguments: field "%s" must be of type "%s".', $propertyName, $expectedType);
-            }
-        }
-
-        return null;
-    }
-
-    private function matchesType(mixed $value, string $expectedType): bool
-    {
-        return match ($expectedType) {
-            'string' => \is_string($value),
-            'integer' => \is_int($value),
-            'number' => \is_int($value) || \is_float($value),
-            'boolean' => \is_bool($value),
-            'array' => \is_array($value) && array_is_list($value),
-            'object' => \is_array($value) && !array_is_list($value),
-            default => true,
-        };
-    }
-
-    /**
-     * Constructs the context array passed to after-hooks from tool call and policy.
-     *
-     * @return array<string, mixed>
-     */
-    private function contextForHooks(ToolCall $toolCall, ToolExecutionPolicy $policy, ?string $toolIdempotencyKey): array
-    {
-        $context = $toolCall->context;
-
-        $context['tool_name'] = $toolCall->toolName;
-        $context['tool_call_id'] = $toolCall->toolCallId;
-        $context['mode'] = $policy->mode->value;
-        $context['timeout_seconds'] = $policy->timeoutSeconds;
-        $context['max_parallelism'] = $policy->maxParallelism;
-
-        if (null !== $toolIdempotencyKey && '' !== $toolIdempotencyKey) {
-            $context['tool_idempotency_key'] = $toolIdempotencyKey;
-        }
-
-        return $context;
+        return $normalized;
     }
 
     private function runId(ToolCall $toolCall): ?string
@@ -489,28 +326,6 @@ final class ToolExecutor implements ToolExecutorInterface
         $token = $toolCall->context['cancel_token'] ?? null;
 
         return $token instanceof CancellationTokenInterface ? $token : new NullCancellationToken();
-    }
-
-    private function canUseSymfonyToolbox(): bool
-    {
-        return null !== $this->toolbox
-            && method_exists($this->toolbox, 'execute')
-            && class_exists('Symfony\\AI\\Platform\\Result\\ToolCall');
-    }
-
-    private function toSymfonyToolCall(ToolCall $toolCall): object
-    {
-        $toolCallClass = 'Symfony\\AI\\Platform\\Result\\ToolCall';
-
-        if (!class_exists($toolCallClass)) {
-            throw new \RuntimeException('Symfony ToolCall class is unavailable.');
-        }
-
-        return new $toolCallClass(
-            $toolCall->toolCallId,
-            $toolCall->toolName,
-            $toolCall->arguments,
-        );
     }
 
     private function interruptResult(ToolCall $toolCall): ToolResult
@@ -554,8 +369,6 @@ final class ToolExecutor implements ToolExecutorInterface
     }
 
     /**
-     * Creates a ToolResult representing a tool execution error with details.
-     *
      * @param array<string, mixed> $details
      */
     private function errorResult(string $toolCallId, string $toolName, string $message, array $details = []): ToolResult
@@ -572,25 +385,25 @@ final class ToolExecutor implements ToolExecutorInterface
         );
     }
 
-    private function stringify(mixed $value): string
+    private function normalizeResultText(mixed $result): string
     {
-        if (null === $value) {
+        if (null === $result) {
             return '';
         }
 
-        if (\is_string($value)) {
-            return $value;
+        if (\is_string($result)) {
+            return $result;
         }
 
-        if (\is_scalar($value)) {
-            return (string) $value;
+        if (\is_scalar($result)) {
+            return (string) $result;
         }
 
-        if ($value instanceof \Stringable) {
-            return (string) $value;
+        if ($result instanceof \Stringable) {
+            return (string) $result;
         }
 
-        $encoded = json_encode($value);
+        $encoded = json_encode($result);
 
         return false === $encoded ? '{}' : $encoded;
     }

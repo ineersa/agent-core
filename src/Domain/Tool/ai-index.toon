@@ -3,11 +3,7 @@ namespace: "Domain\\Tool"
 fqcn: "Ineersa\\AgentCore\\Domain\\Tool"
 updatedAt: 2026-04-20
 description: "Tool execution value objects — call representation, definition schema, results, execution modes, provider request/result, and before/after hook contexts."
-files[12]{file,type,summary}:
-  AfterToolCallContext.php,readonly final class,"This readonly final class encapsulates the immutable context required after a tool execution, bundling the assistant's message, the specific tool call, its arguments, and the resulting outcome. It serves as a structured data carrier for propagating tool interaction details within the agent domain."
-  AfterToolCallResult.php,readonly final class,"The AfterToolCallResult class represents the immutable outcome of a tool execution within the agent domain, encapsulating content, details, and error status. It provides a fluent interface for constructing result instances with optional overrides for content and details."
-  BeforeToolCallContext.php,readonly final class,"This readonly final class encapsulates the immutable context required before a tool execution, bundling the assistant's message, the specific tool call, and its arguments. It serves as a structured data carrier to pass execution state through the agent's processing pipeline without exposing mutable state."
-  BeforeToolCallResult.php,readonly final class,Represents the outcome of a pre-execution validation check for a tool call within the agent domain. It encapsulates whether the call is permitted or blocked along with an optional reason for denial. This immutable value object facilitates clear decision-making before tool invocation.
+files[8]{file,type,summary}:
   PlatformInvocationResult.php,readonly final class,"Represents the immutable result of a platform tool invocation, capturing assistant message deltas, usage statistics, and stop reasons. Designed as a readonly value object to ensure data integrity across the domain layer."
   ProviderRequest.php,readonly final class,"A readonly value object representing a tool provider request with model, input, and options parameters. It provides a method to apply these parameters onto a specific model context, returning the resulting configuration array."
   ResolvedModel.php,readonly final class,A readonly value object representing a resolved AI model configuration with its associated options. It encapsulates the model identifier and any specific parameters required for instantiation. This class serves as a data carrier for model resolution within the domain layer.

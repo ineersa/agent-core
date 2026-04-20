@@ -45,7 +45,7 @@ final class RunReducer
                     continue;
                 }
 
-                $message = $this->hydrateMessage($serializedMessage);
+                $message = AgentMessage::fromPayload($serializedMessage);
                 if (null === $message) {
                     continue;
                 }
@@ -124,7 +124,7 @@ final class RunReducer
         if (\in_array($command->kind, ['steer', 'follow_up'], true)
             && isset($command->payload['message'])
             && \is_array($command->payload['message'])) {
-            $message = $this->hydrateMessage($command->payload['message']);
+            $message = AgentMessage::fromPayload($command->payload['message']);
             if (null !== $message) {
                 $messages[] = $message;
             }
@@ -142,50 +142,6 @@ final class RunReducer
             errorMessage: $errorMessage,
             messages: $messages,
             activeStepId: $state->activeStepId,
-        );
-    }
-
-    /**
-     * Deserializes a payload array into an AgentMessage instance.
-     *
-     * @param array<string, mixed> $payload
-     */
-    private function hydrateMessage(array $payload): ?AgentMessage
-    {
-        $role = $payload['role'] ?? null;
-        $rawContent = $payload['content'] ?? null;
-
-        if (!\is_string($role) || !\is_array($rawContent)) {
-            return null;
-        }
-
-        $content = [];
-        foreach ($rawContent as $contentPart) {
-            if (!\is_array($contentPart)) {
-                continue;
-            }
-
-            $content[] = $contentPart;
-        }
-
-        $timestamp = null;
-        if (\is_string($payload['timestamp'] ?? null)) {
-            try {
-                $timestamp = new \DateTimeImmutable($payload['timestamp']);
-            } catch (\Throwable) {
-            }
-        }
-
-        return new AgentMessage(
-            role: $role,
-            content: $content,
-            timestamp: $timestamp,
-            name: \is_string($payload['name'] ?? null) ? $payload['name'] : null,
-            toolCallId: \is_string($payload['tool_call_id'] ?? null) ? $payload['tool_call_id'] : null,
-            toolName: \is_string($payload['tool_name'] ?? null) ? $payload['tool_name'] : null,
-            details: $payload['details'] ?? null,
-            isError: \is_bool($payload['is_error'] ?? null) ? $payload['is_error'] : false,
-            metadata: \is_array($payload['metadata'] ?? null) ? $payload['metadata'] : [],
         );
     }
 }

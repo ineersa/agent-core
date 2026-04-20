@@ -3,7 +3,7 @@ file: RunOrchestrator.php
 class: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator"
 type: readonly final class
 summary: "The RunOrchestrator coordinates the lifecycle of an agent run by processing commands and handling step results through a reducer pattern. It manages state transitions, tool execution policies, and message hydration while persisting events and commands to their respective stores."
-methods[37]:
+methods[36]:
   - method: __construct
     start: 57
     end: 79
@@ -94,7 +94,7 @@ methods[37]:
     symbolLine: 1090
     symbolColumn: 22
     signature: "private function applyPendingTurnStartCommands(RunState $state): array"
-    callees[9]: "Ineersa\\AgentCore\\Contract\\CommandStoreInterface::pending","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::supersededSteerKeys","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markSuperseded","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markRejected","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::hydrateMessage","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markApplied","Ineersa\\AgentCore\\Domain\\Command\\CoreCommandKind::isCore","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyExtensionCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::copyState"
+    callees[9]: "Ineersa\\AgentCore\\Contract\\CommandStoreInterface::pending","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::supersededSteerKeys","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markSuperseded","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markRejected","Ineersa\\AgentCore\\Domain\\Message\\AgentMessage::fromPayload","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markApplied","Ineersa\\AgentCore\\Domain\\Command\\CoreCommandKind::isCore","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyExtensionCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::copyState"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onAdvanceRun"
   - method: applyPendingStopBoundaryCommands
     start: 1176
@@ -103,7 +103,7 @@ methods[37]:
     symbolLine: 1181
     symbolColumn: 22
     signature: "private function applyPendingStopBoundaryCommands(RunState $state): array"
-    callees[9]: "Ineersa\\AgentCore\\Contract\\CommandStoreInterface::pending","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::supersededSteerKeys","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markSuperseded","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markRejected","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::hydrateMessage","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markApplied","Ineersa\\AgentCore\\Domain\\Command\\CoreCommandKind::isCore","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyExtensionCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::copyState"
+    callees[9]: "Ineersa\\AgentCore\\Contract\\CommandStoreInterface::pending","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::supersededSteerKeys","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markSuperseded","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markRejected","Ineersa\\AgentCore\\Domain\\Message\\AgentMessage::fromPayload","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markApplied","Ineersa\\AgentCore\\Domain\\Command\\CoreCommandKind::isCore","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyExtensionCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::copyState"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onLlmStepResult"
   - method: isCancelSafeExtensionCommand
     start: 1266
@@ -284,35 +284,27 @@ methods[37]:
     signature: "private function incrementStateVersion(RunState $state, int $eventCount): RunState"
     callees[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::copyState"
     callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onLlmStepResult","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onToolCallResult"
-  - method: hydrateMessage
-    start: 1873
-    end: 1915
-    limit: 43
-    symbolLine: 1878
-    symbolColumn: 22
-    signature: "private function hydrateMessage(array $payload): ?AgentMessage"
-    callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingStopBoundaryCommands"
   - method: assistantMessage
-    start: 1917
-    end: 1954
+    start: 1873
+    end: 1910
     limit: 38
-    symbolLine: 1922
+    symbolLine: 1878
     symbolColumn: 22
     signature: "private function assistantMessage(array $assistantMessage): AgentMessage"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onLlmStepResult"
   - method: toolMessage
-    start: 1956
-    end: 1984
+    start: 1912
+    end: 1940
     limit: 29
-    symbolLine: 1956
+    symbolLine: 1912
     symbolColumn: 22
     signature: "private function toolMessage(ToolCallResult $result): AgentMessage"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onToolCallResult"
   - method: extractToolCalls
-    start: 1986
-    end: 2030
+    start: 1942
+    end: 1986
     limit: 45
-    symbolLine: 1999
+    symbolLine: 1955
     symbolColumn: 22
     signature: "private function extractToolCalls(array $assistantMessage): array"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onLlmStepResult"

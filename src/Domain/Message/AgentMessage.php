@@ -28,6 +28,50 @@ final readonly class AgentMessage
     ) {
     }
 
+    /**
+     * Builds a message instance from a serialized payload.
+     *
+     * @param array<string, mixed> $payload
+     */
+    public static function fromPayload(array $payload): ?self
+    {
+        $role = $payload['role'] ?? null;
+        $rawContent = $payload['content'] ?? null;
+
+        if (!\is_string($role) || !\is_array($rawContent)) {
+            return null;
+        }
+
+        $content = [];
+        foreach ($rawContent as $contentPart) {
+            if (!\is_array($contentPart)) {
+                continue;
+            }
+
+            $content[] = $contentPart;
+        }
+
+        $timestamp = null;
+        if (\is_string($payload['timestamp'] ?? null)) {
+            try {
+                $timestamp = new \DateTimeImmutable($payload['timestamp']);
+            } catch (\Throwable) {
+            }
+        }
+
+        return new self(
+            role: $role,
+            content: $content,
+            timestamp: $timestamp,
+            name: \is_string($payload['name'] ?? null) ? $payload['name'] : null,
+            toolCallId: \is_string($payload['tool_call_id'] ?? null) ? $payload['tool_call_id'] : null,
+            toolName: \is_string($payload['tool_name'] ?? null) ? $payload['tool_name'] : null,
+            details: $payload['details'] ?? null,
+            isError: \is_bool($payload['is_error'] ?? null) ? $payload['is_error'] : false,
+            metadata: \is_array($payload['metadata'] ?? null) ? $payload['metadata'] : [],
+        );
+    }
+
     public function isCustomRole(): bool
     {
         return !\in_array($this->role, ['system', 'user', 'assistant', 'tool'], true);

@@ -1,9 +1,0 @@
-spec: agent-core.file-index/v1
-file: BeforeToolCallResult.php
-class: "Ineersa\\AgentCore\\Domain\\Tool\\BeforeToolCallResult"
-type: readonly final class
-summary: Represents the outcome of a pre-execution validation check for a tool call within the agent domain. It encapsulates whether the call is permitted or blocked along with an optional reason for denial. This immutable value object facilitates clear decision-making before tool invocation.
-methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,12,16,5,12,21,"public function __construct(bool $block = false, ?string $reason = null)"
-  allow,18,21,4,18,28,"static public function allow(): self"
-  blocked,23,26,4,23,28,"static public function blocked(?string $reason = null): self"

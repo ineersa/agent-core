@@ -6,15 +6,16 @@ namespace Ineersa\AgentCore\Tests\Application\Handler;
 
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
-use Ineersa\AgentCore\Contract\Hook\AfterToolCallHookInterface;
-use Ineersa\AgentCore\Contract\Hook\BeforeToolCallHookInterface;
-use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
-use Ineersa\AgentCore\Domain\Tool\AfterToolCallContext;
-use Ineersa\AgentCore\Domain\Tool\AfterToolCallResult;
-use Ineersa\AgentCore\Domain\Tool\BeforeToolCallContext;
-use Ineersa\AgentCore\Domain\Tool\BeforeToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
+use Symfony\AI\Agent\Toolbox\Event\ToolCallRequested;
+use Symfony\AI\Agent\Toolbox\Toolbox;
+use Symfony\AI\Agent\Toolbox\ToolboxInterface;
+use Symfony\AI\Agent\Toolbox\ToolResult as SymfonyToolResult;
+use Symfony\AI\Platform\Result\ToolCall as SymfonyToolCall;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 
 final class ToolExecutorTest extends TestCase
 {
@@ -32,7 +33,7 @@ final class ToolExecutorTest extends TestCase
             ],
             orderIndex: 0,
             runId: 'run-stage-06',
-            mode: \Ineersa\AgentCore\Domain\Tool\ToolExecutionMode::Interrupt,
+            mode: ToolExecutionMode::Interrupt,
         ));
 
         self::assertFalse($result->isError);
@@ -42,10 +43,23 @@ final class ToolExecutorTest extends TestCase
         self::assertSame('Approve deployment?', $result->details['prompt']);
     }
 
+    public function testToolExecutionIsUnavailableWithoutToolbox(): void
+    {
+        $executor = new ToolExecutor('parallel', 30, 2);
+
+        $result = $executor->execute(new ToolCall(
+            toolCallId: 'call-1',
+            toolName: 'web_search',
+            arguments: ['query' => 'symfony'],
+            orderIndex: 0,
+        ));
+
+        self::assertTrue($result->isError);
+        self::assertStringContainsString('execution is unavailable', $result->content[0]['text']);
+    }
+
     public function testRunScopedDedupeReusesTerminalToolResult(): void
     {
-        $this->ensureSymfonyToolCallStub();
-
         $toolbox = new CountingToolbox();
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
@@ -80,8 +94,6 @@ final class ToolExecutorTest extends TestCase
 
     public function testToolIdempotencyKeyReusePreventsDuplicateExternalExecution(): void
     {
-        $this->ensureSymfonyToolCallStub();
-
         $toolbox = new CountingToolbox();
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
@@ -115,80 +127,65 @@ final class ToolExecutorTest extends TestCase
         self::assertSame('tool_idempotency_reuse', $second->details['idempotency_reuse_reason']);
     }
 
-    public function testSchemaValidationAndAfterHookOverrideApplyOnBlockedTools(): void
+    public function testSymfonyToolboxRequestedEventCanDenyExecution(): void
     {
-        $before = new class implements BeforeToolCallHookInterface {
-            public function beforeToolCall(BeforeToolCallContext $context, ?CancellationTokenInterface $cancelToken = null): ?BeforeToolCallResult
-            {
-                return BeforeToolCallResult::blocked('Blocked by policy.');
-            }
-        };
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addListener(ToolCallRequested::class, static function (ToolCallRequested $event): void {
+            $event->deny('Blocked by policy listener.');
+        });
 
-        $after = new class implements AfterToolCallHookInterface {
-            public function afterToolCall(AfterToolCallContext $context, ?CancellationTokenInterface $cancelToken = null): ?AfterToolCallResult
-            {
-                return AfterToolCallResult::withDetails(['after' => 'override'])->withIsError(false);
-            }
-        };
+        $toolbox = new Toolbox([new SymfonySearchTool()], eventDispatcher: $dispatcher);
 
         $executor = new ToolExecutor(
-            defaultMode: 'sequential',
+            defaultMode: 'parallel',
             defaultTimeoutSeconds: 30,
-            maxParallelism: 1,
+            maxParallelism: 4,
             overrides: [],
-            beforeToolCallHooks: [$before],
-            afterToolCallHooks: [$after],
+            toolbox: $toolbox,
+            resultStore: new ToolExecutionResultStore(),
         );
 
         $result = $executor->execute(new ToolCall(
-            toolCallId: 'blocked-1',
+            toolCallId: 'call-3',
             toolName: 'web_search',
-            arguments: [],
+            arguments: ['query' => 'agent core'],
             orderIndex: 0,
-            runId: 'run-stage-06',
-            context: [
-                'arg_schema' => [
-                    'type' => 'object',
-                    'required' => ['query'],
-                    'properties' => [
-                        'query' => ['type' => 'string'],
-                    ],
-                ],
-            ],
         ));
 
-        self::assertFalse($result->isError, 'afterToolCall override should be able to change error status.');
-        self::assertSame('override', $result->details['after']);
-    }
-
-    private function ensureSymfonyToolCallStub(): void
-    {
-        if (class_exists('Symfony\\AI\\Platform\\Result\\ToolCall')) {
-            return;
-        }
-
-        eval('namespace Symfony\\AI\\Platform\\Result; final class ToolCall { public function __construct(public string $id, public string $name, public array $arguments = []) {} }');
+        self::assertFalse($result->isError);
+        self::assertSame('Blocked by policy listener.', $result->details['raw_result']);
+        self::assertSame('Blocked by policy listener.', $result->content[0]['text']);
     }
 }
 
-final class CountingToolbox
+final class CountingToolbox implements ToolboxInterface
 {
     public int $executions = 0;
 
-    public function execute(object $toolCall): object
+    public function getTools(): array
+    {
+        return [];
+    }
+
+    public function execute(SymfonyToolCall $toolCall): SymfonyToolResult
     {
         ++$this->executions;
 
-        return new class {
-            public function getResult(): mixed
-            {
-                return ['status' => 'ok'];
-            }
+        return new SymfonyToolResult($toolCall, ['status' => 'ok']);
+    }
+}
 
-            public function getSources(): array
-            {
-                return ['source'];
-            }
-        };
+#[AsTool(name: 'web_search', description: 'Searches the web for relevant snippets.')]
+final class SymfonySearchTool
+{
+    /**
+     * @return array{query: string, status: string}
+     */
+    public function __invoke(string $query): array
+    {
+        return [
+            'query' => $query,
+            'status' => 'ok',
+        ];
     }
 }

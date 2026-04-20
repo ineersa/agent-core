@@ -136,7 +136,7 @@ final readonly class Platform implements PlatformInterface
                     continue;
                 }
 
-                $hydrated = $this->hydrateMessage($message);
+                $hydrated = AgentMessage::fromPayload($message);
                 if (null !== $hydrated) {
                     $messages[] = $hydrated;
                 }
@@ -277,41 +277,5 @@ final readonly class Platform implements PlatformInterface
         }
 
         return new NullCancellationToken();
-    }
-
-    /**
-     * Converts a message payload array into an AgentMessage object.
-     *
-     * @param array<string, mixed> $payload
-     */
-    private function hydrateMessage(array $payload): ?AgentMessage
-    {
-        $role = $payload['role'] ?? null;
-        $rawContent = $payload['content'] ?? null;
-
-        if (!\is_string($role) || !\is_array($rawContent)) {
-            return null;
-        }
-
-        $content = [];
-        foreach ($rawContent as $contentPart) {
-            if (!\is_array($contentPart)) {
-                continue;
-            }
-
-            $content[] = $contentPart;
-        }
-
-        return new AgentMessage(
-            role: $role,
-            content: $content,
-            timestamp: null,
-            name: \is_string($payload['name'] ?? null) ? $payload['name'] : null,
-            toolCallId: \is_string($payload['tool_call_id'] ?? null) ? $payload['tool_call_id'] : null,
-            toolName: \is_string($payload['tool_name'] ?? null) ? $payload['tool_name'] : null,
-            details: $payload['details'] ?? null,
-            isError: \is_bool($payload['is_error'] ?? null) ? $payload['is_error'] : false,
-            metadata: \is_array($payload['metadata'] ?? null) ? $payload['metadata'] : [],
-        );
     }
 }

@@ -1,8 +1,6 @@
 spec: agent-core.ai-docs/v1
 package: ineersa/agent-core
 updatedAt: 2026-04-20
-indexedAt: "2026-04-19T03:06:31Z"
-indexedCommit: da6ab8e9ede07bf1316e6614ec364e8a3ecea614
 description: "Agent loop engine — event-sourced run lifecycle, LLM orchestration, tool execution, hook system, and HTTP/streaming API for Symfony."
 rootFile: src/AgentLoopBundle.php
 config:
@@ -18,4 +16,4 @@ namespaces[8]{namespace,fqcn,path,description,index}:
   Api,"Ineersa\\AgentCore\\Api",src/Api,"Transport-facing HTTP API for run lifecycle endpoints, transcript/replay reads, and event serialization/stream integration.",src/Api/ai-index.toon
   Schema,"Ineersa\\AgentCore\\Schema",src/Schema,"Shared payload contract schemas, event-name mapping, and command/event normalizers for API and worker boundaries.",src/Schema/ai-index.toon
   Command,"Ineersa\\AgentCore\\Command",src/Command,"Console operational commands (agent-loop:health, etc.).",src/Command/ai-index.toon
-sourceHash: 4f9d70886b80cea9c2443cf236c033040249284efe8bd20d9c8b56e588b205a3
+

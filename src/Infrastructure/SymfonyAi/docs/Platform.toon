@@ -3,7 +3,7 @@ file: Platform.php
 class: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform"
 type: readonly final class
 summary: "The Platform class orchestrates the execution of AI agent runs within the Symfony infrastructure, bridging high-level agent inputs with the underlying provider invoker. It manages context resolution, message transformation, and hook application to prepare requests for external AI providers. The class ensures proper lifecycle management of runs and cancellation tokens while abstracting provider-specific details."
-methods[11]:
+methods[10]:
   - method: __construct
     start: 24
     end: 42
@@ -34,7 +34,7 @@ methods[11]:
     symbolLine: 123
     symbolColumn: 22
     signature: "private function resolveContextMessages(array $input, ?string $runId): array"
-    callees[2]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::hydrateMessage","Ineersa\\AgentCore\\Contract\\RunStoreInterface::get"
+    callees[2]: "Ineersa\\AgentCore\\Domain\\Message\\AgentMessage::fromPayload","Ineersa\\AgentCore\\Contract\\RunStoreInterface::get"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::invoke"
   - method: applyTransformHooks
     start: 160
@@ -88,11 +88,3 @@ methods[11]:
     symbolColumn: 22
     signature: "private function cancellationToken(?string $runId, mixed $provided): CancellationTokenInterface"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::invoke"
-  - method: hydrateMessage
-    start: 282
-    end: 316
-    limit: 35
-    symbolLine: 287
-    symbolColumn: 22
-    signature: "private function hydrateMessage(array $payload): ?AgentMessage"
-    callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::resolveContextMessages"
