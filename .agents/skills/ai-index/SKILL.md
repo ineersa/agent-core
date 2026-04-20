@@ -4,7 +4,7 @@ description: Defines the AI index workflow for this repository, including docblo
 license: MIT
 metadata:
   author: agent-core
-  version: "1.3"
+  version: "1.4"
 ---
 
 # AI Documentation Index
@@ -19,36 +19,52 @@ castor dev:index-methods
 
 - Source of truth is **PHP docblock summaries in source files**.
 - Every class must have a summary in the first description sentence (enforced by `--strict`).
-- Method summaries are not indexed — use IDE tools or targeted reads for method understanding.
+- Method summaries are not indexed — use IDE tools, call graph data, or targeted reads for method understanding.
 - Extraction stops before the first blank line or any `@tag`.
 - Generated files must not be edited manually:
   - `src/**/ai-index.toon`
   - `src/**/docs/*.toon`
+  - `callgraph.json`
 - Root `ai-index.toon` is curated and updated intentionally.
+
+## What's in a class `.toon` file
+
+Per-class `docs/<Class>.toon` files contain:
+
+- **Class-level**: type, summary
+- **Per method**:
+  - `start`, `end`, `limit` — read window for the full method (use `read(path, offset=start, limit=limit)`)
+  - `symbolLine`, `symbolColumn` — coordinates for IDE semantic tools
+  - `signature` — full method signature (modifiers, params, return type)
+  - `callees` — methods this method calls (e.g. `CommandRouter::route`)
+  - `callers` — methods that call this method (e.g. `RunOrchestrator::onApplyCommand`)
+
+Callees and callers are auto-generated from PHPStan call-graph analysis. Use them instead of `ide_call_hierarchy` — the data is already in the file you're reading.
 
 ## Navigation workflow
 
 1. Read root `ai-index.toon`.
 2. Read namespace `ai-index.toon`.
-3. Read class `docs/<Class>.toon` for method coordinates (`start`, `end`, `limit`, `symbolLine`, `symbolColumn`).
-4. Use `symbolLine` + `symbolColumn` with IDE semantic tools first.
+3. Read class `docs/<Class>.toon` for method coordinates and call relationships.
+4. Use `symbolLine` + `symbolColumn` with IDE semantic tools for definition/navigation.
 5. Read targeted source windows using `offset=start, limit=limit`.
+6. Check `callees`/`callers` to understand method relationships without querying IDE tools.
 
 ## Maintenance workflow
 
 Use Castor for all index operations:
 
 - `castor dev:index-methods` — changed files
-- `castor dev:index-methods --all --force` — full regeneration
+- `castor dev:index-methods --all --force` — full regeneration (auto-generates callgraph.json)
 - `castor dev:index-methods --strict --all` — read-only validation
-- `castor dev:index-methods --migrate --all` — one-time migration from `.toon` summaries into source docblocks
+- `castor dev:callgraph` — regenerate callgraph.json only
 
-`castor dev:check` includes strict summary validation (`summaries`).
+`castor dev:check` runs: cs-fix → phpstan → test → summaries validation → full index regeneration.
 
 ## 1) Global summary prompt
 
 ```text
-Write a PHP docblock summary for the target symbol.
+Write a PHP docblock summary for the target class.
 
 Rules:
 - Output one clear sentence as the first description line.
@@ -88,6 +104,5 @@ Weak:
 Then run:
 
 ```bash
-castor dev:index-methods --strict --all
 LLM_MODE=true castor dev:check
 ```

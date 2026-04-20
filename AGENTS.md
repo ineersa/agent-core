@@ -44,60 +44,25 @@ If any of these fail, the work is **not complete**.
 
 This repository uses a two-level AI index for token-efficient code navigation:
 1. **Namespace indexes** (`src/**/ai-index.toon`) — per-namespace class listings with summaries.
-2. **Per-file indexes** (`src/**/docs/<Class>.toon`) — method metadata with line numbers, symbol coordinates, and summaries.
+2. **Per-file indexes** (`src/**/docs/<Class>.toon`) — method coordinates, signatures, and call relationships (callers/callees).
 
-All indexes are generated from source docblocks (no LLM calls).
+All indexes are auto-generated from source code (no LLM calls). `castor dev:check` regenerates them on every run.
 
-For the full operational guide and summary-authoring prompts, load:
-- `.agents/skills/ai-index/SKILL.md`
+### Summary policy
 
-### Summary policy (mandatory)
+**Every class must have a docblock summary as the first description line.** Missing class summary = `dev:check` failure. Method summaries are not indexed.
 
-**Every class must have a docblock summary as the first description line** (before any blank line or `@tag`).
+### Key rules
 
-- Class docblock: `/** <summary> */` (tags may follow)
-- The first sentence of the description is extracted as the summary
-- Missing class summary = `castor dev:index-methods --strict` failure (and `castor dev:check` failure)
-- Method summaries are not indexed and not enforced — use IDE tools or targeted reads for method understanding.
+- **Never edit** generated `src/**/ai-index.toon` or `src/**/docs/*.toon` manually.
+- Root `ai-index.toon` is curated and should be updated intentionally.
+- When code changes alter command/event/message relationships, update the affected nested `AGENTS.md` files.
 
-When adding or editing classes, keep class summaries present and accurate.
+For detailed index schema and navigation guidance, load `.agents/skills/ai-index/SKILL.md`.
 
-### Reading policy (mandatory)
+## Architecture notes
 
-**Prefer targeted reads; avoid whole-file reads when possible.**
-
-1. Read root `ai-index.toon` to choose namespace.
-2. Read namespace `ai-index.toon` to choose class.
-3. Read `docs/<Class>.toon` for method metadata (`start`, `end`, `limit`, `symbolLine`, `symbolColumn`).
-4. Use `symbolLine` + `symbolColumn` first for IDE semantic navigation tools.
-5. Read only needed slices via `read(path, offset, limit)`.
-
-Example: if index has `start=47` and `limit=162`, read method window with `offset=47`, `limit=162`.
-
-### Index maintenance
-
-Indexes are generated via `castor dev:index-methods`.
-
-Common commands:
-- `castor dev:index-methods` — changed files
-- `castor dev:index-methods --all --force` — full regeneration
-- `castor dev:index-methods --strict --all` — read-only validation
-- `castor dev:index-methods --migrate --all` — one-time migration from existing `.toon` summaries into source docblocks
-
-After code changes, regenerate indexes for changed files.
-
-**Never edit generated `src/**/ai-index.toon` or `src/**/docs/*.toon` manually.** Regenerate via Castor. The repository root `ai-index.toon` is curated and should be updated intentionally.
-
-## Architecture notes (README-driven, mandatory)
-
-The `ai-index.toon` system is for **navigation indexes** (class/method lookup), not for architectural relationship maps.
-
-- Keep architecture maps in nested `README.md` files near the code (for example `src/Application/README.md`, `src/Domain/Event/README.md`, `src/Domain/Message/README.md`).
-- These nested READMEs should document relationship views such as:
-  - command -> handler
-  - event -> projector/listener
-  - message -> dispatched-by / handled-by
-- When code changes alter those relationships, the agent must update the affected nested `README.md` files in the same change.
+Architecture maps live in nested `AGENTS.md` files near the code (e.g. `src/Application/AGENTS.md`, `src/Domain/Event/AGENTS.md`). These document relationship views (command→handler, event→projector, message→dispatched-by). Update them when relationships change.
 
 ## Namespace responsibilities
 
@@ -115,3 +80,35 @@ The `ai-index.toon` system is for **navigation indexes** (class/method lookup), 
   - Public transport-facing API controllers/DTOs/serializers for run start/commands/read/replay and stream payloads.
 - `Ineersa\AgentCore\Command`
   - Console operational commands (`agent-loop:health`, etc.).
+
+## Standard workflows
+
+### Workflow: Edit existing code
+When making modifications to existing classes or methods:
+1. Locate the target class in the `ai-index.toon` files.
+2. Read `docs/<Class>.toon` to find the exact method coordinates (`start`, `limit`).
+3. Check the `callers`/`callees` lists within the `.toon` file to understand the impact of your change.
+4. Read only the target method using `read(path, offset=start, limit=limit)`.
+5. Apply the edit.
+6. Verify your work by running `LLM_MODE=true castor dev:check` before claiming completion.
+
+### Workflow: Adding a New Feature
+When asked to implement a new feature (e.g., a new Command, Event, or Service):
+1. **Navigate**: Read the root `ai-index.toon` and relevant namespace `ai-index.toon` to determine where the new class belongs.
+2. **Implement**: Create the new class(es). Ensure every new class has a valid PHP docblock summary as its first line.
+3. **Verify & Update Index**: Run `LLM_MODE=true castor dev:check` (this automatically updates the `.toon` indexes and verifies quality gates).
+4. **Update Architecture Docs**: Before claiming the task is done, if the feature introduces new commands, events, or handlers, update the relevant nested `AGENTS.md` maps (e.g., `src/Application/AGENTS.md`).
+
+### Workflow: Refactoring & Renaming
+When asked to rename a concept, class, or method, or move files:
+1. **Locate**: Use `ai-index.toon` to find the target's precise coordinates (`symbolLine` and `symbolColumn`).
+2. **Refactor via IDE**: **Never** use `sed` or text replacement. Always use the JetBrains IDE MCP refactor tools (e.g., `jetbrains_index_ide_refactor_rename` or `jetbrains_index_ide_move_file`).
+3. **Verify & Update Index**: Run `LLM_MODE=true castor dev:check` to ensure no usages were missed and to regenerate the stale `.toon` indexes.
+4. **Update Architecture Docs**: Check if the renamed concept is mentioned in any nested `AGENTS.md` maps and update them manually before claiming completion.
+
+### Workflow: Bug Investigation
+When investigating a bug or error trace:
+1. **Analyze Error**: Identify the failing class/method from logs or `jetbrains_index_ide_diagnostics`.
+2. **Targeted Read**: Use `docs/<Class>.toon` to find the exact offset and limit for the failing method. Use `read(path, offset, limit)` to inspect only that method.
+3. **Trace Execution**: Check the `callers` list in the `.toon` file from step 2 to quickly see what invokes the failing method.
+4. **Fix & Test**: Apply the fix. Run the specific test via `castor dev:test --filter <TestName>` before running the full `castor dev:check` suite.

@@ -36,4 +36,4 @@ The `CoreLifecycleEventType::validateOrder()` method is the source of truth for 
 
 ## Maintenance rule
 
-When event types, ordering rules, projection sinks, or subscriber contracts change, update this file and `src/Application/README.md` in the same change.
+When event types, ordering rules, projection sinks, or subscriber contracts change, update this file and `src/Application/AGENTS.md` in the same change.

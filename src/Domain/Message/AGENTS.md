@@ -8,7 +8,7 @@
 - Execution-bus payloads: `ExecuteLlmStep`, `ExecuteToolCall`, `CollectToolBatch`
 - Publisher-bus payloads: `ProjectJsonlOutbox`, `ProjectMercureOutbox`
 
-For concrete producers/consumers, see `src/Application/README.md`.
+For concrete producers/consumers, see `src/Application/AGENTS.md`.
 
 ## Contract boundaries
 
@@ -17,4 +17,4 @@ For concrete producers/consumers, see `src/Application/README.md`.
 
 ## Maintenance rule
 
-When a new message type is added, removed, or re-routed, update this file and `src/Application/README.md` together.
+When a new message type is added, removed, or re-routed, update this file and `src/Application/AGENTS.md` together.
