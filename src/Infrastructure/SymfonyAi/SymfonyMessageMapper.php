@@ -69,9 +69,6 @@ final class SymfonyMessageMapper
         ];
     }
 
-    /**
-     * Maps an AgentMessage to a provider-specific object format.
-     */
     private function convertAgentMessage(AgentMessage $message): object
     {
         if (!$this->supportsNativeMessageApi()) {
@@ -93,9 +90,6 @@ final class SymfonyMessageMapper
         };
     }
 
-    /**
-     * Constructs a native tool call message object from agent message content.
-     */
     private function toNativeToolCallMessage(AgentMessage $message, string $textContent): object
     {
         /** @var class-string $messageFactory */
@@ -167,9 +161,6 @@ final class SymfonyMessageMapper
         return [] === $toolCalls ? null : $toolCalls;
     }
 
-    /**
-     * Creates a generic message object representation from an agent message.
-     */
     private function toGenericMessageObject(AgentMessage $message): object
     {
         $payload = [
@@ -197,26 +188,17 @@ final class SymfonyMessageMapper
         return (object) $payload;
     }
 
-    /**
-     * Checks if the current provider supports native message API formats.
-     */
     private function supportsNativeMessageApi(): bool
     {
         return class_exists('Symfony\\AI\\Platform\\Message\\Message')
             && class_exists('Symfony\\AI\\Platform\\Message\\MessageBag');
     }
 
-    /**
-     * Determines if a message object conforms to the native message bag structure.
-     */
     private function isNativeMessageBag(object $message): bool
     {
         return 'Symfony\\AI\\Platform\\Message\\MessageBag' === $message::class;
     }
 
-    /**
-     * Extracts plain text content from an agent message for user role.
-     */
     private function userText(AgentMessage $message, string $textContent): string
     {
         if ($message->isCustomRole()) {
@@ -289,9 +271,6 @@ final class SymfonyMessageMapper
         return ['raw' => $this->stringify($message)];
     }
 
-    /**
-     * Normalizes mixed content types into a consistent format.
-     */
     private function normalizeContent(mixed $content): mixed
     {
         if (\is_scalar($content) || null === $content) {
@@ -309,9 +288,6 @@ final class SymfonyMessageMapper
         return $this->stringify($content);
     }
 
-    /**
-     * Converts a mixed value into its string representation.
-     */
     private function stringify(mixed $value): string
     {
         if (\is_string($value)) {

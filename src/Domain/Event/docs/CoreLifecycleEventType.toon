@@ -6,24 +6,24 @@ summary: CoreLifecycleEventType provides static utility methods for identifying 
 methods[3]:
   - method: isCore
     start: 48
-    end: 54
-    limit: 7
-    symbolLine: 51
+    end: 51
+    limit: 4
+    symbolLine: 48
     symbolColumn: 28
     signature: "static public function isCore(string $type): bool"
     callers[1]: "Ineersa\\AgentCore\\Domain\\Event\\CoreLifecycleEventType::validateOrder"
   - method: eventClassMap
-    start: 56
-    end: 75
+    start: 53
+    end: 72
     limit: 20
-    symbolLine: 61
+    symbolLine: 58
     symbolColumn: 28
     signature: "static public function eventClassMap(): array"
   - method: validateOrder
-    start: 77
-    end: 221
+    start: 74
+    end: 218
     limit: 145
-    symbolLine: 84
+    symbolLine: 81
     symbolColumn: 28
     signature: "static public function validateOrder(array $events, string $extensionPrefix = 'ext_'): array"
     callees[1]: "Ineersa\\AgentCore\\Domain\\Event\\CoreLifecycleEventType::isCore"

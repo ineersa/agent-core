@@ -6,25 +6,25 @@ summary: This command prints a consolidated diagnostic snapshot for a run.
 methods[3]:
   - method: __construct
     start: 22
-    end: 33
-    limit: 12
-    symbolLine: 25
+    end: 30
+    limit: 9
+    symbolLine: 22
     symbolColumn: 21
     signature: public function __construct(RunDebugService $runDebugService)
     callees[3]: "Symfony\\Component\\Console\\Command\\Command::__construct","Symfony\\Component\\Console\\Command\\Command::addArgument","Symfony\\Component\\Console\\Command\\Command::addOption"
   - method: execute
-    start: 35
-    end: 143
-    limit: 109
-    symbolLine: 38
+    start: 32
+    end: 137
+    limit: 106
+    symbolLine: 32
     symbolColumn: 24
     signature: "protected function execute(InputInterface $input, OutputInterface $output): int"
     callees[11]: "Symfony\\Component\\Console\\Input\\InputInterface::getArgument","Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::inspect","Symfony\\Component\\Console\\Input\\InputInterface::getOption","Ineersa\\AgentCore\\Command\\AgentLoopRunInspectCommand::encodeJson","Symfony\\Component\\Console\\Output\\OutputInterface::writeln","Symfony\\Component\\Console\\Style\\SymfonyStyle::title","Symfony\\Component\\Console\\Style\\SymfonyStyle::warning","Symfony\\Component\\Console\\Style\\SymfonyStyle::section","Symfony\\Component\\Console\\Style\\SymfonyStyle::definitionList","Symfony\\Component\\Console\\Style\\SymfonyStyle::text","Symfony\\Component\\Console\\Style\\SymfonyStyle::table"
   - method: encodeJson
-    start: 145
-    end: 155
+    start: 139
+    end: 149
     limit: 11
-    symbolLine: 150
+    symbolLine: 144
     symbolColumn: 22
     signature: "private function encodeJson(array $payload): string"
     callers[1]: "Ineersa\\AgentCore\\Command\\AgentLoopRunInspectCommand::execute"

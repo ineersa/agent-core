@@ -11,24 +11,15 @@ use Random\RandomException;
  */
 final readonly class RunId
 {
-    /**
-     * Initializes the run identifier with a given string value.
-     */
     public function __construct(public string $value)
     {
     }
 
-    /**
-     * Returns the string representation of the run identifier.
-     */
     public function __toString(): string
     {
         return $this->value;
     }
 
-    /**
-     * Creates and returns a new RunId instance with a generated unique value.
-     */
     public static function generate(): self
     {
         try {

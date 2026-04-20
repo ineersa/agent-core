@@ -12,8 +12,5 @@ use Ineersa\AgentCore\Domain\Tool\BeforeToolCallResult;
  */
 interface BeforeToolCallHookInterface
 {
-    /**
-     * Intercepts tool call execution to allow pre-validation or cancellation.
-     */
     public function beforeToolCall(BeforeToolCallContext $context, ?CancellationTokenInterface $cancelToken = null): ?BeforeToolCallResult;
 }

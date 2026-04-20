@@ -11,9 +11,6 @@ use Symfony\Component\Lock\LockFactory;
  */
 final readonly class RunLockManager
 {
-    /**
-     * Initializes the manager with a lock factory and default TTL.
-     */
     public function __construct(
         private LockFactory $lockFactory,
         private float $ttlSeconds = 30.0,
@@ -53,9 +50,6 @@ final readonly class RunLockManager
         }
     }
 
-    /**
-     * Generates a unique string key for the given run ID.
-     */
     private function lockKey(string $runId): string
     {
         return \sprintf('agent_loop.run.%s', $runId);

@@ -14,18 +14,12 @@ use Ineersa\AgentCore\Domain\Message\ApplyCommand;
  */
 final class CommandRouter
 {
-    /**
-     * Initializes the router with a handler registry and optional extension prefix.
-     */
     public function __construct(
         private readonly CommandHandlerRegistry $registry,
         private readonly string $extensionPrefix = 'ext:',
     ) {
     }
 
-    /**
-     * Routes an ApplyCommand to its corresponding handler and returns a RoutedCommand.
-     */
     public function route(ApplyCommand $command): RoutedCommand
     {
         $optionValidationError = $this->validateOptionKeys($command);
@@ -67,17 +61,11 @@ final class CommandRouter
         return RoutedCommand::extension($command->kind, $command->payload, $normalizedOptions);
     }
 
-    /**
-     * Retrieves a CommandHandlerInterface instance for a given command kind.
-     */
     public function handlerFor(string $kind): ?CommandHandlerInterface
     {
         return $this->registry->find($kind);
     }
 
-    /**
-     * Validates option keys within an ApplyCommand and returns error message if invalid.
-     */
     private function validateOptionKeys(ApplyCommand $command): ?string
     {
         $allowedOptionKeys = ['cancel_safe'];

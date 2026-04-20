@@ -16,18 +16,12 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 #[AsMessageHandler(bus: 'agent.publisher.bus')]
 final readonly class JsonlOutboxProjectorWorker
 {
-    /**
-     * initializes the worker with outbox store and run log writer dependencies.
-     */
     public function __construct(
         private OutboxStoreInterface $outboxStore,
         private RunLogWriter $runLogWriter,
     ) {
     }
 
-    /**
-     * processes ProjectJsonlOutbox message by persisting data to outbox and logging run details.
-     */
     public function __invoke(ProjectJsonlOutbox $message): void
     {
         $batchSize = max(1, $message->batchSize);

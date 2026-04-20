@@ -36,9 +36,6 @@ final readonly class AfterToolCallResult
         );
     }
 
-    /**
-     * Creates a new instance with the specified details payload.
-     */
     public static function withDetails(mixed $details): self
     {
         return new self(
@@ -47,9 +44,6 @@ final readonly class AfterToolCallResult
         );
     }
 
-    /**
-     * Creates a new instance with the specified error status flag.
-     */
     public function withIsError(bool $isError): self
     {
         return new self(

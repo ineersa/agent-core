@@ -6,9 +6,9 @@ summary: Defines the contract for executing tool calls within the agent core sys
 methods[1]:
   - method: execute
     start: 15
-    end: 18
-    limit: 4
-    symbolLine: 18
+    end: 15
+    limit: 1
+    symbolLine: 15
     symbolColumn: 21
     signature: "public function execute(ToolCall $toolCall): ToolResult"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker::execute"

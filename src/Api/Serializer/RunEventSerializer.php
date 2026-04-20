@@ -22,9 +22,6 @@ final readonly class RunEventSerializer
         return $this->normalizeStreamEvent($this->fromRunEvent($event));
     }
 
-    /**
-     * Transforms a RunEvent domain object into a RunStreamEvent instance.
-     */
     public function fromRunEvent(RunEvent $event): RunStreamEvent
     {
         return new RunStreamEvent(

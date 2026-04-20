@@ -20,16 +20,10 @@ use Symfony\Component\Messenger\MessageBusInterface;
  */
 final class AgentRunner implements AgentRunnerInterface
 {
-    /**
-     * Injects the command bus for dispatching core commands.
-     */
     public function __construct(private readonly MessageBusInterface $commandBus)
     {
     }
 
-    /**
-     * Initiates a new agent run and returns a handle.
-     */
     public function start(StartRunInput $input): RunHandle
     {
         $runId = $input->runId ?? (string) RunId::generate();
@@ -50,42 +44,27 @@ final class AgentRunner implements AgentRunnerInterface
         return new RunHandle($runId);
     }
 
-    /**
-     * Resumes execution for an existing run ID.
-     */
     public function continue(string $runId): void
     {
         $this->applyCoreCommand($runId, CoreCommandKind::Continue, []);
     }
 
-    /**
-     * Injects steering message into a specific run.
-     */
     public function steer(string $runId, AgentMessage $message): void
     {
         $this->applyCoreCommand($runId, CoreCommandKind::Steer, ['message' => $this->serializeMessage($message)]);
     }
 
-    /**
-     * Processes follow-up message for a specific run.
-     */
     public function followUp(string $runId, AgentMessage $message): void
     {
         $this->applyCoreCommand($runId, CoreCommandKind::FollowUp, ['message' => $this->serializeMessage($message)]);
     }
 
-    /**
-     * Cancels a run with an optional reason.
-     */
     public function cancel(string $runId, ?string $reason = null): void
     {
         $payload = null === $reason ? [] : ['reason' => $reason];
         $this->applyCoreCommand($runId, CoreCommandKind::Cancel, $payload);
     }
 
-    /**
-     * Submits human answer for a specific question ID.
-     */
     public function answerHuman(string $runId, string $questionId, mixed $answer): void
     {
         $this->applyCoreCommand($runId, CoreCommandKind::HumanResponse, [
@@ -123,25 +102,16 @@ final class AgentRunner implements AgentRunnerInterface
         return $message->toArray();
     }
 
-    /**
-     * Generates unique step ID with given prefix.
-     */
     private function nextStepId(string $prefix): string
     {
         return \sprintf('%s-%d', $prefix, hrtime(true));
     }
 
-    /**
-     * Constructs idempotency key from run and step IDs.
-     */
     private function idempotencyKey(string $runId, string $stepId): string
     {
         return hash('sha256', \sprintf('%s|%s', $runId, $stepId));
     }
 
-    /**
-     * Sends message to the command bus.
-     */
     private function dispatch(object $message): void
     {
         try {

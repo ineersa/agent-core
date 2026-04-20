@@ -6,39 +6,39 @@ summary: InMemoryOutboxStore provides an in-memory implementation of the outbox 
 methods[5]:
   - method: enqueue
     start: 35
-    end: 56
-    limit: 22
-    symbolLine: 38
+    end: 53
+    limit: 19
+    symbolLine: 35
     symbolColumn: 21
     signature: "public function enqueue(RunEvent $event, OutboxSink $sink): void"
     callees[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryOutboxStore::dedupeKey"
   - method: claim
-    start: 58
-    end: 98
-    limit: 41
-    symbolLine: 61
+    start: 55
+    end: 92
+    limit: 38
+    symbolLine: 55
     symbolColumn: 21
     signature: "public function claim(OutboxSink $sink, int $limit = 100, ?DateTimeImmutable $now = null): array"
   - method: markProcessed
-    start: 100
-    end: 111
-    limit: 12
-    symbolLine: 103
+    start: 94
+    end: 102
+    limit: 9
+    symbolLine: 94
     symbolColumn: 21
     signature: "public function markProcessed(int $entryId, ?DateTimeImmutable $processedAt = null): void"
   - method: markFailed
-    start: 113
-    end: 127
-    limit: 15
-    symbolLine: 116
+    start: 104
+    end: 115
+    limit: 12
+    symbolLine: 104
     symbolColumn: 21
     signature: "public function markFailed(int $entryId, int $retryAfterSeconds = 30, ?DateTimeImmutable $now = null): void"
     callees[2]: "DateTimeImmutable::getTimestamp","DateTimeImmutable::setTimestamp"
   - method: dedupeKey
-    start: 129
-    end: 135
-    limit: 7
-    symbolLine: 132
+    start: 117
+    end: 120
+    limit: 4
+    symbolLine: 117
     symbolColumn: 22
     signature: "private function dedupeKey(OutboxSink $sink, RunEvent $event): string"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryOutboxStore::enqueue"

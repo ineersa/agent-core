@@ -16,9 +16,6 @@ final class RunTracer
 
     private int $sequence = 0;
 
-    /**
-     * Initializes tracer with optional logger sink.
-     */
     public function __construct(private readonly ?LoggerInterface $logger = null)
     {
     }

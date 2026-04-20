@@ -27,17 +27,11 @@ final readonly class ToolBatchCollectOutcome
     ) {
     }
 
-    /**
-     * Creates a static instance representing a rejected batch outcome.
-     */
     public static function rejected(): self
     {
         return new self(accepted: false, duplicate: false, complete: false);
     }
 
-    /**
-     * Creates a static instance representing a duplicate batch outcome.
-     */
     public static function duplicate(): self
     {
         return new self(accepted: true, duplicate: true, complete: false);

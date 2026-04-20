@@ -24,9 +24,6 @@ final class CommandHandlerRegistry
         $this->handlers = $handlers;
     }
 
-    /**
-     * Retrieves the command handler matching the specified kind.
-     */
     public function find(string $kind): ?CommandHandlerInterface
     {
         foreach ($this->handlers as $handler) {

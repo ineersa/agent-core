@@ -9,9 +9,6 @@ namespace Ineersa\AgentCore\Domain\Message;
  */
 final readonly class ProjectJsonlOutbox
 {
-    /**
-     * Initializes batch size and retry delay configuration values.
-     */
     public function __construct(
         public int $batchSize = 100,
         public int $retryDelaySeconds = 30,

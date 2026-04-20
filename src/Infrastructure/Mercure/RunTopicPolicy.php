@@ -9,9 +9,6 @@ namespace Ineersa\AgentCore\Infrastructure\Mercure;
  */
 final readonly class RunTopicPolicy
 {
-    /**
-     * Generates a single Mercure topic string for the specified run ID.
-     */
     public function topicFor(string $runId): string
     {
         return \sprintf('agent/runs/%s', $runId);

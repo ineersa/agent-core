@@ -6,24 +6,24 @@ summary: This class serves as a message handler for executing LLM steps within t
 methods[3]:
   - method: __construct
     start: 19
-    end: 28
-    limit: 10
-    symbolLine: 22
+    end: 25
+    limit: 7
+    symbolLine: 19
     symbolColumn: 21
     signature: "public function __construct(PlatformInterface $platform, MessageBusInterface $commandBus, ?RunMetrics $metrics = null, ?RunTracer $tracer = null)"
   - method: __invoke
-    start: 30
-    end: 58
+    start: 27
+    end: 55
     limit: 29
-    symbolLine: 34
+    symbolLine: 31
     symbolColumn: 21
     signature: "public function __invoke(ExecuteLlmStep $message): void"
     callees[6]: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteLlmStepWorker::execute","Symfony\\Component\\Messenger\\MessageBusInterface::dispatch","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId"
   - method: execute
-    start: 60
-    end: 139
-    limit: 80
-    symbolLine: 63
+    start: 57
+    end: 133
+    limit: 77
+    symbolLine: 57
     symbolColumn: 22
     signature: "private function execute(ExecuteLlmStep $message): LlmStepResult"
     callees[9]: "Ineersa\\AgentCore\\Contract\\Tool\\PlatformInterface::invoke","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordLlmLatency","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::attempt","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Throwable::getMessage"

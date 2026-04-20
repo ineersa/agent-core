@@ -31,18 +31,18 @@ methods[5]:
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::invoke"
   - method: assertSchemaStability
     start: 65
-    end: 84
-    limit: 20
-    symbolLine: 68
+    end: 81
+    limit: 17
+    symbolLine: 65
     symbolColumn: 22
     signature: "private function assertSchemaStability(ToolDefinition $definition): void"
     callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver::schemaFingerprint"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver::resolve"
   - method: schemaFingerprint
-    start: 86
-    end: 99
+    start: 83
+    end: 96
     limit: 14
-    symbolLine: 91
+    symbolLine: 88
     symbolColumn: 22
     signature: "private function schemaFingerprint(?array $schema): string"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver::assertSchemaStability"

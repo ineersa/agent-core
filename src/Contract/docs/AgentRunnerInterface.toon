@@ -6,44 +6,44 @@ summary: "Defines the contract for orchestrating the lifecycle of an agent execu
 methods[6]:
   - method: start
     start: 16
-    end: 19
-    limit: 4
-    symbolLine: 19
+    end: 16
+    limit: 1
+    symbolLine: 16
     symbolColumn: 21
     signature: "public function start(StartRunInput $input): RunHandle"
     callers[1]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::startRun"
   - method: continue
-    start: 21
-    end: 24
-    limit: 4
-    symbolLine: 24
+    start: 18
+    end: 18
+    limit: 1
+    symbolLine: 18
     symbolColumn: 21
     signature: "public function continue(string $runId): void"
   - method: steer
-    start: 26
-    end: 29
-    limit: 4
-    symbolLine: 29
+    start: 20
+    end: 20
+    limit: 1
+    symbolLine: 20
     symbolColumn: 21
     signature: "public function steer(string $runId, AgentMessage $message): void"
   - method: followUp
-    start: 31
-    end: 34
-    limit: 4
-    symbolLine: 34
+    start: 22
+    end: 22
+    limit: 1
+    symbolLine: 22
     symbolColumn: 21
     signature: "public function followUp(string $runId, AgentMessage $message): void"
   - method: cancel
-    start: 36
-    end: 39
-    limit: 4
-    symbolLine: 39
+    start: 24
+    end: 24
+    limit: 1
+    symbolLine: 24
     symbolColumn: 21
     signature: "public function cancel(string $runId, ?string $reason = null): void"
   - method: answerHuman
-    start: 41
-    end: 44
-    limit: 4
-    symbolLine: 44
+    start: 26
+    end: 26
+    limit: 1
+    symbolLine: 26
     symbolColumn: 21
     signature: "public function answerHuman(string $runId, string $questionId, mixed $answer): void"

@@ -6,16 +6,16 @@ summary: The JsonlOutboxProjectorWorker consumes ProjectJsonlOutbox messages to 
 methods[2]:
   - method: __construct
     start: 19
-    end: 26
-    limit: 8
-    symbolLine: 22
+    end: 23
+    limit: 5
+    symbolLine: 19
     symbolColumn: 21
     signature: "public function __construct(OutboxStoreInterface $outboxStore, RunLogWriter $runLogWriter)"
   - method: __invoke
-    start: 28
-    end: 50
-    limit: 23
-    symbolLine: 31
+    start: 25
+    end: 44
+    limit: 20
+    symbolLine: 25
     symbolColumn: 21
     signature: "public function __invoke(ProjectJsonlOutbox $message): void"
     callees[4]: "Ineersa\\AgentCore\\Contract\\OutboxStoreInterface::claim","Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogWriter::append","Ineersa\\AgentCore\\Contract\\OutboxStoreInterface::markProcessed","Ineersa\\AgentCore\\Contract\\OutboxStoreInterface::markFailed"

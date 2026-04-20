@@ -9,9 +9,6 @@ namespace Ineersa\AgentCore\Domain\Message;
  */
 final readonly class ProjectMercureOutbox
 {
-    /**
-     * Initializes batch size and retry delay configuration for Mercure outbox publishing.
-     */
     public function __construct(
         public int $batchSize = 100,
         public int $retryDelaySeconds = 30,

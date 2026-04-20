@@ -6,9 +6,9 @@ summary: "Represents a domain event for executing an LLM step within an agent ru
 methods[1]:
   - method: __construct
     start: 12
-    end: 25
-    limit: 14
-    symbolLine: 15
+    end: 22
+    limit: 11
+    symbolLine: 12
     symbolColumn: 21
     signature: "public function __construct(string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey, string $contextRef, string $toolsRef)"
     callees[1]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::__construct"

@@ -6,34 +6,34 @@ summary: "Reads run log files from the filesystem to reconstruct event sequences
 methods[4]:
   - method: __construct
     start: 17
-    end: 22
-    limit: 6
-    symbolLine: 20
+    end: 19
+    limit: 3
+    symbolLine: 17
     symbolColumn: 21
     signature: public function __construct(FilesystemOperator $filesystem)
   - method: allFor
-    start: 24
-    end: 53
+    start: 21
+    end: 50
     limit: 30
-    symbolLine: 29
+    symbolLine: 26
     symbolColumn: 21
     signature: "public function allFor(string $runId): array"
     callees[3]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader::runLogPaths","League\\Flysystem\\FilesystemReader::read","Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader::eventFromJsonLine"
     callers[3]: "Ineersa\\AgentCore\\Api\\Http\\RunReadService::eventsForRun","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::eventsForReplay","Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::eventsForRun"
   - method: runLogPaths
-    start: 55
-    end: 86
+    start: 52
+    end: 83
     limit: 32
-    symbolLine: 60
+    symbolLine: 57
     symbolColumn: 22
     signature: "private function runLogPaths(string $runId): array"
     callees[2]: "League\\Flysystem\\FilesystemReader::listContents","League\\Flysystem\\FileAttributes::path"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader::allFor"
   - method: eventFromJsonLine
-    start: 88
-    end: 131
-    limit: 44
-    symbolLine: 91
+    start: 85
+    end: 125
+    limit: 41
+    symbolLine: 85
     symbolColumn: 22
     signature: "private function eventFromJsonLine(string $runId, string $line): ?RunEvent"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader::allFor"

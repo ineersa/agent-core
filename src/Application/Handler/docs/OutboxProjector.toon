@@ -6,16 +6,16 @@ summary: The OutboxProjector class processes a batch of domain events by persist
 methods[2]:
   - method: __construct
     start: 20
-    end: 28
-    limit: 9
-    symbolLine: 23
+    end: 25
+    limit: 6
+    symbolLine: 20
     symbolColumn: 21
     signature: "public function __construct(OutboxStoreInterface $outboxStore, RunLogWriter $runLogWriter, RunEventPublisher $runEventPublisher)"
   - method: project
-    start: 30
-    end: 47
+    start: 27
+    end: 44
     limit: 18
-    symbolLine: 35
+    symbolLine: 32
     symbolColumn: 21
     signature: "public function project(array $events): void"
     callees[1]: "Ineersa\\AgentCore\\Contract\\OutboxStoreInterface::enqueue"

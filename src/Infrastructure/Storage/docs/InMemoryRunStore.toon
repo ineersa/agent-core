@@ -4,6 +4,6 @@ class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunStore"
 type: final class
 summary: "InMemoryRunStore provides an in-memory implementation of the RunState persistence layer, designed for testing or ephemeral runtime contexts. It manages the lifecycle of agent run states using versioned optimistic locking to ensure consistency during concurrent updates."
 methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  get,21,27,7,24,21,"public function get(string $runId): ?RunState"
-  compareAndSwap,29,45,17,32,21,"public function compareAndSwap(RunState $state, int $expectedVersion): bool"
-  findRunningStaleBefore,47,68,22,50,21,"public function findRunningStaleBefore(DateTimeImmutable $updatedBefore): array"
+  get,21,24,4,21,21,"public function get(string $runId): ?RunState"
+  compareAndSwap,26,39,14,26,21,"public function compareAndSwap(RunState $state, int $expectedVersion): bool"
+  findRunningStaleBefore,41,59,19,41,21,"public function findRunningStaleBefore(DateTimeImmutable $updatedBefore): array"

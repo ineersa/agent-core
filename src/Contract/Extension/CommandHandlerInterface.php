@@ -9,14 +9,8 @@ namespace Ineersa\AgentCore\Contract\Extension;
  */
 interface CommandHandlerInterface
 {
-    /**
-     * Checks if the handler supports the specified command kind.
-     */
     public function supports(string $kind): bool;
 
-    /**
-     * Verifies if the command kind supports safe cancellation semantics.
-     */
     public function supportsCancelSafe(string $kind): bool;
 
     /**

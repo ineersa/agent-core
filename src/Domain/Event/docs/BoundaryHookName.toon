@@ -6,17 +6,17 @@ summary: Provides static utility methods to classify event hook names based on t
 methods[2]:
   - method: isBoundary
     start: 29
-    end: 35
-    limit: 7
-    symbolLine: 32
+    end: 32
+    limit: 4
+    symbolLine: 29
     symbolColumn: 28
     signature: "static public function isBoundary(string $hookName): bool"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\HookDispatcher::dispatch"
   - method: isExtensionHook
-    start: 37
-    end: 43
-    limit: 7
-    symbolLine: 40
+    start: 34
+    end: 37
+    limit: 4
+    symbolLine: 34
     symbolColumn: 28
     signature: "static public function isExtensionHook(string $hookName, string $extensionPrefix = self::EXTENSION_PREFIX): bool"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\HookDispatcher::dispatch"

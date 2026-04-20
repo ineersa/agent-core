@@ -6,44 +6,44 @@ summary: "This class provides a caching layer for tool execution results, enabli
 methods[5]:
   - method: findByRunToolCall
     start: 20
-    end: 26
-    limit: 7
-    symbolLine: 23
+    end: 23
+    limit: 4
+    symbolLine: 20
     symbolColumn: 21
     signature: "public function findByRunToolCall(string $runId, string $toolCallId): ?ToolResult"
     callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore::runToolCallKey"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::execute"
   - method: findByToolAndIdempotencyKey
-    start: 28
-    end: 34
-    limit: 7
-    symbolLine: 31
+    start: 25
+    end: 28
+    limit: 4
+    symbolLine: 25
     symbolColumn: 21
     signature: "public function findByToolAndIdempotencyKey(string $toolName, string $toolIdempotencyKey): ?ToolResult"
     callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore::toolIdempotencyKey"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::execute"
   - method: remember
-    start: 36
-    end: 48
-    limit: 13
-    symbolLine: 39
+    start: 30
+    end: 39
+    limit: 10
+    symbolLine: 30
     symbolColumn: 21
     signature: "public function remember(string $runId, string $toolCallId, string $toolName, ?string $toolIdempotencyKey, ToolResult $result): void"
     callees[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore::runToolCallKey","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore::toolIdempotencyKey"
     callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::execute","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::rememberAndReturn"
   - method: runToolCallKey
-    start: 50
-    end: 56
-    limit: 7
-    symbolLine: 53
+    start: 41
+    end: 44
+    limit: 4
+    symbolLine: 41
     symbolColumn: 22
     signature: "private function runToolCallKey(string $runId, string $toolCallId): string"
     callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore::findByRunToolCall","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore::remember"
   - method: toolIdempotencyKey
-    start: 58
-    end: 64
-    limit: 7
-    symbolLine: 61
+    start: 46
+    end: 49
+    limit: 4
+    symbolLine: 46
     symbolColumn: 22
     signature: "private function toolIdempotencyKey(string $toolName, string $toolIdempotencyKey): string"
     callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore::findByToolAndIdempotencyKey","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore::remember"

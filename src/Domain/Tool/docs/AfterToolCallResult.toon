@@ -6,5 +6,5 @@ summary: "The AfterToolCallResult class represents the immutable outcome of a to
 methods[4]{method,start,end,limit,symbolLine,symbolColumn,signature}:
   __construct,12,24,13,17,21,"public function __construct(bool $hasContentOverride = false, array $content = [], bool $hasDetailsOverride = false, mixed $details = null, ?bool $isError = null)"
   withContent,26,37,12,31,28,"static public function withContent(array $content): self"
-  withDetails,39,48,10,42,28,"static public function withDetails(mixed $details): self"
-  withIsError,50,62,13,53,21,"public function withIsError(bool $isError): self"
+  withDetails,39,45,7,39,28,"static public function withDetails(mixed $details): self"
+  withIsError,47,56,10,47,21,"public function withIsError(bool $isError): self"

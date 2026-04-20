@@ -4,8 +4,8 @@ class: "Ineersa\\AgentCore\\Domain\\Message\\AgentBusMessageInterface"
 type: interface
 summary: "Defines the contract for domain messages dispatched via the agent bus, ensuring consistent metadata for execution tracking. It enforces the presence of unique identifiers and sequence numbers required for reliable event processing and state management."
 methods[5]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  runId,12,15,4,15,21,"public function runId(): string"
-  turnNo,17,20,4,20,21,"public function turnNo(): int"
-  stepId,22,25,4,25,21,"public function stepId(): string"
-  attempt,27,30,4,30,21,"public function attempt(): int"
-  idempotencyKey,32,35,4,35,21,"public function idempotencyKey(): string"
+  runId,12,12,1,12,21,"public function runId(): string"
+  turnNo,14,14,1,14,21,"public function turnNo(): int"
+  stepId,16,16,1,16,21,"public function stepId(): string"
+  attempt,18,18,1,18,21,"public function attempt(): int"
+  idempotencyKey,20,20,1,20,21,"public function idempotencyKey(): string"

@@ -22,8 +22,8 @@ methods[3]:
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ReplayService::rebuildHotPromptState"
   - method: delete
     start: 26
-    end: 29
-    limit: 4
-    symbolLine: 29
+    end: 26
+    limit: 1
+    symbolLine: 26
     symbolColumn: 21
     signature: "public function delete(string $runId): void"

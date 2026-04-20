@@ -14,9 +14,6 @@ use League\Flysystem\FilesystemOperator;
  */
 final readonly class RunLogReader
 {
-    /**
-     * initializes the reader with a filesystem operator.
-     */
     public function __construct(private FilesystemOperator $filesystem)
     {
     }
@@ -85,9 +82,6 @@ final readonly class RunLogReader
         return $paths;
     }
 
-    /**
-     * parses a JSON line string into a RunEvent object.
-     */
     private function eventFromJsonLine(string $runId, string $line): ?RunEvent
     {
         $trimmedLine = trim($line);

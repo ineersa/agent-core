@@ -42,9 +42,6 @@ final class LatencyHistogram
         $this->bucketCounts[\count($bucketBoundsMs)] = 0;
     }
 
-    /**
-     * Adds one latency observation in milliseconds.
-     */
     public function observe(float $durationMs): void
     {
         $valueMs = max(0.0, $durationMs);

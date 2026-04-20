@@ -11,9 +11,6 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
  */
 final readonly class AfterToolCallContext
 {
-    /**
-     * Initializes the context with assistant message, tool call, arguments, result, and error status.
-     */
     public function __construct(
         public AgentMessage $assistantMessage,
         public ToolCall $toolCall,

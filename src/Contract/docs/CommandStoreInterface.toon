@@ -6,65 +6,65 @@ summary: "Defines the contract for persisting and managing the lifecycle of pend
 methods[8]:
   - method: enqueue
     start: 14
-    end: 17
-    limit: 4
-    symbolLine: 17
+    end: 14
+    limit: 1
+    symbolLine: 14
     symbolColumn: 21
     signature: "public function enqueue(PendingCommand $command): bool"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onApplyCommand"
   - method: has
-    start: 19
-    end: 22
-    limit: 4
-    symbolLine: 22
+    start: 16
+    end: 16
+    limit: 1
+    symbolLine: 16
     symbolColumn: 21
     signature: "public function has(string $runId, string $idempotencyKey): bool"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onApplyCommand"
   - method: pending
-    start: 24
-    end: 29
+    start: 18
+    end: 23
     limit: 6
-    symbolLine: 29
+    symbolLine: 23
     symbolColumn: 21
     signature: "public function pending(string $runId): array"
     callers[3]: "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::inspect","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingStopBoundaryCommands"
   - method: countPending
-    start: 31
-    end: 34
-    limit: 4
-    symbolLine: 34
+    start: 25
+    end: 25
+    limit: 1
+    symbolLine: 25
     symbolColumn: 21
     signature: "public function countPending(string $runId): int"
     callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onApplyCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::trackCommitMetrics"
   - method: rejectPendingByKind
-    start: 36
-    end: 41
+    start: 27
+    end: 32
     limit: 6
-    symbolLine: 41
+    symbolLine: 32
     symbolColumn: 21
     signature: "public function rejectPendingByKind(string $runId, string $kind, string $reason): array"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyCancelCommand"
   - method: markApplied
-    start: 43
-    end: 46
-    limit: 4
-    symbolLine: 46
+    start: 34
+    end: 34
+    limit: 1
+    symbolLine: 34
     symbolColumn: 21
     signature: "public function markApplied(string $runId, string $idempotencyKey): void"
     callers[6]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyCancelCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyContinueCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyHumanResponseCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingStopBoundaryCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyExtensionCommand"
   - method: markRejected
-    start: 48
-    end: 51
-    limit: 4
-    symbolLine: 51
+    start: 36
+    end: 36
+    limit: 1
+    symbolLine: 36
     symbolColumn: 21
     signature: "public function markRejected(string $runId, string $idempotencyKey, string $reason): void"
     callers[4]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::rejectCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingStopBoundaryCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyExtensionCommand"
   - method: markSuperseded
-    start: 53
-    end: 56
-    limit: 4
-    symbolLine: 56
+    start: 38
+    end: 38
+    limit: 1
+    symbolLine: 38
     symbolColumn: 21
     signature: "public function markSuperseded(string $runId, string $idempotencyKey, string $reason): void"
     callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingStopBoundaryCommands"

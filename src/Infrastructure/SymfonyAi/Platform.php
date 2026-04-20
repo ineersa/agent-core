@@ -41,9 +41,6 @@ final readonly class Platform implements PlatformInterface
     ) {
     }
 
-    /**
-     * Executes an AI agent run with the specified model, input, and options.
-     */
     public function invoke(string $model, array $input, array $options = []): array
     {
         $runContext = $this->runContextFrom($input);
@@ -269,9 +266,6 @@ final readonly class Platform implements PlatformInterface
         return $options;
     }
 
-    /**
-     * Creates or retrieves a cancellation token based on run ID and provided value.
-     */
     private function cancellationToken(?string $runId, mixed $provided): CancellationTokenInterface
     {
         if ($provided instanceof CancellationTokenInterface) {

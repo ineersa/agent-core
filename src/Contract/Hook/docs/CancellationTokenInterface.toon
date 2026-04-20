@@ -6,9 +6,9 @@ summary: Defines the contract for a cancellation token used to signal intent to 
 methods[1]:
   - method: isCancellationRequested
     start: 12
-    end: 15
-    limit: 4
-    symbolLine: 15
+    end: 12
+    limit: 1
+    symbolLine: 12
     symbolColumn: 21
     signature: "public function isCancellationRequested(): bool"
     callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::execute","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyPlatformInvoker::invoke"

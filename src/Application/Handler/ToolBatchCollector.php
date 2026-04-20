@@ -26,9 +26,6 @@ final class ToolBatchCollector
      */
     private array $batches = [];
 
-    /**
-     * Initializes the collector with a default maximum parallelism limit.
-     */
     public function __construct(
         private readonly int $defaultMaxParallelism = 4,
     ) {
@@ -77,9 +74,6 @@ final class ToolBatchCollector
         return $initialDispatch;
     }
 
-    /**
-     * Collects a tool call result and returns the batch collection outcome.
-     */
     public function collect(ToolCallResult $result): ToolBatchCollectOutcome
     {
         $batchKey = $this->batchKey($result->runId(), $result->turnNo(), $result->stepId());
@@ -185,9 +179,6 @@ final class ToolBatchCollector
         return $dispatch;
     }
 
-    /**
-     * Generates a unique composite key from run, turn, and step identifiers.
-     */
     private function batchKey(string $runId, int $turnNo, string $stepId): string
     {
         return \sprintf('%s|%d|%s', $runId, $turnNo, $stepId);

@@ -21,9 +21,6 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand(name: 'agent-loop:run-replay', description: 'Replay run events after a given sequence number.')]
 final class AgentLoopRunReplayCommand extends Command
 {
-    /**
-     * Injects debug replay dependencies.
-     */
     public function __construct(
         private readonly RunDebugService $runDebugService,
         private readonly RunEventSerializer $runEventSerializer,
@@ -38,9 +35,6 @@ final class AgentLoopRunReplayCommand extends Command
         ;
     }
 
-    /**
-     * Prints replay windows for operational debugging.
-     */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $runId = (string) $input->getArgument('runId');
@@ -117,9 +111,6 @@ final class AgentLoopRunReplayCommand extends Command
         return false === $encoded ? '{}' : $encoded;
     }
 
-    /**
-     * Builds a compact payload preview for tabular output.
-     */
     private function payloadPreview(mixed $payload): string
     {
         $encoded = json_encode($payload);

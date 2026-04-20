@@ -9,26 +9,17 @@ namespace Ineersa\AgentCore\Domain\Tool;
  */
 final readonly class BeforeToolCallResult
 {
-    /**
-     * Initializes the result with block status and optional reason.
-     */
     public function __construct(
         public bool $block = false,
         public ?string $reason = null,
     ) {
     }
 
-    /**
-     * Creates a new instance indicating the tool call is permitted.
-     */
     public static function allow(): self
     {
         return new self();
     }
 
-    /**
-     * Creates a new instance indicating the tool call is denied with a reason.
-     */
     public static function blocked(?string $reason = null): self
     {
         return new self(block: true, reason: $reason);

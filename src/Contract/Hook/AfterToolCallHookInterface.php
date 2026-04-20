@@ -12,8 +12,5 @@ use Ineersa\AgentCore\Domain\Tool\AfterToolCallResult;
  */
 interface AfterToolCallHookInterface
 {
-    /**
-     * Processes the result of a tool call using the provided context and optional cancellation token.
-     */
     public function afterToolCall(AfterToolCallContext $context, ?CancellationTokenInterface $cancelToken = null): ?AfterToolCallResult;
 }

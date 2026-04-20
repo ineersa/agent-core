@@ -17,9 +17,6 @@ use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
  */
 final readonly class RunDebugService
 {
-    /**
-     * Injects stores and replay services used to inspect run internals.
-     */
     public function __construct(
         private RunStoreInterface $runStore,
         private CommandStoreInterface $commandStore,
@@ -299,9 +296,6 @@ final readonly class RunDebugService
         return $missing;
     }
 
-    /**
-     * Clamps user-provided limits to a safe positive range.
-     */
     private function clampLimit(int $limit, int $max): int
     {
         return min(max(1, $limit), $max);

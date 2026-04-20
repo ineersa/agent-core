@@ -13,17 +13,17 @@ methods[3]:
     signature: public function __construct(array $bucketBoundsMs)
   - method: observe
     start: 45
-    end: 68
-    limit: 24
-    symbolLine: 48
+    end: 65
+    limit: 21
+    symbolLine: 45
     symbolColumn: 21
     signature: "public function observe(float $durationMs): void"
     callers[3]: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordTurnCompleted","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordLlmLatency","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordToolLatency"
   - method: snapshot
-    start: 70
-    end: 97
+    start: 67
+    end: 94
     limit: 28
-    symbolLine: 75
+    symbolLine: 72
     symbolColumn: 21
     signature: "public function snapshot(): array"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::snapshot"

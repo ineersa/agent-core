@@ -46,17 +46,11 @@ final readonly class RoutedCommand
         return new self(status: 'extension', kind: $kind, payload: $payload, options: $options);
     }
 
-    /**
-     * Creates a rejected command instance with the specified kind and reason.
-     */
     public static function rejected(string $kind, string $reason): self
     {
         return new self(status: 'rejected', kind: $kind, reason: $reason);
     }
 
-    /**
-     * Returns true if the command status indicates rejection.
-     */
     public function isRejected(): bool
     {
         return 'rejected' === $this->status;

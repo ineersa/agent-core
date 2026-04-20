@@ -28,9 +28,6 @@ final readonly class ToolExecutionPolicyResolver
         $this->defaultMode = ToolExecutionMode::tryFrom($defaultMode) ?? ToolExecutionMode::Sequential;
     }
 
-    /**
-     * Returns the ToolExecutionPolicy for the specified tool name using overrides or defaults.
-     */
     public function resolve(string $toolName): ToolExecutionPolicy
     {
         $override = $this->overrides[$toolName] ?? [];

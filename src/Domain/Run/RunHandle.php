@@ -9,9 +9,6 @@ namespace Ineersa\AgentCore\Domain\Run;
  */
 final readonly class RunHandle
 {
-    /**
-     * Initializes the run handle with a specific run ID string.
-     */
     public function __construct(public string $runId)
     {
     }

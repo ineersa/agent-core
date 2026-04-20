@@ -28,9 +28,6 @@ final readonly class MessageBag
         return $this->messages;
     }
 
-    /**
-     * Creates and returns a new empty MessageBag instance.
-     */
     public static function empty(): self
     {
         return new self([]);

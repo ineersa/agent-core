@@ -14,17 +14,11 @@ final class HotPromptStateStore implements PromptStateStoreInterface
     /** @var array<string, array<string, mixed>> */
     private array $states = [];
 
-    /**
-     * Retrieves the cached state array for a specific run ID or returns null if not found.
-     */
     public function get(string $runId): ?array
     {
         return $this->states[$runId] ?? null;
     }
 
-    /**
-     * Stores the provided state array in the cache under the specified run ID.
-     */
     public function save(string $runId, array $state): void
     {
         if (null !== $this->get($runId)) {
@@ -38,9 +32,6 @@ final class HotPromptStateStore implements PromptStateStoreInterface
         $this->states[$runId] = $normalizedState;
     }
 
-    /**
-     * Removes the cached state entry for the specified run ID from the cache.
-     */
     public function delete(string $runId): void
     {
         unset($this->states[$runId]);

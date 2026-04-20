@@ -19,9 +19,6 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand(name: 'agent-loop:run-rebuild-hot-state', description: 'Rebuild hot prompt state for a run from event history.')]
 final class AgentLoopRunRebuildHotStateCommand extends Command
 {
-    /**
-     * Injects the debug service used to rebuild prompt state.
-     */
     public function __construct(private readonly RunDebugService $runDebugService)
     {
         parent::__construct();
@@ -32,9 +29,6 @@ final class AgentLoopRunRebuildHotStateCommand extends Command
         ;
     }
 
-    /**
-     * Replays events and persists rebuilt prompt state.
-     */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $runId = (string) $input->getArgument('runId');

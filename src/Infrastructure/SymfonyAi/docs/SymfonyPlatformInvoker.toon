@@ -6,52 +6,52 @@ summary: "SymfonyPlatformInvoker acts as an adapter for the Symfony AI platform,
 methods[6]:
   - method: __construct
     start: 16
-    end: 22
-    limit: 7
-    symbolLine: 19
+    end: 19
+    limit: 4
+    symbolLine: 16
     symbolColumn: 21
     signature: public function __construct(?object $platform = null)
   - method: invoke
-    start: 24
-    end: 89
+    start: 21
+    end: 86
     limit: 66
-    symbolLine: 30
+    symbolLine: 27
     symbolColumn: 21
     signature: "public function invoke(string $model, array|string|object $input, array $toolDefinitions = [], array $options = [], ?CancellationTokenInterface $cancelToken = null): PlatformInvocationResult"
     callees[10]: "stdClass::invoke","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyPlatformInvoker::streamFrom","Ineersa\\AgentCore\\Contract\\Hook\\CancellationTokenInterface::isCancellationRequested","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::consume","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyPlatformInvoker::extractUsage","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::deltas","Throwable::getMessage","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::usage","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::assistantMessage","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::hasToolCalls"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::invoke"
   - method: streamFrom
-    start: 91
-    end: 113
+    start: 88
+    end: 110
     limit: 23
-    symbolLine: 96
+    symbolLine: 93
     symbolColumn: 22
     signature: "private function streamFrom(object $deferredResult): iterable"
     callees[3]: "stdClass::asStream","stdClass::getResult","stdClass::getContent"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyPlatformInvoker::invoke"
   - method: extractUsage
-    start: 115
-    end: 152
+    start: 112
+    end: 149
     limit: 38
-    symbolLine: 120
+    symbolLine: 117
     symbolColumn: 22
     signature: "private function extractUsage(object $deferredResult): array"
     callees[3]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyPlatformInvoker::metadataFrom","stdClass::get","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyPlatformInvoker::numericFrom"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyPlatformInvoker::invoke"
   - method: metadataFrom
-    start: 154
-    end: 173
+    start: 151
+    end: 170
     limit: 20
-    symbolLine: 159
+    symbolLine: 156
     symbolColumn: 22
     signature: "private function metadataFrom(object $deferredResult): array|object|null"
     callees[2]: "stdClass::getMetadata","stdClass::getResult"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyPlatformInvoker::extractUsage"
   - method: numericFrom
-    start: 175
-    end: 191
-    limit: 17
-    symbolLine: 178
+    start: 172
+    end: 185
+    limit: 14
+    symbolLine: 172
     symbolColumn: 22
     signature: "private function numericFrom(object $value, string $method): int|float|null"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyPlatformInvoker::extractUsage"

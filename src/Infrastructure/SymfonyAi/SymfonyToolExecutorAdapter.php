@@ -34,9 +34,6 @@ final readonly class SymfonyToolExecutorAdapter implements ToolExecutorInterface
     ) {
     }
 
-    /**
-     * executes tool call via fallback executor or Symfony toolbox and returns result.
-     */
     public function execute(ToolCall $toolCall): ToolResult
     {
         if (!$this->canUseSymfonyToolbox()) {
@@ -186,9 +183,6 @@ final readonly class SymfonyToolExecutorAdapter implements ToolExecutorInterface
         ];
     }
 
-    /**
-     * checks if Symfony toolbox is available and usable for the current context.
-     */
     private function canUseSymfonyToolbox(): bool
     {
         return null !== $this->toolbox
@@ -196,9 +190,6 @@ final readonly class SymfonyToolExecutorAdapter implements ToolExecutorInterface
             && class_exists('Symfony\\AI\\Platform\\Result\\ToolCall');
     }
 
-    /**
-     * transforms generic ToolCall into a Symfony-specific tool call object.
-     */
     private function toSymfonyToolCall(ToolCall $toolCall): object
     {
         /** @var class-string $toolCallClass */
@@ -211,9 +202,6 @@ final readonly class SymfonyToolExecutorAdapter implements ToolExecutorInterface
         );
     }
 
-    /**
-     * converts mixed value to its string representation.
-     */
     private function stringify(mixed $value): string
     {
         if (null === $value) {

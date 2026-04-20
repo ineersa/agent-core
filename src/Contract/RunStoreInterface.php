@@ -11,14 +11,8 @@ use Ineersa\AgentCore\Domain\Run\RunState;
  */
 interface RunStoreInterface
 {
-    /**
-     * Retrieves the current RunState for a given run ID.
-     */
     public function get(string $runId): ?RunState;
 
-    /**
-     * Atomically updates a RunState if the current version matches the expected version.
-     */
     public function compareAndSwap(RunState $state, int $expectedVersion): bool;
 
     /**

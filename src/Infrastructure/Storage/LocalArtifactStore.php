@@ -11,16 +11,10 @@ use Ineersa\AgentCore\Contract\ArtifactStoreInterface;
  */
 final readonly class LocalArtifactStore implements ArtifactStoreInterface
 {
-    /**
-     * initializes the store with the specified base directory path.
-     */
     public function __construct(private string $basePath)
     {
     }
 
-    /**
-     * writes artifact content to a file within the run-specific directory and returns the file path.
-     */
     public function put(string $runId, string $artifactName, string $content, array $metadata = []): string
     {
         $safeName = preg_replace('{[^a-zA-Z0-9._-]}', '_', $artifactName) ?? 'artifact.bin';

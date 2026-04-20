@@ -6,98 +6,98 @@ summary: "The AgentRunner class orchestrates the lifecycle of agent execution ru
 methods[12]:
   - method: __construct
     start: 23
-    end: 28
-    limit: 6
-    symbolLine: 26
+    end: 25
+    limit: 3
+    symbolLine: 23
     symbolColumn: 21
     signature: public function __construct(MessageBusInterface $commandBus)
   - method: start
-    start: 30
-    end: 51
-    limit: 22
-    symbolLine: 33
+    start: 27
+    end: 45
+    limit: 19
+    symbolLine: 27
     symbolColumn: 21
     signature: "public function start(StartRunInput $input): RunHandle"
     callees[4]: "Ineersa\\AgentCore\\Domain\\Run\\RunId::generate","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::nextStepId","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::dispatch","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::idempotencyKey"
   - method: continue
-    start: 53
-    end: 59
-    limit: 7
-    symbolLine: 56
+    start: 47
+    end: 50
+    limit: 4
+    symbolLine: 47
     symbolColumn: 21
     signature: "public function continue(string $runId): void"
     callees[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::applyCoreCommand"
   - method: steer
-    start: 61
-    end: 67
-    limit: 7
-    symbolLine: 64
+    start: 52
+    end: 55
+    limit: 4
+    symbolLine: 52
     symbolColumn: 21
     signature: "public function steer(string $runId, AgentMessage $message): void"
     callees[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::applyCoreCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::serializeMessage"
   - method: followUp
-    start: 69
-    end: 75
-    limit: 7
-    symbolLine: 72
+    start: 57
+    end: 60
+    limit: 4
+    symbolLine: 57
     symbolColumn: 21
     signature: "public function followUp(string $runId, AgentMessage $message): void"
     callees[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::applyCoreCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::serializeMessage"
   - method: cancel
-    start: 77
-    end: 84
-    limit: 8
-    symbolLine: 80
+    start: 62
+    end: 66
+    limit: 5
+    symbolLine: 62
     symbolColumn: 21
     signature: "public function cancel(string $runId, ?string $reason = null): void"
     callees[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::applyCoreCommand"
   - method: answerHuman
-    start: 86
-    end: 95
-    limit: 10
-    symbolLine: 89
+    start: 68
+    end: 74
+    limit: 7
+    symbolLine: 68
     symbolColumn: 21
     signature: "public function answerHuman(string $runId, string $questionId, mixed $answer): void"
     callees[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::applyCoreCommand"
   - method: applyCoreCommand
-    start: 97
-    end: 114
+    start: 76
+    end: 93
     limit: 18
-    symbolLine: 102
+    symbolLine: 81
     symbolColumn: 22
     signature: "private function applyCoreCommand(string $runId, string $kind, array $payload): void"
     callees[3]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::nextStepId","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::dispatch","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::idempotencyKey"
     callers[5]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::continue","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::steer","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::followUp","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::cancel","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::answerHuman"
   - method: serializeMessage
-    start: 116
-    end: 124
+    start: 95
+    end: 103
     limit: 9
-    symbolLine: 121
+    symbolLine: 100
     symbolColumn: 22
     signature: "private function serializeMessage(AgentMessage $message): array"
     callees[1]: "Ineersa\\AgentCore\\Domain\\Message\\AgentMessage::toArray"
     callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::steer","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::followUp"
   - method: nextStepId
-    start: 126
-    end: 132
-    limit: 7
-    symbolLine: 129
+    start: 105
+    end: 108
+    limit: 4
+    symbolLine: 105
     symbolColumn: 22
     signature: "private function nextStepId(string $prefix): string"
     callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::start","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::applyCoreCommand"
   - method: idempotencyKey
-    start: 134
-    end: 140
-    limit: 7
-    symbolLine: 137
+    start: 110
+    end: 113
+    limit: 4
+    symbolLine: 110
     symbolColumn: 22
     signature: "private function idempotencyKey(string $runId, string $stepId): string"
     callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::start","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::applyCoreCommand"
   - method: dispatch
-    start: 142
-    end: 152
-    limit: 11
-    symbolLine: 145
+    start: 115
+    end: 122
+    limit: 8
+    symbolLine: 115
     symbolColumn: 22
     signature: "private function dispatch(object $message): void"
     callees[1]: "Symfony\\Component\\Messenger\\MessageBusInterface::dispatch"

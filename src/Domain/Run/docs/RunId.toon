@@ -6,23 +6,23 @@ summary: A value object representing a unique identifier for a run within the ag
 methods[3]:
   - method: __construct
     start: 14
-    end: 19
-    limit: 6
-    symbolLine: 17
+    end: 16
+    limit: 3
+    symbolLine: 14
     symbolColumn: 21
     signature: public function __construct(string $value)
   - method: __toString
-    start: 21
-    end: 27
-    limit: 7
-    symbolLine: 24
+    start: 18
+    end: 21
+    limit: 4
+    symbolLine: 18
     symbolColumn: 21
     signature: "public function __toString(): string"
   - method: generate
-    start: 29
-    end: 61
-    limit: 33
-    symbolLine: 32
+    start: 23
+    end: 52
+    limit: 30
+    symbolLine: 23
     symbolColumn: 28
     signature: "static public function generate(): self"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::start"

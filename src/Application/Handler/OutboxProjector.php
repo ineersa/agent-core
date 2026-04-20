@@ -17,9 +17,6 @@ use Ineersa\AgentCore\Infrastructure\Storage\RunLogWriter;
  */
 final readonly class OutboxProjector
 {
-    /**
-     * initializes the projector with required outbox, logging, and publishing collaborators.
-     */
     public function __construct(
         private OutboxStoreInterface $outboxStore,
         private RunLogWriter $runLogWriter,

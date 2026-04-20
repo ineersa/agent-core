@@ -24,9 +24,6 @@ final readonly class RunAccessScope
     ) {
     }
 
-    /**
-     * Returns a new instance with the updated timestamp, preserving existing scope data.
-     */
     public function withUpdatedAt(?\DateTimeImmutable $updatedAt = null): self
     {
         return new self(

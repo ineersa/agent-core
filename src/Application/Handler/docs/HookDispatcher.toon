@@ -6,16 +6,16 @@ summary: The HookDispatcher class orchestrates the execution of registered hook 
 methods[2]:
   - method: __construct
     start: 16
-    end: 23
-    limit: 8
-    symbolLine: 19
+    end: 20
+    limit: 5
+    symbolLine: 16
     symbolColumn: 21
     signature: "public function __construct(HookSubscriberRegistry $registry, EventDispatcherInterface $eventDispatcher)"
   - method: dispatch
-    start: 25
-    end: 49
+    start: 22
+    end: 46
     limit: 25
-    symbolLine: 32
+    symbolLine: 29
     symbolColumn: 21
     signature: "public function dispatch(string $hookName, array $context = []): array"
     callees[5]: "Ineersa\\AgentCore\\Domain\\Event\\BoundaryHookName::isBoundary","Ineersa\\AgentCore\\Domain\\Event\\BoundaryHookName::isExtensionHook","Symfony\\Contracts\\EventDispatcher\\EventDispatcherInterface::dispatch","Ineersa\\AgentCore\\Application\\Handler\\HookSubscriberRegistry::subscribersFor","Ineersa\\AgentCore\\Contract\\Extension\\HookSubscriberInterface::handle"

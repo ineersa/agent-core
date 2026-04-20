@@ -6,23 +6,23 @@ summary: InMemoryRunAccessStore provides an in-memory implementation for persist
 methods[3]:
   - method: save
     start: 18
-    end: 24
-    limit: 7
-    symbolLine: 21
+    end: 21
+    limit: 4
+    symbolLine: 18
     symbolColumn: 21
     signature: "public function save(RunAccessScope $scope): void"
   - method: get
-    start: 26
-    end: 32
-    limit: 7
-    symbolLine: 29
+    start: 23
+    end: 26
+    limit: 4
+    symbolLine: 23
     symbolColumn: 21
     signature: "public function get(string $runId): ?RunAccessScope"
   - method: touch
-    start: 34
-    end: 45
-    limit: 12
-    symbolLine: 37
+    start: 28
+    end: 36
+    limit: 9
+    symbolLine: 28
     symbolColumn: 21
     signature: "public function touch(string $runId, ?DateTimeImmutable $updatedAt = null): void"
     callees[1]: "Ineersa\\AgentCore\\Domain\\Run\\RunAccessScope::withUpdatedAt"

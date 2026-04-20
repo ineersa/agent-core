@@ -27,9 +27,6 @@ final class StreamDeltaReducer
     /** @var array<string, int|float> */
     private array $usage = [];
 
-    /**
-     * Processes a single streaming delta object to update internal state.
-     */
     public function consume(mixed $delta): void
     {
         if (\is_string($delta)) {
@@ -180,17 +177,11 @@ final class StreamDeltaReducer
         return $payload;
     }
 
-    /**
-     * Checks if any tool calls were registered during consumption.
-     */
     public function hasToolCalls(): bool
     {
         return [] !== $this->toolCalls;
     }
 
-    /**
-     * Appends text content to the current assistant message buffer.
-     */
     private function appendText(string $text): void
     {
         if ('' === $text) {
@@ -204,9 +195,6 @@ final class StreamDeltaReducer
         ];
     }
 
-    /**
-     * Initializes a new tool call entry with its ID and name.
-     */
     private function registerToolCallStart(string $id, string $name): void
     {
         if ('' === $id || '' === $name) {
@@ -229,9 +217,6 @@ final class StreamDeltaReducer
         ];
     }
 
-    /**
-     * Accumulates partial JSON arguments for an active tool call.
-     */
     private function registerToolInputDelta(string $id, string $name, string $partialJson): void
     {
         if ('' === $id || '' === $name) {
@@ -260,9 +245,6 @@ final class StreamDeltaReducer
         ];
     }
 
-    /**
-     * Finalizes a tool call by parsing and storing its complete arguments.
-     */
     private function registerToolCallComplete(object $delta): void
     {
         $toolCalls = method_exists($delta, 'getToolCalls') ? $delta->getToolCalls() : null;
@@ -307,9 +289,6 @@ final class StreamDeltaReducer
         }
     }
 
-    /**
-     * Determines if a delta object contains token usage statistics.
-     */
     private function looksLikeTokenUsage(object $delta): bool
     {
         return method_exists($delta, 'getTotalTokens')
@@ -437,9 +416,6 @@ final class StreamDeltaReducer
         return $decoded;
     }
 
-    /**
-     * Extracts the short class name from a fully qualified class name.
-     */
     private function shortClass(string $fqcn): string
     {
         $parts = explode('\\', $fqcn);

@@ -4,4 +4,4 @@ class: "Ineersa\\AgentCore\\Domain\\Run\\RunHandle"
 type: readonly final class
 summary: A value object representing a unique identifier for a run within the agent core domain. It encapsulates the run ID as a strongly-typed string to enforce type safety and semantic clarity across the application.
 methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,12,17,6,15,21,public function __construct(string $runId)
+  __construct,12,14,3,12,21,public function __construct(string $runId)

@@ -62,9 +62,6 @@ final class ToolCatalogResolver
         );
     }
 
-    /**
-     * Verifies schema fingerprint consistency for a tool definition.
-     */
     private function assertSchemaStability(ToolDefinition $definition): void
     {
         $fingerprint = $this->schemaFingerprint($definition->schema);

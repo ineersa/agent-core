@@ -9,9 +9,6 @@ namespace Ineersa\AgentCore\Domain\Message;
  */
 final readonly class ExecuteLlmStep extends AbstractAgentBusMessage
 {
-    /**
-     * Initializes the LLM step execution context with run, turn, step, attempt, and idempotency details.
-     */
     public function __construct(
         string $runId,
         int $turnNo,

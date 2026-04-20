@@ -26,17 +26,11 @@ final class BoundaryHookName
         self::BEFORE_RUN_FINALIZE,
     ];
 
-    /**
-     * Determines if a hook name represents a boundary hook.
-     */
     public static function isBoundary(string $hookName): bool
     {
         return \in_array($hookName, self::ALL, true);
     }
 
-    /**
-     * Determines if a hook name matches the extension prefix.
-     */
     public static function isExtensionHook(string $hookName, string $extensionPrefix = self::EXTENSION_PREFIX): bool
     {
         return str_starts_with($hookName, $extensionPrefix);

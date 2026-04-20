@@ -6,25 +6,25 @@ summary: "HotPromptStateStore provides a lightweight, in-memory cache for transi
 methods[3]:
   - method: get
     start: 17
-    end: 23
-    limit: 7
-    symbolLine: 20
+    end: 20
+    limit: 4
+    symbolLine: 17
     symbolColumn: 21
     signature: "public function get(string $runId): ?array"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\HotPromptStateStore::save"
   - method: save
-    start: 25
-    end: 39
-    limit: 15
-    symbolLine: 28
+    start: 22
+    end: 33
+    limit: 12
+    symbolLine: 22
     symbolColumn: 21
     signature: "public function save(string $runId, array $state): void"
     callees[3]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\HotPromptStateStore::get","Ineersa\\AgentCore\\Infrastructure\\Storage\\HotPromptStateStore::delete","DateTimeImmutable::format"
   - method: delete
-    start: 41
-    end: 47
-    limit: 7
-    symbolLine: 44
+    start: 35
+    end: 38
+    limit: 4
+    symbolLine: 35
     symbolColumn: 21
     signature: "public function delete(string $runId): void"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\HotPromptStateStore::save"

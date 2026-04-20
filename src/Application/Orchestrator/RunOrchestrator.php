@@ -54,9 +54,6 @@ final readonly class RunOrchestrator
     private const string SteerDrainOneAtATime = 'one_at_a_time';
     private const string SteerDrainAll = 'all';
 
-    /**
-     * Initializes the orchestrator with required stores, reducer, and dispatcher.
-     */
     public function __construct(
         private RunStoreInterface $runStore,
         private EventStoreInterface $eventStore,
@@ -897,9 +894,6 @@ final readonly class RunOrchestrator
         ], $handle, root: true);
     }
 
-    /**
-     * Rejects a command with a specified reason.
-     */
     private function rejectCommand(RunState $state, ApplyCommand $message, string $reason): void
     {
         $runId = $message->runId();
@@ -1377,9 +1371,6 @@ final readonly class RunOrchestrator
         return $superseded;
     }
 
-    /**
-     * Determines if continuing the run is rejected and why.
-     */
     private function continueRejectionReason(RunState $state): ?string
     {
         if (\in_array($state->status, [RunStatus::Running, RunStatus::Completed, RunStatus::Cancelled, RunStatus::Cancelling], true)) {
@@ -1437,9 +1428,6 @@ final readonly class RunOrchestrator
         );
     }
 
-    /**
-     * Retrieves the role of the last message in the run state.
-     */
     private function lastMessageRole(RunState $state): ?string
     {
         if ([] === $state->messages) {
@@ -1451,9 +1439,6 @@ final readonly class RunOrchestrator
         return $lastMessage instanceof AgentMessage ? $lastMessage->role : null;
     }
 
-    /**
-     * Dispatches an advance event for a run.
-     */
     private function dispatchAdvance(string $runId, string $prefix): void
     {
         if (null === $this->commandBus) {
@@ -1692,9 +1677,6 @@ final readonly class RunOrchestrator
         }
     }
 
-    /**
-     * Resolves the step identifier for structured event logging.
-     */
     private function eventStepId(RunEvent $event, RunState $state): ?string
     {
         if (\is_string($event->payload['step_id'] ?? null) && '' !== $event->payload['step_id']) {
@@ -1708,9 +1690,6 @@ final readonly class RunOrchestrator
         return $state->activeStepId;
     }
 
-    /**
-     * Resolves the worker identifier for structured event logging.
-     */
     private function eventWorkerId(RunEvent $event): string
     {
         if (\is_string($event->payload['worker_id'] ?? null) && '' !== $event->payload['worker_id']) {
@@ -1720,9 +1699,6 @@ final readonly class RunOrchestrator
         return 'orchestrator';
     }
 
-    /**
-     * Resolves the execution attempt value for structured event logging.
-     */
     private function eventAttempt(RunEvent $event): ?int
     {
         $attempt = $event->payload['attempt'] ?? null;
@@ -1877,9 +1853,6 @@ final readonly class RunOrchestrator
         return array_filter($payload, static fn (mixed $value): bool => null !== $value);
     }
 
-    /**
-     * Checks if a tool result is stale relative to current state.
-     */
     private function isStaleResult(RunState $state, int $turnNo, string $stepId): bool
     {
         if ($state->turnNo !== $turnNo) {
@@ -1889,9 +1862,6 @@ final readonly class RunOrchestrator
         return null !== $state->activeStepId && $state->activeStepId !== $stepId;
     }
 
-    /**
-     * Increments the state version based on event count.
-     */
     private function incrementStateVersion(RunState $state, int $eventCount): RunState
     {
         return $this->copyState($state, [
@@ -1983,9 +1953,6 @@ final readonly class RunOrchestrator
         );
     }
 
-    /**
-     * Constructs an AgentMessage from a tool call result.
-     */
     private function toolMessage(ToolCallResult $result): AgentMessage
     {
         $text = json_encode([

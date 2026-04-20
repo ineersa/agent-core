@@ -6,85 +6,85 @@ summary: "This service provides read-only debugging views for run state, replay 
 methods[10]:
   - method: __construct
     start: 20
-    end: 32
-    limit: 13
-    symbolLine: 23
+    end: 29
+    limit: 10
+    symbolLine: 20
     symbolColumn: 21
     signature: "public function __construct(RunStoreInterface $runStore, CommandStoreInterface $commandStore, PromptStateStoreInterface $promptStateStore, EventStoreInterface $eventStore, RunLogReader $runLogReader, ReplayService $replayService, ?RunMetrics $metrics = null)"
   - method: inspect
-    start: 34
-    end: 112
+    start: 31
+    end: 109
     limit: 79
-    symbolLine: 76
+    symbolLine: 73
     symbolColumn: 21
     signature: "public function inspect(string $runId): array"
     callees[6]: "Ineersa\\AgentCore\\Contract\\RunStoreInterface::get","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::verifyIntegrity","Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::normalizeHotPromptState","Ineersa\\AgentCore\\Contract\\PromptStateStoreInterface::get","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::pending","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::snapshot"
     callers[1]: "Ineersa\\AgentCore\\Command\\AgentLoopRunInspectCommand::execute"
   - method: replayAfter
-    start: 114
-    end: 155
+    start: 111
+    end: 152
     limit: 42
-    symbolLine: 127
+    symbolLine: 124
     symbolColumn: 21
     signature: "public function replayAfter(string $runId, int $afterSeq = 0, int $limit = 200): array"
     callees[3]: "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::eventsForRun","Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::clampLimit","Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::missingSequences"
     callers[1]: "Ineersa\\AgentCore\\Command\\AgentLoopRunReplayCommand::execute"
   - method: tail
-    start: 157
-    end: 181
+    start: 154
+    end: 178
     limit: 25
-    symbolLine: 168
+    symbolLine: 165
     symbolColumn: 21
     signature: "public function tail(string $runId, int $limit = 25): array"
     callees[2]: "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::eventsForRun","Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::clampLimit"
     callers[1]: "Ineersa\\AgentCore\\Command\\AgentLoopRunTailCommand::execute"
   - method: rebuildHotPromptState
-    start: 183
-    end: 200
+    start: 180
+    end: 197
     limit: 18
-    symbolLine: 197
+    symbolLine: 194
     symbolColumn: 21
     signature: "public function rebuildHotPromptState(string $runId): array"
     callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\ReplayService::rebuildHotPromptState"
     callers[1]: "Ineersa\\AgentCore\\Command\\AgentLoopRunRebuildHotStateCommand::execute"
   - method: normalizeHotPromptState
-    start: 202
-    end: 243
+    start: 199
+    end: 240
     limit: 42
-    symbolLine: 217
+    symbolLine: 214
     symbolColumn: 22
     signature: "private function normalizeHotPromptState(?array $state): ?array"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::inspect"
   - method: eventsForRun
-    start: 245
-    end: 258
+    start: 242
+    end: 255
     limit: 14
-    symbolLine: 250
+    symbolLine: 247
     symbolColumn: 22
     signature: "private function eventsForRun(string $runId): array"
     callees[3]: "Ineersa\\AgentCore\\Contract\\EventStoreInterface::allFor","Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::sortBySequence","Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader::allFor"
     callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::replayAfter","Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::tail"
   - method: sortBySequence
-    start: 260
-    end: 272
+    start: 257
+    end: 269
     limit: 13
-    symbolLine: 267
+    symbolLine: 264
     symbolColumn: 22
     signature: "private function sortBySequence(array $events): array"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::eventsForRun"
   - method: missingSequences
-    start: 274
-    end: 300
+    start: 271
+    end: 297
     limit: 27
-    symbolLine: 281
+    symbolLine: 278
     symbolColumn: 22
     signature: "private function missingSequences(array $events, int $expectedStart): array"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::replayAfter"
   - method: clampLimit
-    start: 302
-    end: 308
-    limit: 7
-    symbolLine: 305
+    start: 299
+    end: 302
+    limit: 4
+    symbolLine: 299
     symbolColumn: 22
     signature: "private function clampLimit(int $limit, int $max): int"
     callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::replayAfter","Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::tail"

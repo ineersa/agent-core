@@ -12,18 +12,12 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
  */
 final readonly class RunEventDispatcher
 {
-    /**
-     * initializes the dispatcher with subscriber registry and event dispatcher.
-     */
     public function __construct(
         private EventSubscriberRegistry $registry,
         private EventDispatcherInterface $eventDispatcher,
     ) {
     }
 
-    /**
-     * routes RunEvent to subscribers via registry and dispatches via event dispatcher.
-     */
     public function dispatch(RunEvent $event): void
     {
         $this->eventDispatcher->dispatch($event, $event->type);

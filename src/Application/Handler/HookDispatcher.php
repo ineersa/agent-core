@@ -13,9 +13,6 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
  */
 final readonly class HookDispatcher
 {
-    /**
-     * Initializes the dispatcher with a subscriber registry and event dispatcher.
-     */
     public function __construct(
         private HookSubscriberRegistry $registry,
         private EventDispatcherInterface $eventDispatcher,

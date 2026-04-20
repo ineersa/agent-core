@@ -12,9 +12,6 @@ use Symfony\Component\Messenger\MessageBusInterface;
  */
 final readonly class StepDispatcher
 {
-    /**
-     * initializes dispatcher with execution and publisher message buses.
-     */
     public function __construct(
         private MessageBusInterface $executionBus,
         private MessageBusInterface $publisherBus,
@@ -37,9 +34,6 @@ final readonly class StepDispatcher
         }
     }
 
-    /**
-     * publishes a single message object to the publisher bus.
-     */
     public function publish(object $message): void
     {
         try {

@@ -9,9 +9,6 @@ namespace Ineersa\AgentCore\Domain\Message;
  */
 abstract readonly class AbstractAgentBusMessage implements AgentBusMessageInterface
 {
-    /**
-     * Initializes the message with run, turn, step, attempt, and idempotency context.
-     */
     public function __construct(
         private string $runId,
         private int $turnNo,
@@ -21,41 +18,26 @@ abstract readonly class AbstractAgentBusMessage implements AgentBusMessageInterf
     ) {
     }
 
-    /**
-     * Returns the unique identifier for the agent run.
-     */
     public function runId(): string
     {
         return $this->runId;
     }
 
-    /**
-     * Returns the sequential turn number within the agent run.
-     */
     public function turnNo(): int
     {
         return $this->turnNo;
     }
 
-    /**
-     * Returns the unique identifier for the current execution step.
-     */
     public function stepId(): string
     {
         return $this->stepId;
     }
 
-    /**
-     * Returns the current attempt count for the step execution.
-     */
     public function attempt(): int
     {
         return $this->attempt;
     }
 
-    /**
-     * Returns the idempotency key to prevent duplicate processing.
-     */
     public function idempotencyKey(): string
     {
         return $this->idempotencyKey;

@@ -17,9 +17,6 @@ use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
  */
 final readonly class RunReadService
 {
-    /**
-     * Injects run and event stores along with the log reader.
-     */
     public function __construct(
         private RunStoreInterface $runStore,
         private RunAccessStoreInterface $runAccessStore,
@@ -217,9 +214,6 @@ final readonly class RunReadService
         return null;
     }
 
-    /**
-     * Generates a summary string from a single agent message.
-     */
     private function messageSummary(AgentMessage $message): ?string
     {
         $chunks = [];

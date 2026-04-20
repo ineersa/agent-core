@@ -6,17 +6,17 @@ summary: This command identifies and resumes stale agent runs by coordinating wi
 methods[2]:
   - method: __construct
     start: 27
-    end: 39
-    limit: 13
-    symbolLine: 30
+    end: 36
+    limit: 10
+    symbolLine: 27
     symbolColumn: 21
     signature: "public function __construct(RunStoreInterface $runStore, PromptStateStoreInterface $promptStateStore, ReplayService $replayService, RunLockManager $runLockManager, MessageBusInterface $commandBus, int $staleAfterSeconds = 120)"
     callees[1]: "Symfony\\Component\\Console\\Command\\Command::__construct"
   - method: execute
-    start: 41
-    end: 102
-    limit: 62
-    symbolLine: 44
+    start: 38
+    end: 96
+    limit: 59
+    symbolLine: 38
     symbolColumn: 24
     signature: "protected function execute(InputInterface $input, OutputInterface $output): int"
     callees[9]: "DateTimeImmutable::setTimestamp","Ineersa\\AgentCore\\Contract\\RunStoreInterface::findRunningStaleBefore","Ineersa\\AgentCore\\Application\\Handler\\RunLockManager::synchronized","Ineersa\\AgentCore\\Contract\\RunStoreInterface::get","Ineersa\\AgentCore\\Contract\\PromptStateStoreInterface::get","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::rebuildHotPromptState","Symfony\\Component\\Messenger\\MessageBusInterface::dispatch","Symfony\\Component\\Console\\Style\\SymfonyStyle::definitionList","Symfony\\Component\\Console\\Style\\SymfonyStyle::success"

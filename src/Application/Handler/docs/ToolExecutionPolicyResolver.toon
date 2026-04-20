@@ -14,9 +14,9 @@ methods[2]:
     callees[1]: "Ineersa\\AgentCore\\Domain\\Tool\\ToolExecutionMode::tryFrom"
   - method: resolve
     start: 31
-    end: 46
-    limit: 16
-    symbolLine: 34
+    end: 43
+    limit: 13
+    symbolLine: 31
     symbolColumn: 21
     signature: "public function resolve(string $toolName): ToolExecutionPolicy"
     callees[1]: "Ineersa\\AgentCore\\Domain\\Tool\\ToolExecutionMode::tryFrom"

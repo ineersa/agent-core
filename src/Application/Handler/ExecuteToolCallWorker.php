@@ -22,9 +22,6 @@ use Symfony\Component\Messenger\MessageBusInterface;
  */
 final readonly class ExecuteToolCallWorker
 {
-    /**
-     * initializes dependencies for tool execution and message bus interaction.
-     */
     public function __construct(
         private ToolExecutorInterface $toolExecutor,
         private MessageBusInterface $commandBus,
@@ -66,9 +63,6 @@ final readonly class ExecuteToolCallWorker
         ], $execute, root: true);
     }
 
-    /**
-     * invokes the tool executor and returns the resulting tool call outcome.
-     */
     private function execute(ExecuteToolCall $message): ToolCallResult
     {
         $cancelToken = null !== $this->runStore

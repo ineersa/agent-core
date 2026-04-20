@@ -16,9 +16,6 @@ use Symfony\Component\Messenger\MessageBusInterface;
  */
 final readonly class ExecuteLlmStepWorker
 {
-    /**
-     * Injects platform and command bus dependencies.
-     */
     public function __construct(
         private PlatformInterface $platform,
         private MessageBusInterface $commandBus,
@@ -57,9 +54,6 @@ final readonly class ExecuteLlmStepWorker
         ], $execute, root: true);
     }
 
-    /**
-     * Executes the LLM step logic and returns the result.
-     */
     private function execute(ExecuteLlmStep $message): LlmStepResult
     {
         $startedAt = hrtime(true);

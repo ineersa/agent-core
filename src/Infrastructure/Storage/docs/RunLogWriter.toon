@@ -6,25 +6,25 @@ summary: "The RunLogWriter class provides a mechanism for persisting RunEvent in
 methods[3]:
   - method: __construct
     start: 15
-    end: 20
-    limit: 6
-    symbolLine: 18
+    end: 17
+    limit: 3
+    symbolLine: 15
     symbolColumn: 21
     signature: public function __construct(FilesystemOperator $filesystem)
   - method: append
-    start: 22
-    end: 55
-    limit: 34
-    symbolLine: 25
+    start: 19
+    end: 49
+    limit: 31
+    symbolLine: 19
     symbolColumn: 21
     signature: "public function append(RunEvent $event): void"
     callees[5]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogWriter::pathForRun","DateTimeImmutable::format","League\\Flysystem\\FilesystemReader::fileExists","League\\Flysystem\\FilesystemReader::read","League\\Flysystem\\FilesystemWriter::write"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\JsonlOutboxProjectorWorker::__invoke"
   - method: pathForRun
-    start: 57
-    end: 63
-    limit: 7
-    symbolLine: 60
+    start: 51
+    end: 54
+    limit: 4
+    symbolLine: 51
     symbolColumn: 22
     signature: "private function pathForRun(string $runId, DateTimeImmutable $at): string"
     callees[1]: "DateTimeImmutable::format"

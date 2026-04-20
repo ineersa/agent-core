@@ -21,8 +21,8 @@ methods[3]:
     callers[2]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::invoke","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::toProviderInput"
   - method: empty
     start: 31
-    end: 37
-    limit: 7
-    symbolLine: 34
+    end: 34
+    limit: 4
+    symbolLine: 31
     symbolColumn: 28
     signature: "static public function empty(): self"

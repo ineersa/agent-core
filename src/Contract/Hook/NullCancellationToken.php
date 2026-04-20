@@ -9,9 +9,6 @@ namespace Ineersa\AgentCore\Contract\Hook;
  */
 final readonly class NullCancellationToken implements CancellationTokenInterface
 {
-    /**
-     * Returns false to indicate the cancellation has not been requested.
-     */
     public function isCancellationRequested(): bool
     {
         return false;

@@ -24,9 +24,6 @@ final class CoreCommandKind
         self::Continue,
     ];
 
-    /**
-     * Validates if the provided command kind string is a recognized core command type.
-     */
     public static function isCore(string $kind): bool
     {
         return \in_array($kind, self::ALL, true);

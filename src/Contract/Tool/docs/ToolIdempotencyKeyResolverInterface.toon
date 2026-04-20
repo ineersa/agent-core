@@ -6,9 +6,9 @@ summary: Defines the contract for resolving idempotency keys for tool calls with
 methods[1]:
   - method: resolveToolIdempotencyKey
     start: 14
-    end: 17
-    limit: 4
-    symbolLine: 17
+    end: 14
+    limit: 1
+    symbolLine: 14
     symbolColumn: 21
     signature: "public function resolveToolIdempotencyKey(ToolCall $toolCall): ?string"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::execute"

@@ -15,9 +15,6 @@ use Symfony\Component\DependencyInjection\Loader\PhpFileLoader;
  */
 final class AgentLoopExtension extends Extension implements PrependExtensionInterface
 {
-    /**
-     * Registers default bundle configuration into the container builder.
-     */
     public function prepend(ContainerBuilder $container): void
     {
         foreach (['messenger.php', 'doctrine.php'] as $configFile) {

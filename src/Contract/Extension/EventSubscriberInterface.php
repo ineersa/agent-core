@@ -18,8 +18,5 @@ interface EventSubscriberInterface
      */
     public static function subscribedEventTypes(): array;
 
-    /**
-     * Processes a single RunEvent instance received from the event bus.
-     */
     public function onEvent(RunEvent $event): void;
 }

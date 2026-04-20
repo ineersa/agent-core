@@ -13,33 +13,33 @@ methods[5]:
     signature: "public function __construct(bool $accepted, bool $duplicate, bool $complete, array $orderedResults = [], array $effectsToDispatch = [])"
   - method: rejected
     start: 30
-    end: 36
-    limit: 7
-    symbolLine: 33
+    end: 33
+    limit: 4
+    symbolLine: 30
     symbolColumn: 28
     signature: "static public function rejected(): self"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::collect"
   - method: duplicate
-    start: 38
-    end: 44
-    limit: 7
-    symbolLine: 41
+    start: 35
+    end: 38
+    limit: 4
+    symbolLine: 35
     symbolColumn: 28
     signature: "static public function duplicate(): self"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::collect"
   - method: acceptedPending
-    start: 46
-    end: 54
+    start: 40
+    end: 48
     limit: 9
-    symbolLine: 51
+    symbolLine: 45
     symbolColumn: 28
     signature: "static public function acceptedPending(array $effectsToDispatch = []): self"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::collect"
   - method: acceptedComplete
-    start: 56
-    end: 71
+    start: 50
+    end: 65
     limit: 16
-    symbolLine: 62
+    symbolLine: 56
     symbolColumn: 28
     signature: "static public function acceptedComplete(array $orderedResults, array $effectsToDispatch = []): self"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::collect"

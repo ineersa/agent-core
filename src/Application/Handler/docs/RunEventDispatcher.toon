@@ -6,16 +6,16 @@ summary: The RunEventDispatcher class acts as an application-level facade for ro
 methods[2]:
   - method: __construct
     start: 15
-    end: 22
-    limit: 8
-    symbolLine: 18
+    end: 19
+    limit: 5
+    symbolLine: 15
     symbolColumn: 21
     signature: "public function __construct(EventSubscriberRegistry $registry, EventDispatcherInterface $eventDispatcher)"
   - method: dispatch
-    start: 24
-    end: 34
-    limit: 11
-    symbolLine: 27
+    start: 21
+    end: 28
+    limit: 8
+    symbolLine: 21
     symbolColumn: 21
     signature: "public function dispatch(RunEvent $event): void"
     callees[3]: "Symfony\\Contracts\\EventDispatcher\\EventDispatcherInterface::dispatch","Ineersa\\AgentCore\\Application\\Handler\\EventSubscriberRegistry::subscribersFor","Ineersa\\AgentCore\\Contract\\Extension\\EventSubscriberInterface::onEvent"

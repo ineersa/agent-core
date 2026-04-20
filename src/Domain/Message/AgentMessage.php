@@ -28,9 +28,6 @@ final readonly class AgentMessage
     ) {
     }
 
-    /**
-     * Checks if the message role is not a standard system, user, or assistant type.
-     */
     public function isCustomRole(): bool
     {
         return !\in_array($this->role, ['system', 'user', 'assistant', 'tool'], true);

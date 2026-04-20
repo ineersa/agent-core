@@ -9,8 +9,5 @@ namespace Ineersa\AgentCore\Contract\Hook;
  */
 interface CancellationTokenInterface
 {
-    /**
-     * Checks if cancellation has been requested.
-     */
     public function isCancellationRequested(): bool;
 }

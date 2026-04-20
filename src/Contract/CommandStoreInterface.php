@@ -11,14 +11,8 @@ use Ineersa\AgentCore\Domain\Command\PendingCommand;
  */
 interface CommandStoreInterface
 {
-    /**
-     * Persists a pending command and returns success status.
-     */
     public function enqueue(PendingCommand $command): bool;
 
-    /**
-     * Checks for the existence of a command by run ID and idempotency key.
-     */
     public function has(string $runId, string $idempotencyKey): bool;
 
     /**
@@ -28,9 +22,6 @@ interface CommandStoreInterface
      */
     public function pending(string $runId): array;
 
-    /**
-     * Returns the number of pending commands for a specific run ID.
-     */
     public function countPending(string $runId): int;
 
     /**
@@ -40,18 +31,9 @@ interface CommandStoreInterface
      */
     public function rejectPendingByKind(string $runId, string $kind, string $reason): array;
 
-    /**
-     * Marks a specific command as applied using its run ID and idempotency key.
-     */
     public function markApplied(string $runId, string $idempotencyKey): void;
 
-    /**
-     * Marks a specific command as rejected with a reason using its run ID and idempotency key.
-     */
     public function markRejected(string $runId, string $idempotencyKey, string $reason): void;
 
-    /**
-     * Marks a specific command as superseded with a reason using its run ID and idempotency key.
-     */
     public function markSuperseded(string $runId, string $idempotencyKey, string $reason): void;
 }

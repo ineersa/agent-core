@@ -13,9 +13,6 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
  */
 interface OutboxStoreInterface
 {
-    /**
-     * persists a RunEvent into the outbox store with the specified sink.
-     */
     public function enqueue(RunEvent $event, OutboxSink $sink): void;
 
     /**
@@ -25,13 +22,7 @@ interface OutboxStoreInterface
      */
     public function claim(OutboxSink $sink, int $limit = 100, ?\DateTimeImmutable $now = null): array;
 
-    /**
-     * marks an entry as successfully processed with an optional timestamp.
-     */
     public function markProcessed(int $entryId, ?\DateTimeImmutable $processedAt = null): void;
 
-    /**
-     * marks an entry as failed and schedules retry after specified seconds.
-     */
     public function markFailed(int $entryId, int $retryAfterSeconds = 30, ?\DateTimeImmutable $now = null): void;
 }

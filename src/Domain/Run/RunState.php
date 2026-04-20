@@ -33,9 +33,6 @@ final readonly class RunState
     ) {
     }
 
-    /**
-     * Creates a new run state instance initialized to queued status.
-     */
     public static function queued(string $runId): self
     {
         return new self(runId: $runId, status: RunStatus::Queued);

@@ -9,9 +9,6 @@ namespace Ineersa\AgentCore\Domain\Event;
  */
 final readonly class OutboxEntry
 {
-    /**
-     * Initializes outbox entry with id, sink, event, attempts, and availability timestamp.
-     */
     public function __construct(
         public int $id,
         public OutboxSink $sink,

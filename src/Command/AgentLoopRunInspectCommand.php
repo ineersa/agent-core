@@ -19,9 +19,6 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand(name: 'agent-loop:run-inspect', description: 'Inspect run state, mailbox, and replay integrity.')]
 final class AgentLoopRunInspectCommand extends Command
 {
-    /**
-     * Injects the debug read service used to gather run diagnostics.
-     */
     public function __construct(private readonly RunDebugService $runDebugService)
     {
         parent::__construct();
@@ -32,9 +29,6 @@ final class AgentLoopRunInspectCommand extends Command
         ;
     }
 
-    /**
-     * Renders run debug details for operators.
-     */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $runId = (string) $input->getArgument('runId');

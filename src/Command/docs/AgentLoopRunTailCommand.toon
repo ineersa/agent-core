@@ -6,33 +6,33 @@ summary: This command prints the latest persisted events for a run.
 methods[4]:
   - method: __construct
     start: 24
-    end: 38
-    limit: 15
-    symbolLine: 27
+    end: 35
+    limit: 12
+    symbolLine: 24
     symbolColumn: 21
     signature: "public function __construct(RunDebugService $runDebugService, RunEventSerializer $runEventSerializer)"
     callees[3]: "Symfony\\Component\\Console\\Command\\Command::__construct","Symfony\\Component\\Console\\Command\\Command::addArgument","Symfony\\Component\\Console\\Command\\Command::addOption"
   - method: execute
-    start: 40
-    end: 100
-    limit: 61
-    symbolLine: 43
+    start: 37
+    end: 94
+    limit: 58
+    symbolLine: 37
     symbolColumn: 24
     signature: "protected function execute(InputInterface $input, OutputInterface $output): int"
     callees[11]: "Symfony\\Component\\Console\\Input\\InputInterface::getArgument","Symfony\\Component\\Console\\Input\\InputInterface::getOption","Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::tail","Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer::normalizeRunEvent","Ineersa\\AgentCore\\Command\\AgentLoopRunTailCommand::encodeJson","Symfony\\Component\\Console\\Output\\OutputInterface::writeln","Symfony\\Component\\Console\\Style\\SymfonyStyle::title","Symfony\\Component\\Console\\Style\\SymfonyStyle::definitionList","Symfony\\Component\\Console\\Style\\SymfonyStyle::warning","Ineersa\\AgentCore\\Command\\AgentLoopRunTailCommand::payloadPreview","Symfony\\Component\\Console\\Style\\SymfonyStyle::table"
   - method: encodeJson
-    start: 102
-    end: 112
+    start: 96
+    end: 106
     limit: 11
-    symbolLine: 107
+    symbolLine: 101
     symbolColumn: 22
     signature: "private function encodeJson(array $payload): string"
     callers[1]: "Ineersa\\AgentCore\\Command\\AgentLoopRunTailCommand::execute"
   - method: payloadPreview
-    start: 114
-    end: 129
-    limit: 16
-    symbolLine: 117
+    start: 108
+    end: 120
+    limit: 13
+    symbolLine: 108
     symbolColumn: 22
     signature: "private function payloadPreview(mixed $payload): string"
     callers[1]: "Ineersa\\AgentCore\\Command\\AgentLoopRunTailCommand::execute"

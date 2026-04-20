@@ -6,17 +6,17 @@ summary: This class provides utility methods for constructing Mercure topic iden
 methods[2]:
   - method: topicFor
     start: 12
-    end: 18
-    limit: 7
-    symbolLine: 15
+    end: 15
+    limit: 4
+    symbolLine: 12
     symbolColumn: 21
     signature: "public function topicFor(string $runId): string"
     callers[3]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::startRun","Ineersa\\AgentCore\\Api\\Http\\RunApiController::runSummary","Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunTopicPolicy::topicsFor"
   - method: topicsFor
-    start: 20
-    end: 28
+    start: 17
+    end: 25
     limit: 9
-    symbolLine: 25
+    symbolLine: 22
     symbolColumn: 21
     signature: "public function topicsFor(string $runId): array"
     callees[1]: "Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunTopicPolicy::topicFor"

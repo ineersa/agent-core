@@ -13,18 +13,12 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
  */
 final readonly class RunCancellationToken implements CancellationTokenInterface
 {
-    /**
-     * Initializes the token with the run store and run identifier.
-     */
     public function __construct(
         private RunStoreInterface $runStore,
         private string $runId,
     ) {
     }
 
-    /**
-     * Queries the run store to check if the specified run has been cancelled.
-     */
     public function isCancellationRequested(): bool
     {
         $state = $this->runStore->get($this->runId);

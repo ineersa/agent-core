@@ -44,9 +44,6 @@ final class RunMetrics
 
     private LatencyHistogram $toolLatencyHistogram;
 
-    /**
-     * Initializes metric histograms with stable latency buckets.
-     */
     public function __construct()
     {
         $this->turnDurationHistogram = new LatencyHistogram([50, 100, 250, 500, 1_000, 2_500, 5_000]);
@@ -58,9 +55,6 @@ final class RunMetrics
         }
     }
 
-    /**
-     * Updates active run gauges after a status transition.
-     */
     public function recordRunStatusTransition(RunStatus $from, RunStatus $to): void
     {
         if ($from === $to) {
@@ -74,17 +68,11 @@ final class RunMetrics
         $this->activeRunsByStatus[$to->value] = ($this->activeRunsByStatus[$to->value] ?? 0) + 1;
     }
 
-    /**
-     * Records the latest command mailbox lag for a run.
-     */
     public function setCommandQueueLag(string $runId, int $pendingCount): void
     {
         $this->commandQueueLagByRun[$runId] = max(0, $pendingCount);
     }
 
-    /**
-     * Marks the start timestamp for a run turn duration measurement.
-     */
     public function recordTurnStarted(string $runId, int $turnNo): void
     {
         if ($turnNo < 1) {
@@ -94,9 +82,6 @@ final class RunMetrics
         $this->turnStartedAtMsByRunTurn[$this->turnKey($runId, $turnNo)] = microtime(true) * 1000;
     }
 
-    /**
-     * Records turn duration when a tracked turn reaches a completion boundary.
-     */
     public function recordTurnCompleted(string $runId, int $turnNo): void
     {
         if ($turnNo < 1) {
@@ -116,9 +101,6 @@ final class RunMetrics
         $this->turnDurationHistogram->observe($durationMs);
     }
 
-    /**
-     * Records LLM invocation latency and updates error totals.
-     */
     public function recordLlmLatency(float $durationMs, bool $isError): void
     {
         ++$this->llmCalls;
@@ -129,9 +111,6 @@ final class RunMetrics
         $this->llmLatencyHistogram->observe($durationMs);
     }
 
-    /**
-     * Records tool execution latency and tracks error/timeout counters.
-     */
     public function recordToolLatency(float $durationMs, bool $isError, bool $isTimeout): void
     {
         ++$this->toolCalls;
@@ -147,9 +126,6 @@ final class RunMetrics
         $this->toolLatencyHistogram->observe($durationMs);
     }
 
-    /**
-     * Increments stale result counter when stale executor outcomes are ignored.
-     */
     public function incrementStaleResultCount(int $by = 1): void
     {
         if ($by < 1) {
@@ -159,9 +135,6 @@ final class RunMetrics
         $this->staleResultCount += $by;
     }
 
-    /**
-     * Increments rebuild counter grouped by replay source category.
-     */
     public function incrementReplayRebuildCount(string $source): void
     {
         $metricSource = 'jsonl_fallback' === $source ? 'jsonl_fallback' : 'canonical_events';
@@ -215,17 +188,11 @@ final class RunMetrics
         ];
     }
 
-    /**
-     * Builds a deterministic key for a run/turn pair.
-     */
     private function turnKey(string $runId, int $turnNo): string
     {
         return \sprintf('%s|%d', $runId, $turnNo);
     }
 
-    /**
-     * Computes a rounded ratio while guarding against division by zero.
-     */
     private function rate(int $numerator, int $denominator): float
     {
         if (0 === $denominator) {

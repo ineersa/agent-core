@@ -4,5 +4,5 @@ class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\LocalArtifactStore"
 type: readonly final class
 summary: "LocalArtifactStore persists binary or text artifacts to the local filesystem using a configurable base directory. It organizes files by run ID and artifact name, ensuring isolated storage for agent execution outputs."
 methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,14,19,6,17,21,public function __construct(string $basePath)
-  put,21,44,24,24,21,"public function put(string $runId, string $artifactName, string $content, array $metadata = []): string"
+  __construct,14,16,3,14,21,public function __construct(string $basePath)
+  put,18,38,21,18,21,"public function put(string $runId, string $artifactName, string $content, array $metadata = []): string"

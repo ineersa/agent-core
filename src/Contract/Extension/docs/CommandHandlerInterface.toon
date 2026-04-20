@@ -6,25 +6,25 @@ summary: "Defines the contract for command handlers within the AgentCore extensi
 methods[3]:
   - method: supports
     start: 12
-    end: 15
-    limit: 4
-    symbolLine: 15
+    end: 12
+    limit: 1
+    symbolLine: 12
     symbolColumn: 21
     signature: "public function supports(string $kind): bool"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\CommandHandlerRegistry::find"
   - method: supportsCancelSafe
-    start: 17
-    end: 20
-    limit: 4
-    symbolLine: 20
+    start: 14
+    end: 14
+    limit: 1
+    symbolLine: 14
     symbolColumn: 21
     signature: "public function supportsCancelSafe(string $kind): bool"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::route"
   - method: map
-    start: 22
-    end: 30
+    start: 16
+    end: 24
     limit: 9
-    symbolLine: 30
+    symbolLine: 24
     symbolColumn: 21
     signature: "public function map(string $runId, string $kind, array $payload, array $options = []): array"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyExtensionCommand"

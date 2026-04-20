@@ -14,9 +14,9 @@ methods[2]:
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\EventSubscriberRegistry::subscribersFor"
   - method: onEvent
     start: 21
-    end: 24
-    limit: 4
-    symbolLine: 24
+    end: 21
+    limit: 1
+    symbolLine: 21
     symbolColumn: 21
     signature: "public function onEvent(RunEvent $event): void"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\RunEventDispatcher::dispatch"

@@ -6,25 +6,25 @@ summary: Defines the contract for persisting and retrieving access scopes associ
 methods[3]:
   - method: save
     start: 14
-    end: 17
-    limit: 4
-    symbolLine: 17
+    end: 14
+    limit: 1
+    symbolLine: 14
     symbolColumn: 21
     signature: "public function save(RunAccessScope $scope): void"
     callers[1]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::startRun"
   - method: get
-    start: 19
-    end: 22
-    limit: 4
-    symbolLine: 22
+    start: 16
+    end: 16
+    limit: 1
+    symbolLine: 16
     symbolColumn: 21
     signature: "public function get(string $runId): ?RunAccessScope"
     callers[4]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::authorizeRun","Ineersa\\AgentCore\\Api\\Http\\RunReadService::summary","Ineersa\\AgentCore\\Api\\Http\\RunReadService::transcriptPage","Ineersa\\AgentCore\\Api\\Http\\RunReadService::replayAfter"
   - method: touch
-    start: 24
-    end: 27
-    limit: 4
-    symbolLine: 27
+    start: 18
+    end: 18
+    limit: 1
+    symbolLine: 18
     symbolColumn: 21
     signature: "public function touch(string $runId, ?DateTimeImmutable $updatedAt = null): void"
     callers[1]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::sendCommand"

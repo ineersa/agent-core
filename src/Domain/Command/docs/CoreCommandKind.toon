@@ -6,9 +6,9 @@ summary: Defines the set of core command types recognized by the agent core syst
 methods[1]:
   - method: isCore
     start: 27
-    end: 33
-    limit: 7
-    symbolLine: 30
+    end: 30
+    limit: 4
+    symbolLine: 27
     symbolColumn: 28
     signature: "static public function isCore(string $kind): bool"
     callers[5]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::sendCommand","Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::route","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingStopBoundaryCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::isCancelSafeExtensionCommand"

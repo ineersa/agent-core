@@ -6,33 +6,33 @@ summary: "Defines the contract for persisting and retrieving outbound event entr
 methods[4]:
   - method: enqueue
     start: 16
-    end: 19
-    limit: 4
-    symbolLine: 19
+    end: 16
+    limit: 1
+    symbolLine: 16
     symbolColumn: 21
     signature: "public function enqueue(RunEvent $event, OutboxSink $sink): void"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\OutboxProjector::project"
   - method: claim
-    start: 21
-    end: 26
+    start: 18
+    end: 23
     limit: 6
-    symbolLine: 26
+    symbolLine: 23
     symbolColumn: 21
     signature: "public function claim(OutboxSink $sink, int $limit = 100, ?DateTimeImmutable $now = null): array"
     callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\JsonlOutboxProjectorWorker::__invoke","Ineersa\\AgentCore\\Application\\Handler\\MercureOutboxProjectorWorker::__invoke"
   - method: markProcessed
-    start: 28
-    end: 31
-    limit: 4
-    symbolLine: 31
+    start: 25
+    end: 25
+    limit: 1
+    symbolLine: 25
     symbolColumn: 21
     signature: "public function markProcessed(int $entryId, ?DateTimeImmutable $processedAt = null): void"
     callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\JsonlOutboxProjectorWorker::__invoke","Ineersa\\AgentCore\\Application\\Handler\\MercureOutboxProjectorWorker::__invoke"
   - method: markFailed
-    start: 33
-    end: 36
-    limit: 4
-    symbolLine: 36
+    start: 27
+    end: 27
+    limit: 1
+    symbolLine: 27
     symbolColumn: 21
     signature: "public function markFailed(int $entryId, int $retryAfterSeconds = 30, ?DateTimeImmutable $now = null): void"
     callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\JsonlOutboxProjectorWorker::__invoke","Ineersa\\AgentCore\\Application\\Handler\\MercureOutboxProjectorWorker::__invoke"

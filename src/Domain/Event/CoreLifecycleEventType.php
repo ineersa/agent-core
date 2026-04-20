@@ -45,9 +45,6 @@ final class CoreLifecycleEventType
         self::AGENT_END,
     ];
 
-    /**
-     * Determines if a given event type string is a registered core lifecycle event.
-     */
     public static function isCore(string $type): bool
     {
         return \in_array($type, self::ALL, true);

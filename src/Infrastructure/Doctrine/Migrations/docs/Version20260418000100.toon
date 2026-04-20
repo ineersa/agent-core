@@ -6,24 +6,24 @@ summary: This class defines a Doctrine migration to modify the database schema f
 methods[3]:
   - method: getDescription
     start: 16
-    end: 22
-    limit: 7
-    symbolLine: 19
+    end: 19
+    limit: 4
+    symbolLine: 16
     symbolColumn: 21
     signature: "public function getDescription(): string"
   - method: up
-    start: 24
-    end: 152
-    limit: 129
-    symbolLine: 27
+    start: 21
+    end: 146
+    limit: 126
+    symbolLine: 21
     symbolColumn: 21
     signature: "public function up(Schema $schema): void"
     callees[7]: "Doctrine\\DBAL\\Schema\\Schema::hasTable","Doctrine\\DBAL\\Schema\\Schema::createTable","Doctrine\\DBAL\\Schema\\Table::addColumn","Doctrine\\DBAL\\Schema\\Table::setPrimaryKey","Doctrine\\DBAL\\Schema\\Table::addUniqueIndex","Doctrine\\DBAL\\Schema\\Table::addIndex","Doctrine\\DBAL\\Schema\\Table::addForeignKeyConstraint"
   - method: down
-    start: 154
-    end: 164
-    limit: 11
-    symbolLine: 157
+    start: 148
+    end: 155
+    limit: 8
+    symbolLine: 148
     symbolColumn: 21
     signature: "public function down(Schema $schema): void"
     callees[2]: "Doctrine\\DBAL\\Schema\\Schema::hasTable","Doctrine\\DBAL\\Schema\\Schema::dropTable"

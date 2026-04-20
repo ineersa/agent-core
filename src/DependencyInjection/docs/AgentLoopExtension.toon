@@ -6,17 +6,17 @@ summary: Registers default configuration values for the Agent Loop bundle into t
 methods[2]:
   - method: prepend
     start: 18
-    end: 37
-    limit: 20
-    symbolLine: 21
+    end: 34
+    limit: 17
+    symbolLine: 18
     symbolColumn: 21
     signature: "public function prepend(ContainerBuilder $container): void"
     callees[2]: "Symfony\\Component\\DependencyInjection\\ContainerBuilder::hasExtension","Symfony\\Component\\DependencyInjection\\ContainerBuilder::prependExtensionConfig"
   - method: load
-    start: 39
-    end: 77
+    start: 36
+    end: 74
     limit: 39
-    symbolLine: 44
+    symbolLine: 41
     symbolColumn: 21
     signature: "public function load(array $configs, ContainerBuilder $container): void"
     callees[5]: "Symfony\\Component\\DependencyInjection\\Extension\\Extension::processConfiguration","Symfony\\Component\\DependencyInjection\\Container::setParameter","Symfony\\Component\\DependencyInjection\\Loader\\PhpFileLoader::load","Symfony\\Component\\DependencyInjection\\Alias::setPublic","Symfony\\Component\\DependencyInjection\\ContainerBuilder::setAlias"

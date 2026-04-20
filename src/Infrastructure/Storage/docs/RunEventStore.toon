@@ -6,24 +6,24 @@ summary: The RunEventStore provides a persistence layer for RunEvent entities wi
 methods[3]:
   - method: append
     start: 18
-    end: 25
-    limit: 8
-    symbolLine: 21
+    end: 22
+    limit: 5
+    symbolLine: 18
     symbolColumn: 21
     signature: "public function append(RunEvent $event): void"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunEventStore::appendMany"
   - method: appendMany
-    start: 27
-    end: 35
-    limit: 9
-    symbolLine: 30
+    start: 24
+    end: 29
+    limit: 6
+    symbolLine: 24
     symbolColumn: 21
     signature: "public function appendMany(array $events): void"
     callees[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunEventStore::append"
   - method: allFor
-    start: 37
-    end: 49
+    start: 31
+    end: 43
     limit: 13
-    symbolLine: 42
+    symbolLine: 36
     symbolColumn: 21
     signature: "public function allFor(string $runId): array"

@@ -9,9 +9,6 @@ namespace Ineersa\AgentCore\Domain\Tool;
  */
 final readonly class ToolExecutionPolicy
 {
-    /**
-     * Initializes policy with execution mode, timeout, and parallelism settings.
-     */
     public function __construct(
         public ToolExecutionMode $mode,
         public int $timeoutSeconds,

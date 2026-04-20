@@ -23,8 +23,5 @@ interface PromptStateStoreInterface
      */
     public function save(string $runId, array $state): void;
 
-    /**
-     * Removes the state entry associated with the given run ID.
-     */
     public function delete(string $runId): void;
 }

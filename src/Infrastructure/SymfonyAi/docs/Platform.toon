@@ -13,86 +13,86 @@ methods[11]:
     signature: "public function __construct(SymfonyPlatformInvoker $invoker, RunStoreInterface $runStore, ToolCatalogResolver $toolCatalogResolver, SymfonyMessageMapper $messageMapper, iterable $transformContextHooks = [], iterable $convertToLlmHooks = [], iterable $beforeProviderRequestHooks = [], ?ModelResolverInterface $modelResolver = null, string $defaultModel = 'gpt-4o-mini')"
   - method: invoke
     start: 44
-    end: 91
-    limit: 48
-    symbolLine: 47
+    end: 88
+    limit: 45
+    symbolLine: 44
     symbolColumn: 21
     signature: "public function invoke(string $model, array $input, array $options = []): array"
     callees[13]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::runContextFrom","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::cancellationToken","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::resolveContextMessages","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::applyTransformHooks","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::applyConvertHooks","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::optionsWithoutInternalFields","Ineersa\\AgentCore\\Contract\\Tool\\ModelResolverInterface::resolve","Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver::resolveProviderPayload","Ineersa\\AgentCore\\Domain\\Message\\MessageBag::all","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::applyBeforeProviderRequestHooks","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::providerInputFrom","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyPlatformInvoker::invoke","Ineersa\\AgentCore\\Domain\\Tool\\PlatformInvocationResult::toArray"
   - method: runContextFrom
-    start: 93
-    end: 117
+    start: 90
+    end: 114
     limit: 25
-    symbolLine: 100
+    symbolLine: 97
     symbolColumn: 22
     signature: "private function runContextFrom(array $input): array"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::invoke"
   - method: resolveContextMessages
-    start: 119
-    end: 161
+    start: 116
+    end: 158
     limit: 43
-    symbolLine: 126
+    symbolLine: 123
     symbolColumn: 22
     signature: "private function resolveContextMessages(array $input, ?string $runId): array"
     callees[2]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::hydrateMessage","Ineersa\\AgentCore\\Contract\\RunStoreInterface::get"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::invoke"
   - method: applyTransformHooks
-    start: 163
-    end: 179
+    start: 160
+    end: 176
     limit: 17
-    symbolLine: 170
+    symbolLine: 167
     symbolColumn: 22
     signature: "private function applyTransformHooks(array $messages, CancellationTokenInterface $cancelToken): array"
     callees[1]: "Ineersa\\AgentCore\\Contract\\Hook\\TransformContextHookInterface::transformContext"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::invoke"
   - method: applyConvertHooks
-    start: 181
-    end: 195
+    start: 178
+    end: 192
     limit: 15
-    symbolLine: 186
+    symbolLine: 183
     symbolColumn: 22
     signature: "private function applyConvertHooks(array $messages, CancellationTokenInterface $cancelToken): MessageBag"
     callees[2]: "Ineersa\\AgentCore\\Contract\\Hook\\ConvertToLlmHookInterface::convertToLlm","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::toMessageBag"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::invoke"
   - method: applyBeforeProviderRequestHooks
-    start: 197
-    end: 228
+    start: 194
+    end: 225
     limit: 32
-    symbolLine: 205
+    symbolLine: 202
     symbolColumn: 22
     signature: "private function applyBeforeProviderRequestHooks(string $model, array $input, array $options, CancellationTokenInterface $cancelToken): array"
     callees[2]: "Ineersa\\AgentCore\\Contract\\Hook\\BeforeProviderRequestHookInterface::beforeProviderRequest","Ineersa\\AgentCore\\Domain\\Tool\\ProviderRequest::applyOn"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::invoke"
   - method: providerInputFrom
-    start: 230
-    end: 256
+    start: 227
+    end: 253
     limit: 27
-    symbolLine: 237
+    symbolLine: 234
     symbolColumn: 22
     signature: "private function providerInputFrom(array $input): array|object"
     callees[2]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::toMessageBag","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::toProviderInput"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::invoke"
   - method: optionsWithoutInternalFields
-    start: 258
-    end: 270
+    start: 255
+    end: 267
     limit: 13
-    symbolLine: 265
+    symbolLine: 262
     symbolColumn: 22
     signature: "private function optionsWithoutInternalFields(array $options): array"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::invoke"
   - method: cancellationToken
-    start: 272
-    end: 286
-    limit: 15
-    symbolLine: 275
+    start: 269
+    end: 280
+    limit: 12
+    symbolLine: 269
     symbolColumn: 22
     signature: "private function cancellationToken(?string $runId, mixed $provided): CancellationTokenInterface"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::invoke"
   - method: hydrateMessage
-    start: 288
-    end: 322
+    start: 282
+    end: 316
     limit: 35
-    symbolLine: 293
+    symbolLine: 287
     symbolColumn: 22
     signature: "private function hydrateMessage(array $payload): ?AgentMessage"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::resolveContextMessages"

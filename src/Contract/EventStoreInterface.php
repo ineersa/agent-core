@@ -11,9 +11,6 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
  */
 interface EventStoreInterface
 {
-    /**
-     * Persists a single RunEvent to the store.
-     */
     public function append(RunEvent $event): void;
 
     /**

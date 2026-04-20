@@ -6,9 +6,9 @@ summary: Defines the contract for processing events after a tool execution compl
 methods[1]:
   - method: afterToolCall
     start: 15
-    end: 18
-    limit: 4
-    symbolLine: 18
+    end: 15
+    limit: 1
+    symbolLine: 15
     symbolColumn: 21
     signature: "public function afterToolCall(AfterToolCallContext $context, ?CancellationTokenInterface $cancelToken = null): ?AfterToolCallResult"
     callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::applyAfterHooks","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyToolExecutorAdapter::execute"

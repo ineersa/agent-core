@@ -14,9 +14,9 @@ methods[2]:
     callees[1]: "Symfony\\Component\\Console\\Command\\Command::__construct"
   - method: execute
     start: 29
-    end: 49
-    limit: 21
-    symbolLine: 32
+    end: 46
+    limit: 18
+    symbolLine: 29
     symbolColumn: 24
     signature: "protected function execute(InputInterface $input, OutputInterface $output): int"
     callees[3]: "Symfony\\Component\\Console\\Style\\SymfonyStyle::title","Symfony\\Component\\Console\\Style\\SymfonyStyle::definitionList","Symfony\\Component\\Console\\Style\\SymfonyStyle::success"

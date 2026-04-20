@@ -18,17 +18,11 @@ final class InMemoryRunStore implements RunStoreInterface
     /** @var array<string, \DateTimeImmutable> */
     private array $updatedAtByRun = [];
 
-    /**
-     * Retrieves the current RunState for a given run ID or returns null if not found.
-     */
     public function get(string $runId): ?RunState
     {
         return $this->states[$runId] ?? null;
     }
 
-    /**
-     * Updates RunState if the provided version matches the expected version, ensuring optimistic concurrency control.
-     */
     public function compareAndSwap(RunState $state, int $expectedVersion): bool
     {
         $currentState = $this->states[$state->runId] ?? null;
@@ -44,9 +38,6 @@ final class InMemoryRunStore implements RunStoreInterface
         return true;
     }
 
-    /**
-     * Identifies running RunStates that have not been updated since the specified timestamp.
-     */
     public function findRunningStaleBefore(\DateTimeImmutable $updatedBefore): array
     {
         $stale = [];

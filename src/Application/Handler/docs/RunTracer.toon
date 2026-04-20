@@ -6,16 +6,16 @@ summary: This class emits lightweight structured tracing spans for run processin
 methods[2]:
   - method: __construct
     start: 19
-    end: 24
-    limit: 6
-    symbolLine: 22
+    end: 21
+    limit: 3
+    symbolLine: 19
     symbolColumn: 21
     signature: public function __construct(?LoggerInterface $logger = null)
   - method: inSpan
-    start: 26
-    end: 72
+    start: 23
+    end: 69
     limit: 47
-    symbolLine: 36
+    symbolLine: 33
     symbolColumn: 21
     signature: "public function inSpan(string $name, array $attributes, callable $operation, bool $root = false): mixed"
     callees[1]: "Psr\\Log\\LoggerInterface::info"

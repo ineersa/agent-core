@@ -4,4 +4,4 @@ class: "Ineersa\\AgentCore\\Domain\\Tool\\AfterToolCallContext"
 type: readonly final class
 summary: "This readonly final class encapsulates the immutable context required after a tool execution, bundling the assistant's message, the specific tool call, its arguments, and the resulting outcome. It serves as a structured data carrier for propagating tool interaction details within the agent domain."
 methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,14,25,12,17,21,"public function __construct(AgentMessage $assistantMessage, ToolCall $toolCall, mixed $args, ToolResult $result, bool $isError, mixed $context)"
+  __construct,14,22,9,14,21,"public function __construct(AgentMessage $assistantMessage, ToolCall $toolCall, mixed $args, ToolResult $result, bool $isError, mixed $context)"

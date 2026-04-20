@@ -29,17 +29,17 @@ methods[5]:
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::route"
   - method: rejected
     start: 49
-    end: 55
-    limit: 7
-    symbolLine: 52
+    end: 52
+    limit: 4
+    symbolLine: 49
     symbolColumn: 28
     signature: "static public function rejected(string $kind, string $reason): self"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::route"
   - method: isRejected
-    start: 57
-    end: 63
-    limit: 7
-    symbolLine: 60
+    start: 54
+    end: 57
+    limit: 4
+    symbolLine: 54
     symbolColumn: 21
     signature: "public function isRejected(): bool"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onApplyCommand"

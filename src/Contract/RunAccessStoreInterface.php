@@ -11,18 +11,9 @@ use Ineersa\AgentCore\Domain\Run\RunAccessScope;
  */
 interface RunAccessStoreInterface
 {
-    /**
-     * persists a run access scope to storage.
-     */
     public function save(RunAccessScope $scope): void;
 
-    /**
-     * retrieves a run access scope by run ID.
-     */
     public function get(string $runId): ?RunAccessScope;
 
-    /**
-     * updates the access timestamp for a run.
-     */
     public function touch(string $runId, ?\DateTimeImmutable $updatedAt = null): void;
 }

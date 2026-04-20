@@ -6,34 +6,34 @@ summary: "The CommandRouter class acts as a central dispatcher for ApplyCommand 
 methods[4]:
   - method: __construct
     start: 17
-    end: 24
-    limit: 8
-    symbolLine: 20
+    end: 21
+    limit: 5
+    symbolLine: 17
     symbolColumn: 21
     signature: "public function __construct(CommandHandlerRegistry $registry, string $extensionPrefix = 'ext:')"
   - method: route
-    start: 26
-    end: 68
-    limit: 43
-    symbolLine: 29
+    start: 23
+    end: 62
+    limit: 40
+    symbolLine: 23
     symbolColumn: 21
     signature: "public function route(ApplyCommand $command): RoutedCommand"
     callees[7]: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::validateOptionKeys","Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand::rejected","Ineersa\\AgentCore\\Domain\\Command\\CoreCommandKind::isCore","Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand::core","Ineersa\\AgentCore\\Application\\Handler\\CommandHandlerRegistry::find","Ineersa\\AgentCore\\Contract\\Extension\\CommandHandlerInterface::supportsCancelSafe","Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand::extension"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onApplyCommand"
   - method: handlerFor
-    start: 70
-    end: 76
-    limit: 7
-    symbolLine: 73
+    start: 64
+    end: 67
+    limit: 4
+    symbolLine: 64
     symbolColumn: 21
     signature: "public function handlerFor(string $kind): ?CommandHandlerInterface"
     callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\CommandHandlerRegistry::find"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyExtensionCommand"
   - method: validateOptionKeys
-    start: 78
-    end: 98
-    limit: 21
-    symbolLine: 81
+    start: 69
+    end: 86
+    limit: 18
+    symbolLine: 69
     symbolColumn: 22
     signature: "private function validateOptionKeys(ApplyCommand $command): ?string"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::route"

@@ -32,9 +32,6 @@ final class InMemoryOutboxStore implements OutboxStoreInterface
 
     private int $nextId = 1;
 
-    /**
-     * Adds a RunEvent to the outbox buffer using the OutboxSink for deduplication.
-     */
     public function enqueue(RunEvent $event, OutboxSink $sink): void
     {
         $key = $this->dedupeKey($sink, $event);
@@ -55,9 +52,6 @@ final class InMemoryOutboxStore implements OutboxStoreInterface
         $this->dedupe[$key] = $id;
     }
 
-    /**
-     * Retrieves up to limit pending events for processing with optional timestamp override.
-     */
     public function claim(OutboxSink $sink, int $limit = 100, ?\DateTimeImmutable $now = null): array
     {
         $clock = $now ?? new \DateTimeImmutable();
@@ -97,9 +91,6 @@ final class InMemoryOutboxStore implements OutboxStoreInterface
         return $claimed;
     }
 
-    /**
-     * Marks a specific outbox entry as successfully processed with optional timestamp.
-     */
     public function markProcessed(int $entryId, ?\DateTimeImmutable $processedAt = null): void
     {
         if (!isset($this->entries[$entryId])) {
@@ -110,9 +101,6 @@ final class InMemoryOutboxStore implements OutboxStoreInterface
         $this->entries[$entryId]['processed_at'] = $processedAt ?? new \DateTimeImmutable();
     }
 
-    /**
-     * Marks a specific outbox entry as failed with retry delay and optional timestamp.
-     */
     public function markFailed(int $entryId, int $retryAfterSeconds = 30, ?\DateTimeImmutable $now = null): void
     {
         if (!isset($this->entries[$entryId])) {
@@ -126,9 +114,6 @@ final class InMemoryOutboxStore implements OutboxStoreInterface
         $this->entries[$entryId]['available_at'] = $clock->setTimestamp($clock->getTimestamp() + $delay);
     }
 
-    /**
-     * Generates a unique string identifier for an event and sink combination.
-     */
     private function dedupeKey(OutboxSink $sink, RunEvent $event): string
     {
         return \sprintf('%s|%s|%d', $sink->value, $event->runId, $event->seq);

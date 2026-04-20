@@ -6,25 +6,25 @@ summary: "Defines the contract for persisting and managing agent run states with
 methods[3]:
   - method: get
     start: 14
-    end: 17
-    limit: 4
-    symbolLine: 17
+    end: 14
+    limit: 1
+    symbolLine: 14
     symbolColumn: 21
     signature: "public function get(string $runId): ?RunState"
     callers[12]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::sendCommand","Ineersa\\AgentCore\\Api\\Http\\RunReadService::summary","Ineersa\\AgentCore\\Api\\Http\\RunReadService::transcriptPage","Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::inspect","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onStartRun","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onApplyCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onAdvanceRun","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onLlmStepResult","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onToolCallResult","Ineersa\\AgentCore\\Command\\AgentLoopResumeStaleRunsCommand::execute","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::resolveContextMessages","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\RunCancellationToken::isCancellationRequested"
   - method: compareAndSwap
-    start: 19
-    end: 22
-    limit: 4
-    symbolLine: 22
+    start: 16
+    end: 16
+    limit: 1
+    symbolLine: 16
     symbolColumn: 21
     signature: "public function compareAndSwap(RunState $state, int $expectedVersion): bool"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::commit"
   - method: findRunningStaleBefore
-    start: 24
-    end: 29
+    start: 18
+    end: 23
     limit: 6
-    symbolLine: 29
+    symbolLine: 23
     symbolColumn: 21
     signature: "public function findRunningStaleBefore(DateTimeImmutable $updatedBefore): array"
     callers[1]: "Ineersa\\AgentCore\\Command\\AgentLoopResumeStaleRunsCommand::execute"

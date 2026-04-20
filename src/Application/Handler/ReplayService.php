@@ -14,9 +14,6 @@ use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
  */
 final readonly class ReplayService
 {
-    /**
-     * initializes dependencies for event replay and state reconstruction.
-     */
     public function __construct(
         private EventStoreInterface $eventStore,
         private RunLogReader $runLogReader,

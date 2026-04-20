@@ -6,63 +6,63 @@ summary: "InMemoryCommandStore provides an in-memory implementation of the comma
 methods[8]:
   - method: enqueue
     start: 24
-    end: 38
-    limit: 15
-    symbolLine: 27
+    end: 35
+    limit: 12
+    symbolLine: 24
     symbolColumn: 21
     signature: "public function enqueue(PendingCommand $command): bool"
     callees[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryCommandStore::has"
   - method: has
-    start: 40
-    end: 46
-    limit: 7
-    symbolLine: 43
+    start: 37
+    end: 40
+    limit: 4
+    symbolLine: 37
     symbolColumn: 21
     signature: "public function has(string $runId, string $idempotencyKey): bool"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryCommandStore::enqueue"
   - method: pending
-    start: 48
-    end: 69
-    limit: 22
-    symbolLine: 51
+    start: 42
+    end: 60
+    limit: 19
+    symbolLine: 42
     symbolColumn: 21
     signature: "public function pending(string $runId): array"
     callers[2]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryCommandStore::countPending","Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryCommandStore::rejectPendingByKind"
   - method: countPending
-    start: 71
-    end: 77
-    limit: 7
-    symbolLine: 74
+    start: 62
+    end: 65
+    limit: 4
+    symbolLine: 62
     symbolColumn: 21
     signature: "public function countPending(string $runId): int"
     callees[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryCommandStore::pending"
   - method: rejectPendingByKind
-    start: 79
-    end: 96
-    limit: 18
-    symbolLine: 82
+    start: 67
+    end: 81
+    limit: 15
+    symbolLine: 67
     symbolColumn: 21
     signature: "public function rejectPendingByKind(string $runId, string $kind, string $reason): array"
     callees[2]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryCommandStore::pending","Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryCommandStore::markRejected"
   - method: markApplied
-    start: 98
-    end: 104
-    limit: 7
-    symbolLine: 101
+    start: 83
+    end: 86
+    limit: 4
+    symbolLine: 83
     symbolColumn: 21
     signature: "public function markApplied(string $runId, string $idempotencyKey): void"
   - method: markRejected
-    start: 106
-    end: 112
-    limit: 7
-    symbolLine: 109
+    start: 88
+    end: 91
+    limit: 4
+    symbolLine: 88
     symbolColumn: 21
     signature: "public function markRejected(string $runId, string $idempotencyKey, string $reason): void"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryCommandStore::rejectPendingByKind"
   - method: markSuperseded
-    start: 114
-    end: 120
-    limit: 7
-    symbolLine: 117
+    start: 93
+    end: 96
+    limit: 4
+    symbolLine: 93
     symbolColumn: 21
     signature: "public function markSuperseded(string $runId, string $idempotencyKey, string $reason): void"

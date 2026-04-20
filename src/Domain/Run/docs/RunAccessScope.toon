@@ -13,9 +13,9 @@ methods[2]:
     signature: "public function __construct(string $runId, ?string $tenantId, ?string $userId, array $sessionMetadata = [], DateTimeImmutable $createdAt = new \\DateTimeImmutable(), DateTimeImmutable $updatedAt = new \\DateTimeImmutable())"
   - method: withUpdatedAt
     start: 27
-    end: 40
-    limit: 14
-    symbolLine: 30
+    end: 37
+    limit: 11
+    symbolLine: 27
     symbolColumn: 21
     signature: "public function withUpdatedAt(?DateTimeImmutable $updatedAt = null): self"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunAccessStore::touch"

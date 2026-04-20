@@ -15,18 +15,12 @@ final class RunEventStore implements EventStoreInterface
     /** @var array<string, list<RunEvent>> */
     private array $eventsByRun = [];
 
-    /**
-     * persists a single RunEvent to storage.
-     */
     public function append(RunEvent $event): void
     {
         $this->eventsByRun[$event->runId] ??= [];
         $this->eventsByRun[$event->runId][] = $event;
     }
 
-    /**
-     * persists an array of RunEvents to storage.
-     */
     public function appendMany(array $events): void
     {
         foreach ($events as $event) {

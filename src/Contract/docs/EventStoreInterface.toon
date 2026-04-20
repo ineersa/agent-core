@@ -6,25 +6,25 @@ summary: Defines the contract for persisting and retrieving execution events wit
 methods[3]:
   - method: append
     start: 14
-    end: 17
-    limit: 4
-    symbolLine: 17
+    end: 14
+    limit: 1
+    symbolLine: 14
     symbolColumn: 21
     signature: "public function append(RunEvent $event): void"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::commit"
   - method: appendMany
-    start: 19
-    end: 24
+    start: 16
+    end: 21
     limit: 6
-    symbolLine: 24
+    symbolLine: 21
     symbolColumn: 21
     signature: "public function appendMany(array $events): void"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::commit"
   - method: allFor
-    start: 26
-    end: 31
+    start: 23
+    end: 28
     limit: 6
-    symbolLine: 31
+    symbolLine: 28
     symbolColumn: 21
     signature: "public function allFor(string $runId): array"
     callers[3]: "Ineersa\\AgentCore\\Api\\Http\\RunReadService::eventsForRun","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::eventsForReplay","Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::eventsForRun"

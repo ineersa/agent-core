@@ -13,9 +13,6 @@ use Ineersa\AgentCore\Domain\Tool\PlatformInvocationResult;
  */
 final readonly class SymfonyPlatformInvoker
 {
-    /**
-     * Initializes the invoker with an optional Symfony AI platform instance.
-     */
     public function __construct(
         private ?object $platform = null,
     ) {
@@ -172,9 +169,6 @@ final readonly class SymfonyPlatformInvoker
         return null;
     }
 
-    /**
-     * Retrieves a numeric value from a platform result using a method name.
-     */
     private function numericFrom(object $value, string $method): int|float|null
     {
         if (!method_exists($value, $method)) {

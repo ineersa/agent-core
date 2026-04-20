@@ -31,9 +31,6 @@ use Symfony\Component\Routing\Attribute\Route;
 #[Route('/agent/runs')]
 final class RunApiController
 {
-    /**
-     * Injects domain services and infrastructure dependencies into the controller.
-     */
     public function __construct(
         private AgentRunnerInterface $runner,
         private MessageBusInterface $commandBus,
@@ -299,9 +296,6 @@ final class RunApiController
         ]);
     }
 
-    /**
-     * Validates user access to a specific run by checking runId and request credentials.
-     */
     private function authorizeRun(string $runId, Request $request): ?JsonResponse
     {
         $scope = $this->runAccessStore->get($runId);
@@ -355,9 +349,6 @@ final class RunApiController
         return $decoded;
     }
 
-    /**
-     * Validates and converts a value to a non-negative integer for a given field name.
-     */
     private function parseNonNegativeInt(mixed $value, string $fieldName): int
     {
         if (\is_int($value)) {
@@ -375,9 +366,6 @@ final class RunApiController
         return (int) $value;
     }
 
-    /**
-     * Trims and normalizes a string value, returning null if empty or invalid.
-     */
     private function normalizeString(mixed $value): ?string
     {
         if (!\is_string($value)) {
@@ -389,9 +377,6 @@ final class RunApiController
         return '' === $normalized ? null : $normalized;
     }
 
-    /**
-     * Constructs and returns a standardized JSON error response with the given message and status code.
-     */
     private function error(string $message, int $status): JsonResponse
     {
         return new JsonResponse(['error' => $message], $status);

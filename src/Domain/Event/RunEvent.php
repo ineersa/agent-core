@@ -24,9 +24,6 @@ readonly class RunEvent
     ) {
     }
 
-    /**
-     * Checks if the event type starts with the specified extension prefix.
-     */
     public function isExtensionEvent(string $prefix = 'ext_'): bool
     {
         return str_starts_with($this->type, $prefix);

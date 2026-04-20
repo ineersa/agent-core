@@ -11,9 +11,6 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
  */
 final readonly class BeforeToolCallContext
 {
-    /**
-     * Initializes the context with assistant message, tool call, arguments, and generic context data.
-     */
     public function __construct(
         public AgentMessage $assistantMessage,
         public ToolCall $toolCall,

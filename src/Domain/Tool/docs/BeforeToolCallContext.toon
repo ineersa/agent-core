@@ -4,4 +4,4 @@ class: "Ineersa\\AgentCore\\Domain\\Tool\\BeforeToolCallContext"
 type: readonly final class
 summary: "This readonly final class encapsulates the immutable context required before a tool execution, bundling the assistant's message, the specific tool call, and its arguments. It serves as a structured data carrier to pass execution state through the agent's processing pipeline without exposing mutable state."
 methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,14,23,10,17,21,"public function __construct(AgentMessage $assistantMessage, ToolCall $toolCall, mixed $args, mixed $context)"
+  __construct,14,20,7,14,21,"public function __construct(AgentMessage $assistantMessage, ToolCall $toolCall, mixed $args, mixed $context)"

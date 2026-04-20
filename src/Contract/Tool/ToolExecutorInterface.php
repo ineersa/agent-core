@@ -12,8 +12,5 @@ use Ineersa\AgentCore\Domain\Tool\ToolResult;
  */
 interface ToolExecutorInterface
 {
-    /**
-     * Executes the provided tool call and returns the result.
-     */
     public function execute(ToolCall $toolCall): ToolResult;
 }

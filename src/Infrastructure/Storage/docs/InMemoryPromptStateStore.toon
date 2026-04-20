@@ -4,6 +4,6 @@ class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryPromptStateStore"
 type: final class
 summary: "InMemoryPromptStateStore provides an ephemeral, in-memory storage mechanism for persisting prompt state associated with specific agent run IDs. It implements a simple key-value interface using an internal array to map run identifiers to their corresponding state arrays."
 methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  get,17,23,7,20,21,"public function get(string $runId): ?array"
-  save,25,31,7,28,21,"public function save(string $runId, array $state): void"
-  delete,33,39,7,36,21,"public function delete(string $runId): void"
+  get,17,20,4,17,21,"public function get(string $runId): ?array"
+  save,22,25,4,22,21,"public function save(string $runId, array $state): void"
+  delete,27,30,4,27,21,"public function delete(string $runId): void"

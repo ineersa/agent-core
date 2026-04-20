@@ -13,9 +13,6 @@ use Symfony\Component\HttpKernel\Bundle\Bundle;
  */
 final class AgentLoopBundle extends Bundle
 {
-    /**
-     * Retrieves the bundle's dependency injection extension instance.
-     */
     public function getContainerExtension(): ?ExtensionInterface
     {
         if (null === $this->extension) {

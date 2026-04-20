@@ -14,15 +14,15 @@ methods[3]:
     callers[1]: "Ineersa\\AgentCore\\Domain\\Event\\Lifecycle\\AbstractLifecycleRunEvent::__construct"
   - method: isExtensionEvent
     start: 27
-    end: 33
-    limit: 7
-    symbolLine: 30
+    end: 30
+    limit: 4
+    symbolLine: 27
     symbolColumn: 21
     signature: "public function isExtensionEvent(string $prefix = 'ext_'): bool"
   - method: extension
-    start: 35
-    end: 61
+    start: 32
+    end: 58
     limit: 27
-    symbolLine: 40
+    symbolLine: 37
     symbolColumn: 28
     signature: "static public function extension(string $runId, int $seq, int $turnNo, string $type, array $payload = [], string $prefix = 'ext_', ?DateTimeImmutable $createdAt = null): self"

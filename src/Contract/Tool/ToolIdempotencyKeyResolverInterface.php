@@ -11,8 +11,5 @@ use Ineersa\AgentCore\Domain\Tool\ToolCall;
  */
 interface ToolIdempotencyKeyResolverInterface
 {
-    /**
-     * Resolves the idempotency key for a given tool call.
-     */
     public function resolveToolIdempotencyKey(ToolCall $toolCall): ?string;
 }

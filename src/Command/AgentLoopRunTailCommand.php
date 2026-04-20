@@ -21,9 +21,6 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand(name: 'agent-loop:run-tail', description: 'Tail the latest persisted events for a run.')]
 final class AgentLoopRunTailCommand extends Command
 {
-    /**
-     * Injects tail-read dependencies.
-     */
     public function __construct(
         private readonly RunDebugService $runDebugService,
         private readonly RunEventSerializer $runEventSerializer,
@@ -37,9 +34,6 @@ final class AgentLoopRunTailCommand extends Command
         ;
     }
 
-    /**
-     * Prints a tail window of recent run events.
-     */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $runId = (string) $input->getArgument('runId');
@@ -111,9 +105,6 @@ final class AgentLoopRunTailCommand extends Command
         return false === $encoded ? '{}' : $encoded;
     }
 
-    /**
-     * Builds a compact payload preview for tabular output.
-     */
     private function payloadPreview(mixed $payload): string
     {
         $encoded = json_encode($payload);

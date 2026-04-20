@@ -12,16 +12,10 @@ use League\Flysystem\FilesystemOperator;
  */
 final readonly class RunLogWriter
 {
-    /**
-     * initializes the writer with a filesystem operator for storage operations.
-     */
     public function __construct(private FilesystemOperator $filesystem)
     {
     }
 
-    /**
-     * persists a RunEvent to the filesystem using a generated path based on run ID and timestamp.
-     */
     public function append(RunEvent $event): void
     {
         $path = $this->pathForRun($event->runId, $event->createdAt);
@@ -54,9 +48,6 @@ final readonly class RunLogWriter
         }
     }
 
-    /**
-     * generates a unique filesystem path for a run using its ID and creation timestamp.
-     */
     private function pathForRun(string $runId, \DateTimeImmutable $at): string
     {
         return \sprintf('%s/%s/%s.jsonl', $at->format('Y'), $at->format('m'), $runId);

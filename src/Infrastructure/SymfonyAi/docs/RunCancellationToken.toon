@@ -6,16 +6,16 @@ summary: Provides a mechanism to check if a specific agent run has been cancelle
 methods[2]:
   - method: __construct
     start: 16
-    end: 23
-    limit: 8
-    symbolLine: 19
+    end: 20
+    limit: 5
+    symbolLine: 16
     symbolColumn: 21
     signature: "public function __construct(RunStoreInterface $runStore, string $runId)"
   - method: isCancellationRequested
-    start: 25
-    end: 36
-    limit: 12
-    symbolLine: 28
+    start: 22
+    end: 30
+    limit: 9
+    symbolLine: 22
     symbolColumn: 21
     signature: "public function isCancellationRequested(): bool"
     callees[1]: "Ineersa\\AgentCore\\Contract\\RunStoreInterface::get"
