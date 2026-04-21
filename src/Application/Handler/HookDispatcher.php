@@ -9,7 +9,7 @@ use Ineersa\AgentCore\Domain\Event\BoundaryHookName;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 /**
- * The HookDispatcher class orchestrates the execution of registered hook subscribers by mapping hook names to their corresponding handlers. It leverages a subscriber registry to identify relevant hooks and an event dispatcher to trigger the associated logic with provided context data.
+ * Dispatches boundary and extension hooks via Symfony's event dispatcher and iterates registered hook subscribers.
  */
 final readonly class HookDispatcher
 {

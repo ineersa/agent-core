@@ -1,6 +1,6 @@
 spec: agent-core.ai-docs/v1
 namespace: Serializer
 fqcn: "Ineersa\\AgentCore\\Api\\Serializer"
-updatedAt: 2026-04-20
+updatedAt: 2026-04-21
 files[1]{file,type,summary}:
   RunEventSerializer.php,readonly final class,The RunEventSerializer converts between domain RunEvent and RunStreamEvent objects and their array representations for API transport. It provides bidirectional normalization to support serialization boundaries without leaking domain structure.

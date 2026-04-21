@@ -1,7 +1,7 @@
 spec: agent-core.ai-docs/v1
 namespace: Contract
 fqcn: "Ineersa\\AgentCore\\Contract"
-updatedAt: 2026-04-20
+updatedAt: 2026-04-21
 description: "Stable public interfaces for the agent loop: runner API, storage abstractions, tool execution, hook system, and extension seams. Implementations live in Infrastructure/."
 files[8]{file,type,summary}:
   AgentRunnerInterface.php,interface,"Defines the contract for orchestrating the lifecycle of an agent execution run, including initialization, state transitions, and termination. It provides a unified interface for controlling agent behavior through steering, follow-ups, and human-in-the-loop interactions."

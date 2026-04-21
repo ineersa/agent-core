@@ -4,4 +4,4 @@ class: "Ineersa\\AgentCore\\Domain\\Tool\\ToolCall"
 type: readonly final class
 summary: "Represents a discrete tool invocation within an agent's execution flow, capturing the identifier, target tool name, and serialized arguments. It serves as a value object to track the sequence and context of tool calls during runtime."
 methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,14,32,19,20,21,"public function __construct(string $toolCallId, string $toolName, array $arguments, int $orderIndex, ?string $runId = null, ?ToolExecutionMode $mode = null, ?int $timeoutSeconds = null, ?string $toolIdempotencyKey = null, ?AgentMessage $assistantMessage = null, array $context = [])"
+  __construct,12,29,18,18,21,"public function __construct(string $toolCallId, string $toolName, array $arguments, int $orderIndex, ?string $runId = null, ?ToolExecutionMode $mode = null, ?int $timeoutSeconds = null, ?string $toolIdempotencyKey = null, array $context = [])"

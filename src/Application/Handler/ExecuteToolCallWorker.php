@@ -7,7 +7,6 @@ namespace Ineersa\AgentCore\Application\Handler;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
-use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
@@ -78,7 +77,6 @@ final readonly class ExecuteToolCallWorker
             mode: ToolExecutionMode::tryFrom((string) $message->mode),
             timeoutSeconds: $message->timeoutSeconds,
             toolIdempotencyKey: $message->toolIdempotencyKey,
-            assistantMessage: $this->hydrateAssistantMessage($message->assistantMessage),
             context: [
                 'run_id' => $message->runId(),
                 'turn_no' => $message->turnNo(),
@@ -163,31 +161,5 @@ final readonly class ExecuteToolCallWorker
                 ],
             );
         }
-    }
-
-    /**
-     * constructs an AgentMessage object from a raw payload array.
-     *
-     * @param array<string, mixed>|null $payload
-     */
-    private function hydrateAssistantMessage(?array $payload): ?AgentMessage
-    {
-        if (null === $payload) {
-            return null;
-        }
-
-        $role = \is_string($payload['role'] ?? null) ? $payload['role'] : 'assistant';
-        $content = \is_array($payload['content'] ?? null) ? $payload['content'] : [];
-
-        return new AgentMessage(
-            role: $role,
-            content: $content,
-            name: \is_string($payload['name'] ?? null) ? $payload['name'] : null,
-            toolCallId: \is_string($payload['tool_call_id'] ?? null) ? $payload['tool_call_id'] : null,
-            toolName: \is_string($payload['tool_name'] ?? null) ? $payload['tool_name'] : null,
-            details: $payload['details'] ?? null,
-            isError: \is_bool($payload['is_error'] ?? null) ? $payload['is_error'] : false,
-            metadata: \is_array($payload['metadata'] ?? null) ? $payload['metadata'] : [],
-        );
     }
 }

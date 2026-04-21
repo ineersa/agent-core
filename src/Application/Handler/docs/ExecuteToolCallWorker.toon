@@ -3,36 +3,28 @@ file: ExecuteToolCallWorker.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker"
 type: readonly final class
 summary: "This class acts as a message handler for the agent execution bus, processing tool call commands by delegating execution to a dedicated tool executor. It coordinates the invocation of external tools and manages the resulting state updates within the agent's runtime context."
-methods[4]:
+methods[3]:
   - method: __construct
-    start: 25
-    end: 32
+    start: 24
+    end: 31
     limit: 8
-    symbolLine: 25
+    symbolLine: 24
     symbolColumn: 21
     signature: "public function __construct(ToolExecutorInterface $toolExecutor, MessageBusInterface $commandBus, ?RunStoreInterface $runStore = null, ?RunMetrics $metrics = null, ?RunTracer $tracer = null)"
   - method: __invoke
-    start: 34
-    end: 64
+    start: 33
+    end: 63
     limit: 31
-    symbolLine: 38
+    symbolLine: 37
     symbolColumn: 21
     signature: "public function __invoke(ExecuteToolCall $message): void"
     callees[6]: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker::execute","Symfony\\Component\\Messenger\\MessageBusInterface::dispatch","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId"
   - method: execute
-    start: 66
-    end: 166
-    limit: 101
-    symbolLine: 66
+    start: 65
+    end: 164
+    limit: 100
+    symbolLine: 65
     symbolColumn: 22
     signature: "private function execute(ExecuteToolCall $message): ToolCallResult"
-    callees[11]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Tool\\ToolExecutionMode::tryFrom","Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker::hydrateAssistantMessage","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Contract\\Tool\\ToolExecutorInterface::execute","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordToolLatency","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::attempt","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Throwable::getMessage"
+    callees[10]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Tool\\ToolExecutionMode::tryFrom","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Contract\\Tool\\ToolExecutorInterface::execute","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordToolLatency","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::attempt","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Throwable::getMessage"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker::__invoke"
-  - method: hydrateAssistantMessage
-    start: 168
-    end: 192
-    limit: 25
-    symbolLine: 173
-    symbolColumn: 22
-    signature: "private function hydrateAssistantMessage(?array $payload): ?AgentMessage"
-    callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker::execute"

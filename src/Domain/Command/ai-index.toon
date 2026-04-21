@@ -1,7 +1,7 @@
 spec: agent-core.ai-docs/v1
 namespace: "Domain\\Command"
 fqcn: "Ineersa\\AgentCore\\Domain\\Command"
-updatedAt: 2026-04-20
+updatedAt: 2026-04-21
 description: "Command value objects for the agent loop — kind constants, pending queue items, and routed commands with core/extension/rejected discrimination."
 files[3]{file,type,summary}:
   CoreCommandKind.php,final class,Defines the set of core command types recognized by the agent core system. This final class provides a static utility to validate whether a given command kind string belongs to the core domain. It serves as a strict type guard for command routing and processing.

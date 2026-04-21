@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Tool;
 
-use Ineersa\AgentCore\Domain\Message\AgentMessage;
-
 /**
  * Represents a discrete tool invocation within an agent's execution flow, capturing the identifier, target tool name, and serialized arguments. It serves as a value object to track the sequence and context of tool calls during runtime.
  */
@@ -26,7 +24,6 @@ final readonly class ToolCall
         public ?ToolExecutionMode $mode = null,
         public ?int $timeoutSeconds = null,
         public ?string $toolIdempotencyKey = null,
-        public ?AgentMessage $assistantMessage = null,
         public array $context = [],
     ) {
     }

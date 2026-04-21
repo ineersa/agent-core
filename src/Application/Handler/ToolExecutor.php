@@ -170,9 +170,9 @@ final class ToolExecutor implements ToolExecutorInterface
         return $this->toDomainResult(
             $toolCall,
             $this->faultTolerantToolbox->execute(new SymfonyToolCall(
-                $toolCall->toolCallId,
-                $toolCall->toolName,
-                $toolCall->arguments,
+                id: $toolCall->toolCallId,
+                name: $toolCall->toolName,
+                arguments: $toolCall->arguments,
             )),
         );
     }

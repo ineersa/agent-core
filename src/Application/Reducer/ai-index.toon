@@ -1,7 +1,7 @@
 spec: agent-core.ai-docs/v1
 namespace: "Application\\Reducer"
 fqcn: "Ineersa\\AgentCore\\Application\\Reducer"
-updatedAt: 2026-04-20
+updatedAt: 2026-04-21
 description: "Pure state reducer — transforms RunState given bus commands (StartRun, AdvanceRun, ApplyCommand), returns new state + effects."
 files[2]{file,type,summary}:
   ReduceResult.php,readonly final class,"ReduceResult is a readonly value object that encapsulates the outcome of a reducer operation, bundling the resulting RunState and a list of side-effect instructions. It serves as a pure data container to separate computation results from their execution, ensuring immutability and clear intent in the application's event processing flow."

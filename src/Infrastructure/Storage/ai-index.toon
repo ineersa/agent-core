@@ -1,7 +1,7 @@
 spec: agent-core.ai-docs/v1
 namespace: "Infrastructure\\Storage"
 fqcn: "Ineersa\\AgentCore\\Infrastructure\\Storage"
-updatedAt: 2026-04-20
+updatedAt: 2026-04-21
 description: "Storage adapters — in-memory stores, Flysystem run logs, Doctrine event store, hot prompt state, local artifact store."
 files[10]{file,type,summary}:
   HotPromptStateStore.php,final class,"HotPromptStateStore provides a lightweight, in-memory cache for transient prompt execution states keyed by run ID. It is designed for high-speed access during active agent runs but does not guarantee persistence across restarts."

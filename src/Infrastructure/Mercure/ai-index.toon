@@ -1,7 +1,7 @@
 spec: agent-core.ai-docs/v1
 namespace: "Infrastructure\\Mercure"
 fqcn: "Ineersa\\AgentCore\\Infrastructure\\Mercure"
-updatedAt: 2026-04-20
+updatedAt: 2026-04-21
 description: Mercure integration — real-time event streaming.
 files[2]{file,type,summary}:
   RunEventPublisher.php,final class,"The RunEventPublisher class publishes domain RunEvent instances to a Mercure hub using configurable serialization and topic policies. It implements a coalescing mechanism to batch rapid updates within a defined time window, reducing unnecessary network traffic."

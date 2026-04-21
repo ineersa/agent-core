@@ -1,7 +1,7 @@
 spec: agent-core.ai-docs/v1
 namespace: "Application\\Handler"
 fqcn: "Ineersa\\AgentCore\\Application\\Handler"
-updatedAt: 2026-04-20
+updatedAt: 2026-04-21
 description: "Handler infrastructure — command routing, extension registries, LLM/tool execution workers, outbox projectors, event dispatching, step dispatch, locking, idempotency, replay, tool batch collection, bounded parallel dispatch, and idempotency result store."
 files[25]{file,type,summary}:
   CommandHandlerRegistry.php,final class,The CommandHandlerRegistry acts as a central lookup mechanism for resolving command handlers by their specific kind. It maintains a registry of handler instances to facilitate efficient dispatching within the application's command handling pipeline.
@@ -9,7 +9,7 @@ files[25]{file,type,summary}:
   EventSubscriberRegistry.php,final class,The EventSubscriberRegistry acts as a centralized registry for managing event subscribers within the application's handler layer. It stores a collection of subscribers and provides a mechanism to retrieve them based on specific event types. This design facilitates decoupled event handling by allowing components to query for relevant subscribers dynamically.
   ExecuteLlmStepWorker.php,readonly final class,This class serves as a message handler for executing LLM steps within the agent execution domain. It coordinates with the platform to perform the step logic and dispatches the resulting state updates via a dedicated command bus.
   ExecuteToolCallWorker.php,readonly final class,"This class acts as a message handler for the agent execution bus, processing tool call commands by delegating execution to a dedicated tool executor. It coordinates the invocation of external tools and manages the resulting state updates within the agent's runtime context."
-  HookDispatcher.php,readonly final class,The HookDispatcher class orchestrates the execution of registered hook subscribers by mapping hook names to their corresponding handlers. It leverages a subscriber registry to identify relevant hooks and an event dispatcher to trigger the associated logic with provided context data.
+  HookDispatcher.php,readonly final class,Dispatches boundary and extension hooks via Symfony's event dispatcher and iterates registered hook subscribers.
   HookSubscriberRegistry.php,final class,The HookSubscriberRegistry maintains a registry of hook subscribers to facilitate event-driven dispatching within the application. It provides a lookup mechanism to retrieve specific subscribers associated with a given hook name.
   JsonlOutboxProjectorWorker.php,readonly final class,The JsonlOutboxProjectorWorker consumes ProjectJsonlOutbox messages to persist event data into a JSONL outbox store. It coordinates the projection of domain events by writing to the outbox and logging execution details via a run log writer.
   LatencyHistogram.php,final class,This class records latency observations and exposes histogram-style snapshots.

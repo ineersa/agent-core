@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: HookDispatcher.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\HookDispatcher"
 type: readonly final class
-summary: The HookDispatcher class orchestrates the execution of registered hook subscribers by mapping hook names to their corresponding handlers. It leverages a subscriber registry to identify relevant hooks and an event dispatcher to trigger the associated logic with provided context data.
+summary: Dispatches boundary and extension hooks via Symfony's event dispatcher and iterates registered hook subscribers.
 methods[2]:
   - method: __construct
     start: 16

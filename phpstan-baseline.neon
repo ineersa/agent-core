@@ -241,12 +241,6 @@ parameters:
 			path: src/Domain/Run/RunState.php
 
 		-
-			message: '#^Property Ineersa\\AgentCore\\Domain\\Tool\\ToolCall\:\:\$assistantMessage is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/Domain/Tool/ToolCall.php
-
-		-
 			message: '#^Property Ineersa\\AgentCore\\Domain\\Tool\\ToolCall\:\:\$orderIndex is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
