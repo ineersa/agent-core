@@ -2,7 +2,8 @@
   "settings": {
     "toolPrefix": "server",
     "directTools": false,
-    "disableProxyTool": false
+    "disableProxyTool": false,
+    "toonEncode": ["jetbrains-index"]
   },
   "mcpServers": {
     "jetbrains-index": {

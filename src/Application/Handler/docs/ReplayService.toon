@@ -19,7 +19,7 @@ methods[8]:
     symbolColumn: 21
     signature: "public function rebuildHotPromptState(string $runId): array"
     callees[7]: "Ineersa\\AgentCore\\Application\\Handler\\ReplayService::eventsForReplay","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::replayMessages","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::verifyIntegrity","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::estimateTokens","Ineersa\\AgentCore\\Contract\\PromptStateStoreInterface::save","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::incrementReplayRebuildCount","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan"
-    callers[3]: "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::rebuildHotPromptState","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::commit","Ineersa\\AgentCore\\Command\\AgentLoopResumeStaleRunsCommand::execute"
+    callers[3]: "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::rebuildHotPromptState","Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit::commit","Ineersa\\AgentCore\\Command\\AgentLoopResumeStaleRunsCommand::execute"
   - method: verifyIntegrity
     start: 74
     end: 99

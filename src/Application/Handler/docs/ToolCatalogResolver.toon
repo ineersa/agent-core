@@ -19,7 +19,7 @@ methods[5]:
     symbolColumn: 21
     signature: "public function resolve(array $context = []): array"
     callees[2]: "Ineersa\\AgentCore\\Contract\\Tool\\ToolCatalogProviderInterface::resolveToolCatalog","Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver::assertSchemaStability"
-    callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver::resolveProviderPayload","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::resolveToolSchemas"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver::resolveProviderPayload","Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::resolveToolSchemas"
   - method: resolveProviderPayload
     start: 50
     end: 63

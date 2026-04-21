@@ -1,7 +1,0 @@
-spec: agent-core.file-index/v1
-file: ReduceResult.php
-class: "Ineersa\\AgentCore\\Application\\Reducer\\ReduceResult"
-type: readonly final class
-summary: "ReduceResult is a readonly value object that encapsulates the outcome of a reducer operation, bundling the resulting RunState and a list of side-effect instructions. It serves as a pure data container to separate computation results from their execution, ensuring immutability and clear intent in the application's event processing flow."
-methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,14,23,10,19,21,"public function __construct(RunState $state, array $effects)"

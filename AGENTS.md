@@ -104,12 +104,14 @@ When asked to implement a new feature (e.g., a new Command, Event, or Service):
 3. **Verify & Update Index**: Run `LLM_MODE=true castor dev:check` (this automatically updates the `.toon` indexes and verifies quality gates).
 4. **Update Architecture Docs**: Before claiming the task is done, if the feature introduces new commands, events, or handlers, update the relevant nested `AGENTS.md` maps (e.g., `src/Application/AGENTS.md`).
 
-### Workflow: Refactoring & Renaming
-When asked to rename a concept, class, or method, or move files:
-1. **Locate**: Use `ai-index.toon` to find the target's precise coordinates (`symbolLine` and `symbolColumn`).
-2. **Refactor via IDE**: **Never** use `sed` or text replacement. Always use the JetBrains IDE MCP refactor tools (e.g., `jetbrains_index_ide_refactor_rename` or `jetbrains_index_ide_move_file`).
-3. **Verify & Update Index**: Run `LLM_MODE=true castor dev:check` to ensure no usages were missed and to regenerate the stale `.toon` indexes.
-4. **Update Architecture Docs**: Check if the renamed concept is mentioned in any nested `AGENTS.md` maps and update them manually before claiming completion.
+### Workflow: Refactoring, Renaming & Deletion
+When asked to rename/remove a concept, class, or method, or move files:
+1. **Locate**: Use `ai-index.toon`/`docs/<Class>.toon` to find precise coordinates (`symbolLine` + `symbolColumn`).
+2. **Map impact first (required)**: Run `jetbrains_index_ide_find_references` using those coordinates **before any text search**. For deletions, do not delete until this reference map is reviewed.
+3. **Refactor via IDE**: **Never** use `sed` or raw text replacement for semantic renames/moves. Always use JetBrains IDE MCP refactor tools (`jetbrains_index_ide_refactor_rename`, `jetbrains_index_ide_move_file`).
+4. **Text search only after semantic map**: Use textual search (`jetbrains_index_ide_search_text` or `rg`) only for non-symbol strings/config/docs after step 2.
+5. **Verify & Update Index**: Run `LLM_MODE=true castor dev:check` to ensure no usages were missed and to regenerate stale `.toon` indexes.
+6. **Update Architecture Docs**: Check whether renamed/removed concepts appear in nested `AGENTS.md` maps and update them in the same change.
 
 ### Workflow: Bug Investigation
 When investigating a bug or error trace:

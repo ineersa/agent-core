@@ -19,7 +19,7 @@ methods[4]:
     symbolColumn: 21
     signature: "public function route(ApplyCommand $command): RoutedCommand"
     callees[7]: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::validateOptionKeys","Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand::rejected","Ineersa\\AgentCore\\Domain\\Command\\CoreCommandKind::isCore","Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand::core","Ineersa\\AgentCore\\Application\\Handler\\CommandHandlerRegistry::find","Ineersa\\AgentCore\\Contract\\Extension\\CommandHandlerInterface::supportsCancelSafe","Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand::extension"
-    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onApplyCommand"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::handle"
   - method: handlerFor
     start: 64
     end: 67
@@ -28,7 +28,7 @@ methods[4]:
     symbolColumn: 21
     signature: "public function handlerFor(string $kind): ?CommandHandlerInterface"
     callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\CommandHandlerRegistry::find"
-    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyExtensionCommand"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyExtensionCommand"
   - method: validateOptionKeys
     start: 69
     end: 86

@@ -19,4 +19,4 @@ methods[2]:
     symbolColumn: 21
     signature: "public function project(array $events): void"
     callees[1]: "Ineersa\\AgentCore\\Contract\\OutboxStoreInterface::enqueue"
-    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::commit"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit::commit"

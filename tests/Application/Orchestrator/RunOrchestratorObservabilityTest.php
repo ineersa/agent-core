@@ -14,8 +14,16 @@ use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
+use Ineersa\AgentCore\Application\Orchestrator\AdvanceRunHandler;
+use Ineersa\AgentCore\Application\Orchestrator\ApplyCommandHandler;
+use Ineersa\AgentCore\Application\Orchestrator\CommandMailboxPolicy;
+use Ineersa\AgentCore\Application\Orchestrator\LlmStepResultHandler;
+use Ineersa\AgentCore\Application\Orchestrator\RunCommit;
+use Ineersa\AgentCore\Application\Orchestrator\RunMessageProcessor;
+use Ineersa\AgentCore\Application\Orchestrator\RunMessageStateTools;
 use Ineersa\AgentCore\Application\Orchestrator\RunOrchestrator;
-use Ineersa\AgentCore\Application\Reducer\RunReducer;
+use Ineersa\AgentCore\Application\Orchestrator\StartRunHandler;
+use Ineersa\AgentCore\Application\Orchestrator\ToolCallResultHandler;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\StartRun;
@@ -70,20 +78,65 @@ final class RunOrchestratorObservabilityTest extends TestCase
         $traceLogger = new ObservabilityTraceLogger();
         $tracer = new RunTracer($traceLogger);
 
-        $orchestrator = new RunOrchestrator(
+        $stepDispatcher = new StepDispatcher(new ObservabilityNullMessageBus(), new ObservabilityNullMessageBus());
+        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+        );
+        $stateTools = new RunMessageStateTools();
+        $toolBatchCollector = new ToolBatchCollector();
+
+        $runCommit = new RunCommit(
             runStore: $runStore,
             eventStore: $eventStore,
             commandStore: $commandStore,
-            reducer: new RunReducer(),
-            stepDispatcher: new StepDispatcher(new ObservabilityNullMessageBus(), new ObservabilityNullMessageBus()),
-            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
             outboxProjector: $outboxProjector,
             replayService: new ReplayService($eventStore, new RunLogReader($filesystem), new HotPromptStateStore(), $metrics, $tracer),
-            idempotency: new MessageIdempotencyService(),
-            runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
-            toolBatchCollector: new ToolBatchCollector(),
+            stepDispatcher: $stepDispatcher,
             logger: $traceLogger,
             metrics: $metrics,
+            tracer: $tracer,
+        );
+
+        $runMessageProcessor = new RunMessageProcessor(
+            runStore: $runStore,
+            idempotency: new MessageIdempotencyService(),
+            runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
+            runCommit: $runCommit,
+            stepDispatcher: $stepDispatcher,
+            handlers: [
+                new StartRunHandler(stateTools: $stateTools),
+                new ApplyCommandHandler(
+                    commandStore: $commandStore,
+                    commandRouter: $commandRouter,
+                    commandMailboxPolicy: $commandMailboxPolicy,
+                    stateTools: $stateTools,
+                ),
+                new AdvanceRunHandler(
+                    commandMailboxPolicy: $commandMailboxPolicy,
+                    stateTools: $stateTools,
+                    metrics: $metrics,
+                    tracer: $tracer,
+                ),
+                new LlmStepResultHandler(
+                    toolBatchCollector: $toolBatchCollector,
+                    commandMailboxPolicy: $commandMailboxPolicy,
+                    stateTools: $stateTools,
+                    stepDispatcher: $stepDispatcher,
+                    metrics: $metrics,
+                    tracer: $tracer,
+                ),
+                new ToolCallResultHandler(
+                    toolBatchCollector: $toolBatchCollector,
+                    stateTools: $stateTools,
+                    metrics: $metrics,
+                ),
+            ],
+        );
+
+        $orchestrator = new RunOrchestrator(
+            runMessageProcessor: $runMessageProcessor,
             tracer: $tracer,
         );
 

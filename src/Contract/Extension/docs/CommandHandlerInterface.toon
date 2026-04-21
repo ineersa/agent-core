@@ -27,4 +27,4 @@ methods[3]:
     symbolLine: 24
     symbolColumn: 21
     signature: "public function map(string $runId, string $kind, array $payload, array $options = []): array"
-    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyExtensionCommand"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyExtensionCommand"

@@ -19,7 +19,7 @@ methods[12]:
     symbolLine: 58
     symbolColumn: 21
     signature: "public function recordRunStatusTransition(RunStatus $from, RunStatus $to): void"
-    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::trackCommitMetrics"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit::trackCommitMetrics"
   - method: setCommandQueueLag
     start: 71
     end: 74
@@ -27,7 +27,7 @@ methods[12]:
     symbolLine: 71
     symbolColumn: 21
     signature: "public function setCommandQueueLag(string $runId, int $pendingCount): void"
-    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::trackCommitMetrics"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit::trackCommitMetrics"
   - method: recordTurnStarted
     start: 76
     end: 83
@@ -36,7 +36,7 @@ methods[12]:
     symbolColumn: 21
     signature: "public function recordTurnStarted(string $runId, int $turnNo): void"
     callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::turnKey"
-    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onAdvanceRun"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AdvanceRunHandler::handle"
   - method: recordTurnCompleted
     start: 85
     end: 102
@@ -45,7 +45,7 @@ methods[12]:
     symbolColumn: 21
     signature: "public function recordTurnCompleted(string $runId, int $turnNo): void"
     callees[2]: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::turnKey","Ineersa\\AgentCore\\Application\\Handler\\LatencyHistogram::observe"
-    callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onLlmStepResult","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onToolCallResult"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::turnCompletedCallbacks","Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler::turnCompletedCallbacks"
   - method: recordLlmLatency
     start: 104
     end: 112
@@ -71,7 +71,7 @@ methods[12]:
     symbolLine: 129
     symbolColumn: 21
     signature: "public function incrementStaleResultCount(int $by = 1): void"
-    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::trackCommitMetrics"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit::trackCommitMetrics"
   - method: incrementReplayRebuildCount
     start: 138
     end: 142

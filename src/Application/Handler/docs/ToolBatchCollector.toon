@@ -19,7 +19,7 @@ methods[5]:
     symbolColumn: 21
     signature: "public function registerExpectedBatch(string $runId, int $turnNo, string $stepId, array $toolCalls): array"
     callees[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::dispatchableCalls","Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::batchKey"
-    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onLlmStepResult"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::handle"
   - method: collect
     start: 77
     end: 119
@@ -28,7 +28,7 @@ methods[5]:
     symbolColumn: 21
     signature: "public function collect(ToolCallResult $result): ToolBatchCollectOutcome"
     callees[9]: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::batchKey","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollectOutcome::rejected","Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollectOutcome::duplicate","Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::dispatchableCalls","Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollectOutcome::acceptedPending","Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollectOutcome::acceptedComplete"
-    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onToolCallResult"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler::handle"
   - method: dispatchableCalls
     start: 121
     end: 180

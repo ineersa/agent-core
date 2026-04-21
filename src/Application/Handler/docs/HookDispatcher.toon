@@ -19,4 +19,4 @@ methods[2]:
     symbolColumn: 21
     signature: "public function dispatch(string $hookName, array $context = []): array"
     callees[5]: "Ineersa\\AgentCore\\Domain\\Event\\BoundaryHookName::isBoundary","Ineersa\\AgentCore\\Domain\\Event\\BoundaryHookName::isExtensionHook","Symfony\\Contracts\\EventDispatcher\\EventDispatcherInterface::dispatch","Ineersa\\AgentCore\\Application\\Handler\\HookSubscriberRegistry::subscribersFor","Ineersa\\AgentCore\\Contract\\Extension\\HookSubscriberInterface::handle"
-    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::commit"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit::commit"

@@ -12,8 +12,16 @@ use Ineersa\AgentCore\Application\Handler\ReplayService;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
+use Ineersa\AgentCore\Application\Orchestrator\AdvanceRunHandler;
+use Ineersa\AgentCore\Application\Orchestrator\ApplyCommandHandler;
+use Ineersa\AgentCore\Application\Orchestrator\CommandMailboxPolicy;
+use Ineersa\AgentCore\Application\Orchestrator\LlmStepResultHandler;
+use Ineersa\AgentCore\Application\Orchestrator\RunCommit;
+use Ineersa\AgentCore\Application\Orchestrator\RunMessageProcessor;
+use Ineersa\AgentCore\Application\Orchestrator\RunMessageStateTools;
 use Ineersa\AgentCore\Application\Orchestrator\RunOrchestrator;
-use Ineersa\AgentCore\Application\Reducer\RunReducer;
+use Ineersa\AgentCore\Application\Orchestrator\StartRunHandler;
+use Ineersa\AgentCore\Application\Orchestrator\ToolCallResultHandler;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Infrastructure\Mercure\RunEventPublisher;
 use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
@@ -64,19 +72,58 @@ final class RunOrchestratorStructuredLoggingTest extends TestCase
 
         $logger = new RecordingStructuredLogger();
 
-        $orchestrator = new RunOrchestrator(
+        $stepDispatcher = new StepDispatcher(new NullMessageBus(), new NullMessageBus());
+        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+        );
+        $stateTools = new RunMessageStateTools();
+        $toolBatchCollector = new ToolBatchCollector();
+
+        $runCommit = new RunCommit(
             runStore: $runStore,
             eventStore: $eventStore,
             commandStore: $commandStore,
-            reducer: new RunReducer(),
-            stepDispatcher: new StepDispatcher(new NullMessageBus(), new NullMessageBus()),
-            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
             outboxProjector: $outboxProjector,
             replayService: $replayService,
+            stepDispatcher: $stepDispatcher,
+            logger: $logger,
+        );
+
+        $runMessageProcessor = new RunMessageProcessor(
+            runStore: $runStore,
             idempotency: new MessageIdempotencyService(),
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
-            toolBatchCollector: new ToolBatchCollector(),
-            logger: $logger,
+            runCommit: $runCommit,
+            stepDispatcher: $stepDispatcher,
+            handlers: [
+                new StartRunHandler(stateTools: $stateTools),
+                new ApplyCommandHandler(
+                    commandStore: $commandStore,
+                    commandRouter: $commandRouter,
+                    commandMailboxPolicy: $commandMailboxPolicy,
+                    stateTools: $stateTools,
+                ),
+                new AdvanceRunHandler(
+                    commandMailboxPolicy: $commandMailboxPolicy,
+                    stateTools: $stateTools,
+                ),
+                new LlmStepResultHandler(
+                    toolBatchCollector: $toolBatchCollector,
+                    commandMailboxPolicy: $commandMailboxPolicy,
+                    stateTools: $stateTools,
+                    stepDispatcher: $stepDispatcher,
+                ),
+                new ToolCallResultHandler(
+                    toolBatchCollector: $toolBatchCollector,
+                    stateTools: $stateTools,
+                ),
+            ],
+        );
+
+        $orchestrator = new RunOrchestrator(
+            runMessageProcessor: $runMessageProcessor,
         );
 
         $orchestrator->onStartRun(new StartRun(

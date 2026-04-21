@@ -28,9 +28,18 @@ use Ineersa\AgentCore\Application\Handler\ToolCatalogResolver;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionPolicyResolver;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
+use Ineersa\AgentCore\Application\Orchestrator\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Orchestrator\AgentRunner;
+use Ineersa\AgentCore\Application\Orchestrator\ApplyCommandHandler;
+use Ineersa\AgentCore\Application\Orchestrator\CommandMailboxPolicy;
+use Ineersa\AgentCore\Application\Orchestrator\LlmStepResultHandler;
+use Ineersa\AgentCore\Application\Orchestrator\RunCommit;
+use Ineersa\AgentCore\Application\Orchestrator\RunMessageHandler;
+use Ineersa\AgentCore\Application\Orchestrator\RunMessageProcessor;
+use Ineersa\AgentCore\Application\Orchestrator\RunMessageStateTools;
 use Ineersa\AgentCore\Application\Orchestrator\RunOrchestrator;
-use Ineersa\AgentCore\Application\Reducer\RunReducer;
+use Ineersa\AgentCore\Application\Orchestrator\StartRunHandler;
+use Ineersa\AgentCore\Application\Orchestrator\ToolCallResultHandler;
 use Ineersa\AgentCore\Command\AgentLoopHealthCommand;
 use Ineersa\AgentCore\Command\AgentLoopResumeStaleRunsCommand;
 use Ineersa\AgentCore\Command\AgentLoopRunInspectCommand;
@@ -129,6 +138,11 @@ return static function (ContainerConfigurator $container): void {
         ->tag('agent_loop.tool_catalog_provider')
     ;
 
+    $services
+        ->instanceof(RunMessageHandler::class)
+        ->tag('agent_loop.orchestrator.message_handler')
+    ;
+
     $services->set(AgentRunner::class)
         ->arg('$commandBus', service('agent.command.bus'))
     ;
@@ -148,12 +162,34 @@ return static function (ContainerConfigurator $container): void {
         ->tag('controller.service_arguments')
     ;
 
-    $services->set(RunOrchestrator::class)
-        ->arg('$maxPendingCommands', param('agent_loop.commands.max_pending_per_run'))
+    $services->set(RunCommit::class);
+
+    $services->set(CommandMailboxPolicy::class)
         ->arg('$steerDrainMode', param('agent_loop.commands.steer_drain_mode'))
+    ;
+
+    $services->set(RunMessageStateTools::class);
+
+    $services->set(StartRunHandler::class);
+
+    $services->set(ApplyCommandHandler::class)
+        ->arg('$maxPendingCommands', param('agent_loop.commands.max_pending_per_run'))
         ->arg('$commandBus', service('agent.command.bus'))
     ;
-    $services->set(RunReducer::class);
+
+    $services->set(AdvanceRunHandler::class);
+
+    $services->set(LlmStepResultHandler::class)
+        ->arg('$commandBus', service('agent.command.bus'))
+    ;
+
+    $services->set(ToolCallResultHandler::class);
+
+    $services->set(RunMessageProcessor::class)
+        ->arg('$handlers', tagged_iterator('agent_loop.orchestrator.message_handler'))
+    ;
+
+    $services->set(RunOrchestrator::class);
 
     $services->set(StepDispatcher::class)
         ->arg('$executionBus', service('agent.execution.bus'))

@@ -20,4 +20,4 @@ methods[2]:
     symbolColumn: 21
     signature: "public function resolve(string $toolName): ToolExecutionPolicy"
     callees[1]: "Ineersa\\AgentCore\\Domain\\Tool\\ToolExecutionMode::tryFrom"
-    callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::resolvePolicy","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::resolveToolPolicy"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::resolvePolicy","Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::resolveToolPolicy"

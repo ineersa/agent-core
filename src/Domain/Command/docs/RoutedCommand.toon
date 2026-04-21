@@ -42,4 +42,4 @@ methods[5]:
     symbolLine: 54
     symbolColumn: 21
     signature: "public function isRejected(): bool"
-    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onApplyCommand"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::handle"

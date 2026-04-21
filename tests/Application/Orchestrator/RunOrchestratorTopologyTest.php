@@ -12,8 +12,16 @@ use Ineersa\AgentCore\Application\Handler\ReplayService;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
+use Ineersa\AgentCore\Application\Orchestrator\AdvanceRunHandler;
+use Ineersa\AgentCore\Application\Orchestrator\ApplyCommandHandler;
+use Ineersa\AgentCore\Application\Orchestrator\CommandMailboxPolicy;
+use Ineersa\AgentCore\Application\Orchestrator\LlmStepResultHandler;
+use Ineersa\AgentCore\Application\Orchestrator\RunCommit;
+use Ineersa\AgentCore\Application\Orchestrator\RunMessageProcessor;
+use Ineersa\AgentCore\Application\Orchestrator\RunMessageStateTools;
 use Ineersa\AgentCore\Application\Orchestrator\RunOrchestrator;
-use Ineersa\AgentCore\Application\Reducer\RunReducer;
+use Ineersa\AgentCore\Application\Orchestrator\StartRunHandler;
+use Ineersa\AgentCore\Application\Orchestrator\ToolCallResultHandler;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
@@ -476,21 +484,61 @@ final class RunOrchestratorTopologyTest extends TestCase
         $executionBus = new RecordingMessageBus();
         $publisherBus = new RecordingMessageBus();
 
-        $orchestrator = new RunOrchestrator(
+        $stepDispatcher = new StepDispatcher($executionBus, $publisherBus);
+        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+            steerDrainMode: $steerDrainMode,
+        );
+        $stateTools = new RunMessageStateTools();
+        $toolBatchCollector = new ToolBatchCollector();
+
+        $runCommit = new RunCommit(
             runStore: $runStore,
             eventStore: $eventStore,
             commandStore: $commandStore,
-            reducer: new RunReducer(),
-            stepDispatcher: new StepDispatcher($executionBus, $publisherBus),
-            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
             outboxProjector: $outboxProjector,
             replayService: $replayService,
+            stepDispatcher: $stepDispatcher,
+        );
+
+        $runMessageProcessor = new RunMessageProcessor(
+            runStore: $runStore,
             idempotency: new MessageIdempotencyService(),
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
-            toolBatchCollector: new ToolBatchCollector(),
-            maxPendingCommands: $maxPendingCommands,
-            steerDrainMode: $steerDrainMode,
-            commandBus: $commandBus,
+            runCommit: $runCommit,
+            stepDispatcher: $stepDispatcher,
+            handlers: [
+                new StartRunHandler(stateTools: $stateTools),
+                new ApplyCommandHandler(
+                    commandStore: $commandStore,
+                    commandRouter: $commandRouter,
+                    commandMailboxPolicy: $commandMailboxPolicy,
+                    stateTools: $stateTools,
+                    maxPendingCommands: $maxPendingCommands,
+                    commandBus: $commandBus,
+                ),
+                new AdvanceRunHandler(
+                    commandMailboxPolicy: $commandMailboxPolicy,
+                    stateTools: $stateTools,
+                ),
+                new LlmStepResultHandler(
+                    toolBatchCollector: $toolBatchCollector,
+                    commandMailboxPolicy: $commandMailboxPolicy,
+                    stateTools: $stateTools,
+                    stepDispatcher: $stepDispatcher,
+                    commandBus: $commandBus,
+                ),
+                new ToolCallResultHandler(
+                    toolBatchCollector: $toolBatchCollector,
+                    stateTools: $stateTools,
+                ),
+            ],
+        );
+
+        $orchestrator = new RunOrchestrator(
+            runMessageProcessor: $runMessageProcessor,
         );
 
         return new RunOrchestratorFixture(

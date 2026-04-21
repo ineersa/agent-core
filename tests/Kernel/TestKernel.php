@@ -23,7 +23,6 @@ use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
 use Ineersa\AgentCore\Application\Orchestrator\AgentRunner;
 use Ineersa\AgentCore\Application\Orchestrator\RunOrchestrator;
-use Ineersa\AgentCore\Application\Reducer\RunReducer;
 use Ineersa\AgentCore\Infrastructure\Mercure\RunEventPublisher;
 use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryOutboxStore;
@@ -89,7 +88,6 @@ final class TestKernel extends Kernel
         foreach ([
             'test.agent_runner' => AgentRunner::class,
             'test.run_orchestrator' => RunOrchestrator::class,
-            'test.run_reducer' => RunReducer::class,
             'test.step_dispatcher' => StepDispatcher::class,
             'test.tool_executor' => ToolExecutor::class,
             'test.run_log_writer' => RunLogWriter::class,

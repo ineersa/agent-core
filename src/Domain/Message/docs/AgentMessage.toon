@@ -18,7 +18,7 @@ methods[4]:
     symbolLine: 36
     symbolColumn: 28
     signature: "static public function fromPayload(array $payload): ?self"
-    callers[5]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::applyPendingStopBoundaryCommands","Ineersa\\AgentCore\\Application\\Reducer\\RunReducer::onStartRun","Ineersa\\AgentCore\\Application\\Reducer\\RunReducer::onApplyCommand","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::resolveContextMessages"
+    callers[4]: "Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyPendingStopBoundaryCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::messagesFromPayload","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::resolveContextMessages"
   - method: isCustomRole
     start: 75
     end: 78

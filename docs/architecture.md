@@ -7,17 +7,31 @@ The `agent-core` project implements a robust, event-sourced, and message-driven 
 The system is designed around a CQRS (Command Query Responsibility Segregation) pattern, driven by various message buses.
 
 ```text
-+----------------+      [1. Dispatch]      +------------------+      [2. Handle]       +-------------------+
-|   API / CLI    | ----------------------> |   AgentRunner    | ---------------------> |  RunOrchestrator  |
-| (Controllers,  |                         |  (API Facade)    |   (Command Bus)        |  (CQRS Processor) |
-|  Commands)     |                         +------------------+                        +-------------------+
-+----------------+                                                                              |
-                                                                                                | [3. Reduce & Produce Effects]
-                                                                                                v
-+-------------------+      [5. Execute Effects]   +------------------+      [4. Async Effects] +-------------------+
-|  Workers /        | <-------------------------- |  Execution Bus   | <---------------------- |   RunReducer      |
-|  Side-effects     |                             |  (Messenger)     |                         |  (Pure State)     |
-+-------------------+                             +------------------+                         +-------------------+
++----------------+      [1. Dispatch]      +------------------+      [2. Entrypoint]    +-------------------+
+|   API / CLI    | ----------------------> |   AgentRunner    | -----------------------> |  RunOrchestrator  |
+| (Controllers,  |                         |  (API Facade)    |   (Command Bus)          |  (Bus Handler)    |
+|  Commands)     |                         +------------------+                          +-------------------+
++----------------+                                                                                 |
+                                                                                                   | [3. Shared Pipeline]
+                                                                                                   v
+                                                                                         +-------------------+
+                                                                                         | RunMessageProcessor|
+                                                                                         +-------------------+
+                                                                                                   |
+                                                                                                   | [4. Transition Build]
+                                                                                                   v
+                                                                                         +-------------------+
+                                                                                         | Message Handlers   |
+                                                                                         | (Start/Apply/...)  |
+                                                                                         +-------------------+
+                                                                                                   |
+                                                                                                   | [5. Commit + Effects]
+                                                                                                   v
++-------------------+      [7. Execute Effects]   +------------------+      [6. Dispatch] +-------------------+
+|  Workers /        | <-------------------------- |  Execution Bus   | <------------------ |     RunCommit     |
+|  Side-effects     |                             |  (Messenger)     |                    | (CAS + Outbox +   |
++-------------------+                             +------------------+                    |  Replay + Hooks)  |
+                                                                                          +-------------------+
 ```
 
 ## Core Modules
@@ -26,9 +40,11 @@ The system is designed around a CQRS (Command Query Responsibility Segregation) 
 Coordinates runtime flow and orchestration.
 
 - **`AgentRunner`**: Acts as the public API facade, translating high-level actions (start, continue, steer, cancel) into discrete messages dispatched onto the command bus.
-- **`RunOrchestrator`**: The central CQRS processor. It processes commands (e.g., `StartRun`, `AdvanceRun`, `ApplyCommand`) and handles step results (`LlmStepResult`, `ToolCallResult`). It delegates to `RunReducer` to compute state transitions and handles concurrency/locking.
-- **`RunReducer`**: A pure functional state reducer. It transforms the given `RunState` and an input message into a new `RunState` and a list of side-effects (`ExecuteLlmStep`, `ExecuteToolCall`) to be dispatched to the execution bus.
-- **Workers (`src/Application/Handler`)**: Handlers that execute async side-effects. `ExecuteLlmStepWorker` interfaces with language models, and `ExecuteToolCallWorker` runs actual tools, yielding Results back to the Orchestrator.
+- **`RunOrchestrator`**: Thin message-bus entrypoint with root tracing spans. It delegates runtime processing to `RunMessageProcessor`.
+- **`RunMessageProcessor`**: Shared runtime pipeline for lock, idempotency, state load, per-message handler routing, commit orchestration, and post-commit actions.
+- **Dedicated message handlers (`src/Application/Orchestrator`)**: `StartRunHandler`, `ApplyCommandHandler`, `AdvanceRunHandler`, `LlmStepResultHandler`, and `ToolCallResultHandler` build `HandlerResult` transitions.
+- **`RunCommit`**: Owns durable persistence lifecycle (CAS, event append, outbox projection, replay rebuild, effect dispatch, hooks, and commit observability).
+- **Workers (`src/Application/Handler`)**: Handlers that execute async side-effects. `ExecuteLlmStepWorker` interfaces with language models, and `ExecuteToolCallWorker` runs actual tools, yielding results back to the orchestrator pipeline.
 
 ### 2. Domain Layer (`src/Domain`)
 Contains framework-agnostic models, state representations, and message contracts.
@@ -47,10 +63,11 @@ Concrete adapters to external systems.
 - **Mercure**: Real-time server-sent event (SSE) publisher (`MercureOutboxProjectorWorker`), pushing lifecycle events to `agent/runs/{runId}` topics.
 - **SymfonyAI**: Bridges the core tool and execution mechanics with Symfony's LLM components.
 
-## Data Flow: Commands, Reducers, and Events
+## Data Flow: Commands, Handlers, and Events
 
-1. **Intention**: `AgentRunner` dispatches `ApplyCommand` to the command bus.
-2. **Orchestration**: `RunOrchestrator` acquires a lock, loads current `RunState`, and passes the command to `RunReducer`.
-3. **Reduction**: `RunReducer` returns the next `RunState` and any required *effects* (e.g., `ExecuteLlmStep`).
-4. **Commit & Project**: `RunOrchestrator` commits new events to Doctrine. The `OutboxProjector` catches committed events and delegates them to the JSONL log outbox and Mercure outbox.
-5. **Effect Execution**: Effects are dispatched. `ExecuteLlmStepWorker` queries the LLM and dispatches `LlmStepResult` back to the orchestrator, starting the loop again until completion.
+1. **Intention**: `AgentRunner` dispatches messages (`StartRun`, `ApplyCommand`, `AdvanceRun`) to the command bus.
+2. **Entrypoint**: `RunOrchestrator` receives the message and opens a root trace span.
+3. **Processing Pipeline**: `RunMessageProcessor` enforces lock/idempotency boundaries, loads `RunState`, and routes to the matching message handler.
+4. **Transition Build**: The handler produces `HandlerResult` (next state, durable events, commit effects, optional post-commit callbacks/effects).
+5. **Commit & Project**: `RunCommit` persists state/events and projects events through `OutboxProjector` (JSONL + Mercure outboxes).
+6. **Effect Execution**: Durable effects are dispatched to workers. `ExecuteLlmStepWorker` and `ExecuteToolCallWorker` emit result messages (`LlmStepResult`, `ToolCallResult`) that re-enter the same pipeline until terminal or paused state.
