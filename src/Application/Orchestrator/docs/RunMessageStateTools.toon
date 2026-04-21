@@ -1,0 +1,97 @@
+spec: agent-core.file-index/v1
+file: RunMessageStateTools.php
+class: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools"
+type: readonly final class
+summary: The RunMessageStateTools provide shared immutable state-copy and payload-hydration helpers for run message handlers.
+methods[11]:
+  - method: copyState
+    start: 17
+    end: 42
+    limit: 26
+    symbolLine: 20
+    symbolColumn: 21
+    signature: "public function copyState(RunState $state, array $overrides = []): RunState"
+    callers[10]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AdvanceRunHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::rejectCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyCancelCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyContinueCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyHumanResponseCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::incrementStateVersion","Ineersa\\AgentCore\\Application\\Orchestrator\\StartRunHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler::handle"
+  - method: event
+    start: 44
+    end: 56
+    limit: 13
+    symbolLine: 47
+    symbolColumn: 21
+    signature: "public function event(string $runId, int $seq, int $turnNo, string $type, array $payload = []): RunEvent"
+    callers[8]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::rejectCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyContinueCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyHumanResponseCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::eventsFromSpecs","Ineersa\\AgentCore\\Application\\Orchestrator\\StartRunHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler::handle"
+  - method: eventsFromSpecs
+    start: 58
+    end: 85
+    limit: 28
+    symbolLine: 63
+    symbolColumn: 21
+    signature: "public function eventsFromSpecs(string $runId, int $turnNo, int $startSeq, array $eventSpecs): array"
+    callees[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::event"
+    callers[4]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AdvanceRunHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyCancelCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler::handle"
+  - method: messagesFromPayload
+    start: 87
+    end: 115
+    limit: 29
+    symbolLine: 92
+    symbolColumn: 21
+    signature: "public function messagesFromPayload(array $payload): array"
+    callees[1]: "Ineersa\\AgentCore\\Domain\\Message\\AgentMessage::fromPayload"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\StartRunHandler::handle"
+  - method: isStaleResult
+    start: 117
+    end: 124
+    limit: 8
+    symbolLine: 117
+    symbolColumn: 21
+    signature: "public function isStaleResult(RunState $state, int $turnNo, string $stepId): bool"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler::handle"
+  - method: incrementStateVersion
+    start: 126
+    end: 132
+    limit: 7
+    symbolLine: 126
+    symbolColumn: 21
+    signature: "public function incrementStateVersion(RunState $state, int $eventCount): RunState"
+    callees[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::copyState"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler::handle"
+  - method: assistantMessage
+    start: 134
+    end: 169
+    limit: 36
+    symbolLine: 137
+    symbolColumn: 21
+    signature: "public function assistantMessage(array $assistantMessage): AgentMessage"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::handle"
+  - method: humanResponseMessage
+    start: 171
+    end: 199
+    limit: 29
+    symbolLine: 174
+    symbolColumn: 21
+    signature: "public function humanResponseMessage(array $payload): ?AgentMessage"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyHumanResponseCommand"
+  - method: toolMessage
+    start: 201
+    end: 229
+    limit: 29
+    symbolLine: 201
+    symbolColumn: 21
+    signature: "public function toolMessage(ToolCallResult $result): AgentMessage"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler::handle"
+  - method: extractToolCalls
+    start: 231
+    end: 267
+    limit: 37
+    symbolLine: 236
+    symbolColumn: 21
+    signature: "public function extractToolCalls(array $assistantMessage): array"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::handle"
+  - method: interruptPayloadFromToolResult
+    start: 269
+    end: 309
+    limit: 41
+    symbolLine: 272
+    symbolColumn: 21
+    signature: "public function interruptPayloadFromToolResult(ToolCallResult $result): ?array"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler::handle"

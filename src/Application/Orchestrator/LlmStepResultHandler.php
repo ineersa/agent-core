@@ -1,0 +1,386 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ineersa\AgentCore\Application\Orchestrator;
+
+use Ineersa\AgentCore\Application\Handler\RunMetrics;
+use Ineersa\AgentCore\Application\Handler\RunTracer;
+use Ineersa\AgentCore\Application\Handler\StepDispatcher;
+use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
+use Ineersa\AgentCore\Application\Handler\ToolCatalogResolver;
+use Ineersa\AgentCore\Application\Handler\ToolExecutionPolicyResolver;
+use Ineersa\AgentCore\Domain\Event\CoreLifecycleEventType;
+use Ineersa\AgentCore\Domain\Message\AdvanceRun;
+use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
+use Ineersa\AgentCore\Domain\Message\LlmStepResult;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Symfony\Component\Messenger\Exception\ExceptionInterface;
+use Symfony\Component\Messenger\MessageBusInterface;
+
+/**
+ * The LlmStepResultHandler applies LLM step outcomes, including stop-boundary command policy and tool-call fanout preparation.
+ */
+final readonly class LlmStepResultHandler implements RunMessageHandler
+{
+    public function __construct(
+        private ToolBatchCollector $toolBatchCollector,
+        private CommandMailboxPolicy $commandMailboxPolicy,
+        private RunMessageStateTools $stateTools,
+        private StepDispatcher $stepDispatcher,
+        private ?ToolExecutionPolicyResolver $toolExecutionPolicyResolver = null,
+        private ?ToolCatalogResolver $toolCatalogResolver = null,
+        private ?RunMetrics $metrics = null,
+        private ?RunTracer $tracer = null,
+        private ?MessageBusInterface $commandBus = null,
+    ) {
+    }
+
+    public function supports(object $message): bool
+    {
+        return $message instanceof LlmStepResult;
+    }
+
+    public function handle(object $message, RunState $state): HandlerResult
+    {
+        if (!$message instanceof LlmStepResult) {
+            throw new \InvalidArgumentException('LlmStepResultHandler can only handle LlmStepResult messages.');
+        }
+
+        $runId = $message->runId();
+
+        if ($this->stateTools->isStaleResult($state, $message->turnNo(), $message->stepId())) {
+            $nextState = $this->stateTools->incrementStateVersion($state, eventCount: 1);
+            $event = $this->stateTools->event(
+                runId: $runId,
+                seq: $nextState->lastSeq,
+                turnNo: $state->turnNo,
+                type: 'stale_result_ignored',
+                payload: [
+                    'result' => 'llm_step_result',
+                    'step_id' => $message->stepId(),
+                    'turn_no' => $message->turnNo(),
+                ],
+            );
+
+            return new HandlerResult(
+                nextState: $nextState,
+                events: [$event],
+            );
+        }
+
+        if ('aborted' === $message->stopReason || RunStatus::Cancelling === $state->status) {
+            $messages = $state->messages;
+            if (null !== $message->assistantMessage) {
+                $messages[] = $this->stateTools->assistantMessage($message->assistantMessage);
+            }
+
+            $eventSpecs = [
+                [
+                    'type' => 'llm_step_aborted',
+                    'payload' => [
+                        'step_id' => $message->stepId(),
+                        'stop_reason' => $message->stopReason ?? 'aborted',
+                        'usage' => $message->usage,
+                    ],
+                ],
+                [
+                    'type' => CoreLifecycleEventType::AGENT_END,
+                    'payload' => [
+                        'reason' => 'cancelled',
+                    ],
+                ],
+            ];
+
+            $events = $this->stateTools->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
+            $nextState = $this->stateTools->copyState($state, [
+                'status' => RunStatus::Cancelled,
+                'version' => $state->version + 1,
+                'lastSeq' => $state->lastSeq + \count($events),
+                'isStreaming' => false,
+                'streamingMessage' => null,
+                'pendingToolCalls' => [],
+                'errorMessage' => $state->errorMessage ?? 'Run cancelled during LLM streaming.',
+                'messages' => $messages,
+                'retryableFailure' => false,
+            ]);
+
+            return new HandlerResult(
+                nextState: $nextState,
+                events: $events,
+                postCommit: $this->turnCompletedCallbacks($runId, $state->turnNo),
+            );
+        }
+
+        if (null !== $message->error) {
+            $errorMessage = \is_string($message->error['message'] ?? null)
+                ? $message->error['message']
+                : 'LLM worker failed.';
+            $retryable = \is_bool($message->error['retryable'] ?? null)
+                ? $message->error['retryable']
+                : false;
+
+            $nextState = $this->stateTools->copyState($state, [
+                'status' => RunStatus::Failed,
+                'version' => $state->version + 1,
+                'lastSeq' => $state->lastSeq + 1,
+                'isStreaming' => false,
+                'streamingMessage' => null,
+                'pendingToolCalls' => [],
+                'errorMessage' => $errorMessage,
+                'retryableFailure' => $retryable,
+            ]);
+
+            $event = $this->stateTools->event(
+                runId: $runId,
+                seq: $nextState->lastSeq,
+                turnNo: $nextState->turnNo,
+                type: 'llm_step_failed',
+                payload: [
+                    'error' => $message->error,
+                    'retryable' => $retryable,
+                    'step_id' => $message->stepId(),
+                ],
+            );
+
+            return new HandlerResult(
+                nextState: $nextState,
+                events: [$event],
+                postCommit: $this->turnCompletedCallbacks($runId, $state->turnNo),
+            );
+        }
+
+        $assistantMessage = $message->assistantMessage ?? [];
+        $toolCalls = $this->stateTools->extractToolCalls($assistantMessage);
+        $toolSchemas = $this->resolveToolSchemas($runId, $state->turnNo, $message->stepId());
+
+        $messages = $state->messages;
+        $messages[] = $this->stateTools->assistantMessage($assistantMessage);
+
+        $pendingToolCalls = [];
+        foreach ($toolCalls as $toolCall) {
+            $pendingToolCalls[$toolCall['id']] = false;
+        }
+
+        $effects = [];
+        foreach ($toolCalls as $toolCall) {
+            $policy = $this->resolveToolPolicy($toolCall['name']);
+
+            $effects[] = new ExecuteToolCall(
+                runId: $runId,
+                turnNo: $state->turnNo,
+                stepId: $message->stepId(),
+                attempt: 1,
+                idempotencyKey: hash('sha256', \sprintf('%s|%s|%s', $runId, $message->stepId(), $toolCall['id'])),
+                toolCallId: $toolCall['id'],
+                toolName: $toolCall['name'],
+                args: $toolCall['args'],
+                orderIndex: $toolCall['order_index'],
+                toolIdempotencyKey: $toolCall['tool_idempotency_key'],
+                mode: $policy['mode']->value,
+                timeoutSeconds: $policy['timeout_seconds'],
+                maxParallelism: $policy['max_parallelism'],
+                assistantMessage: $assistantMessage,
+                argSchema: $toolSchemas[$toolCall['name']] ?? null,
+            );
+        }
+
+        $eventSpecs = [[
+            'type' => 'llm_step_completed',
+            'payload' => [
+                'step_id' => $message->stepId(),
+                'stop_reason' => $message->stopReason,
+                'usage' => $message->usage,
+                'tool_calls_count' => \count($toolCalls),
+            ],
+        ]];
+
+        if ([] === $toolCalls) {
+            $stateAfterAssistant = $this->stateTools->copyState($state, [
+                'messages' => $messages,
+                'pendingToolCalls' => [],
+                'errorMessage' => null,
+                'retryableFailure' => false,
+            ]);
+
+            [$stateAfterBoundary, $boundaryEventSpecs, $shouldContinue] = null === $this->tracer
+                ? $this->commandMailboxPolicy->applyPendingStopBoundaryCommands($stateAfterAssistant)
+                : $this->tracer->inSpan('command.application.stop_boundary', [
+                    'run_id' => $runId,
+                    'turn_no' => $state->turnNo,
+                    'step_id' => $message->stepId(),
+                ], fn (): array => $this->commandMailboxPolicy->applyPendingStopBoundaryCommands($stateAfterAssistant))
+            ;
+
+            $eventSpecs = [
+                ...$eventSpecs,
+                ...$boundaryEventSpecs,
+            ];
+
+            if (!$shouldContinue) {
+                $eventSpecs[] = [
+                    'type' => CoreLifecycleEventType::AGENT_END,
+                    'payload' => [
+                        'reason' => 'completed',
+                    ],
+                ];
+            }
+
+            $events = $this->stateTools->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
+
+            $nextState = $this->stateTools->copyState($stateAfterBoundary, [
+                'status' => $shouldContinue ? RunStatus::Running : RunStatus::Completed,
+                'version' => $state->version + 1,
+                'lastSeq' => $state->lastSeq + \count($events),
+                'isStreaming' => false,
+                'streamingMessage' => null,
+                'pendingToolCalls' => [],
+                'errorMessage' => null,
+                'retryableFailure' => false,
+            ]);
+
+            $postCommit = [
+                ...$this->turnCompletedCallbacks($runId, $state->turnNo),
+            ];
+
+            $followUpAdvance = $shouldContinue ? $this->followUpAdvanceCallback($runId, 'stop-boundary-follow-up') : null;
+            if (null !== $followUpAdvance) {
+                $postCommit[] = $followUpAdvance;
+            }
+
+            return new HandlerResult(
+                nextState: $nextState,
+                events: $events,
+                postCommit: $postCommit,
+            );
+        }
+
+        foreach ($effects as $effect) {
+            $eventSpecs[] = [
+                'type' => CoreLifecycleEventType::TOOL_EXECUTION_START,
+                'payload' => [
+                    'tool_call_id' => $effect->toolCallId,
+                    'tool_name' => $effect->toolName,
+                    'order_index' => $effect->orderIndex,
+                    'mode' => $effect->mode,
+                ],
+            ];
+        }
+
+        $events = $this->stateTools->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
+
+        $nextState = $this->stateTools->copyState($state, [
+            'status' => RunStatus::Running,
+            'version' => $state->version + 1,
+            'lastSeq' => $state->lastSeq + \count($events),
+            'isStreaming' => false,
+            'streamingMessage' => null,
+            'pendingToolCalls' => $pendingToolCalls,
+            'errorMessage' => null,
+            'messages' => $messages,
+            'retryableFailure' => false,
+        ]);
+
+        $postCommit = [function () use ($runId, $state, $message, $effects): void {
+            $initialEffects = $this->toolBatchCollector->registerExpectedBatch(
+                $runId,
+                $state->turnNo,
+                $message->stepId(),
+                $effects,
+            );
+
+            if ([] !== $initialEffects) {
+                $this->stepDispatcher->dispatchEffects($initialEffects);
+            }
+        }];
+
+        return new HandlerResult(
+            nextState: $nextState,
+            events: $events,
+            postCommit: $postCommit,
+        );
+    }
+
+    /**
+     * @return array{mode: ToolExecutionMode, timeout_seconds: int, max_parallelism: int}
+     */
+    private function resolveToolPolicy(string $toolName): array
+    {
+        if (null === $this->toolExecutionPolicyResolver) {
+            return [
+                'mode' => ToolExecutionMode::Sequential,
+                'timeout_seconds' => 90,
+                'max_parallelism' => 1,
+            ];
+        }
+
+        $policy = $this->toolExecutionPolicyResolver->resolve($toolName);
+
+        return [
+            'mode' => $policy->mode,
+            'timeout_seconds' => $policy->timeoutSeconds,
+            'max_parallelism' => $policy->maxParallelism,
+        ];
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    private function resolveToolSchemas(string $runId, int $turnNo, string $stepId): array
+    {
+        if (null === $this->toolCatalogResolver) {
+            return [];
+        }
+
+        $schemas = [];
+
+        foreach ($this->toolCatalogResolver->resolve([
+            'run_id' => $runId,
+            'turn_no' => $turnNo,
+            'step_id' => $stepId,
+        ]) as $definition) {
+            $schemas[$definition->name] = $definition->schema ?? ['type' => 'object'];
+        }
+
+        return $schemas;
+    }
+
+    /**
+     * @return list<callable(): void>
+     */
+    private function turnCompletedCallbacks(string $runId, int $turnNo): array
+    {
+        if (null === $this->metrics) {
+            return [];
+        }
+
+        return [function () use ($runId, $turnNo): void {
+            $this->metrics->recordTurnCompleted($runId, $turnNo);
+        }];
+    }
+
+    private function followUpAdvanceCallback(string $runId, string $prefix): ?callable
+    {
+        if (null === $this->commandBus) {
+            return null;
+        }
+
+        return function () use ($runId, $prefix): void {
+            $stepId = \sprintf('%s-%d', $prefix, hrtime(true));
+
+            try {
+                $this->commandBus->dispatch(new AdvanceRun(
+                    runId: $runId,
+                    turnNo: 0,
+                    stepId: $stepId,
+                    attempt: 1,
+                    idempotencyKey: hash('sha256', \sprintf('%s|%s', $runId, $stepId)),
+                ));
+            } catch (ExceptionInterface $exception) {
+                throw new \RuntimeException('Failed to dispatch follow-up AdvanceRun command.', previous: $exception);
+            }
+        };
+    }
+}

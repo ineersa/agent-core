@@ -1,0 +1,22 @@
+spec: agent-core.file-index/v1
+file: RunMessageHandler.php
+class: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageHandler"
+type: interface
+summary: The RunMessageHandler maps a bus message and current run state into a declarative transition result consumed by the message processor.
+methods[2]:
+  - method: supports
+    start: 14
+    end: 14
+    limit: 1
+    symbolLine: 14
+    symbolColumn: 21
+    signature: "public function supports(object $message): bool"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor::resolveHandler"
+  - method: handle
+    start: 16
+    end: 16
+    limit: 1
+    symbolLine: 16
+    symbolColumn: 21
+    signature: "public function handle(object $message, RunState $state): HandlerResult"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor::process"

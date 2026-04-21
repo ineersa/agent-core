@@ -1,0 +1,28 @@
+spec: agent-core.file-index/v1
+file: StartRunHandler.php
+class: "Ineersa\\AgentCore\\Application\\Orchestrator\\StartRunHandler"
+type: readonly final class
+summary: The StartRunHandler computes the initial run-start transition and execution effects for start commands.
+methods[3]:
+  - method: __construct
+    start: 16
+    end: 19
+    limit: 4
+    symbolLine: 16
+    symbolColumn: 21
+    signature: public function __construct(RunMessageStateTools $stateTools)
+  - method: supports
+    start: 21
+    end: 24
+    limit: 4
+    symbolLine: 21
+    symbolColumn: 21
+    signature: "public function supports(object $message): bool"
+  - method: handle
+    start: 26
+    end: 67
+    limit: 42
+    symbolLine: 26
+    symbolColumn: 21
+    signature: "public function handle(object $message, RunState $state): HandlerResult"
+    callees[5]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::messagesFromPayload","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::copyState","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::event","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId"

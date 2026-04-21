@@ -1,0 +1,82 @@
+spec: agent-core.file-index/v1
+file: CommandMailboxPolicy.php
+class: "Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy"
+type: readonly final class
+summary: Applies queued command mailbox policies at turn boundaries and validates cancellation and continue admissibility rules.
+methods[9]:
+  - method: __construct
+    start: 24
+    end: 29
+    limit: 6
+    symbolLine: 24
+    symbolColumn: 21
+    signature: "public function __construct(CommandStoreInterface $commandStore, CommandRouter $commandRouter, string $steerDrainMode = self::SteerDrainOneAtATime)"
+  - method: applyPendingTurnStartCommands
+    start: 31
+    end: 118
+    limit: 88
+    symbolLine: 34
+    symbolColumn: 21
+    signature: "public function applyPendingTurnStartCommands(RunState $state): array"
+    callees[9]: "Ineersa\\AgentCore\\Contract\\CommandStoreInterface::pending","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::supersededSteerKeys","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markSuperseded","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markRejected","Ineersa\\AgentCore\\Domain\\Message\\AgentMessage::fromPayload","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markApplied","Ineersa\\AgentCore\\Domain\\Command\\CoreCommandKind::isCore","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyExtensionCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::copyState"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AdvanceRunHandler::handle"
+  - method: applyPendingStopBoundaryCommands
+    start: 120
+    end: 206
+    limit: 87
+    symbolLine: 123
+    symbolColumn: 21
+    signature: "public function applyPendingStopBoundaryCommands(RunState $state): array"
+    callees[9]: "Ineersa\\AgentCore\\Contract\\CommandStoreInterface::pending","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::supersededSteerKeys","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markSuperseded","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markRejected","Ineersa\\AgentCore\\Domain\\Message\\AgentMessage::fromPayload","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markApplied","Ineersa\\AgentCore\\Domain\\Command\\CoreCommandKind::isCore","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyExtensionCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::copyState"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::handle"
+  - method: isCancelSafeExtensionCommand
+    start: 208
+    end: 215
+    limit: 8
+    symbolLine: 211
+    symbolColumn: 21
+    signature: "public function isCancelSafeExtensionCommand(string $kind, array $options): bool"
+    callees[1]: "Ineersa\\AgentCore\\Domain\\Command\\CoreCommandKind::isCore"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::handle"
+  - method: continueRejectionReason
+    start: 217
+    end: 240
+    limit: 24
+    symbolLine: 217
+    symbolColumn: 21
+    signature: "public function continueRejectionReason(RunState $state): ?string"
+    callees[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::lastMessageRole"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyContinueCommand"
+  - method: applyExtensionCommand
+    start: 242
+    end: 299
+    limit: 58
+    symbolLine: 245
+    symbolColumn: 22
+    signature: "private function applyExtensionCommand(RunState $state, PendingCommand $command): array"
+    callees[5]: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::handlerFor","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markRejected","Ineersa\\AgentCore\\Contract\\Extension\\CommandHandlerInterface::map","Throwable::getMessage","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markApplied"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyPendingStopBoundaryCommands"
+  - method: supersededSteerKeys
+    start: 301
+    end: 333
+    limit: 33
+    symbolLine: 306
+    symbolColumn: 22
+    signature: "private function supersededSteerKeys(array $pendingCommands): array"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyPendingStopBoundaryCommands"
+  - method: lastMessageRole
+    start: 335
+    end: 344
+    limit: 10
+    symbolLine: 335
+    symbolColumn: 22
+    signature: "private function lastMessageRole(RunState $state): ?string"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::continueRejectionReason"
+  - method: copyState
+    start: 346
+    end: 371
+    limit: 26
+    symbolLine: 349
+    symbolColumn: 22
+    signature: "private function copyState(RunState $state, array $overrides = []): RunState"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyPendingStopBoundaryCommands"

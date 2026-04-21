@@ -1,0 +1,64 @@
+spec: agent-core.file-index/v1
+file: LlmStepResultHandler.php
+class: "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler"
+type: readonly final class
+summary: "The LlmStepResultHandler applies LLM step outcomes, including stop-boundary command policy and tool-call fanout preparation."
+methods[7]:
+  - method: __construct
+    start: 28
+    end: 39
+    limit: 12
+    symbolLine: 28
+    symbolColumn: 21
+    signature: "public function __construct(ToolBatchCollector $toolBatchCollector, CommandMailboxPolicy $commandMailboxPolicy, RunMessageStateTools $stateTools, StepDispatcher $stepDispatcher, ?ToolExecutionPolicyResolver $toolExecutionPolicyResolver = null, ?ToolCatalogResolver $toolCatalogResolver = null, ?RunMetrics $metrics = null, ?RunTracer $tracer = null, ?MessageBusInterface $commandBus = null)"
+  - method: supports
+    start: 41
+    end: 44
+    limit: 4
+    symbolLine: 41
+    symbolColumn: 21
+    signature: "public function supports(object $message): bool"
+  - method: handle
+    start: 46
+    end: 304
+    limit: 259
+    symbolLine: 46
+    symbolColumn: 21
+    signature: "public function handle(object $message, RunState $state): HandlerResult"
+    callees[18]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::isStaleResult","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::incrementStateVersion","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::event","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::assistantMessage","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::eventsFromSpecs","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::copyState","Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::turnCompletedCallbacks","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::extractToolCalls","Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::resolveToolSchemas","Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::resolveToolPolicy","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyPendingStopBoundaryCommands","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::followUpAdvanceCallback","Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::registerExpectedBatch","Ineersa\\AgentCore\\Application\\Handler\\StepDispatcher::dispatchEffects"
+  - method: resolveToolPolicy
+    start: 306
+    end: 326
+    limit: 21
+    symbolLine: 309
+    symbolColumn: 22
+    signature: "private function resolveToolPolicy(string $toolName): array"
+    callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionPolicyResolver::resolve"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::handle"
+  - method: resolveToolSchemas
+    start: 328
+    end: 348
+    limit: 21
+    symbolLine: 331
+    symbolColumn: 22
+    signature: "private function resolveToolSchemas(string $runId, int $turnNo, string $stepId): array"
+    callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver::resolve"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::handle"
+  - method: turnCompletedCallbacks
+    start: 350
+    end: 362
+    limit: 13
+    symbolLine: 353
+    symbolColumn: 22
+    signature: "private function turnCompletedCallbacks(string $runId, int $turnNo): array"
+    callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordTurnCompleted"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::handle"
+  - method: followUpAdvanceCallback
+    start: 364
+    end: 385
+    limit: 22
+    symbolLine: 364
+    symbolColumn: 22
+    signature: "private function followUpAdvanceCallback(string $runId, string $prefix): ?callable"
+    callees[1]: "Symfony\\Component\\Messenger\\MessageBusInterface::dispatch"
+    callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::handle"

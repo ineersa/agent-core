@@ -1,0 +1,28 @@
+spec: agent-core.file-index/v1
+file: AdvanceRunHandler.php
+class: "Ineersa\\AgentCore\\Application\\Orchestrator\\AdvanceRunHandler"
+type: readonly final class
+summary: The AdvanceRunHandler applies turn-start mailbox policy and prepares the next LLM execution turn when the run can continue.
+methods[3]:
+  - method: __construct
+    start: 20
+    end: 26
+    limit: 7
+    symbolLine: 20
+    symbolColumn: 21
+    signature: "public function __construct(CommandMailboxPolicy $commandMailboxPolicy, RunMessageStateTools $stateTools, ?RunMetrics $metrics = null, ?RunTracer $tracer = null)"
+  - method: supports
+    start: 28
+    end: 31
+    limit: 4
+    symbolLine: 28
+    symbolColumn: 21
+    signature: "public function supports(object $message): bool"
+  - method: handle
+    start: 33
+    end: 144
+    limit: 112
+    symbolLine: 33
+    symbolColumn: 21
+    signature: "public function handle(object $message, RunState $state): HandlerResult"
+    callees[7]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::eventsFromSpecs","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::copyState","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordTurnStarted"
