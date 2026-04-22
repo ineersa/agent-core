@@ -3,6 +3,36 @@ file: RunReadService.php
 class: "Ineersa\\AgentCore\\Api\\Http\\RunReadService"
 type: readonly final class
 summary: "This class provides HTTP-read access to run data and event transcripts by coordinating between run metadata stores and event storage. It retrieves summaries, paginated transcripts, and replayable event sequences while enforcing access control via the run access store."
+sections[2]:
+  - kind: classDoc
+    start: 15
+    end: 17
+    limit: 3
+  - kind: constructor
+    start: 20
+    end: 26
+    limit: 7
+    signatureLine: 20
+constructorInputs[4]{param,type,required}:
+  $runStore,RunStoreInterface,true
+  $runAccessStore,RunAccessStoreInterface,true
+  $eventStore,EventStoreInterface,true
+  $runLogReader,RunLogReader,true
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Api\\Http\\RunReadService"
+      visibility: private
+      autowire: true
+      autoconfigure: true
+      file: src/Api/Http/RunReadService.php
+      line: 18
+      args:
+        "$eventStore": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\RunEventStore)"
+        "$runAccessStore": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunAccessStore)"
+        "$runLogReader": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader)"
+        "$runStore": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunStore)"
+  injectedInto[1]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Api\\Http\\RunApiController",src/Api/Http/RunApiController.php,32
 methods[9]:
   - method: __construct
     start: 20

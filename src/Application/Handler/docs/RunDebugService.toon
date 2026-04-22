@@ -3,6 +3,45 @@ file: RunDebugService.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService"
 type: readonly final class
 summary: "This service provides read-only debugging views for run state, replay streams, and hot prompt snapshots."
+sections[2]:
+  - kind: classDoc
+    start: 15
+    end: 17
+    limit: 3
+  - kind: constructor
+    start: 20
+    end: 29
+    limit: 10
+    signatureLine: 20
+constructorInputs[7]{param,type,required}:
+  $runStore,RunStoreInterface,true
+  $commandStore,CommandStoreInterface,true
+  $promptStateStore,PromptStateStoreInterface,true
+  $eventStore,EventStoreInterface,true
+  $runLogReader,RunLogReader,true
+  $replayService,ReplayService,true
+  $metrics,?RunMetrics,false
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService"
+      visibility: private
+      autowire: true
+      autoconfigure: true
+      file: src/Application/Handler/RunDebugService.php
+      line: 18
+      args:
+        "$commandStore": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryCommandStore)"
+        "$eventStore": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\RunEventStore)"
+        "$metrics": "service(Ineersa\\AgentCore\\Application\\Handler\\RunMetrics)"
+        "$promptStateStore": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\HotPromptStateStore)"
+        "$replayService": "service(Ineersa\\AgentCore\\Application\\Handler\\ReplayService)"
+        "$runLogReader": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader)"
+        "$runStore": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunStore)"
+  injectedInto[4]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Command\\AgentLoopRunInspectCommand",src/Command/AgentLoopRunInspectCommand.php,20
+    "Ineersa\\AgentCore\\Command\\AgentLoopRunRebuildHotStateCommand",src/Command/AgentLoopRunRebuildHotStateCommand.php,20
+    "Ineersa\\AgentCore\\Command\\AgentLoopRunReplayCommand",src/Command/AgentLoopRunReplayCommand.php,22
+    "Ineersa\\AgentCore\\Command\\AgentLoopRunTailCommand",src/Command/AgentLoopRunTailCommand.php,22
 methods[10]:
   - method: __construct
     start: 20

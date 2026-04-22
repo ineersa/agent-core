@@ -3,6 +3,17 @@ file: RunMessageStateTools.php
 class: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools"
 type: readonly final class
 summary: The RunMessageStateTools provide shared immutable state-copy and payload-hydration helpers for run message handlers.
+sections[1]{kind,start,end,limit}:
+  classDoc,12,14,3
+wiring:
+  serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools",private,true,true,src/Application/Orchestrator/RunMessageStateTools.php,15
+  injectedInto[5]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\AdvanceRunHandler",src/Application/Orchestrator/AdvanceRunHandler.php,18
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler",src/Application/Orchestrator/ApplyCommandHandler.php,21
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler",src/Application/Orchestrator/LlmStepResultHandler.php,26
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\StartRunHandler",src/Application/Orchestrator/StartRunHandler.php,14
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler",src/Application/Orchestrator/ToolCallResultHandler.php,17
 methods[11]:
   - method: copyState
     start: 17

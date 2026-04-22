@@ -3,6 +3,37 @@ file: RunLogWriter.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogWriter"
 type: readonly final class
 summary: "The RunLogWriter class provides a mechanism for persisting RunEvent instances to the filesystem. It formats event data into structured files based on run identifiers and timestamps, ensuring durable storage of agent execution logs."
+sections[3]:
+  - kind: classDoc
+    start: 11
+    end: 13
+    limit: 3
+  - kind: properties
+    start: 16
+    end: 16
+    limit: 1
+  - kind: constructor
+    start: 18
+    end: 23
+    limit: 6
+    signatureLine: 18
+constructorInputs[2]{param,type,required}:
+  $filesystem,FilesystemOperator,true
+  $eventPayloadNormalizer,?EventPayloadNormalizer,false
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogWriter"
+      visibility: private
+      autowire: true
+      autoconfigure: true
+      file: src/Infrastructure/Storage/RunLogWriter.php
+      line: 14
+      args:
+        "$eventPayloadNormalizer": "service(Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer)"
+        "$filesystem": service(agent_loop.run_logs)
+  injectedInto[2]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Application\\Handler\\JsonlOutboxProjectorWorker",src/Application/Handler/JsonlOutboxProjectorWorker.php,17
+    "Ineersa\\AgentCore\\Application\\Handler\\OutboxProjector",src/Application/Handler/OutboxProjector.php,18
 methods[3]:
   - method: __construct
     start: 18

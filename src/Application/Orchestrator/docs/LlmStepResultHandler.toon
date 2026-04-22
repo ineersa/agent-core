@@ -3,6 +3,46 @@ file: LlmStepResultHandler.php
 class: "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler"
 type: readonly final class
 summary: "The LlmStepResultHandler applies LLM step outcomes, including stop-boundary command policy and tool-call fanout preparation."
+sections[2]:
+  - kind: classDoc
+    start: 23
+    end: 25
+    limit: 3
+  - kind: constructor
+    start: 28
+    end: 39
+    limit: 12
+    signatureLine: 28
+constructorInputs[9]{param,type,required}:
+  $toolBatchCollector,ToolBatchCollector,true
+  $commandMailboxPolicy,CommandMailboxPolicy,true
+  $stateTools,RunMessageStateTools,true
+  $stepDispatcher,StepDispatcher,true
+  $toolExecutionPolicyResolver,?ToolExecutionPolicyResolver,false
+  $toolCatalogResolver,?ToolCatalogResolver,false
+  $metrics,?RunMetrics,false
+  $tracer,?RunTracer,false
+  $commandBus,?MessageBusInterface,false
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler"
+      visibility: private
+      autowire: true
+      autoconfigure: true
+      file: src/Application/Orchestrator/LlmStepResultHandler.php
+      line: 26
+      args:
+        "$commandBus": service(agent.command.bus)
+        "$commandMailboxPolicy": "service(Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy)"
+        "$metrics": "service(Ineersa\\AgentCore\\Application\\Handler\\RunMetrics)"
+        "$stateTools": "service(Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools)"
+        "$stepDispatcher": "service(Ineersa\\AgentCore\\Application\\Handler\\StepDispatcher)"
+        "$toolBatchCollector": "service(Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector)"
+        "$toolCatalogResolver": "service(Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver)"
+        "$toolExecutionPolicyResolver": "service(Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionPolicyResolver)"
+        "$tracer": "service(Ineersa\\AgentCore\\Application\\Handler\\RunTracer)"
+  injectedInto[1]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor",src/Application/Orchestrator/RunMessageProcessor.php,17
 methods[7]:
   - method: __construct
     start: 28

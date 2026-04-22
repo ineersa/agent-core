@@ -3,6 +3,40 @@ file: ReplayService.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ReplayService"
 type: readonly final class
 summary: ReplayService reconstructs agent run state by replaying historical events from the event store and run logs. It verifies data integrity and rebuilds prompt state to ensure consistency across sequences.
+sections[2]:
+  - kind: classDoc
+    start: 12
+    end: 14
+    limit: 3
+  - kind: constructor
+    start: 17
+    end: 24
+    limit: 8
+    signatureLine: 17
+constructorInputs[5]{param,type,required}:
+  $eventStore,EventStoreInterface,true
+  $runLogReader,RunLogReader,true
+  $promptStateStore,PromptStateStoreInterface,true
+  $metrics,?RunMetrics,false
+  $tracer,?RunTracer,false
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Application\\Handler\\ReplayService"
+      visibility: private
+      autowire: true
+      autoconfigure: true
+      file: src/Application/Handler/ReplayService.php
+      line: 15
+      args:
+        "$eventStore": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\RunEventStore)"
+        "$metrics": "service(Ineersa\\AgentCore\\Application\\Handler\\RunMetrics)"
+        "$promptStateStore": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\HotPromptStateStore)"
+        "$runLogReader": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader)"
+        "$tracer": "service(Ineersa\\AgentCore\\Application\\Handler\\RunTracer)"
+  injectedInto[3]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService",src/Application/Handler/RunDebugService.php,18
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit",src/Application/Orchestrator/RunCommit.php,24
+    "Ineersa\\AgentCore\\Command\\AgentLoopResumeStaleRunsCommand",src/Command/AgentLoopResumeStaleRunsCommand.php,25
 methods[8]:
   - method: __construct
     start: 17

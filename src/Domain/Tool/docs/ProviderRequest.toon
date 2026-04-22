@@ -3,6 +3,21 @@ file: ProviderRequest.php
 class: "Ineersa\\AgentCore\\Domain\\Tool\\ProviderRequest"
 type: readonly final class
 summary: "A readonly value object representing a tool provider request with model, input, and options parameters. It provides a method to apply these parameters onto a specific model context, returning the resulting configuration array."
+sections[2]:
+  - kind: classDoc
+    start: 7
+    end: 9
+    limit: 3
+  - kind: constructor
+    start: 12
+    end: 23
+    limit: 12
+    signatureLine: 18
+    commentStart: 12
+constructorInputs[3]{param,type,required}:
+  $model,?string,false
+  $input,?array,false
+  $options,?array,false
 methods[2]:
   - method: __construct
     start: 12

@@ -3,6 +3,17 @@ file: InMemoryRunAccessStore.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunAccessStore"
 type: final class
 summary: InMemoryRunAccessStore provides an in-memory implementation for persisting and retrieving RunAccessScope entities keyed by run ID. It serves as a transient storage layer for run access metadata within the agent core infrastructure.
+sections[2]{kind,start,end,limit}:
+  classDoc,10,12,3
+  properties,16,16,1
+wiring:
+  serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
+    "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunAccessStore",private,true,true,src/Infrastructure/Storage/InMemoryRunAccessStore.php,13
+  aliases[1]{serviceId,target}:
+    "Ineersa\\AgentCore\\Contract\\RunAccessStoreInterface","Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunAccessStore"
+  injectedInto[2]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Api\\Http\\RunApiController",src/Api/Http/RunApiController.php,32
+    "Ineersa\\AgentCore\\Api\\Http\\RunReadService",src/Api/Http/RunReadService.php,18
 methods[3]:
   - method: save
     start: 18

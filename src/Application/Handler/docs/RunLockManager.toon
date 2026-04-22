@@ -3,6 +3,33 @@ file: RunLockManager.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\RunLockManager"
 type: readonly final class
 summary: "The RunLockManager provides a mechanism to execute critical sections of code exclusively for a specific run ID using distributed locking. It leverages a LockFactory to acquire locks with a configurable time-to-live, ensuring thread-safe or process-safe execution of run-specific logic."
+sections[2]:
+  - kind: classDoc
+    start: 9
+    end: 11
+    limit: 3
+  - kind: constructor
+    start: 14
+    end: 19
+    limit: 6
+    signatureLine: 14
+constructorInputs[3]{param,type,required}:
+  $lockFactory,LockFactory,true
+  $ttlSeconds,float,false
+  $acquireTimeoutSeconds,float,false
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Application\\Handler\\RunLockManager"
+      visibility: private
+      autowire: true
+      autoconfigure: true
+      file: src/Application/Handler/RunLockManager.php
+      line: 12
+      args:
+        "$lockFactory": service(agent_loop.lock.factory)
+  injectedInto[2]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor",src/Application/Orchestrator/RunMessageProcessor.php,17
+    "Ineersa\\AgentCore\\Command\\AgentLoopResumeStaleRunsCommand",src/Command/AgentLoopResumeStaleRunsCommand.php,25
 methods[3]:
   - method: __construct
     start: 14

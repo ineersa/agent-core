@@ -3,6 +3,43 @@ file: ToolExecutor.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor"
 type: final class
 summary: "Executes tool calls with policy resolution, idempotent result reuse, cancellation checks, and Symfony Toolbox invocation."
+sections[3]:
+  - kind: classDoc
+    start: 21
+    end: 23
+    limit: 3
+  - kind: properties
+    start: 26
+    end: 30
+    limit: 5
+  - kind: constructor
+    start: 32
+    end: 47
+    limit: 16
+    signatureLine: 35
+    commentStart: 32
+constructorInputs[7]{param,type,required}:
+  $defaultMode,string,true
+  $defaultTimeoutSeconds,int,true
+  $maxParallelism,int,true
+  $overrides,array,false
+  $toolbox,?ToolboxInterface,false
+  $resultStore,?ToolExecutionResultStore,false
+  $toolIdempotencyKeyResolver,?ToolIdempotencyKeyResolverInterface,false
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor"
+      visibility: private
+      autowire: true
+      autoconfigure: true
+      file: src/Application/Handler/ToolExecutor.php
+      line: 24
+      args:
+        "$resultStore": "service(Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore)"
+  aliases[1]{serviceId,target}:
+    "Ineersa\\AgentCore\\Contract\\Tool\\ToolExecutorInterface","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor"
+  injectedInto[1]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker",src/Application/Handler/ExecuteToolCallWorker.php,22
 methods[14]:
   - method: __construct
     start: 32

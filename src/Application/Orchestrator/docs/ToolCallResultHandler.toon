@@ -3,6 +3,34 @@ file: ToolCallResultHandler.php
 class: "Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler"
 type: readonly final class
 summary: The ToolCallResultHandler collects tool execution outcomes and commits ordered batch results back into run state.
+sections[2]:
+  - kind: classDoc
+    start: 14
+    end: 16
+    limit: 3
+  - kind: constructor
+    start: 19
+    end: 24
+    limit: 6
+    signatureLine: 19
+constructorInputs[3]{param,type,required}:
+  $toolBatchCollector,ToolBatchCollector,true
+  $stateTools,RunMessageStateTools,true
+  $metrics,?RunMetrics,false
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler"
+      visibility: private
+      autowire: true
+      autoconfigure: true
+      file: src/Application/Orchestrator/ToolCallResultHandler.php
+      line: 17
+      args:
+        "$metrics": "service(Ineersa\\AgentCore\\Application\\Handler\\RunMetrics)"
+        "$stateTools": "service(Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools)"
+        "$toolBatchCollector": "service(Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector)"
+  injectedInto[1]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor",src/Application/Orchestrator/RunMessageProcessor.php,17
 methods[4]:
   - method: __construct
     start: 19

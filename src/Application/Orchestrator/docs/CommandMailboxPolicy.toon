@@ -3,6 +3,39 @@ file: CommandMailboxPolicy.php
 class: "Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy"
 type: readonly final class
 summary: Applies queued command mailbox policies at turn boundaries and validates cancellation and continue admissibility rules.
+sections[3]:
+  - kind: classDoc
+    start: 16
+    end: 18
+    limit: 3
+  - kind: constants
+    start: 21
+    end: 22
+    limit: 2
+  - kind: constructor
+    start: 24
+    end: 29
+    limit: 6
+    signatureLine: 24
+constructorInputs[3]{param,type,required}:
+  $commandStore,CommandStoreInterface,true
+  $commandRouter,CommandRouter,true
+  $steerDrainMode,string,false
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy"
+      visibility: private
+      autowire: true
+      autoconfigure: true
+      file: src/Application/Orchestrator/CommandMailboxPolicy.php
+      line: 19
+      args:
+        "$commandRouter": "service(Ineersa\\AgentCore\\Application\\Handler\\CommandRouter)"
+        "$commandStore": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryCommandStore)"
+  injectedInto[3]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\AdvanceRunHandler",src/Application/Orchestrator/AdvanceRunHandler.php,18
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler",src/Application/Orchestrator/ApplyCommandHandler.php,21
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler",src/Application/Orchestrator/LlmStepResultHandler.php,26
 methods[9]:
   - method: __construct
     start: 24

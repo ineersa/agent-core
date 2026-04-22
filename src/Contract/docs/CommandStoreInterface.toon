@@ -3,6 +3,11 @@ file: CommandStoreInterface.php
 class: "Ineersa\\AgentCore\\Contract\\CommandStoreInterface"
 type: interface
 summary: "Defines the contract for persisting and managing the lifecycle of pending commands within a specific run context. It provides mechanisms to enqueue new commands, query their status, and transition them through applied, rejected, or superseded states. This interface abstracts the underlying storage mechanism for command durability and idempotency checks."
+sections[1]{kind,start,end,limit}:
+  classDoc,9,11,3
+wiring:
+  aliases[1]{serviceId,target}:
+    "Ineersa\\AgentCore\\Contract\\CommandStoreInterface","Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryCommandStore"
 methods[8]:
   - method: enqueue
     start: 14

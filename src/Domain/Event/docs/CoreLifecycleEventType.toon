@@ -3,6 +3,9 @@ file: CoreLifecycleEventType.php
 class: "Ineersa\\AgentCore\\Domain\\Event\\CoreLifecycleEventType"
 type: final class
 summary: CoreLifecycleEventType provides static utility methods for identifying and validating core lifecycle event types within the agent domain. It serves as a central registry for mapping event types to their corresponding class implementations and enforcing ordering constraints.
+sections[2]{kind,start,end,limit}:
+  classDoc,18,20,3
+  constants,23,46,24
 methods[3]:
   - method: isCore
     start: 48

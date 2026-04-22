@@ -3,6 +3,27 @@ file: LlmStepResult.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\LlmStepResult"
 type: readonly final class
 summary: "Represents the immutable result of a single LLM agent step within a multi-turn conversation. It encapsulates execution metadata including run identifiers, turn sequence, and idempotency keys to ensure reliable processing. This value object serves as a core domain entity for tracking agent execution state."
+sections[2]:
+  - kind: classDoc
+    start: 7
+    end: 9
+    limit: 3
+  - kind: constructor
+    start: 12
+    end: 31
+    limit: 20
+    signatureLine: 19
+    commentStart: 12
+constructorInputs[9]{param,type,required}:
+  $runId,string,true
+  $turnNo,int,true
+  $stepId,string,true
+  $attempt,int,true
+  $idempotencyKey,string,true
+  $assistantMessage,?array,false
+  $usage,array,false
+  $stopReason,?string,false
+  $error,?array,false
 methods[1]:
   - method: __construct
     start: 12

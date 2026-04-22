@@ -3,6 +3,12 @@ file: InMemoryPromptStateStore.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryPromptStateStore"
 type: final class
 summary: "InMemoryPromptStateStore provides an ephemeral, in-memory storage mechanism for persisting prompt state associated with specific agent run IDs. It implements a simple key-value interface using an internal array to map run identifiers to their corresponding state arrays."
+sections[2]{kind,start,end,limit}:
+  classDoc,9,11,3
+  properties,15,15,1
+wiring:
+  serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
+    "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryPromptStateStore",private,true,true,src/Infrastructure/Storage/InMemoryPromptStateStore.php,12
 methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
   get,17,20,4,17,21,"public function get(string $runId): ?array"
   save,22,25,4,22,21,"public function save(string $runId, array $state): void"

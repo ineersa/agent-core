@@ -3,6 +3,39 @@ file: RunEventPublisher.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunEventPublisher"
 type: final class
 summary: "The RunEventPublisher class publishes domain RunEvent instances to a Mercure hub using configurable serialization and topic policies. It implements a coalescing mechanism to batch rapid updates within a defined time window, reducing unnecessary network traffic."
+sections[3]:
+  - kind: classDoc
+    start: 12
+    end: 14
+    limit: 3
+  - kind: properties
+    start: 18
+    end: 18
+    limit: 1
+  - kind: constructor
+    start: 20
+    end: 26
+    limit: 7
+    signatureLine: 20
+constructorInputs[4]{param,type,required}:
+  $hub,?HubInterface,false
+  $serializer,?RunEventSerializer,false
+  $topicPolicy,?RunTopicPolicy,false
+  $messageUpdateCoalesceWindowMs,int,false
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunEventPublisher"
+      visibility: private
+      autowire: true
+      autoconfigure: true
+      file: src/Infrastructure/Mercure/RunEventPublisher.php
+      line: 15
+      args:
+        "$serializer": "service(Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer)"
+        "$topicPolicy": "service(Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunTopicPolicy)"
+  injectedInto[2]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Application\\Handler\\MercureOutboxProjectorWorker",src/Application/Handler/MercureOutboxProjectorWorker.php,17
+    "Ineersa\\AgentCore\\Application\\Handler\\OutboxProjector",src/Application/Handler/OutboxProjector.php,18
 methods[3]:
   - method: __construct
     start: 20

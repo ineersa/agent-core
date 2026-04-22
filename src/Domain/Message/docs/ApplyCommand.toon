@@ -3,6 +3,26 @@ file: ApplyCommand.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\ApplyCommand"
 type: readonly final class
 summary: "The ApplyCommand class represents a domain event for applying a command within a specific execution step. It encapsulates the necessary context such as run ID, turn number, and step ID to ensure proper sequencing and identification of the operation."
+sections[2]:
+  - kind: classDoc
+    start: 7
+    end: 9
+    limit: 3
+  - kind: constructor
+    start: 12
+    end: 29
+    limit: 18
+    signatureLine: 18
+    commentStart: 12
+constructorInputs[8]{param,type,required}:
+  $runId,string,true
+  $turnNo,int,true
+  $stepId,string,true
+  $attempt,int,true
+  $idempotencyKey,string,true
+  $kind,string,true
+  $payload,array,false
+  $options,array,false
 methods[1]:
   - method: __construct
     start: 12

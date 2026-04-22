@@ -3,6 +3,8 @@ file: ToolCatalogProviderInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Tool\\ToolCatalogProviderInterface"
 type: interface
 summary: Defines the contract for resolving tool catalogs within the AgentCore framework. Implementations provide a mechanism to retrieve available tools based on a provided context array. This interface abstracts the source of tool definitions to allow for flexible catalog resolution strategies.
+sections[1]{kind,start,end,limit}:
+  classDoc,9,11,3
 methods[1]:
   - method: resolveToolCatalog
     start: 14

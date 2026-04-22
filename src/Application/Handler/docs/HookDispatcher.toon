@@ -3,6 +3,32 @@ file: HookDispatcher.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\HookDispatcher"
 type: readonly final class
 summary: Dispatches boundary and extension hooks via Symfony's event dispatcher and iterates registered hook subscribers.
+sections[2]:
+  - kind: classDoc
+    start: 11
+    end: 13
+    limit: 3
+  - kind: constructor
+    start: 16
+    end: 20
+    limit: 5
+    signatureLine: 16
+constructorInputs[2]{param,type,required}:
+  $registry,HookSubscriberRegistry,true
+  $eventDispatcher,EventDispatcherInterface,true
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Application\\Handler\\HookDispatcher"
+      visibility: private
+      autowire: true
+      autoconfigure: true
+      file: src/Application/Handler/HookDispatcher.php
+      line: 14
+      args:
+        "$eventDispatcher": service(event_dispatcher)
+        "$registry": "service(Ineersa\\AgentCore\\Application\\Handler\\HookSubscriberRegistry)"
+  injectedInto[1]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit",src/Application/Orchestrator/RunCommit.php,24
 methods[2]:
   - method: __construct
     start: 16

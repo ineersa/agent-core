@@ -3,6 +3,21 @@ file: ToolDefinition.php
 class: "Ineersa\\AgentCore\\Domain\\Tool\\ToolDefinition"
 type: readonly final class
 summary: "Defines the immutable structure and metadata for an agent tool, including its name, description, and JSON schema. This class serves as the domain model for tool configuration within the AgentCore system."
+sections[2]:
+  - kind: classDoc
+    start: 7
+    end: 9
+    limit: 3
+  - kind: constructor
+    start: 12
+    end: 22
+    limit: 11
+    signatureLine: 17
+    commentStart: 12
+constructorInputs[3]{param,type,required}:
+  $name,string,true
+  $description,string,true
+  $schema,?array,false
 methods[2]:
   - method: __construct
     start: 12

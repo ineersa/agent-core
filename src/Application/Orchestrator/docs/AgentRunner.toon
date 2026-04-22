@@ -3,6 +3,32 @@ file: AgentRunner.php
 class: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner"
 type: final class
 summary: "The AgentRunner class orchestrates the lifecycle of agent execution runs by translating high-level inputs into discrete, idempotent steps. It manages state transitions for starting, continuing, steering, and canceling runs while ensuring reliable message dispatch via a command bus."
+sections[2]:
+  - kind: classDoc
+    start: 18
+    end: 20
+    limit: 3
+  - kind: constructor
+    start: 23
+    end: 25
+    limit: 3
+    signatureLine: 23
+constructorInputs[1]{param,type,required}:
+  $commandBus,MessageBusInterface,true
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner"
+      visibility: private
+      autowire: true
+      autoconfigure: true
+      file: src/Application/Orchestrator/AgentRunner.php
+      line: 21
+      args:
+        "$commandBus": service(agent.command.bus)
+  aliases[1]{serviceId,target}:
+    "Ineersa\\AgentCore\\Contract\\AgentRunnerInterface","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner"
+  injectedInto[1]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Api\\Http\\RunApiController",src/Api/Http/RunApiController.php,32
 methods[12]:
   - method: __construct
     start: 23

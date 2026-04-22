@@ -3,6 +3,13 @@ file: SymfonyMessageMapper.php
 class: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper"
 type: final class
 summary: SymfonyMessageMapper translates between internal AgentMessage objects and provider-specific message formats for AI integration. It normalizes content structures and handles tool call serialization to ensure compatibility with external AI service APIs.
+sections[1]{kind,start,end,limit}:
+  classDoc,10,12,3
+wiring:
+  serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
+    "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper",private,true,true,src/Infrastructure/SymfonyAi/SymfonyMessageMapper.php,13
+  injectedInto[1]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform",src/Infrastructure/SymfonyAi/Platform.php,22
 methods[13]:
   - method: toMessageBag
     start: 15

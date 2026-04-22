@@ -3,6 +3,9 @@ file: BoundaryHookName.php
 class: "Ineersa\\AgentCore\\Domain\\Event\\BoundaryHookName"
 type: final class
 summary: Provides static utility methods to classify event hook names based on their semantic role within the domain. It distinguishes between boundary hooks and extension hooks by evaluating string prefixes against defined constants.
+sections[2]{kind,start,end,limit}:
+  classDoc,7,9,3
+  constants,12,27,16
 methods[2]:
   - method: isBoundary
     start: 29

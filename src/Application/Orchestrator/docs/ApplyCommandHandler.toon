@@ -3,6 +3,39 @@ file: ApplyCommandHandler.php
 class: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler"
 type: readonly final class
 summary: The ApplyCommandHandler validates and maps incoming commands into durable command-mailbox transitions.
+sections[2]:
+  - kind: classDoc
+    start: 18
+    end: 20
+    limit: 3
+  - kind: constructor
+    start: 23
+    end: 31
+    limit: 9
+    signatureLine: 23
+constructorInputs[6]{param,type,required}:
+  $commandStore,CommandStoreInterface,true
+  $commandRouter,CommandRouter,true
+  $commandMailboxPolicy,CommandMailboxPolicy,true
+  $stateTools,RunMessageStateTools,true
+  $maxPendingCommands,int,false
+  $commandBus,?MessageBusInterface,false
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler"
+      visibility: private
+      autowire: true
+      autoconfigure: true
+      file: src/Application/Orchestrator/ApplyCommandHandler.php
+      line: 21
+      args:
+        "$commandBus": service(agent.command.bus)
+        "$commandMailboxPolicy": "service(Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy)"
+        "$commandRouter": "service(Ineersa\\AgentCore\\Application\\Handler\\CommandRouter)"
+        "$commandStore": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryCommandStore)"
+        "$stateTools": "service(Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools)"
+  injectedInto[1]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor",src/Application/Orchestrator/RunMessageProcessor.php,17
 methods[8]:
   - method: __construct
     start: 23

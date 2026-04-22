@@ -3,6 +3,8 @@ file: ModelResolverInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Tool\\ModelResolverInterface"
 type: interface
 summary: Defines the contract for resolving AI model configurations based on incoming message context and default settings. It abstracts the decision logic for selecting the appropriate model to process a given set of messages.
+sections[1]{kind,start,end,limit}:
+  classDoc,10,12,3
 methods[1]:
   - method: resolve
     start: 15

@@ -3,6 +3,29 @@ file: ToolCatalogResolver.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver"
 type: final class
 summary: Resolves tool catalog definitions by iterating over registered providers and aggregating their payloads. Ensures schema stability for each tool definition by computing and verifying a deterministic fingerprint.
+sections[3]:
+  - kind: classDoc
+    start: 10
+    end: 12
+    limit: 3
+  - kind: properties
+    start: 16
+    end: 16
+    limit: 1
+  - kind: constructor
+    start: 18
+    end: 26
+    limit: 9
+    signatureLine: 23
+    commentStart: 18
+constructorInputs[1]{param,type,required}:
+  $providers,iterable,true
+wiring:
+  serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
+    "Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver",private,true,true,src/Application/Handler/ToolCatalogResolver.php,13
+  injectedInto[2]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler",src/Application/Orchestrator/LlmStepResultHandler.php,26
+    "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform",src/Infrastructure/SymfonyAi/Platform.php,22
 methods[5]:
   - method: __construct
     start: 18

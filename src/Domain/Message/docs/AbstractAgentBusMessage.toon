@@ -3,6 +3,22 @@ file: AbstractAgentBusMessage.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage"
 type: readonly abstract class
 summary: "AbstractAgentBusMessage serves as a base value object for agent execution events, encapsulating core execution context such as run identifiers, turn numbers, and step metadata. It provides immutable accessors for these fields to ensure consistent data structure across agent bus messages. The class enforces immutability through readonly properties and final getter methods."
+sections[2]:
+  - kind: classDoc
+    start: 7
+    end: 9
+    limit: 3
+  - kind: constructor
+    start: 12
+    end: 19
+    limit: 8
+    signatureLine: 12
+constructorInputs[5]{param,type,required}:
+  $runId,string,true
+  $turnNo,int,true
+  $stepId,string,true
+  $attempt,int,true
+  $idempotencyKey,string,true
 methods[6]:
   - method: __construct
     start: 12

@@ -3,6 +3,19 @@ file: RunEventStore.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunEventStore"
 type: final class
 summary: The RunEventStore provides a persistence layer for RunEvent entities within the infrastructure storage boundary. It abstracts the underlying storage mechanism to allow appending individual or batched events and retrieving the complete event history for a specific run. This class serves as the primary interface for run-related event data access and mutation.
+sections[2]{kind,start,end,limit}:
+  classDoc,10,12,3
+  properties,16,16,1
+wiring:
+  serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
+    "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunEventStore",private,true,true,src/Infrastructure/Storage/RunEventStore.php,13
+  aliases[1]{serviceId,target}:
+    "Ineersa\\AgentCore\\Contract\\EventStoreInterface","Ineersa\\AgentCore\\Infrastructure\\Storage\\RunEventStore"
+  injectedInto[4]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Api\\Http\\RunReadService",src/Api/Http/RunReadService.php,18
+    "Ineersa\\AgentCore\\Application\\Handler\\ReplayService",src/Application/Handler/ReplayService.php,15
+    "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService",src/Application/Handler/RunDebugService.php,18
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit",src/Application/Orchestrator/RunCommit.php,24
 methods[3]:
   - method: append
     start: 18

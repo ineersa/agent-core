@@ -3,6 +3,32 @@ file: CommandRouter.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter"
 type: final class
 summary: "The CommandRouter class acts as a central dispatcher for ApplyCommand instances, routing them to appropriate handlers based on command kind. It leverages a CommandHandlerRegistry to resolve specific handler implementations and validates command options before routing."
+sections[2]:
+  - kind: classDoc
+    start: 12
+    end: 14
+    limit: 3
+  - kind: constructor
+    start: 17
+    end: 21
+    limit: 5
+    signatureLine: 17
+constructorInputs[2]{param,type,required}:
+  $registry,CommandHandlerRegistry,true
+  $extensionPrefix,string,false
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter"
+      visibility: private
+      autowire: true
+      autoconfigure: true
+      file: src/Application/Handler/CommandRouter.php
+      line: 15
+      args:
+        "$registry": "service(Ineersa\\AgentCore\\Application\\Handler\\CommandHandlerRegistry)"
+  injectedInto[2]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler",src/Application/Orchestrator/ApplyCommandHandler.php,21
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy",src/Application/Orchestrator/CommandMailboxPolicy.php,19
 methods[4]:
   - method: __construct
     start: 17

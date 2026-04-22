@@ -3,6 +3,37 @@ file: RunEventSerializer.php
 class: "Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer"
 type: readonly final class
 summary: The RunEventSerializer converts between domain RunEvent and RunStreamEvent objects and their array representations for API transport. It provides bidirectional normalization to support serialization boundaries without leaking domain structure.
+sections[3]:
+  - kind: classDoc
+    start: 11
+    end: 13
+    limit: 3
+  - kind: properties
+    start: 16
+    end: 16
+    limit: 1
+  - kind: constructor
+    start: 18
+    end: 21
+    limit: 4
+    signatureLine: 18
+constructorInputs[1]{param,type,required}:
+  $eventPayloadNormalizer,?EventPayloadNormalizer,false
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer"
+      visibility: private
+      autowire: true
+      autoconfigure: true
+      file: src/Api/Serializer/RunEventSerializer.php
+      line: 14
+      args:
+        "$eventPayloadNormalizer": "service(Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer)"
+  injectedInto[4]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Api\\Http\\RunApiController",src/Api/Http/RunApiController.php,32
+    "Ineersa\\AgentCore\\Command\\AgentLoopRunReplayCommand",src/Command/AgentLoopRunReplayCommand.php,22
+    "Ineersa\\AgentCore\\Command\\AgentLoopRunTailCommand",src/Command/AgentLoopRunTailCommand.php,22
+    "Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunEventPublisher",src/Infrastructure/Mercure/RunEventPublisher.php,15
 methods[4]:
   - method: __construct
     start: 18

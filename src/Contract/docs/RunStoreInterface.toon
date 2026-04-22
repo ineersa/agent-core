@@ -3,6 +3,11 @@ file: RunStoreInterface.php
 class: "Ineersa\\AgentCore\\Contract\\RunStoreInterface"
 type: interface
 summary: "Defines the contract for persisting and managing agent run states with optimistic concurrency control. It supports retrieving individual run states, atomically updating them based on version numbers, and identifying stale running runs for cleanup."
+sections[1]{kind,start,end,limit}:
+  classDoc,9,11,3
+wiring:
+  aliases[1]{serviceId,target}:
+    "Ineersa\\AgentCore\\Contract\\RunStoreInterface","Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunStore"
 methods[3]:
   - method: get
     start: 14

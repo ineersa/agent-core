@@ -3,6 +3,32 @@ file: RunMetrics.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics"
 type: final class
 summary: This class collects in-process runtime metrics for run orchestration and workers.
+sections[3]:
+  - kind: classDoc
+    start: 9
+    end: 11
+    limit: 3
+  - kind: properties
+    start: 15
+    end: 45
+    limit: 31
+  - kind: constructor
+    start: 47
+    end: 56
+    limit: 10
+    signatureLine: 47
+wiring:
+  serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
+    "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics",private,true,true,src/Application/Handler/RunMetrics.php,12
+  injectedInto[8]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Application\\Handler\\ExecuteLlmStepWorker",src/Application/Handler/ExecuteLlmStepWorker.php,17
+    "Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker",src/Application/Handler/ExecuteToolCallWorker.php,22
+    "Ineersa\\AgentCore\\Application\\Handler\\ReplayService",src/Application/Handler/ReplayService.php,15
+    "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService",src/Application/Handler/RunDebugService.php,18
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\AdvanceRunHandler",src/Application/Orchestrator/AdvanceRunHandler.php,18
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler",src/Application/Orchestrator/LlmStepResultHandler.php,26
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit",src/Application/Orchestrator/RunCommit.php,24
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler",src/Application/Orchestrator/ToolCallResultHandler.php,17
 methods[12]:
   - method: __construct
     start: 47

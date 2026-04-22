@@ -3,6 +3,23 @@ file: SymfonyPlatformInvoker.php
 class: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyPlatformInvoker"
 type: readonly final class
 summary: "SymfonyPlatformInvoker acts as an adapter for the Symfony AI platform, translating generic agent inputs into platform-specific invocations. It handles the execution of model calls and extracts structured usage metadata from the platform's deferred results."
+sections[2]:
+  - kind: classDoc
+    start: 11
+    end: 13
+    limit: 3
+  - kind: constructor
+    start: 16
+    end: 19
+    limit: 4
+    signatureLine: 16
+constructorInputs[1]{param,type,required}:
+  $platform,?object,false
+wiring:
+  serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
+    "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyPlatformInvoker",private,true,true,src/Infrastructure/SymfonyAi/SymfonyPlatformInvoker.php,14
+  injectedInto[1]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform",src/Infrastructure/SymfonyAi/Platform.php,22
 methods[6]:
   - method: __construct
     start: 16

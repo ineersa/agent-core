@@ -3,6 +3,24 @@ file: ExecuteLlmStep.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\ExecuteLlmStep"
 type: readonly final class
 summary: "Represents a domain event for executing an LLM step within an agent run, capturing execution context such as run ID, turn number, and step identifier. It includes retry attempt tracking and an idempotency key to ensure safe re-execution. This class serves as a structured payload for triggering or recording LLM processing actions."
+sections[2]:
+  - kind: classDoc
+    start: 7
+    end: 9
+    limit: 3
+  - kind: constructor
+    start: 12
+    end: 22
+    limit: 11
+    signatureLine: 12
+constructorInputs[7]{param,type,required}:
+  $runId,string,true
+  $turnNo,int,true
+  $stepId,string,true
+  $attempt,int,true
+  $idempotencyKey,string,true
+  $contextRef,string,true
+  $toolsRef,string,true
 methods[1]:
   - method: __construct
     start: 12

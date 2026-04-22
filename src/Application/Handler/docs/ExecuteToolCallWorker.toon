@@ -3,6 +3,36 @@ file: ExecuteToolCallWorker.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker"
 type: readonly final class
 summary: "This class acts as a message handler for the agent execution bus, processing tool call commands by delegating execution to a dedicated tool executor. It coordinates the invocation of external tools and manages the resulting state updates within the agent's runtime context."
+sections[2]:
+  - kind: classDoc
+    start: 19
+    end: 21
+    limit: 3
+  - kind: constructor
+    start: 24
+    end: 31
+    limit: 8
+    signatureLine: 24
+constructorInputs[5]{param,type,required}:
+  $toolExecutor,ToolExecutorInterface,true
+  $commandBus,MessageBusInterface,true
+  $runStore,?RunStoreInterface,false
+  $metrics,?RunMetrics,false
+  $tracer,?RunTracer,false
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker"
+      visibility: private
+      autowire: true
+      autoconfigure: true
+      file: src/Application/Handler/ExecuteToolCallWorker.php
+      line: 22
+      args:
+        "$commandBus": service(agent.command.bus)
+        "$metrics": "service(Ineersa\\AgentCore\\Application\\Handler\\RunMetrics)"
+        "$runStore": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunStore)"
+        "$toolExecutor": "service(Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor)"
+        "$tracer": "service(Ineersa\\AgentCore\\Application\\Handler\\RunTracer)"
 methods[3]:
   - method: __construct
     start: 24

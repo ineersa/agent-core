@@ -1,7 +1,7 @@
 spec: agent-core.ai-docs/v1
 namespace: "Domain\\Tool"
 fqcn: "Ineersa\\AgentCore\\Domain\\Tool"
-updatedAt: 2026-04-21
+updatedAt: 2026-04-22
 description: "Tool execution value objects — call representation, definition schema, results, execution modes, provider request/result, and before/after hook contexts."
 files[8]{file,type,summary}:
   PlatformInvocationResult.php,readonly final class,"Represents the immutable result of a platform tool invocation, capturing assistant message deltas, usage statistics, and stop reasons. Designed as a readonly value object to ensure data integrity across the domain layer."

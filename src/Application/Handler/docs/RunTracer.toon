@@ -3,6 +3,40 @@ file: RunTracer.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\RunTracer"
 type: final class
 summary: This class emits lightweight structured tracing spans for run processing paths.
+sections[3]:
+  - kind: classDoc
+    start: 9
+    end: 11
+    limit: 3
+  - kind: properties
+    start: 15
+    end: 17
+    limit: 3
+  - kind: constructor
+    start: 19
+    end: 21
+    limit: 3
+    signatureLine: 19
+constructorInputs[1]{param,type,required}:
+  $logger,?LoggerInterface,false
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Application\\Handler\\RunTracer"
+      visibility: private
+      autowire: true
+      autoconfigure: true
+      file: src/Application/Handler/RunTracer.php
+      line: 12
+      args:
+        "$logger": service(logger)
+  injectedInto[7]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Application\\Handler\\ExecuteLlmStepWorker",src/Application/Handler/ExecuteLlmStepWorker.php,17
+    "Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker",src/Application/Handler/ExecuteToolCallWorker.php,22
+    "Ineersa\\AgentCore\\Application\\Handler\\ReplayService",src/Application/Handler/ReplayService.php,15
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\AdvanceRunHandler",src/Application/Orchestrator/AdvanceRunHandler.php,18
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler",src/Application/Orchestrator/LlmStepResultHandler.php,26
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit",src/Application/Orchestrator/RunCommit.php,24
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator",src/Application/Orchestrator/RunOrchestrator.php,18
 methods[2]:
   - method: __construct
     start: 19

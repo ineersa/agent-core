@@ -3,6 +3,23 @@ file: RoutedCommand.php
 class: "Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand"
 type: readonly final class
 summary: "RoutedCommand is a readonly value object representing a command in the domain layer, distinguishing between core and extension command types. It encapsulates the command kind, payload, options, and status to provide a structured representation of domain operations."
+sections[2]:
+  - kind: classDoc
+    start: 7
+    end: 9
+    limit: 3
+  - kind: constructor
+    start: 12
+    end: 25
+    limit: 14
+    signatureLine: 18
+    commentStart: 12
+constructorInputs[5]{param,type,required}:
+  $status,string,true
+  $kind,string,true
+  $payload,array,false
+  $options,array,false
+  $reason,?string,false
 methods[5]:
   - method: __construct
     start: 12

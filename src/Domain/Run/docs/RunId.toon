@@ -3,6 +3,18 @@ file: RunId.php
 class: "Ineersa\\AgentCore\\Domain\\Run\\RunId"
 type: readonly final class
 summary: A value object representing a unique identifier for a run within the agent core domain. It encapsulates a string value to ensure type safety and immutability for run identification. This class supports string conversion and programmatic generation of new identifiers.
+sections[2]:
+  - kind: classDoc
+    start: 9
+    end: 11
+    limit: 3
+  - kind: constructor
+    start: 14
+    end: 16
+    limit: 3
+    signatureLine: 14
+constructorInputs[1]{param,type,required}:
+  $value,string,true
 methods[3]:
   - method: __construct
     start: 14

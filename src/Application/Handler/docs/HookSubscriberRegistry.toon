@@ -3,6 +3,28 @@ file: HookSubscriberRegistry.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\HookSubscriberRegistry"
 type: final class
 summary: The HookSubscriberRegistry maintains a registry of hook subscribers to facilitate event-driven dispatching within the application. It provides a lookup mechanism to retrieve specific subscribers associated with a given hook name.
+sections[3]:
+  - kind: classDoc
+    start: 9
+    end: 11
+    limit: 3
+  - kind: properties
+    start: 15
+    end: 15
+    limit: 1
+  - kind: constructor
+    start: 17
+    end: 25
+    limit: 9
+    signatureLine: 22
+    commentStart: 17
+constructorInputs[1]{param,type,required}:
+  $subscribers,iterable,true
+wiring:
+  serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
+    "Ineersa\\AgentCore\\Application\\Handler\\HookSubscriberRegistry",private,true,true,src/Application/Handler/HookSubscriberRegistry.php,12
+  injectedInto[1]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Application\\Handler\\HookDispatcher",src/Application/Handler/HookDispatcher.php,14
 methods[2]:
   - method: __construct
     start: 17

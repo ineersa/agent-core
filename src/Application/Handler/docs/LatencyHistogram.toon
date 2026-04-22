@@ -3,6 +3,23 @@ file: LatencyHistogram.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\LatencyHistogram"
 type: final class
 summary: This class records latency observations and exposes histogram-style snapshots.
+sections[3]:
+  - kind: classDoc
+    start: 7
+    end: 9
+    limit: 3
+  - kind: properties
+    start: 12
+    end: 21
+    limit: 10
+  - kind: constructor
+    start: 23
+    end: 43
+    limit: 21
+    signatureLine: 28
+    commentStart: 23
+constructorInputs[1]{param,type,required}:
+  $bucketBoundsMs,array,true
 methods[3]:
   - method: __construct
     start: 23

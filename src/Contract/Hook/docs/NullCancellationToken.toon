@@ -3,5 +3,7 @@ file: NullCancellationToken.php
 class: "Ineersa\\AgentCore\\Contract\\Hook\\NullCancellationToken"
 type: readonly final class
 summary: NullCancellationToken implements the cancellation token contract by providing a non-cancelable instance. It serves as a safe default for scenarios where cancellation support is not required or applicable.
+sections[1]{kind,start,end,limit}:
+  classDoc,7,9,3
 methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
   isCancellationRequested,12,15,4,12,21,"public function isCancellationRequested(): bool"

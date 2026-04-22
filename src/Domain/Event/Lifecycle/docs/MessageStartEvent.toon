@@ -3,3 +3,6 @@ file: MessageStartEvent.php
 class: "Ineersa\\AgentCore\\Domain\\Event\\Lifecycle\\MessageStartEvent"
 type: readonly final class
 summary: Represents a domain event signaling the initiation of message processing within the lifecycle. This immutable value object encapsulates the context required to track the start of a message operation. It serves as a structural marker for event sourcing and domain audit trails.
+sections[2]{kind,start,end,limit}:
+  classDoc,9,11,3
+  constants,14,14,1

@@ -3,6 +3,36 @@ file: AdvanceRunHandler.php
 class: "Ineersa\\AgentCore\\Application\\Orchestrator\\AdvanceRunHandler"
 type: readonly final class
 summary: The AdvanceRunHandler applies turn-start mailbox policy and prepares the next LLM execution turn when the run can continue.
+sections[2]:
+  - kind: classDoc
+    start: 15
+    end: 17
+    limit: 3
+  - kind: constructor
+    start: 20
+    end: 26
+    limit: 7
+    signatureLine: 20
+constructorInputs[4]{param,type,required}:
+  $commandMailboxPolicy,CommandMailboxPolicy,true
+  $stateTools,RunMessageStateTools,true
+  $metrics,?RunMetrics,false
+  $tracer,?RunTracer,false
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Application\\Orchestrator\\AdvanceRunHandler"
+      visibility: private
+      autowire: true
+      autoconfigure: true
+      file: src/Application/Orchestrator/AdvanceRunHandler.php
+      line: 18
+      args:
+        "$commandMailboxPolicy": "service(Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy)"
+        "$metrics": "service(Ineersa\\AgentCore\\Application\\Handler\\RunMetrics)"
+        "$stateTools": "service(Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools)"
+        "$tracer": "service(Ineersa\\AgentCore\\Application\\Handler\\RunTracer)"
+  injectedInto[1]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor",src/Application/Orchestrator/RunMessageProcessor.php,17
 methods[3]:
   - method: __construct
     start: 20

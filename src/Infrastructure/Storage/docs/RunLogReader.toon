@@ -3,6 +3,38 @@ file: RunLogReader.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader"
 type: readonly final class
 summary: "Reads run log files from the filesystem to reconstruct event sequences for a specific run. It parses JSON lines into domain events, providing a read-only view of historical run data."
+sections[3]:
+  - kind: classDoc
+    start: 13
+    end: 15
+    limit: 3
+  - kind: properties
+    start: 18
+    end: 18
+    limit: 1
+  - kind: constructor
+    start: 20
+    end: 25
+    limit: 6
+    signatureLine: 20
+constructorInputs[2]{param,type,required}:
+  $filesystem,FilesystemOperator,true
+  $eventPayloadNormalizer,?EventPayloadNormalizer,false
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader"
+      visibility: private
+      autowire: true
+      autoconfigure: true
+      file: src/Infrastructure/Storage/RunLogReader.php
+      line: 16
+      args:
+        "$eventPayloadNormalizer": "service(Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer)"
+        "$filesystem": service(agent_loop.run_logs)
+  injectedInto[3]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Api\\Http\\RunReadService",src/Api/Http/RunReadService.php,18
+    "Ineersa\\AgentCore\\Application\\Handler\\ReplayService",src/Application/Handler/ReplayService.php,15
+    "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService",src/Application/Handler/RunDebugService.php,18
 methods[4]:
   - method: __construct
     start: 20

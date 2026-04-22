@@ -3,6 +3,30 @@ file: AgentLoopRunReplayCommand.php
 class: "Ineersa\\AgentCore\\Command\\AgentLoopRunReplayCommand"
 type: final class
 summary: This command replays persisted run events after a sequence cursor.
+sections[2]:
+  - kind: classDoc
+    start: 18
+    end: 20
+    limit: 3
+  - kind: constructor
+    start: 24
+    end: 36
+    limit: 13
+    signatureLine: 24
+constructorInputs[2]{param,type,required}:
+  $runDebugService,RunDebugService,true
+  $runEventSerializer,RunEventSerializer,true
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Command\\AgentLoopRunReplayCommand"
+      visibility: public
+      autowire: true
+      autoconfigure: true
+      file: src/Command/AgentLoopRunReplayCommand.php
+      line: 22
+      args:
+        "$runDebugService": "service(Ineersa\\AgentCore\\Application\\Handler\\RunDebugService)"
+        "$runEventSerializer": "service(Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer)"
 methods[4]:
   - method: __construct
     start: 24

@@ -3,6 +3,24 @@ file: RunAccessScope.php
 class: "Ineersa\\AgentCore\\Domain\\Run\\RunAccessScope"
 type: readonly final class
 summary: "Defines an immutable scope for run access control, encapsulating the run identifier, optional tenant and user contexts, and session metadata. Designed as a value object to enforce strict access boundaries without mutable state."
+sections[2]:
+  - kind: classDoc
+    start: 7
+    end: 9
+    limit: 3
+  - kind: constructor
+    start: 12
+    end: 25
+    limit: 14
+    signatureLine: 17
+    commentStart: 12
+constructorInputs[6]{param,type,required}:
+  $runId,string,true
+  $tenantId,?string,true
+  $userId,?string,true
+  $sessionMetadata,array,false
+  $createdAt,DateTimeImmutable,false
+  $updatedAt,DateTimeImmutable,false
 methods[2]:
   - method: __construct
     start: 12

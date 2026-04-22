@@ -3,6 +3,8 @@ file: ConvertToLlmHookInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Hook\\ConvertToLlmHookInterface"
 type: interface
 summary: Defines the contract for converting raw message arrays into a structured MessageBag for Large Language Model processing. This interface allows implementations to transform and normalize input data while supporting cancellation via a CancellationToken.
+sections[1]{kind,start,end,limit}:
+  classDoc,10,12,3
 methods[1]:
   - method: convertToLlm
     start: 15

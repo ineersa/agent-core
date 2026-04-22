@@ -3,6 +3,19 @@ file: MessageBag.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\MessageBag"
 type: readonly final class
 summary: MessageBag is a readonly value object that encapsulates a collection of domain messages. It provides a simple interface to retrieve the contained messages or instantiate an empty instance.
+sections[2]:
+  - kind: classDoc
+    start: 7
+    end: 9
+    limit: 3
+  - kind: constructor
+    start: 12
+    end: 19
+    limit: 8
+    signatureLine: 17
+    commentStart: 12
+constructorInputs[1]{param,type,required}:
+  $messages,array,true
 methods[3]:
   - method: __construct
     start: 12

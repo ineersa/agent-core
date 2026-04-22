@@ -3,6 +3,40 @@ file: RunApiController.php
 class: "Ineersa\\AgentCore\\Api\\Http\\RunApiController"
 type: final class
 summary: "Exposes HTTP endpoints for starting runs, submitting commands, and reading run summaries, transcripts, and replay events with scoped access checks and payload validation."
+sections[2]:
+  - kind: classDoc
+    start: 27
+    end: 29
+    limit: 3
+  - kind: constructor
+    start: 34
+    end: 43
+    limit: 10
+    signatureLine: 34
+constructorInputs[7]{param,type,required}:
+  $runner,AgentRunnerInterface,true
+  $commandBus,MessageBusInterface,true
+  $runStore,RunStoreInterface,true
+  $runAccessStore,RunAccessStoreInterface,true
+  $runReadService,RunReadService,true
+  $eventSerializer,RunEventSerializer,true
+  $topicPolicy,RunTopicPolicy,true
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Api\\Http\\RunApiController"
+      visibility: public
+      autowire: true
+      autoconfigure: true
+      file: src/Api/Http/RunApiController.php
+      line: 32
+      args:
+        "$commandBus": service(agent.command.bus)
+        "$eventSerializer": "service(Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer)"
+        "$runAccessStore": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunAccessStore)"
+        "$runReadService": "service(Ineersa\\AgentCore\\Api\\Http\\RunReadService)"
+        "$runStore": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunStore)"
+        "$runner": "service(Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner)"
+        "$topicPolicy": "service(Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunTopicPolicy)"
 methods[12]:
   - method: __construct
     start: 34

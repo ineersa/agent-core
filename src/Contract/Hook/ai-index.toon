@@ -1,7 +1,7 @@
 spec: agent-core.ai-docs/v1
 namespace: "Contract\\Hook"
 fqcn: "Ineersa\\AgentCore\\Contract\\Hook"
-updatedAt: 2026-04-21
+updatedAt: 2026-04-22
 description: "Hook interfaces for intercepting agent loop lifecycle: context transforms, LLM conversion, tool call boundaries, cancellation, and message providers."
 files[7]{file,type,summary}:
   BeforeProviderRequestHookInterface.php,interface,"Defines a hook interface for intercepting provider requests before they are dispatched. It allows modifying or canceling the request based on the model, input, and options provided."

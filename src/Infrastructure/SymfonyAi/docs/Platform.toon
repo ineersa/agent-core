@@ -3,6 +3,44 @@ file: Platform.php
 class: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform"
 type: readonly final class
 summary: "The Platform class orchestrates the execution of AI agent runs within the Symfony infrastructure, bridging high-level agent inputs with the underlying provider invoker. It manages context resolution, message transformation, and hook application to prepare requests for external AI providers. The class ensures proper lifecycle management of runs and cancellation tokens while abstracting provider-specific details."
+sections[2]:
+  - kind: classDoc
+    start: 19
+    end: 21
+    limit: 3
+  - kind: constructor
+    start: 24
+    end: 42
+    limit: 19
+    signatureLine: 31
+    commentStart: 24
+constructorInputs[9]{param,type,required}:
+  $invoker,SymfonyPlatformInvoker,true
+  $runStore,RunStoreInterface,true
+  $toolCatalogResolver,ToolCatalogResolver,true
+  $messageMapper,SymfonyMessageMapper,true
+  $transformContextHooks,iterable,false
+  $convertToLlmHooks,iterable,false
+  $beforeProviderRequestHooks,iterable,false
+  $modelResolver,?ModelResolverInterface,false
+  $defaultModel,string,false
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform"
+      visibility: private
+      autowire: true
+      autoconfigure: true
+      file: src/Infrastructure/SymfonyAi/Platform.php
+      line: 22
+      args:
+        "$invoker": "service(Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyPlatformInvoker)"
+        "$messageMapper": "service(Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper)"
+        "$runStore": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunStore)"
+        "$toolCatalogResolver": "service(Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver)"
+  aliases[1]{serviceId,target}:
+    "Ineersa\\AgentCore\\Contract\\Tool\\PlatformInterface","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform"
+  injectedInto[1]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Application\\Handler\\ExecuteLlmStepWorker",src/Application/Handler/ExecuteLlmStepWorker.php,17
 methods[10]:
   - method: __construct
     start: 24

@@ -3,6 +3,8 @@ file: Version20260418000100.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Doctrine\\Migrations\\Version20260418000100"
 type: final class
 summary: This class defines a Doctrine migration to modify the database schema for the Agent Core infrastructure. It implements the standard up and down methods to apply or revert structural changes using the Doctrine Schema abstraction.
+sections[1]{kind,start,end,limit}:
+  classDoc,11,13,3
 methods[3]:
   - method: getDescription
     start: 16

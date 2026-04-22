@@ -3,5 +3,22 @@ file: PendingCommand.php
 class: "Ineersa\\AgentCore\\Domain\\Command\\PendingCommand"
 type: readonly final class
 summary: "PendingCommand represents a durable, immutable command record queued for asynchronous execution within the agent core domain. It encapsulates execution metadata including run identifiers, idempotency keys, and optional configuration payloads to ensure reliable processing."
+sections[2]:
+  - kind: classDoc
+    start: 7
+    end: 9
+    limit: 3
+  - kind: constructor
+    start: 12
+    end: 25
+    limit: 14
+    signatureLine: 18
+    commentStart: 12
+constructorInputs[5]{param,type,required}:
+  $runId,string,true
+  $kind,string,true
+  $idempotencyKey,string,true
+  $payload,array,false
+  $options,array,false
 methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
   __construct,12,25,14,18,21,"public function __construct(string $runId, string $kind, string $idempotencyKey, array $payload = [], array $options = [])"

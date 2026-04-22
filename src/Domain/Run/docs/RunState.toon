@@ -3,6 +3,30 @@ file: RunState.php
 class: "Ineersa\\AgentCore\\Domain\\Run\\RunState"
 type: readonly final class
 summary: "Represents the immutable state of a run within the agent core domain, encapsulating its identifier, current status, and progression metrics. This readonly value object ensures state consistency by preventing mutation after construction."
+sections[2]:
+  - kind: classDoc
+    start: 9
+    end: 11
+    limit: 3
+  - kind: constructor
+    start: 14
+    end: 34
+    limit: 21
+    signatureLine: 20
+    commentStart: 14
+constructorInputs[12]{param,type,required}:
+  $runId,string,true
+  $status,RunStatus,true
+  $version,int,false
+  $turnNo,int,false
+  $lastSeq,int,false
+  $isStreaming,bool,false
+  $streamingMessage,?array,false
+  $pendingToolCalls,array,false
+  $errorMessage,?string,false
+  $messages,array,false
+  $activeStepId,?string,false
+  $retryableFailure,bool,false
 methods[2]:
   - method: __construct
     start: 14

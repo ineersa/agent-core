@@ -32,6 +32,17 @@ castor dev:index-methods
 Per-class `docs/<Class>.toon` files contain:
 
 - **Class-level**: type, summary
+- **Class sections** (`sections`) for targeted reads:
+  - `classDoc`
+  - `constants`
+  - `properties`
+  - `constructor` (includes `commentStart` + `signatureLine` when available)
+- **Constructor inputs** (`constructorInputs`) from `__construct` params:
+  - `param`, `type`, `required`
+- **DI wiring** (`wiring`) from compiled Symfony container metadata:
+  - `serviceDefinitions` (service id + visibility/autowire/autoconfigure + resolved service args)
+  - `aliases` (service id alias -> target)
+  - `injectedInto` (reverse DI edges showing which classes consume this service)
 - **Per method**:
   - `start`, `end`, `limit` — read window for the full method (use `read(path, offset=start, limit=limit)`)
   - `symbolLine`, `symbolColumn` — coordinates for IDE semantic tools
@@ -55,7 +66,7 @@ Callees and callers are auto-generated from PHPStan call-graph analysis. Use the
 Use Castor for all index operations:
 
 - `castor dev:index-methods` — changed files
-- `castor dev:index-methods --all --force` — full regeneration (auto-generates callgraph.json)
+- `castor dev:index-methods --all --force` — full regeneration (auto-generates callgraph.json + DI wiring map)
 - `castor dev:index-methods --strict --all` — read-only validation
 - `castor dev:callgraph` — regenerate callgraph.json only
 

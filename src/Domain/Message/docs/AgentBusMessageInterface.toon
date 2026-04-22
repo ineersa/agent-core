@@ -3,6 +3,8 @@ file: AgentBusMessageInterface.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\AgentBusMessageInterface"
 type: interface
 summary: "Defines the contract for domain messages dispatched via the agent bus, ensuring consistent metadata for execution tracking. It enforces the presence of unique identifiers and sequence numbers required for reliable event processing and state management."
+sections[1]{kind,start,end,limit}:
+  classDoc,7,9,3
 methods[5]{method,start,end,limit,symbolLine,symbolColumn,signature}:
   runId,12,12,1,12,21,"public function runId(): string"
   turnNo,14,14,1,14,21,"public function turnNo(): int"

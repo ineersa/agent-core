@@ -311,6 +311,129 @@ function findClassLikeNodes(array $ast): array
 }
 
 /**
+ * @param list<Node> $nodes
+ *
+ * @return array{kind: string, start: int, end: int, limit: int}|null
+ */
+function buildSectionFromNodes(string $kind, array $nodes): ?array
+{
+    if ([] === $nodes) {
+        return null;
+    }
+
+    $start = min(array_map(static fn (Node $node): int => $node->getStartLine(), $nodes));
+    $end = max(array_map(static fn (Node $node): int => $node->getEndLine(), $nodes));
+
+    return [
+        'kind' => $kind,
+        'start' => $start,
+        'end' => $end,
+        'limit' => $end - $start + 1,
+    ];
+}
+
+function findConstructorMethod(Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_|Node\Stmt\Interface_ $class): ?Node\Stmt\ClassMethod
+{
+    foreach ($class->stmts as $stmt) {
+        if (!$stmt instanceof Node\Stmt\ClassMethod) {
+            continue;
+        }
+        if ('__construct' === strtolower($stmt->name->toString())) {
+            return $stmt;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * @return list<array<string, int|string>>
+ */
+function extractClassSections(Node\Stmt\Class_|Node\Stmt\Trait_|Node\Stmt\Enum_|Node\Stmt\Interface_ $class): array
+{
+    $sections = [];
+
+    $classDoc = $class->getDocComment();
+    if (null !== $classDoc) {
+        $classDocStart = $classDoc->getStartLine();
+        $classDocEnd = $classDoc->getEndLine();
+        $sections[] = [
+            'kind' => 'classDoc',
+            'start' => $classDocStart,
+            'end' => $classDocEnd,
+            'limit' => $classDocEnd - $classDocStart + 1,
+        ];
+    }
+
+    $constantNodes = [];
+    $propertyNodes = [];
+    foreach ($class->stmts as $stmt) {
+        if ($stmt instanceof Node\Stmt\ClassConst || $stmt instanceof Node\Stmt\EnumCase) {
+            $constantNodes[] = $stmt;
+        }
+        if ($stmt instanceof Node\Stmt\Property) {
+            $propertyNodes[] = $stmt;
+        }
+    }
+
+    $constantsSection = buildSectionFromNodes('constants', $constantNodes);
+    if (null !== $constantsSection) {
+        $sections[] = $constantsSection;
+    }
+
+    $propertiesSection = buildSectionFromNodes('properties', $propertyNodes);
+    if (null !== $propertiesSection) {
+        $sections[] = $propertiesSection;
+    }
+
+    $constructor = findConstructorMethod($class);
+    if (null !== $constructor) {
+        $constructorDoc = $constructor->getDocComment();
+        $constructorStart = $constructorDoc?->getStartLine() ?? $constructor->getStartLine();
+        $constructorEnd = $constructor->getEndLine();
+
+        $constructorSection = [
+            'kind' => 'constructor',
+            'start' => $constructorStart,
+            'end' => $constructorEnd,
+            'limit' => $constructorEnd - $constructorStart + 1,
+            'signatureLine' => $constructor->name->getStartLine(),
+        ];
+
+        if (null !== $constructorDoc) {
+            $constructorSection['commentStart'] = $constructorDoc->getStartLine();
+        }
+
+        $sections[] = $constructorSection;
+    }
+
+    return $sections;
+}
+
+/**
+ * @return list<array{param: string, type: string, required: bool}>
+ */
+function extractConstructorInputs(?Node\Stmt\ClassMethod $constructor): array
+{
+    if (null === $constructor) {
+        return [];
+    }
+
+    $inputs = [];
+    foreach ($constructor->getParams() as $param) {
+        $type = typeToString($param->type);
+
+        $inputs[] = [
+            'param' => '$' . $param->var->name,
+            'type' => '' !== $type ? $type : 'mixed',
+            'required' => null === $param->default && !$param->variadic,
+        ];
+    }
+
+    return $inputs;
+}
+
+/**
  * Build structured info from a class-like AST node.
  */
 function buildClassEntry(
@@ -333,6 +456,8 @@ function buildClassEntry(
     }
 
     $classSummary = extractDocblockSummary($class->getDocComment());
+    $sections = extractClassSections($class);
+    $constructorInputs = extractConstructorInputs(findConstructorMethod($class));
 
     $methods = [];
     foreach ($class->stmts as $stmt) {
@@ -372,6 +497,8 @@ function buildClassEntry(
         'classType' => $classType,
         'classModifiers' => implode(' ', $classModifiers),
         'classSummary' => $classSummary,
+        'sections' => $sections,
+        'constructorInputs' => $constructorInputs,
         'methods' => $methods,
     ];
 }
@@ -495,6 +622,15 @@ if (file_exists($callgraphNeon)) {
 }
 
 $callGraph = loadCallGraph($callGraphPath);
+
+$diWiringByClass = [];
+if (!$strict && !$migrate) {
+    $diWiringPath = $projectRoot.'/var/reports/di-wiring.toon';
+    $diWiringByClass = loadDiWiringByClass($diWiringPath);
+    if ([] === $diWiringByClass) {
+        echo "  warning: no DI wiring map found at var/reports/di-wiring.toon; skipping wiring metadata\n";
+    }
+}
 
 foreach ($phpFiles as $phpFile) {
     $relPath = substr($phpFile, strlen($projectRoot) + 1);
@@ -673,6 +809,18 @@ foreach ($phpFiles as $phpFile) {
             'type' => $classType,
             'summary' => $classSummary,
         ];
+        if (!empty($classInfo['sections'])) {
+            $indexData['sections'] = $classInfo['sections'];
+        }
+        if (!empty($classInfo['constructorInputs'])) {
+            $indexData['constructorInputs'] = $classInfo['constructorInputs'];
+        }
+
+        $wiring = $diWiringByClass[$fqcn] ?? [];
+        if ([] !== $wiring) {
+            $indexData['wiring'] = $wiring;
+        }
+
         if (!empty($methodEntries)) {
             $indexData['methods'] = $methodEntries;
         }
@@ -727,125 +875,62 @@ if ($strict && [] !== $strictErrors) {
     exit(1);
 }
 
-// ── Phase 2: Regenerate namespace indexes ─────────────────────────────────
-
-if (!$strict && !$migrate && !$skipNamespace && $stats['generated'] > 0) {
-    $srcDir = $projectRoot . '/src';
-    $namespaces = [];
-
-    $iter = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($srcDir, FilesystemIterator::SKIP_DOTS),
-    );
-    foreach ($iter as $f) {
-        if ($f->getExtension() !== 'toon') continue;
-        $path = $f->getPathname();
-        if (!str_contains($path, '/docs/')) continue;
-
-        $data = Toon::decode(file_get_contents($path));
-        if (($data['spec'] ?? '') !== 'agent-core.file-index/v1') continue;
-
-        $dir = dirname(dirname($path));
-        $dir = realpath($dir);
-        $namespaces[$dir][] = [
-            'file' => basename($path, '.toon') . '.php',
-            'type' => $data['type'] ?? '',
-            'summary' => $data['summary'] ?? '',
-        ];
-    }
-
-    foreach ($namespaces as $dir => $entries) {
-        $indexPath = $dir . '/ai-index.toon';
-        $existingIndex = null;
-        if (file_exists($indexPath)) {
-            $existingIndex = Toon::decode(file_get_contents($indexPath));
-        }
-
-        $relDir = substr($dir, strlen($srcDir) + 1);
-        $namespace = basename($dir);
-        $existingFqcn = '';
-        $description = '';
-
-        if ($existingIndex) {
-            $namespace = $existingIndex['namespace'] ?? $namespace;
-            $existingFqcn = $existingIndex['fqcn'] ?? '';
-            $description = $existingIndex['description'] ?? '';
-        }
-
-        $derivedFqcn = deriveFqcnFromSrcRelativeDir($relDir);
-        $fqcn = isUsableExistingFqcn($existingFqcn)
-            ? $existingFqcn
-            : $derivedFqcn;
-
-        $fileEntries = [];
-        foreach ($entries as $e) {
-            $fileEntries[] = [
-                'file' => $e['file'],
-                'type' => $e['type'],
-                'summary' => $e['summary'],
-            ];
-        }
-        usort($fileEntries, static fn (array $left, array $right): int => $left['file'] <=> $right['file']);
-
-        /** @var list<array<string, mixed>> $subNamespaces */
-        $subNamespaces = ($existingIndex && isset($existingIndex['subNamespaces']) && is_array($existingIndex['subNamespaces']))
-            ? $existingIndex['subNamespaces']
-            : [];
-
-        $newIndex = [
-            'spec' => 'agent-core.ai-docs/v1',
-            'namespace' => $namespace,
-            'fqcn' => $fqcn,
-            'updatedAt' => date('Y-m-d'),
-        ];
-        if ($description) {
-            $newIndex['description'] = $description;
-        }
-        $newIndex['files'] = $fileEntries;
-        if ([] !== $subNamespaces) {
-            $newIndex['subNamespaces'] = $subNamespaces;
-        }
-
-        $toonContent = Toon::encode($newIndex);
-
-        if ($dryRun) {
-            $outRel = substr($indexPath, strlen($projectRoot) + 1);
-            echo "  [DRY-RUN] would update: {$outRel}\n";
-        } else {
-            file_put_contents($indexPath, $toonContent);
-            $outRel = substr($indexPath, strlen($projectRoot) + 1);
-            echo "  updated: {$outRel}\n";
-        }
-    }
-
-    // Also regenerate parent namespaces (ones with only subNamespaces)
-    $parentDirs = [];
-    foreach (array_keys($namespaces) as $dir) {
-        $parent = dirname($dir);
-        while (str_starts_with($parent, $srcDir)) {
-            $parentDirs[$parent] = true;
-            $parent = dirname($parent);
-        }
-    }
-
-    foreach (array_keys($parentDirs) as $dir) {
-        $indexPath = $dir . '/ai-index.toon';
-        if (!file_exists($indexPath)) continue;
-
-        $data = Toon::decode(file_get_contents($indexPath));
-        $data['updatedAt'] = date('Y-m-d');
-
-        if ($dryRun) {
-            $outRel = substr($indexPath, strlen($projectRoot) + 1);
-            echo "  [DRY-RUN] would touch: {$outRel}\n";
-        } else {
-            file_put_contents($indexPath, Toon::encode($data));
-            $outRel = substr($indexPath, strlen($projectRoot) + 1);
-            echo "  touched: {$outRel}\n";
-        }
-    }
-}
-
 // ── Helper: load existing .toon file ──────────────────────────────────────
+
+/**
+ * @return array<string, array<string, mixed>>
+ */
+function loadDiWiringByClass(string $wiringPath): array
+{
+    if (!file_exists($wiringPath)) {
+        return [];
+    }
+
+    $payload = Toon::decode(file_get_contents($wiringPath));
+    if (($payload['spec'] ?? '') !== 'agent-core.di-wiring/v1') {
+        return [];
+    }
+
+    $entries = $payload['classes'] ?? [];
+    if (!is_array($entries)) {
+        return [];
+    }
+
+    $byClass = [];
+    foreach ($entries as $entry) {
+        if (!is_array($entry)) {
+            continue;
+        }
+
+        $className = $entry['class'] ?? '';
+        if (!is_string($className) || '' === trim($className)) {
+            continue;
+        }
+
+        $wiring = [];
+
+        $serviceDefinitions = $entry['serviceDefinitions'] ?? null;
+        if (is_array($serviceDefinitions) && [] !== $serviceDefinitions) {
+            $wiring['serviceDefinitions'] = $serviceDefinitions;
+        }
+
+        $aliases = $entry['aliases'] ?? null;
+        if (is_array($aliases) && [] !== $aliases) {
+            $wiring['aliases'] = $aliases;
+        }
+
+        $injectedInto = $entry['injectedInto'] ?? null;
+        if (is_array($injectedInto) && [] !== $injectedInto) {
+            $wiring['injectedInto'] = $injectedInto;
+        }
+
+        if ([] !== $wiring) {
+            $byClass[$className] = $wiring;
+        }
+    }
+
+    return $byClass;
+}
 
 function loadToonSummary(string $outputPath): ?array
 {
@@ -853,6 +938,18 @@ function loadToonSummary(string $outputPath): ?array
     $data = Toon::decode(file_get_contents($outputPath));
     if (($data['spec'] ?? '') !== 'agent-core.file-index/v1') return null;
     return $data;
+}
+
+/**
+ * @param array<string, mixed> $index
+ *
+ * @return array<string, mixed>
+ */
+function stripLegacyNamespaceMetadata(array $index): array
+{
+    unset($index['indexedAt'], $index['indexedCommit'], $index['sourceHash']);
+
+    return $index;
 }
 
 // ── Namespace index regeneration ──────────────────────────────────────────
@@ -886,7 +983,7 @@ function regenerateNamespaceIndexes(string $projectRoot, bool $dryRun): void
         $indexPath = $dir . '/ai-index.toon';
         $existingIndex = null;
         if (file_exists($indexPath)) {
-            $existingIndex = Toon::decode(file_get_contents($indexPath));
+            $existingIndex = stripLegacyNamespaceMetadata(Toon::decode(file_get_contents($indexPath)));
         }
 
         $relDir = substr($dir, strlen($srcDir) + 1);
@@ -960,7 +1057,7 @@ function regenerateNamespaceIndexes(string $projectRoot, bool $dryRun): void
         $indexPath = $dir . '/ai-index.toon';
         if (!file_exists($indexPath)) continue;
 
-        $data = Toon::decode(file_get_contents($indexPath));
+        $data = stripLegacyNamespaceMetadata(Toon::decode(file_get_contents($indexPath)));
         $data['updatedAt'] = date('Y-m-d');
 
         if ($dryRun) {

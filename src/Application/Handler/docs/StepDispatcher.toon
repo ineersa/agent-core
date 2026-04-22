@@ -3,6 +3,34 @@ file: StepDispatcher.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\StepDispatcher"
 type: readonly final class
 summary: The StepDispatcher class orchestrates the execution of agent steps by routing effects and messages to distinct message buses. It decouples side-effect processing from publishing logic by delegating to separate MessageBusInterface instances.
+sections[2]:
+  - kind: classDoc
+    start: 10
+    end: 12
+    limit: 3
+  - kind: constructor
+    start: 15
+    end: 19
+    limit: 5
+    signatureLine: 15
+constructorInputs[2]{param,type,required}:
+  $executionBus,MessageBusInterface,true
+  $publisherBus,MessageBusInterface,true
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Application\\Handler\\StepDispatcher"
+      visibility: private
+      autowire: true
+      autoconfigure: true
+      file: src/Application/Handler/StepDispatcher.php
+      line: 13
+      args:
+        "$executionBus": service(agent.execution.bus)
+        "$publisherBus": service(agent.publisher.bus)
+  injectedInto[3]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler",src/Application/Orchestrator/LlmStepResultHandler.php,26
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit",src/Application/Orchestrator/RunCommit.php,24
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor",src/Application/Orchestrator/RunMessageProcessor.php,17
 methods[3]:
   - method: __construct
     start: 15

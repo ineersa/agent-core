@@ -3,3 +3,6 @@ file: AgentStartEvent.php
 class: "Ineersa\\AgentCore\\Domain\\Event\\Lifecycle\\AgentStartEvent"
 type: readonly final class
 summary: Represents a domain event signaling the initiation of an agent's lifecycle within the system. This immutable value object captures the context required to track the start of an agent instance.
+sections[2]{kind,start,end,limit}:
+  classDoc,9,11,3
+  constants,14,14,1

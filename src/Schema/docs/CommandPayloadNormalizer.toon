@@ -3,6 +3,11 @@ file: CommandPayloadNormalizer.php
 class: "Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer"
 type: final class
 summary: Normalizes command and execution DTOs into canonical schema-versioned payload envelopes for API and worker boundaries.
+sections[1]{kind,start,end,limit}:
+  classDoc,15,17,3
+wiring:
+  serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
+    "Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer",private,true,true,src/Schema/CommandPayloadNormalizer.php,18
 methods[9]:
   - method: normalize
     start: 20

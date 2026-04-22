@@ -57,6 +57,7 @@ All indexes are auto-generated from source code (no LLM calls). `castor dev:chec
 ### Key rules
 
 - **Never edit** generated `src/**/ai-index.toon` or `src/**/docs/*.toon` manually.
+- `.toon` files are **not indexed by IDE search tools** (to avoid noise); open them directly with `read` when needed.
 - Root `ai-index.toon` is curated and should be updated intentionally.
 - When code changes alter command/event/message relationships, update the affected nested `AGENTS.md` files.
 

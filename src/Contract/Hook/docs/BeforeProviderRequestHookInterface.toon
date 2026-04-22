@@ -3,6 +3,8 @@ file: BeforeProviderRequestHookInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Hook\\BeforeProviderRequestHookInterface"
 type: interface
 summary: "Defines a hook interface for intercepting provider requests before they are dispatched. It allows modifying or canceling the request based on the model, input, and options provided."
+sections[1]{kind,start,end,limit}:
+  classDoc,9,11,3
 methods[1]:
   - method: beforeProviderRequest
     start: 14

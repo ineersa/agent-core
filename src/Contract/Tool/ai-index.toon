@@ -1,7 +1,7 @@
 spec: agent-core.ai-docs/v1
 namespace: "Contract\\Tool"
 fqcn: "Ineersa\\AgentCore\\Contract\\Tool"
-updatedAt: 2026-04-21
+updatedAt: 2026-04-22
 description: "Tool execution contracts — platform invocation, model resolution, tool catalog discovery, tool executor, and idempotency key resolution."
 files[5]{file,type,summary}:
   ModelResolverInterface.php,interface,Defines the contract for resolving AI model configurations based on incoming message context and default settings. It abstracts the decision logic for selecting the appropriate model to process a given set of messages.

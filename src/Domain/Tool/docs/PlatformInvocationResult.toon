@@ -3,6 +3,23 @@ file: PlatformInvocationResult.php
 class: "Ineersa\\AgentCore\\Domain\\Tool\\PlatformInvocationResult"
 type: readonly final class
 summary: "Represents the immutable result of a platform tool invocation, capturing assistant message deltas, usage statistics, and stop reasons. Designed as a readonly value object to ensure data integrity across the domain layer."
+sections[2]:
+  - kind: classDoc
+    start: 7
+    end: 9
+    limit: 3
+  - kind: constructor
+    start: 12
+    end: 27
+    limit: 16
+    signatureLine: 20
+    commentStart: 12
+constructorInputs[5]{param,type,required}:
+  $assistantMessage,?array,true
+  $deltas,array,false
+  $usage,array,false
+  $stopReason,?string,false
+  $error,?array,false
 methods[2]:
   - method: __construct
     start: 12

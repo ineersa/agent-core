@@ -3,6 +3,37 @@ file: AgentLoopResumeStaleRunsCommand.php
 class: "Ineersa\\AgentCore\\Command\\AgentLoopResumeStaleRunsCommand"
 type: final class
 summary: This command identifies and resumes stale agent runs by coordinating with storage and locking mechanisms to ensure safe execution. It leverages a replay service to restore state and dispatches commands via the message bus to continue processing.
+sections[2]:
+  - kind: classDoc
+    start: 21
+    end: 23
+    limit: 3
+  - kind: constructor
+    start: 27
+    end: 36
+    limit: 10
+    signatureLine: 27
+constructorInputs[6]{param,type,required}:
+  $runStore,RunStoreInterface,true
+  $promptStateStore,PromptStateStoreInterface,true
+  $replayService,ReplayService,true
+  $runLockManager,RunLockManager,true
+  $commandBus,MessageBusInterface,true
+  $staleAfterSeconds,int,false
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Command\\AgentLoopResumeStaleRunsCommand"
+      visibility: public
+      autowire: true
+      autoconfigure: true
+      file: src/Command/AgentLoopResumeStaleRunsCommand.php
+      line: 25
+      args:
+        "$commandBus": service(agent.command.bus)
+        "$promptStateStore": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\HotPromptStateStore)"
+        "$replayService": "service(Ineersa\\AgentCore\\Application\\Handler\\ReplayService)"
+        "$runLockManager": "service(Ineersa\\AgentCore\\Application\\Handler\\RunLockManager)"
+        "$runStore": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunStore)"
 methods[2]:
   - method: __construct
     start: 27

@@ -3,6 +3,11 @@ file: OutboxStoreInterface.php
 class: "Ineersa\\AgentCore\\Contract\\OutboxStoreInterface"
 type: interface
 summary: "Defines the contract for persisting and retrieving outbound event entries to ensure reliable delivery. It provides mechanisms to enqueue new events, claim batches for processing, and update their status upon completion or failure."
+sections[1]{kind,start,end,limit}:
+  classDoc,11,13,3
+wiring:
+  aliases[1]{serviceId,target}:
+    "Ineersa\\AgentCore\\Contract\\OutboxStoreInterface","Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryOutboxStore"
 methods[4]:
   - method: enqueue
     start: 16

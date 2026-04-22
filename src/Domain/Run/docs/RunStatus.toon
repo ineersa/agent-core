@@ -3,3 +3,6 @@ file: RunStatus.php
 class: "Ineersa\\AgentCore\\Domain\\Run\\RunStatus"
 type: enum
 summary: Defines the immutable lifecycle states for a Run entity within the AgentCore domain. This enum enforces type-safe state transitions and prevents invalid status updates by restricting values to a closed set of operational phases.
+sections[2]{kind,start,end,limit}:
+  classDoc,7,9,3
+  constants,12,18,7

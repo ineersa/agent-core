@@ -1,7 +1,7 @@
 spec: agent-core.ai-docs/v1
 namespace: "Application\\Orchestrator"
 fqcn: "Ineersa\\AgentCore\\Application\\Orchestrator"
-updatedAt: 2026-04-21
+updatedAt: 2026-04-22
 description: Top-level orchestrators — AgentRunner is the public API facade; RunOrchestrator is the central CQRS processor handling all bus messages.
 files[13]{file,type,summary}:
   AdvanceRunHandler.php,readonly final class,The AdvanceRunHandler applies turn-start mailbox policy and prepares the next LLM execution turn when the run can continue.

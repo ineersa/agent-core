@@ -1,7 +1,7 @@
 spec: agent-core.ai-docs/v1
 namespace: "Domain\\Event\\Lifecycle"
 fqcn: "Ineersa\\AgentCore\\Domain\\Event\\Lifecycle"
-updatedAt: 2026-04-21
+updatedAt: 2026-04-22
 description: Typed lifecycle event subclasses extending AbstractLifecycleRunEvent. Each maps to a CoreLifecycleEventType constant.
 files[11]{file,type,summary}:
   AbstractLifecycleRunEvent.php,readonly abstract class,"Abstract base class for lifecycle run events within the AgentCore domain, providing a structured foundation for event data. It encapsulates core execution metadata such as run identifiers, sequence numbers, and turn counts. This class ensures consistent event structure across concrete lifecycle implementations."

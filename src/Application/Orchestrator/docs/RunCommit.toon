@@ -3,6 +3,48 @@ file: RunCommit.php
 class: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit"
 type: readonly final class
 summary: "Owns the durable run-commit lifecycle from compare-and-swap persistence through projection, replay rebuild, effects dispatch, hooks, and observability updates."
+sections[2]:
+  - kind: classDoc
+    start: 21
+    end: 23
+    limit: 3
+  - kind: constructor
+    start: 26
+    end: 38
+    limit: 13
+    signatureLine: 26
+constructorInputs[10]{param,type,required}:
+  $runStore,RunStoreInterface,true
+  $eventStore,EventStoreInterface,true
+  $commandStore,CommandStoreInterface,true
+  $outboxProjector,OutboxProjector,true
+  $replayService,ReplayService,true
+  $stepDispatcher,StepDispatcher,true
+  $hookDispatcher,?HookDispatcher,false
+  $logger,?LoggerInterface,false
+  $metrics,?RunMetrics,false
+  $tracer,?RunTracer,false
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit"
+      visibility: private
+      autowire: true
+      autoconfigure: true
+      file: src/Application/Orchestrator/RunCommit.php
+      line: 24
+      args:
+        "$commandStore": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryCommandStore)"
+        "$eventStore": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\RunEventStore)"
+        "$hookDispatcher": "service(Ineersa\\AgentCore\\Application\\Handler\\HookDispatcher)"
+        "$logger": service(logger)
+        "$metrics": "service(Ineersa\\AgentCore\\Application\\Handler\\RunMetrics)"
+        "$outboxProjector": "service(Ineersa\\AgentCore\\Application\\Handler\\OutboxProjector)"
+        "$replayService": "service(Ineersa\\AgentCore\\Application\\Handler\\ReplayService)"
+        "$runStore": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunStore)"
+        "$stepDispatcher": "service(Ineersa\\AgentCore\\Application\\Handler\\StepDispatcher)"
+        "$tracer": "service(Ineersa\\AgentCore\\Application\\Handler\\RunTracer)"
+  injectedInto[1]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor",src/Application/Orchestrator/RunMessageProcessor.php,17
 methods[7]:
   - method: __construct
     start: 26

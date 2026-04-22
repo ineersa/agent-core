@@ -3,6 +3,30 @@ file: StartRunHandler.php
 class: "Ineersa\\AgentCore\\Application\\Orchestrator\\StartRunHandler"
 type: readonly final class
 summary: The StartRunHandler computes the initial run-start transition and execution effects for start commands.
+sections[2]:
+  - kind: classDoc
+    start: 11
+    end: 13
+    limit: 3
+  - kind: constructor
+    start: 16
+    end: 19
+    limit: 4
+    signatureLine: 16
+constructorInputs[1]{param,type,required}:
+  $stateTools,RunMessageStateTools,true
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Application\\Orchestrator\\StartRunHandler"
+      visibility: private
+      autowire: true
+      autoconfigure: true
+      file: src/Application/Orchestrator/StartRunHandler.php
+      line: 14
+      args:
+        "$stateTools": "service(Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools)"
+  injectedInto[1]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor",src/Application/Orchestrator/RunMessageProcessor.php,17
 methods[3]:
   - method: __construct
     start: 16

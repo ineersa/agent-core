@@ -1,7 +1,7 @@
 spec: agent-core.ai-docs/v1
 namespace: "Domain\\Message"
 fqcn: "Ineersa\\AgentCore\\Domain\\Message"
-updatedAt: 2026-04-21
+updatedAt: 2026-04-22
 description: "Message bus envelopes — AgentMessage DTO, MessageBag, bus commands, results, and outbox projection signals."
 files[14]{file,type,summary}:
   AbstractAgentBusMessage.php,readonly abstract class,"AbstractAgentBusMessage serves as a base value object for agent execution events, encapsulating core execution context such as run identifiers, turn numbers, and step metadata. It provides immutable accessors for these fields to ensure consistent data structure across agent bus messages. The class enforces immutability through readonly properties and final getter methods."

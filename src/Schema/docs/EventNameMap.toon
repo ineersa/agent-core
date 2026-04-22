@@ -3,6 +3,14 @@ file: EventNameMap.php
 class: "Ineersa\\AgentCore\\Schema\\EventNameMap"
 type: final class
 summary: Maintains the mapping table between internal lifecycle event identifiers and public stream event names.
+sections[2]{kind,start,end,limit}:
+  classDoc,9,11,3
+  constants,17,28,12
+wiring:
+  serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
+    "Ineersa\\AgentCore\\Schema\\EventNameMap",private,true,true,src/Schema/EventNameMap.php,12
+  injectedInto[1]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer",src/Schema/EventPayloadNormalizer.php,12
 methods[4]:
   - method: toPublic
     start: 30

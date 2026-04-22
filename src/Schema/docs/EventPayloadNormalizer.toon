@@ -3,6 +3,36 @@ file: EventPayloadNormalizer.php
 class: "Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer"
 type: readonly final class
 summary: Normalizes and denormalizes persisted run events into a stable schema-versioned transport envelope.
+sections[3]:
+  - kind: classDoc
+    start: 9
+    end: 11
+    limit: 3
+  - kind: properties
+    start: 14
+    end: 14
+    limit: 1
+  - kind: constructor
+    start: 16
+    end: 19
+    limit: 4
+    signatureLine: 16
+constructorInputs[1]{param,type,required}:
+  $eventNameMap,?EventNameMap,false
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer"
+      visibility: private
+      autowire: true
+      autoconfigure: true
+      file: src/Schema/EventPayloadNormalizer.php
+      line: 12
+      args:
+        "$eventNameMap": "service(Ineersa\\AgentCore\\Schema\\EventNameMap)"
+  injectedInto[3]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer",src/Api/Serializer/RunEventSerializer.php,14
+    "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader",src/Infrastructure/Storage/RunLogReader.php,16
+    "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogWriter",src/Infrastructure/Storage/RunLogWriter.php,14
 methods[7]:
   - method: __construct
     start: 16

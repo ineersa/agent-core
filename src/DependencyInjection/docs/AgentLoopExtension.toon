@@ -3,6 +3,8 @@ file: AgentLoopExtension.php
 class: "Ineersa\\AgentCore\\DependencyInjection\\AgentLoopExtension"
 type: final class
 summary: Registers default configuration values for the Agent Loop bundle into the Symfony container before user configuration is processed. It ensures consistent baseline settings for the agent core subsystem by merging predefined defaults with the provided configuration array.
+sections[1]{kind,start,end,limit}:
+  classDoc,13,15,3
 methods[2]:
   - method: prepend
     start: 18

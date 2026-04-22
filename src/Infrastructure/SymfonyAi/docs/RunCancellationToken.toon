@@ -3,6 +3,19 @@ file: RunCancellationToken.php
 class: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\RunCancellationToken"
 type: readonly final class
 summary: Provides a mechanism to check if a specific agent run has been cancelled by querying the persistent store. It encapsulates the run identifier and store dependency to determine cancellation status on demand.
+sections[2]:
+  - kind: classDoc
+    start: 11
+    end: 13
+    limit: 3
+  - kind: constructor
+    start: 16
+    end: 20
+    limit: 5
+    signatureLine: 16
+constructorInputs[2]{param,type,required}:
+  $runStore,RunStoreInterface,true
+  $runId,string,true
 methods[2]:
   - method: __construct
     start: 16

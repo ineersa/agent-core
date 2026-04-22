@@ -3,6 +3,23 @@ file: ToolBatchCollectOutcome.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollectOutcome"
 type: readonly final class
 summary: "A readonly value object representing the outcome of a tool batch execution within the agent core application. It encapsulates execution status flags, ordered results, and side-effect payloads for downstream processing. Designed to provide a structured, immutable contract for communicating batch processing states."
+sections[2]:
+  - kind: classDoc
+    start: 10
+    end: 12
+    limit: 3
+  - kind: constructor
+    start: 15
+    end: 28
+    limit: 14
+    signatureLine: 21
+    commentStart: 15
+constructorInputs[5]{param,type,required}:
+  $accepted,bool,true
+  $duplicate,bool,true
+  $complete,bool,true
+  $orderedResults,array,false
+  $effectsToDispatch,array,false
 methods[5]:
   - method: __construct
     start: 15

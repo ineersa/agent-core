@@ -3,5 +3,26 @@ file: ToolCall.php
 class: "Ineersa\\AgentCore\\Domain\\Tool\\ToolCall"
 type: readonly final class
 summary: "Represents a discrete tool invocation within an agent's execution flow, capturing the identifier, target tool name, and serialized arguments. It serves as a value object to track the sequence and context of tool calls during runtime."
+sections[2]:
+  - kind: classDoc
+    start: 7
+    end: 9
+    limit: 3
+  - kind: constructor
+    start: 12
+    end: 29
+    limit: 18
+    signatureLine: 18
+    commentStart: 12
+constructorInputs[9]{param,type,required}:
+  $toolCallId,string,true
+  $toolName,string,true
+  $arguments,array,true
+  $orderIndex,int,true
+  $runId,?string,false
+  $mode,?ToolExecutionMode,false
+  $timeoutSeconds,?int,false
+  $toolIdempotencyKey,?string,false
+  $context,array,false
 methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
   __construct,12,29,18,18,21,"public function __construct(string $toolCallId, string $toolName, array $arguments, int $orderIndex, ?string $runId = null, ?ToolExecutionMode $mode = null, ?int $timeoutSeconds = null, ?string $toolIdempotencyKey = null, array $context = [])"

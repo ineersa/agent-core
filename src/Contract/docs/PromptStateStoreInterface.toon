@@ -3,6 +3,11 @@ file: PromptStateStoreInterface.php
 class: "Ineersa\\AgentCore\\Contract\\PromptStateStoreInterface"
 type: interface
 summary: "Defines the contract for persisting and retrieving agent execution state keyed by run identifiers. It provides a minimal interface for storing, fetching, and removing structured state arrays associated with specific agent runs."
+sections[1]{kind,start,end,limit}:
+  classDoc,7,9,3
+wiring:
+  aliases[1]{serviceId,target}:
+    "Ineersa\\AgentCore\\Contract\\PromptStateStoreInterface","Ineersa\\AgentCore\\Infrastructure\\Storage\\HotPromptStateStore"
 methods[3]:
   - method: get
     start: 12

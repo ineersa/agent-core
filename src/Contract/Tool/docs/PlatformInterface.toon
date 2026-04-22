@@ -3,6 +3,11 @@ file: PlatformInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Tool\\PlatformInterface"
 type: interface
 summary: Defines the contract for executing AI model invocations within the Agent Core platform. It standardizes the interface for sending input payloads and receiving structured responses from various model providers. This abstraction allows the system to interact with different backend services through a unified method signature.
+sections[1]{kind,start,end,limit}:
+  classDoc,7,9,3
+wiring:
+  aliases[1]{serviceId,target}:
+    "Ineersa\\AgentCore\\Contract\\Tool\\PlatformInterface","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform"
 methods[1]:
   - method: invoke
     start: 12

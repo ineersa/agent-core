@@ -3,6 +3,30 @@ file: AgentLoopRunTailCommand.php
 class: "Ineersa\\AgentCore\\Command\\AgentLoopRunTailCommand"
 type: final class
 summary: This command prints the latest persisted events for a run.
+sections[2]:
+  - kind: classDoc
+    start: 18
+    end: 20
+    limit: 3
+  - kind: constructor
+    start: 24
+    end: 35
+    limit: 12
+    signatureLine: 24
+constructorInputs[2]{param,type,required}:
+  $runDebugService,RunDebugService,true
+  $runEventSerializer,RunEventSerializer,true
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Command\\AgentLoopRunTailCommand"
+      visibility: public
+      autowire: true
+      autoconfigure: true
+      file: src/Command/AgentLoopRunTailCommand.php
+      line: 22
+      args:
+        "$runDebugService": "service(Ineersa\\AgentCore\\Application\\Handler\\RunDebugService)"
+        "$runEventSerializer": "service(Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer)"
 methods[4]:
   - method: __construct
     start: 24

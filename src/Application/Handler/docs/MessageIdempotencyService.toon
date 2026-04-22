@@ -3,6 +3,14 @@ file: MessageIdempotencyService.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService"
 type: final class
 summary: Ensures message idempotency by tracking processed execution keys within specific scopes and run contexts. It prevents duplicate processing of identical idempotency keys for the same logical operation.
+sections[2]{kind,start,end,limit}:
+  classDoc,7,9,3
+  properties,13,13,1
+wiring:
+  serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
+    "Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService",private,true,true,src/Application/Handler/MessageIdempotencyService.php,10
+  injectedInto[1]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor",src/Application/Orchestrator/RunMessageProcessor.php,17
 methods[3]:
   - method: wasHandled
     start: 15

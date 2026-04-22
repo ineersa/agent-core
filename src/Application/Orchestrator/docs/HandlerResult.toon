@@ -3,5 +3,23 @@ file: HandlerResult.php
 class: "Ineersa\\AgentCore\\Application\\Orchestrator\\HandlerResult"
 type: readonly final class
 summary: The HandlerResult captures the durable transition and post-commit work emitted by a run message handler.
+sections[2]:
+  - kind: classDoc
+    start: 10
+    end: 12
+    limit: 3
+  - kind: constructor
+    start: 15
+    end: 29
+    limit: 15
+    signatureLine: 21
+    commentStart: 15
+constructorInputs[6]{param,type,required}:
+  $nextState,?RunState,false
+  $events,array,false
+  $effects,array,false
+  $postCommitEffects,array,false
+  $postCommit,array,false
+  $markHandled,bool,false
 methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
   __construct,15,29,15,21,21,"public function __construct(?RunState $nextState = null, array $events = [], array $effects = [], array $postCommitEffects = [], array $postCommit = [], bool $markHandled = true)"

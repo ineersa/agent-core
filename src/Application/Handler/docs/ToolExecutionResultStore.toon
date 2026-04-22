@@ -3,6 +3,14 @@ file: ToolExecutionResultStore.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore"
 type: final class
 summary: "This class provides a caching layer for tool execution results, enabling efficient retrieval of previously computed outputs. It supports lookup by run and tool call identifiers, as well as by tool name and idempotency keys to prevent redundant execution."
+sections[2]{kind,start,end,limit}:
+  classDoc,9,11,3
+  properties,15,18,4
+wiring:
+  serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
+    "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore",private,true,true,src/Application/Handler/ToolExecutionResultStore.php,12
+  injectedInto[1]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor",src/Application/Handler/ToolExecutor.php,24
 methods[5]:
   - method: findByRunToolCall
     start: 20

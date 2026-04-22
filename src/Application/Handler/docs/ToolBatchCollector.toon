@@ -3,6 +3,28 @@ file: ToolBatchCollector.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector"
 type: final class
 summary: "The ToolBatchCollector aggregates individual tool calls into batches based on run, turn, and step identifiers, enforcing a configurable maximum parallelism limit. It tracks expected batches and collects results to determine when a batch is complete and ready for dispatch."
+sections[3]:
+  - kind: classDoc
+    start: 11
+    end: 13
+    limit: 3
+  - kind: properties
+    start: 27
+    end: 27
+    limit: 1
+  - kind: constructor
+    start: 29
+    end: 32
+    limit: 4
+    signatureLine: 29
+constructorInputs[1]{param,type,required}:
+  $defaultMaxParallelism,int,false
+wiring:
+  serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
+    "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector",private,true,true,src/Application/Handler/ToolBatchCollector.php,14
+  injectedInto[2]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler",src/Application/Orchestrator/LlmStepResultHandler.php,26
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler",src/Application/Orchestrator/ToolCallResultHandler.php,17
 methods[5]:
   - method: __construct
     start: 29

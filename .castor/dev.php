@@ -191,7 +191,7 @@ function quality(): void
  *
  * @param list<string> $targets
  */
-#[AsTask(description: 'Generate per-file method indexes from docblock summaries (no LLM)')]
+#[AsTask(description: 'Generate per-file method indexes from docblock summaries (no LLM, includes DI wiring export)')]
 function index_methods(
     #[AsArgument(description: 'Optional PHP files/directories to process')]
     array $targets = [],
@@ -210,6 +210,15 @@ function index_methods(
     #[AsOption(description: 'Skip namespace index regeneration')]
     bool $skipNamespace = false,
 ): void {
+    if (!$strict && !$migrate) {
+        $wiringCommand = 'php scripts/export-wiring-map.php';
+        if ($dryRun) {
+            $wiringCommand .= ' --dry-run';
+        }
+
+        dev_php_exec($wiringCommand);
+    }
+
     $command = 'php scripts/generate-method-index.php';
 
     if ($all) {

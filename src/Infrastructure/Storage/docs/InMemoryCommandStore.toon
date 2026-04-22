@@ -3,6 +3,19 @@ file: InMemoryCommandStore.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryCommandStore"
 type: final class
 summary: "InMemoryCommandStore provides an in-memory implementation of the command persistence interface, managing the lifecycle of pending commands for specific run IDs. It supports idempotency checks and state transitions such as applying, rejecting, or superseding commands within a single process context."
+sections[2]{kind,start,end,limit}:
+  classDoc,10,12,3
+  properties,16,22,7
+wiring:
+  serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
+    "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryCommandStore",private,true,true,src/Infrastructure/Storage/InMemoryCommandStore.php,13
+  aliases[1]{serviceId,target}:
+    "Ineersa\\AgentCore\\Contract\\CommandStoreInterface","Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryCommandStore"
+  injectedInto[4]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService",src/Application/Handler/RunDebugService.php,18
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler",src/Application/Orchestrator/ApplyCommandHandler.php,21
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy",src/Application/Orchestrator/CommandMailboxPolicy.php,19
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit",src/Application/Orchestrator/RunCommit.php,24
 methods[8]:
   - method: enqueue
     start: 24

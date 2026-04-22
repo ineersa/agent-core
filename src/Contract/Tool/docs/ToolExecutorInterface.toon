@@ -3,6 +3,11 @@ file: ToolExecutorInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Tool\\ToolExecutorInterface"
 type: interface
 summary: Defines the contract for executing tool calls within the agent core system. It abstracts the execution logic to allow for interchangeable implementations of tool handlers. This interface ensures a consistent return type for tool execution results.
+sections[1]{kind,start,end,limit}:
+  classDoc,10,12,3
+wiring:
+  aliases[1]{serviceId,target}:
+    "Ineersa\\AgentCore\\Contract\\Tool\\ToolExecutorInterface","Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor"
 methods[1]:
   - method: execute
     start: 15

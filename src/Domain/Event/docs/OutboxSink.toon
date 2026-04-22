@@ -3,3 +3,6 @@ file: OutboxSink.php
 class: "Ineersa\\AgentCore\\Domain\\Event\\OutboxSink"
 type: enum
 summary: OutboxSink defines the contract for persisting domain events to an outbox storage mechanism. It ensures reliable event delivery by providing a standardized interface for writing event payloads to durable storage.
+sections[2]{kind,start,end,limit}:
+  classDoc,7,9,3
+  constants,12,13,2

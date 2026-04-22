@@ -3,6 +3,28 @@ file: ToolCallResult.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\ToolCallResult"
 type: readonly final class
 summary: "Represents the result of a tool execution within an agent run, capturing execution context and identity metadata. This immutable value object serves as a domain event or message payload for tracking tool call outcomes."
+sections[2]:
+  - kind: classDoc
+    start: 7
+    end: 9
+    limit: 3
+  - kind: constructor
+    start: 12
+    end: 30
+    limit: 19
+    signatureLine: 17
+    commentStart: 12
+constructorInputs[10]{param,type,required}:
+  $runId,string,true
+  $turnNo,int,true
+  $stepId,string,true
+  $attempt,int,true
+  $idempotencyKey,string,true
+  $toolCallId,string,true
+  $orderIndex,int,true
+  $result,mixed,false
+  $isError,bool,false
+  $error,?array,false
 methods[1]:
   - method: __construct
     start: 12

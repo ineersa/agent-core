@@ -6,7 +6,4 @@ subNamespaces[3]{namespace,fqcn,path,description,index}:
   Orchestrator,"Ineersa\\AgentCore\\Application\\Orchestrator",Orchestrator,"Top-level orchestrators — AgentRunner (public API) dispatches to message bus; RunOrchestrator handles all bus messages with locking, idempotency, CQRS commit, and effect dispatch.",Orchestrator/ai-index.toon
   Handler,"Ineersa\\AgentCore\\Application\\Handler",Handler,"Handler infrastructure — command routing, registries, LLM/tool workers, outbox projectors, event dispatching, step dispatch, locking, idempotency, replay, tool batch collection.",Handler/ai-index.toon
   Reducer,"Ineersa\\AgentCore\\Application\\Reducer",Reducer,"Pure state reducer — transforms RunState given bus commands, produces effects for async execution.",Reducer/ai-index.toon
-updatedAt: 2026-04-21
-indexedAt: "2026-04-19T02:23:45Z"
-indexedCommit: a9fad156e82ade03d9ec71f00a662163a6e66256
-sourceHash: 9c749bcc0a18e0e9946f93cbc36ebf7889dd6ed5a8b0614b6af747be4b768bfd
+updatedAt: 2026-04-22

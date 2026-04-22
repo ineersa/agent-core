@@ -3,6 +3,45 @@ file: RunMessageProcessor.php
 class: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor"
 type: readonly final class
 summary: The RunMessageProcessor executes the shared lock/idempotency/load/commit pipeline around dedicated run message handlers.
+sections[3]:
+  - kind: classDoc
+    start: 14
+    end: 16
+    limit: 3
+  - kind: properties
+    start: 20
+    end: 20
+    limit: 1
+  - kind: constructor
+    start: 22
+    end: 34
+    limit: 13
+    signatureLine: 25
+    commentStart: 22
+constructorInputs[6]{param,type,required}:
+  $runStore,RunStoreInterface,true
+  $idempotency,MessageIdempotencyService,true
+  $runLockManager,RunLockManager,true
+  $runCommit,RunCommit,true
+  $stepDispatcher,StepDispatcher,true
+  $handlers,iterable,true
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor"
+      visibility: private
+      autowire: true
+      autoconfigure: true
+      file: src/Application/Orchestrator/RunMessageProcessor.php
+      line: 17
+      args:
+        "$handlers": "services(Ineersa\\AgentCore\\Application\\Orchestrator\\AdvanceRunHandler|Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler|Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler|Ineersa\\AgentCore\\Application\\Orchestrator\\StartRunHandler|Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler)"
+        "$idempotency": "service(Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService)"
+        "$runCommit": "service(Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit)"
+        "$runLockManager": "service(Ineersa\\AgentCore\\Application\\Handler\\RunLockManager)"
+        "$runStore": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunStore)"
+        "$stepDispatcher": "service(Ineersa\\AgentCore\\Application\\Handler\\StepDispatcher)"
+  injectedInto[1]{fqcn,file,line}:
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator",src/Application/Orchestrator/RunOrchestrator.php,18
 methods[3]:
   - method: __construct
     start: 22

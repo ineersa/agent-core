@@ -3,6 +3,33 @@ file: ExecuteToolCall.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\ExecuteToolCall"
 type: readonly final class
 summary: "Represents a domain event signaling the execution of a tool call within an agent run. It encapsulates the necessary context such as run identifiers, turn sequence, and idempotency keys to ensure reliable processing. This class serves as a structured payload for internal event bus communication."
+sections[2]:
+  - kind: classDoc
+    start: 7
+    end: 9
+    limit: 3
+  - kind: constructor
+    start: 12
+    end: 37
+    limit: 26
+    signatureLine: 19
+    commentStart: 12
+constructorInputs[15]{param,type,required}:
+  $runId,string,true
+  $turnNo,int,true
+  $stepId,string,true
+  $attempt,int,true
+  $idempotencyKey,string,true
+  $toolCallId,string,true
+  $toolName,string,true
+  $args,array,true
+  $orderIndex,int,true
+  $toolIdempotencyKey,?string,false
+  $mode,?string,false
+  $timeoutSeconds,?int,false
+  $maxParallelism,?int,false
+  $assistantMessage,?array,false
+  $argSchema,?array,false
 methods[1]:
   - method: __construct
     start: 12

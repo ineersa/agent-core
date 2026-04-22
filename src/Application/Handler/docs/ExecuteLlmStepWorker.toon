@@ -3,6 +3,34 @@ file: ExecuteLlmStepWorker.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteLlmStepWorker"
 type: readonly final class
 summary: This class serves as a message handler for executing LLM steps within the agent execution domain. It coordinates with the platform to perform the step logic and dispatches the resulting state updates via a dedicated command bus.
+sections[2]:
+  - kind: classDoc
+    start: 14
+    end: 16
+    limit: 3
+  - kind: constructor
+    start: 19
+    end: 25
+    limit: 7
+    signatureLine: 19
+constructorInputs[4]{param,type,required}:
+  $platform,PlatformInterface,true
+  $commandBus,MessageBusInterface,true
+  $metrics,?RunMetrics,false
+  $tracer,?RunTracer,false
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteLlmStepWorker"
+      visibility: private
+      autowire: true
+      autoconfigure: true
+      file: src/Application/Handler/ExecuteLlmStepWorker.php
+      line: 17
+      args:
+        "$commandBus": service(agent.command.bus)
+        "$metrics": "service(Ineersa\\AgentCore\\Application\\Handler\\RunMetrics)"
+        "$platform": "service(Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform)"
+        "$tracer": "service(Ineersa\\AgentCore\\Application\\Handler\\RunTracer)"
 methods[3]:
   - method: __construct
     start: 19

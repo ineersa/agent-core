@@ -3,6 +3,27 @@ file: AgentMessage.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\AgentMessage"
 type: readonly final class
 summary: "Represents a canonical transcript message at bundle boundaries, including role/content and JS-parity fields for tool calls, errors, and metadata."
+sections[2]:
+  - kind: classDoc
+    start: 7
+    end: 9
+    limit: 3
+  - kind: constructor
+    start: 12
+    end: 29
+    limit: 18
+    signatureLine: 18
+    commentStart: 12
+constructorInputs[9]{param,type,required}:
+  $role,string,true
+  $content,array,true
+  $timestamp,?DateTimeImmutable,false
+  $name,?string,false
+  $toolCallId,?string,false
+  $toolName,?string,false
+  $details,mixed,false
+  $isError,bool,false
+  $metadata,array,false
 methods[4]:
   - method: __construct
     start: 12

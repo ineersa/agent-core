@@ -3,6 +3,34 @@ file: RunOrchestrator.php
 class: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator"
 type: readonly final class
 summary: "The RunOrchestrator is the message-bus entrypoint for run lifecycle commands and step results, delegating runtime transitions to RunMessageProcessor and dedicated message handlers."
+sections[3]:
+  - kind: classDoc
+    start: 15
+    end: 17
+    limit: 3
+  - kind: constants
+    start: 20
+    end: 24
+    limit: 5
+  - kind: constructor
+    start: 26
+    end: 30
+    limit: 5
+    signatureLine: 26
+constructorInputs[2]{param,type,required}:
+  $runMessageProcessor,RunMessageProcessor,true
+  $tracer,?RunTracer,false
+wiring:
+  serviceDefinitions[1]:
+    - serviceId: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator"
+      visibility: private
+      autowire: true
+      autoconfigure: true
+      file: src/Application/Orchestrator/RunOrchestrator.php
+      line: 18
+      args:
+        "$runMessageProcessor": "service(Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor)"
+        "$tracer": "service(Ineersa\\AgentCore\\Application\\Handler\\RunTracer)"
 methods[6]:
   - method: __construct
     start: 26
