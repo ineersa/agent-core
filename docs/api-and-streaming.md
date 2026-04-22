@@ -1,35 +1,45 @@
 # API Surface and Streaming
 
-The `agent-core` exposes an HTTP API and a real-time Mercure SSE (Server-Sent Events) topic for seamless web/UI integration.
+`agent-core` exposes HTTP endpoints for run control/read APIs and uses Mercure for real-time event delivery.
 
-## REST Endpoints
+## REST endpoints
 
-- **`POST /agent/runs`**: Starts a new run. Accepts the initial prompt, model, session metadata, and tool scope. Returns a `run_id`.
-- **`POST /agent/runs/{runId}/commands`**: The control-plane entry point. Dispatches commands like `steer`, `follow_up`, `cancel`, `continue`, or `ext:*`. Requires an `idempotency_key` to prevent double-submissions.
-- **`GET /agent/runs/{runId}`**: Returns the current summary, status, turn count, and waiting flags.
-- **`GET /agent/runs/{runId}/messages`**: Returns a paginated transcript of the run's messages for UI hydration.
+- **`POST /agent/runs`**
+  - Starts a run from prompt + optional `system_prompt`, `model`, `session`, and `tools_scope`.
+  - Requires actor scope (`tenant_id`, `user_id`) via headers or `session` payload.
+  - Returns `run_id`, initial `status` (`queued`), and `stream_topic`.
 
-## Real-Time Streaming (Mercure)
+- **`POST /agent/runs/{runId}/commands`**
+  - Sends control-plane commands (`steer`, `follow_up`, `cancel`, `human_response`, `continue`, `ext:*`).
+  - Requires `idempotency_key`.
+  - Validates command `options` (currently supports `cancel_safe` only for extension commands).
 
-The system projects lifecycle events in real-time to specific topics.
+- **`GET /agent/runs/{runId}`**
+  - Returns run summary (`status`, `turn_count`, timestamps, `latest_summary`, `waiting_flags`) + `stream_topic`.
 
-- **Topic Pattern**: `agent/runs/{runId}`
-- **Event ID**: Corresponds to the sequence number (`seq`) from the canonical event log.
-- **Payload Shape**:
-  ```json
-  {
-    "run_id": "...",
-    "seq": 123,
-    "turn_no": 9,
-    "type": "message_update",
-    "payload": { "delta": "..." },
-    "ts": "2026-04-12T12:00:00Z"
-  }
-  ```
+- **`GET /agent/runs/{runId}/messages`**
+  - Cursor-based transcript pagination (`cursor`, `limit`, `next_cursor`, `has_more`, `items`).
 
-### Backpressure & Coalescing
-To prevent overwhelming the browser, fast-firing `message_update` events (like LLM streaming deltas) can be coalesced within a 50-100ms window.
-Critical structural events like `message_end` and `turn_end` are always published instantly and fully intact.
+- **`GET /agent/runs/{runId}/events`**
+  - Replay endpoint for reconnect (`Last-Event-ID` header or `last_event_id` query).
+  - Returns replay source (`canonical_events` / `jsonl_fallback`), `resync_required`, and normalized event list.
 
-### Reconnect Behavior
-If a UI disconnects and reconnects with a `Last-Event-ID`, the server pulls from the canonical event store (or JSONL fallback) and replays all events where `seq > last_event_id`. If there's a permanent gap or missing index, the server emits a `resync_required` event prompting the UI to hit the REST API and perform a full reload.
+## Access scope model
+
+Run-scoped endpoints enforce actor ownership using:
+
+- `X-Agent-Tenant-Id`
+- `X-Agent-User-Id`
+
+Run scope is saved at creation and checked on all subsequent run endpoints.
+
+## Mercure streaming
+
+- **Topic pattern**: `agent/runs/{runId}`
+- **Event id**: run `seq`
+- **Event type**: lifecycle `type`
+- **Payload shape**: normalized `RunStreamEvent`
+
+`message_update` events are coalesced in a short window (default `75ms`) to reduce update volume. Structural boundaries (e.g. `message_end`, `turn_end`) are not coalesced.
+
+If replay detects missing sequences, clients should use `reload_endpoint` from replay responses and refresh via REST.

@@ -1,44 +1,54 @@
 # Events and Traces
 
-## Events Map
+## Event model
 
-The system uses Event Sourcing for the core domain. Events are the source of truth for the `RunState`.
+`RunEvent` is the canonical event envelope for a run.
 
-### Ordered Lifecycle (`CoreLifecycleEventType`)
+### Ordered lifecycle (`CoreLifecycleEventType`)
 
-The system guarantees the following event emission order per run/turn:
-1. `agent_start`: The run is initialized.
-2. `turn_start`: A new conversational turn begins.
-3. `message_start`: The LLM starts streaming a message.
-4. `message_update`: Streaming chunks are received (optional).
-5. `message_end`: The LLM message is complete.
-6. `tool_execution_start`: A tool call is initiated.
-7. `tool_execution_update`: Mid-execution status (optional).
-8. `tool_execution_end`: Tool execution finishes.
-9. `turn_end`: The conversational turn finishes (yielding to the user or wrapping up).
-10. `agent_end`: The run is completed or cancelled.
+The core order is validated by `CoreLifecycleEventType::validateOrder()`:
 
-**Projection**: Events are committed to Doctrine, then projected via `OutboxProjector` to JSONL files (Flysystem) and real-time SSE (Mercure).
+1. `agent_start`
+2. `turn_start`
+3. `message_start`
+4. `message_update` (optional)
+5. `message_end`
+6. `tool_execution_start`
+7. `tool_execution_update` (optional)
+8. `tool_execution_end`
+9. `turn_end`
+10. `agent_end`
+
+### Projection and replay sources
+
+Committed events are:
+
+- stored in the canonical event store (`RunEventStore`)
+- projected to outbox sinks (JSONL + Mercure)
+
+Read/replay paths use:
+
+- `canonical_events` when event-store data is present
+- `jsonl_fallback` when canonical events are unavailable
+
+If sequence gaps are detected during replay, the API emits `resync_required` metadata/event guidance.
 
 ---
 
-## Traces and Spans
+## Tracing
 
-The Application layer utilizes `RunTracer` to emit structured latency and observability spans.
+`RunTracer` emits structured span logs:
 
-### Using `RunTracer`
+- `agent_loop.trace.start`
+- `agent_loop.trace.finish`
 
-The tracer wraps operations and logs `agent_loop.trace.start` and `agent_loop.trace.finish` with duration metrics.
+Core span names include:
 
-```php
-$tracer->inSpan('turn.process', ['run_id' => $runId], function() {
-    // ... work
-});
-```
+- `command.*` (top-level command handling)
+- `turn.*` (turn lifecycle)
+- `persistence.commit`
+- `llm.call`
+- `tool.call`
+- `replay.rebuild_hot_prompt_state`
 
-### Core Spans
-- **`command.*`**: Tracks the latency of top-level command processing in the Orchestrator.
-- **`turn.*`**: Tracks the duration of a single agent turn.
-- **`persistence.commit`**: Tracks the database commit phase.
-- **`llm.call`**: Emitted by `ExecuteLlmStepWorker` to track LLM response latency.
-- **`tool.call`**: Emitted by `ExecuteToolCallWorker` to track tool execution time.
+Each finish event includes duration and status, enabling latency and failure analysis.

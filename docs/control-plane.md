@@ -1,28 +1,45 @@
 # Control Plane
 
-The agent loop allows dynamic run management via the Command Bus. These control-plane commands (sent via `ApplyCommand`) manage steering, follow-ups, cancellation, and HITL (Human-in-the-Loop) resolution.
+The control plane is implemented through `ApplyCommand` messages on `agent.command.bus`. It allows mid-run steering, cancellation, follow-ups, and HITL continuation without breaking run consistency.
 
-## Command Mailbox & Lifecycle
+## Command mailbox and boundaries
 
-Commands are pushed into a per-run mailbox (persisted in `agent_commands`) and evaluated by the Orchestrator at specific boundaries (e.g., before an LLM call or after a turn completes) to ensure state integrity.
+Commands are queued in `CommandStoreInterface` (default: `InMemoryCommandStore`) and applied at safe orchestration boundaries:
 
-### Core Command Kinds
-- `steer`: Injects instructions into an active run without interrupting an in-flight tool call.
-- `follow_up`: Appends a user message if the run would otherwise stop, seamlessly continuing execution.
-- `cancel`: Aborts the run. Transitions to `cancelling`, stops at the next safe boundary, and emits `agent_end`.
-- `human_response`: Resolves a HITL `interrupt` tool by providing the user's answer.
-- `continue`: Explicitly resumes a run after a failure (e.g., if the LLM threw a retryable exception).
-- `ext:*`: Custom extension-defined commands.
+- **turn-start boundary** (`applyPendingTurnStartCommands`)
+- **stop boundary** after model output/tool completion (`applyPendingStopBoundaryCommands`)
 
-### Conflict & Priority Policy
-- **Deduplication**: Handled via `idempotency_key`. Duplicates act as no-op acknowledgments.
-- **Cancellation Priority**: Once `cancel` is requested, new `steer`, `follow_up`, or `continue` commands are rejected. 
-- **Extension Safety**: Only extension commands (`ext:*`) with the `options.cancel_safe=true` flag are allowed to process during a cancellation (used for cleanup).
-- **Steering Drain Mode**: If multiple steering commands queue up, they are processed based on the drain mode (either applying all FIFO, or superseding older ones with the latest).
+This keeps state transitions deterministic and compatible with retries/idempotency.
 
-## Resiliency & Crash Recovery
+## Supported command kinds
 
-If the worker crashes, the system can self-heal:
-1. A scanner command (`agent-loop:resume-stale-runs`) finds runs stuck in `running` status past a threshold.
-2. It acquires a lock and rebuilds the "hot prompt" state from the immutable event log (falling back to JSONL if needed).
-3. It dispatches an `AdvanceRun` message to seamlessly continue exactly where it left off, avoiding duplicate commits.
+Core command kinds (`CoreCommandKind`) are:
+
+- `steer`
+- `follow_up`
+- `cancel`
+- `human_response`
+- `continue`
+
+Extension commands must start with `ext:`.
+
+## API command validation rules
+
+`POST /agent/runs/{runId}/commands` enforces:
+
+- `kind`: non-empty string, core kind or `ext:*`
+- `idempotency_key`: required non-empty string
+- `payload`: JSON object
+- `options`: JSON object; currently only `cancel_safe` is accepted
+- `cancel_safe` is **reserved for extension commands** (core commands cannot set it)
+
+## Conflict and priority policy
+
+- **Idempotency**: duplicates are safely ignored/acknowledged by idempotency handling.
+- **Cancellation precedence**: once cancel is in play, conflicting commands can be rejected.
+- **Extension safety during cancellation**: only extension commands with `options.cancel_safe=true` are eligible when cancellation constraints apply.
+- **Steer drain mode**: configurable via `agent_loop.commands.steer_drain_mode` (`one_at_a_time` or `all`).
+
+## Recovery and stale-run resume
+
+`agent-loop:resume-stale-runs` scans stale `running` runs (`resume_stale_after_seconds`), locks each run, rebuilds hot prompt state when needed, and dispatches `AdvanceRun` so processing resumes at a safe boundary.

@@ -1,10 +1,8 @@
 # Agent Core Architecture
 
-The `agent-core` project implements a robust, event-sourced, and message-driven architectural pattern utilizing Domain-Driven Design (DDD). It separates pure domain logic from infrastructure adapters and side-effects.
+`agent-core` is an event-sourced, message-driven runtime for agent runs. It keeps domain state transitions explicit (commands/events/effects) and isolates side effects in workers/adapters.
 
 ## High-Level Workflow
-
-The system is designed around a CQRS (Command Query Responsibility Segregation) pattern, driven by various message buses.
 
 ```text
 +----------------+      [1. Dispatch]      +------------------+      [2. Entrypoint]    +-------------------+
@@ -36,38 +34,50 @@ The system is designed around a CQRS (Command Query Responsibility Segregation) 
 
 ## Core Modules
 
-### 1. Application Layer (`src/Application`)
-Coordinates runtime flow and orchestration.
+### 1) Application (`src/Application`)
+Coordinates orchestration and runtime flow.
 
-- **`AgentRunner`**: Acts as the public API facade, translating high-level actions (start, continue, steer, cancel) into discrete messages dispatched onto the command bus.
-- **`RunOrchestrator`**: Thin message-bus entrypoint with root tracing spans. It delegates runtime processing to `RunMessageProcessor`.
-- **`RunMessageProcessor`**: Shared runtime pipeline for lock, idempotency, state load, per-message handler routing, commit orchestration, and post-commit actions.
-- **Dedicated message handlers (`src/Application/Orchestrator`)**: `StartRunHandler`, `ApplyCommandHandler`, `AdvanceRunHandler`, `LlmStepResultHandler`, and `ToolCallResultHandler` build `HandlerResult` transitions.
-- **`RunCommit`**: Owns durable persistence lifecycle (CAS, event append, outbox projection, replay rebuild, effect dispatch, hooks, and commit observability).
-- **Workers (`src/Application/Handler`)**: Handlers that execute async side-effects. `ExecuteLlmStepWorker` interfaces with language models, and `ExecuteToolCallWorker` runs actual tools, yielding results back to the orchestrator pipeline.
+- **`AgentRunner`**: public API facade (`start`, `continue`, `steer`, `followUp`, `cancel`, `answerHuman`) that emits command-bus messages.
+- **`RunOrchestrator`**: command-bus entrypoint (`onStartRun`, `onApplyCommand`, `onAdvanceRun`, `onLlmStepResult`, `onToolCallResult`) with root tracing spans.
+- **`RunMessageProcessor`**: shared lock/idempotency/load/handler/commit pipeline.
+- **Message handlers** (`src/Application/Orchestrator`): `StartRunHandler`, `ApplyCommandHandler`, `AdvanceRunHandler`, `LlmStepResultHandler`, `ToolCallResultHandler`.
+- **`RunCommit`**: CAS persistence + event append + outbox projection + replay rebuild + effect dispatch + hook dispatch + commit metrics.
+- **Workers** (`src/Application/Handler`): `ExecuteLlmStepWorker`, `ExecuteToolCallWorker`, plus outbox projector workers.
 
-### 2. Domain Layer (`src/Domain`)
-Contains framework-agnostic models, state representations, and message contracts.
+### 2) Domain (`src/Domain`)
+Framework-agnostic models and contracts.
 
-- **`Run` / `RunState`**: Immutable value objects representing the lifecycle and current state of a running agent.
-- **`Event` (Event Sourcing)**: `RunEvent` is the canonical persisted event envelope. The domain maps out an exact lifecycle order (`CoreLifecycleEventType`) like `agent_start` -> `turn_start` -> `message_start` -> `tool_execution` -> `turn_end`.
-- **`Command`**: Value objects mapping intentional state changes (e.g., Core/Extension Commands).
-- **`Message`**: Transports for buses (e.g., `StartRun`, `ExecuteLlmStep`).
+- **Run model**: `RunState`, `RunStatus`, `RunHandle`, `RunId`.
+- **Commands/messages**: `StartRun`, `ApplyCommand`, `AdvanceRun`, `ExecuteLlmStep`, `ExecuteToolCall`, `LlmStepResult`, `ToolCallResult`.
+- **Events**: canonical `RunEvent` envelope with strict lifecycle ordering via `CoreLifecycleEventType::validateOrder()`.
 
-### 3. Infrastructure Layer (`src/Infrastructure`)
-Concrete adapters to external systems.
+### 3) Infrastructure (`src/Infrastructure`)
+Concrete adapters used by the runtime.
 
-- **Doctrine**: Canonical persistence. Maintains tables for Runs, canonical Events, pending Commands, Tool Jobs, and Outbox logs (`Migrations/Version20260418000100.php`).
-- **Messenger**: Symfony Messenger configuration for reliable routing across `agent.command.bus`, `agent.execution.bus`, and `agent.publisher.bus`.
-- **Storage / Flysystem**: JSONL event logs are persisted to a durable file store (`JsonlOutboxProjectorWorker` -> `RunLogWriter`).
-- **Mercure**: Real-time server-sent event (SSE) publisher (`MercureOutboxProjectorWorker`), pushing lifecycle events to `agent/runs/{runId}` topics.
-- **SymfonyAI**: Bridges the core tool and execution mechanics with Symfony's LLM components.
+- **Default runtime stores are in-memory**:
+  - `InMemoryRunStore`
+  - `InMemoryCommandStore`
+  - `RunEventStore`
+  - `InMemoryRunAccessStore`
+  - `HotPromptStateStore` / `InMemoryPromptStateStore`
+- **Run logs**: JSONL append/read via `RunLogWriter` and `RunLogReader` (Flysystem).
+- **Mercure streaming**: `RunEventPublisher` publishes to `agent/runs/{runId}` (with `message_update` coalescing).
+- **Symfony AI bridge**: platform/tool invocation adapters.
+- **Doctrine namespace currently provides migration scaffolding** (`src/Infrastructure/Doctrine/Migrations`) rather than the active default storage backend.
 
-## Data Flow: Commands, Handlers, and Events
+### 4) API (`src/Api`)
+Transport-facing HTTP layer.
 
-1. **Intention**: `AgentRunner` dispatches messages (`StartRun`, `ApplyCommand`, `AdvanceRun`) to the command bus.
-2. **Entrypoint**: `RunOrchestrator` receives the message and opens a root trace span.
-3. **Processing Pipeline**: `RunMessageProcessor` enforces lock/idempotency boundaries, loads `RunState`, and routes to the matching message handler.
-4. **Transition Build**: The handler produces `HandlerResult` (next state, durable events, commit effects, optional post-commit callbacks/effects).
-5. **Commit & Project**: `RunCommit` persists state/events and projects events through `OutboxProjector` (JSONL + Mercure outboxes).
-6. **Effect Execution**: Durable effects are dispatched to workers. `ExecuteLlmStepWorker` and `ExecuteToolCallWorker` emit result messages (`LlmStepResult`, `ToolCallResult`) that re-enter the same pipeline until terminal or paused state.
+- `RunApiController`: start run, send command, run summary, transcript page, replay events.
+- `RunReadService`: read-model composition and replay-source fallback (`canonical_events` -> `jsonl_fallback`).
+- `RunEventSerializer` / `RunStreamEvent`: domain-to-transport event mapping.
+
+## Runtime Data Flow
+
+1. **Intention**: API/CLI dispatches `StartRun`/`ApplyCommand`/`AdvanceRun`.
+2. **Entrypoint**: `RunOrchestrator` receives message and starts a trace span.
+3. **Shared pipeline**: `RunMessageProcessor` acquires lock, checks idempotency, loads state, resolves handler.
+4. **Transition build**: handler returns `HandlerResult` (next state, events, effects, callbacks).
+5. **Commit**: `RunCommit` persists state/events, projects outbox, rebuilds prompt snapshot, emits metrics/hooks.
+6. **Effect dispatch**: effects go to execution/publisher buses.
+7. **Loop continuation**: workers emit `LlmStepResult` / `ToolCallResult`, which re-enter step 2 until terminal or paused state.

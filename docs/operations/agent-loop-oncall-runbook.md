@@ -1,8 +1,16 @@
 # Agent Loop On-Call Runbook
 
-Use this runbook when a run is stuck (`running`, `waiting_human`, or `cancelling`) or when alerts from `agent-loop-alert-rules.yaml` fire.
+Use this runbook when runs appear stuck (`running`, `waiting_human`, `cancelling`) or alert rules fire.
 
-## 1) Inspect current run state
+## 0) Quick health check
+
+```bash
+php bin/console agent-loop:health
+```
+
+Confirm runtime/streaming/storage settings are as expected for the environment.
+
+## 1) Inspect run state
 
 ```bash
 php bin/console agent-loop:run-inspect <runId>
@@ -13,31 +21,33 @@ Check:
 
 - `state.status`
 - `state.active_step_id`
+- `integrity.source` (`canonical_events` or `jsonl_fallback`)
 - `integrity.missing_sequences`
 - `pending_commands`
+- `metrics.command_queue_lag.max`
 - `metrics.stale_result_count`
 
-## 2) Inspect recent event flow
+## 2) Inspect recent events
 
 ```bash
 php bin/console agent-loop:run-tail <runId> --limit=50
 php bin/console agent-loop:run-replay <runId> --after-seq=<lastSeenSeq> --limit=200
 ```
 
-Use these to confirm whether the run is progressing or repeatedly retrying the same boundary.
+Use this to confirm whether the run is advancing or looping/retrying on the same boundary.
 
-## 3) Rebuild hot prompt state if drift is suspected
+## 3) Rebuild hot prompt state (if drift is suspected)
 
 ```bash
 php bin/console agent-loop:run-rebuild-hot-state <runId>
 ```
 
-Expected outcome:
+Expected:
 
-- `source` is `canonical_events` in normal operation.
-- `missing_sequences` is empty.
+- `source` preferably `canonical_events` (or `jsonl_fallback` if canonical store is empty)
+- `missing_sequences` is empty
 
-## 4) Resume stale runs
+## 4) Resume stale running runs
 
 ```bash
 php bin/console agent-loop:resume-stale-runs
@@ -45,47 +55,40 @@ php bin/console agent-loop:resume-stale-runs
 
 This command:
 
-- finds stale `running` runs by `commands.resume_stale_after_seconds`
-- rebuilds missing hot state when needed
-- dispatches `AdvanceRun` to continue execution
+- finds stale `running` runs (`commands.resume_stale_after_seconds`)
+- acquires per-run lock
+- rebuilds hot state when missing
+- dispatches `AdvanceRun` to continue processing
 
-## 5) Failure drill playbooks
+## 5) Failure drills
 
-### Worker killed during LLM step
+### Worker died during LLM step
 
-1. Inspect run (`run-inspect`) and verify `active_step_id` points to LLM step.
-2. Replay/tail events to confirm no terminal `llm_step_completed` or `llm_step_failed` event.
-3. Run `agent-loop:resume-stale-runs` to re-dispatch advancement path.
+1. `run-inspect` confirms run is still `running` and step is active.
+2. `run-tail` / `run-replay` show no terminal LLM result boundary.
+3. Run `agent-loop:resume-stale-runs`.
 
-### Worker killed during tool batch
+### Worker died during tool batch
 
-1. Tail run events and look for partial `tool_call_result_received` events without `tool_batch_committed`.
-2. Verify pending tool calls in `run-inspect`.
-3. Resume stale runs and confirm batch closes with deterministic ordering.
+1. Replay/tail events for partial tool-result boundaries.
+2. Confirm pending tool calls in `run-inspect`.
+3. Resume stale runs and verify batch closure.
 
-### Transient DB/event-store failure during commit
+### Commit/persistence failures
 
-1. Inspect logs for `agent_loop.commit.event_persist_failed`.
-2. Retry delivery path (automatic via messenger retry).
-3. Confirm `run-inspect` shows contiguous sequences after retry.
+1. Check logs for `agent_loop.commit.*` warnings.
+2. Confirm replay continuity (`missing_sequences` empty).
+3. Re-run stale resume path if needed.
 
-### JSONL append failure
+### Replay fallback spike
 
-1. Inspect logs for outbox retry patterns and `agent_loop.commit.projection_failed`.
-2. Confirm canonical events are intact via `run-replay`.
-3. Re-run projector workers (or allow retry) until JSONL projection catches up.
+1. Check `integrity.source` and rebuild counters.
+2. Validate canonical event-store availability.
+3. Keep operations running via JSONL fallback while investigating.
 
-### Duplicate delivery storm
+## 6) Escalate when
 
-1. Inspect run tail for duplicate transport attempts.
-2. Confirm event stream does not duplicate terminal boundaries (`tool_batch_committed`, `agent_end`).
-3. Validate idempotency keys for affected messages.
-
-## 6) Escalation checklist
-
-Escalate if any of the following remain true after recovery steps:
-
-- `integrity.missing_sequences` remains non-empty
-- run cannot transition from `running`/`cancelling` after resume
-- repeated `event_persist_failed` for same run over 15 minutes
-- stale-result counter continues increasing while throughput drops
+- `integrity.missing_sequences` remains non-empty after rebuild/retry
+- runs cannot leave `running`/`cancelling`
+- repeated commit failures persist for the same run
+- stale-result count rises while throughput drops
