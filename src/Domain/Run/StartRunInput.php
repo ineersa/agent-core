@@ -7,7 +7,7 @@ namespace Ineersa\AgentCore\Domain\Run;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 
 /**
- * Defines the immutable input payload for initiating a new agent run, encapsulating the system prompt, conversation history, and optional metadata. This class serves as a strict data contract for the Run domain, ensuring type safety for run configuration parameters.
+ * Input payload for starting a new run, carrying the system prompt, initial message history, and optional metadata.
  */
 final readonly class StartRunInput
 {

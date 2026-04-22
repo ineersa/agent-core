@@ -17,7 +17,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\MessageBag;
 
 /**
- * The Platform class orchestrates the execution of AI agent runs within the Symfony infrastructure, bridging high-level agent inputs with the underlying provider invoker. It manages context resolution, message transformation, and hook application to prepare requests for external AI providers. The class ensures proper lifecycle management of runs and cancellation tokens while abstracting provider-specific details.
+ * Orchestrates AI provider calls by resolving context, mapping messages, applying hooks, and delegating invocation to the platform adapter.
  */
 final readonly class Platform implements PlatformInterface
 {

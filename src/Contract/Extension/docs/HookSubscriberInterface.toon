@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: HookSubscriberInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Extension\\HookSubscriberInterface"
 type: interface
-summary: Defines the contract for components that subscribe to and process specific system hooks within the AgentCore extension system. Implementations declare their target hook names and provide logic to process incoming hook events with associated context data.
+summary: Subscribes to named hooks and processes incoming hook events with context data.
 sections[1]{kind,start,end,limit}:
   classDoc,9,11,3
 methods[2]:

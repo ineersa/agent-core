@@ -4,14 +4,14 @@ fqcn: "Ineersa\\AgentCore\\Contract"
 updatedAt: 2026-04-22
 description: "Stable public interfaces for the agent loop: runner API, storage abstractions, tool execution, hook system, and extension seams. Implementations live in Infrastructure/."
 files[8]{file,type,summary}:
-  AgentRunnerInterface.php,interface,"Defines the contract for orchestrating the lifecycle of an agent execution run, including initialization, state transitions, and termination. It provides a unified interface for controlling agent behavior through steering, follow-ups, and human-in-the-loop interactions."
-  ArtifactStoreInterface.php,interface,"Defines the contract for persisting agent execution artifacts, such as logs or intermediate outputs, to a storage backend. It ensures consistent storage semantics across different implementations by standardizing the input parameters and return value for artifact registration."
-  CommandStoreInterface.php,interface,"Defines the contract for persisting and managing the lifecycle of pending commands within a specific run context. It provides mechanisms to enqueue new commands, query their status, and transition them through applied, rejected, or superseded states. This interface abstracts the underlying storage mechanism for command durability and idempotency checks."
-  EventStoreInterface.php,interface,Defines the contract for persisting and retrieving execution events within the Agent Core system. It abstracts the underlying storage mechanism to ensure consistent interaction with run-specific event data. This interface serves as the primary boundary for event persistence operations.
-  OutboxStoreInterface.php,interface,"Defines the contract for persisting and retrieving outbound event entries to ensure reliable delivery. It provides mechanisms to enqueue new events, claim batches for processing, and update their status upon completion or failure."
-  PromptStateStoreInterface.php,interface,"Defines the contract for persisting and retrieving agent execution state keyed by run identifiers. It provides a minimal interface for storing, fetching, and removing structured state arrays associated with specific agent runs."
-  RunAccessStoreInterface.php,interface,Defines the contract for persisting and retrieving access scopes associated with specific runs. It enables atomic storage of scope data and supports timestamp updates for access tracking. This interface abstracts the underlying storage mechanism for run access control.
-  RunStoreInterface.php,interface,"Defines the contract for persisting and managing agent run states with optimistic concurrency control. It supports retrieving individual run states, atomically updating them based on version numbers, and identifying stale running runs for cleanup."
+  AgentRunnerInterface.php,interface,"Orchestrates agent execution runs through start, steer, follow-up, and cancel lifecycle operations."
+  ArtifactStoreInterface.php,interface,"Persists named execution artifacts (logs, intermediate outputs) to a storage backend."
+  CommandStoreInterface.php,interface,"Manages the lifecycle of pending commands per run — enqueue, idempotency checks, status queries, and state transitions."
+  EventStoreInterface.php,interface,Persists and retrieves execution events scoped to individual runs.
+  OutboxStoreInterface.php,interface,"Ensures reliable delivery of outbound events via enqueue, batch claim, and completion tracking."
+  PromptStateStoreInterface.php,interface,"Stores, fetches, and removes structured prompt state keyed by run identifier."
+  RunAccessStoreInterface.php,interface,Persists access scopes per run with atomic save and timestamp-based access tracking.
+  RunStoreInterface.php,interface,Persists run states with optimistic concurrency control via compare-and-swap and stale-run detection.
 subNamespaces[3]{namespace,fqcn,path,description,index}:
   Hook,"Ineersa\\AgentCore\\Contract\\Hook",Hook,"Hook interfaces for intercepting agent loop lifecycle: context transforms, LLM conversion, tool call boundaries, cancellation tokens, message providers.",Hook/ai-index.toon
   Extension,"Ineersa\\AgentCore\\Contract\\Extension",Extension,"Extension seam interfaces — command handlers, event subscribers, hook subscribers for third-party integrations.",Extension/ai-index.toon

@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: InMemoryOutboxStore.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryOutboxStore"
 type: final class
-summary: InMemoryOutboxStore provides an in-memory implementation of the outbox pattern for buffering domain events before publication. It ensures event durability within the current process lifecycle by managing entry states and preventing duplicate submissions via sink-based deduplication.
+summary: Buffers outbox entries in memory with sink-based deduplication for domain event publication.
 sections[2]{kind,start,end,limit}:
   classDoc,12,14,3
   properties,28,33,6

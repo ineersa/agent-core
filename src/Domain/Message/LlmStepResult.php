@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Domain\Message;
 
 /**
- * Represents the immutable result of a single LLM agent step within a multi-turn conversation. It encapsulates execution metadata including run identifiers, turn sequence, and idempotency keys to ensure reliable processing. This value object serves as a core domain entity for tracking agent execution state.
+ * Result of a single LLM inference step, carrying the assistant message, usage statistics, and optional error.
  */
 final readonly class LlmStepResult extends AbstractAgentBusMessage
 {

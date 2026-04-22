@@ -10,7 +10,7 @@ use Symfony\Component\Mercure\HubInterface;
 use Symfony\Component\Mercure\Update;
 
 /**
- * The RunEventPublisher class publishes domain RunEvent instances to a Mercure hub using configurable serialization and topic policies. It implements a coalescing mechanism to batch rapid updates within a defined time window, reducing unnecessary network traffic.
+ * Publishes domain run events to a Mercure hub with coalesced message-update batching to reduce network traffic.
  */
 final class RunEventPublisher
 {

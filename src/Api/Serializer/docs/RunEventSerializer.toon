@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: RunEventSerializer.php
 class: "Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer"
 type: readonly final class
-summary: The RunEventSerializer converts between domain RunEvent and RunStreamEvent objects and their array representations for API transport. It provides bidirectional normalization to support serialization boundaries without leaking domain structure.
+summary: "Converts domain RunEvent objects to API-facing RunStreamEvent DTOs and normalized array payloads, bridging domain events to transport representations."
 sections[3]:
   - kind: classDoc
     start: 11

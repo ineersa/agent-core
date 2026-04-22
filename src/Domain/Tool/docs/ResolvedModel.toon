@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: ResolvedModel.php
 class: "Ineersa\\AgentCore\\Domain\\Tool\\ResolvedModel"
 type: readonly final class
-summary: A readonly value object representing a resolved AI model configuration with its associated options. It encapsulates the model identifier and any specific parameters required for instantiation. This class serves as a data carrier for model resolution within the domain layer.
+summary: Resolved AI model identifier with its associated configuration options for provider instantiation.
 sections[2]:
   - kind: classDoc
     start: 7

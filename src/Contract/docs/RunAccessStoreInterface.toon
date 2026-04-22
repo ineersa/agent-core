@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: RunAccessStoreInterface.php
 class: "Ineersa\\AgentCore\\Contract\\RunAccessStoreInterface"
 type: interface
-summary: Defines the contract for persisting and retrieving access scopes associated with specific runs. It enables atomic storage of scope data and supports timestamp updates for access tracking. This interface abstracts the underlying storage mechanism for run access control.
+summary: Persists access scopes per run with atomic save and timestamp-based access tracking.
 sections[1]{kind,start,end,limit}:
   classDoc,9,11,3
 wiring:

@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: ToolExecutionPolicy.php
 class: "Ineersa\\AgentCore\\Domain\\Tool\\ToolExecutionPolicy"
 type: readonly final class
-summary: "ToolExecutionPolicy defines immutable configuration constraints for tool execution, including mode, timeout, and parallelism limits. It serves as a value object to enforce execution boundaries within the agent core domain."
+summary: "Immutable execution constraints for tool calls, governing mode, timeout, and parallelism limits."
 sections[2]:
   - kind: classDoc
     start: 7

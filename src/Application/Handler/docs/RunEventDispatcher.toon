@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: RunEventDispatcher.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\RunEventDispatcher"
 type: readonly final class
-summary: The RunEventDispatcher class acts as an application-level facade for routing RunEvent instances to registered subscribers. It leverages an EventSubscriberRegistry to identify relevant handlers and delegates execution to a standard EventDispatcherInterface. This design decouples the specific event type from the underlying dispatching mechanism.
+summary: Routes RunEvent instances to registered subscribers via the application event dispatcher.
 sections[2]:
   - kind: classDoc
     start: 10

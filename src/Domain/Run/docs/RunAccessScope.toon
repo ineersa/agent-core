@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: RunAccessScope.php
 class: "Ineersa\\AgentCore\\Domain\\Run\\RunAccessScope"
 type: readonly final class
-summary: "Defines an immutable scope for run access control, encapsulating the run identifier, optional tenant and user contexts, and session metadata. Designed as a value object to enforce strict access boundaries without mutable state."
+summary: "Encapsulates the run's access context — run identity, optional tenant/user scopes, and session metadata — for authorization decisions."
 sections[2]:
   - kind: classDoc
     start: 7

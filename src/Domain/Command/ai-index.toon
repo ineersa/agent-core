@@ -4,6 +4,6 @@ fqcn: "Ineersa\\AgentCore\\Domain\\Command"
 updatedAt: 2026-04-22
 description: "Command value objects for the agent loop — kind constants, pending queue items, and routed commands with core/extension/rejected discrimination."
 files[3]{file,type,summary}:
-  CoreCommandKind.php,final class,Defines the set of core command types recognized by the agent core system. This final class provides a static utility to validate whether a given command kind string belongs to the core domain. It serves as a strict type guard for command routing and processing.
-  PendingCommand.php,readonly final class,"PendingCommand represents a durable, immutable command record queued for asynchronous execution within the agent core domain. It encapsulates execution metadata including run identifiers, idempotency keys, and optional configuration payloads to ensure reliable processing."
-  RoutedCommand.php,readonly final class,"RoutedCommand is a readonly value object representing a command in the domain layer, distinguishing between core and extension command types. It encapsulates the command kind, payload, options, and status to provide a structured representation of domain operations."
+  CoreCommandKind.php,final class,"Closed set of core command kinds (steer, follow_up, cancel, human_response, continue) with validation for command routing."
+  PendingCommand.php,readonly final class,"Immutable command record awaiting processing, carrying run identity, kind, idempotency key, and optional payload."
+  RoutedCommand.php,readonly final class,"Discriminated command wrapper that classifies a pending command as core-routable, extension-delegated, or rejected."

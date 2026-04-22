@@ -14,7 +14,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
- * This command rebuilds hot prompt state from persisted run events.
+ * Rebuilds hot prompt state for a run from persisted event history.
  */
 #[AsCommand(name: 'agent-loop:run-rebuild-hot-state', description: 'Rebuild hot prompt state for a run from event history.')]
 final class AgentLoopRunRebuildHotStateCommand extends Command

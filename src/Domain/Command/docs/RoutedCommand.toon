@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: RoutedCommand.php
 class: "Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand"
 type: readonly final class
-summary: "RoutedCommand is a readonly value object representing a command in the domain layer, distinguishing between core and extension command types. It encapsulates the command kind, payload, options, and status to provide a structured representation of domain operations."
+summary: "Discriminated command wrapper that classifies a pending command as core-routable, extension-delegated, or rejected."
 sections[2]:
   - kind: classDoc
     start: 7

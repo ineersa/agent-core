@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Domain\Message;
 
 /**
- * Represents the result of a tool execution within an agent run, capturing execution context and identity metadata. This immutable value object serves as a domain event or message payload for tracking tool call outcomes.
+ * Result of a single tool call execution, carrying the tool identity, output content, and optional error.
  */
 final readonly class ToolCallResult extends AbstractAgentBusMessage
 {

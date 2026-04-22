@@ -7,7 +7,7 @@ namespace Ineersa\AgentCore\Application\Handler;
 use Symfony\Component\Lock\LockFactory;
 
 /**
- * The RunLockManager provides a mechanism to execute critical sections of code exclusively for a specific run ID using distributed locking. It leverages a LockFactory to acquire locks with a configurable time-to-live, ensuring thread-safe or process-safe execution of run-specific logic.
+ * Provides per-run distributed locking to guard critical sections against concurrent execution.
  */
 final readonly class RunLockManager
 {

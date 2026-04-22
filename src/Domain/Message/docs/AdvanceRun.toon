@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: AdvanceRun.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\AdvanceRun"
 type: readonly final class
-summary: "Represents a domain event signaling the progression of a specific run step within an agent execution. It encapsulates the unique identifiers for the run, turn, and step, along with attempt tracking and idempotency guarantees. This immutable value object ensures consistent state representation for run advancement logic."
+summary: "Bus message commanding the advancement of a run to its next processing step, carrying a payload for the target state."
 sections[2]:
   - kind: classDoc
     start: 7

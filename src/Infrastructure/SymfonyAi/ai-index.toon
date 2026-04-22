@@ -4,8 +4,8 @@ fqcn: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi"
 updatedAt: 2026-04-22
 description: "Symfony AI bridge — adapters connecting the agent loop to the Symfony AI ecosystem (platform, tool executor, message mapping, streaming)."
 files[5]{file,type,summary}:
-  Platform.php,readonly final class,"The Platform class orchestrates the execution of AI agent runs within the Symfony infrastructure, bridging high-level agent inputs with the underlying provider invoker. It manages context resolution, message transformation, and hook application to prepare requests for external AI providers. The class ensures proper lifecycle management of runs and cancellation tokens while abstracting provider-specific details."
-  RunCancellationToken.php,readonly final class,Provides a mechanism to check if a specific agent run has been cancelled by querying the persistent store. It encapsulates the run identifier and store dependency to determine cancellation status on demand.
-  StreamDeltaReducer.php,final class,"StreamDeltaReducer aggregates incremental streaming deltas from an AI assistant into a coherent final message structure, including text content and tool call executions. It parses partial JSON arguments for tool calls and merges token usage statistics from the stream. The class maintains internal state to reconstruct the complete assistant response and associated metadata."
-  SymfonyMessageMapper.php,final class,SymfonyMessageMapper translates between internal AgentMessage objects and provider-specific message formats for AI integration. It normalizes content structures and handles tool call serialization to ensure compatibility with external AI service APIs.
-  SymfonyPlatformInvoker.php,readonly final class,"SymfonyPlatformInvoker acts as an adapter for the Symfony AI platform, translating generic agent inputs into platform-specific invocations. It handles the execution of model calls and extracts structured usage metadata from the platform's deferred results."
+  Platform.php,readonly final class,"Orchestrates AI provider calls by resolving context, mapping messages, applying hooks, and delegating invocation to the platform adapter."
+  RunCancellationToken.php,readonly final class,Checks whether a run has been cancelled by querying the run store on demand.
+  StreamDeltaReducer.php,final class,"Reduces streaming AI response deltas into a final assistant message with text content, tool calls, and usage statistics."
+  SymfonyMessageMapper.php,final class,"Converts between internal AgentMessage objects and Symfony AI provider message formats, handling tool-call serialization."
+  SymfonyPlatformInvoker.php,readonly final class,Invokes the Symfony AI platform model endpoint and extracts structured usage metadata from deferred results.

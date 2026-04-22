@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: CommandHandlerRegistry.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\CommandHandlerRegistry"
 type: final class
-summary: The CommandHandlerRegistry acts as a central lookup mechanism for resolving command handlers by their specific kind. It maintains a registry of handler instances to facilitate efficient dispatching within the application's command handling pipeline.
+summary: Named-lookup registry that resolves command handlers by their command kind.
 sections[3]:
   - kind: classDoc
     start: 9

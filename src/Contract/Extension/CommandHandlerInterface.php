@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Contract\Extension;
 
 /**
- * Defines the contract for command handlers within the AgentCore extension system, enabling type-safe dispatch and transformation of command payloads. It ensures that handlers can validate command kinds and safely map execution contexts to structured results.
+ * Handles extension commands with kind-based dispatch, validation, and payload mapping.
  */
 interface CommandHandlerInterface
 {

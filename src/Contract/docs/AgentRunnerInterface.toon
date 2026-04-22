@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: AgentRunnerInterface.php
 class: "Ineersa\\AgentCore\\Contract\\AgentRunnerInterface"
 type: interface
-summary: "Defines the contract for orchestrating the lifecycle of an agent execution run, including initialization, state transitions, and termination. It provides a unified interface for controlling agent behavior through steering, follow-ups, and human-in-the-loop interactions."
+summary: "Orchestrates agent execution runs through start, steer, follow-up, and cancel lifecycle operations."
 sections[1]{kind,start,end,limit}:
   classDoc,11,13,3
 wiring:

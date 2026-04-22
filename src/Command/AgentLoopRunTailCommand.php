@@ -16,7 +16,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
- * This command prints the latest persisted events for a run.
+ * Prints the latest persisted events for a run to the console.
  */
 #[AsCommand(name: 'agent-loop:run-tail', description: 'Tail the latest persisted events for a run.')]
 final class AgentLoopRunTailCommand extends Command

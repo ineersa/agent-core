@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: RunMetrics.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics"
 type: final class
-summary: This class collects in-process runtime metrics for run orchestration and workers.
+summary: Collects in-process runtime metrics for run orchestration and worker execution.
 sections[3]:
   - kind: classDoc
     start: 9

@@ -7,7 +7,7 @@ namespace Ineersa\AgentCore\Application\Handler;
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
 
 /**
- * The HookSubscriberRegistry maintains a registry of hook subscribers to facilitate event-driven dispatching within the application. It provides a lookup mechanism to retrieve specific subscribers associated with a given hook name.
+ * Named-lookup registry that resolves hook subscribers by hook name.
  */
 final class HookSubscriberRegistry
 {

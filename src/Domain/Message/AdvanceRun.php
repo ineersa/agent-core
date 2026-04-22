@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Domain\Message;
 
 /**
- * Represents a domain event signaling the progression of a specific run step within an agent execution. It encapsulates the unique identifiers for the run, turn, and step, along with attempt tracking and idempotency guarantees. This immutable value object ensures consistent state representation for run advancement logic.
+ * Bus message commanding the advancement of a run to its next processing step, carrying a payload for the target state.
  */
 final readonly class AdvanceRun extends AbstractAgentBusMessage
 {

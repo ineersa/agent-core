@@ -14,7 +14,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
- * This command prints a consolidated diagnostic snapshot for a run.
+ * Prints a consolidated diagnostic snapshot of run state, mailbox, and replay integrity.
  */
 #[AsCommand(name: 'agent-loop:run-inspect', description: 'Inspect run state, mailbox, and replay integrity.')]
 final class AgentLoopRunInspectCommand extends Command

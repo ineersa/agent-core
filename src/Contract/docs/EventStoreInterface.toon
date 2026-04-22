@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: EventStoreInterface.php
 class: "Ineersa\\AgentCore\\Contract\\EventStoreInterface"
 type: interface
-summary: Defines the contract for persisting and retrieving execution events within the Agent Core system. It abstracts the underlying storage mechanism to ensure consistent interaction with run-specific event data. This interface serves as the primary boundary for event persistence operations.
+summary: Persists and retrieves execution events scoped to individual runs.
 sections[1]{kind,start,end,limit}:
   classDoc,9,11,3
 wiring:

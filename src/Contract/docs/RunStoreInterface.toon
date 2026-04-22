@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: RunStoreInterface.php
 class: "Ineersa\\AgentCore\\Contract\\RunStoreInterface"
 type: interface
-summary: "Defines the contract for persisting and managing agent run states with optimistic concurrency control. It supports retrieving individual run states, atomically updating them based on version numbers, and identifying stale running runs for cleanup."
+summary: Persists run states with optimistic concurrency control via compare-and-swap and stale-run detection.
 sections[1]{kind,start,end,limit}:
   classDoc,9,11,3
 wiring:

@@ -7,7 +7,7 @@ namespace Ineersa\AgentCore\Application\Handler;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 
 /**
- * This class provides a caching layer for tool execution results, enabling efficient retrieval of previously computed outputs. It supports lookup by run and tool call identifiers, as well as by tool name and idempotency keys to prevent redundant execution.
+ * In-process cache for tool execution results, supporting lookup by run+tool-call and by tool name+idempotency key.
  */
 final class ToolExecutionResultStore
 {

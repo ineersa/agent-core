@@ -13,7 +13,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
 
 /**
- * This service provides read-only debugging views for run state, replay streams, and hot prompt snapshots.
+ * Provides read-only debugging views of run state, replay streams, and prompt snapshots.
  */
 final readonly class RunDebugService
 {

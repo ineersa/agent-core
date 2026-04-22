@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: InMemoryCommandStore.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryCommandStore"
 type: final class
-summary: "InMemoryCommandStore provides an in-memory implementation of the command persistence interface, managing the lifecycle of pending commands for specific run IDs. It supports idempotency checks and state transitions such as applying, rejecting, or superseding commands within a single process context."
+summary: "Manages pending commands in memory with idempotent enqueue and state transitions (applied, rejected, superseded) per run."
 sections[2]{kind,start,end,limit}:
   classDoc,10,12,3
   properties,16,22,7

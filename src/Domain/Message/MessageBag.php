@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Domain\Message;
 
 /**
- * MessageBag is a readonly value object that encapsulates a collection of domain messages. It provides a simple interface to retrieve the contained messages or instantiate an empty instance.
+ * An immutable collection of domain message objects, providing empty-instance creation and typed retrieval.
  */
 final readonly class MessageBag
 {

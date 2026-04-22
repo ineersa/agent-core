@@ -7,7 +7,7 @@ namespace Ineersa\AgentCore\Contract\Extension;
 use Ineersa\AgentCore\Domain\Event\BoundaryHookName;
 
 /**
- * Defines the contract for components that subscribe to and process specific system hooks within the AgentCore extension system. Implementations declare their target hook names and provide logic to process incoming hook events with associated context data.
+ * Subscribes to named hooks and processes incoming hook events with context data.
  */
 interface HookSubscriberInterface
 {

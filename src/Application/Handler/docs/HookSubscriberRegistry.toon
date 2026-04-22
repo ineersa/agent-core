@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: HookSubscriberRegistry.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\HookSubscriberRegistry"
 type: final class
-summary: The HookSubscriberRegistry maintains a registry of hook subscribers to facilitate event-driven dispatching within the application. It provides a lookup mechanism to retrieve specific subscribers associated with a given hook name.
+summary: Named-lookup registry that resolves hook subscribers by hook name.
 sections[3]:
   - kind: classDoc
     start: 9

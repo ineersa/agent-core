@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: CoreCommandKind.php
 class: "Ineersa\\AgentCore\\Domain\\Command\\CoreCommandKind"
 type: final class
-summary: Defines the set of core command types recognized by the agent core system. This final class provides a static utility to validate whether a given command kind string belongs to the core domain. It serves as a strict type guard for command routing and processing.
+summary: "Closed set of core command kinds (steer, follow_up, cancel, human_response, continue) with validation for command routing."
 sections[2]{kind,start,end,limit}:
   classDoc,7,9,3
   constants,12,25,14

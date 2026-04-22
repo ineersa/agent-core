@@ -8,7 +8,7 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 
 /**
- * A readonly value object representing the outcome of a tool batch execution within the agent core application. It encapsulates execution status flags, ordered results, and side-effect payloads for downstream processing. Designed to provide a structured, immutable contract for communicating batch processing states.
+ * Immutable outcome of a tool batch collection carrying acceptance flags, ordered results, and pending execution effects.
  */
 final readonly class ToolBatchCollectOutcome
 {

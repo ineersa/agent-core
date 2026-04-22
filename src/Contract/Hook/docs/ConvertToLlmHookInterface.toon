@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: ConvertToLlmHookInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Hook\\ConvertToLlmHookInterface"
 type: interface
-summary: Defines the contract for converting raw message arrays into a structured MessageBag for Large Language Model processing. This interface allows implementations to transform and normalize input data while supporting cancellation via a CancellationToken.
+summary: Converts raw message arrays into a structured MessageBag for LLM consumption.
 sections[1]{kind,start,end,limit}:
   classDoc,10,12,3
 methods[1]:

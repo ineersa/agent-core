@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: StartRun.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\StartRun"
 type: readonly final class
-summary: A domain event representing the initiation of a specific execution run within the agent core. It encapsulates the unique identifiers and sequence metadata required to track the lifecycle of a single run instance. This class serves as a value object for conveying run start context across domain boundaries.
+summary: "Bus message commanding the initiation of a new agent run, carrying the initial payload for execution."
 sections[2]:
   - kind: classDoc
     start: 7

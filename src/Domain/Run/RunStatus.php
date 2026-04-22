@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Domain\Run;
 
 /**
- * Defines the immutable lifecycle states for a Run entity within the AgentCore domain. This enum enforces type-safe state transitions and prevents invalid status updates by restricting values to a closed set of operational phases.
+ * Enumerates the closed set of run lifecycle states from queued through terminal (completed, failed, cancelled).
  */
 enum RunStatus: string
 {

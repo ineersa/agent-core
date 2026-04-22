@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: Version20260418000100.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Doctrine\\Migrations\\Version20260418000100"
 type: final class
-summary: This class defines a Doctrine migration to modify the database schema for the Agent Core infrastructure. It implements the standard up and down methods to apply or revert structural changes using the Doctrine Schema abstraction.
+summary: "Creates the initial agent-loop persistence schema (events, commands, runs, outbox, prompt state, artifacts)."
 sections[1]{kind,start,end,limit}:
   classDoc,11,13,3
 methods[3]:

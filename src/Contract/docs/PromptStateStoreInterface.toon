@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: PromptStateStoreInterface.php
 class: "Ineersa\\AgentCore\\Contract\\PromptStateStoreInterface"
 type: interface
-summary: "Defines the contract for persisting and retrieving agent execution state keyed by run identifiers. It provides a minimal interface for storing, fetching, and removing structured state arrays associated with specific agent runs."
+summary: "Stores, fetches, and removes structured prompt state keyed by run identifier."
 sections[1]{kind,start,end,limit}:
   classDoc,7,9,3
 wiring:

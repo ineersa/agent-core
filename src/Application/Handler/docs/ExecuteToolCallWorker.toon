@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: ExecuteToolCallWorker.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker"
 type: readonly final class
-summary: "This class acts as a message handler for the agent execution bus, processing tool call commands by delegating execution to a dedicated tool executor. It coordinates the invocation of external tools and manages the resulting state updates within the agent's runtime context."
+summary: Bus handler that delegates tool execution to the executor and dispatches the ToolCallResult message back.
 sections[2]:
   - kind: classDoc
     start: 19

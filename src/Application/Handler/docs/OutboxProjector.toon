@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: OutboxProjector.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\OutboxProjector"
 type: readonly final class
-summary: The OutboxProjector class processes a batch of domain events by persisting execution logs and publishing corresponding runtime events. It acts as a bridge between the outbox storage mechanism and external consumers via the event publisher.
+summary: Projects a batch of domain events to run log storage and the event publisher.
 sections[2]:
   - kind: classDoc
     start: 15

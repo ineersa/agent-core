@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: HotPromptStateStore.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\HotPromptStateStore"
 type: final class
-summary: "HotPromptStateStore provides a lightweight, in-memory cache for transient prompt execution states keyed by run ID. It is designed for high-speed access during active agent runs but does not guarantee persistence across restarts."
+summary: Caches prompt execution state in memory keyed by run ID for high-speed access during active agent runs.
 sections[2]{kind,start,end,limit}:
   classDoc,9,11,3
   properties,15,15,1

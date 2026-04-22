@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: StartRunInput.php
 class: "Ineersa\\AgentCore\\Domain\\Run\\StartRunInput"
 type: readonly final class
-summary: "Defines the immutable input payload for initiating a new agent run, encapsulating the system prompt, conversation history, and optional metadata. This class serves as a strict data contract for the Run domain, ensuring type safety for run configuration parameters."
+summary: "Input payload for starting a new run, carrying the system prompt, initial message history, and optional metadata."
 sections[2]:
   - kind: classDoc
     start: 9

@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: AgentLoopRunReplayCommand.php
 class: "Ineersa\\AgentCore\\Command\\AgentLoopRunReplayCommand"
 type: final class
-summary: This command replays persisted run events after a sequence cursor.
+summary: Replays persisted run events after a given sequence cursor.
 sections[2]:
   - kind: classDoc
     start: 18

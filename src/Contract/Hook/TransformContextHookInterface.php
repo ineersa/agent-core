@@ -7,7 +7,7 @@ namespace Ineersa\AgentCore\Contract\Hook;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 
 /**
- * Defines the contract for hook implementations that transform message payloads within the agent core. It provides a standardized entry point for processing message arrays with optional cancellation support.
+ * Transforms message payloads in the agent loop with optional cancellation support.
  */
 interface TransformContextHookInterface
 {

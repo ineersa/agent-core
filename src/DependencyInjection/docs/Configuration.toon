@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: Configuration.php
 class: "Ineersa\\AgentCore\\DependencyInjection\\Configuration"
 type: final class
-summary: Configures the Ineersa AgentCore bundle's configuration schema using Symfony's configuration tree builder. It defines the hierarchical structure and validation rules for the bundle's settings within the application container.
+summary: "Defines the validated configuration tree for the AgentCore bundle (runtime, streaming, storage, tools, commands, events, checkpoints, retention)."
 sections[1]{kind,start,end,limit}:
   classDoc,11,13,3
 methods[1]:

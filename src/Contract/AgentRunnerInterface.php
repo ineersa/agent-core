@@ -9,7 +9,7 @@ use Ineersa\AgentCore\Domain\Run\RunHandle;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 
 /**
- * Defines the contract for orchestrating the lifecycle of an agent execution run, including initialization, state transitions, and termination. It provides a unified interface for controlling agent behavior through steering, follow-ups, and human-in-the-loop interactions.
+ * Orchestrates agent execution runs through start, steer, follow-up, and cancel lifecycle operations.
  */
 interface AgentRunnerInterface
 {

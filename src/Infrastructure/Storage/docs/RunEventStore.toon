@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: RunEventStore.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunEventStore"
 type: final class
-summary: The RunEventStore provides a persistence layer for RunEvent entities within the infrastructure storage boundary. It abstracts the underlying storage mechanism to allow appending individual or batched events and retrieving the complete event history for a specific run. This class serves as the primary interface for run-related event data access and mutation.
+summary: "Stores run events in memory, supporting append and retrieval of the full event history per run."
 sections[2]{kind,start,end,limit}:
   classDoc,10,12,3
   properties,16,16,1

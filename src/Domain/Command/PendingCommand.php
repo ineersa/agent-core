@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Domain\Command;
 
 /**
- * PendingCommand represents a durable, immutable command record queued for asynchronous execution within the agent core domain. It encapsulates execution metadata including run identifiers, idempotency keys, and optional configuration payloads to ensure reliable processing.
+ * Immutable command record awaiting processing, carrying run identity, kind, idempotency key, and optional payload.
  */
 final readonly class PendingCommand
 {

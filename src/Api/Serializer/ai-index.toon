@@ -3,4 +3,4 @@ namespace: Serializer
 fqcn: "Ineersa\\AgentCore\\Api\\Serializer"
 updatedAt: 2026-04-22
 files[1]{file,type,summary}:
-  RunEventSerializer.php,readonly final class,The RunEventSerializer converts between domain RunEvent and RunStreamEvent objects and their array representations for API transport. It provides bidirectional normalization to support serialization boundaries without leaking domain structure.
+  RunEventSerializer.php,readonly final class,"Converts domain RunEvent objects to API-facing RunStreamEvent DTOs and normalized array payloads, bridging domain events to transport representations."

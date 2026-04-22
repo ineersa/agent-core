@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Infrastructure\Mercure;
 
 /**
- * This class provides utility methods for constructing Mercure topic identifiers based on a run identifier. It encapsulates the logic for generating single and multiple topic strings required for event publication or subscription within the Mercure transport boundary.
+ * Constructs Mercure topic strings for run event publication and subscription.
  */
 final readonly class RunTopicPolicy
 {

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Domain\Message;
 
 /**
- * Represents a domain event signaling the execution of a tool call within an agent run. It encapsulates the necessary context such as run identifiers, turn sequence, and idempotency keys to ensure reliable processing. This class serves as a structured payload for internal event bus communication.
+ * Bus message commanding the execution of a single tool call with its arguments and optional schema.
  */
 final readonly class ExecuteToolCall extends AbstractAgentBusMessage
 {

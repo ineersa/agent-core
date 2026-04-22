@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: AbstractAgentBusMessage.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage"
 type: readonly abstract class
-summary: "AbstractAgentBusMessage serves as a base value object for agent execution events, encapsulating core execution context such as run identifiers, turn numbers, and step metadata. It provides immutable accessors for these fields to ensure consistent data structure across agent bus messages. The class enforces immutability through readonly properties and final getter methods."
+summary: "Base value object for agent bus messages, carrying run/turn/step identity and idempotency metadata shared across all execution commands and results."
 sections[2]:
   - kind: classDoc
     start: 7

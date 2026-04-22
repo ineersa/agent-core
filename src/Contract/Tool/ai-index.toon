@@ -4,8 +4,8 @@ fqcn: "Ineersa\\AgentCore\\Contract\\Tool"
 updatedAt: 2026-04-22
 description: "Tool execution contracts — platform invocation, model resolution, tool catalog discovery, tool executor, and idempotency key resolution."
 files[5]{file,type,summary}:
-  ModelResolverInterface.php,interface,Defines the contract for resolving AI model configurations based on incoming message context and default settings. It abstracts the decision logic for selecting the appropriate model to process a given set of messages.
-  PlatformInterface.php,interface,Defines the contract for executing AI model invocations within the Agent Core platform. It standardizes the interface for sending input payloads and receiving structured responses from various model providers. This abstraction allows the system to interact with different backend services through a unified method signature.
-  ToolCatalogProviderInterface.php,interface,Defines the contract for resolving tool catalogs within the AgentCore framework. Implementations provide a mechanism to retrieve available tools based on a provided context array. This interface abstracts the source of tool definitions to allow for flexible catalog resolution strategies.
-  ToolExecutorInterface.php,interface,Defines the contract for executing tool calls within the agent core system. It abstracts the execution logic to allow for interchangeable implementations of tool handlers. This interface ensures a consistent return type for tool execution results.
-  ToolIdempotencyKeyResolverInterface.php,interface,Defines the contract for resolving idempotency keys for tool calls within the AgentCore system. This interface ensures that repeated executions of the same tool call can be identified and handled consistently. It serves as a boundary for decoupling idempotency logic from the core tool execution flow.
+  ModelResolverInterface.php,interface,Resolves the target AI model configuration from message context and default settings.
+  PlatformInterface.php,interface,Executes AI model invocations and returns structured provider responses.
+  ToolCatalogProviderInterface.php,interface,Resolves the available tool catalog from execution context.
+  ToolExecutorInterface.php,interface,Executes a tool call and returns the structured result.
+  ToolIdempotencyKeyResolverInterface.php,interface,Resolves idempotency keys for tool calls to ensure consistent deduplication.

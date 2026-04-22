@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Domain\Message;
 
 /**
- * ProjectJsonlOutbox configures batch and retry parameters for persisting domain events to a JSON Lines file. It serves as a configuration holder for the outbox mechanism without performing I/O operations itself.
+ * Configuration value object for JSON Lines outbox delivery, specifying batch size and retry delay.
  */
 final readonly class ProjectJsonlOutbox
 {

@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: MercureOutboxProjectorWorker.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\MercureOutboxProjectorWorker"
 type: readonly final class
-summary: This class acts as a worker that processes Mercure outbox projection messages by retrieving pending events from the outbox store. It publishes these events via the run event publisher to ensure consistent delivery to Mercure subscribers.
+summary: Bus handler that drains pending outbox events and publishes them to Mercure subscribers.
 sections[2]:
   - kind: classDoc
     start: 13

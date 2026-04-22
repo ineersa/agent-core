@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: AgentLoopResumeStaleRunsCommand.php
 class: "Ineersa\\AgentCore\\Command\\AgentLoopResumeStaleRunsCommand"
 type: final class
-summary: This command identifies and resumes stale agent runs by coordinating with storage and locking mechanisms to ensure safe execution. It leverages a replay service to restore state and dispatches commands via the message bus to continue processing.
+summary: Resumes stale agent runs after worker restart by replaying state and dispatching continuation commands.
 sections[2]:
   - kind: classDoc
     start: 21

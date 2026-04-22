@@ -19,7 +19,7 @@ use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
- * This command identifies and resumes stale agent runs by coordinating with storage and locking mechanisms to ensure safe execution. It leverages a replay service to restore state and dispatches commands via the message bus to continue processing.
+ * Resumes stale agent runs after worker restart by replaying state and dispatching continuation commands.
  */
 #[AsCommand(name: 'agent-loop:resume-stale-runs', description: 'Resume stale running runs after worker restart.')]
 final class AgentLoopResumeStaleRunsCommand extends Command

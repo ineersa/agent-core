@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: RunEventPublisher.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunEventPublisher"
 type: final class
-summary: "The RunEventPublisher class publishes domain RunEvent instances to a Mercure hub using configurable serialization and topic policies. It implements a coalescing mechanism to batch rapid updates within a defined time window, reducing unnecessary network traffic."
+summary: Publishes domain run events to a Mercure hub with coalesced message-update batching to reduce network traffic.
 sections[3]:
   - kind: classDoc
     start: 12

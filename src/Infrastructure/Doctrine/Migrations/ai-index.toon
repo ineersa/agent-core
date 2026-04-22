@@ -3,4 +3,4 @@ namespace: Migrations
 fqcn: "Ineersa\\AgentCore\\Infrastructure\\Doctrine\\Migrations"
 updatedAt: 2026-04-22
 files[1]{file,type,summary}:
-  Version20260418000100.php,final class,This class defines a Doctrine migration to modify the database schema for the Agent Core infrastructure. It implements the standard up and down methods to apply or revert structural changes using the Doctrine Schema abstraction.
+  Version20260418000100.php,final class,"Creates the initial agent-loop persistence schema (events, commands, runs, outbox, prompt state, artifacts)."

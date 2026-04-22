@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: StepDispatcher.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\StepDispatcher"
 type: readonly final class
-summary: The StepDispatcher class orchestrates the execution of agent steps by routing effects and messages to distinct message buses. It decouples side-effect processing from publishing logic by delegating to separate MessageBusInterface instances.
+summary: Routes execution effects to the execution bus and projection messages to the publisher bus.
 sections[2]:
   - kind: classDoc
     start: 10

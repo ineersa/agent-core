@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Domain\Tool;
 
 /**
- * A readonly value object representing a resolved AI model configuration with its associated options. It encapsulates the model identifier and any specific parameters required for instantiation. This class serves as a data carrier for model resolution within the domain layer.
+ * Resolved AI model identifier with its associated configuration options for provider instantiation.
  */
 final readonly class ResolvedModel
 {

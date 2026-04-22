@@ -13,7 +13,7 @@ use Ineersa\AgentCore\Infrastructure\Mercure\RunEventPublisher;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogWriter;
 
 /**
- * The OutboxProjector class processes a batch of domain events by persisting execution logs and publishing corresponding runtime events. It acts as a bridge between the outbox storage mechanism and external consumers via the event publisher.
+ * Projects a batch of domain events to run log storage and the event publisher.
  */
 final readonly class OutboxProjector
 {

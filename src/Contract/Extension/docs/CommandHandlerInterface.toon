@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: CommandHandlerInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Extension\\CommandHandlerInterface"
 type: interface
-summary: "Defines the contract for command handlers within the AgentCore extension system, enabling type-safe dispatch and transformation of command payloads. It ensures that handlers can validate command kinds and safely map execution contexts to structured results."
+summary: "Handles extension commands with kind-based dispatch, validation, and payload mapping."
 sections[1]{kind,start,end,limit}:
   classDoc,7,9,3
 methods[3]:

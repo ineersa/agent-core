@@ -9,7 +9,7 @@ use Symfony\Component\Config\Definition\Builder\TreeBuilder;
 use Symfony\Component\Config\Definition\ConfigurationInterface;
 
 /**
- * Configures the Ineersa AgentCore bundle's configuration schema using Symfony's configuration tree builder. It defines the hierarchical structure and validation rules for the bundle's settings within the application container.
+ * Defines the validated configuration tree for the AgentCore bundle (runtime, streaming, storage, tools, commands, events, checkpoints, retention).
  */
 final class Configuration implements ConfigurationInterface
 {

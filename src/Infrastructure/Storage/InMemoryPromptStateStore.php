@@ -7,7 +7,7 @@ namespace Ineersa\AgentCore\Infrastructure\Storage;
 use Ineersa\AgentCore\Contract\PromptStateStoreInterface;
 
 /**
- * InMemoryPromptStateStore provides an ephemeral, in-memory storage mechanism for persisting prompt state associated with specific agent run IDs. It implements a simple key-value interface using an internal array to map run identifiers to their corresponding state arrays.
+ * Stores prompt state per run ID in an ephemeral in-memory array.
  */
 final class InMemoryPromptStateStore implements PromptStateStoreInterface
 {

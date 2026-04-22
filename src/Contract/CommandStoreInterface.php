@@ -7,7 +7,7 @@ namespace Ineersa\AgentCore\Contract;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 
 /**
- * Defines the contract for persisting and managing the lifecycle of pending commands within a specific run context. It provides mechanisms to enqueue new commands, query their status, and transition them through applied, rejected, or superseded states. This interface abstracts the underlying storage mechanism for command durability and idempotency checks.
+ * Manages the lifecycle of pending commands per run — enqueue, idempotency checks, status queries, and state transitions.
  */
 interface CommandStoreInterface
 {

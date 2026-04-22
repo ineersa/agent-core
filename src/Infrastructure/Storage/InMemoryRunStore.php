@@ -8,7 +8,7 @@ use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
 
 /**
- * InMemoryRunStore provides an in-memory implementation of the RunState persistence layer, designed for testing or ephemeral runtime contexts. It manages the lifecycle of agent run states using versioned optimistic locking to ensure consistency during concurrent updates.
+ * Persists run states in memory with versioned optimistic locking for concurrent-update safety.
  */
 final class InMemoryRunStore implements RunStoreInterface
 {

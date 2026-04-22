@@ -4,4 +4,4 @@ fqcn: "Ineersa\\AgentCore\\Infrastructure\\Messenger"
 updatedAt: 2026-04-22
 description: Messenger bus configuration — bus name constants.
 files[1]{file,type,summary}:
-  BusNames.php,final class,This class provides a centralized registry of named constants for identifying different message bus instances within the application. It serves as a configuration boundary to ensure consistent bus selection across the infrastructure layer.
+  BusNames.php,final class,"Defines bus name constants for the command, execution, and publisher Messenger buses."

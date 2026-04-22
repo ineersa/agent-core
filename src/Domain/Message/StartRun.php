@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Domain\Message;
 
 /**
- * A domain event representing the initiation of a specific execution run within the agent core. It encapsulates the unique identifiers and sequence metadata required to track the lifecycle of a single run instance. This class serves as a value object for conveying run start context across domain boundaries.
+ * Bus message commanding the initiation of a new agent run, carrying the initial payload for execution.
  */
 final readonly class StartRun extends AbstractAgentBusMessage
 {

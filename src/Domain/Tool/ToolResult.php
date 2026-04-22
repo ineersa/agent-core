@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Domain\Tool;
 
 /**
- * ToolResult is a readonly value object that encapsulates the outcome of a tool execution within the agent domain. It stores the tool identifier, name, structured content, and optional error details to represent a complete execution result.
+ * Outcome of a tool call execution, capturing the tool identity, structured content blocks, and optional error details.
  */
 final readonly class ToolResult
 {

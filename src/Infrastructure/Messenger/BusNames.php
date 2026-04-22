@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Infrastructure\Messenger;
 
 /**
- * This class provides a centralized registry of named constants for identifying different message bus instances within the application. It serves as a configuration boundary to ensure consistent bus selection across the infrastructure layer.
+ * Defines bus name constants for the command, execution, and publisher Messenger buses.
  */
 final class BusNames
 {

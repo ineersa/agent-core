@@ -16,7 +16,7 @@ use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
- * The AgentRunner class orchestrates the lifecycle of agent execution runs by translating high-level inputs into discrete, idempotent steps. It manages state transitions for starting, continuing, steering, and canceling runs while ensuring reliable message dispatch via a command bus.
+ * Public API facade that dispatches start, continue, steer, and cancel commands to the agent message bus as idempotent execution messages.
  */
 final class AgentRunner implements AgentRunnerInterface
 {

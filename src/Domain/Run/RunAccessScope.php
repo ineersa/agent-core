@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Domain\Run;
 
 /**
- * Defines an immutable scope for run access control, encapsulating the run identifier, optional tenant and user contexts, and session metadata. Designed as a value object to enforce strict access boundaries without mutable state.
+ * Encapsulates the run's access context — run identity, optional tenant/user scopes, and session metadata — for authorization decisions.
  */
 final readonly class RunAccessScope
 {

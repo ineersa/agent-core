@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: ApplyCommand.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\ApplyCommand"
 type: readonly final class
-summary: "The ApplyCommand class represents a domain event for applying a command within a specific execution step. It encapsulates the necessary context such as run ID, turn number, and step ID to ensure proper sequencing and identification of the operation."
+summary: "Bus message commanding the application of an external command (steer, cancel, etc.) to an active run step."
 sections[2]:
   - kind: classDoc
     start: 7

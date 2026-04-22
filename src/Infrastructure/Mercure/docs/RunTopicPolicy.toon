@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: RunTopicPolicy.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunTopicPolicy"
 type: readonly final class
-summary: This class provides utility methods for constructing Mercure topic identifiers based on a run identifier. It encapsulates the logic for generating single and multiple topic strings required for event publication or subscription within the Mercure transport boundary.
+summary: Constructs Mercure topic strings for run event publication and subscription.
 sections[1]{kind,start,end,limit}:
   classDoc,7,9,3
 wiring:

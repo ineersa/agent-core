@@ -8,7 +8,7 @@ use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
- * The StepDispatcher class orchestrates the execution of agent steps by routing effects and messages to distinct message buses. It decouples side-effect processing from publishing logic by delegating to separate MessageBusInterface instances.
+ * Routes execution effects to the execution bus and projection messages to the publisher bus.
  */
 final readonly class StepDispatcher
 {

@@ -4,6 +4,6 @@ fqcn: "Ineersa\\AgentCore\\Contract\\Extension"
 updatedAt: 2026-04-22
 description: "Extension seam interfaces for third-party integrations — command handlers, event subscribers, hook subscribers."
 files[3]{file,type,summary}:
-  CommandHandlerInterface.php,interface,"Defines the contract for command handlers within the AgentCore extension system, enabling type-safe dispatch and transformation of command payloads. It ensures that handlers can validate command kinds and safely map execution contexts to structured results."
-  EventSubscriberInterface.php,interface,Defines the contract for components that react to specific domain events within the AgentCore system. Implementers declare which event types they observe and provide the logic to process those events when they occur.
-  HookSubscriberInterface.php,interface,Defines the contract for components that subscribe to and process specific system hooks within the AgentCore extension system. Implementations declare their target hook names and provide logic to process incoming hook events with associated context data.
+  CommandHandlerInterface.php,interface,"Handles extension commands with kind-based dispatch, validation, and payload mapping."
+  EventSubscriberInterface.php,interface,Reacts to specific domain events by declaring subscribed event types and processing them.
+  HookSubscriberInterface.php,interface,Subscribes to named hooks and processes incoming hook events with context data.

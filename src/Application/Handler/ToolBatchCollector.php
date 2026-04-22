@@ -9,7 +9,7 @@ use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 
 /**
- * The ToolBatchCollector aggregates individual tool calls into batches based on run, turn, and step identifiers, enforcing a configurable maximum parallelism limit. It tracks expected batches and collects results to determine when a batch is complete and ready for dispatch.
+ * Aggregates tool calls into bounded-parallelism batches scoped by run/turn/step and detects batch completion.
  */
 final class ToolBatchCollector
 {

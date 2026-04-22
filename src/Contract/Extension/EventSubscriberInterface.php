@@ -7,7 +7,7 @@ namespace Ineersa\AgentCore\Contract\Extension;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 
 /**
- * Defines the contract for components that react to specific domain events within the AgentCore system. Implementers declare which event types they observe and provide the logic to process those events when they occur.
+ * Reacts to specific domain events by declaring subscribed event types and processing them.
  */
 interface EventSubscriberInterface
 {

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Contract;
 
 /**
- * Defines the contract for persisting agent execution artifacts, such as logs or intermediate outputs, to a storage backend. It ensures consistent storage semantics across different implementations by standardizing the input parameters and return value for artifact registration.
+ * Persists named execution artifacts (logs, intermediate outputs) to a storage backend.
  */
 interface ArtifactStoreInterface
 {

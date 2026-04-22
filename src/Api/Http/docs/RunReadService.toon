@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: RunReadService.php
 class: "Ineersa\\AgentCore\\Api\\Http\\RunReadService"
 type: readonly final class
-summary: "This class provides HTTP-read access to run data and event transcripts by coordinating between run metadata stores and event storage. It retrieves summaries, paginated transcripts, and replayable event sequences while enforcing access control via the run access store."
+summary: "Provides read access to run summaries, paginated transcripts, and replayable event sequences, enforcing scoped access control across run and event stores."
 sections[2]:
   - kind: classDoc
     start: 15

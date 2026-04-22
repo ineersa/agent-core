@@ -8,7 +8,7 @@ use Ineersa\AgentCore\Contract\RunAccessStoreInterface;
 use Ineersa\AgentCore\Domain\Run\RunAccessScope;
 
 /**
- * InMemoryRunAccessStore provides an in-memory implementation for persisting and retrieving RunAccessScope entities keyed by run ID. It serves as a transient storage layer for run access metadata within the agent core infrastructure.
+ * Holds run access scopes in memory, keyed by run ID.
  */
 final class InMemoryRunAccessStore implements RunAccessStoreInterface
 {

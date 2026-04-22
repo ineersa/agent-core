@@ -9,7 +9,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 
 /**
- * The RunEventSerializer converts between domain RunEvent and RunStreamEvent objects and their array representations for API transport. It provides bidirectional normalization to support serialization boundaries without leaking domain structure.
+ * Converts domain RunEvent objects to API-facing RunStreamEvent DTOs and normalized array payloads, bridging domain events to transport representations.
  */
 final readonly class RunEventSerializer
 {

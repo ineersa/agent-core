@@ -7,7 +7,7 @@ namespace Ineersa\AgentCore\Contract\Hook;
 use Ineersa\AgentCore\Domain\Tool\ProviderRequest;
 
 /**
- * Defines a hook interface for intercepting provider requests before they are dispatched. It allows modifying or canceling the request based on the model, input, and options provided.
+ * Intercepts provider requests before dispatch, allowing modification or cancellation.
  */
 interface BeforeProviderRequestHookInterface
 {

@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: InMemoryRunStore.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunStore"
 type: final class
-summary: "InMemoryRunStore provides an in-memory implementation of the RunState persistence layer, designed for testing or ephemeral runtime contexts. It manages the lifecycle of agent run states using versioned optimistic locking to ensure consistency during concurrent updates."
+summary: Persists run states in memory with versioned optimistic locking for concurrent-update safety.
 sections[2]{kind,start,end,limit}:
   classDoc,10,12,3
   properties,16,19,4

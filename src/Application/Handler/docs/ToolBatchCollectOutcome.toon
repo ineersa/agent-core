@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: ToolBatchCollectOutcome.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollectOutcome"
 type: readonly final class
-summary: "A readonly value object representing the outcome of a tool batch execution within the agent core application. It encapsulates execution status flags, ordered results, and side-effect payloads for downstream processing. Designed to provide a structured, immutable contract for communicating batch processing states."
+summary: "Immutable outcome of a tool batch collection carrying acceptance flags, ordered results, and pending execution effects."
 sections[2]:
   - kind: classDoc
     start: 10

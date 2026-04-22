@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: ToolExecutionResultStore.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutionResultStore"
 type: final class
-summary: "This class provides a caching layer for tool execution results, enabling efficient retrieval of previously computed outputs. It supports lookup by run and tool call identifiers, as well as by tool name and idempotency keys to prevent redundant execution."
+summary: "In-process cache for tool execution results, supporting lookup by run+tool-call and by tool name+idempotency key."
 sections[2]{kind,start,end,limit}:
   classDoc,9,11,3
   properties,15,18,4

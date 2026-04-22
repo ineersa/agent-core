@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Contract\Hook;
 
 /**
- * Defines the contract for a cancellation token used to signal intent to abort long-running or asynchronous hook operations. It provides a mechanism for cooperative cancellation without requiring external state management.
+ * Signals cooperative cancellation for long-running or asynchronous hook operations.
  */
 interface CancellationTokenInterface
 {

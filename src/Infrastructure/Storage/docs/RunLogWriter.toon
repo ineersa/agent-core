@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: RunLogWriter.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogWriter"
 type: readonly final class
-summary: "The RunLogWriter class provides a mechanism for persisting RunEvent instances to the filesystem. It formats event data into structured files based on run identifiers and timestamps, ensuring durable storage of agent execution logs."
+summary: "Appends run events as JSON lines to Flysystem-backed log files, partitioned by run ID."
 sections[3]:
   - kind: classDoc
     start: 11

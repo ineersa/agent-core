@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: AgentLoopRunRebuildHotStateCommand.php
 class: "Ineersa\\AgentCore\\Command\\AgentLoopRunRebuildHotStateCommand"
 type: final class
-summary: This command rebuilds hot prompt state from persisted run events.
+summary: Rebuilds hot prompt state for a run from persisted event history.
 sections[2]:
   - kind: classDoc
     start: 16

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Contract;
 
 /**
- * Defines the contract for persisting and retrieving agent execution state keyed by run identifiers. It provides a minimal interface for storing, fetching, and removing structured state arrays associated with specific agent runs.
+ * Stores, fetches, and removes structured prompt state keyed by run identifier.
  */
 interface PromptStateStoreInterface
 {

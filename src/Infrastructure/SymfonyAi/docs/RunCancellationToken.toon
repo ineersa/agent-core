@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: RunCancellationToken.php
 class: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\RunCancellationToken"
 type: readonly final class
-summary: Provides a mechanism to check if a specific agent run has been cancelled by querying the persistent store. It encapsulates the run identifier and store dependency to determine cancellation status on demand.
+summary: Checks whether a run has been cancelled by querying the run store on demand.
 sections[2]:
   - kind: classDoc
     start: 11

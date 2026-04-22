@@ -11,7 +11,7 @@ use Symfony\Component\DependencyInjection\Extension\PrependExtensionInterface;
 use Symfony\Component\DependencyInjection\Loader\PhpFileLoader;
 
 /**
- * Registers default configuration values for the Agent Loop bundle into the Symfony container before user configuration is processed. It ensures consistent baseline settings for the agent core subsystem by merging predefined defaults with the provided configuration array.
+ * Loads AgentCore service definitions, validates and persists bundle configuration, and prepends framework config (messenger, doctrine) into the Symfony container.
  */
 final class AgentLoopExtension extends Extension implements PrependExtensionInterface
 {

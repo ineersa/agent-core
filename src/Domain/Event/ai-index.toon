@@ -6,9 +6,9 @@ description: "Event sourcing models — base RunEvent, outbox pattern (Entry/Sin
 files[6]{file,type,summary}:
   BoundaryHookEvent.php,final class,Defines a domain event representing the execution of a named boundary hook within the agent core. It encapsulates the hook identifier and an optional context array to provide metadata for downstream processing.
   BoundaryHookName.php,final class,Provides static utility methods to classify event hook names based on their semantic role within the domain. It distinguishes between boundary hooks and extension hooks by evaluating string prefixes against defined constants.
-  CoreLifecycleEventType.php,final class,CoreLifecycleEventType provides static utility methods for identifying and validating core lifecycle event types within the agent domain. It serves as a central registry for mapping event types to their corresponding class implementations and enforcing ordering constraints.
+  CoreLifecycleEventType.php,final class,"Central registry mapping lifecycle event type strings to concrete event classes, with ordering validation for event sequencing."
   OutboxEntry.php,readonly final class,"Represents a durable record for an event pending delivery to an external sink. It encapsulates the event payload, target sink, and retry metadata to support reliable outbox pattern implementation."
-  OutboxSink.php,enum,OutboxSink defines the contract for persisting domain events to an outbox storage mechanism. It ensures reliable event delivery by providing a standardized interface for writing event payloads to durable storage.
+  OutboxSink.php,enum,Enumerates the supported outbox delivery targets — JSON Lines file and Mercure hub.
   RunEvent.php,readonly class,"Represents a domain event for a specific run execution, capturing sequence and turn metadata alongside a typed payload. Designed as a readonly value object to ensure immutability and safe propagation of run state changes within the domain layer."
 subNamespaces[1]{namespace,fqcn,path,description,index}:
   Lifecycle,"Ineersa\\AgentCore\\Domain\\Event\\Lifecycle",Lifecycle,"Typed lifecycle event subclasses — AgentStart/End, TurnStart/End, MessageStart/Update/End, ToolExecutionStart/Update/End.",Lifecycle/ai-index.toon

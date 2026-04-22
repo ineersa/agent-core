@@ -7,7 +7,7 @@ namespace Ineersa\AgentCore\Contract;
 use Ineersa\AgentCore\Domain\Run\RunAccessScope;
 
 /**
- * Defines the contract for persisting and retrieving access scopes associated with specific runs. It enables atomic storage of scope data and supports timestamp updates for access tracking. This interface abstracts the underlying storage mechanism for run access control.
+ * Persists access scopes per run with atomic save and timestamp-based access tracking.
  */
 interface RunAccessStoreInterface
 {

@@ -4,9 +4,9 @@ fqcn: "Ineersa\\AgentCore\\Domain\\Run"
 updatedAt: 2026-04-22
 description: "Run lifecycle value objects — identity, state, status enum, and input DTO for starting runs."
 files[6]{file,type,summary}:
-  RunAccessScope.php,readonly final class,"Defines an immutable scope for run access control, encapsulating the run identifier, optional tenant and user contexts, and session metadata. Designed as a value object to enforce strict access boundaries without mutable state."
+  RunAccessScope.php,readonly final class,"Encapsulates the run's access context — run identity, optional tenant/user scopes, and session metadata — for authorization decisions."
   RunHandle.php,readonly final class,A value object representing a unique identifier for a run within the agent core domain. It encapsulates the run ID as a strongly-typed string to enforce type safety and semantic clarity across the application.
   RunId.php,readonly final class,A value object representing a unique identifier for a run within the agent core domain. It encapsulates a string value to ensure type safety and immutability for run identification. This class supports string conversion and programmatic generation of new identifiers.
-  RunState.php,readonly final class,"Represents the immutable state of a run within the agent core domain, encapsulating its identifier, current status, and progression metrics. This readonly value object ensures state consistency by preventing mutation after construction."
-  RunStatus.php,enum,Defines the immutable lifecycle states for a Run entity within the AgentCore domain. This enum enforces type-safe state transitions and prevents invalid status updates by restricting values to a closed set of operational phases.
-  StartRunInput.php,readonly final class,"Defines the immutable input payload for initiating a new agent run, encapsulating the system prompt, conversation history, and optional metadata. This class serves as a strict data contract for the Run domain, ensuring type safety for run configuration parameters."
+  RunState.php,readonly final class,"Immutable snapshot of a run's current state — status, conversation messages, progression counters, and pending tool calls."
+  RunStatus.php,enum,"Enumerates the closed set of run lifecycle states from queued through terminal (completed, failed, cancelled)."
+  StartRunInput.php,readonly final class,"Input payload for starting a new run, carrying the system prompt, initial message history, and optional metadata."

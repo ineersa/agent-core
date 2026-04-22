@@ -17,7 +17,7 @@ use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
- * This class acts as a message handler for the agent execution bus, processing tool call commands by delegating execution to a dedicated tool executor. It coordinates the invocation of external tools and manages the resulting state updates within the agent's runtime context.
+ * Bus handler that delegates tool execution to the executor and dispatches the ToolCallResult message back.
  */
 final readonly class ExecuteToolCallWorker
 {

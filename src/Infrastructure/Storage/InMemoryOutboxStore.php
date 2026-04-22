@@ -10,7 +10,7 @@ use Ineersa\AgentCore\Domain\Event\OutboxSink;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 
 /**
- * InMemoryOutboxStore provides an in-memory implementation of the outbox pattern for buffering domain events before publication. It ensures event durability within the current process lifecycle by managing entry states and preventing duplicate submissions via sink-based deduplication.
+ * Buffers outbox entries in memory with sink-based deduplication for domain event publication.
  */
 final class InMemoryOutboxStore implements OutboxStoreInterface
 {

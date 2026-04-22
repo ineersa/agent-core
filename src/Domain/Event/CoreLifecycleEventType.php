@@ -16,7 +16,7 @@ use Ineersa\AgentCore\Domain\Event\Lifecycle\TurnEndEvent;
 use Ineersa\AgentCore\Domain\Event\Lifecycle\TurnStartEvent;
 
 /**
- * CoreLifecycleEventType provides static utility methods for identifying and validating core lifecycle event types within the agent domain. It serves as a central registry for mapping event types to their corresponding class implementations and enforcing ordering constraints.
+ * Central registry mapping lifecycle event type strings to concrete event classes, with ordering validation for event sequencing.
  */
 final class CoreLifecycleEventType
 {

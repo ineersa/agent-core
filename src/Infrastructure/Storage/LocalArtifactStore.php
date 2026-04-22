@@ -7,7 +7,7 @@ namespace Ineersa\AgentCore\Infrastructure\Storage;
 use Ineersa\AgentCore\Contract\ArtifactStoreInterface;
 
 /**
- * LocalArtifactStore persists binary or text artifacts to the local filesystem using a configurable base directory. It organizes files by run ID and artifact name, ensuring isolated storage for agent execution outputs.
+ * Persists artifacts to the local filesystem, organized by run ID and artifact name.
  */
 final readonly class LocalArtifactStore implements ArtifactStoreInterface
 {

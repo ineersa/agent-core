@@ -7,7 +7,7 @@ namespace Ineersa\AgentCore\Contract\Tool;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 
 /**
- * Defines the contract for resolving idempotency keys for tool calls within the AgentCore system. This interface ensures that repeated executions of the same tool call can be identified and handled consistently. It serves as a boundary for decoupling idempotency logic from the core tool execution flow.
+ * Resolves idempotency keys for tool calls to ensure consistent deduplication.
  */
 interface ToolIdempotencyKeyResolverInterface
 {

@@ -9,7 +9,7 @@ use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use League\Flysystem\FilesystemOperator;
 
 /**
- * The RunLogWriter class provides a mechanism for persisting RunEvent instances to the filesystem. It formats event data into structured files based on run identifiers and timestamps, ensuring durable storage of agent execution logs.
+ * Appends run events as JSON lines to Flysystem-backed log files, partitioned by run ID.
  */
 final readonly class RunLogWriter
 {

@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: LlmStepResult.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\LlmStepResult"
 type: readonly final class
-summary: "Represents the immutable result of a single LLM agent step within a multi-turn conversation. It encapsulates execution metadata including run identifiers, turn sequence, and idempotency keys to ensure reliable processing. This value object serves as a core domain entity for tracking agent execution state."
+summary: "Result of a single LLM inference step, carrying the assistant message, usage statistics, and optional error."
 sections[2]:
   - kind: classDoc
     start: 7

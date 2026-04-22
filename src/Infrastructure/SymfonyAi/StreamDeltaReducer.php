@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 
 /**
- * StreamDeltaReducer aggregates incremental streaming deltas from an AI assistant into a coherent final message structure, including text content and tool call executions. It parses partial JSON arguments for tool calls and merges token usage statistics from the stream. The class maintains internal state to reconstruct the complete assistant response and associated metadata.
+ * Reduces streaming AI response deltas into a final assistant message with text content, tool calls, and usage statistics.
  */
 final class StreamDeltaReducer
 {

@@ -10,7 +10,7 @@ use Ineersa\AgentCore\Domain\Command\RoutedCommand;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 
 /**
- * The CommandRouter class acts as a central dispatcher for ApplyCommand instances, routing them to appropriate handlers based on command kind. It leverages a CommandHandlerRegistry to resolve specific handler implementations and validates command options before routing.
+ * Routes ApplyCommand messages to the matching handler by command kind, resolving extension-prefixed commands via the handler registry.
  */
 final class CommandRouter
 {

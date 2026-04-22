@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: SymfonyMessageMapper.php
 class: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper"
 type: final class
-summary: SymfonyMessageMapper translates between internal AgentMessage objects and provider-specific message formats for AI integration. It normalizes content structures and handles tool call serialization to ensure compatibility with external AI service APIs.
+summary: "Converts between internal AgentMessage objects and Symfony AI provider message formats, handling tool-call serialization."
 sections[1]{kind,start,end,limit}:
   classDoc,10,12,3
 wiring:

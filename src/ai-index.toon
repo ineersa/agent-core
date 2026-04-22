@@ -3,4 +3,4 @@ namespace: src
 fqcn: "Ineersa\\AgentCore"
 updatedAt: 2026-04-22
 files[1]{file,type,summary}:
-  AgentLoopBundle.php,final class,"The AgentLoopBundle class serves as the Symfony bundle entry point for the AgentCore library, facilitating its integration into the application container. It provides the standard mechanism for registering the bundle's configuration and services within the Symfony framework."
+  AgentLoopBundle.php,final class,Symfony bundle entry point that registers the AgentCore extension for container configuration and service loading.

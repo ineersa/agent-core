@@ -13,7 +13,7 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
 
 /**
- * This class provides HTTP-read access to run data and event transcripts by coordinating between run metadata stores and event storage. It retrieves summaries, paginated transcripts, and replayable event sequences while enforcing access control via the run access store.
+ * Provides read access to run summaries, paginated transcripts, and replayable event sequences, enforcing scoped access control across run and event stores.
  */
 final readonly class RunReadService
 {

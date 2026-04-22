@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Domain\Message;
 
 /**
- * The ApplyCommand class represents a domain event for applying a command within a specific execution step. It encapsulates the necessary context such as run ID, turn number, and step ID to ensure proper sequencing and identification of the operation.
+ * Bus message commanding the application of an external command (steer, cancel, etc.) to an active run step.
  */
 final readonly class ApplyCommand extends AbstractAgentBusMessage
 {

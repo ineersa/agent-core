@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: RunState.php
 class: "Ineersa\\AgentCore\\Domain\\Run\\RunState"
 type: readonly final class
-summary: "Represents the immutable state of a run within the agent core domain, encapsulating its identifier, current status, and progression metrics. This readonly value object ensures state consistency by preventing mutation after construction."
+summary: "Immutable snapshot of a run's current state — status, conversation messages, progression counters, and pending tool calls."
 sections[2]:
   - kind: classDoc
     start: 9

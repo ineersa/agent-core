@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Domain\Message;
 
 /**
- * CollectToolBatch is a domain message representing a batch of tool executions within a specific agent run. It encapsulates execution context such as turn number, step ID, and attempt count to ensure proper sequencing and tracking. The class uses an idempotency key to prevent duplicate processing of the same batch.
+ * Bus message commanding the collection and dispatch of a batch of pending tool calls for parallel or sequential execution.
  */
 final readonly class CollectToolBatch extends AbstractAgentBusMessage
 {

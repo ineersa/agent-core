@@ -8,7 +8,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\MessageBag;
 
 /**
- * Defines the contract for converting raw message arrays into a structured MessageBag for Large Language Model processing. This interface allows implementations to transform and normalize input data while supporting cancellation via a CancellationToken.
+ * Converts raw message arrays into a structured MessageBag for LLM consumption.
  */
 interface ConvertToLlmHookInterface
 {

@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: ExecuteLlmStepWorker.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteLlmStepWorker"
 type: readonly final class
-summary: This class serves as a message handler for executing LLM steps within the agent execution domain. It coordinates with the platform to perform the step logic and dispatches the resulting state updates via a dedicated command bus.
+summary: Bus handler that invokes the LLM platform for a step and dispatches the result as a LlmStepResult message.
 sections[2]:
   - kind: classDoc
     start: 14

@@ -9,7 +9,7 @@ use Ineersa\AgentCore\Domain\Event\OutboxSink;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 
 /**
- * Defines the contract for persisting and retrieving outbound event entries to ensure reliable delivery. It provides mechanisms to enqueue new events, claim batches for processing, and update their status upon completion or failure.
+ * Ensures reliable delivery of outbound events via enqueue, batch claim, and completion tracking.
  */
 interface OutboxStoreInterface
 {

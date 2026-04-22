@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Handler;
 
 /**
- * This class records latency observations and exposes histogram-style snapshots.
+ * Records latency observations and exposes histogram-style bucket snapshots.
  */
 final class LatencyHistogram
 {

@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: AgentLoopHealthCommand.php
 class: "Ineersa\\AgentCore\\Command\\AgentLoopHealthCommand"
 type: final class
-summary: This class implements a Symfony console command to report the health status of the agent loop. It retrieves configuration details to provide operational visibility into the agent's runtime state.
+summary: Reports agent-loop health and effective runtime settings to the console.
 sections[2]:
   - kind: classDoc
     start: 13

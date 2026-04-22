@@ -7,7 +7,7 @@ namespace Ineersa\AgentCore\Application\Handler;
 use Ineersa\AgentCore\Contract\Extension\EventSubscriberInterface;
 
 /**
- * The EventSubscriberRegistry acts as a centralized registry for managing event subscribers within the application's handler layer. It stores a collection of subscribers and provides a mechanism to retrieve them based on specific event types. This design facilitates decoupled event handling by allowing components to query for relevant subscribers dynamically.
+ * Named-lookup registry that resolves event subscribers by event type.
  */
 final class EventSubscriberRegistry
 {

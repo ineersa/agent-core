@@ -9,7 +9,7 @@ use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 
 /**
- * Provides a mechanism to check if a specific agent run has been cancelled by querying the persistent store. It encapsulates the run identifier and store dependency to determine cancellation status on demand.
+ * Checks whether a run has been cancelled by querying the run store on demand.
  */
 final readonly class RunCancellationToken implements CancellationTokenInterface
 {

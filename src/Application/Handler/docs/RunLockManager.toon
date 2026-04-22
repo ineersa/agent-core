@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: RunLockManager.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\RunLockManager"
 type: readonly final class
-summary: "The RunLockManager provides a mechanism to execute critical sections of code exclusively for a specific run ID using distributed locking. It leverages a LockFactory to acquire locks with a configurable time-to-live, ensuring thread-safe or process-safe execution of run-specific logic."
+summary: Provides per-run distributed locking to guard critical sections against concurrent execution.
 sections[2]:
   - kind: classDoc
     start: 9

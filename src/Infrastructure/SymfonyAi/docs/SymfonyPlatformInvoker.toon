@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: SymfonyPlatformInvoker.php
 class: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyPlatformInvoker"
 type: readonly final class
-summary: "SymfonyPlatformInvoker acts as an adapter for the Symfony AI platform, translating generic agent inputs into platform-specific invocations. It handles the execution of model calls and extracts structured usage metadata from the platform's deferred results."
+summary: Invokes the Symfony AI platform model endpoint and extracts structured usage metadata from deferred results.
 sections[2]:
   - kind: classDoc
     start: 11

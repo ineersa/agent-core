@@ -7,7 +7,7 @@ namespace Ineersa\AgentCore\Contract;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 
 /**
- * Defines the contract for persisting and retrieving execution events within the Agent Core system. It abstracts the underlying storage mechanism to ensure consistent interaction with run-specific event data. This interface serves as the primary boundary for event persistence operations.
+ * Persists and retrieves execution events scoped to individual runs.
  */
 interface EventStoreInterface
 {

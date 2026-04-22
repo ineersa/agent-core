@@ -8,7 +8,7 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 
 /**
- * The RunEventStore provides a persistence layer for RunEvent entities within the infrastructure storage boundary. It abstracts the underlying storage mechanism to allow appending individual or batched events and retrieving the complete event history for a specific run. This class serves as the primary interface for run-related event data access and mutation.
+ * Stores run events in memory, supporting append and retrieval of the full event history per run.
  */
 final class RunEventStore implements EventStoreInterface
 {

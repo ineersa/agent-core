@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: LocalArtifactStore.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\LocalArtifactStore"
 type: readonly final class
-summary: "LocalArtifactStore persists binary or text artifacts to the local filesystem using a configurable base directory. It organizes files by run ID and artifact name, ensuring isolated storage for agent execution outputs."
+summary: "Persists artifacts to the local filesystem, organized by run ID and artifact name."
 sections[2]:
   - kind: classDoc
     start: 9

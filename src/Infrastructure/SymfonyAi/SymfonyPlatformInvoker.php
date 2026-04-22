@@ -9,7 +9,7 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Domain\Tool\PlatformInvocationResult;
 
 /**
- * SymfonyPlatformInvoker acts as an adapter for the Symfony AI platform, translating generic agent inputs into platform-specific invocations. It handles the execution of model calls and extracts structured usage metadata from the platform's deferred results.
+ * Invokes the Symfony AI platform model endpoint and extracts structured usage metadata from deferred results.
  */
 final readonly class SymfonyPlatformInvoker
 {

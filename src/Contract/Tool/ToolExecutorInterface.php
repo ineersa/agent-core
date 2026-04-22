@@ -8,7 +8,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 
 /**
- * Defines the contract for executing tool calls within the agent core system. It abstracts the execution logic to allow for interchangeable implementations of tool handlers. This interface ensures a consistent return type for tool execution results.
+ * Executes a tool call and returns the structured result.
  */
 interface ToolExecutorInterface
 {

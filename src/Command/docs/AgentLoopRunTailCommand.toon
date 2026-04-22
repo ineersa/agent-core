@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: AgentLoopRunTailCommand.php
 class: "Ineersa\\AgentCore\\Command\\AgentLoopRunTailCommand"
 type: final class
-summary: This command prints the latest persisted events for a run.
+summary: Prints the latest persisted events for a run to the console.
 sections[2]:
   - kind: classDoc
     start: 18

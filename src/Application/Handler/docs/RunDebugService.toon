@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: RunDebugService.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService"
 type: readonly final class
-summary: "This service provides read-only debugging views for run state, replay streams, and hot prompt snapshots."
+summary: "Provides read-only debugging views of run state, replay streams, and prompt snapshots."
 sections[2]:
   - kind: classDoc
     start: 15

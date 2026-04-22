@@ -7,7 +7,7 @@ namespace Ineersa\AgentCore\Application\Handler;
 use Ineersa\AgentCore\Contract\Extension\CommandHandlerInterface;
 
 /**
- * The CommandHandlerRegistry acts as a central lookup mechanism for resolving command handlers by their specific kind. It maintains a registry of handler instances to facilitate efficient dispatching within the application's command handling pipeline.
+ * Named-lookup registry that resolves command handlers by their command kind.
  */
 final class CommandHandlerRegistry
 {

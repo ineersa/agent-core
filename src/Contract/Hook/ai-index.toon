@@ -4,10 +4,10 @@ fqcn: "Ineersa\\AgentCore\\Contract\\Hook"
 updatedAt: 2026-04-22
 description: "Hook interfaces for intercepting agent loop lifecycle: context transforms, LLM conversion, tool call boundaries, cancellation, and message providers."
 files[7]{file,type,summary}:
-  BeforeProviderRequestHookInterface.php,interface,"Defines a hook interface for intercepting provider requests before they are dispatched. It allows modifying or canceling the request based on the model, input, and options provided."
-  CancellationTokenInterface.php,interface,Defines the contract for a cancellation token used to signal intent to abort long-running or asynchronous hook operations. It provides a mechanism for cooperative cancellation without requiring external state management.
-  ConvertToLlmHookInterface.php,interface,Defines the contract for converting raw message arrays into a structured MessageBag for Large Language Model processing. This interface allows implementations to transform and normalize input data while supporting cancellation via a CancellationToken.
-  FollowUpMessagesProviderInterface.php,interface,"Defines the contract for retrieving follow-up messages within the AgentCore hook system. This interface abstracts the source of contextual messages, allowing implementations to provide dynamic responses based on the current agent state."
-  NullCancellationToken.php,readonly final class,NullCancellationToken implements the cancellation token contract by providing a non-cancelable instance. It serves as a safe default for scenarios where cancellation support is not required or applicable.
-  SteeringMessagesProviderInterface.php,interface,Defines the contract for retrieving steering messages within the AgentCore hook system. This interface abstracts the source of configuration or routing directives used to steer agent behavior. It serves as a dependency injection point for components requiring dynamic message resolution.
-  TransformContextHookInterface.php,interface,Defines the contract for hook implementations that transform message payloads within the agent core. It provides a standardized entry point for processing message arrays with optional cancellation support.
+  BeforeProviderRequestHookInterface.php,interface,"Intercepts provider requests before dispatch, allowing modification or cancellation."
+  CancellationTokenInterface.php,interface,Signals cooperative cancellation for long-running or asynchronous hook operations.
+  ConvertToLlmHookInterface.php,interface,Converts raw message arrays into a structured MessageBag for LLM consumption.
+  FollowUpMessagesProviderInterface.php,interface,Supplies contextual follow-up messages based on current agent state.
+  NullCancellationToken.php,readonly final class,Non-cancelable sentinel implementing the cancellation token contract for scenarios that do not require abort support.
+  SteeringMessagesProviderInterface.php,interface,Supplies steering messages that configure or route agent behavior.
+  TransformContextHookInterface.php,interface,Transforms message payloads in the agent loop with optional cancellation support.

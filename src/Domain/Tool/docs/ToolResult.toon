@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: ToolResult.php
 class: "Ineersa\\AgentCore\\Domain\\Tool\\ToolResult"
 type: readonly final class
-summary: "ToolResult is a readonly value object that encapsulates the outcome of a tool execution within the agent domain. It stores the tool identifier, name, structured content, and optional error details to represent a complete execution result."
+summary: "Outcome of a tool call execution, capturing the tool identity, structured content blocks, and optional error details."
 sections[2]:
   - kind: classDoc
     start: 7

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Domain\Command;
 
 /**
- * RoutedCommand is a readonly value object representing a command in the domain layer, distinguishing between core and extension command types. It encapsulates the command kind, payload, options, and status to provide a structured representation of domain operations.
+ * Discriminated command wrapper that classifies a pending command as core-routable, extension-delegated, or rejected.
  */
 final readonly class RoutedCommand
 {

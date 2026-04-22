@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: CommandStoreInterface.php
 class: "Ineersa\\AgentCore\\Contract\\CommandStoreInterface"
 type: interface
-summary: "Defines the contract for persisting and managing the lifecycle of pending commands within a specific run context. It provides mechanisms to enqueue new commands, query their status, and transition them through applied, rejected, or superseded states. This interface abstracts the underlying storage mechanism for command durability and idempotency checks."
+summary: "Manages the lifecycle of pending commands per run — enqueue, idempotency checks, status queries, and state transitions."
 sections[1]{kind,start,end,limit}:
   classDoc,9,11,3
 wiring:

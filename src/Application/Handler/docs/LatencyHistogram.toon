@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: LatencyHistogram.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\LatencyHistogram"
 type: final class
-summary: This class records latency observations and exposes histogram-style snapshots.
+summary: Records latency observations and exposes histogram-style bucket snapshots.
 sections[3]:
   - kind: classDoc
     start: 7

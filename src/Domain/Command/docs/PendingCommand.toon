@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: PendingCommand.php
 class: "Ineersa\\AgentCore\\Domain\\Command\\PendingCommand"
 type: readonly final class
-summary: "PendingCommand represents a durable, immutable command record queued for asynchronous execution within the agent core domain. It encapsulates execution metadata including run identifiers, idempotency keys, and optional configuration payloads to ensure reliable processing."
+summary: "Immutable command record awaiting processing, carrying run identity, kind, idempotency key, and optional payload."
 sections[2]:
   - kind: classDoc
     start: 7

@@ -8,7 +8,7 @@ use Ineersa\AgentCore\Domain\Message\MessageBag;
 use Ineersa\AgentCore\Domain\Tool\ResolvedModel;
 
 /**
- * Defines the contract for resolving AI model configurations based on incoming message context and default settings. It abstracts the decision logic for selecting the appropriate model to process a given set of messages.
+ * Resolves the target AI model configuration from message context and default settings.
  */
 interface ModelResolverInterface
 {

@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: ProjectJsonlOutbox.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\ProjectJsonlOutbox"
 type: readonly final class
-summary: ProjectJsonlOutbox configures batch and retry parameters for persisting domain events to a JSON Lines file. It serves as a configuration holder for the outbox mechanism without performing I/O operations itself.
+summary: "Configuration value object for JSON Lines outbox delivery, specifying batch size and retry delay."
 sections[2]:
   - kind: classDoc
     start: 7

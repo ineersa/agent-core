@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: AgentLoopRunInspectCommand.php
 class: "Ineersa\\AgentCore\\Command\\AgentLoopRunInspectCommand"
 type: final class
-summary: This command prints a consolidated diagnostic snapshot for a run.
+summary: "Prints a consolidated diagnostic snapshot of run state, mailbox, and replay integrity."
 sections[2]:
   - kind: classDoc
     start: 16

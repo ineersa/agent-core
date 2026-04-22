@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Domain\Message;
 
 /**
- * AbstractAgentBusMessage serves as a base value object for agent execution events, encapsulating core execution context such as run identifiers, turn numbers, and step metadata. It provides immutable accessors for these fields to ensure consistent data structure across agent bus messages. The class enforces immutability through readonly properties and final getter methods.
+ * Base value object for agent bus messages, carrying run/turn/step identity and idempotency metadata shared across all execution commands and results.
  */
 abstract readonly class AbstractAgentBusMessage implements AgentBusMessageInterface
 {

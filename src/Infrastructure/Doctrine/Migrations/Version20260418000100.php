@@ -9,7 +9,7 @@ use Doctrine\DBAL\Types\Types;
 use Doctrine\Migrations\AbstractMigration;
 
 /**
- * This class defines a Doctrine migration to modify the database schema for the Agent Core infrastructure. It implements the standard up and down methods to apply or revert structural changes using the Doctrine Schema abstraction.
+ * Creates the initial agent-loop persistence schema (events, commands, runs, outbox, prompt state, artifacts).
  */
 final class Version20260418000100 extends AbstractMigration
 {

@@ -2,7 +2,7 @@ spec: agent-core.file-index/v1
 file: ToolBatchCollector.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector"
 type: final class
-summary: "The ToolBatchCollector aggregates individual tool calls into batches based on run, turn, and step identifiers, enforcing a configurable maximum parallelism limit. It tracks expected batches and collects results to determine when a batch is complete and ready for dispatch."
+summary: Aggregates tool calls into bounded-parallelism batches scoped by run/turn/step and detects batch completion.
 sections[3]:
   - kind: classDoc
     start: 11
