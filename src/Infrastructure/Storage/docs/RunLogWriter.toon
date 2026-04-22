@@ -44,7 +44,7 @@ methods[3]:
     symbolLine: 22
     symbolColumn: 21
     signature: "public function append(RunEvent $event): void"
-    callees[5]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogWriter::pathForRun","Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer::normalizeRunEvent","League\\Flysystem\\FilesystemReader::fileExists","League\\Flysystem\\FilesystemReader::read","League\\Flysystem\\FilesystemWriter::write"
+    callees[2]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogWriter::pathForRun","Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer::normalizeRunEvent"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\JsonlOutboxProjectorWorker::__invoke"
   - method: pathForRun
     start: 46
@@ -53,5 +53,4 @@ methods[3]:
     symbolLine: 46
     symbolColumn: 22
     signature: "private function pathForRun(string $runId, DateTimeImmutable $at): string"
-    callees[1]: "DateTimeImmutable::format"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogWriter::append"

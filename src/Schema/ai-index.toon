@@ -7,3 +7,4 @@ files[4]{file,type}:
   EventNameMap.php,final class
   EventPayloadNormalizer.php,readonly final class
   SchemaVersion.php,final class
+description: "Shared payload contract schemas, event-name mapping, and command/event normalizers for API and worker boundaries."

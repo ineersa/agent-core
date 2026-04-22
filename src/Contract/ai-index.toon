@@ -2,7 +2,6 @@ spec: agent-core.ai-docs/v1
 namespace: Contract
 fqcn: "Ineersa\\AgentCore\\Contract"
 updatedAt: 2026-04-22
-description: "Stable public interfaces for the agent loop: runner API, storage abstractions, tool execution, hook system, and extension seams. Implementations live in Infrastructure/."
 files[8]{file,type}:
   AgentRunnerInterface.php,interface
   ArtifactStoreInterface.php,interface
@@ -12,6 +11,7 @@ files[8]{file,type}:
   PromptStateStoreInterface.php,interface
   RunAccessStoreInterface.php,interface
   RunStoreInterface.php,interface
+description: "Stable public interfaces for the agent loop: runner API, storage abstractions, tool execution, hook system, and extension seams. Implementations live in Infrastructure/."
 subNamespaces[3]{namespace,fqcn,path,description,index}:
   Hook,"Ineersa\\AgentCore\\Contract\\Hook",Hook,"Hook interfaces for intercepting agent loop lifecycle: context transforms, LLM conversion, tool call boundaries, cancellation tokens, message providers.",Hook/ai-index.toon
   Extension,"Ineersa\\AgentCore\\Contract\\Extension",Extension,"Extension seam interfaces — command handlers, event subscribers, hook subscribers for third-party integrations.",Extension/ai-index.toon

@@ -43,7 +43,7 @@ methods[8]:
     symbolLine: 37
     symbolColumn: 21
     signature: "public function rebuildHotPromptState(string $runId): array"
-    callees[7]: "Ineersa\\AgentCore\\Application\\Handler\\ReplayService::eventsForReplay","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::replayMessages","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::verifyIntegrity","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::estimateTokens","Ineersa\\AgentCore\\Contract\\PromptStateStoreInterface::save","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::incrementReplayRebuildCount","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan"
+    callees[7]: "Ineersa\\AgentCore\\Application\\Handler\\ReplayService::estimateTokens","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::eventsForReplay","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::replayMessages","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::verifyIntegrity","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::incrementReplayRebuildCount","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Contract\\PromptStateStoreInterface::save"
     callers[3]: "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::rebuildHotPromptState","Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit::commit","Ineersa\\AgentCore\\Command\\AgentLoopResumeStaleRunsCommand::execute"
   - method: verifyIntegrity
     start: 71
@@ -61,7 +61,7 @@ methods[8]:
     symbolLine: 103
     symbolColumn: 22
     signature: "private function eventsForReplay(string $runId): array"
-    callees[3]: "Ineersa\\AgentCore\\Contract\\EventStoreInterface::allFor","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::sortBySequence","Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader::allFor"
+    callees[3]: "Ineersa\\AgentCore\\Application\\Handler\\ReplayService::sortBySequence","Ineersa\\AgentCore\\Contract\\EventStoreInterface::allFor","Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader::allFor"
     callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\ReplayService::rebuildHotPromptState","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::verifyIntegrity"
   - method: sortBySequence
     start: 113

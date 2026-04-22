@@ -9,10 +9,11 @@ const VERSION_CHECK_PATTERN = /\bCASTOR_DISABLE_VERSION_CHECK\s*=/;
 const NO_COLOR_PATTERN = /\bNO_COLOR\s*=/;
 const CL_COLOR_PATTERN = /\bCLICOLOR\s*=/;
 
-const CASTOR_LIST_SEGMENT_PATTERN = /((?:^|\s|&&\s*|\|\|\s*|;\s*)(?:vendor\/bin\/)?castor\s+list\b)([^\n;]*)/g;
+// Stop at shell operators so pipes/redirections are not swallowed into args.
+const CASTOR_LIST_PATTERN = /((?:^|\s|&&\s*|\|\|\s*|;\s*)(?:vendor\/bin\/)?castor\s+list\b)((?:\s+[^\s|;&>]+)*)/g;
 
 function applyLlmFriendlyListDefaults(command: string): string {
-	return command.replace(CASTOR_LIST_SEGMENT_PATTERN, (_match, prefix: string, args: string) => {
+	return command.replace(CASTOR_LIST_PATTERN, (_match, prefix: string, args: string) => {
 		const hasRaw = /\s--raw\b/.test(args);
 		const hasFormat = /\s--format(?:=|\s)/.test(args);
 		const hasShort = /\s--short\b/.test(args);

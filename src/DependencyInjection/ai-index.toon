@@ -2,7 +2,7 @@ spec: agent-core.ai-docs/v1
 namespace: DependencyInjection
 fqcn: "Ineersa\\AgentCore\\DependencyInjection"
 updatedAt: 2026-04-22
-description: "Symfony bundle extension: config tree definition, config validation, service loading, and framework config prepend (messenger, doctrine)."
 files[2]{file,type}:
   AgentLoopExtension.php,final class
   Configuration.php,final class
+description: "Symfony bundle extension: config tree definition, config validation, service loading, and framework config prepend (messenger, doctrine)."

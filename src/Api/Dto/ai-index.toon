@@ -4,3 +4,4 @@ fqcn: "Ineersa\\AgentCore\\Api\\Dto"
 updatedAt: 2026-04-22
 files[1]{file,type}:
   RunStreamEvent.php,readonly final class
+description: Transport-facing envelope objects for HTTP and streaming payloads.

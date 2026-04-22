@@ -5,3 +5,4 @@ updatedAt: 2026-04-22
 files[2]{file,type}:
   RunApiController.php,final class
   RunReadService.php,readonly final class
+description: "HTTP controllers for run start, commands, transcript reads, and event replay with tenant-scoped authorization."

@@ -49,7 +49,7 @@ methods[8]:
     symbolLine: 35
     symbolColumn: 21
     signature: "public function handle(object $message, RunState $state): HandlerResult"
-    callees[14]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::has","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::route","Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand::isRejected","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::rejectCommand","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::countPending","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::isCancelSafeExtensionCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyCancelCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyContinueCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyHumanResponseCommand","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::enqueue","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::copyState","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::event"
+    callees[14]: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::route","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyCancelCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyContinueCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyHumanResponseCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::rejectCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::isCancelSafeExtensionCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::copyState","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::event","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::countPending","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::enqueue","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::has","Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand::isRejected","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId"
   - method: rejectCommand
     start: 123
     end: 150
@@ -57,8 +57,8 @@ methods[8]:
     symbolLine: 123
     symbolColumn: 22
     signature: "private function rejectCommand(RunState $state, ApplyCommand $message, string $reason): HandlerResult"
-    callees[5]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markRejected","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::copyState","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::event"
-    callers[3]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyContinueCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyHumanResponseCommand"
+    callees[5]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::copyState","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::event","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markRejected","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId"
+    callers[3]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyContinueCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyHumanResponseCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::handle"
   - method: applyCancelCommand
     start: 152
     end: 200
@@ -66,7 +66,7 @@ methods[8]:
     symbolLine: 152
     symbolColumn: 22
     signature: "private function applyCancelCommand(RunState $state, ApplyCommand $message): HandlerResult"
-    callees[6]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markApplied","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::rejectPendingByKind","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::eventsFromSpecs","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::copyState"
+    callees[6]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::copyState","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::eventsFromSpecs","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markApplied","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::rejectPendingByKind","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::handle"
   - method: applyContinueCommand
     start: 202
@@ -75,7 +75,7 @@ methods[8]:
     symbolLine: 205
     symbolColumn: 22
     signature: "private function applyContinueCommand(RunState $state, ApplyCommand $message, array $options): HandlerResult"
-    callees[8]: "Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::continueRejectionReason","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::rejectCommand","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markApplied","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::copyState","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::event","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::followUpAdvanceCallback"
+    callees[8]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::followUpAdvanceCallback","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::rejectCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::continueRejectionReason","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::copyState","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::event","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markApplied","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::handle"
   - method: applyHumanResponseCommand
     start: 248
@@ -84,7 +84,7 @@ methods[8]:
     symbolLine: 251
     symbolColumn: 22
     signature: "private function applyHumanResponseCommand(RunState $state, ApplyCommand $message, array $options): HandlerResult"
-    callees[8]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::rejectCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::humanResponseMessage","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markApplied","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::copyState","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::event","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::followUpAdvanceCallback"
+    callees[8]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::followUpAdvanceCallback","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::rejectCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::copyState","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::event","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::humanResponseMessage","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markApplied","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::handle"
   - method: followUpAdvanceCallback
     start: 307
@@ -93,5 +93,4 @@ methods[8]:
     symbolLine: 307
     symbolColumn: 22
     signature: "private function followUpAdvanceCallback(string $runId, string $prefix): ?callable"
-    callees[1]: "Symfony\\Component\\Messenger\\MessageBusInterface::dispatch"
     callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyContinueCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyHumanResponseCommand"

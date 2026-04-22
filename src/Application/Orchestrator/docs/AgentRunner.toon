@@ -35,7 +35,7 @@ methods[12]:
     symbolLine: 24
     symbolColumn: 21
     signature: "public function start(StartRunInput $input): RunHandle"
-    callees[4]: "Ineersa\\AgentCore\\Domain\\Run\\RunId::generate","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::nextStepId","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::dispatch","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::idempotencyKey"
+    callees[4]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::dispatch","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::idempotencyKey","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::nextStepId","Ineersa\\AgentCore\\Domain\\Run\\RunId::generate"
   - method: continue
     start: 44
     end: 47
@@ -83,8 +83,8 @@ methods[12]:
     symbolLine: 78
     symbolColumn: 22
     signature: "private function applyCoreCommand(string $runId, string $kind, array $payload): void"
-    callees[3]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::nextStepId","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::dispatch","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::idempotencyKey"
-    callers[5]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::continue","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::steer","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::followUp","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::cancel","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::answerHuman"
+    callees[3]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::dispatch","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::idempotencyKey","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::nextStepId"
+    callers[5]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::answerHuman","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::cancel","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::continue","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::followUp","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::steer"
   - method: serializeMessage
     start: 92
     end: 100
@@ -93,7 +93,7 @@ methods[12]:
     symbolColumn: 22
     signature: "private function serializeMessage(AgentMessage $message): array"
     callees[1]: "Ineersa\\AgentCore\\Domain\\Message\\AgentMessage::toArray"
-    callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::steer","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::followUp"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::followUp","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::steer"
   - method: nextStepId
     start: 102
     end: 105
@@ -101,7 +101,7 @@ methods[12]:
     symbolLine: 102
     symbolColumn: 22
     signature: "private function nextStepId(string $prefix): string"
-    callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::start","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::applyCoreCommand"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::applyCoreCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::start"
   - method: idempotencyKey
     start: 107
     end: 110
@@ -109,7 +109,7 @@ methods[12]:
     symbolLine: 107
     symbolColumn: 22
     signature: "private function idempotencyKey(string $runId, string $stepId): string"
-    callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::start","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::applyCoreCommand"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::applyCoreCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::start"
   - method: dispatch
     start: 112
     end: 119
@@ -117,5 +117,4 @@ methods[12]:
     symbolLine: 112
     symbolColumn: 22
     signature: "private function dispatch(object $message): void"
-    callees[1]: "Symfony\\Component\\Messenger\\MessageBusInterface::dispatch"
-    callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::start","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::applyCoreCommand"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::applyCoreCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::start"

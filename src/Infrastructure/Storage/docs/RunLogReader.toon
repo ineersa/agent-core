@@ -45,7 +45,7 @@ methods[4]:
     symbolLine: 29
     symbolColumn: 21
     signature: "public function allFor(string $runId): array"
-    callees[3]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader::runLogPaths","League\\Flysystem\\FilesystemReader::read","Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader::eventFromJsonLine"
+    callees[2]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader::eventFromJsonLine","Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader::runLogPaths"
     callers[3]: "Ineersa\\AgentCore\\Api\\Http\\RunReadService::eventsForRun","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::eventsForReplay","Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::eventsForRun"
   - method: runLogPaths
     start: 55
@@ -54,7 +54,6 @@ methods[4]:
     symbolLine: 60
     symbolColumn: 22
     signature: "private function runLogPaths(string $runId): array"
-    callees[2]: "League\\Flysystem\\FilesystemReader::listContents","League\\Flysystem\\FileAttributes::path"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader::allFor"
   - method: eventFromJsonLine
     start: 88

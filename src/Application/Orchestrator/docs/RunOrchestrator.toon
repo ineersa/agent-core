@@ -41,7 +41,7 @@ methods[6]:
     symbolLine: 33
     symbolColumn: 21
     signature: "public function onStartRun(StartRun $message): void"
-    callees[5]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor::process","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId"
+    callees[5]: "Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor::process","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo"
   - method: onApplyCommand
     start: 50
     end: 70
@@ -49,7 +49,7 @@ methods[6]:
     symbolLine: 54
     symbolColumn: 21
     signature: "public function onApplyCommand(ApplyCommand $message): void"
-    callees[5]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor::process","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId"
+    callees[5]: "Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor::process","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo"
   - method: onAdvanceRun
     start: 72
     end: 91
@@ -57,7 +57,7 @@ methods[6]:
     symbolLine: 76
     symbolColumn: 21
     signature: "public function onAdvanceRun(AdvanceRun $message): void"
-    callees[5]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor::process","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId"
+    callees[5]: "Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor::process","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo"
   - method: onLlmStepResult
     start: 93
     end: 112
@@ -65,7 +65,7 @@ methods[6]:
     symbolLine: 97
     symbolColumn: 21
     signature: "public function onLlmStepResult(LlmStepResult $message): void"
-    callees[5]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor::process","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId"
+    callees[5]: "Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor::process","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo"
   - method: onToolCallResult
     start: 114
     end: 134
@@ -73,4 +73,4 @@ methods[6]:
     symbolLine: 118
     symbolColumn: 21
     signature: "public function onToolCallResult(ToolCallResult $message): void"
-    callees[5]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor::process","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId"
+    callees[5]: "Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor::process","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo"

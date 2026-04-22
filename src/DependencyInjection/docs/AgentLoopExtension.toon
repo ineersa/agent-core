@@ -2,20 +2,6 @@ spec: agent-core.file-index/v1
 file: AgentLoopExtension.php
 class: "Ineersa\\AgentCore\\DependencyInjection\\AgentLoopExtension"
 type: final class
-methods[2]:
-  - method: prepend
-    start: 15
-    end: 31
-    limit: 17
-    symbolLine: 15
-    symbolColumn: 21
-    signature: "public function prepend(ContainerBuilder $container): void"
-    callees[2]: "Symfony\\Component\\DependencyInjection\\ContainerBuilder::hasExtension","Symfony\\Component\\DependencyInjection\\ContainerBuilder::prependExtensionConfig"
-  - method: load
-    start: 33
-    end: 71
-    limit: 39
-    symbolLine: 38
-    symbolColumn: 21
-    signature: "public function load(array $configs, ContainerBuilder $container): void"
-    callees[5]: "Symfony\\Component\\DependencyInjection\\Extension\\Extension::processConfiguration","Symfony\\Component\\DependencyInjection\\Container::setParameter","Symfony\\Component\\DependencyInjection\\Loader\\PhpFileLoader::load","Symfony\\Component\\DependencyInjection\\Alias::setPublic","Symfony\\Component\\DependencyInjection\\ContainerBuilder::setAlias"
+methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  prepend,15,31,17,15,21,"public function prepend(ContainerBuilder $container): void"
+  load,33,71,39,38,21,"public function load(array $configs, ContainerBuilder $container): void"

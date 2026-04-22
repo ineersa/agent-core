@@ -39,7 +39,7 @@ methods[3]:
     symbolLine: 34
     symbolColumn: 21
     signature: "public function __invoke(ExecuteToolCall $message): void"
-    callees[6]: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker::execute","Symfony\\Component\\Messenger\\MessageBusInterface::dispatch","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId"
+    callees[5]: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker::execute","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo"
   - method: execute
     start: 62
     end: 161
@@ -47,5 +47,5 @@ methods[3]:
     symbolLine: 62
     symbolColumn: 22
     signature: "private function execute(ExecuteToolCall $message): ToolCallResult"
-    callees[10]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Tool\\ToolExecutionMode::tryFrom","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Contract\\Tool\\ToolExecutorInterface::execute","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordToolLatency","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::attempt","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Throwable::getMessage"
+    callees[9]: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordToolLatency","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Contract\\Tool\\ToolExecutorInterface::execute","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::attempt","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Tool\\ToolExecutionMode::tryFrom"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker::__invoke"

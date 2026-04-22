@@ -33,7 +33,7 @@ methods[13]:
     symbolLine: 69
     symbolColumn: 22
     signature: "private function convertAgentMessage(AgentMessage $message): object"
-    callees[6]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::supportsNativeMessageApi","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::toGenericMessageObject","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::contentToText","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::assistantToolCalls","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::toNativeToolCallMessage","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::userText"
+    callees[6]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::assistantToolCalls","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::contentToText","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::supportsNativeMessageApi","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::toGenericMessageObject","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::toNativeToolCallMessage","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::userText"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::toMessageBag"
   - method: toNativeToolCallMessage
     start: 90
@@ -42,7 +42,7 @@ methods[13]:
     symbolLine: 90
     symbolColumn: 22
     signature: "private function toNativeToolCallMessage(AgentMessage $message, string $textContent): object"
-    callees[2]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::userText","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::stringify"
+    callees[2]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::stringify","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::userText"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::convertAgentMessage"
   - method: assistantToolCalls
     start: 116
@@ -67,7 +67,7 @@ methods[13]:
     symbolLine: 188
     symbolColumn: 22
     signature: "private function supportsNativeMessageApi(): bool"
-    callers[2]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::toProviderInput","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::convertAgentMessage"
+    callers[2]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::convertAgentMessage","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::toProviderInput"
   - method: isNativeMessageBag
     start: 194
     end: 197
@@ -100,7 +100,7 @@ methods[13]:
     symbolLine: 238
     symbolColumn: 22
     signature: "private function normalizeProviderMessage(object $message): array"
-    callees[7]: "stdClass::getRole","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::normalizeContent","stdClass::getContent","stdClass::getToolCall","stdClass::getId","stdClass::getName","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::stringify"
+    callees[2]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::normalizeContent","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::stringify"
   - method: normalizeContent
     start: 271
     end: 286
@@ -108,7 +108,7 @@ methods[13]:
     symbolLine: 271
     symbolColumn: 22
     signature: "private function normalizeContent(mixed $content): mixed"
-    callees[2]: "stdClass::getText","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::stringify"
+    callees[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::stringify"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::normalizeProviderMessage"
   - method: stringify
     start: 288
@@ -117,4 +117,4 @@ methods[13]:
     symbolLine: 288
     symbolColumn: 22
     signature: "private function stringify(mixed $value): string"
-    callers[3]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::toNativeToolCallMessage","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::normalizeProviderMessage","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::normalizeContent"
+    callers[3]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::normalizeContent","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::normalizeProviderMessage","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::toNativeToolCallMessage"

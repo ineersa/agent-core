@@ -52,7 +52,7 @@ methods[7]:
     symbolLine: 42
     symbolColumn: 21
     signature: "public function normalize(string $runId, int $seq, int $turnNo, string $type, array $payload = [], ?DateTimeImmutable $ts = null): array"
-    callees[2]: "Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer::toPublicType","DateTimeImmutable::format"
+    callees[1]: "Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer::toPublicType"
     callers[2]: "Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer::normalizeStreamEvent","Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer::normalizeRunEvent"
   - method: denormalizeRunEvent
     start: 63

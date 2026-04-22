@@ -9,20 +9,6 @@ constructorInputs[1]{param,type,required}:
 wiring:
   serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
     "Ineersa\\AgentCore\\Command\\AgentLoopHealthCommand",public,true,true,src/Command/AgentLoopHealthCommand.php,14
-methods[2]:
-  - method: __construct
-    start: 16
-    end: 24
-    limit: 9
-    symbolLine: 21
-    symbolColumn: 21
-    signature: public function __construct(array $config)
-    callees[1]: "Symfony\\Component\\Console\\Command\\Command::__construct"
-  - method: execute
-    start: 26
-    end: 43
-    limit: 18
-    symbolLine: 26
-    symbolColumn: 24
-    signature: "protected function execute(InputInterface $input, OutputInterface $output): int"
-    callees[3]: "Symfony\\Component\\Console\\Style\\SymfonyStyle::title","Symfony\\Component\\Console\\Style\\SymfonyStyle::definitionList","Symfony\\Component\\Console\\Style\\SymfonyStyle::success"
+methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,16,24,9,21,21,public function __construct(array $config)
+  execute,26,43,18,26,24,"protected function execute(InputInterface $input, OutputInterface $output): int"

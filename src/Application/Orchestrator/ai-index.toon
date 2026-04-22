@@ -2,7 +2,6 @@ spec: agent-core.ai-docs/v1
 namespace: "Application\\Orchestrator"
 fqcn: "Ineersa\\AgentCore\\Application\\Orchestrator"
 updatedAt: 2026-04-22
-description: Top-level orchestrators — AgentRunner is the public API facade; RunOrchestrator is the central CQRS processor handling all bus messages.
 files[13]{file,type}:
   AdvanceRunHandler.php,readonly final class
   AgentRunner.php,final class
@@ -17,3 +16,4 @@ files[13]{file,type}:
   RunOrchestrator.php,readonly final class
   StartRunHandler.php,readonly final class
   ToolCallResultHandler.php,readonly final class
+description: Top-level orchestrators — AgentRunner is the public API facade; RunOrchestrator is the central CQRS processor handling all bus messages.

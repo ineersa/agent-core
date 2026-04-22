@@ -46,7 +46,7 @@ methods[3]:
     symbolLine: 25
     symbolColumn: 21
     signature: "public function publish(RunEvent $event): void"
-    callees[4]: "Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunEventPublisher::shouldCoalesce","Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer::normalizeRunEvent","Symfony\\Component\\Mercure\\HubInterface::publish","Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunTopicPolicy::topicsFor"
+    callees[3]: "Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer::normalizeRunEvent","Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunEventPublisher::shouldCoalesce","Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunTopicPolicy::topicsFor"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\MercureOutboxProjectorWorker::__invoke"
   - method: shouldCoalesce
     start: 53

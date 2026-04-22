@@ -44,6 +44,7 @@
         "phpunit/phpunit": "^13.0.5",
         "shipmonk/dead-code-detector": "^0.15.1",
         "symfony/framework-bundle": "^8.0",
-        "ineersa/call-graph": "^0.1.5"
+        "ineersa/call-graph": "^0.1.5",
+        "ineersa/ai-index": "^0.1.2"
     }
 }

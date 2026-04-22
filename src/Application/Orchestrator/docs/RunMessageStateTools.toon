@@ -19,7 +19,7 @@ methods[11]:
     symbolLine: 17
     symbolColumn: 21
     signature: "public function copyState(RunState $state, array $overrides = []): RunState"
-    callers[10]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AdvanceRunHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::rejectCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyCancelCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyContinueCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyHumanResponseCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::incrementStateVersion","Ineersa\\AgentCore\\Application\\Orchestrator\\StartRunHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler::handle"
+    callers[10]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AdvanceRunHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyCancelCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyContinueCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyHumanResponseCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::rejectCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::incrementStateVersion","Ineersa\\AgentCore\\Application\\Orchestrator\\StartRunHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler::handle"
   - method: event
     start: 41
     end: 53
@@ -27,7 +27,7 @@ methods[11]:
     symbolLine: 44
     symbolColumn: 21
     signature: "public function event(string $runId, int $seq, int $turnNo, string $type, array $payload = []): RunEvent"
-    callers[8]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::rejectCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyContinueCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyHumanResponseCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::eventsFromSpecs","Ineersa\\AgentCore\\Application\\Orchestrator\\StartRunHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler::handle"
+    callers[8]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyContinueCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyHumanResponseCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::rejectCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::eventsFromSpecs","Ineersa\\AgentCore\\Application\\Orchestrator\\StartRunHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler::handle"
   - method: eventsFromSpecs
     start: 55
     end: 82

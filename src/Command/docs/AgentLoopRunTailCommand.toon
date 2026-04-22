@@ -26,7 +26,6 @@ methods[4]:
     symbolLine: 21
     symbolColumn: 21
     signature: "public function __construct(RunDebugService $runDebugService, RunEventSerializer $runEventSerializer)"
-    callees[3]: "Symfony\\Component\\Console\\Command\\Command::__construct","Symfony\\Component\\Console\\Command\\Command::addArgument","Symfony\\Component\\Console\\Command\\Command::addOption"
   - method: execute
     start: 34
     end: 91
@@ -34,7 +33,7 @@ methods[4]:
     symbolLine: 34
     symbolColumn: 24
     signature: "protected function execute(InputInterface $input, OutputInterface $output): int"
-    callees[11]: "Symfony\\Component\\Console\\Input\\InputInterface::getArgument","Symfony\\Component\\Console\\Input\\InputInterface::getOption","Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::tail","Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer::normalizeRunEvent","Ineersa\\AgentCore\\Command\\AgentLoopRunTailCommand::encodeJson","Symfony\\Component\\Console\\Output\\OutputInterface::writeln","Symfony\\Component\\Console\\Style\\SymfonyStyle::title","Symfony\\Component\\Console\\Style\\SymfonyStyle::definitionList","Symfony\\Component\\Console\\Style\\SymfonyStyle::warning","Ineersa\\AgentCore\\Command\\AgentLoopRunTailCommand::payloadPreview","Symfony\\Component\\Console\\Style\\SymfonyStyle::table"
+    callees[4]: "Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer::normalizeRunEvent","Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::tail","Ineersa\\AgentCore\\Command\\AgentLoopRunTailCommand::encodeJson","Ineersa\\AgentCore\\Command\\AgentLoopRunTailCommand::payloadPreview"
   - method: encodeJson
     start: 93
     end: 103

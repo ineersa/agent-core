@@ -30,7 +30,7 @@ methods[3]:
     symbolLine: 42
     symbolColumn: 21
     signature: "public function observe(float $durationMs): void"
-    callers[3]: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordTurnCompleted","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordLlmLatency","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordToolLatency"
+    callers[3]: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordLlmLatency","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordToolLatency","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordTurnCompleted"
   - method: snapshot
     start: 64
     end: 91

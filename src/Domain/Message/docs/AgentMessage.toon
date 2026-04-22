@@ -29,7 +29,7 @@ methods[4]:
     symbolLine: 33
     symbolColumn: 28
     signature: "static public function fromPayload(array $payload): ?self"
-    callers[4]: "Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyPendingStopBoundaryCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::messagesFromPayload","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::resolveContextMessages"
+    callers[4]: "Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyPendingStopBoundaryCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::messagesFromPayload","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::resolveContextMessages"
   - method: isCustomRole
     start: 72
     end: 75
@@ -45,5 +45,4 @@ methods[4]:
     symbolLine: 82
     symbolColumn: 21
     signature: "public function toArray(): array"
-    callees[1]: "DateTimeImmutable::format"
     callers[2]: "Ineersa\\AgentCore\\Api\\Http\\RunReadService::transcriptPage","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::serializeMessage"

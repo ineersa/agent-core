@@ -13,7 +13,7 @@ methods[9]:
     symbolLine: 22
     symbolColumn: 21
     signature: "public function normalize(object $message): array"
-    callees[6]: "Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeStartRun","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeApplyCommand","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeExecuteLlmStep","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeLlmStepResult","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeExecuteToolCall","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeToolCallResult"
+    callees[6]: "Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeApplyCommand","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeExecuteLlmStep","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeExecuteToolCall","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeLlmStepResult","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeStartRun","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeToolCallResult"
   - method: normalizeStartRun
     start: 35
     end: 48
@@ -21,7 +21,7 @@ methods[9]:
     symbolLine: 40
     symbolColumn: 21
     signature: "public function normalizeStartRun(StartRun $command): array"
-    callees[3]: "Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::mergePayloadIntoEnvelope","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey"
+    callees[3]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::mergePayloadIntoEnvelope"
     callers[1]: "Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalize"
   - method: normalizeApplyCommand
     start: 50
@@ -30,7 +30,7 @@ methods[9]:
     symbolLine: 55
     symbolColumn: 21
     signature: "public function normalizeApplyCommand(ApplyCommand $command): array"
-    callees[5]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Domain\\Command\\CoreCommandKind::isCore","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::coreApplyCommandName","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::mergePayloadIntoEnvelope"
+    callees[5]: "Ineersa\\AgentCore\\Domain\\Command\\CoreCommandKind::isCore","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::coreApplyCommandName","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::mergePayloadIntoEnvelope"
     callers[1]: "Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalize"
   - method: normalizeExecuteLlmStep
     start: 95
@@ -39,7 +39,7 @@ methods[9]:
     symbolLine: 100
     symbolColumn: 21
     signature: "public function normalizeExecuteLlmStep(ExecuteLlmStep $message): array"
-    callees[4]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::attempt"
+    callees[4]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::attempt","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo"
     callers[1]: "Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalize"
   - method: normalizeLlmStepResult
     start: 114
@@ -48,7 +48,7 @@ methods[9]:
     symbolLine: 119
     symbolColumn: 21
     signature: "public function normalizeLlmStepResult(LlmStepResult $message): array"
-    callees[3]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId"
+    callees[3]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo"
     callers[1]: "Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalize"
   - method: normalizeExecuteToolCall
     start: 134
@@ -57,7 +57,7 @@ methods[9]:
     symbolLine: 139
     symbolColumn: 21
     signature: "public function normalizeExecuteToolCall(ExecuteToolCall $message): array"
-    callees[4]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::attempt"
+    callees[4]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::attempt","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo"
     callers[1]: "Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalize"
   - method: normalizeToolCallResult
     start: 161
@@ -66,7 +66,7 @@ methods[9]:
     symbolLine: 166
     symbolColumn: 21
     signature: "public function normalizeToolCallResult(ToolCallResult $message): array"
-    callees[3]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId"
+    callees[3]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo"
     callers[1]: "Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalize"
   - method: coreApplyCommandName
     start: 182
@@ -83,4 +83,4 @@ methods[9]:
     symbolLine: 201
     symbolColumn: 22
     signature: "private function mergePayloadIntoEnvelope(array $envelope, array $payload, array $reservedKeys): array"
-    callers[2]: "Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeStartRun","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeApplyCommand"
+    callers[2]: "Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeApplyCommand","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeStartRun"

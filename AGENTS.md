@@ -40,6 +40,7 @@ If any of these fail, the work is **not complete**.
   - property hooks
 - Apply these features pragmatically (readability first, no novelty for novelty’s sake).
 
+<!-- ai-index:begin -->
 ## AI Documentation Index
 
 This repository uses a two-level AI index for token-efficient code navigation:
@@ -58,6 +59,7 @@ All indexes are auto-generated from source code (no LLM calls). `castor dev:chec
 - When code changes alter command/event/message relationships, update the affected nested `AGENTS.md` files.
 
 For detailed index schema and navigation guidance, load `.agents/skills/ai-index/SKILL.md`.
+<!-- ai-index:end -->
 
 ## Architecture notes
 
@@ -116,3 +118,4 @@ When investigating a bug or error trace:
 2. **Targeted Read**: Use `docs/<Class>.toon` to find the exact offset and limit for the failing method. Use `read(path, offset, limit)` to inspect only that method.
 3. **Trace Execution**: Check the `callers` list in the `.toon` file from step 2 to quickly see what invokes the failing method.
 4. **Fix & Test**: Apply the fix. Run the specific test via `castor dev:test --filter <TestName>` before running the full `castor dev:check` suite.
+

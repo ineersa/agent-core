@@ -46,7 +46,7 @@ methods[10]:
     symbolLine: 41
     symbolColumn: 21
     signature: "public function invoke(string $model, array $input, array $options = []): array"
-    callees[13]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::runContextFrom","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::cancellationToken","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::resolveContextMessages","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::applyTransformHooks","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::applyConvertHooks","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::optionsWithoutInternalFields","Ineersa\\AgentCore\\Contract\\Tool\\ModelResolverInterface::resolve","Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver::resolveProviderPayload","Ineersa\\AgentCore\\Domain\\Message\\MessageBag::all","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::applyBeforeProviderRequestHooks","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::providerInputFrom","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyPlatformInvoker::invoke","Ineersa\\AgentCore\\Domain\\Tool\\PlatformInvocationResult::toArray"
+    callees[13]: "Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver::resolveProviderPayload","Ineersa\\AgentCore\\Contract\\Tool\\ModelResolverInterface::resolve","Ineersa\\AgentCore\\Domain\\Message\\MessageBag::all","Ineersa\\AgentCore\\Domain\\Tool\\PlatformInvocationResult::toArray","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::applyBeforeProviderRequestHooks","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::applyConvertHooks","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::applyTransformHooks","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::cancellationToken","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::optionsWithoutInternalFields","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::providerInputFrom","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::resolveContextMessages","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::runContextFrom","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyPlatformInvoker::invoke"
   - method: runContextFrom
     start: 87
     end: 111
@@ -62,7 +62,7 @@ methods[10]:
     symbolLine: 120
     symbolColumn: 22
     signature: "private function resolveContextMessages(array $input, ?string $runId): array"
-    callees[2]: "Ineersa\\AgentCore\\Domain\\Message\\AgentMessage::fromPayload","Ineersa\\AgentCore\\Contract\\RunStoreInterface::get"
+    callees[2]: "Ineersa\\AgentCore\\Contract\\RunStoreInterface::get","Ineersa\\AgentCore\\Domain\\Message\\AgentMessage::fromPayload"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::invoke"
   - method: applyTransformHooks
     start: 157

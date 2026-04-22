@@ -37,7 +37,7 @@ methods[3]:
     symbolLine: 28
     symbolColumn: 21
     signature: "public function __invoke(ExecuteLlmStep $message): void"
-    callees[6]: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteLlmStepWorker::execute","Symfony\\Component\\Messenger\\MessageBusInterface::dispatch","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId"
+    callees[5]: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteLlmStepWorker::execute","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo"
   - method: execute
     start: 54
     end: 130
@@ -45,5 +45,5 @@ methods[3]:
     symbolLine: 54
     symbolColumn: 22
     signature: "private function execute(ExecuteLlmStep $message): LlmStepResult"
-    callees[9]: "Ineersa\\AgentCore\\Contract\\Tool\\PlatformInterface::invoke","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordLlmLatency","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::attempt","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Throwable::getMessage"
+    callees[8]: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordLlmLatency","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Contract\\Tool\\PlatformInterface::invoke","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::attempt","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteLlmStepWorker::__invoke"

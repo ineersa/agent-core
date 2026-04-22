@@ -2,7 +2,6 @@ spec: agent-core.ai-docs/v1
 namespace: "Infrastructure\\Storage"
 fqcn: "Ineersa\\AgentCore\\Infrastructure\\Storage"
 updatedAt: 2026-04-22
-description: "Storage adapters — in-memory stores, Flysystem run logs, Doctrine event store, hot prompt state, local artifact store."
 files[10]{file,type}:
   HotPromptStateStore.php,final class
   InMemoryCommandStore.php,final class
@@ -14,3 +13,4 @@ files[10]{file,type}:
   RunEventStore.php,final class
   RunLogReader.php,readonly final class
   RunLogWriter.php,readonly final class
+description: "Storage adapters — in-memory stores, Flysystem run logs, Doctrine event store, hot prompt state, local artifact store."

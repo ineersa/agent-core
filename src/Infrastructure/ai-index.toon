@@ -5,7 +5,7 @@ description: "Concrete adapters/integrations: Doctrine migrations, Mercure publi
 subNamespaces[5]{namespace,fqcn,path,description,index}:
   Doctrine,"Ineersa\\AgentCore\\Infrastructure\\Doctrine",Doctrine,"Doctrine integration — migrations for agent-loop persistence tables (events, commands, runs, outbox, prompt state, artifacts).",Doctrine/ai-index.toon
   Messenger,"Ineersa\\AgentCore\\Infrastructure\\Messenger",Messenger,"Messenger bus configuration — bus name constants for command, execution, and publisher buses.",Messenger/ai-index.toon
-  Mercure,"Ineersa\\AgentCore\\Infrastructure\\Mercure",Mercure,Mercure integration — publishes RunEvents via Symfony Mercure Hub for real-time streaming.,Mercure/ai-index.toon
+  Mercure,"Ineersa\\AgentCore\\Infrastructure\\Mercure",Mercure,Mercure integration — publishes RunEvents via Symfony Mercure Hub for real-time SSE streaming to clients.,Mercure/ai-index.toon
   Storage,"Ineersa\\AgentCore\\Infrastructure\\Storage",Storage,"Storage adapters — in-memory implementations for all store interfaces, Flysystem-based run log writer/reader, Doctrine-based event store, hot prompt state, local artifact store.",Storage/ai-index.toon
   SymfonyAi,"Ineersa\\AgentCore\\Infrastructure\\SymfonyAi",SymfonyAi,"Symfony AI bridge — Platform adapter, tool executor adapter, message mapper, stream delta reducer, cancellation token, platform invoker.",SymfonyAi/ai-index.toon
 updatedAt: 2026-04-22

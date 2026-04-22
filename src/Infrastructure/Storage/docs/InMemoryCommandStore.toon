@@ -54,7 +54,7 @@ methods[8]:
     symbolLine: 64
     symbolColumn: 21
     signature: "public function rejectPendingByKind(string $runId, string $kind, string $reason): array"
-    callees[2]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryCommandStore::pending","Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryCommandStore::markRejected"
+    callees[2]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryCommandStore::markRejected","Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryCommandStore::pending"
   - method: markApplied
     start: 80
     end: 83

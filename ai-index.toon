@@ -13,7 +13,7 @@ namespaces[8]{namespace,fqcn,path,description,index}:
   Domain,"Ineersa\\AgentCore\\Domain",src/Domain,"Framework-agnostic core models: run state, commands, events, message envelopes, tool DTOs.",src/Domain/ai-index.toon
   Application,"Ineersa\\AgentCore\\Application",src/Application,"Runtime coordination and flow: orchestrator, reducer, command router, effect dispatchers.",src/Application/ai-index.toon
   Infrastructure,"Ineersa\\AgentCore\\Infrastructure",src/Infrastructure,"Concrete adapters/integrations: Doctrine, Mercure, Messenger, storage, Symfony AI bridge.",src/Infrastructure/ai-index.toon
-  Api,"Ineersa\\AgentCore\\Api",src/Api,"Transport-facing HTTP API for run lifecycle endpoints, transcript/replay reads, and event serialization/stream integration.",src/Api/ai-index.toon
+  Api,"Ineersa\\AgentCore\\Api",src/Api,"HTTP controllers, DTOs, and serializers for run lifecycle, commands, transcript reads, and event streaming.",src/Api/ai-index.toon
   Schema,"Ineersa\\AgentCore\\Schema",src/Schema,"Shared payload contract schemas, event-name mapping, and command/event normalizers for API and worker boundaries.",src/Schema/ai-index.toon
   Command,"Ineersa\\AgentCore\\Command",src/Command,"Console operational commands (agent-loop:health, etc.).",src/Command/ai-index.toon
 

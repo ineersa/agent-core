@@ -65,7 +65,7 @@ methods[12]:
     symbolLine: 82
     symbolColumn: 21
     signature: "public function recordTurnCompleted(string $runId, int $turnNo): void"
-    callees[2]: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::turnKey","Ineersa\\AgentCore\\Application\\Handler\\LatencyHistogram::observe"
+    callees[2]: "Ineersa\\AgentCore\\Application\\Handler\\LatencyHistogram::observe","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::turnKey"
     callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::turnCompletedCallbacks","Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler::turnCompletedCallbacks"
   - method: recordLlmLatency
     start: 101
@@ -117,7 +117,7 @@ methods[12]:
     symbolLine: 188
     symbolColumn: 22
     signature: "private function turnKey(string $runId, int $turnNo): string"
-    callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordTurnStarted","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordTurnCompleted"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordTurnCompleted","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordTurnStarted"
   - method: rate
     start: 193
     end: 200

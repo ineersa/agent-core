@@ -36,7 +36,7 @@ methods[3]:
     symbolLine: 27
     symbolColumn: 21
     signature: "public function synchronized(string $runId, callable $criticalSection): mixed"
-    callees[5]: "Ineersa\\AgentCore\\Application\\Handler\\RunLockManager::lockKey","Symfony\\Component\\Lock\\LockFactory::createLock","Symfony\\Component\\Lock\\LockInterface::acquire","Symfony\\Component\\Lock\\LockInterface::isAcquired","Symfony\\Component\\Lock\\LockInterface::release"
+    callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\RunLockManager::lockKey"
     callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor::process","Ineersa\\AgentCore\\Command\\AgentLoopResumeStaleRunsCommand::execute"
   - method: lockKey
     start: 50

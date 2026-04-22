@@ -29,7 +29,7 @@ methods[3]:
     symbolLine: 19
     symbolColumn: 21
     signature: "public function save(string $runId, array $state): void"
-    callees[3]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\HotPromptStateStore::get","Ineersa\\AgentCore\\Infrastructure\\Storage\\HotPromptStateStore::delete","DateTimeImmutable::format"
+    callees[2]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\HotPromptStateStore::delete","Ineersa\\AgentCore\\Infrastructure\\Storage\\HotPromptStateStore::get"
   - method: delete
     start: 32
     end: 35

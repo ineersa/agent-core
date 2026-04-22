@@ -33,4 +33,4 @@ methods[2]:
     symbolLine: 22
     symbolColumn: 21
     signature: "public function __invoke(ProjectMercureOutbox $message): void"
-    callees[4]: "Ineersa\\AgentCore\\Contract\\OutboxStoreInterface::claim","Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunEventPublisher::publish","Ineersa\\AgentCore\\Contract\\OutboxStoreInterface::markProcessed","Ineersa\\AgentCore\\Contract\\OutboxStoreInterface::markFailed"
+    callees[4]: "Ineersa\\AgentCore\\Contract\\OutboxStoreInterface::claim","Ineersa\\AgentCore\\Contract\\OutboxStoreInterface::markFailed","Ineersa\\AgentCore\\Contract\\OutboxStoreInterface::markProcessed","Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunEventPublisher::publish"

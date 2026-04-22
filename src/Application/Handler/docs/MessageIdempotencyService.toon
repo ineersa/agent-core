@@ -35,4 +35,4 @@ methods[3]:
     symbolLine: 22
     symbolColumn: 22
     signature: "private function index(string $scope, string $runId, string $idempotencyKey): string"
-    callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService::wasHandled","Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService::markHandled"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService::markHandled","Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService::wasHandled"

@@ -1,6 +1,6 @@
 spec: agent-core.ai-docs/v1
 namespace: Api
 fqcn: "Ineersa\\AgentCore\\Api"
-description: Public transport-facing API contracts/controllers/DTOs — placeholder for later implementation stages.
+description: "HTTP controllers, DTOs, and serializers for run lifecycle, commands, transcript reads, and event streaming."
 files[0]:
 updatedAt: 2026-04-22

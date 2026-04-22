@@ -35,7 +35,7 @@ methods[4]:
     symbolLine: 20
     symbolColumn: 21
     signature: "public function route(ApplyCommand $command): RoutedCommand"
-    callees[7]: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::validateOptionKeys","Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand::rejected","Ineersa\\AgentCore\\Domain\\Command\\CoreCommandKind::isCore","Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand::core","Ineersa\\AgentCore\\Application\\Handler\\CommandHandlerRegistry::find","Ineersa\\AgentCore\\Contract\\Extension\\CommandHandlerInterface::supportsCancelSafe","Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand::extension"
+    callees[7]: "Ineersa\\AgentCore\\Application\\Handler\\CommandHandlerRegistry::find","Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::validateOptionKeys","Ineersa\\AgentCore\\Contract\\Extension\\CommandHandlerInterface::supportsCancelSafe","Ineersa\\AgentCore\\Domain\\Command\\CoreCommandKind::isCore","Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand::core","Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand::extension","Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand::rejected"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::handle"
   - method: handlerFor
     start: 61

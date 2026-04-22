@@ -2,10 +2,10 @@ spec: agent-core.ai-docs/v1
 namespace: "Contract\\Tool"
 fqcn: "Ineersa\\AgentCore\\Contract\\Tool"
 updatedAt: 2026-04-22
-description: "Tool execution contracts — platform invocation, model resolution, tool catalog discovery, tool executor, and idempotency key resolution."
 files[5]{file,type}:
   ModelResolverInterface.php,interface
   PlatformInterface.php,interface
   ToolCatalogProviderInterface.php,interface
   ToolExecutorInterface.php,interface
   ToolIdempotencyKeyResolverInterface.php,interface
+description: "Tool execution contracts — platform invocation, model resolution, tool catalog discovery, tool executor, and idempotency key resolution."

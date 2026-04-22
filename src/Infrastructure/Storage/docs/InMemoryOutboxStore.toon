@@ -43,7 +43,6 @@ methods[5]:
     symbolLine: 101
     symbolColumn: 21
     signature: "public function markFailed(int $entryId, int $retryAfterSeconds = 30, ?DateTimeImmutable $now = null): void"
-    callees[2]: "DateTimeImmutable::getTimestamp","DateTimeImmutable::setTimestamp"
   - method: dedupeKey
     start: 114
     end: 117

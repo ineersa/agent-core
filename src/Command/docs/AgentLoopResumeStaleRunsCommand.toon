@@ -33,7 +33,6 @@ methods[2]:
     symbolLine: 24
     symbolColumn: 21
     signature: "public function __construct(RunStoreInterface $runStore, PromptStateStoreInterface $promptStateStore, ReplayService $replayService, RunLockManager $runLockManager, MessageBusInterface $commandBus, int $staleAfterSeconds = 120)"
-    callees[1]: "Symfony\\Component\\Console\\Command\\Command::__construct"
   - method: execute
     start: 35
     end: 93
@@ -41,4 +40,4 @@ methods[2]:
     symbolLine: 35
     symbolColumn: 24
     signature: "protected function execute(InputInterface $input, OutputInterface $output): int"
-    callees[9]: "DateTimeImmutable::setTimestamp","Ineersa\\AgentCore\\Contract\\RunStoreInterface::findRunningStaleBefore","Ineersa\\AgentCore\\Application\\Handler\\RunLockManager::synchronized","Ineersa\\AgentCore\\Contract\\RunStoreInterface::get","Ineersa\\AgentCore\\Contract\\PromptStateStoreInterface::get","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::rebuildHotPromptState","Symfony\\Component\\Messenger\\MessageBusInterface::dispatch","Symfony\\Component\\Console\\Style\\SymfonyStyle::definitionList","Symfony\\Component\\Console\\Style\\SymfonyStyle::success"
+    callees[5]: "Ineersa\\AgentCore\\Application\\Handler\\ReplayService::rebuildHotPromptState","Ineersa\\AgentCore\\Application\\Handler\\RunLockManager::synchronized","Ineersa\\AgentCore\\Contract\\PromptStateStoreInterface::get","Ineersa\\AgentCore\\Contract\\RunStoreInterface::findRunningStaleBefore","Ineersa\\AgentCore\\Contract\\RunStoreInterface::get"

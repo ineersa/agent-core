@@ -202,14 +202,7 @@ function index_methods(
     #[AsOption(description: 'Skip namespace index regeneration')]
     bool $skipNamespace = false,
 ): void {
-    $wiringCommand = 'php scripts/export-wiring-map.php';
-    if ($dryRun) {
-        $wiringCommand .= ' --dry-run';
-    }
-
-    dev_php_exec($wiringCommand);
-
-    $command = 'php scripts/generate-method-index.php';
+    $command = 'vendor/bin/ai-index generate';
 
     if ($all) {
         $command .= ' --all';
@@ -227,7 +220,7 @@ function index_methods(
         $command .= ' --skip-namespace';
     }
     if ([] !== $targets) {
-        $command .= ' '.implode(' ', array_map('escapeshellarg', $targets));
+        $command .= ' -- '.implode(' ', array_map('escapeshellarg', $targets));
     }
 
     dev_php_exec($command);

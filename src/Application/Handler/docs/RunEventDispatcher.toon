@@ -33,4 +33,4 @@ methods[2]:
     symbolLine: 18
     symbolColumn: 21
     signature: "public function dispatch(RunEvent $event): void"
-    callees[3]: "Symfony\\Contracts\\EventDispatcher\\EventDispatcherInterface::dispatch","Ineersa\\AgentCore\\Application\\Handler\\EventSubscriberRegistry::subscribersFor","Ineersa\\AgentCore\\Contract\\Extension\\EventSubscriberInterface::onEvent"
+    callees[2]: "Ineersa\\AgentCore\\Application\\Handler\\EventSubscriberRegistry::subscribersFor","Ineersa\\AgentCore\\Contract\\Extension\\EventSubscriberInterface::onEvent"

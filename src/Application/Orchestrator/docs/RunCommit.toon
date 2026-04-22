@@ -51,7 +51,7 @@ methods[7]:
     symbolLine: 41
     symbolColumn: 21
     signature: "public function commit(RunState $state, RunState $nextState, array $events, array $effects = []): bool"
-    callees[12]: "Ineersa\\AgentCore\\Contract\\RunStoreInterface::compareAndSwap","Ineersa\\AgentCore\\Contract\\EventStoreInterface::append","Ineersa\\AgentCore\\Contract\\EventStoreInterface::appendMany","Throwable::getMessage","Psr\\Log\\LoggerInterface::warning","Ineersa\\AgentCore\\Application\\Handler\\OutboxProjector::project","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::rebuildHotPromptState","Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit::logCommittedEvents","Ineersa\\AgentCore\\Application\\Handler\\StepDispatcher::dispatchEffects","Ineersa\\AgentCore\\Application\\Handler\\HookDispatcher::dispatch","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit::trackCommitMetrics"
+    callees[10]: "Ineersa\\AgentCore\\Application\\Handler\\HookDispatcher::dispatch","Ineersa\\AgentCore\\Application\\Handler\\OutboxProjector::project","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::rebuildHotPromptState","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Application\\Handler\\StepDispatcher::dispatchEffects","Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit::logCommittedEvents","Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit::trackCommitMetrics","Ineersa\\AgentCore\\Contract\\EventStoreInterface::append","Ineersa\\AgentCore\\Contract\\EventStoreInterface::appendMany","Ineersa\\AgentCore\\Contract\\RunStoreInterface::compareAndSwap"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor::process"
   - method: trackCommitMetrics
     start: 170
@@ -60,7 +60,7 @@ methods[7]:
     symbolLine: 173
     symbolColumn: 22
     signature: "private function trackCommitMetrics(RunState $state, RunState $nextState, array $events): void"
-    callees[4]: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordRunStatusTransition","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::setCommandQueueLag","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::countPending","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::incrementStaleResultCount"
+    callees[4]: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::incrementStaleResultCount","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordRunStatusTransition","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::setCommandQueueLag","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::countPending"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit::commit"
   - method: logCommittedEvents
     start: 197
@@ -69,7 +69,7 @@ methods[7]:
     symbolLine: 200
     symbolColumn: 22
     signature: "private function logCommittedEvents(RunState $state, array $events): void"
-    callees[4]: "Psr\\Log\\LoggerInterface::info","Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit::eventStepId","Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit::eventWorkerId","Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit::eventAttempt"
+    callees[3]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit::eventAttempt","Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit::eventStepId","Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit::eventWorkerId"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit::commit"
   - method: eventStepId
     start: 219

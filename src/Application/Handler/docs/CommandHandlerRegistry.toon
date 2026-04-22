@@ -36,4 +36,4 @@ methods[2]:
     symbolColumn: 21
     signature: "public function find(string $kind): ?CommandHandlerInterface"
     callees[1]: "Ineersa\\AgentCore\\Contract\\Extension\\CommandHandlerInterface::supports"
-    callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::route","Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::handlerFor"
+    callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::handlerFor","Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::route"

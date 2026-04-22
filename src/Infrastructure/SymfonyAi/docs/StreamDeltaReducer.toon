@@ -12,7 +12,7 @@ methods[17]:
     symbolLine: 27
     symbolColumn: 21
     signature: "public function consume(mixed $delta): void"
-    callees[9]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::appendText","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::shortClass","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::stringFrom","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::registerToolCallStart","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::registerToolInputDelta","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::registerToolCallComplete","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::looksLikeTokenUsage","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::mergeUsage","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::usageFromTokenUsage"
+    callees[9]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::appendText","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::looksLikeTokenUsage","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::mergeUsage","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::registerToolCallComplete","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::registerToolCallStart","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::registerToolInputDelta","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::shortClass","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::stringFrom","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::usageFromTokenUsage"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyPlatformInvoker::invoke"
   - method: deltas
     start: 122
@@ -62,7 +62,7 @@ methods[17]:
     symbolLine: 195
     symbolColumn: 22
     signature: "private function registerToolCallStart(string $id, string $name): void"
-    callers[3]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::consume","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::registerToolInputDelta","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::registerToolCallComplete"
+    callers[3]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::consume","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::registerToolCallComplete","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::registerToolInputDelta"
   - method: registerToolInputDelta
     start: 217
     end: 243
@@ -70,7 +70,7 @@ methods[17]:
     symbolLine: 217
     symbolColumn: 22
     signature: "private function registerToolInputDelta(string $id, string $name, string $partialJson): void"
-    callees[2]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::registerToolCallStart","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::parseArguments"
+    callees[2]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::parseArguments","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::registerToolCallStart"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::consume"
   - method: registerToolCallComplete
     start: 245
@@ -79,7 +79,7 @@ methods[17]:
     symbolLine: 245
     symbolColumn: 22
     signature: "private function registerToolCallComplete(object $delta): void"
-    callees[5]: "stdClass::getToolCalls","stdClass::getId","stdClass::getName","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::registerToolCallStart","stdClass::getArguments"
+    callees[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::registerToolCallStart"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\StreamDeltaReducer::consume"
   - method: mergeUsage
     start: 277

@@ -35,5 +35,5 @@ methods[2]:
     symbolLine: 26
     symbolColumn: 21
     signature: "public function dispatch(string $hookName, array $context = []): array"
-    callees[5]: "Ineersa\\AgentCore\\Domain\\Event\\BoundaryHookName::isBoundary","Ineersa\\AgentCore\\Domain\\Event\\BoundaryHookName::isExtensionHook","Symfony\\Contracts\\EventDispatcher\\EventDispatcherInterface::dispatch","Ineersa\\AgentCore\\Application\\Handler\\HookSubscriberRegistry::subscribersFor","Ineersa\\AgentCore\\Contract\\Extension\\HookSubscriberInterface::handle"
+    callees[4]: "Ineersa\\AgentCore\\Application\\Handler\\HookSubscriberRegistry::subscribersFor","Ineersa\\AgentCore\\Contract\\Extension\\HookSubscriberInterface::handle","Ineersa\\AgentCore\\Domain\\Event\\BoundaryHookName::isBoundary","Ineersa\\AgentCore\\Domain\\Event\\BoundaryHookName::isExtensionHook"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit::commit"

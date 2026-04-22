@@ -36,7 +36,7 @@ methods[5]:
     symbolLine: 32
     symbolColumn: 21
     signature: "public function resolve(array $context = []): array"
-    callees[2]: "Ineersa\\AgentCore\\Contract\\Tool\\ToolCatalogProviderInterface::resolveToolCatalog","Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver::assertSchemaStability"
+    callees[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver::assertSchemaStability","Ineersa\\AgentCore\\Contract\\Tool\\ToolCatalogProviderInterface::resolveToolCatalog"
     callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver::resolveProviderPayload","Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::resolveToolSchemas"
   - method: resolveProviderPayload
     start: 47
@@ -45,7 +45,7 @@ methods[5]:
     symbolLine: 54
     symbolColumn: 21
     signature: "public function resolveProviderPayload(array $context = []): array"
-    callees[2]: "Ineersa\\AgentCore\\Domain\\Tool\\ToolDefinition::toProviderPayload","Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver::resolve"
+    callees[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver::resolve","Ineersa\\AgentCore\\Domain\\Tool\\ToolDefinition::toProviderPayload"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::invoke"
   - method: assertSchemaStability
     start: 62

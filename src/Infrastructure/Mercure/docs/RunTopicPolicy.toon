@@ -16,7 +16,7 @@ methods[2]:
     symbolLine: 9
     symbolColumn: 21
     signature: "public function topicFor(string $runId): string"
-    callers[3]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::startRun","Ineersa\\AgentCore\\Api\\Http\\RunApiController::runSummary","Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunTopicPolicy::topicsFor"
+    callers[3]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::runSummary","Ineersa\\AgentCore\\Api\\Http\\RunApiController::startRun","Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunTopicPolicy::topicsFor"
   - method: topicsFor
     start: 14
     end: 22

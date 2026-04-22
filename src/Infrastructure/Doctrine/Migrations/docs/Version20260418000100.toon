@@ -2,27 +2,7 @@ spec: agent-core.file-index/v1
 file: Version20260418000100.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Doctrine\\Migrations\\Version20260418000100"
 type: final class
-methods[3]:
-  - method: getDescription
-    start: 13
-    end: 16
-    limit: 4
-    symbolLine: 13
-    symbolColumn: 21
-    signature: "public function getDescription(): string"
-  - method: up
-    start: 18
-    end: 143
-    limit: 126
-    symbolLine: 18
-    symbolColumn: 21
-    signature: "public function up(Schema $schema): void"
-    callees[7]: "Doctrine\\DBAL\\Schema\\Schema::hasTable","Doctrine\\DBAL\\Schema\\Schema::createTable","Doctrine\\DBAL\\Schema\\Table::addColumn","Doctrine\\DBAL\\Schema\\Table::setPrimaryKey","Doctrine\\DBAL\\Schema\\Table::addUniqueIndex","Doctrine\\DBAL\\Schema\\Table::addIndex","Doctrine\\DBAL\\Schema\\Table::addForeignKeyConstraint"
-  - method: down
-    start: 145
-    end: 152
-    limit: 8
-    symbolLine: 145
-    symbolColumn: 21
-    signature: "public function down(Schema $schema): void"
-    callees[2]: "Doctrine\\DBAL\\Schema\\Schema::hasTable","Doctrine\\DBAL\\Schema\\Schema::dropTable"
+methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  getDescription,13,16,4,13,21,"public function getDescription(): string"
+  up,18,143,126,18,21,"public function up(Schema $schema): void"
+  down,145,152,8,145,21,"public function down(Schema $schema): void"
