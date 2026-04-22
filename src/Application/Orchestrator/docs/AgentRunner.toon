@@ -2,17 +2,8 @@ spec: agent-core.file-index/v1
 file: AgentRunner.php
 class: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner"
 type: final class
-summary: "Public API facade that dispatches start, continue, steer, and cancel commands to the agent message bus as idempotent execution messages."
-sections[2]:
-  - kind: classDoc
-    start: 18
-    end: 20
-    limit: 3
-  - kind: constructor
-    start: 23
-    end: 25
-    limit: 3
-    signatureLine: 23
+sections[1]{kind,start,end,limit,signatureLine}:
+  constructor,20,22,3,20
 constructorInputs[1]{param,type,required}:
   $commandBus,MessageBusInterface,true
 wiring:
@@ -22,108 +13,108 @@ wiring:
       autowire: true
       autoconfigure: true
       file: src/Application/Orchestrator/AgentRunner.php
-      line: 21
+      line: 18
       args:
         "$commandBus": service(agent.command.bus)
   aliases[1]{serviceId,target}:
     "Ineersa\\AgentCore\\Contract\\AgentRunnerInterface","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner"
   injectedInto[1]{fqcn,file,line}:
-    "Ineersa\\AgentCore\\Api\\Http\\RunApiController",src/Api/Http/RunApiController.php,32
+    "Ineersa\\AgentCore\\Api\\Http\\RunApiController",src/Api/Http/RunApiController.php,29
 methods[12]:
   - method: __construct
-    start: 23
-    end: 25
+    start: 20
+    end: 22
     limit: 3
-    symbolLine: 23
+    symbolLine: 20
     symbolColumn: 21
     signature: public function __construct(MessageBusInterface $commandBus)
   - method: start
-    start: 27
-    end: 45
+    start: 24
+    end: 42
     limit: 19
-    symbolLine: 27
+    symbolLine: 24
     symbolColumn: 21
     signature: "public function start(StartRunInput $input): RunHandle"
     callees[4]: "Ineersa\\AgentCore\\Domain\\Run\\RunId::generate","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::nextStepId","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::dispatch","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::idempotencyKey"
   - method: continue
-    start: 47
-    end: 50
+    start: 44
+    end: 47
     limit: 4
-    symbolLine: 47
+    symbolLine: 44
     symbolColumn: 21
     signature: "public function continue(string $runId): void"
     callees[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::applyCoreCommand"
   - method: steer
-    start: 52
-    end: 55
+    start: 49
+    end: 52
     limit: 4
-    symbolLine: 52
+    symbolLine: 49
     symbolColumn: 21
     signature: "public function steer(string $runId, AgentMessage $message): void"
     callees[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::applyCoreCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::serializeMessage"
   - method: followUp
-    start: 57
-    end: 60
+    start: 54
+    end: 57
     limit: 4
-    symbolLine: 57
+    symbolLine: 54
     symbolColumn: 21
     signature: "public function followUp(string $runId, AgentMessage $message): void"
     callees[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::applyCoreCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::serializeMessage"
   - method: cancel
-    start: 62
-    end: 66
+    start: 59
+    end: 63
     limit: 5
-    symbolLine: 62
+    symbolLine: 59
     symbolColumn: 21
     signature: "public function cancel(string $runId, ?string $reason = null): void"
     callees[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::applyCoreCommand"
   - method: answerHuman
-    start: 68
-    end: 74
+    start: 65
+    end: 71
     limit: 7
-    symbolLine: 68
+    symbolLine: 65
     symbolColumn: 21
     signature: "public function answerHuman(string $runId, string $questionId, mixed $answer): void"
     callees[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::applyCoreCommand"
   - method: applyCoreCommand
-    start: 76
-    end: 93
+    start: 73
+    end: 90
     limit: 18
-    symbolLine: 81
+    symbolLine: 78
     symbolColumn: 22
     signature: "private function applyCoreCommand(string $runId, string $kind, array $payload): void"
     callees[3]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::nextStepId","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::dispatch","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::idempotencyKey"
     callers[5]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::continue","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::steer","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::followUp","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::cancel","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::answerHuman"
   - method: serializeMessage
-    start: 95
-    end: 103
+    start: 92
+    end: 100
     limit: 9
-    symbolLine: 100
+    symbolLine: 97
     symbolColumn: 22
     signature: "private function serializeMessage(AgentMessage $message): array"
     callees[1]: "Ineersa\\AgentCore\\Domain\\Message\\AgentMessage::toArray"
     callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::steer","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::followUp"
   - method: nextStepId
-    start: 105
-    end: 108
+    start: 102
+    end: 105
     limit: 4
-    symbolLine: 105
+    symbolLine: 102
     symbolColumn: 22
     signature: "private function nextStepId(string $prefix): string"
     callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::start","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::applyCoreCommand"
   - method: idempotencyKey
-    start: 110
-    end: 113
+    start: 107
+    end: 110
     limit: 4
-    symbolLine: 110
+    symbolLine: 107
     symbolColumn: 22
     signature: "private function idempotencyKey(string $runId, string $stepId): string"
     callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::start","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner::applyCoreCommand"
   - method: dispatch
-    start: 115
-    end: 122
+    start: 112
+    end: 119
     limit: 8
-    symbolLine: 115
+    symbolLine: 112
     symbolColumn: 22
     signature: "private function dispatch(object $message): void"
     callees[1]: "Symfony\\Component\\Messenger\\MessageBusInterface::dispatch"

@@ -3,7 +3,7 @@ namespace: "Domain\\Command"
 fqcn: "Ineersa\\AgentCore\\Domain\\Command"
 updatedAt: 2026-04-22
 description: "Command value objects for the agent loop — kind constants, pending queue items, and routed commands with core/extension/rejected discrimination."
-files[3]{file,type,summary}:
-  CoreCommandKind.php,final class,"Closed set of core command kinds (steer, follow_up, cancel, human_response, continue) with validation for command routing."
-  PendingCommand.php,readonly final class,"Immutable command record awaiting processing, carrying run identity, kind, idempotency key, and optional payload."
-  RoutedCommand.php,readonly final class,"Discriminated command wrapper that classifies a pending command as core-routable, extension-delegated, or rejected."
+files[3]{file,type}:
+  CoreCommandKind.php,final class
+  PendingCommand.php,readonly final class
+  RoutedCommand.php,readonly final class

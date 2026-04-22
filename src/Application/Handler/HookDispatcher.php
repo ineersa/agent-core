@@ -8,9 +8,6 @@ use Ineersa\AgentCore\Domain\Event\BoundaryHookEvent;
 use Ineersa\AgentCore\Domain\Event\BoundaryHookName;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
-/**
- * Dispatches boundary and extension hooks via Symfony's event dispatcher and iterates registered hook subscribers.
- */
 final readonly class HookDispatcher
 {
     public function __construct(

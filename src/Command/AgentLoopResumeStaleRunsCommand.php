@@ -18,9 +18,6 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
-/**
- * Resumes stale agent runs after worker restart by replaying state and dispatching continuation commands.
- */
 #[AsCommand(name: 'agent-loop:resume-stale-runs', description: 'Resume stale running runs after worker restart.')]
 final class AgentLoopResumeStaleRunsCommand extends Command
 {

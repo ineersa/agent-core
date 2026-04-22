@@ -2,88 +2,85 @@ spec: agent-core.file-index/v1
 file: CommandPayloadNormalizer.php
 class: "Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer"
 type: final class
-summary: Normalizes command and execution DTOs into canonical schema-versioned payload envelopes for API and worker boundaries.
-sections[1]{kind,start,end,limit}:
-  classDoc,15,17,3
 wiring:
   serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
-    "Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer",private,true,true,src/Schema/CommandPayloadNormalizer.php,18
+    "Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer",private,true,true,src/Schema/CommandPayloadNormalizer.php,15
 methods[9]:
   - method: normalize
-    start: 20
-    end: 36
+    start: 17
+    end: 33
     limit: 17
-    symbolLine: 25
+    symbolLine: 22
     symbolColumn: 21
     signature: "public function normalize(object $message): array"
     callees[6]: "Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeStartRun","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeApplyCommand","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeExecuteLlmStep","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeLlmStepResult","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeExecuteToolCall","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeToolCallResult"
   - method: normalizeStartRun
-    start: 38
-    end: 51
+    start: 35
+    end: 48
     limit: 14
-    symbolLine: 43
+    symbolLine: 40
     symbolColumn: 21
     signature: "public function normalizeStartRun(StartRun $command): array"
     callees[3]: "Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::mergePayloadIntoEnvelope","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey"
     callers[1]: "Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalize"
   - method: normalizeApplyCommand
-    start: 53
-    end: 96
+    start: 50
+    end: 93
     limit: 44
-    symbolLine: 58
+    symbolLine: 55
     symbolColumn: 21
     signature: "public function normalizeApplyCommand(ApplyCommand $command): array"
     callees[5]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Domain\\Command\\CoreCommandKind::isCore","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::coreApplyCommandName","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::mergePayloadIntoEnvelope"
     callers[1]: "Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalize"
   - method: normalizeExecuteLlmStep
-    start: 98
-    end: 115
+    start: 95
+    end: 112
     limit: 18
-    symbolLine: 103
+    symbolLine: 100
     symbolColumn: 21
     signature: "public function normalizeExecuteLlmStep(ExecuteLlmStep $message): array"
     callees[4]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::attempt"
     callers[1]: "Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalize"
   - method: normalizeLlmStepResult
-    start: 117
-    end: 135
+    start: 114
+    end: 132
     limit: 19
-    symbolLine: 122
+    symbolLine: 119
     symbolColumn: 21
     signature: "public function normalizeLlmStepResult(LlmStepResult $message): array"
     callees[3]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId"
     callers[1]: "Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalize"
   - method: normalizeExecuteToolCall
-    start: 137
-    end: 162
+    start: 134
+    end: 159
     limit: 26
-    symbolLine: 142
+    symbolLine: 139
     symbolColumn: 21
     signature: "public function normalizeExecuteToolCall(ExecuteToolCall $message): array"
     callees[4]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::attempt"
     callers[1]: "Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalize"
   - method: normalizeToolCallResult
-    start: 164
-    end: 183
+    start: 161
+    end: 180
     limit: 20
-    symbolLine: 169
+    symbolLine: 166
     symbolColumn: 21
     signature: "public function normalizeToolCallResult(ToolCallResult $message): array"
     callees[3]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId"
     callers[1]: "Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalize"
   - method: coreApplyCommandName
-    start: 185
-    end: 195
+    start: 182
+    end: 192
     limit: 11
-    symbolLine: 185
+    symbolLine: 182
     symbolColumn: 22
     signature: "private function coreApplyCommandName(string $kind): string"
     callers[1]: "Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeApplyCommand"
   - method: mergePayloadIntoEnvelope
-    start: 197
-    end: 217
+    start: 194
+    end: 214
     limit: 21
-    symbolLine: 204
+    symbolLine: 201
     symbolColumn: 22
     signature: "private function mergePayloadIntoEnvelope(array $envelope, array $payload, array $reservedKeys): array"
     callers[2]: "Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeStartRun","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeApplyCommand"

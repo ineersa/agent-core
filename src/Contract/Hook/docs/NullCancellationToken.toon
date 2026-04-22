@@ -2,8 +2,5 @@ spec: agent-core.file-index/v1
 file: NullCancellationToken.php
 class: "Ineersa\\AgentCore\\Contract\\Hook\\NullCancellationToken"
 type: readonly final class
-summary: Non-cancelable sentinel implementing the cancellation token contract for scenarios that do not require abort support.
-sections[1]{kind,start,end,limit}:
-  classDoc,7,9,3
 methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  isCancellationRequested,12,15,4,12,21,"public function isCancellationRequested(): bool"
+  isCancellationRequested,9,12,4,9,21,"public function isCancellationRequested(): bool"

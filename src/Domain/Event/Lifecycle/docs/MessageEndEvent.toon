@@ -2,7 +2,5 @@ spec: agent-core.file-index/v1
 file: MessageEndEvent.php
 class: "Ineersa\\AgentCore\\Domain\\Event\\Lifecycle\\MessageEndEvent"
 type: readonly final class
-summary: Represents the terminal state of a message lifecycle within the agent core domain. This immutable event captures the conclusion of a message processing sequence for domain event sourcing. It serves as a durable record of message completion for downstream consumers.
-sections[2]{kind,start,end,limit}:
-  classDoc,9,11,3
-  constants,14,14,1
+sections[1]{kind,start,end,limit}:
+  constants,11,11,1

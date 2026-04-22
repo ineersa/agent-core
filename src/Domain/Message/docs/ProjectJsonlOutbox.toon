@@ -2,19 +2,10 @@ spec: agent-core.file-index/v1
 file: ProjectJsonlOutbox.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\ProjectJsonlOutbox"
 type: readonly final class
-summary: "Configuration value object for JSON Lines outbox delivery, specifying batch size and retry delay."
-sections[2]:
-  - kind: classDoc
-    start: 7
-    end: 9
-    limit: 3
-  - kind: constructor
-    start: 12
-    end: 16
-    limit: 5
-    signatureLine: 12
+sections[1]{kind,start,end,limit,signatureLine}:
+  constructor,9,13,5,9
 constructorInputs[2]{param,type,required}:
   $batchSize,int,false
   $retryDelaySeconds,int,false
 methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,12,16,5,12,21,"public function __construct(int $batchSize = 100, int $retryDelaySeconds = 30)"
+  __construct,9,13,5,9,21,"public function __construct(int $batchSize = 100, int $retryDelaySeconds = 30)"

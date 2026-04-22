@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Handler;
 
-/**
- * Ensures message idempotency by tracking processed execution keys within specific scopes and run contexts. It prevents duplicate processing of identical idempotency keys for the same logical operation.
- */
 final class MessageIdempotencyService
 {
     /** @var array<string, true> */

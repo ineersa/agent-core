@@ -2,17 +2,8 @@ spec: agent-core.file-index/v1
 file: HookDispatcher.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\HookDispatcher"
 type: readonly final class
-summary: Dispatches boundary and extension hooks via Symfony's event dispatcher and iterates registered hook subscribers.
-sections[2]:
-  - kind: classDoc
-    start: 11
-    end: 13
-    limit: 3
-  - kind: constructor
-    start: 16
-    end: 20
-    limit: 5
-    signatureLine: 16
+sections[1]{kind,start,end,limit,signatureLine}:
+  constructor,13,17,5,13
 constructorInputs[2]{param,type,required}:
   $registry,HookSubscriberRegistry,true
   $eventDispatcher,EventDispatcherInterface,true
@@ -23,25 +14,25 @@ wiring:
       autowire: true
       autoconfigure: true
       file: src/Application/Handler/HookDispatcher.php
-      line: 14
+      line: 11
       args:
         "$eventDispatcher": service(event_dispatcher)
         "$registry": "service(Ineersa\\AgentCore\\Application\\Handler\\HookSubscriberRegistry)"
   injectedInto[1]{fqcn,file,line}:
-    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit",src/Application/Orchestrator/RunCommit.php,24
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit",src/Application/Orchestrator/RunCommit.php,21
 methods[2]:
   - method: __construct
-    start: 16
-    end: 20
+    start: 13
+    end: 17
     limit: 5
-    symbolLine: 16
+    symbolLine: 13
     symbolColumn: 21
     signature: "public function __construct(HookSubscriberRegistry $registry, EventDispatcherInterface $eventDispatcher)"
   - method: dispatch
-    start: 22
-    end: 46
+    start: 19
+    end: 43
     limit: 25
-    symbolLine: 29
+    symbolLine: 26
     symbolColumn: 21
     signature: "public function dispatch(string $hookName, array $context = []): array"
     callees[5]: "Ineersa\\AgentCore\\Domain\\Event\\BoundaryHookName::isBoundary","Ineersa\\AgentCore\\Domain\\Event\\BoundaryHookName::isExtensionHook","Symfony\\Contracts\\EventDispatcher\\EventDispatcherInterface::dispatch","Ineersa\\AgentCore\\Application\\Handler\\HookSubscriberRegistry::subscribersFor","Ineersa\\AgentCore\\Contract\\Extension\\HookSubscriberInterface::handle"

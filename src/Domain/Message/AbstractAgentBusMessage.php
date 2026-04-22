@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Message;
 
-/**
- * Base value object for agent bus messages, carrying run/turn/step identity and idempotency metadata shared across all execution commands and results.
- */
 abstract readonly class AbstractAgentBusMessage implements AgentBusMessageInterface
 {
     public function __construct(

@@ -6,9 +6,6 @@ namespace Ineersa\AgentCore\Application\Handler;
 
 use Symfony\Component\Lock\LockFactory;
 
-/**
- * Provides per-run distributed locking to guard critical sections against concurrent execution.
- */
 final readonly class RunLockManager
 {
     public function __construct(

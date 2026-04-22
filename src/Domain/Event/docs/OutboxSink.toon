@@ -2,7 +2,5 @@ spec: agent-core.file-index/v1
 file: OutboxSink.php
 class: "Ineersa\\AgentCore\\Domain\\Event\\OutboxSink"
 type: enum
-summary: Enumerates the supported outbox delivery targets — JSON Lines file and Mercure hub.
-sections[2]{kind,start,end,limit}:
-  classDoc,7,9,3
-  constants,12,13,2
+sections[1]{kind,start,end,limit}:
+  constants,9,10,2

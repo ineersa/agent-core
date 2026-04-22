@@ -2,18 +2,8 @@ spec: agent-core.file-index/v1
 file: StartRun.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\StartRun"
 type: readonly final class
-summary: "Bus message commanding the initiation of a new agent run, carrying the initial payload for execution."
-sections[2]:
-  - kind: classDoc
-    start: 7
-    end: 9
-    limit: 3
-  - kind: constructor
-    start: 12
-    end: 26
-    limit: 15
-    signatureLine: 17
-    commentStart: 12
+sections[1]{kind,start,end,limit,signatureLine,commentStart}:
+  constructor,9,23,15,14,9
 constructorInputs[6]{param,type,required}:
   $runId,string,true
   $turnNo,int,true
@@ -23,10 +13,10 @@ constructorInputs[6]{param,type,required}:
   $payload,array,false
 methods[1]:
   - method: __construct
-    start: 12
-    end: 26
+    start: 9
+    end: 23
     limit: 15
-    symbolLine: 17
+    symbolLine: 14
     symbolColumn: 21
     signature: "public function __construct(string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey, array $payload = [])"
     callees[1]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::__construct"

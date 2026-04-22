@@ -7,9 +7,6 @@ namespace Ineersa\AgentCore\Application\Handler;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionPolicy;
 
-/**
- * Resolves execution policies for tools by combining a default configuration with specific overrides. It determines the operational mode, timeout, and parallelism constraints for a given tool name.
- */
 final readonly class ToolExecutionPolicyResolver
 {
     private ToolExecutionMode $defaultMode;

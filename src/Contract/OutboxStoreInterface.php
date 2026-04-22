@@ -8,9 +8,6 @@ use Ineersa\AgentCore\Domain\Event\OutboxEntry;
 use Ineersa\AgentCore\Domain\Event\OutboxSink;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 
-/**
- * Ensures reliable delivery of outbound events via enqueue, batch claim, and completion tracking.
- */
 interface OutboxStoreInterface
 {
     public function enqueue(RunEvent $event, OutboxSink $sink): void;

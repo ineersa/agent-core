@@ -2,39 +2,37 @@ spec: agent-core.file-index/v1
 file: MessageIdempotencyService.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService"
 type: final class
-summary: Ensures message idempotency by tracking processed execution keys within specific scopes and run contexts. It prevents duplicate processing of identical idempotency keys for the same logical operation.
-sections[2]{kind,start,end,limit}:
-  classDoc,7,9,3
-  properties,13,13,1
+sections[1]{kind,start,end,limit}:
+  properties,10,10,1
 wiring:
   serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
-    "Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService",private,true,true,src/Application/Handler/MessageIdempotencyService.php,10
+    "Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService",private,true,true,src/Application/Handler/MessageIdempotencyService.php,7
   injectedInto[1]{fqcn,file,line}:
-    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor",src/Application/Orchestrator/RunMessageProcessor.php,17
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor",src/Application/Orchestrator/RunMessageProcessor.php,14
 methods[3]:
   - method: wasHandled
-    start: 15
-    end: 18
+    start: 12
+    end: 15
     limit: 4
-    symbolLine: 15
+    symbolLine: 12
     symbolColumn: 21
     signature: "public function wasHandled(string $scope, string $runId, string $idempotencyKey): bool"
     callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService::index"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor::process"
   - method: markHandled
-    start: 20
-    end: 23
+    start: 17
+    end: 20
     limit: 4
-    symbolLine: 20
+    symbolLine: 17
     symbolColumn: 21
     signature: "public function markHandled(string $scope, string $runId, string $idempotencyKey): void"
     callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService::index"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor::process"
   - method: index
-    start: 25
-    end: 28
+    start: 22
+    end: 25
     limit: 4
-    symbolLine: 25
+    symbolLine: 22
     symbolColumn: 22
     signature: "private function index(string $scope, string $runId, string $idempotencyKey): string"
     callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService::wasHandled","Ineersa\\AgentCore\\Application\\Handler\\MessageIdempotencyService::markHandled"

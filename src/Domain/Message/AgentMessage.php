@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Message;
 
-/**
- * Represents a canonical transcript message at bundle boundaries, including role/content and JS-parity fields for tool calls, errors, and metadata.
- */
 final readonly class AgentMessage
 {
     /**

@@ -2,15 +2,12 @@ spec: agent-core.file-index/v1
 file: ConvertToLlmHookInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Hook\\ConvertToLlmHookInterface"
 type: interface
-summary: Converts raw message arrays into a structured MessageBag for LLM consumption.
-sections[1]{kind,start,end,limit}:
-  classDoc,10,12,3
 methods[1]:
   - method: convertToLlm
-    start: 15
-    end: 20
+    start: 12
+    end: 17
     limit: 6
-    symbolLine: 20
+    symbolLine: 17
     symbolColumn: 21
     signature: "public function convertToLlm(array $messages, ?CancellationTokenInterface $cancelToken = null): MessageBag"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::applyConvertHooks"

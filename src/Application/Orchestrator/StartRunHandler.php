@@ -8,9 +8,6 @@ use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 
-/**
- * The StartRunHandler computes the initial run-start transition and execution effects for start commands.
- */
 final readonly class StartRunHandler implements RunMessageHandler
 {
     public function __construct(

@@ -18,9 +18,6 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Psr\Log\LoggerInterface;
 
-/**
- * Owns the durable run-commit lifecycle from compare-and-swap persistence through projection, replay rebuild, effects dispatch, hooks, and observability updates.
- */
 final readonly class RunCommit
 {
     public function __construct(

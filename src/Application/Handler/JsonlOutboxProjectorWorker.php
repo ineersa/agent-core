@@ -10,9 +10,6 @@ use Ineersa\AgentCore\Domain\Message\ProjectJsonlOutbox;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogWriter;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
-/**
- * Bus handler that persists domain events to the JSONL outbox store and writes execution details to the run log.
- */
 #[AsMessageHandler(bus: 'agent.publisher.bus')]
 final readonly class JsonlOutboxProjectorWorker
 {

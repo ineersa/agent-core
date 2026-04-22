@@ -2,7 +2,5 @@ spec: agent-core.file-index/v1
 file: BusNames.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Messenger\\BusNames"
 type: final class
-summary: "Defines bus name constants for the command, execution, and publisher Messenger buses."
-sections[2]{kind,start,end,limit}:
-  classDoc,7,9,3
-  constants,12,14,3
+sections[1]{kind,start,end,limit}:
+  constants,9,11,3

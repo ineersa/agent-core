@@ -18,9 +18,6 @@ use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolResult as SymfonyToolResult;
 use Symfony\AI\Platform\Result\ToolCall as SymfonyToolCall;
 
-/**
- * Executes tool calls with policy resolution, idempotent result reuse, cancellation checks, and Symfony Toolbox invocation.
- */
 final class ToolExecutor implements ToolExecutorInterface
 {
     private ToolExecutionPolicyResolver $policyResolver;

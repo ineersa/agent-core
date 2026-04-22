@@ -9,9 +9,6 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 
-/**
- * The RunMessageStateTools provide shared immutable state-copy and payload-hydration helpers for run message handlers.
- */
 final readonly class RunMessageStateTools
 {
     /**

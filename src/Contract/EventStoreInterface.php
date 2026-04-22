@@ -6,9 +6,6 @@ namespace Ineersa\AgentCore\Contract;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 
-/**
- * Persists and retrieves execution events scoped to individual runs.
- */
 interface EventStoreInterface
 {
     public function append(RunEvent $event): void;

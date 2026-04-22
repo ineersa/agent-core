@@ -24,9 +24,6 @@ use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Attribute\Route;
 
-/**
- * Exposes HTTP endpoints for starting runs, submitting commands, and reading run summaries, transcripts, and replay events with scoped access checks and payload validation.
- */
 #[AsController]
 #[Route('/agent/runs')]
 final class RunApiController

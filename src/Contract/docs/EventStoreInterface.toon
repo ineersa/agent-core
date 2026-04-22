@@ -2,34 +2,31 @@ spec: agent-core.file-index/v1
 file: EventStoreInterface.php
 class: "Ineersa\\AgentCore\\Contract\\EventStoreInterface"
 type: interface
-summary: Persists and retrieves execution events scoped to individual runs.
-sections[1]{kind,start,end,limit}:
-  classDoc,9,11,3
 wiring:
   aliases[1]{serviceId,target}:
     "Ineersa\\AgentCore\\Contract\\EventStoreInterface","Ineersa\\AgentCore\\Infrastructure\\Storage\\RunEventStore"
 methods[3]:
   - method: append
-    start: 14
-    end: 14
+    start: 11
+    end: 11
     limit: 1
-    symbolLine: 14
+    symbolLine: 11
     symbolColumn: 21
     signature: "public function append(RunEvent $event): void"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit::commit"
   - method: appendMany
-    start: 16
-    end: 21
+    start: 13
+    end: 18
     limit: 6
-    symbolLine: 21
+    symbolLine: 18
     symbolColumn: 21
     signature: "public function appendMany(array $events): void"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit::commit"
   - method: allFor
-    start: 23
-    end: 28
+    start: 20
+    end: 25
     limit: 6
-    symbolLine: 28
+    symbolLine: 25
     symbolColumn: 21
     signature: "public function allFor(string $runId): array"
     callers[3]: "Ineersa\\AgentCore\\Api\\Http\\RunReadService::eventsForRun","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::eventsForReplay","Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::eventsForRun"

@@ -2,21 +2,16 @@ spec: agent-core.file-index/v1
 file: RunLogWriter.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogWriter"
 type: readonly final class
-summary: "Appends run events as JSON lines to Flysystem-backed log files, partitioned by run ID."
-sections[3]:
-  - kind: classDoc
-    start: 11
-    end: 13
-    limit: 3
+sections[2]:
   - kind: properties
-    start: 16
-    end: 16
+    start: 13
+    end: 13
     limit: 1
   - kind: constructor
-    start: 18
-    end: 23
+    start: 15
+    end: 20
     limit: 6
-    signatureLine: 18
+    signatureLine: 15
 constructorInputs[2]{param,type,required}:
   $filesystem,FilesystemOperator,true
   $eventPayloadNormalizer,?EventPayloadNormalizer,false
@@ -27,35 +22,35 @@ wiring:
       autowire: true
       autoconfigure: true
       file: src/Infrastructure/Storage/RunLogWriter.php
-      line: 14
+      line: 11
       args:
         "$eventPayloadNormalizer": "service(Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer)"
         "$filesystem": service(agent_loop.run_logs)
   injectedInto[2]{fqcn,file,line}:
-    "Ineersa\\AgentCore\\Application\\Handler\\JsonlOutboxProjectorWorker",src/Application/Handler/JsonlOutboxProjectorWorker.php,17
-    "Ineersa\\AgentCore\\Application\\Handler\\OutboxProjector",src/Application/Handler/OutboxProjector.php,18
+    "Ineersa\\AgentCore\\Application\\Handler\\JsonlOutboxProjectorWorker",src/Application/Handler/JsonlOutboxProjectorWorker.php,14
+    "Ineersa\\AgentCore\\Application\\Handler\\OutboxProjector",src/Application/Handler/OutboxProjector.php,15
 methods[3]:
   - method: __construct
-    start: 18
-    end: 23
+    start: 15
+    end: 20
     limit: 6
-    symbolLine: 18
+    symbolLine: 15
     symbolColumn: 21
     signature: "public function __construct(FilesystemOperator $filesystem, ?EventPayloadNormalizer $eventPayloadNormalizer = null)"
   - method: append
-    start: 25
-    end: 47
+    start: 22
+    end: 44
     limit: 23
-    symbolLine: 25
+    symbolLine: 22
     symbolColumn: 21
     signature: "public function append(RunEvent $event): void"
     callees[5]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogWriter::pathForRun","Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer::normalizeRunEvent","League\\Flysystem\\FilesystemReader::fileExists","League\\Flysystem\\FilesystemReader::read","League\\Flysystem\\FilesystemWriter::write"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\JsonlOutboxProjectorWorker::__invoke"
   - method: pathForRun
-    start: 49
-    end: 52
+    start: 46
+    end: 49
     limit: 4
-    symbolLine: 49
+    symbolLine: 46
     symbolColumn: 22
     signature: "private function pathForRun(string $runId, DateTimeImmutable $at): string"
     callees[1]: "DateTimeImmutable::format"

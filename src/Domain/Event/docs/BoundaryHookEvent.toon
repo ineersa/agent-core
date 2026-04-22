@@ -2,20 +2,10 @@ spec: agent-core.file-index/v1
 file: BoundaryHookEvent.php
 class: "Ineersa\\AgentCore\\Domain\\Event\\BoundaryHookEvent"
 type: final class
-summary: Defines a domain event representing the execution of a named boundary hook within the agent core. It encapsulates the hook identifier and an optional context array to provide metadata for downstream processing.
-sections[2]:
-  - kind: classDoc
-    start: 7
-    end: 9
-    limit: 3
-  - kind: constructor
-    start: 12
-    end: 21
-    limit: 10
-    signatureLine: 17
-    commentStart: 12
+sections[1]{kind,start,end,limit,signatureLine,commentStart}:
+  constructor,9,18,10,14,9
 constructorInputs[2]{param,type,required}:
   $hookName,string,true
   $context,array,false
 methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,12,21,10,17,21,"public function __construct(string $hookName, array $context = [])"
+  __construct,9,18,10,14,21,"public function __construct(string $hookName, array $context = [])"

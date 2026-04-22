@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Message;
 
-/**
- * Bus message commanding the execution of a single tool call with its arguments and optional schema.
- */
 final readonly class ExecuteToolCall extends AbstractAgentBusMessage
 {
     /**

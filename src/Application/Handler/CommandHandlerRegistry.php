@@ -6,9 +6,6 @@ namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\Extension\CommandHandlerInterface;
 
-/**
- * Named-lookup registry that resolves command handlers by their command kind.
- */
 final class CommandHandlerRegistry
 {
     /** @var iterable<CommandHandlerInterface> */

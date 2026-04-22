@@ -2,16 +2,14 @@ spec: agent-core.file-index/v1
 file: CoreCommandKind.php
 class: "Ineersa\\AgentCore\\Domain\\Command\\CoreCommandKind"
 type: final class
-summary: "Closed set of core command kinds (steer, follow_up, cancel, human_response, continue) with validation for command routing."
-sections[2]{kind,start,end,limit}:
-  classDoc,7,9,3
-  constants,12,25,14
+sections[1]{kind,start,end,limit}:
+  constants,9,22,14
 methods[1]:
   - method: isCore
-    start: 27
-    end: 30
+    start: 24
+    end: 27
     limit: 4
-    symbolLine: 27
+    symbolLine: 24
     symbolColumn: 28
     signature: "static public function isCore(string $kind): bool"
     callers[6]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::sendCommand","Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::route","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyPendingStopBoundaryCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::isCancelSafeExtensionCommand","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeApplyCommand"

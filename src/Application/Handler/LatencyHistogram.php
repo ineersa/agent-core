@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Handler;
 
-/**
- * Records latency observations and exposes histogram-style bucket snapshots.
- */
 final class LatencyHistogram
 {
     private int $count = 0;

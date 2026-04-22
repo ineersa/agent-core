@@ -2,17 +2,8 @@ spec: agent-core.file-index/v1
 file: AgentLoopRunReplayCommand.php
 class: "Ineersa\\AgentCore\\Command\\AgentLoopRunReplayCommand"
 type: final class
-summary: Replays persisted run events after a given sequence cursor.
-sections[2]:
-  - kind: classDoc
-    start: 18
-    end: 20
-    limit: 3
-  - kind: constructor
-    start: 24
-    end: 36
-    limit: 13
-    signatureLine: 24
+sections[1]{kind,start,end,limit,signatureLine}:
+  constructor,21,33,13,21
 constructorInputs[2]{param,type,required}:
   $runDebugService,RunDebugService,true
   $runEventSerializer,RunEventSerializer,true
@@ -23,40 +14,40 @@ wiring:
       autowire: true
       autoconfigure: true
       file: src/Command/AgentLoopRunReplayCommand.php
-      line: 22
+      line: 19
       args:
         "$runDebugService": "service(Ineersa\\AgentCore\\Application\\Handler\\RunDebugService)"
         "$runEventSerializer": "service(Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer)"
 methods[4]:
   - method: __construct
-    start: 24
-    end: 36
+    start: 21
+    end: 33
     limit: 13
-    symbolLine: 24
+    symbolLine: 21
     symbolColumn: 21
     signature: "public function __construct(RunDebugService $runDebugService, RunEventSerializer $runEventSerializer)"
     callees[3]: "Symfony\\Component\\Console\\Command\\Command::__construct","Symfony\\Component\\Console\\Command\\Command::addArgument","Symfony\\Component\\Console\\Command\\Command::addOption"
   - method: execute
-    start: 38
-    end: 100
+    start: 35
+    end: 97
     limit: 63
-    symbolLine: 38
+    symbolLine: 35
     symbolColumn: 24
     signature: "protected function execute(InputInterface $input, OutputInterface $output): int"
     callees[11]: "Symfony\\Component\\Console\\Input\\InputInterface::getArgument","Symfony\\Component\\Console\\Input\\InputInterface::getOption","Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::replayAfter","Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer::normalizeRunEvent","Ineersa\\AgentCore\\Command\\AgentLoopRunReplayCommand::encodeJson","Symfony\\Component\\Console\\Output\\OutputInterface::writeln","Symfony\\Component\\Console\\Style\\SymfonyStyle::title","Symfony\\Component\\Console\\Style\\SymfonyStyle::definitionList","Symfony\\Component\\Console\\Style\\SymfonyStyle::warning","Ineersa\\AgentCore\\Command\\AgentLoopRunReplayCommand::payloadPreview","Symfony\\Component\\Console\\Style\\SymfonyStyle::table"
   - method: encodeJson
-    start: 102
-    end: 112
+    start: 99
+    end: 109
     limit: 11
-    symbolLine: 107
+    symbolLine: 104
     symbolColumn: 22
     signature: "private function encodeJson(array $payload): string"
     callers[1]: "Ineersa\\AgentCore\\Command\\AgentLoopRunReplayCommand::execute"
   - method: payloadPreview
-    start: 114
-    end: 126
+    start: 111
+    end: 123
     limit: 13
-    symbolLine: 114
+    symbolLine: 111
     symbolColumn: 22
     signature: "private function payloadPreview(mixed $payload): string"
     callers[1]: "Ineersa\\AgentCore\\Command\\AgentLoopRunReplayCommand::execute"

@@ -11,9 +11,6 @@ use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 
-/**
- * The ToolCallResultHandler collects tool execution outcomes and commits ordered batch results back into run state.
- */
 final readonly class ToolCallResultHandler implements RunMessageHandler
 {
     public function __construct(

@@ -3,14 +3,14 @@ namespace: "Infrastructure\\Storage"
 fqcn: "Ineersa\\AgentCore\\Infrastructure\\Storage"
 updatedAt: 2026-04-22
 description: "Storage adapters — in-memory stores, Flysystem run logs, Doctrine event store, hot prompt state, local artifact store."
-files[10]{file,type,summary}:
-  HotPromptStateStore.php,final class,Caches prompt execution state in memory keyed by run ID for high-speed access during active agent runs.
-  InMemoryCommandStore.php,final class,"Manages pending commands in memory with idempotent enqueue and state transitions (applied, rejected, superseded) per run."
-  InMemoryOutboxStore.php,final class,Buffers outbox entries in memory with sink-based deduplication for domain event publication.
-  InMemoryPromptStateStore.php,final class,Stores prompt state per run ID in an ephemeral in-memory array.
-  InMemoryRunAccessStore.php,final class,"Holds run access scopes in memory, keyed by run ID."
-  InMemoryRunStore.php,final class,Persists run states in memory with versioned optimistic locking for concurrent-update safety.
-  LocalArtifactStore.php,readonly final class,"Persists artifacts to the local filesystem, organized by run ID and artifact name."
-  RunEventStore.php,final class,"Stores run events in memory, supporting append and retrieval of the full event history per run."
-  RunLogReader.php,readonly final class,"Reads run log files from the filesystem to reconstruct event sequences for a specific run. It parses JSON lines into domain events, providing a read-only view of historical run data."
-  RunLogWriter.php,readonly final class,"Appends run events as JSON lines to Flysystem-backed log files, partitioned by run ID."
+files[10]{file,type}:
+  HotPromptStateStore.php,final class
+  InMemoryCommandStore.php,final class
+  InMemoryOutboxStore.php,final class
+  InMemoryPromptStateStore.php,final class
+  InMemoryRunAccessStore.php,final class
+  InMemoryRunStore.php,final class
+  LocalArtifactStore.php,readonly final class
+  RunEventStore.php,final class
+  RunLogReader.php,readonly final class
+  RunLogWriter.php,readonly final class

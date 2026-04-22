@@ -6,9 +6,6 @@ namespace Ineersa\AgentCore\Infrastructure\Storage;
 
 use Ineersa\AgentCore\Contract\PromptStateStoreInterface;
 
-/**
- * Caches prompt execution state in memory keyed by run ID for high-speed access during active agent runs.
- */
 final class HotPromptStateStore implements PromptStateStoreInterface
 {
     /** @var array<string, array<string, mixed>> */

@@ -6,9 +6,6 @@ namespace Ineersa\AgentCore\Contract\Extension;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 
-/**
- * Reacts to specific domain events by declaring subscribed event types and processing them.
- */
 interface EventSubscriberInterface
 {
     /**

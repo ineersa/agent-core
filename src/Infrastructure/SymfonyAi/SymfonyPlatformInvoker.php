@@ -8,9 +8,6 @@ use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Domain\Tool\PlatformInvocationResult;
 
-/**
- * Invokes the Symfony AI platform model endpoint and extracts structured usage metadata from deferred results.
- */
 final readonly class SymfonyPlatformInvoker
 {
     public function __construct(

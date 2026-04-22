@@ -2,17 +2,8 @@ spec: agent-core.file-index/v1
 file: RunEventDispatcher.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\RunEventDispatcher"
 type: readonly final class
-summary: Routes RunEvent instances to registered subscribers via the application event dispatcher.
-sections[2]:
-  - kind: classDoc
-    start: 10
-    end: 12
-    limit: 3
-  - kind: constructor
-    start: 15
-    end: 19
-    limit: 5
-    signatureLine: 15
+sections[1]{kind,start,end,limit,signatureLine}:
+  constructor,12,16,5,12
 constructorInputs[2]{param,type,required}:
   $registry,EventSubscriberRegistry,true
   $eventDispatcher,EventDispatcherInterface,true
@@ -23,23 +14,23 @@ wiring:
       autowire: true
       autoconfigure: true
       file: src/Application/Handler/RunEventDispatcher.php
-      line: 13
+      line: 10
       args:
         "$eventDispatcher": service(event_dispatcher)
         "$registry": "service(Ineersa\\AgentCore\\Application\\Handler\\EventSubscriberRegistry)"
 methods[2]:
   - method: __construct
-    start: 15
-    end: 19
+    start: 12
+    end: 16
     limit: 5
-    symbolLine: 15
+    symbolLine: 12
     symbolColumn: 21
     signature: "public function __construct(EventSubscriberRegistry $registry, EventDispatcherInterface $eventDispatcher)"
   - method: dispatch
-    start: 21
-    end: 28
+    start: 18
+    end: 25
     limit: 8
-    symbolLine: 21
+    symbolLine: 18
     symbolColumn: 21
     signature: "public function dispatch(RunEvent $event): void"
     callees[3]: "Symfony\\Contracts\\EventDispatcher\\EventDispatcherInterface::dispatch","Ineersa\\AgentCore\\Application\\Handler\\EventSubscriberRegistry::subscribersFor","Ineersa\\AgentCore\\Contract\\Extension\\EventSubscriberInterface::onEvent"

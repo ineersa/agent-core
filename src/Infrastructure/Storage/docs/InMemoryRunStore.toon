@@ -2,25 +2,23 @@ spec: agent-core.file-index/v1
 file: InMemoryRunStore.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunStore"
 type: final class
-summary: Persists run states in memory with versioned optimistic locking for concurrent-update safety.
-sections[2]{kind,start,end,limit}:
-  classDoc,10,12,3
-  properties,16,19,4
+sections[1]{kind,start,end,limit}:
+  properties,13,16,4
 wiring:
   serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
-    "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunStore",private,true,true,src/Infrastructure/Storage/InMemoryRunStore.php,13
+    "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunStore",private,true,true,src/Infrastructure/Storage/InMemoryRunStore.php,10
   aliases[1]{serviceId,target}:
     "Ineersa\\AgentCore\\Contract\\RunStoreInterface","Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunStore"
   injectedInto[8]{fqcn,file,line}:
-    "Ineersa\\AgentCore\\Api\\Http\\RunApiController",src/Api/Http/RunApiController.php,32
-    "Ineersa\\AgentCore\\Api\\Http\\RunReadService",src/Api/Http/RunReadService.php,18
-    "Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker",src/Application/Handler/ExecuteToolCallWorker.php,22
-    "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService",src/Application/Handler/RunDebugService.php,18
-    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit",src/Application/Orchestrator/RunCommit.php,24
-    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor",src/Application/Orchestrator/RunMessageProcessor.php,17
-    "Ineersa\\AgentCore\\Command\\AgentLoopResumeStaleRunsCommand",src/Command/AgentLoopResumeStaleRunsCommand.php,25
-    "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform",src/Infrastructure/SymfonyAi/Platform.php,22
+    "Ineersa\\AgentCore\\Api\\Http\\RunApiController",src/Api/Http/RunApiController.php,29
+    "Ineersa\\AgentCore\\Api\\Http\\RunReadService",src/Api/Http/RunReadService.php,15
+    "Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker",src/Application/Handler/ExecuteToolCallWorker.php,19
+    "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService",src/Application/Handler/RunDebugService.php,15
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit",src/Application/Orchestrator/RunCommit.php,21
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor",src/Application/Orchestrator/RunMessageProcessor.php,14
+    "Ineersa\\AgentCore\\Command\\AgentLoopResumeStaleRunsCommand",src/Command/AgentLoopResumeStaleRunsCommand.php,22
+    "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform",src/Infrastructure/SymfonyAi/Platform.php,19
 methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  get,21,24,4,21,21,"public function get(string $runId): ?RunState"
-  compareAndSwap,26,39,14,26,21,"public function compareAndSwap(RunState $state, int $expectedVersion): bool"
-  findRunningStaleBefore,41,59,19,41,21,"public function findRunningStaleBefore(DateTimeImmutable $updatedBefore): array"
+  get,18,21,4,18,21,"public function get(string $runId): ?RunState"
+  compareAndSwap,23,36,14,23,21,"public function compareAndSwap(RunState $state, int $expectedVersion): bool"
+  findRunningStaleBefore,38,56,19,38,21,"public function findRunningStaleBefore(DateTimeImmutable $updatedBefore): array"

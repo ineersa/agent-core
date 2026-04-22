@@ -2,17 +2,8 @@ spec: agent-core.file-index/v1
 file: CommandRouter.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter"
 type: final class
-summary: "Routes ApplyCommand messages to the matching handler by command kind, resolving extension-prefixed commands via the handler registry."
-sections[2]:
-  - kind: classDoc
-    start: 12
-    end: 14
-    limit: 3
-  - kind: constructor
-    start: 17
-    end: 21
-    limit: 5
-    signatureLine: 17
+sections[1]{kind,start,end,limit,signatureLine}:
+  constructor,14,18,5,14
 constructorInputs[2]{param,type,required}:
   $registry,CommandHandlerRegistry,true
   $extensionPrefix,string,false
@@ -23,43 +14,43 @@ wiring:
       autowire: true
       autoconfigure: true
       file: src/Application/Handler/CommandRouter.php
-      line: 15
+      line: 12
       args:
         "$registry": "service(Ineersa\\AgentCore\\Application\\Handler\\CommandHandlerRegistry)"
   injectedInto[2]{fqcn,file,line}:
-    "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler",src/Application/Orchestrator/ApplyCommandHandler.php,21
-    "Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy",src/Application/Orchestrator/CommandMailboxPolicy.php,19
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler",src/Application/Orchestrator/ApplyCommandHandler.php,18
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy",src/Application/Orchestrator/CommandMailboxPolicy.php,16
 methods[4]:
   - method: __construct
-    start: 17
-    end: 21
+    start: 14
+    end: 18
     limit: 5
-    symbolLine: 17
+    symbolLine: 14
     symbolColumn: 21
     signature: "public function __construct(CommandHandlerRegistry $registry, string $extensionPrefix = 'ext:')"
   - method: route
-    start: 23
-    end: 62
+    start: 20
+    end: 59
     limit: 40
-    symbolLine: 23
+    symbolLine: 20
     symbolColumn: 21
     signature: "public function route(ApplyCommand $command): RoutedCommand"
     callees[7]: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::validateOptionKeys","Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand::rejected","Ineersa\\AgentCore\\Domain\\Command\\CoreCommandKind::isCore","Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand::core","Ineersa\\AgentCore\\Application\\Handler\\CommandHandlerRegistry::find","Ineersa\\AgentCore\\Contract\\Extension\\CommandHandlerInterface::supportsCancelSafe","Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand::extension"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::handle"
   - method: handlerFor
-    start: 64
-    end: 67
+    start: 61
+    end: 64
     limit: 4
-    symbolLine: 64
+    symbolLine: 61
     symbolColumn: 21
     signature: "public function handlerFor(string $kind): ?CommandHandlerInterface"
     callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\CommandHandlerRegistry::find"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyExtensionCommand"
   - method: validateOptionKeys
-    start: 69
-    end: 86
+    start: 66
+    end: 83
     limit: 18
-    symbolLine: 69
+    symbolLine: 66
     symbolColumn: 22
     signature: "private function validateOptionKeys(ApplyCommand $command): ?string"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::route"

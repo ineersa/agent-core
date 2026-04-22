@@ -7,9 +7,6 @@ namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\MessageBag;
 
-/**
- * Converts between internal AgentMessage objects and Symfony AI provider message formats, handling tool-call serialization.
- */
 final class SymfonyMessageMapper
 {
     /**

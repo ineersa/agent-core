@@ -2,37 +2,27 @@ spec: agent-core.file-index/v1
 file: AgentLoopHealthCommand.php
 class: "Ineersa\\AgentCore\\Command\\AgentLoopHealthCommand"
 type: final class
-summary: Reports agent-loop health and effective runtime settings to the console.
-sections[2]:
-  - kind: classDoc
-    start: 13
-    end: 15
-    limit: 3
-  - kind: constructor
-    start: 19
-    end: 27
-    limit: 9
-    signatureLine: 24
-    commentStart: 19
+sections[1]{kind,start,end,limit,signatureLine,commentStart}:
+  constructor,16,24,9,21,16
 constructorInputs[1]{param,type,required}:
   $config,array,true
 wiring:
   serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
-    "Ineersa\\AgentCore\\Command\\AgentLoopHealthCommand",public,true,true,src/Command/AgentLoopHealthCommand.php,17
+    "Ineersa\\AgentCore\\Command\\AgentLoopHealthCommand",public,true,true,src/Command/AgentLoopHealthCommand.php,14
 methods[2]:
   - method: __construct
-    start: 19
-    end: 27
+    start: 16
+    end: 24
     limit: 9
-    symbolLine: 24
+    symbolLine: 21
     symbolColumn: 21
     signature: public function __construct(array $config)
     callees[1]: "Symfony\\Component\\Console\\Command\\Command::__construct"
   - method: execute
-    start: 29
-    end: 46
+    start: 26
+    end: 43
     limit: 18
-    symbolLine: 29
+    symbolLine: 26
     symbolColumn: 24
     signature: "protected function execute(InputInterface $input, OutputInterface $output): int"
     callees[3]: "Symfony\\Component\\Console\\Style\\SymfonyStyle::title","Symfony\\Component\\Console\\Style\\SymfonyStyle::definitionList","Symfony\\Component\\Console\\Style\\SymfonyStyle::success"

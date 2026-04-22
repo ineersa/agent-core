@@ -2,7 +2,5 @@ spec: agent-core.file-index/v1
 file: ToolExecutionUpdateEvent.php
 class: "Ineersa\\AgentCore\\Domain\\Event\\Lifecycle\\ToolExecutionUpdateEvent"
 type: readonly final class
-summary: Represents a domain event signaling an update to the execution state of a tool within an agent's lifecycle. This immutable value object captures the specific details of a tool execution change for domain event sourcing.
-sections[2]{kind,start,end,limit}:
-  classDoc,9,11,3
-  constants,14,14,1
+sections[1]{kind,start,end,limit}:
+  constants,11,11,1

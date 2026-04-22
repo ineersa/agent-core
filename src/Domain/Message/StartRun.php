@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Message;
 
-/**
- * Bus message commanding the initiation of a new agent run, carrying the initial payload for execution.
- */
 final readonly class StartRun extends AbstractAgentBusMessage
 {
     /**

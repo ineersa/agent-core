@@ -6,9 +6,6 @@ namespace Ineersa\AgentCore\Infrastructure\Storage;
 
 use Ineersa\AgentCore\Contract\ArtifactStoreInterface;
 
-/**
- * Persists artifacts to the local filesystem, organized by run ID and artifact name.
- */
 final readonly class LocalArtifactStore implements ArtifactStoreInterface
 {
     public function __construct(private string $basePath)

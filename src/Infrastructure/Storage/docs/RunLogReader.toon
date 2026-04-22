@@ -2,21 +2,16 @@ spec: agent-core.file-index/v1
 file: RunLogReader.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader"
 type: readonly final class
-summary: "Reads run log files from the filesystem to reconstruct event sequences for a specific run. It parses JSON lines into domain events, providing a read-only view of historical run data."
-sections[3]:
-  - kind: classDoc
-    start: 13
-    end: 15
-    limit: 3
+sections[2]:
   - kind: properties
-    start: 18
-    end: 18
+    start: 15
+    end: 15
     limit: 1
   - kind: constructor
-    start: 20
-    end: 25
+    start: 17
+    end: 22
     limit: 6
-    signatureLine: 20
+    signatureLine: 17
 constructorInputs[2]{param,type,required}:
   $filesystem,FilesystemOperator,true
   $eventPayloadNormalizer,?EventPayloadNormalizer,false
@@ -27,45 +22,45 @@ wiring:
       autowire: true
       autoconfigure: true
       file: src/Infrastructure/Storage/RunLogReader.php
-      line: 16
+      line: 13
       args:
         "$eventPayloadNormalizer": "service(Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer)"
         "$filesystem": service(agent_loop.run_logs)
   injectedInto[3]{fqcn,file,line}:
-    "Ineersa\\AgentCore\\Api\\Http\\RunReadService",src/Api/Http/RunReadService.php,18
-    "Ineersa\\AgentCore\\Application\\Handler\\ReplayService",src/Application/Handler/ReplayService.php,15
-    "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService",src/Application/Handler/RunDebugService.php,18
+    "Ineersa\\AgentCore\\Api\\Http\\RunReadService",src/Api/Http/RunReadService.php,15
+    "Ineersa\\AgentCore\\Application\\Handler\\ReplayService",src/Application/Handler/ReplayService.php,12
+    "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService",src/Application/Handler/RunDebugService.php,15
 methods[4]:
   - method: __construct
-    start: 20
-    end: 25
+    start: 17
+    end: 22
     limit: 6
-    symbolLine: 20
+    symbolLine: 17
     symbolColumn: 21
     signature: "public function __construct(FilesystemOperator $filesystem, ?EventPayloadNormalizer $eventPayloadNormalizer = null)"
   - method: allFor
-    start: 27
-    end: 56
+    start: 24
+    end: 53
     limit: 30
-    symbolLine: 32
+    symbolLine: 29
     symbolColumn: 21
     signature: "public function allFor(string $runId): array"
     callees[3]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader::runLogPaths","League\\Flysystem\\FilesystemReader::read","Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader::eventFromJsonLine"
     callers[3]: "Ineersa\\AgentCore\\Api\\Http\\RunReadService::eventsForRun","Ineersa\\AgentCore\\Application\\Handler\\ReplayService::eventsForReplay","Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::eventsForRun"
   - method: runLogPaths
-    start: 58
-    end: 89
+    start: 55
+    end: 86
     limit: 32
-    symbolLine: 63
+    symbolLine: 60
     symbolColumn: 22
     signature: "private function runLogPaths(string $runId): array"
     callees[2]: "League\\Flysystem\\FilesystemReader::listContents","League\\Flysystem\\FileAttributes::path"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader::allFor"
   - method: eventFromJsonLine
-    start: 91
-    end: 115
+    start: 88
+    end: 112
     limit: 25
-    symbolLine: 91
+    symbolLine: 88
     symbolColumn: 22
     signature: "private function eventFromJsonLine(string $runId, string $line): ?RunEvent"
     callees[1]: "Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer::denormalizeRunEvent"

@@ -6,9 +6,6 @@ namespace Ineersa\AgentCore\Schema;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 
-/**
- * Normalizes and denormalizes persisted run events into a stable schema-versioned transport envelope.
- */
 final readonly class EventPayloadNormalizer
 {
     private EventNameMap $eventNameMap;

@@ -15,9 +15,6 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
-/**
- * The ApplyCommandHandler validates and maps incoming commands into durable command-mailbox transitions.
- */
 final readonly class ApplyCommandHandler implements RunMessageHandler
 {
     public function __construct(

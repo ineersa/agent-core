@@ -2,21 +2,16 @@ spec: agent-core.file-index/v1
 file: RunEventPublisher.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunEventPublisher"
 type: final class
-summary: Publishes domain run events to a Mercure hub with coalesced message-update batching to reduce network traffic.
-sections[3]:
-  - kind: classDoc
-    start: 12
-    end: 14
-    limit: 3
+sections[2]:
   - kind: properties
-    start: 18
-    end: 18
+    start: 15
+    end: 15
     limit: 1
   - kind: constructor
-    start: 20
-    end: 26
+    start: 17
+    end: 23
     limit: 7
-    signatureLine: 20
+    signatureLine: 17
 constructorInputs[4]{param,type,required}:
   $hub,?HubInterface,false
   $serializer,?RunEventSerializer,false
@@ -29,35 +24,35 @@ wiring:
       autowire: true
       autoconfigure: true
       file: src/Infrastructure/Mercure/RunEventPublisher.php
-      line: 15
+      line: 12
       args:
         "$serializer": "service(Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer)"
         "$topicPolicy": "service(Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunTopicPolicy)"
   injectedInto[2]{fqcn,file,line}:
-    "Ineersa\\AgentCore\\Application\\Handler\\MercureOutboxProjectorWorker",src/Application/Handler/MercureOutboxProjectorWorker.php,17
-    "Ineersa\\AgentCore\\Application\\Handler\\OutboxProjector",src/Application/Handler/OutboxProjector.php,18
+    "Ineersa\\AgentCore\\Application\\Handler\\MercureOutboxProjectorWorker",src/Application/Handler/MercureOutboxProjectorWorker.php,14
+    "Ineersa\\AgentCore\\Application\\Handler\\OutboxProjector",src/Application/Handler/OutboxProjector.php,15
 methods[3]:
   - method: __construct
-    start: 20
-    end: 26
+    start: 17
+    end: 23
     limit: 7
-    symbolLine: 20
+    symbolLine: 17
     symbolColumn: 21
     signature: "public function __construct(?HubInterface $hub = null, ?RunEventSerializer $serializer = null, ?RunTopicPolicy $topicPolicy = null, int $messageUpdateCoalesceWindowMs = 75)"
   - method: publish
-    start: 28
-    end: 54
+    start: 25
+    end: 51
     limit: 27
-    symbolLine: 28
+    symbolLine: 25
     symbolColumn: 21
     signature: "public function publish(RunEvent $event): void"
     callees[4]: "Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunEventPublisher::shouldCoalesce","Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer::normalizeRunEvent","Symfony\\Component\\Mercure\\HubInterface::publish","Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunTopicPolicy::topicsFor"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\MercureOutboxProjectorWorker::__invoke"
   - method: shouldCoalesce
-    start: 56
-    end: 73
+    start: 53
+    end: 70
     limit: 18
-    symbolLine: 56
+    symbolLine: 53
     symbolColumn: 22
     signature: "private function shouldCoalesce(RunEvent $event): bool"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunEventPublisher::publish"

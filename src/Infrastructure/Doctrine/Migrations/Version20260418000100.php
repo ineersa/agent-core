@@ -8,9 +8,6 @@ use Doctrine\DBAL\Schema\Schema;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\Migrations\AbstractMigration;
 
-/**
- * Creates the initial agent-loop persistence schema (events, commands, runs, outbox, prompt state, artifacts).
- */
 final class Version20260418000100 extends AbstractMigration
 {
     public function getDescription(): string

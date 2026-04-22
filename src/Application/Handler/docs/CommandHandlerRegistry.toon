@@ -2,42 +2,37 @@ spec: agent-core.file-index/v1
 file: CommandHandlerRegistry.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\CommandHandlerRegistry"
 type: final class
-summary: Named-lookup registry that resolves command handlers by their command kind.
-sections[3]:
-  - kind: classDoc
-    start: 9
-    end: 11
-    limit: 3
+sections[2]:
   - kind: properties
-    start: 15
-    end: 15
+    start: 12
+    end: 12
     limit: 1
   - kind: constructor
-    start: 17
-    end: 25
+    start: 14
+    end: 22
     limit: 9
-    signatureLine: 22
-    commentStart: 17
+    signatureLine: 19
+    commentStart: 14
 constructorInputs[1]{param,type,required}:
   $handlers,iterable,true
 wiring:
   serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
-    "Ineersa\\AgentCore\\Application\\Handler\\CommandHandlerRegistry",private,true,true,src/Application/Handler/CommandHandlerRegistry.php,12
+    "Ineersa\\AgentCore\\Application\\Handler\\CommandHandlerRegistry",private,true,true,src/Application/Handler/CommandHandlerRegistry.php,9
   injectedInto[1]{fqcn,file,line}:
-    "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter",src/Application/Handler/CommandRouter.php,15
+    "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter",src/Application/Handler/CommandRouter.php,12
 methods[2]:
   - method: __construct
-    start: 17
-    end: 25
+    start: 14
+    end: 22
     limit: 9
-    symbolLine: 22
+    symbolLine: 19
     symbolColumn: 21
     signature: public function __construct(iterable $handlers)
   - method: find
-    start: 27
-    end: 36
+    start: 24
+    end: 33
     limit: 10
-    symbolLine: 27
+    symbolLine: 24
     symbolColumn: 21
     signature: "public function find(string $kind): ?CommandHandlerInterface"
     callees[1]: "Ineersa\\AgentCore\\Contract\\Extension\\CommandHandlerInterface::supports"

@@ -2,14 +2,12 @@ spec: agent-core.file-index/v1
 file: InMemoryPromptStateStore.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryPromptStateStore"
 type: final class
-summary: Stores prompt state per run ID in an ephemeral in-memory array.
-sections[2]{kind,start,end,limit}:
-  classDoc,9,11,3
-  properties,15,15,1
+sections[1]{kind,start,end,limit}:
+  properties,12,12,1
 wiring:
   serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
-    "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryPromptStateStore",private,true,true,src/Infrastructure/Storage/InMemoryPromptStateStore.php,12
+    "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryPromptStateStore",private,true,true,src/Infrastructure/Storage/InMemoryPromptStateStore.php,9
 methods[3]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  get,17,20,4,17,21,"public function get(string $runId): ?array"
-  save,22,25,4,22,21,"public function save(string $runId, array $state): void"
-  delete,27,30,4,27,21,"public function delete(string $runId): void"
+  get,14,17,4,14,21,"public function get(string $runId): ?array"
+  save,19,22,4,19,21,"public function save(string $runId, array $state): void"
+  delete,24,27,4,24,21,"public function delete(string $runId): void"

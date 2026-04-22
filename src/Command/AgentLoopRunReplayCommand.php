@@ -15,9 +15,6 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
-/**
- * Replays persisted run events after a given sequence cursor.
- */
 #[AsCommand(name: 'agent-loop:run-replay', description: 'Replay run events after a given sequence number.')]
 final class AgentLoopRunReplayCommand extends Command
 {

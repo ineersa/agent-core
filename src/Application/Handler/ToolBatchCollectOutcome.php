@@ -7,9 +7,6 @@ namespace Ineersa\AgentCore\Application\Handler;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 
-/**
- * Immutable outcome of a tool batch collection carrying acceptance flags, ordered results, and pending execution effects.
- */
 final readonly class ToolBatchCollectOutcome
 {
     /**

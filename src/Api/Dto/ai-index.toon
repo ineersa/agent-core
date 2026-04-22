@@ -2,5 +2,5 @@ spec: agent-core.ai-docs/v1
 namespace: Dto
 fqcn: "Ineersa\\AgentCore\\Api\\Dto"
 updatedAt: 2026-04-22
-files[1]{file,type,summary}:
-  RunStreamEvent.php,readonly final class,"Represents a single event emitted during a run stream, carrying sequence and turn metadata alongside a typed payload. This immutable DTO structures data for transport across the API boundary without enforcing business logic."
+files[1]{file,type}:
+  RunStreamEvent.php,readonly final class

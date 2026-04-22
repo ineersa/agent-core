@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Run;
 
-/**
- * Encapsulates the run's access context — run identity, optional tenant/user scopes, and session metadata — for authorization decisions.
- */
 final readonly class RunAccessScope
 {
     /**

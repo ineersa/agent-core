@@ -7,9 +7,6 @@ namespace Ineersa\AgentCore\Contract\Tool;
 use Ineersa\AgentCore\Domain\Message\MessageBag;
 use Ineersa\AgentCore\Domain\Tool\ResolvedModel;
 
-/**
- * Resolves the target AI model configuration from message context and default settings.
- */
 interface ModelResolverInterface
 {
     /**

@@ -2,55 +2,53 @@ spec: agent-core.file-index/v1
 file: InMemoryOutboxStore.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryOutboxStore"
 type: final class
-summary: Buffers outbox entries in memory with sink-based deduplication for domain event publication.
-sections[2]{kind,start,end,limit}:
-  classDoc,12,14,3
-  properties,28,33,6
+sections[1]{kind,start,end,limit}:
+  properties,25,30,6
 wiring:
   serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
-    "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryOutboxStore",private,true,true,src/Infrastructure/Storage/InMemoryOutboxStore.php,15
+    "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryOutboxStore",private,true,true,src/Infrastructure/Storage/InMemoryOutboxStore.php,12
   aliases[1]{serviceId,target}:
     "Ineersa\\AgentCore\\Contract\\OutboxStoreInterface","Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryOutboxStore"
   injectedInto[3]{fqcn,file,line}:
-    "Ineersa\\AgentCore\\Application\\Handler\\JsonlOutboxProjectorWorker",src/Application/Handler/JsonlOutboxProjectorWorker.php,17
-    "Ineersa\\AgentCore\\Application\\Handler\\MercureOutboxProjectorWorker",src/Application/Handler/MercureOutboxProjectorWorker.php,17
-    "Ineersa\\AgentCore\\Application\\Handler\\OutboxProjector",src/Application/Handler/OutboxProjector.php,18
+    "Ineersa\\AgentCore\\Application\\Handler\\JsonlOutboxProjectorWorker",src/Application/Handler/JsonlOutboxProjectorWorker.php,14
+    "Ineersa\\AgentCore\\Application\\Handler\\MercureOutboxProjectorWorker",src/Application/Handler/MercureOutboxProjectorWorker.php,14
+    "Ineersa\\AgentCore\\Application\\Handler\\OutboxProjector",src/Application/Handler/OutboxProjector.php,15
 methods[5]:
   - method: enqueue
-    start: 35
-    end: 53
+    start: 32
+    end: 50
     limit: 19
-    symbolLine: 35
+    symbolLine: 32
     symbolColumn: 21
     signature: "public function enqueue(RunEvent $event, OutboxSink $sink): void"
     callees[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryOutboxStore::dedupeKey"
   - method: claim
-    start: 55
-    end: 92
+    start: 52
+    end: 89
     limit: 38
-    symbolLine: 55
+    symbolLine: 52
     symbolColumn: 21
     signature: "public function claim(OutboxSink $sink, int $limit = 100, ?DateTimeImmutable $now = null): array"
   - method: markProcessed
-    start: 94
-    end: 102
+    start: 91
+    end: 99
     limit: 9
-    symbolLine: 94
+    symbolLine: 91
     symbolColumn: 21
     signature: "public function markProcessed(int $entryId, ?DateTimeImmutable $processedAt = null): void"
   - method: markFailed
-    start: 104
-    end: 115
+    start: 101
+    end: 112
     limit: 12
-    symbolLine: 104
+    symbolLine: 101
     symbolColumn: 21
     signature: "public function markFailed(int $entryId, int $retryAfterSeconds = 30, ?DateTimeImmutable $now = null): void"
     callees[2]: "DateTimeImmutable::getTimestamp","DateTimeImmutable::setTimestamp"
   - method: dedupeKey
-    start: 117
-    end: 120
+    start: 114
+    end: 117
     limit: 4
-    symbolLine: 117
+    symbolLine: 114
     symbolColumn: 22
     signature: "private function dedupeKey(OutboxSink $sink, RunEvent $event): string"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryOutboxStore::enqueue"

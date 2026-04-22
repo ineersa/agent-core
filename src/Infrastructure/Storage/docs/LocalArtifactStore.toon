@@ -2,24 +2,15 @@ spec: agent-core.file-index/v1
 file: LocalArtifactStore.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\LocalArtifactStore"
 type: readonly final class
-summary: "Persists artifacts to the local filesystem, organized by run ID and artifact name."
-sections[2]:
-  - kind: classDoc
-    start: 9
-    end: 11
-    limit: 3
-  - kind: constructor
-    start: 14
-    end: 16
-    limit: 3
-    signatureLine: 14
+sections[1]{kind,start,end,limit,signatureLine}:
+  constructor,11,13,3,11
 constructorInputs[1]{param,type,required}:
   $basePath,string,true
 wiring:
   serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
-    "Ineersa\\AgentCore\\Infrastructure\\Storage\\LocalArtifactStore",private,true,true,src/Infrastructure/Storage/LocalArtifactStore.php,12
+    "Ineersa\\AgentCore\\Infrastructure\\Storage\\LocalArtifactStore",private,true,true,src/Infrastructure/Storage/LocalArtifactStore.php,9
   aliases[1]{serviceId,target}:
     "Ineersa\\AgentCore\\Contract\\ArtifactStoreInterface","Ineersa\\AgentCore\\Infrastructure\\Storage\\LocalArtifactStore"
 methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,14,16,3,14,21,public function __construct(string $basePath)
-  put,18,38,21,18,21,"public function put(string $runId, string $artifactName, string $content, array $metadata = []): string"
+  __construct,11,13,3,11,21,public function __construct(string $basePath)
+  put,15,35,21,15,21,"public function put(string $runId, string $artifactName, string $content, array $metadata = []): string"

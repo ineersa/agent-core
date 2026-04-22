@@ -2,22 +2,12 @@ spec: agent-core.file-index/v1
 file: StartRunInput.php
 class: "Ineersa\\AgentCore\\Domain\\Run\\StartRunInput"
 type: readonly final class
-summary: "Input payload for starting a new run, carrying the system prompt, initial message history, and optional metadata."
-sections[2]:
-  - kind: classDoc
-    start: 9
-    end: 11
-    limit: 3
-  - kind: constructor
-    start: 14
-    end: 26
-    limit: 13
-    signatureLine: 20
-    commentStart: 14
+sections[1]{kind,start,end,limit,signatureLine,commentStart}:
+  constructor,11,23,13,17,11
 constructorInputs[4]{param,type,required}:
   $systemPrompt,string,true
   $messages,array,false
   $runId,?string,false
   $metadata,array,false
 methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,14,26,13,20,21,"public function __construct(string $systemPrompt, array $messages = [], ?string $runId = null, array $metadata = [])"
+  __construct,11,23,13,17,21,"public function __construct(string $systemPrompt, array $messages = [], ?string $runId = null, array $metadata = [])"

@@ -2,21 +2,16 @@ spec: agent-core.file-index/v1
 file: RunEventSerializer.php
 class: "Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer"
 type: readonly final class
-summary: "Converts domain RunEvent objects to API-facing RunStreamEvent DTOs and normalized array payloads, bridging domain events to transport representations."
-sections[3]:
-  - kind: classDoc
-    start: 11
-    end: 13
-    limit: 3
+sections[2]:
   - kind: properties
-    start: 16
-    end: 16
+    start: 13
+    end: 13
     limit: 1
   - kind: constructor
-    start: 18
-    end: 21
+    start: 15
+    end: 18
     limit: 4
-    signatureLine: 18
+    signatureLine: 15
 constructorInputs[1]{param,type,required}:
   $eventPayloadNormalizer,?EventPayloadNormalizer,false
 wiring:
@@ -26,44 +21,44 @@ wiring:
       autowire: true
       autoconfigure: true
       file: src/Api/Serializer/RunEventSerializer.php
-      line: 14
+      line: 11
       args:
         "$eventPayloadNormalizer": "service(Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer)"
   injectedInto[4]{fqcn,file,line}:
-    "Ineersa\\AgentCore\\Api\\Http\\RunApiController",src/Api/Http/RunApiController.php,32
-    "Ineersa\\AgentCore\\Command\\AgentLoopRunReplayCommand",src/Command/AgentLoopRunReplayCommand.php,22
-    "Ineersa\\AgentCore\\Command\\AgentLoopRunTailCommand",src/Command/AgentLoopRunTailCommand.php,22
-    "Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunEventPublisher",src/Infrastructure/Mercure/RunEventPublisher.php,15
+    "Ineersa\\AgentCore\\Api\\Http\\RunApiController",src/Api/Http/RunApiController.php,29
+    "Ineersa\\AgentCore\\Command\\AgentLoopRunReplayCommand",src/Command/AgentLoopRunReplayCommand.php,19
+    "Ineersa\\AgentCore\\Command\\AgentLoopRunTailCommand",src/Command/AgentLoopRunTailCommand.php,19
+    "Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunEventPublisher",src/Infrastructure/Mercure/RunEventPublisher.php,12
 methods[4]:
   - method: __construct
-    start: 18
-    end: 21
+    start: 15
+    end: 18
     limit: 4
-    symbolLine: 18
+    symbolLine: 15
     symbolColumn: 21
     signature: public function __construct(?EventPayloadNormalizer $eventPayloadNormalizer = null)
   - method: normalizeRunEvent
-    start: 23
-    end: 31
+    start: 20
+    end: 28
     limit: 9
-    symbolLine: 28
+    symbolLine: 25
     symbolColumn: 21
     signature: "public function normalizeRunEvent(RunEvent $event): array"
     callees[1]: "Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer::normalizeRunEvent"
     callers[4]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::replayEvents","Ineersa\\AgentCore\\Command\\AgentLoopRunReplayCommand::execute","Ineersa\\AgentCore\\Command\\AgentLoopRunTailCommand::execute","Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunEventPublisher::publish"
   - method: fromRunEvent
-    start: 33
-    end: 43
+    start: 30
+    end: 40
     limit: 11
-    symbolLine: 33
+    symbolLine: 30
     symbolColumn: 21
     signature: "public function fromRunEvent(RunEvent $event): RunStreamEvent"
     callees[1]: "Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer::toPublicType"
   - method: normalizeStreamEvent
-    start: 45
-    end: 60
+    start: 42
+    end: 57
     limit: 16
-    symbolLine: 50
+    symbolLine: 47
     symbolColumn: 21
     signature: "public function normalizeStreamEvent(RunStreamEvent $event): array"
     callees[1]: "Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer::normalize"

@@ -2,7 +2,5 @@ spec: agent-core.file-index/v1
 file: SchemaVersion.php
 class: "Ineersa\\AgentCore\\Schema\\SchemaVersion"
 type: final class
-summary: Defines supported payload schema versions and the current default used for serialized command and event contracts.
-sections[2]{kind,start,end,limit}:
-  classDoc,7,9,3
-  constants,12,14,3
+sections[1]{kind,start,end,limit}:
+  constants,9,11,3

@@ -7,9 +7,6 @@ namespace Ineersa\AgentCore\Infrastructure\Storage;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
 
-/**
- * Persists run states in memory with versioned optimistic locking for concurrent-update safety.
- */
 final class InMemoryRunStore implements RunStoreInterface
 {
     /** @var array<string, RunState> */

@@ -3,11 +3,11 @@ namespace: "Contract\\Hook"
 fqcn: "Ineersa\\AgentCore\\Contract\\Hook"
 updatedAt: 2026-04-22
 description: "Hook interfaces for intercepting agent loop lifecycle: context transforms, LLM conversion, tool call boundaries, cancellation, and message providers."
-files[7]{file,type,summary}:
-  BeforeProviderRequestHookInterface.php,interface,"Intercepts provider requests before dispatch, allowing modification or cancellation."
-  CancellationTokenInterface.php,interface,Signals cooperative cancellation for long-running or asynchronous hook operations.
-  ConvertToLlmHookInterface.php,interface,Converts raw message arrays into a structured MessageBag for LLM consumption.
-  FollowUpMessagesProviderInterface.php,interface,Supplies contextual follow-up messages based on current agent state.
-  NullCancellationToken.php,readonly final class,Non-cancelable sentinel implementing the cancellation token contract for scenarios that do not require abort support.
-  SteeringMessagesProviderInterface.php,interface,Supplies steering messages that configure or route agent behavior.
-  TransformContextHookInterface.php,interface,Transforms message payloads in the agent loop with optional cancellation support.
+files[7]{file,type}:
+  BeforeProviderRequestHookInterface.php,interface
+  CancellationTokenInterface.php,interface
+  ConvertToLlmHookInterface.php,interface
+  FollowUpMessagesProviderInterface.php,interface
+  NullCancellationToken.php,readonly final class
+  SteeringMessagesProviderInterface.php,interface
+  TransformContextHookInterface.php,interface

@@ -2,18 +2,8 @@ spec: agent-core.file-index/v1
 file: ToolBatchCollectOutcome.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollectOutcome"
 type: readonly final class
-summary: "Immutable outcome of a tool batch collection carrying acceptance flags, ordered results, and pending execution effects."
-sections[2]:
-  - kind: classDoc
-    start: 10
-    end: 12
-    limit: 3
-  - kind: constructor
-    start: 15
-    end: 28
-    limit: 14
-    signatureLine: 21
-    commentStart: 15
+sections[1]{kind,start,end,limit,signatureLine,commentStart}:
+  constructor,12,25,14,18,12
 constructorInputs[5]{param,type,required}:
   $accepted,bool,true
   $duplicate,bool,true
@@ -22,41 +12,41 @@ constructorInputs[5]{param,type,required}:
   $effectsToDispatch,array,false
 methods[5]:
   - method: __construct
-    start: 15
-    end: 28
+    start: 12
+    end: 25
     limit: 14
-    symbolLine: 21
+    symbolLine: 18
     symbolColumn: 21
     signature: "public function __construct(bool $accepted, bool $duplicate, bool $complete, array $orderedResults = [], array $effectsToDispatch = [])"
   - method: rejected
-    start: 30
-    end: 33
+    start: 27
+    end: 30
     limit: 4
-    symbolLine: 30
+    symbolLine: 27
     symbolColumn: 28
     signature: "static public function rejected(): self"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::collect"
   - method: duplicate
-    start: 35
-    end: 38
+    start: 32
+    end: 35
     limit: 4
-    symbolLine: 35
+    symbolLine: 32
     symbolColumn: 28
     signature: "static public function duplicate(): self"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::collect"
   - method: acceptedPending
-    start: 40
-    end: 48
+    start: 37
+    end: 45
     limit: 9
-    symbolLine: 45
+    symbolLine: 42
     symbolColumn: 28
     signature: "static public function acceptedPending(array $effectsToDispatch = []): self"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::collect"
   - method: acceptedComplete
-    start: 50
-    end: 65
+    start: 47
+    end: 62
     limit: 16
-    symbolLine: 56
+    symbolLine: 53
     symbolColumn: 28
     signature: "static public function acceptedComplete(array $orderedResults, array $effectsToDispatch = []): self"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::collect"

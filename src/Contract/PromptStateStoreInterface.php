@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Contract;
 
-/**
- * Stores, fetches, and removes structured prompt state keyed by run identifier.
- */
 interface PromptStateStoreInterface
 {
     /**

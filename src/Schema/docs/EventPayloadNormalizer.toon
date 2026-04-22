@@ -2,21 +2,16 @@ spec: agent-core.file-index/v1
 file: EventPayloadNormalizer.php
 class: "Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer"
 type: readonly final class
-summary: Normalizes and denormalizes persisted run events into a stable schema-versioned transport envelope.
-sections[3]:
-  - kind: classDoc
-    start: 9
-    end: 11
-    limit: 3
+sections[2]:
   - kind: properties
-    start: 14
-    end: 14
+    start: 11
+    end: 11
     limit: 1
   - kind: constructor
-    start: 16
-    end: 19
+    start: 13
+    end: 16
     limit: 4
-    signatureLine: 16
+    signatureLine: 13
 constructorInputs[1]{param,type,required}:
   $eventNameMap,?EventNameMap,false
 wiring:
@@ -26,71 +21,71 @@ wiring:
       autowire: true
       autoconfigure: true
       file: src/Schema/EventPayloadNormalizer.php
-      line: 12
+      line: 9
       args:
         "$eventNameMap": "service(Ineersa\\AgentCore\\Schema\\EventNameMap)"
   injectedInto[3]{fqcn,file,line}:
-    "Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer",src/Api/Serializer/RunEventSerializer.php,14
-    "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader",src/Infrastructure/Storage/RunLogReader.php,16
-    "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogWriter",src/Infrastructure/Storage/RunLogWriter.php,14
+    "Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer",src/Api/Serializer/RunEventSerializer.php,11
+    "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader",src/Infrastructure/Storage/RunLogReader.php,13
+    "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogWriter",src/Infrastructure/Storage/RunLogWriter.php,11
 methods[7]:
   - method: __construct
-    start: 16
-    end: 19
+    start: 13
+    end: 16
     limit: 4
-    symbolLine: 16
+    symbolLine: 13
     symbolColumn: 21
     signature: public function __construct(?EventNameMap $eventNameMap = null)
   - method: normalizeRunEvent
-    start: 21
-    end: 36
+    start: 18
+    end: 33
     limit: 16
-    symbolLine: 26
+    symbolLine: 23
     symbolColumn: 21
     signature: "public function normalizeRunEvent(RunEvent $event): array"
     callees[1]: "Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer::normalize"
     callers[2]: "Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer::normalizeRunEvent","Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogWriter::append"
   - method: normalize
-    start: 38
-    end: 64
+    start: 35
+    end: 61
     limit: 27
-    symbolLine: 45
+    symbolLine: 42
     symbolColumn: 21
     signature: "public function normalize(string $runId, int $seq, int $turnNo, string $type, array $payload = [], ?DateTimeImmutable $ts = null): array"
     callees[2]: "Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer::toPublicType","DateTimeImmutable::format"
     callers[2]: "Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer::normalizeStreamEvent","Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer::normalizeRunEvent"
   - method: denormalizeRunEvent
-    start: 66
-    end: 110
+    start: 63
+    end: 107
     limit: 45
-    symbolLine: 71
+    symbolLine: 68
     symbolColumn: 21
     signature: "public function denormalizeRunEvent(array $payload): ?RunEvent"
     callees[2]: "Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer::isCompatibleSchemaVersion","Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer::toInternalType"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader::eventFromJsonLine"
   - method: toPublicType
-    start: 112
-    end: 115
+    start: 109
+    end: 112
     limit: 4
-    symbolLine: 112
+    symbolLine: 109
     symbolColumn: 21
     signature: "public function toPublicType(string $internalType): string"
     callees[1]: "Ineersa\\AgentCore\\Schema\\EventNameMap::toPublic"
     callers[2]: "Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer::fromRunEvent","Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer::normalize"
   - method: toInternalType
-    start: 117
-    end: 120
+    start: 114
+    end: 117
     limit: 4
-    symbolLine: 117
+    symbolLine: 114
     symbolColumn: 21
     signature: "public function toInternalType(string $publicType): string"
     callees[1]: "Ineersa\\AgentCore\\Schema\\EventNameMap::toInternal"
     callers[1]: "Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer::denormalizeRunEvent"
   - method: isCompatibleSchemaVersion
-    start: 122
-    end: 128
+    start: 119
+    end: 125
     limit: 7
-    symbolLine: 122
+    symbolLine: 119
     symbolColumn: 22
     signature: "private function isCompatibleSchemaVersion(string $schemaVersion): bool"
     callers[1]: "Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer::denormalizeRunEvent"

@@ -12,9 +12,6 @@ use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 
-/**
- * The AdvanceRunHandler applies turn-start mailbox policy and prepares the next LLM execution turn when the run can continue.
- */
 final readonly class AdvanceRunHandler implements RunMessageHandler
 {
     public function __construct(

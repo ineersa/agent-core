@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Message;
 
-/**
- * Result of a single LLM inference step, carrying the assistant message, usage statistics, and optional error.
- */
 final readonly class LlmStepResult extends AbstractAgentBusMessage
 {
     /**

@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Tool;
 
-/**
- * Defines the immutable structure and metadata for an agent tool, including its name, description, and JSON schema. This class serves as the domain model for tool configuration within the AgentCore system.
- */
 final readonly class ToolDefinition
 {
     /**

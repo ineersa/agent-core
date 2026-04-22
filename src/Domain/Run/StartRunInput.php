@@ -6,9 +6,6 @@ namespace Ineersa\AgentCore\Domain\Run;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 
-/**
- * Input payload for starting a new run, carrying the system prompt, initial message history, and optional metadata.
- */
 final readonly class StartRunInput
 {
     /**

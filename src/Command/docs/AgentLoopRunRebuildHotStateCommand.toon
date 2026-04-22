@@ -2,17 +2,8 @@ spec: agent-core.file-index/v1
 file: AgentLoopRunRebuildHotStateCommand.php
 class: "Ineersa\\AgentCore\\Command\\AgentLoopRunRebuildHotStateCommand"
 type: final class
-summary: Rebuilds hot prompt state for a run from persisted event history.
-sections[2]:
-  - kind: classDoc
-    start: 16
-    end: 18
-    limit: 3
-  - kind: constructor
-    start: 22
-    end: 30
-    limit: 9
-    signatureLine: 22
+sections[1]{kind,start,end,limit,signatureLine}:
+  constructor,19,27,9,19
 constructorInputs[1]{param,type,required}:
   $runDebugService,RunDebugService,true
 wiring:
@@ -22,31 +13,31 @@ wiring:
       autowire: true
       autoconfigure: true
       file: src/Command/AgentLoopRunRebuildHotStateCommand.php
-      line: 20
+      line: 17
       args:
         "$runDebugService": "service(Ineersa\\AgentCore\\Application\\Handler\\RunDebugService)"
 methods[3]:
   - method: __construct
-    start: 22
-    end: 30
+    start: 19
+    end: 27
     limit: 9
-    symbolLine: 22
+    symbolLine: 19
     symbolColumn: 21
     signature: public function __construct(RunDebugService $runDebugService)
     callees[3]: "Symfony\\Component\\Console\\Command\\Command::__construct","Symfony\\Component\\Console\\Command\\Command::addArgument","Symfony\\Component\\Console\\Command\\Command::addOption"
   - method: execute
-    start: 32
-    end: 63
+    start: 29
+    end: 60
     limit: 32
-    symbolLine: 32
+    symbolLine: 29
     symbolColumn: 24
     signature: "protected function execute(InputInterface $input, OutputInterface $output): int"
     callees[9]: "Symfony\\Component\\Console\\Input\\InputInterface::getArgument","Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::rebuildHotPromptState","Symfony\\Component\\Console\\Input\\InputInterface::getOption","Ineersa\\AgentCore\\Command\\AgentLoopRunRebuildHotStateCommand::encodeJson","Symfony\\Component\\Console\\Output\\OutputInterface::writeln","Symfony\\Component\\Console\\Style\\SymfonyStyle::title","Symfony\\Component\\Console\\Style\\SymfonyStyle::definitionList","Symfony\\Component\\Console\\Style\\SymfonyStyle::warning","Symfony\\Component\\Console\\Style\\SymfonyStyle::success"
   - method: encodeJson
-    start: 65
-    end: 75
+    start: 62
+    end: 72
     limit: 11
-    symbolLine: 70
+    symbolLine: 67
     symbolColumn: 22
     signature: "private function encodeJson(array $payload): string"
     callers[1]: "Ineersa\\AgentCore\\Command\\AgentLoopRunRebuildHotStateCommand::execute"

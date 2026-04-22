@@ -2,132 +2,127 @@ spec: agent-core.file-index/v1
 file: RunMetrics.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics"
 type: final class
-summary: Collects in-process runtime metrics for run orchestration and worker execution.
-sections[3]:
-  - kind: classDoc
-    start: 9
-    end: 11
-    limit: 3
+sections[2]:
   - kind: properties
-    start: 15
-    end: 45
+    start: 12
+    end: 42
     limit: 31
   - kind: constructor
-    start: 47
-    end: 56
+    start: 44
+    end: 53
     limit: 10
-    signatureLine: 47
+    signatureLine: 44
 wiring:
   serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
-    "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics",private,true,true,src/Application/Handler/RunMetrics.php,12
+    "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics",private,true,true,src/Application/Handler/RunMetrics.php,9
   injectedInto[8]{fqcn,file,line}:
-    "Ineersa\\AgentCore\\Application\\Handler\\ExecuteLlmStepWorker",src/Application/Handler/ExecuteLlmStepWorker.php,17
-    "Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker",src/Application/Handler/ExecuteToolCallWorker.php,22
-    "Ineersa\\AgentCore\\Application\\Handler\\ReplayService",src/Application/Handler/ReplayService.php,15
-    "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService",src/Application/Handler/RunDebugService.php,18
-    "Ineersa\\AgentCore\\Application\\Orchestrator\\AdvanceRunHandler",src/Application/Orchestrator/AdvanceRunHandler.php,18
-    "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler",src/Application/Orchestrator/LlmStepResultHandler.php,26
-    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit",src/Application/Orchestrator/RunCommit.php,24
-    "Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler",src/Application/Orchestrator/ToolCallResultHandler.php,17
+    "Ineersa\\AgentCore\\Application\\Handler\\ExecuteLlmStepWorker",src/Application/Handler/ExecuteLlmStepWorker.php,14
+    "Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker",src/Application/Handler/ExecuteToolCallWorker.php,19
+    "Ineersa\\AgentCore\\Application\\Handler\\ReplayService",src/Application/Handler/ReplayService.php,12
+    "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService",src/Application/Handler/RunDebugService.php,15
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\AdvanceRunHandler",src/Application/Orchestrator/AdvanceRunHandler.php,15
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler",src/Application/Orchestrator/LlmStepResultHandler.php,23
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit",src/Application/Orchestrator/RunCommit.php,21
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler",src/Application/Orchestrator/ToolCallResultHandler.php,14
 methods[12]:
   - method: __construct
-    start: 47
-    end: 56
+    start: 44
+    end: 53
     limit: 10
-    symbolLine: 47
+    symbolLine: 44
     symbolColumn: 21
     signature: public function __construct()
     callees[1]: "Ineersa\\AgentCore\\Domain\\Run\\RunStatus::cases"
   - method: recordRunStatusTransition
-    start: 58
-    end: 69
+    start: 55
+    end: 66
     limit: 12
-    symbolLine: 58
+    symbolLine: 55
     symbolColumn: 21
     signature: "public function recordRunStatusTransition(RunStatus $from, RunStatus $to): void"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit::trackCommitMetrics"
   - method: setCommandQueueLag
-    start: 71
-    end: 74
+    start: 68
+    end: 71
     limit: 4
-    symbolLine: 71
+    symbolLine: 68
     symbolColumn: 21
     signature: "public function setCommandQueueLag(string $runId, int $pendingCount): void"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit::trackCommitMetrics"
   - method: recordTurnStarted
-    start: 76
-    end: 83
+    start: 73
+    end: 80
     limit: 8
-    symbolLine: 76
+    symbolLine: 73
     symbolColumn: 21
     signature: "public function recordTurnStarted(string $runId, int $turnNo): void"
     callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::turnKey"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\AdvanceRunHandler::handle"
   - method: recordTurnCompleted
-    start: 85
-    end: 102
+    start: 82
+    end: 99
     limit: 18
-    symbolLine: 85
+    symbolLine: 82
     symbolColumn: 21
     signature: "public function recordTurnCompleted(string $runId, int $turnNo): void"
     callees[2]: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::turnKey","Ineersa\\AgentCore\\Application\\Handler\\LatencyHistogram::observe"
     callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::turnCompletedCallbacks","Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler::turnCompletedCallbacks"
   - method: recordLlmLatency
-    start: 104
-    end: 112
+    start: 101
+    end: 109
     limit: 9
-    symbolLine: 104
+    symbolLine: 101
     symbolColumn: 21
     signature: "public function recordLlmLatency(float $durationMs, bool $isError): void"
     callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\LatencyHistogram::observe"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteLlmStepWorker::execute"
   - method: recordToolLatency
-    start: 114
-    end: 127
+    start: 111
+    end: 124
     limit: 14
-    symbolLine: 114
+    symbolLine: 111
     symbolColumn: 21
     signature: "public function recordToolLatency(float $durationMs, bool $isError, bool $isTimeout): void"
     callees[1]: "Ineersa\\AgentCore\\Application\\Handler\\LatencyHistogram::observe"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker::execute"
   - method: incrementStaleResultCount
-    start: 129
-    end: 136
+    start: 126
+    end: 133
     limit: 8
-    symbolLine: 129
+    symbolLine: 126
     symbolColumn: 21
     signature: "public function incrementStaleResultCount(int $by = 1): void"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit::trackCommitMetrics"
   - method: incrementReplayRebuildCount
-    start: 138
-    end: 142
+    start: 135
+    end: 139
     limit: 5
-    symbolLine: 138
+    symbolLine: 135
     symbolColumn: 21
     signature: "public function incrementReplayRebuildCount(string $source): void"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ReplayService::rebuildHotPromptState"
   - method: snapshot
-    start: 144
-    end: 189
+    start: 141
+    end: 186
     limit: 46
-    symbolLine: 158
+    symbolLine: 155
     symbolColumn: 21
     signature: "public function snapshot(): array"
     callees[2]: "Ineersa\\AgentCore\\Application\\Handler\\LatencyHistogram::snapshot","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::rate"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::inspect"
   - method: turnKey
-    start: 191
-    end: 194
+    start: 188
+    end: 191
     limit: 4
-    symbolLine: 191
+    symbolLine: 188
     symbolColumn: 22
     signature: "private function turnKey(string $runId, int $turnNo): string"
     callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordTurnStarted","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordTurnCompleted"
   - method: rate
-    start: 196
-    end: 203
+    start: 193
+    end: 200
     limit: 8
-    symbolLine: 196
+    symbolLine: 193
     symbolColumn: 22
     signature: "private function rate(int $numerator, int $denominator): float"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::snapshot"

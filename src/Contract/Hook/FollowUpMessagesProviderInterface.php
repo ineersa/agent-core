@@ -6,9 +6,6 @@ namespace Ineersa\AgentCore\Contract\Hook;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 
-/**
- * Supplies contextual follow-up messages based on current agent state.
- */
 interface FollowUpMessagesProviderInterface
 {
     /**

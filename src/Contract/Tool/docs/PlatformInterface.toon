@@ -2,18 +2,15 @@ spec: agent-core.file-index/v1
 file: PlatformInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Tool\\PlatformInterface"
 type: interface
-summary: Executes AI model invocations and returns structured provider responses.
-sections[1]{kind,start,end,limit}:
-  classDoc,7,9,3
 wiring:
   aliases[1]{serviceId,target}:
     "Ineersa\\AgentCore\\Contract\\Tool\\PlatformInterface","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform"
 methods[1]:
   - method: invoke
-    start: 12
-    end: 20
+    start: 9
+    end: 17
     limit: 9
-    symbolLine: 20
+    symbolLine: 17
     symbolColumn: 21
     signature: "public function invoke(string $model, array $input, array $options = []): array"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteLlmStepWorker::execute"

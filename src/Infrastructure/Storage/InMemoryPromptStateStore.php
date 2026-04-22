@@ -6,9 +6,6 @@ namespace Ineersa\AgentCore\Infrastructure\Storage;
 
 use Ineersa\AgentCore\Contract\PromptStateStoreInterface;
 
-/**
- * Stores prompt state per run ID in an ephemeral in-memory array.
- */
 final class InMemoryPromptStateStore implements PromptStateStoreInterface
 {
     /** @var array<string, array<string, mixed>> */

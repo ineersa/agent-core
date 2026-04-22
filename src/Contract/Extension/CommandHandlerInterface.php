@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Contract\Extension;
 
-/**
- * Handles extension commands with kind-based dispatch, validation, and payload mapping.
- */
 interface CommandHandlerInterface
 {
     public function supports(string $kind): bool;

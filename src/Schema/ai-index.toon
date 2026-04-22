@@ -2,8 +2,8 @@ spec: agent-core.ai-docs/v1
 namespace: Schema
 fqcn: "Ineersa\\AgentCore\\Schema"
 updatedAt: 2026-04-22
-files[4]{file,type,summary}:
-  CommandPayloadNormalizer.php,final class,Normalizes command and execution DTOs into canonical schema-versioned payload envelopes for API and worker boundaries.
-  EventNameMap.php,final class,Maintains the mapping table between internal lifecycle event identifiers and public stream event names.
-  EventPayloadNormalizer.php,readonly final class,Normalizes and denormalizes persisted run events into a stable schema-versioned transport envelope.
-  SchemaVersion.php,final class,Defines supported payload schema versions and the current default used for serialized command and event contracts.
+files[4]{file,type}:
+  CommandPayloadNormalizer.php,final class
+  EventNameMap.php,final class
+  EventPayloadNormalizer.php,readonly final class
+  SchemaVersion.php,final class

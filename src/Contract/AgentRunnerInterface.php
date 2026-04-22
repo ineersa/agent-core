@@ -8,9 +8,6 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunHandle;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 
-/**
- * Orchestrates agent execution runs through start, steer, follow-up, and cancel lifecycle operations.
- */
 interface AgentRunnerInterface
 {
     public function start(StartRunInput $input): RunHandle;

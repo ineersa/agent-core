@@ -8,9 +8,6 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 
-/**
- * Aggregates tool calls into bounded-parallelism batches scoped by run/turn/step and detects batch completion.
- */
 final class ToolBatchCollector
 {
     /**

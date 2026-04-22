@@ -3,29 +3,29 @@ namespace: "Application\\Handler"
 fqcn: "Ineersa\\AgentCore\\Application\\Handler"
 updatedAt: 2026-04-22
 description: "Handler infrastructure — command routing, extension registries, LLM/tool execution workers, outbox projectors, event dispatching, step dispatch, locking, idempotency, replay, tool batch collection, bounded parallel dispatch, and idempotency result store."
-files[25]{file,type,summary}:
-  CommandHandlerRegistry.php,final class,Named-lookup registry that resolves command handlers by their command kind.
-  CommandRouter.php,final class,"Routes ApplyCommand messages to the matching handler by command kind, resolving extension-prefixed commands via the handler registry."
-  EventSubscriberRegistry.php,final class,Named-lookup registry that resolves event subscribers by event type.
-  ExecuteLlmStepWorker.php,readonly final class,Bus handler that invokes the LLM platform for a step and dispatches the result as a LlmStepResult message.
-  ExecuteToolCallWorker.php,readonly final class,Bus handler that delegates tool execution to the executor and dispatches the ToolCallResult message back.
-  HookDispatcher.php,readonly final class,Dispatches boundary and extension hooks via Symfony's event dispatcher and iterates registered hook subscribers.
-  HookSubscriberRegistry.php,final class,Named-lookup registry that resolves hook subscribers by hook name.
-  JsonlOutboxProjectorWorker.php,readonly final class,Bus handler that persists domain events to the JSONL outbox store and writes execution details to the run log.
-  LatencyHistogram.php,final class,Records latency observations and exposes histogram-style bucket snapshots.
-  MercureOutboxProjectorWorker.php,readonly final class,Bus handler that drains pending outbox events and publishes them to Mercure subscribers.
-  MessageIdempotencyService.php,final class,Ensures message idempotency by tracking processed execution keys within specific scopes and run contexts. It prevents duplicate processing of identical idempotency keys for the same logical operation.
-  OutboxProjector.php,readonly final class,Projects a batch of domain events to run log storage and the event publisher.
-  ReplayService.php,readonly final class,ReplayService reconstructs agent run state by replaying historical events from the event store and run logs. It verifies data integrity and rebuilds prompt state to ensure consistency across sequences.
-  RunDebugService.php,readonly final class,"Provides read-only debugging views of run state, replay streams, and prompt snapshots."
-  RunEventDispatcher.php,readonly final class,Routes RunEvent instances to registered subscribers via the application event dispatcher.
-  RunLockManager.php,readonly final class,Provides per-run distributed locking to guard critical sections against concurrent execution.
-  RunMetrics.php,final class,Collects in-process runtime metrics for run orchestration and worker execution.
-  RunTracer.php,final class,This class emits lightweight structured tracing spans for run processing paths.
-  StepDispatcher.php,readonly final class,Routes execution effects to the execution bus and projection messages to the publisher bus.
-  ToolBatchCollectOutcome.php,readonly final class,"Immutable outcome of a tool batch collection carrying acceptance flags, ordered results, and pending execution effects."
-  ToolBatchCollector.php,final class,Aggregates tool calls into bounded-parallelism batches scoped by run/turn/step and detects batch completion.
-  ToolCatalogResolver.php,final class,Resolves tool catalog definitions by iterating over registered providers and aggregating their payloads. Ensures schema stability for each tool definition by computing and verifying a deterministic fingerprint.
-  ToolExecutionPolicyResolver.php,readonly final class,"Resolves execution policies for tools by combining a default configuration with specific overrides. It determines the operational mode, timeout, and parallelism constraints for a given tool name."
-  ToolExecutionResultStore.php,final class,"In-process cache for tool execution results, supporting lookup by run+tool-call and by tool name+idempotency key."
-  ToolExecutor.php,final class,"Executes tool calls with policy resolution, idempotent result reuse, cancellation checks, and Symfony Toolbox invocation."
+files[25]{file,type}:
+  CommandHandlerRegistry.php,final class
+  CommandRouter.php,final class
+  EventSubscriberRegistry.php,final class
+  ExecuteLlmStepWorker.php,readonly final class
+  ExecuteToolCallWorker.php,readonly final class
+  HookDispatcher.php,readonly final class
+  HookSubscriberRegistry.php,final class
+  JsonlOutboxProjectorWorker.php,readonly final class
+  LatencyHistogram.php,final class
+  MercureOutboxProjectorWorker.php,readonly final class
+  MessageIdempotencyService.php,final class
+  OutboxProjector.php,readonly final class
+  ReplayService.php,readonly final class
+  RunDebugService.php,readonly final class
+  RunEventDispatcher.php,readonly final class
+  RunLockManager.php,readonly final class
+  RunMetrics.php,final class
+  RunTracer.php,final class
+  StepDispatcher.php,readonly final class
+  ToolBatchCollectOutcome.php,readonly final class
+  ToolBatchCollector.php,final class
+  ToolCatalogResolver.php,final class
+  ToolExecutionPolicyResolver.php,readonly final class
+  ToolExecutionResultStore.php,final class
+  ToolExecutor.php,final class

@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Message;
 
-/**
- * Bus message commanding the advancement of a run to its next processing step, carrying a payload for the target state.
- */
 final readonly class AdvanceRun extends AbstractAgentBusMessage
 {
     /**

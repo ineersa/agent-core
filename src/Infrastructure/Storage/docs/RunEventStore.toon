@@ -2,41 +2,39 @@ spec: agent-core.file-index/v1
 file: RunEventStore.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunEventStore"
 type: final class
-summary: "Stores run events in memory, supporting append and retrieval of the full event history per run."
-sections[2]{kind,start,end,limit}:
-  classDoc,10,12,3
-  properties,16,16,1
+sections[1]{kind,start,end,limit}:
+  properties,13,13,1
 wiring:
   serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
-    "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunEventStore",private,true,true,src/Infrastructure/Storage/RunEventStore.php,13
+    "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunEventStore",private,true,true,src/Infrastructure/Storage/RunEventStore.php,10
   aliases[1]{serviceId,target}:
     "Ineersa\\AgentCore\\Contract\\EventStoreInterface","Ineersa\\AgentCore\\Infrastructure\\Storage\\RunEventStore"
   injectedInto[4]{fqcn,file,line}:
-    "Ineersa\\AgentCore\\Api\\Http\\RunReadService",src/Api/Http/RunReadService.php,18
-    "Ineersa\\AgentCore\\Application\\Handler\\ReplayService",src/Application/Handler/ReplayService.php,15
-    "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService",src/Application/Handler/RunDebugService.php,18
-    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit",src/Application/Orchestrator/RunCommit.php,24
+    "Ineersa\\AgentCore\\Api\\Http\\RunReadService",src/Api/Http/RunReadService.php,15
+    "Ineersa\\AgentCore\\Application\\Handler\\ReplayService",src/Application/Handler/ReplayService.php,12
+    "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService",src/Application/Handler/RunDebugService.php,15
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit",src/Application/Orchestrator/RunCommit.php,21
 methods[3]:
   - method: append
-    start: 18
-    end: 22
+    start: 15
+    end: 19
     limit: 5
-    symbolLine: 18
+    symbolLine: 15
     symbolColumn: 21
     signature: "public function append(RunEvent $event): void"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunEventStore::appendMany"
   - method: appendMany
-    start: 24
-    end: 29
+    start: 21
+    end: 26
     limit: 6
-    symbolLine: 24
+    symbolLine: 21
     symbolColumn: 21
     signature: "public function appendMany(array $events): void"
     callees[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\RunEventStore::append"
   - method: allFor
-    start: 31
-    end: 43
+    start: 28
+    end: 40
     limit: 13
-    symbolLine: 36
+    symbolLine: 33
     symbolColumn: 21
     signature: "public function allFor(string $runId): array"

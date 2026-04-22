@@ -12,9 +12,6 @@ use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 
-/**
- * Normalizes command and execution DTOs into canonical schema-versioned payload envelopes for API and worker boundaries.
- */
 final class CommandPayloadNormalizer
 {
     /**

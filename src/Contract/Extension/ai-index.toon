@@ -3,7 +3,7 @@ namespace: "Contract\\Extension"
 fqcn: "Ineersa\\AgentCore\\Contract\\Extension"
 updatedAt: 2026-04-22
 description: "Extension seam interfaces for third-party integrations — command handlers, event subscribers, hook subscribers."
-files[3]{file,type,summary}:
-  CommandHandlerInterface.php,interface,"Handles extension commands with kind-based dispatch, validation, and payload mapping."
-  EventSubscriberInterface.php,interface,Reacts to specific domain events by declaring subscribed event types and processing them.
-  HookSubscriberInterface.php,interface,Subscribes to named hooks and processes incoming hook events with context data.
+files[3]{file,type}:
+  CommandHandlerInterface.php,interface
+  EventSubscriberInterface.php,interface
+  HookSubscriberInterface.php,interface

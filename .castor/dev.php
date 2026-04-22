@@ -18,7 +18,6 @@ use function CastorTasks\run_quiet_command;
 use function CastorTasks\summarize_junit_xml;
 use function CastorTasks\summarize_php_cs_fixer_json;
 use function CastorTasks\summarize_phpstan_json;
-use function CastorTasks\summarize_summaries_log;
 use function CastorTasks\write_empty_junit_report;
 
 #[AsTask(description: 'Run composer command')]
@@ -142,7 +141,7 @@ function phpstan(): void
     ).\PHP_EOL;
 }
 
-#[AsTask(description: 'Run cs-fix, phpstan, tests, and strict summary validation')]
+#[AsTask(description: 'Run cs-fix, phpstan, tests, and full index regeneration')]
 function check(): void
 {
     $failures = [];
@@ -156,9 +155,6 @@ function check(): void
         },
         'test' => static function (): void {
             test();
-        },
-        'summaries' => static function (): void {
-            summaries();
         },
         'index' => static function (): void {
             index_methods(all: true, force: true, skipNamespace: false);
@@ -185,13 +181,13 @@ function quality(): void
 }
 
 /**
- * Generate per-file method indexes from docblock summaries.
+ * Generate per-file method indexes.
  *
  * Defaults to changed files when no targets/options are provided.
  *
  * @param list<string> $targets
  */
-#[AsTask(description: 'Generate per-file method indexes from docblock summaries (no LLM, includes DI wiring export)')]
+#[AsTask(description: 'Generate per-file method indexes (no LLM, includes DI wiring export)')]
 function index_methods(
     #[AsArgument(description: 'Optional PHP files/directories to process')]
     array $targets = [],
@@ -203,21 +199,15 @@ function index_methods(
     bool $dryRun = false,
     #[AsOption(description: 'Regenerate even when generated indexes are newer than source')]
     bool $force = false,
-    #[AsOption(description: 'Fail when class/method docblock summaries are missing (read-only)')]
-    bool $strict = false,
-    #[AsOption(description: 'Migrate .toon summaries back into source docblocks')]
-    bool $migrate = false,
     #[AsOption(description: 'Skip namespace index regeneration')]
     bool $skipNamespace = false,
 ): void {
-    if (!$strict && !$migrate) {
-        $wiringCommand = 'php scripts/export-wiring-map.php';
-        if ($dryRun) {
-            $wiringCommand .= ' --dry-run';
-        }
-
-        dev_php_exec($wiringCommand);
+    $wiringCommand = 'php scripts/export-wiring-map.php';
+    if ($dryRun) {
+        $wiringCommand .= ' --dry-run';
     }
+
+    dev_php_exec($wiringCommand);
 
     $command = 'php scripts/generate-method-index.php';
 
@@ -233,12 +223,6 @@ function index_methods(
     if ($force) {
         $command .= ' --force';
     }
-    if ($strict) {
-        $command .= ' --strict';
-    }
-    if ($migrate) {
-        $command .= ' --migrate';
-    }
     if ($skipNamespace) {
         $command .= ' --skip-namespace';
     }
@@ -247,30 +231,6 @@ function index_methods(
     }
 
     dev_php_exec($command);
-}
-
-/** Validate that all classes and methods have docblock summaries. */
-#[AsTask(description: 'Check docblock summary coverage (read-only)')]
-function summaries(): void
-{
-    $command = 'php scripts/generate-method-index.php --strict --all';
-
-    if (!is_llm_mode()) {
-        dev_php_exec($command);
-
-        return;
-    }
-
-    $process = run_quiet_command($command);
-    persist_process_output($process, 'summaries.log');
-
-    $missing = summarize_summaries_log(trim($process->getOutput()));
-
-    if (0 !== $process->getExitCode()) {
-        throw new \RuntimeException(\sprintf('summaries failed (%s); report=%s', $missing, relative_report_path('summaries.log')));
-    }
-
-    echo \sprintf('summaries: ok (%s)', $missing).\PHP_EOL;
 }
 
 /** Generate callgraph.json via PHPStan call-graph extension. */

@@ -6,9 +6,6 @@ namespace Ineersa\AgentCore\Contract\Hook;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 
-/**
- * Supplies steering messages that configure or route agent behavior.
- */
 interface SteeringMessagesProviderInterface
 {
     /**

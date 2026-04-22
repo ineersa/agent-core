@@ -2,21 +2,16 @@ spec: agent-core.file-index/v1
 file: RunOrchestrator.php
 class: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator"
 type: readonly final class
-summary: "The RunOrchestrator is the message-bus entrypoint for run lifecycle commands and step results, delegating runtime transitions to RunMessageProcessor and dedicated message handlers."
-sections[3]:
-  - kind: classDoc
-    start: 15
-    end: 17
-    limit: 3
+sections[2]:
   - kind: constants
-    start: 20
-    end: 24
+    start: 17
+    end: 21
     limit: 5
   - kind: constructor
-    start: 26
-    end: 30
+    start: 23
+    end: 27
     limit: 5
-    signatureLine: 26
+    signatureLine: 23
 constructorInputs[2]{param,type,required}:
   $runMessageProcessor,RunMessageProcessor,true
   $tracer,?RunTracer,false
@@ -27,55 +22,55 @@ wiring:
       autowire: true
       autoconfigure: true
       file: src/Application/Orchestrator/RunOrchestrator.php
-      line: 18
+      line: 15
       args:
         "$runMessageProcessor": "service(Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor)"
         "$tracer": "service(Ineersa\\AgentCore\\Application\\Handler\\RunTracer)"
 methods[6]:
   - method: __construct
-    start: 26
-    end: 30
+    start: 23
+    end: 27
     limit: 5
-    symbolLine: 26
+    symbolLine: 23
     symbolColumn: 21
     signature: "public function __construct(RunMessageProcessor $runMessageProcessor, ?RunTracer $tracer = null)"
   - method: onStartRun
-    start: 32
-    end: 51
+    start: 29
+    end: 48
     limit: 20
-    symbolLine: 36
+    symbolLine: 33
     symbolColumn: 21
     signature: "public function onStartRun(StartRun $message): void"
     callees[5]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor::process","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId"
   - method: onApplyCommand
-    start: 53
-    end: 73
+    start: 50
+    end: 70
     limit: 21
-    symbolLine: 57
+    symbolLine: 54
     symbolColumn: 21
     signature: "public function onApplyCommand(ApplyCommand $message): void"
     callees[5]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor::process","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId"
   - method: onAdvanceRun
-    start: 75
-    end: 94
+    start: 72
+    end: 91
     limit: 20
-    symbolLine: 79
+    symbolLine: 76
     symbolColumn: 21
     signature: "public function onAdvanceRun(AdvanceRun $message): void"
     callees[5]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor::process","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId"
   - method: onLlmStepResult
-    start: 96
-    end: 115
+    start: 93
+    end: 112
     limit: 20
-    symbolLine: 100
+    symbolLine: 97
     symbolColumn: 21
     signature: "public function onLlmStepResult(LlmStepResult $message): void"
     callees[5]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor::process","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId"
   - method: onToolCallResult
-    start: 117
-    end: 137
+    start: 114
+    end: 134
     limit: 21
-    symbolLine: 121
+    symbolLine: 118
     symbolColumn: 21
     signature: "public function onToolCallResult(ToolCallResult $message): void"
     callees[5]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor::process","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId"

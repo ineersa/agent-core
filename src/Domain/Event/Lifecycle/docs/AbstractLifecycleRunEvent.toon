@@ -2,22 +2,17 @@ spec: agent-core.file-index/v1
 file: AbstractLifecycleRunEvent.php
 class: "Ineersa\\AgentCore\\Domain\\Event\\Lifecycle\\AbstractLifecycleRunEvent"
 type: readonly abstract class
-summary: "Abstract base class for lifecycle run events within the AgentCore domain, providing a structured foundation for event data. It encapsulates core execution metadata such as run identifiers, sequence numbers, and turn counts. This class ensures consistent event structure across concrete lifecycle implementations."
-sections[3]:
-  - kind: classDoc
-    start: 9
-    end: 11
-    limit: 3
+sections[2]:
   - kind: constants
-    start: 14
-    end: 14
+    start: 11
+    end: 11
     limit: 1
   - kind: constructor
-    start: 16
-    end: 36
+    start: 13
+    end: 33
     limit: 21
-    signatureLine: 21
-    commentStart: 16
+    signatureLine: 18
+    commentStart: 13
 constructorInputs[5]{param,type,required}:
   $runId,string,true
   $seq,int,true
@@ -26,10 +21,10 @@ constructorInputs[5]{param,type,required}:
   $createdAt,?DateTimeImmutable,false
 methods[1]:
   - method: __construct
-    start: 16
-    end: 36
+    start: 13
+    end: 33
     limit: 21
-    symbolLine: 21
+    symbolLine: 18
     symbolColumn: 27
     signature: "final public function __construct(string $runId, int $seq, int $turnNo, array $payload = [], ?DateTimeImmutable $createdAt = null)"
     callees[1]: "Ineersa\\AgentCore\\Domain\\Event\\RunEvent::__construct"

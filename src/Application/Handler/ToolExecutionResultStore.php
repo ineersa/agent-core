@@ -6,9 +6,6 @@ namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 
-/**
- * In-process cache for tool execution results, supporting lookup by run+tool-call and by tool name+idempotency key.
- */
 final class ToolExecutionResultStore
 {
     /** @var array<string, ToolResult> */

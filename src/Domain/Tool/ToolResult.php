@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Tool;
 
-/**
- * Outcome of a tool call execution, capturing the tool identity, structured content blocks, and optional error details.
- */
 final readonly class ToolResult
 {
     /**

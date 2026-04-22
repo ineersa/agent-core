@@ -6,9 +6,6 @@ namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
 
-/**
- * Named-lookup registry that resolves hook subscribers by hook name.
- */
 final class HookSubscriberRegistry
 {
     /** @var iterable<HookSubscriberInterface> */

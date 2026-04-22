@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Api\Dto;
 
-/**
- * Represents a single event emitted during a run stream, carrying sequence and turn metadata alongside a typed payload. This immutable DTO structures data for transport across the API boundary without enforcing business logic.
- */
 final readonly class RunStreamEvent
 {
     /**

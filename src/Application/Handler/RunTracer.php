@@ -6,9 +6,6 @@ namespace Ineersa\AgentCore\Application\Handler;
 
 use Psr\Log\LoggerInterface;
 
-/**
- * This class emits lightweight structured tracing spans for run processing paths.
- */
 final class RunTracer
 {
     /** @var list<string> */

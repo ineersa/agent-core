@@ -12,9 +12,6 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
 
-/**
- * Provides read access to run summaries, paginated transcripts, and replayable event sequences, enforcing scoped access control across run and event stores.
- */
 final readonly class RunReadService
 {
     public function __construct(

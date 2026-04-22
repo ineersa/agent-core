@@ -13,9 +13,6 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 
-/**
- * Applies queued command mailbox policies at turn boundaries and validates cancellation and continue admissibility rules.
- */
 final readonly class CommandMailboxPolicy
 {
     private const string SteerDrainOneAtATime = 'one_at_a_time';

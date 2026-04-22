@@ -2,30 +2,27 @@ spec: agent-core.file-index/v1
 file: Version20260418000100.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Doctrine\\Migrations\\Version20260418000100"
 type: final class
-summary: "Creates the initial agent-loop persistence schema (events, commands, runs, outbox, prompt state, artifacts)."
-sections[1]{kind,start,end,limit}:
-  classDoc,11,13,3
 methods[3]:
   - method: getDescription
-    start: 16
-    end: 19
+    start: 13
+    end: 16
     limit: 4
-    symbolLine: 16
+    symbolLine: 13
     symbolColumn: 21
     signature: "public function getDescription(): string"
   - method: up
-    start: 21
-    end: 146
+    start: 18
+    end: 143
     limit: 126
-    symbolLine: 21
+    symbolLine: 18
     symbolColumn: 21
     signature: "public function up(Schema $schema): void"
     callees[7]: "Doctrine\\DBAL\\Schema\\Schema::hasTable","Doctrine\\DBAL\\Schema\\Schema::createTable","Doctrine\\DBAL\\Schema\\Table::addColumn","Doctrine\\DBAL\\Schema\\Table::setPrimaryKey","Doctrine\\DBAL\\Schema\\Table::addUniqueIndex","Doctrine\\DBAL\\Schema\\Table::addIndex","Doctrine\\DBAL\\Schema\\Table::addForeignKeyConstraint"
   - method: down
-    start: 148
-    end: 155
+    start: 145
+    end: 152
     limit: 8
-    symbolLine: 148
+    symbolLine: 145
     symbolColumn: 21
     signature: "public function down(Schema $schema): void"
     callees[2]: "Doctrine\\DBAL\\Schema\\Schema::hasTable","Doctrine\\DBAL\\Schema\\Schema::dropTable"

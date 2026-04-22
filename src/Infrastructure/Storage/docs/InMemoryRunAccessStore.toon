@@ -2,38 +2,36 @@ spec: agent-core.file-index/v1
 file: InMemoryRunAccessStore.php
 class: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunAccessStore"
 type: final class
-summary: "Holds run access scopes in memory, keyed by run ID."
-sections[2]{kind,start,end,limit}:
-  classDoc,10,12,3
-  properties,16,16,1
+sections[1]{kind,start,end,limit}:
+  properties,13,13,1
 wiring:
   serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
-    "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunAccessStore",private,true,true,src/Infrastructure/Storage/InMemoryRunAccessStore.php,13
+    "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunAccessStore",private,true,true,src/Infrastructure/Storage/InMemoryRunAccessStore.php,10
   aliases[1]{serviceId,target}:
     "Ineersa\\AgentCore\\Contract\\RunAccessStoreInterface","Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunAccessStore"
   injectedInto[2]{fqcn,file,line}:
-    "Ineersa\\AgentCore\\Api\\Http\\RunApiController",src/Api/Http/RunApiController.php,32
-    "Ineersa\\AgentCore\\Api\\Http\\RunReadService",src/Api/Http/RunReadService.php,18
+    "Ineersa\\AgentCore\\Api\\Http\\RunApiController",src/Api/Http/RunApiController.php,29
+    "Ineersa\\AgentCore\\Api\\Http\\RunReadService",src/Api/Http/RunReadService.php,15
 methods[3]:
   - method: save
-    start: 18
-    end: 21
+    start: 15
+    end: 18
     limit: 4
-    symbolLine: 18
+    symbolLine: 15
     symbolColumn: 21
     signature: "public function save(RunAccessScope $scope): void"
   - method: get
-    start: 23
-    end: 26
+    start: 20
+    end: 23
     limit: 4
-    symbolLine: 23
+    symbolLine: 20
     symbolColumn: 21
     signature: "public function get(string $runId): ?RunAccessScope"
   - method: touch
-    start: 28
-    end: 36
+    start: 25
+    end: 33
     limit: 9
-    symbolLine: 28
+    symbolLine: 25
     symbolColumn: 21
     signature: "public function touch(string $runId, ?DateTimeImmutable $updatedAt = null): void"
     callees[1]: "Ineersa\\AgentCore\\Domain\\Run\\RunAccessScope::withUpdatedAt"

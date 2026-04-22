@@ -3,9 +3,9 @@ namespace: "Infrastructure\\SymfonyAi"
 fqcn: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi"
 updatedAt: 2026-04-22
 description: "Symfony AI bridge — adapters connecting the agent loop to the Symfony AI ecosystem (platform, tool executor, message mapping, streaming)."
-files[5]{file,type,summary}:
-  Platform.php,readonly final class,"Orchestrates AI provider calls by resolving context, mapping messages, applying hooks, and delegating invocation to the platform adapter."
-  RunCancellationToken.php,readonly final class,Checks whether a run has been cancelled by querying the run store on demand.
-  StreamDeltaReducer.php,final class,"Reduces streaming AI response deltas into a final assistant message with text content, tool calls, and usage statistics."
-  SymfonyMessageMapper.php,final class,"Converts between internal AgentMessage objects and Symfony AI provider message formats, handling tool-call serialization."
-  SymfonyPlatformInvoker.php,readonly final class,Invokes the Symfony AI platform model endpoint and extracts structured usage metadata from deferred results.
+files[5]{file,type}:
+  Platform.php,readonly final class
+  RunCancellationToken.php,readonly final class
+  StreamDeltaReducer.php,final class
+  SymfonyMessageMapper.php,final class
+  SymfonyPlatformInvoker.php,readonly final class

@@ -12,9 +12,6 @@ use Ineersa\AgentCore\Domain\Message\ProjectMercureOutbox;
 use Ineersa\AgentCore\Infrastructure\Mercure\RunEventPublisher;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogWriter;
 
-/**
- * Projects a batch of domain events to run log storage and the event publisher.
- */
 final readonly class OutboxProjector
 {
     public function __construct(

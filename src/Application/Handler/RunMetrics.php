@@ -6,9 +6,6 @@ namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 
-/**
- * Collects in-process runtime metrics for run orchestration and worker execution.
- */
 final class RunMetrics
 {
     /** @var array<string, int> */

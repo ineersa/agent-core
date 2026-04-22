@@ -2,23 +2,20 @@ spec: agent-core.file-index/v1
 file: AgentLoopExtension.php
 class: "Ineersa\\AgentCore\\DependencyInjection\\AgentLoopExtension"
 type: final class
-summary: "Loads AgentCore service definitions, validates and persists bundle configuration, and prepends framework config (messenger, doctrine) into the Symfony container."
-sections[1]{kind,start,end,limit}:
-  classDoc,13,15,3
 methods[2]:
   - method: prepend
-    start: 18
-    end: 34
+    start: 15
+    end: 31
     limit: 17
-    symbolLine: 18
+    symbolLine: 15
     symbolColumn: 21
     signature: "public function prepend(ContainerBuilder $container): void"
     callees[2]: "Symfony\\Component\\DependencyInjection\\ContainerBuilder::hasExtension","Symfony\\Component\\DependencyInjection\\ContainerBuilder::prependExtensionConfig"
   - method: load
-    start: 36
-    end: 74
+    start: 33
+    end: 71
     limit: 39
-    symbolLine: 41
+    symbolLine: 38
     symbolColumn: 21
     signature: "public function load(array $configs, ContainerBuilder $container): void"
     callees[5]: "Symfony\\Component\\DependencyInjection\\Extension\\Extension::processConfiguration","Symfony\\Component\\DependencyInjection\\Container::setParameter","Symfony\\Component\\DependencyInjection\\Loader\\PhpFileLoader::load","Symfony\\Component\\DependencyInjection\\Alias::setPublic","Symfony\\Component\\DependencyInjection\\ContainerBuilder::setAlias"

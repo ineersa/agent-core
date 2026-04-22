@@ -2,15 +2,12 @@ spec: agent-core.file-index/v1
 file: ToolCatalogProviderInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Tool\\ToolCatalogProviderInterface"
 type: interface
-summary: Resolves the available tool catalog from execution context.
-sections[1]{kind,start,end,limit}:
-  classDoc,9,11,3
 methods[1]:
   - method: resolveToolCatalog
-    start: 14
-    end: 21
+    start: 11
+    end: 18
     limit: 8
-    symbolLine: 21
+    symbolLine: 18
     symbolColumn: 21
     signature: "public function resolveToolCatalog(array $context = []): array"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolCatalogResolver::resolve"

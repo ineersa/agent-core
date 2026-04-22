@@ -8,9 +8,6 @@ use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 
-/**
- * Checks whether a run has been cancelled by querying the run store on demand.
- */
 final readonly class RunCancellationToken implements CancellationTokenInterface
 {
     public function __construct(

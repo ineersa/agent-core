@@ -43,22 +43,18 @@ If any of these fail, the work is **not complete**.
 ## AI Documentation Index
 
 This repository uses a two-level AI index for token-efficient code navigation:
-1. **Namespace indexes** (`src/**/ai-index.toon`) — per-namespace class listings with summaries.
+1. **Namespace indexes** (`src/**/ai-index.toon`) — per-namespace class listings.
 2. **Per-file indexes** (`src/**/docs/<Class>.toon`) — method coordinates, signatures, and call relationships (callers/callees).
 
 All indexes are auto-generated from source code (no LLM calls). `castor dev:check` regenerates them on every run.
 
-### Summary policy
-
-**Every class must have a docblock summary as the first description line.** Missing class summary = `dev:check` failure. Method summaries are not indexed.
-
-**If you encounter a weak summary (vague, inaccurate, or excessively verbose/FQCN-heavy) in any file you touch, you MUST improve it in the same change.**
-
 ### Key rules
 
-- **Never edit** generated `src/**/ai-index.toon` or `src/**/docs/*.toon` manually.
-- `.toon` files are **not indexed by IDE search tools** (to avoid noise); open them directly with `read` when needed.
+- **Never edit** generated `src/**/docs/*.toon` manually.
+- `src/**/ai-index.toon` files are generated, but curated description fields (`description`, `subNamespaces[*].description`) may be updated intentionally.
 - Root `ai-index.toon` is curated and should be updated intentionally.
+- For curated AI index description updates, use the `index-maintainer` agent (`.agents/index-maintainer.md`).
+- `.toon` files are **not indexed by IDE search tools** (to avoid noise); open them directly with `read` when needed.
 - When code changes alter command/event/message relationships, update the affected nested `AGENTS.md` files.
 
 For detailed index schema and navigation guidance, load `.agents/skills/ai-index/SKILL.md`.
@@ -101,7 +97,7 @@ Before reading code, resolve target coordinates via `.toon` (`symbolLine`/`start
 ### Workflow: Adding a New Feature
 When asked to implement a new feature (e.g., a new Command, Event, or Service):
 1. **Navigate**: Read the root `ai-index.toon` and relevant namespace `ai-index.toon` to determine where the new class belongs.
-2. **Implement**: Create the new class(es). Ensure every new class has a valid PHP docblock summary as its first line.
+2. **Implement**: Create the new class(es) with clear typing and maintainable structure.
 3. **Verify & Update Index**: Run `LLM_MODE=true castor dev:check` (this automatically updates the `.toon` indexes and verifies quality gates).
 4. **Update Architecture Docs**: Before claiming the task is done, if the feature introduces new commands, events, or handlers, update the relevant nested `AGENTS.md` maps (e.g., `src/Application/AGENTS.md`).
 

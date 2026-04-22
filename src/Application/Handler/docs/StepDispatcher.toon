@@ -2,17 +2,8 @@ spec: agent-core.file-index/v1
 file: StepDispatcher.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\StepDispatcher"
 type: readonly final class
-summary: Routes execution effects to the execution bus and projection messages to the publisher bus.
-sections[2]:
-  - kind: classDoc
-    start: 10
-    end: 12
-    limit: 3
-  - kind: constructor
-    start: 15
-    end: 19
-    limit: 5
-    signatureLine: 15
+sections[1]{kind,start,end,limit,signatureLine}:
+  constructor,12,16,5,12
 constructorInputs[2]{param,type,required}:
   $executionBus,MessageBusInterface,true
   $publisherBus,MessageBusInterface,true
@@ -23,36 +14,36 @@ wiring:
       autowire: true
       autoconfigure: true
       file: src/Application/Handler/StepDispatcher.php
-      line: 13
+      line: 10
       args:
         "$executionBus": service(agent.execution.bus)
         "$publisherBus": service(agent.publisher.bus)
   injectedInto[3]{fqcn,file,line}:
-    "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler",src/Application/Orchestrator/LlmStepResultHandler.php,26
-    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit",src/Application/Orchestrator/RunCommit.php,24
-    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor",src/Application/Orchestrator/RunMessageProcessor.php,17
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler",src/Application/Orchestrator/LlmStepResultHandler.php,23
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit",src/Application/Orchestrator/RunCommit.php,21
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor",src/Application/Orchestrator/RunMessageProcessor.php,14
 methods[3]:
   - method: __construct
-    start: 15
-    end: 19
+    start: 12
+    end: 16
     limit: 5
-    symbolLine: 15
+    symbolLine: 12
     symbolColumn: 21
     signature: "public function __construct(MessageBusInterface $executionBus, MessageBusInterface $publisherBus)"
   - method: dispatchEffects
-    start: 21
-    end: 35
+    start: 18
+    end: 32
     limit: 15
-    symbolLine: 26
+    symbolLine: 23
     symbolColumn: 21
     signature: "public function dispatchEffects(array $effects): void"
     callees[1]: "Symfony\\Component\\Messenger\\MessageBusInterface::dispatch"
     callers[3]: "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit::commit","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor::process"
   - method: publish
-    start: 37
-    end: 44
+    start: 34
+    end: 41
     limit: 8
-    symbolLine: 37
+    symbolLine: 34
     symbolColumn: 21
     signature: "public function publish(object $message): void"
     callees[1]: "Symfony\\Component\\Messenger\\MessageBusInterface::dispatch"

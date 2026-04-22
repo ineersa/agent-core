@@ -7,9 +7,6 @@ namespace Ineersa\AgentCore\Application\Handler;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
-/**
- * Routes RunEvent instances to registered subscribers via the application event dispatcher.
- */
 final readonly class RunEventDispatcher
 {
     public function __construct(

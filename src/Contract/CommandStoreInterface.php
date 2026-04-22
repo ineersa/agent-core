@@ -6,9 +6,6 @@ namespace Ineersa\AgentCore\Contract;
 
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 
-/**
- * Manages the lifecycle of pending commands per run — enqueue, idempotency checks, status queries, and state transitions.
- */
 interface CommandStoreInterface
 {
     public function enqueue(PendingCommand $command): bool;

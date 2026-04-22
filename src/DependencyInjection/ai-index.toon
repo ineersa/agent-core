@@ -3,6 +3,6 @@ namespace: DependencyInjection
 fqcn: "Ineersa\\AgentCore\\DependencyInjection"
 updatedAt: 2026-04-22
 description: "Symfony bundle extension: config tree definition, config validation, service loading, and framework config prepend (messenger, doctrine)."
-files[2]{file,type,summary}:
-  AgentLoopExtension.php,final class,"Loads AgentCore service definitions, validates and persists bundle configuration, and prepends framework config (messenger, doctrine) into the Symfony container."
-  Configuration.php,final class,"Defines the validated configuration tree for the AgentCore bundle (runtime, streaming, storage, tools, commands, events, checkpoints, retention)."
+files[2]{file,type}:
+  AgentLoopExtension.php,final class
+  Configuration.php,final class

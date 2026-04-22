@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Contract\Tool;
 
-/**
- * Executes AI model invocations and returns structured provider responses.
- */
 interface PlatformInterface
 {
     /**

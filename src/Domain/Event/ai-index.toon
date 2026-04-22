@@ -3,12 +3,12 @@ namespace: "Domain\\Event"
 fqcn: "Ineersa\\AgentCore\\Domain\\Event"
 updatedAt: 2026-04-22
 description: "Event sourcing models — base RunEvent, outbox pattern (Entry/Sink), boundary hooks, core lifecycle event types with order validation, and typed Lifecycle event subclasses."
-files[6]{file,type,summary}:
-  BoundaryHookEvent.php,final class,Defines a domain event representing the execution of a named boundary hook within the agent core. It encapsulates the hook identifier and an optional context array to provide metadata for downstream processing.
-  BoundaryHookName.php,final class,Provides static utility methods to classify event hook names based on their semantic role within the domain. It distinguishes between boundary hooks and extension hooks by evaluating string prefixes against defined constants.
-  CoreLifecycleEventType.php,final class,"Central registry mapping lifecycle event type strings to concrete event classes, with ordering validation for event sequencing."
-  OutboxEntry.php,readonly final class,"Represents a durable record for an event pending delivery to an external sink. It encapsulates the event payload, target sink, and retry metadata to support reliable outbox pattern implementation."
-  OutboxSink.php,enum,Enumerates the supported outbox delivery targets — JSON Lines file and Mercure hub.
-  RunEvent.php,readonly class,"Represents a domain event for a specific run execution, capturing sequence and turn metadata alongside a typed payload. Designed as a readonly value object to ensure immutability and safe propagation of run state changes within the domain layer."
+files[6]{file,type}:
+  BoundaryHookEvent.php,final class
+  BoundaryHookName.php,final class
+  CoreLifecycleEventType.php,final class
+  OutboxEntry.php,readonly final class
+  OutboxSink.php,enum
+  RunEvent.php,readonly class
 subNamespaces[1]{namespace,fqcn,path,description,index}:
   Lifecycle,"Ineersa\\AgentCore\\Domain\\Event\\Lifecycle",Lifecycle,"Typed lifecycle event subclasses — AgentStart/End, TurnStart/End, MessageStart/Update/End, ToolExecutionStart/Update/End.",Lifecycle/ai-index.toon

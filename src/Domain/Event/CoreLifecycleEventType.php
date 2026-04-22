@@ -15,9 +15,6 @@ use Ineersa\AgentCore\Domain\Event\Lifecycle\ToolExecutionUpdateEvent;
 use Ineersa\AgentCore\Domain\Event\Lifecycle\TurnEndEvent;
 use Ineersa\AgentCore\Domain\Event\Lifecycle\TurnStartEvent;
 
-/**
- * Central registry mapping lifecycle event type strings to concrete event classes, with ordering validation for event sequencing.
- */
 final class CoreLifecycleEventType
 {
     public const string AGENT_START = 'agent_start';

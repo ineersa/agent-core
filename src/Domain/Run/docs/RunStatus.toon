@@ -2,7 +2,5 @@ spec: agent-core.file-index/v1
 file: RunStatus.php
 class: "Ineersa\\AgentCore\\Domain\\Run\\RunStatus"
 type: enum
-summary: "Enumerates the closed set of run lifecycle states from queued through terminal (completed, failed, cancelled)."
-sections[2]{kind,start,end,limit}:
-  classDoc,7,9,3
-  constants,12,18,7
+sections[1]{kind,start,end,limit}:
+  constants,9,15,7

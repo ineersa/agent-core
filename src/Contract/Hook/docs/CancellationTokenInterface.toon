@@ -2,15 +2,12 @@ spec: agent-core.file-index/v1
 file: CancellationTokenInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Hook\\CancellationTokenInterface"
 type: interface
-summary: Signals cooperative cancellation for long-running or asynchronous hook operations.
-sections[1]{kind,start,end,limit}:
-  classDoc,7,9,3
 methods[1]:
   - method: isCancellationRequested
-    start: 12
-    end: 12
+    start: 9
+    end: 9
     limit: 1
-    symbolLine: 12
+    symbolLine: 9
     symbolColumn: 21
     signature: "public function isCancellationRequested(): bool"
     callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::execute","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyPlatformInvoker::invoke"

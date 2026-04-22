@@ -2,20 +2,11 @@ spec: agent-core.file-index/v1
 file: ToolExecutionPolicy.php
 class: "Ineersa\\AgentCore\\Domain\\Tool\\ToolExecutionPolicy"
 type: readonly final class
-summary: "Immutable execution constraints for tool calls, governing mode, timeout, and parallelism limits."
-sections[2]:
-  - kind: classDoc
-    start: 7
-    end: 9
-    limit: 3
-  - kind: constructor
-    start: 12
-    end: 17
-    limit: 6
-    signatureLine: 12
+sections[1]{kind,start,end,limit,signatureLine}:
+  constructor,9,14,6,9
 constructorInputs[3]{param,type,required}:
   $mode,ToolExecutionMode,true
   $timeoutSeconds,int,true
   $maxParallelism,int,true
 methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  __construct,12,17,6,12,21,"public function __construct(ToolExecutionMode $mode, int $timeoutSeconds, int $maxParallelism)"
+  __construct,9,14,6,9,21,"public function __construct(ToolExecutionMode $mode, int $timeoutSeconds, int $maxParallelism)"

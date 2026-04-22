@@ -2,23 +2,20 @@ spec: agent-core.file-index/v1
 file: EventSubscriberInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Extension\\EventSubscriberInterface"
 type: interface
-summary: Reacts to specific domain events by declaring subscribed event types and processing them.
-sections[1]{kind,start,end,limit}:
-  classDoc,9,11,3
 methods[2]:
   - method: subscribedEventTypes
-    start: 14
-    end: 19
+    start: 11
+    end: 16
     limit: 6
-    symbolLine: 19
+    symbolLine: 16
     symbolColumn: 28
     signature: "static public function subscribedEventTypes(): array"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\EventSubscriberRegistry::subscribersFor"
   - method: onEvent
-    start: 21
-    end: 21
+    start: 18
+    end: 18
     limit: 1
-    symbolLine: 21
+    symbolLine: 18
     symbolColumn: 21
     signature: "public function onEvent(RunEvent $event): void"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\RunEventDispatcher::dispatch"

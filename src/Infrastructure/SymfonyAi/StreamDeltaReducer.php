@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 
-/**
- * Reduces streaming AI response deltas into a final assistant message with text content, tool calls, and usage statistics.
- */
 final class StreamDeltaReducer
 {
     private string $text = '';

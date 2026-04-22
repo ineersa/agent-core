@@ -2,5 +2,5 @@ spec: agent-core.ai-docs/v1
 namespace: Migrations
 fqcn: "Ineersa\\AgentCore\\Infrastructure\\Doctrine\\Migrations"
 updatedAt: 2026-04-22
-files[1]{file,type,summary}:
-  Version20260418000100.php,final class,"Creates the initial agent-loop persistence schema (events, commands, runs, outbox, prompt state, artifacts)."
+files[1]{file,type}:
+  Version20260418000100.php,final class

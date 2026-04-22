@@ -11,9 +11,6 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
-/**
- * Bus handler that invokes the LLM platform for a step and dispatches the result as a LlmStepResult message.
- */
 final readonly class ExecuteLlmStepWorker
 {
     public function __construct(

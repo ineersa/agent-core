@@ -2,31 +2,29 @@ spec: agent-core.file-index/v1
 file: CoreLifecycleEventType.php
 class: "Ineersa\\AgentCore\\Domain\\Event\\CoreLifecycleEventType"
 type: final class
-summary: "Central registry mapping lifecycle event type strings to concrete event classes, with ordering validation for event sequencing."
-sections[2]{kind,start,end,limit}:
-  classDoc,18,20,3
-  constants,23,46,24
+sections[1]{kind,start,end,limit}:
+  constants,20,43,24
 methods[3]:
   - method: isCore
-    start: 48
-    end: 51
+    start: 45
+    end: 48
     limit: 4
-    symbolLine: 48
+    symbolLine: 45
     symbolColumn: 28
     signature: "static public function isCore(string $type): bool"
     callers[1]: "Ineersa\\AgentCore\\Domain\\Event\\CoreLifecycleEventType::validateOrder"
   - method: eventClassMap
-    start: 53
-    end: 72
+    start: 50
+    end: 69
     limit: 20
-    symbolLine: 58
+    symbolLine: 55
     symbolColumn: 28
     signature: "static public function eventClassMap(): array"
   - method: validateOrder
-    start: 74
-    end: 218
+    start: 71
+    end: 215
     limit: 145
-    symbolLine: 81
+    symbolLine: 78
     symbolColumn: 28
     signature: "static public function validateOrder(array $events, string $extensionPrefix = 'ext_'): array"
     callees[1]: "Ineersa\\AgentCore\\Domain\\Event\\CoreLifecycleEventType::isCore"

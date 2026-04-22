@@ -6,9 +6,6 @@ namespace Ineersa\AgentCore\Contract\Extension;
 
 use Ineersa\AgentCore\Domain\Event\BoundaryHookName;
 
-/**
- * Subscribes to named hooks and processes incoming hook events with context data.
- */
 interface HookSubscriberInterface
 {
     /**

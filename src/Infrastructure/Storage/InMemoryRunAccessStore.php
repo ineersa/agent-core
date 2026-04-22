@@ -7,9 +7,6 @@ namespace Ineersa\AgentCore\Infrastructure\Storage;
 use Ineersa\AgentCore\Contract\RunAccessStoreInterface;
 use Ineersa\AgentCore\Domain\Run\RunAccessScope;
 
-/**
- * Holds run access scopes in memory, keyed by run ID.
- */
 final class InMemoryRunAccessStore implements RunAccessStoreInterface
 {
     /** @var array<string, RunAccessScope> */

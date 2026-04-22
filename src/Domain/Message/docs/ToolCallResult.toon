@@ -2,18 +2,8 @@ spec: agent-core.file-index/v1
 file: ToolCallResult.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\ToolCallResult"
 type: readonly final class
-summary: "Result of a single tool call execution, carrying the tool identity, output content, and optional error."
-sections[2]:
-  - kind: classDoc
-    start: 7
-    end: 9
-    limit: 3
-  - kind: constructor
-    start: 12
-    end: 30
-    limit: 19
-    signatureLine: 17
-    commentStart: 12
+sections[1]{kind,start,end,limit,signatureLine,commentStart}:
+  constructor,9,27,19,14,9
 constructorInputs[10]{param,type,required}:
   $runId,string,true
   $turnNo,int,true
@@ -27,10 +17,10 @@ constructorInputs[10]{param,type,required}:
   $error,?array,false
 methods[1]:
   - method: __construct
-    start: 12
-    end: 30
+    start: 9
+    end: 27
     limit: 19
-    symbolLine: 17
+    symbolLine: 14
     symbolColumn: 21
     signature: "public function __construct(string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey, string $toolCallId, int $orderIndex, mixed $result = null, bool $isError = false, ?array $error = null)"
     callees[1]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::__construct"

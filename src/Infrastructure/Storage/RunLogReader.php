@@ -10,9 +10,6 @@ use League\Flysystem\FileAttributes;
 use League\Flysystem\FilesystemException;
 use League\Flysystem\FilesystemOperator;
 
-/**
- * Reads run log files from the filesystem to reconstruct event sequences for a specific run. It parses JSON lines into domain events, providing a read-only view of historical run data.
- */
 final readonly class RunLogReader
 {
     private EventPayloadNormalizer $eventPayloadNormalizer;

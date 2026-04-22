@@ -2,7 +2,5 @@ spec: agent-core.file-index/v1
 file: MessageUpdateEvent.php
 class: "Ineersa\\AgentCore\\Domain\\Event\\Lifecycle\\MessageUpdateEvent"
 type: readonly final class
-summary: Represents a domain event signaling an update to a message within the lifecycle of an agent interaction. This immutable value object encapsulates the context required to track message state changes without side effects.
-sections[2]{kind,start,end,limit}:
-  classDoc,9,11,3
-  constants,14,14,1
+sections[1]{kind,start,end,limit}:
+  constants,11,11,1

@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Infrastructure\Mercure;
 
-/**
- * Constructs Mercure topic strings for run event publication and subscription.
- */
 final readonly class RunTopicPolicy
 {
     public function topicFor(string $runId): string

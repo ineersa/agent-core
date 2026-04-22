@@ -7,9 +7,6 @@ namespace Ineersa\AgentCore\Infrastructure\Storage;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 
-/**
- * Stores run events in memory, supporting append and retrieval of the full event history per run.
- */
 final class RunEventStore implements EventStoreInterface
 {
     /** @var array<string, list<RunEvent>> */

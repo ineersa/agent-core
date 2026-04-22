@@ -11,9 +11,6 @@ use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 
-/**
- * The RunMessageProcessor executes the shared lock/idempotency/load/commit pipeline around dedicated run message handlers.
- */
 final readonly class RunMessageProcessor
 {
     /** @var list<RunMessageHandler> */

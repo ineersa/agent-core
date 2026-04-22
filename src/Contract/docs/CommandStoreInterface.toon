@@ -2,74 +2,71 @@ spec: agent-core.file-index/v1
 file: CommandStoreInterface.php
 class: "Ineersa\\AgentCore\\Contract\\CommandStoreInterface"
 type: interface
-summary: "Manages the lifecycle of pending commands per run — enqueue, idempotency checks, status queries, and state transitions."
-sections[1]{kind,start,end,limit}:
-  classDoc,9,11,3
 wiring:
   aliases[1]{serviceId,target}:
     "Ineersa\\AgentCore\\Contract\\CommandStoreInterface","Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryCommandStore"
 methods[8]:
   - method: enqueue
-    start: 14
-    end: 14
+    start: 11
+    end: 11
     limit: 1
-    symbolLine: 14
+    symbolLine: 11
     symbolColumn: 21
     signature: "public function enqueue(PendingCommand $command): bool"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::handle"
   - method: has
-    start: 16
-    end: 16
+    start: 13
+    end: 13
     limit: 1
-    symbolLine: 16
+    symbolLine: 13
     symbolColumn: 21
     signature: "public function has(string $runId, string $idempotencyKey): bool"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::handle"
   - method: pending
-    start: 18
-    end: 23
+    start: 15
+    end: 20
     limit: 6
-    symbolLine: 23
+    symbolLine: 20
     symbolColumn: 21
     signature: "public function pending(string $runId): array"
     callers[3]: "Ineersa\\AgentCore\\Application\\Handler\\RunDebugService::inspect","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyPendingStopBoundaryCommands"
   - method: countPending
-    start: 25
-    end: 25
+    start: 22
+    end: 22
     limit: 1
-    symbolLine: 25
+    symbolLine: 22
     symbolColumn: 21
     signature: "public function countPending(string $runId): int"
     callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit::trackCommitMetrics"
   - method: rejectPendingByKind
-    start: 27
-    end: 32
+    start: 24
+    end: 29
     limit: 6
-    symbolLine: 32
+    symbolLine: 29
     symbolColumn: 21
     signature: "public function rejectPendingByKind(string $runId, string $kind, string $reason): array"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyCancelCommand"
   - method: markApplied
-    start: 34
-    end: 34
+    start: 31
+    end: 31
     limit: 1
-    symbolLine: 34
+    symbolLine: 31
     symbolColumn: 21
     signature: "public function markApplied(string $runId, string $idempotencyKey): void"
     callers[6]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyCancelCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyContinueCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyHumanResponseCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyPendingStopBoundaryCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyExtensionCommand"
   - method: markRejected
-    start: 36
-    end: 36
+    start: 33
+    end: 33
     limit: 1
-    symbolLine: 36
+    symbolLine: 33
     symbolColumn: 21
     signature: "public function markRejected(string $runId, string $idempotencyKey, string $reason): void"
     callers[4]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::rejectCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyPendingStopBoundaryCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyExtensionCommand"
   - method: markSuperseded
-    start: 38
-    end: 38
+    start: 35
+    end: 35
     limit: 1
-    symbolLine: 38
+    symbolLine: 35
     symbolColumn: 21
     signature: "public function markSuperseded(string $runId, string $idempotencyKey, string $reason): void"
     callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyPendingStopBoundaryCommands"

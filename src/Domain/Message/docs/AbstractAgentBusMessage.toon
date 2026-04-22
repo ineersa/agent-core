@@ -2,17 +2,8 @@ spec: agent-core.file-index/v1
 file: AbstractAgentBusMessage.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage"
 type: readonly abstract class
-summary: "Base value object for agent bus messages, carrying run/turn/step identity and idempotency metadata shared across all execution commands and results."
-sections[2]:
-  - kind: classDoc
-    start: 7
-    end: 9
-    limit: 3
-  - kind: constructor
-    start: 12
-    end: 19
-    limit: 8
-    signatureLine: 12
+sections[1]{kind,start,end,limit,signatureLine}:
+  constructor,9,16,8,9
 constructorInputs[5]{param,type,required}:
   $runId,string,true
   $turnNo,int,true
@@ -21,50 +12,50 @@ constructorInputs[5]{param,type,required}:
   $idempotencyKey,string,true
 methods[6]:
   - method: __construct
-    start: 12
-    end: 19
+    start: 9
+    end: 16
     limit: 8
-    symbolLine: 12
+    symbolLine: 9
     symbolColumn: 21
     signature: "public function __construct(string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey)"
     callers[8]: "Ineersa\\AgentCore\\Domain\\Message\\AdvanceRun::__construct","Ineersa\\AgentCore\\Domain\\Message\\ApplyCommand::__construct","Ineersa\\AgentCore\\Domain\\Message\\CollectToolBatch::__construct","Ineersa\\AgentCore\\Domain\\Message\\ExecuteLlmStep::__construct","Ineersa\\AgentCore\\Domain\\Message\\ExecuteToolCall::__construct","Ineersa\\AgentCore\\Domain\\Message\\LlmStepResult::__construct","Ineersa\\AgentCore\\Domain\\Message\\StartRun::__construct","Ineersa\\AgentCore\\Domain\\Message\\ToolCallResult::__construct"
   - method: runId
-    start: 21
-    end: 24
+    start: 18
+    end: 21
     limit: 4
-    symbolLine: 21
+    symbolLine: 18
     symbolColumn: 21
     signature: "public function runId(): string"
     callers[26]: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteLlmStepWorker::__invoke","Ineersa\\AgentCore\\Application\\Handler\\ExecuteLlmStepWorker::execute","Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker::__invoke","Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker::execute","Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::collect","Ineersa\\AgentCore\\Application\\Orchestrator\\AdvanceRunHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::rejectCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyCancelCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyContinueCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyHumanResponseCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor::process","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onStartRun","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onApplyCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onAdvanceRun","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onLlmStepResult","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onToolCallResult","Ineersa\\AgentCore\\Application\\Orchestrator\\StartRunHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler::handle","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeStartRun","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeApplyCommand","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeExecuteLlmStep","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeLlmStepResult","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeExecuteToolCall","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeToolCallResult"
   - method: turnNo
-    start: 26
-    end: 29
+    start: 23
+    end: 26
     limit: 4
-    symbolLine: 26
+    symbolLine: 23
     symbolColumn: 21
     signature: "public function turnNo(): int"
     callers[16]: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteLlmStepWorker::__invoke","Ineersa\\AgentCore\\Application\\Handler\\ExecuteLlmStepWorker::execute","Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker::__invoke","Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker::execute","Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::collect","Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onStartRun","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onApplyCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onAdvanceRun","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onLlmStepResult","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onToolCallResult","Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler::handle","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeExecuteLlmStep","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeLlmStepResult","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeExecuteToolCall","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeToolCallResult"
   - method: stepId
-    start: 31
-    end: 34
+    start: 28
+    end: 31
     limit: 4
-    symbolLine: 31
+    symbolLine: 28
     symbolColumn: 21
     signature: "public function stepId(): string"
     callers[18]: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteLlmStepWorker::__invoke","Ineersa\\AgentCore\\Application\\Handler\\ExecuteLlmStepWorker::execute","Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker::__invoke","Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker::execute","Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::collect","Ineersa\\AgentCore\\Application\\Orchestrator\\AdvanceRunHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onStartRun","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onApplyCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onAdvanceRun","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onLlmStepResult","Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator::onToolCallResult","Ineersa\\AgentCore\\Application\\Orchestrator\\StartRunHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler::handle","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeExecuteLlmStep","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeLlmStepResult","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeExecuteToolCall","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeToolCallResult"
   - method: attempt
-    start: 36
-    end: 39
+    start: 33
+    end: 36
     limit: 4
-    symbolLine: 36
+    symbolLine: 33
     symbolColumn: 21
     signature: "public function attempt(): int"
     callers[4]: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteLlmStepWorker::execute","Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker::execute","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeExecuteLlmStep","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeExecuteToolCall"
   - method: idempotencyKey
-    start: 41
-    end: 44
+    start: 38
+    end: 41
     limit: 4
-    symbolLine: 41
+    symbolLine: 38
     symbolColumn: 21
     signature: "public function idempotencyKey(): string"
     callers[10]: "Ineersa\\AgentCore\\Application\\Handler\\ExecuteLlmStepWorker::execute","Ineersa\\AgentCore\\Application\\Handler\\ExecuteToolCallWorker::execute","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::rejectCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyCancelCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyContinueCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyHumanResponseCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor::process","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeStartRun","Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer::normalizeApplyCommand"

@@ -2,8 +2,5 @@ spec: agent-core.file-index/v1
 file: SteeringMessagesProviderInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Hook\\SteeringMessagesProviderInterface"
 type: interface
-summary: Supplies steering messages that configure or route agent behavior.
-sections[1]{kind,start,end,limit}:
-  classDoc,9,11,3
 methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  getSteeringMessages,14,19,6,19,21,"public function getSteeringMessages(): array"
+  getSteeringMessages,11,16,6,16,21,"public function getSteeringMessages(): array"

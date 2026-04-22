@@ -2,17 +2,8 @@ spec: agent-core.file-index/v1
 file: JsonlOutboxProjectorWorker.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\JsonlOutboxProjectorWorker"
 type: readonly final class
-summary: Bus handler that persists domain events to the JSONL outbox store and writes execution details to the run log.
-sections[2]:
-  - kind: classDoc
-    start: 13
-    end: 15
-    limit: 3
-  - kind: constructor
-    start: 19
-    end: 23
-    limit: 5
-    signatureLine: 19
+sections[1]{kind,start,end,limit,signatureLine}:
+  constructor,16,20,5,16
 constructorInputs[2]{param,type,required}:
   $outboxStore,OutboxStoreInterface,true
   $runLogWriter,RunLogWriter,true
@@ -23,23 +14,23 @@ wiring:
       autowire: true
       autoconfigure: true
       file: src/Application/Handler/JsonlOutboxProjectorWorker.php
-      line: 17
+      line: 14
       args:
         "$outboxStore": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryOutboxStore)"
         "$runLogWriter": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogWriter)"
 methods[2]:
   - method: __construct
-    start: 19
-    end: 23
+    start: 16
+    end: 20
     limit: 5
-    symbolLine: 19
+    symbolLine: 16
     symbolColumn: 21
     signature: "public function __construct(OutboxStoreInterface $outboxStore, RunLogWriter $runLogWriter)"
   - method: __invoke
-    start: 25
-    end: 44
+    start: 22
+    end: 41
     limit: 20
-    symbolLine: 25
+    symbolLine: 22
     symbolColumn: 21
     signature: "public function __invoke(ProjectJsonlOutbox $message): void"
     callees[4]: "Ineersa\\AgentCore\\Contract\\OutboxStoreInterface::claim","Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogWriter::append","Ineersa\\AgentCore\\Contract\\OutboxStoreInterface::markProcessed","Ineersa\\AgentCore\\Contract\\OutboxStoreInterface::markFailed"

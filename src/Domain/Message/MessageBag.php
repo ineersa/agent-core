@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Message;
 
-/**
- * An immutable collection of domain message objects, providing empty-instance creation and typed retrieval.
- */
 final readonly class MessageBag
 {
     /**

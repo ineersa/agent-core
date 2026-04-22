@@ -10,9 +10,6 @@ use Symfony\Component\DependencyInjection\Extension\Extension;
 use Symfony\Component\DependencyInjection\Extension\PrependExtensionInterface;
 use Symfony\Component\DependencyInjection\Loader\PhpFileLoader;
 
-/**
- * Loads AgentCore service definitions, validates and persists bundle configuration, and prepends framework config (messenger, doctrine) into the Symfony container.
- */
 final class AgentLoopExtension extends Extension implements PrependExtensionInterface
 {
     public function prepend(ContainerBuilder $container): void

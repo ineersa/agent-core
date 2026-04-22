@@ -6,9 +6,6 @@ namespace Ineersa\AgentCore\Contract\Tool;
 
 use Ineersa\AgentCore\Domain\Tool\ToolDefinition;
 
-/**
- * Resolves the available tool catalog from execution context.
- */
 interface ToolCatalogProviderInterface
 {
     /**

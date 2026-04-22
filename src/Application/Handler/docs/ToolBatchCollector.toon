@@ -2,69 +2,64 @@ spec: agent-core.file-index/v1
 file: ToolBatchCollector.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector"
 type: final class
-summary: Aggregates tool calls into bounded-parallelism batches scoped by run/turn/step and detects batch completion.
-sections[3]:
-  - kind: classDoc
-    start: 11
-    end: 13
-    limit: 3
+sections[2]:
   - kind: properties
-    start: 27
-    end: 27
+    start: 24
+    end: 24
     limit: 1
   - kind: constructor
-    start: 29
-    end: 32
+    start: 26
+    end: 29
     limit: 4
-    signatureLine: 29
+    signatureLine: 26
 constructorInputs[1]{param,type,required}:
   $defaultMaxParallelism,int,false
 wiring:
   serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
-    "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector",private,true,true,src/Application/Handler/ToolBatchCollector.php,14
+    "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector",private,true,true,src/Application/Handler/ToolBatchCollector.php,11
   injectedInto[2]{fqcn,file,line}:
-    "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler",src/Application/Orchestrator/LlmStepResultHandler.php,26
-    "Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler",src/Application/Orchestrator/ToolCallResultHandler.php,17
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler",src/Application/Orchestrator/LlmStepResultHandler.php,23
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler",src/Application/Orchestrator/ToolCallResultHandler.php,14
 methods[5]:
   - method: __construct
-    start: 29
-    end: 32
+    start: 26
+    end: 29
     limit: 4
-    symbolLine: 29
+    symbolLine: 26
     symbolColumn: 21
     signature: public function __construct(int $defaultMaxParallelism = 4)
   - method: registerExpectedBatch
-    start: 34
-    end: 75
+    start: 31
+    end: 72
     limit: 42
-    symbolLine: 41
+    symbolLine: 38
     symbolColumn: 21
     signature: "public function registerExpectedBatch(string $runId, int $turnNo, string $stepId, array $toolCalls): array"
     callees[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::dispatchableCalls","Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::batchKey"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler::handle"
   - method: collect
-    start: 77
-    end: 119
+    start: 74
+    end: 116
     limit: 43
-    symbolLine: 77
+    symbolLine: 74
     symbolColumn: 21
     signature: "public function collect(ToolCallResult $result): ToolBatchCollectOutcome"
     callees[9]: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::batchKey","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::turnNo","Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollectOutcome::rejected","Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollectOutcome::duplicate","Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::dispatchableCalls","Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollectOutcome::acceptedPending","Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollectOutcome::acceptedComplete"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler::handle"
   - method: dispatchableCalls
-    start: 121
-    end: 180
+    start: 118
+    end: 177
     limit: 60
-    symbolLine: 136
+    symbolLine: 133
     symbolColumn: 22
     signature: "private function dispatchableCalls(array & $batch): array"
     callees[1]: "Ineersa\\AgentCore\\Domain\\Tool\\ToolExecutionMode::tryFrom"
     callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::registerExpectedBatch","Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::collect"
   - method: batchKey
-    start: 182
-    end: 185
+    start: 179
+    end: 182
     limit: 4
-    symbolLine: 182
+    symbolLine: 179
     symbolColumn: 22
     signature: "private function batchKey(string $runId, int $turnNo, string $stepId): string"
     callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::registerExpectedBatch","Ineersa\\AgentCore\\Application\\Handler\\ToolBatchCollector::collect"

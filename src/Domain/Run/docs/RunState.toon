@@ -2,18 +2,8 @@ spec: agent-core.file-index/v1
 file: RunState.php
 class: "Ineersa\\AgentCore\\Domain\\Run\\RunState"
 type: readonly final class
-summary: "Immutable snapshot of a run's current state — status, conversation messages, progression counters, and pending tool calls."
-sections[2]:
-  - kind: classDoc
-    start: 9
-    end: 11
-    limit: 3
-  - kind: constructor
-    start: 14
-    end: 34
-    limit: 21
-    signatureLine: 20
-    commentStart: 14
+sections[1]{kind,start,end,limit,signatureLine,commentStart}:
+  constructor,11,31,21,17,11
 constructorInputs[12]{param,type,required}:
   $runId,string,true
   $status,RunStatus,true
@@ -29,17 +19,17 @@ constructorInputs[12]{param,type,required}:
   $retryableFailure,bool,false
 methods[2]:
   - method: __construct
-    start: 14
-    end: 34
+    start: 11
+    end: 31
     limit: 21
-    symbolLine: 20
+    symbolLine: 17
     symbolColumn: 21
     signature: "public function __construct(string $runId, RunStatus $status, int $version = 0, int $turnNo = 0, int $lastSeq = 0, bool $isStreaming = false, ?array $streamingMessage = null, array $pendingToolCalls = [], ?string $errorMessage = null, array $messages = [], ?string $activeStepId = null, bool $retryableFailure = false)"
   - method: queued
-    start: 36
-    end: 39
+    start: 33
+    end: 36
     limit: 4
-    symbolLine: 36
+    symbolLine: 33
     symbolColumn: 28
     signature: "static public function queued(string $runId): self"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor::process"

@@ -13,9 +13,6 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
-/**
- * Rebuilds hot prompt state for a run from persisted event history.
- */
 #[AsCommand(name: 'agent-loop:run-rebuild-hot-state', description: 'Rebuild hot prompt state for a run from event history.')]
 final class AgentLoopRunRebuildHotStateCommand extends Command
 {

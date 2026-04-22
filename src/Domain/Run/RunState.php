@@ -6,9 +6,6 @@ namespace Ineersa\AgentCore\Domain\Run;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 
-/**
- * Immutable snapshot of a run's current state — status, conversation messages, progression counters, and pending tool calls.
- */
 final readonly class RunState
 {
     /**

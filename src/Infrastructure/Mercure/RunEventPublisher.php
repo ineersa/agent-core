@@ -9,9 +9,6 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Symfony\Component\Mercure\HubInterface;
 use Symfony\Component\Mercure\Update;
 
-/**
- * Publishes domain run events to a Mercure hub with coalesced message-update batching to reduce network traffic.
- */
 final class RunEventPublisher
 {
     /** @var array<string, int> */

@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Command;
 
-/**
- * Immutable command record awaiting processing, carrying run identity, kind, idempotency key, and optional payload.
- */
 final readonly class PendingCommand
 {
     /**

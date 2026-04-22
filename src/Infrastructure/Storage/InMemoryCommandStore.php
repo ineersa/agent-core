@@ -7,9 +7,6 @@ namespace Ineersa\AgentCore\Infrastructure\Storage;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 
-/**
- * Manages pending commands in memory with idempotent enqueue and state transitions (applied, rejected, superseded) per run.
- */
 final class InMemoryCommandStore implements CommandStoreInterface
 {
     /** @var array<string, array<string, PendingCommand>> */

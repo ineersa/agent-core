@@ -20,9 +20,6 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
-/**
- * The LlmStepResultHandler applies LLM step outcomes, including stop-boundary command policy and tool-call fanout preparation.
- */
 final readonly class LlmStepResultHandler implements RunMessageHandler
 {
     public function __construct(

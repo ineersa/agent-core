@@ -8,9 +8,6 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use League\Flysystem\FilesystemOperator;
 
-/**
- * Appends run events as JSON lines to Flysystem-backed log files, partitioned by run ID.
- */
 final readonly class RunLogWriter
 {
     private EventPayloadNormalizer $eventPayloadNormalizer;

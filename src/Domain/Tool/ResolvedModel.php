@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Tool;
 
-/**
- * Resolved AI model identifier with its associated configuration options for provider instantiation.
- */
 final readonly class ResolvedModel
 {
     /**

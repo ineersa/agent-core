@@ -8,9 +8,6 @@ use Ineersa\AgentCore\DependencyInjection\AgentLoopExtension;
 use Symfony\Component\DependencyInjection\Extension\ExtensionInterface;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
 
-/**
- * Symfony bundle entry point that registers the AgentCore extension for container configuration and service loading.
- */
 final class AgentLoopBundle extends Bundle
 {
     public function getContainerExtension(): ?ExtensionInterface

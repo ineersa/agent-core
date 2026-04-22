@@ -8,9 +8,6 @@ use Ineersa\AgentCore\Api\Dto\RunStreamEvent;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 
-/**
- * Converts domain RunEvent objects to API-facing RunStreamEvent DTOs and normalized array payloads, bridging domain events to transport representations.
- */
 final readonly class RunEventSerializer
 {
     private EventPayloadNormalizer $eventPayloadNormalizer;

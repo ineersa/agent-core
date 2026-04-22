@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Infrastructure\Messenger;
 
-/**
- * Defines bus name constants for the command, execution, and publisher Messenger buses.
- */
 final class BusNames
 {
     public const string Command = 'agent.command.bus';

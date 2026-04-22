@@ -6,9 +6,6 @@ namespace Ineersa\AgentCore\Schema;
 
 use Ineersa\AgentCore\Domain\Event\CoreLifecycleEventType;
 
-/**
- * Maintains the mapping table between internal lifecycle event identifiers and public stream event names.
- */
 final class EventNameMap
 {
     /**

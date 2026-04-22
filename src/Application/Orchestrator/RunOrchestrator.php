@@ -12,9 +12,6 @@ use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
-/**
- * The RunOrchestrator is the message-bus entrypoint for run lifecycle commands and step results, delegating runtime transitions to RunMessageProcessor and dedicated message handlers.
- */
 final readonly class RunOrchestrator
 {
     private const string ScopeStartRun = 'command.start';

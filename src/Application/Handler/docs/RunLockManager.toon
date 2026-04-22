@@ -2,17 +2,8 @@ spec: agent-core.file-index/v1
 file: RunLockManager.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\RunLockManager"
 type: readonly final class
-summary: Provides per-run distributed locking to guard critical sections against concurrent execution.
-sections[2]:
-  - kind: classDoc
-    start: 9
-    end: 11
-    limit: 3
-  - kind: constructor
-    start: 14
-    end: 19
-    limit: 6
-    signatureLine: 14
+sections[1]{kind,start,end,limit,signatureLine}:
+  constructor,11,16,6,11
 constructorInputs[3]{param,type,required}:
   $lockFactory,LockFactory,true
   $ttlSeconds,float,false
@@ -24,34 +15,34 @@ wiring:
       autowire: true
       autoconfigure: true
       file: src/Application/Handler/RunLockManager.php
-      line: 12
+      line: 9
       args:
         "$lockFactory": service(agent_loop.lock.factory)
   injectedInto[2]{fqcn,file,line}:
-    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor",src/Application/Orchestrator/RunMessageProcessor.php,17
-    "Ineersa\\AgentCore\\Command\\AgentLoopResumeStaleRunsCommand",src/Command/AgentLoopResumeStaleRunsCommand.php,25
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor",src/Application/Orchestrator/RunMessageProcessor.php,14
+    "Ineersa\\AgentCore\\Command\\AgentLoopResumeStaleRunsCommand",src/Command/AgentLoopResumeStaleRunsCommand.php,22
 methods[3]:
   - method: __construct
-    start: 14
-    end: 19
+    start: 11
+    end: 16
     limit: 6
-    symbolLine: 14
+    symbolLine: 11
     symbolColumn: 21
     signature: "public function __construct(LockFactory $lockFactory, float $ttlSeconds = 30.0, float $acquireTimeoutSeconds = 5.0)"
   - method: synchronized
-    start: 21
-    end: 51
+    start: 18
+    end: 48
     limit: 31
-    symbolLine: 30
+    symbolLine: 27
     symbolColumn: 21
     signature: "public function synchronized(string $runId, callable $criticalSection): mixed"
     callees[5]: "Ineersa\\AgentCore\\Application\\Handler\\RunLockManager::lockKey","Symfony\\Component\\Lock\\LockFactory::createLock","Symfony\\Component\\Lock\\LockInterface::acquire","Symfony\\Component\\Lock\\LockInterface::isAcquired","Symfony\\Component\\Lock\\LockInterface::release"
     callers[2]: "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor::process","Ineersa\\AgentCore\\Command\\AgentLoopResumeStaleRunsCommand::execute"
   - method: lockKey
-    start: 53
-    end: 56
+    start: 50
+    end: 53
     limit: 4
-    symbolLine: 53
+    symbolLine: 50
     symbolColumn: 22
     signature: "private function lockKey(string $runId): string"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\RunLockManager::synchronized"

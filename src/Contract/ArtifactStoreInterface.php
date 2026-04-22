@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Contract;
 
-/**
- * Persists named execution artifacts (logs, intermediate outputs) to a storage backend.
- */
 interface ArtifactStoreInterface
 {
     /**

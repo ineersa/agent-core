@@ -2,42 +2,37 @@ spec: agent-core.file-index/v1
 file: EventSubscriberRegistry.php
 class: "Ineersa\\AgentCore\\Application\\Handler\\EventSubscriberRegistry"
 type: final class
-summary: Named-lookup registry that resolves event subscribers by event type.
-sections[3]:
-  - kind: classDoc
-    start: 9
-    end: 11
-    limit: 3
+sections[2]:
   - kind: properties
-    start: 15
-    end: 15
+    start: 12
+    end: 12
     limit: 1
   - kind: constructor
-    start: 17
-    end: 25
+    start: 14
+    end: 22
     limit: 9
-    signatureLine: 22
-    commentStart: 17
+    signatureLine: 19
+    commentStart: 14
 constructorInputs[1]{param,type,required}:
   $subscribers,iterable,true
 wiring:
   serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
-    "Ineersa\\AgentCore\\Application\\Handler\\EventSubscriberRegistry",private,true,true,src/Application/Handler/EventSubscriberRegistry.php,12
+    "Ineersa\\AgentCore\\Application\\Handler\\EventSubscriberRegistry",private,true,true,src/Application/Handler/EventSubscriberRegistry.php,9
   injectedInto[1]{fqcn,file,line}:
-    "Ineersa\\AgentCore\\Application\\Handler\\RunEventDispatcher",src/Application/Handler/RunEventDispatcher.php,13
+    "Ineersa\\AgentCore\\Application\\Handler\\RunEventDispatcher",src/Application/Handler/RunEventDispatcher.php,10
 methods[2]:
   - method: __construct
-    start: 17
-    end: 25
+    start: 14
+    end: 22
     limit: 9
-    symbolLine: 22
+    symbolLine: 19
     symbolColumn: 21
     signature: public function __construct(iterable $subscribers)
   - method: subscribersFor
-    start: 27
-    end: 41
+    start: 24
+    end: 38
     limit: 15
-    symbolLine: 32
+    symbolLine: 29
     symbolColumn: 21
     signature: "public function subscribersFor(string $eventType): iterable"
     callees[1]: "Ineersa\\AgentCore\\Contract\\Extension\\EventSubscriberInterface::subscribedEventTypes"

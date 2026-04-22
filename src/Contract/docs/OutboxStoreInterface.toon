@@ -2,42 +2,39 @@ spec: agent-core.file-index/v1
 file: OutboxStoreInterface.php
 class: "Ineersa\\AgentCore\\Contract\\OutboxStoreInterface"
 type: interface
-summary: "Ensures reliable delivery of outbound events via enqueue, batch claim, and completion tracking."
-sections[1]{kind,start,end,limit}:
-  classDoc,11,13,3
 wiring:
   aliases[1]{serviceId,target}:
     "Ineersa\\AgentCore\\Contract\\OutboxStoreInterface","Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryOutboxStore"
 methods[4]:
   - method: enqueue
-    start: 16
-    end: 16
+    start: 13
+    end: 13
     limit: 1
-    symbolLine: 16
+    symbolLine: 13
     symbolColumn: 21
     signature: "public function enqueue(RunEvent $event, OutboxSink $sink): void"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\OutboxProjector::project"
   - method: claim
-    start: 18
-    end: 23
+    start: 15
+    end: 20
     limit: 6
-    symbolLine: 23
+    symbolLine: 20
     symbolColumn: 21
     signature: "public function claim(OutboxSink $sink, int $limit = 100, ?DateTimeImmutable $now = null): array"
     callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\JsonlOutboxProjectorWorker::__invoke","Ineersa\\AgentCore\\Application\\Handler\\MercureOutboxProjectorWorker::__invoke"
   - method: markProcessed
-    start: 25
-    end: 25
+    start: 22
+    end: 22
     limit: 1
-    symbolLine: 25
+    symbolLine: 22
     symbolColumn: 21
     signature: "public function markProcessed(int $entryId, ?DateTimeImmutable $processedAt = null): void"
     callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\JsonlOutboxProjectorWorker::__invoke","Ineersa\\AgentCore\\Application\\Handler\\MercureOutboxProjectorWorker::__invoke"
   - method: markFailed
-    start: 27
-    end: 27
+    start: 24
+    end: 24
     limit: 1
-    symbolLine: 27
+    symbolLine: 24
     symbolColumn: 21
     signature: "public function markFailed(int $entryId, int $retryAfterSeconds = 30, ?DateTimeImmutable $now = null): void"
     callers[2]: "Ineersa\\AgentCore\\Application\\Handler\\JsonlOutboxProjectorWorker::__invoke","Ineersa\\AgentCore\\Application\\Handler\\MercureOutboxProjectorWorker::__invoke"

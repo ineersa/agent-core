@@ -2,18 +2,8 @@ spec: agent-core.file-index/v1
 file: RunAccessScope.php
 class: "Ineersa\\AgentCore\\Domain\\Run\\RunAccessScope"
 type: readonly final class
-summary: "Encapsulates the run's access context — run identity, optional tenant/user scopes, and session metadata — for authorization decisions."
-sections[2]:
-  - kind: classDoc
-    start: 7
-    end: 9
-    limit: 3
-  - kind: constructor
-    start: 12
-    end: 25
-    limit: 14
-    signatureLine: 17
-    commentStart: 12
+sections[1]{kind,start,end,limit,signatureLine,commentStart}:
+  constructor,9,22,14,14,9
 constructorInputs[6]{param,type,required}:
   $runId,string,true
   $tenantId,?string,true
@@ -23,17 +13,17 @@ constructorInputs[6]{param,type,required}:
   $updatedAt,DateTimeImmutable,false
 methods[2]:
   - method: __construct
-    start: 12
-    end: 25
+    start: 9
+    end: 22
     limit: 14
-    symbolLine: 17
+    symbolLine: 14
     symbolColumn: 21
     signature: "public function __construct(string $runId, ?string $tenantId, ?string $userId, array $sessionMetadata = [], DateTimeImmutable $createdAt = new \\DateTimeImmutable(), DateTimeImmutable $updatedAt = new \\DateTimeImmutable())"
   - method: withUpdatedAt
-    start: 27
-    end: 37
+    start: 24
+    end: 34
     limit: 11
-    symbolLine: 27
+    symbolLine: 24
     symbolColumn: 21
     signature: "public function withUpdatedAt(?DateTimeImmutable $updatedAt = null): self"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunAccessStore::touch"

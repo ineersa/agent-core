@@ -6,9 +6,6 @@ namespace Ineersa\AgentCore\Contract;
 
 use Ineersa\AgentCore\Domain\Run\RunState;
 
-/**
- * Persists run states with optimistic concurrency control via compare-and-swap and stale-run detection.
- */
 interface RunStoreInterface
 {
     public function get(string $runId): ?RunState;

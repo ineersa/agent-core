@@ -2,34 +2,31 @@ spec: agent-core.file-index/v1
 file: RunAccessStoreInterface.php
 class: "Ineersa\\AgentCore\\Contract\\RunAccessStoreInterface"
 type: interface
-summary: Persists access scopes per run with atomic save and timestamp-based access tracking.
-sections[1]{kind,start,end,limit}:
-  classDoc,9,11,3
 wiring:
   aliases[1]{serviceId,target}:
     "Ineersa\\AgentCore\\Contract\\RunAccessStoreInterface","Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunAccessStore"
 methods[3]:
   - method: save
-    start: 14
-    end: 14
+    start: 11
+    end: 11
     limit: 1
-    symbolLine: 14
+    symbolLine: 11
     symbolColumn: 21
     signature: "public function save(RunAccessScope $scope): void"
     callers[1]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::startRun"
   - method: get
-    start: 16
-    end: 16
+    start: 13
+    end: 13
     limit: 1
-    symbolLine: 16
+    symbolLine: 13
     symbolColumn: 21
     signature: "public function get(string $runId): ?RunAccessScope"
     callers[4]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::authorizeRun","Ineersa\\AgentCore\\Api\\Http\\RunReadService::summary","Ineersa\\AgentCore\\Api\\Http\\RunReadService::transcriptPage","Ineersa\\AgentCore\\Api\\Http\\RunReadService::replayAfter"
   - method: touch
-    start: 18
-    end: 18
+    start: 15
+    end: 15
     limit: 1
-    symbolLine: 18
+    symbolLine: 15
     symbolColumn: 21
     signature: "public function touch(string $runId, ?DateTimeImmutable $updatedAt = null): void"
     callers[1]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::sendCommand"

@@ -12,9 +12,6 @@ use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
 
-/**
- * Provides read-only debugging views of run state, replay streams, and prompt snapshots.
- */
 final readonly class RunDebugService
 {
     public function __construct(

@@ -7,9 +7,6 @@ namespace Ineersa\AgentCore\Application\Handler;
 use Ineersa\AgentCore\Contract\Tool\ToolCatalogProviderInterface;
 use Ineersa\AgentCore\Domain\Tool\ToolDefinition;
 
-/**
- * Resolves tool catalog definitions by iterating over registered providers and aggregating their payloads. Ensures schema stability for each tool definition by computing and verifying a deterministic fingerprint.
- */
 final class ToolCatalogResolver
 {
     /** @var array<string, string> */

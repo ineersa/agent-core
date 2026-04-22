@@ -2,17 +2,8 @@ spec: agent-core.file-index/v1
 file: ExecuteLlmStep.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\ExecuteLlmStep"
 type: readonly final class
-summary: "Bus message commanding the execution of a single LLM inference step, referencing context and tool snapshots."
-sections[2]:
-  - kind: classDoc
-    start: 7
-    end: 9
-    limit: 3
-  - kind: constructor
-    start: 12
-    end: 22
-    limit: 11
-    signatureLine: 12
+sections[1]{kind,start,end,limit,signatureLine}:
+  constructor,9,19,11,9
 constructorInputs[7]{param,type,required}:
   $runId,string,true
   $turnNo,int,true
@@ -23,10 +14,10 @@ constructorInputs[7]{param,type,required}:
   $toolsRef,string,true
 methods[1]:
   - method: __construct
-    start: 12
-    end: 22
+    start: 9
+    end: 19
     limit: 11
-    symbolLine: 12
+    symbolLine: 9
     symbolColumn: 21
     signature: "public function __construct(string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey, string $contextRef, string $toolsRef)"
     callees[1]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::__construct"

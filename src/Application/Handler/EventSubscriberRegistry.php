@@ -6,9 +6,6 @@ namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\Extension\EventSubscriberInterface;
 
-/**
- * Named-lookup registry that resolves event subscribers by event type.
- */
 final class EventSubscriberRegistry
 {
     /** @var iterable<EventSubscriberInterface> */

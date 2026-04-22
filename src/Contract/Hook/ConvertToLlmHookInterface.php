@@ -7,9 +7,6 @@ namespace Ineersa\AgentCore\Contract\Hook;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\MessageBag;
 
-/**
- * Converts raw message arrays into a structured MessageBag for LLM consumption.
- */
 interface ConvertToLlmHookInterface
 {
     /**

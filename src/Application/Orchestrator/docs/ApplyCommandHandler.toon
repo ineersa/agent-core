@@ -2,17 +2,8 @@ spec: agent-core.file-index/v1
 file: ApplyCommandHandler.php
 class: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler"
 type: readonly final class
-summary: The ApplyCommandHandler validates and maps incoming commands into durable command-mailbox transitions.
-sections[2]:
-  - kind: classDoc
-    start: 18
-    end: 20
-    limit: 3
-  - kind: constructor
-    start: 23
-    end: 31
-    limit: 9
-    signatureLine: 23
+sections[1]{kind,start,end,limit,signatureLine}:
+  constructor,20,28,9,20
 constructorInputs[6]{param,type,required}:
   $commandStore,CommandStoreInterface,true
   $commandRouter,CommandRouter,true
@@ -27,7 +18,7 @@ wiring:
       autowire: true
       autoconfigure: true
       file: src/Application/Orchestrator/ApplyCommandHandler.php
-      line: 21
+      line: 18
       args:
         "$commandBus": service(agent.command.bus)
         "$commandMailboxPolicy": "service(Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy)"
@@ -35,71 +26,71 @@ wiring:
         "$commandStore": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryCommandStore)"
         "$stateTools": "service(Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools)"
   injectedInto[1]{fqcn,file,line}:
-    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor",src/Application/Orchestrator/RunMessageProcessor.php,17
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor",src/Application/Orchestrator/RunMessageProcessor.php,14
 methods[8]:
   - method: __construct
-    start: 23
-    end: 31
+    start: 20
+    end: 28
     limit: 9
-    symbolLine: 23
+    symbolLine: 20
     symbolColumn: 21
     signature: "public function __construct(CommandStoreInterface $commandStore, CommandRouter $commandRouter, CommandMailboxPolicy $commandMailboxPolicy, RunMessageStateTools $stateTools, int $maxPendingCommands = 100, ?MessageBusInterface $commandBus = null)"
   - method: supports
-    start: 33
-    end: 36
+    start: 30
+    end: 33
     limit: 4
-    symbolLine: 33
+    symbolLine: 30
     symbolColumn: 21
     signature: "public function supports(object $message): bool"
   - method: handle
-    start: 38
-    end: 124
+    start: 35
+    end: 121
     limit: 87
-    symbolLine: 38
+    symbolLine: 35
     symbolColumn: 21
     signature: "public function handle(object $message, RunState $state): HandlerResult"
     callees[14]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::has","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::route","Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand::isRejected","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::rejectCommand","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::countPending","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::isCancelSafeExtensionCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyCancelCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyContinueCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyHumanResponseCommand","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::enqueue","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::copyState","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::event"
   - method: rejectCommand
-    start: 126
-    end: 153
+    start: 123
+    end: 150
     limit: 28
-    symbolLine: 126
+    symbolLine: 123
     symbolColumn: 22
     signature: "private function rejectCommand(RunState $state, ApplyCommand $message, string $reason): HandlerResult"
     callees[5]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markRejected","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::copyState","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::event"
     callers[3]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::handle","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyContinueCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::applyHumanResponseCommand"
   - method: applyCancelCommand
-    start: 155
-    end: 203
+    start: 152
+    end: 200
     limit: 49
-    symbolLine: 155
+    symbolLine: 152
     symbolColumn: 22
     signature: "private function applyCancelCommand(RunState $state, ApplyCommand $message): HandlerResult"
     callees[6]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markApplied","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::rejectPendingByKind","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::eventsFromSpecs","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::copyState"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::handle"
   - method: applyContinueCommand
-    start: 205
-    end: 249
+    start: 202
+    end: 246
     limit: 45
-    symbolLine: 208
+    symbolLine: 205
     symbolColumn: 22
     signature: "private function applyContinueCommand(RunState $state, ApplyCommand $message, array $options): HandlerResult"
     callees[8]: "Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::continueRejectionReason","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::rejectCommand","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markApplied","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::copyState","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::event","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::followUpAdvanceCallback"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::handle"
   - method: applyHumanResponseCommand
-    start: 251
-    end: 308
+    start: 248
+    end: 305
     limit: 58
-    symbolLine: 254
+    symbolLine: 251
     symbolColumn: 22
     signature: "private function applyHumanResponseCommand(RunState $state, ApplyCommand $message, array $options): HandlerResult"
     callees[8]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::rejectCommand","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::humanResponseMessage","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Contract\\CommandStoreInterface::markApplied","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::idempotencyKey","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::copyState","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::event","Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::followUpAdvanceCallback"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::handle"
   - method: followUpAdvanceCallback
-    start: 310
-    end: 331
+    start: 307
+    end: 328
     limit: 22
-    symbolLine: 310
+    symbolLine: 307
     symbolColumn: 22
     signature: "private function followUpAdvanceCallback(string $runId, string $prefix): ?callable"
     callees[1]: "Symfony\\Component\\Messenger\\MessageBusInterface::dispatch"

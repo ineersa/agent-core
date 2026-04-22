@@ -16,9 +16,6 @@ use Ineersa\AgentCore\Contract\Tool\PlatformInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\MessageBag;
 
-/**
- * Orchestrates AI provider calls by resolving context, mapping messages, applying hooks, and delegating invocation to the platform adapter.
- */
 final readonly class Platform implements PlatformInterface
 {
     /**

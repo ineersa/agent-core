@@ -2,23 +2,20 @@ spec: agent-core.file-index/v1
 file: HookSubscriberInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Extension\\HookSubscriberInterface"
 type: interface
-summary: Subscribes to named hooks and processes incoming hook events with context data.
-sections[1]{kind,start,end,limit}:
-  classDoc,9,11,3
 methods[2]:
   - method: subscribedHooks
-    start: 14
-    end: 19
+    start: 11
+    end: 16
     limit: 6
-    symbolLine: 19
+    symbolLine: 16
     symbolColumn: 28
     signature: "static public function subscribedHooks(): array"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\HookSubscriberRegistry::subscribersFor"
   - method: handle
-    start: 21
-    end: 28
+    start: 18
+    end: 25
     limit: 8
-    symbolLine: 28
+    symbolLine: 25
     symbolColumn: 21
     signature: "public function handle(string $hookName, array $context): array"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\HookDispatcher::dispatch"

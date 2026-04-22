@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Command;
 
-/**
- * Closed set of core command kinds (steer, follow_up, cancel, human_response, continue) with validation for command routing.
- */
 final class CoreCommandKind
 {
     public const string Steer = 'steer';

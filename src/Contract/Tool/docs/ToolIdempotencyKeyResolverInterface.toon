@@ -2,15 +2,12 @@ spec: agent-core.file-index/v1
 file: ToolIdempotencyKeyResolverInterface.php
 class: "Ineersa\\AgentCore\\Contract\\Tool\\ToolIdempotencyKeyResolverInterface"
 type: interface
-summary: Resolves idempotency keys for tool calls to ensure consistent deduplication.
-sections[1]{kind,start,end,limit}:
-  classDoc,9,11,3
 methods[1]:
   - method: resolveToolIdempotencyKey
-    start: 14
-    end: 14
+    start: 11
+    end: 11
     limit: 1
-    symbolLine: 14
+    symbolLine: 11
     symbolColumn: 21
     signature: "public function resolveToolIdempotencyKey(ToolCall $toolCall): ?string"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\ToolExecutor::execute"

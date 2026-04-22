@@ -9,9 +9,6 @@ use Ineersa\AgentCore\Domain\Event\OutboxEntry;
 use Ineersa\AgentCore\Domain\Event\OutboxSink;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 
-/**
- * Buffers outbox entries in memory with sink-based deduplication for domain event publication.
- */
 final class InMemoryOutboxStore implements OutboxStoreInterface
 {
     /**

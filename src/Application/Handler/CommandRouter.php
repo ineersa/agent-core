@@ -9,9 +9,6 @@ use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\RoutedCommand;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 
-/**
- * Routes ApplyCommand messages to the matching handler by command kind, resolving extension-prefixed commands via the handler registry.
- */
 final class CommandRouter
 {
     public function __construct(

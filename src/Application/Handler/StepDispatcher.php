@@ -7,9 +7,6 @@ namespace Ineersa\AgentCore\Application\Handler;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
-/**
- * Routes execution effects to the execution bus and projection messages to the publisher bus.
- */
 final readonly class StepDispatcher
 {
     public function __construct(

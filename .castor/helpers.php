@@ -108,22 +108,6 @@ function summarize_php_cs_fixer_json(string $jsonOutput): string
     return \sprintf('files_fixed=%d', $fileCount);
 }
 
-function summarize_summaries_log(string $output): string
-{
-    $output = trim($output);
-    if ('' === $output) {
-        return 'summary unavailable';
-    }
-
-    if (preg_match('/^Checked:\s*(\d+)/m', $output, $checked)
-        && preg_match('/^Missing:\s*(\d+)/m', $output, $missing)
-    ) {
-        return \sprintf('checked=%d,missing=%d', $checked[1], $missing[1]);
-    }
-
-    return 'summary unavailable';
-}
-
 function phpunit_inputs_available(): bool
 {
     foreach (['phpunit.xml', 'phpunit.xml.dist', 'phpunit.dist.xml'] as $configFile) {

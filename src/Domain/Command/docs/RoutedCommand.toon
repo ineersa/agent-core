@@ -2,18 +2,8 @@ spec: agent-core.file-index/v1
 file: RoutedCommand.php
 class: "Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand"
 type: readonly final class
-summary: "Discriminated command wrapper that classifies a pending command as core-routable, extension-delegated, or rejected."
-sections[2]:
-  - kind: classDoc
-    start: 7
-    end: 9
-    limit: 3
-  - kind: constructor
-    start: 12
-    end: 25
-    limit: 14
-    signatureLine: 18
-    commentStart: 12
+sections[1]{kind,start,end,limit,signatureLine,commentStart}:
+  constructor,9,22,14,15,9
 constructorInputs[5]{param,type,required}:
   $status,string,true
   $kind,string,true
@@ -22,41 +12,41 @@ constructorInputs[5]{param,type,required}:
   $reason,?string,false
 methods[5]:
   - method: __construct
-    start: 12
-    end: 25
+    start: 9
+    end: 22
     limit: 14
-    symbolLine: 18
+    symbolLine: 15
     symbolColumn: 22
     signature: "private function __construct(string $status, string $kind, array $payload = [], array $options = [], ?string $reason = null)"
   - method: core
-    start: 27
-    end: 36
+    start: 24
+    end: 33
     limit: 10
-    symbolLine: 33
+    symbolLine: 30
     symbolColumn: 28
     signature: "static public function core(string $kind, array $payload, array $options): self"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::route"
   - method: extension
-    start: 38
-    end: 47
+    start: 35
+    end: 44
     limit: 10
-    symbolLine: 44
+    symbolLine: 41
     symbolColumn: 28
     signature: "static public function extension(string $kind, array $payload, array $options): self"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::route"
   - method: rejected
-    start: 49
-    end: 52
+    start: 46
+    end: 49
     limit: 4
-    symbolLine: 49
+    symbolLine: 46
     symbolColumn: 28
     signature: "static public function rejected(string $kind, string $reason): self"
     callers[1]: "Ineersa\\AgentCore\\Application\\Handler\\CommandRouter::route"
   - method: isRejected
-    start: 54
-    end: 57
+    start: 51
+    end: 54
     limit: 4
-    symbolLine: 54
+    symbolLine: 51
     symbolColumn: 21
     signature: "public function isRejected(): bool"
     callers[1]: "Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler::handle"

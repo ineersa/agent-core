@@ -2,7 +2,5 @@ spec: agent-core.file-index/v1
 file: TurnEndEvent.php
 class: "Ineersa\\AgentCore\\Domain\\Event\\Lifecycle\\TurnEndEvent"
 type: readonly final class
-summary: Represents a domain event signaling the conclusion of an agent turn within the lifecycle. This readonly value object encapsulates the immutable state of a completed interaction step. It serves as a structural component for event-driven architecture without performing actions.
-sections[2]{kind,start,end,limit}:
-  classDoc,9,11,3
-  constants,14,14,1
+sections[1]{kind,start,end,limit}:
+  constants,11,11,1

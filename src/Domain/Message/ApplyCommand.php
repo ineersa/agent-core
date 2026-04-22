@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Message;
 
-/**
- * Bus message commanding the application of an external command (steer, cancel, etc.) to an active run step.
- */
 final readonly class ApplyCommand extends AbstractAgentBusMessage
 {
     /**

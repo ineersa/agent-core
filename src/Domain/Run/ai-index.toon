@@ -3,10 +3,10 @@ namespace: "Domain\\Run"
 fqcn: "Ineersa\\AgentCore\\Domain\\Run"
 updatedAt: 2026-04-22
 description: "Run lifecycle value objects — identity, state, status enum, and input DTO for starting runs."
-files[6]{file,type,summary}:
-  RunAccessScope.php,readonly final class,"Encapsulates the run's access context — run identity, optional tenant/user scopes, and session metadata — for authorization decisions."
-  RunHandle.php,readonly final class,A value object representing a unique identifier for a run within the agent core domain. It encapsulates the run ID as a strongly-typed string to enforce type safety and semantic clarity across the application.
-  RunId.php,readonly final class,A value object representing a unique identifier for a run within the agent core domain. It encapsulates a string value to ensure type safety and immutability for run identification. This class supports string conversion and programmatic generation of new identifiers.
-  RunState.php,readonly final class,"Immutable snapshot of a run's current state — status, conversation messages, progression counters, and pending tool calls."
-  RunStatus.php,enum,"Enumerates the closed set of run lifecycle states from queued through terminal (completed, failed, cancelled)."
-  StartRunInput.php,readonly final class,"Input payload for starting a new run, carrying the system prompt, initial message history, and optional metadata."
+files[6]{file,type}:
+  RunAccessScope.php,readonly final class
+  RunHandle.php,readonly final class
+  RunId.php,readonly final class
+  RunState.php,readonly final class
+  RunStatus.php,enum
+  StartRunInput.php,readonly final class

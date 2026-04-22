@@ -10,9 +10,6 @@ use Ineersa\AgentCore\Domain\Message\ProjectMercureOutbox;
 use Ineersa\AgentCore\Infrastructure\Mercure\RunEventPublisher;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
-/**
- * Bus handler that drains pending outbox events and publishes them to Mercure subscribers.
- */
 #[AsMessageHandler(bus: 'agent.publisher.bus')]
 final readonly class MercureOutboxProjectorWorker
 {

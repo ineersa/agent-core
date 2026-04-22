@@ -2,7 +2,5 @@ spec: agent-core.file-index/v1
 file: ToolExecutionMode.php
 class: "Ineersa\\AgentCore\\Domain\\Tool\\ToolExecutionMode"
 type: enum
-summary: Defines the execution modes for tools within the agent core domain. This enum provides a type-safe way to distinguish between different operational contexts for tool invocation. It serves as a value object to enforce strict typing for execution behavior.
-sections[2]{kind,start,end,limit}:
-  classDoc,7,9,3
-  constants,12,14,3
+sections[1]{kind,start,end,limit}:
+  constants,9,11,3

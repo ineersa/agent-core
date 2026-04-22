@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Message;
 
-/**
- * Result of a single tool call execution, carrying the tool identity, output content, and optional error.
- */
 final readonly class ToolCallResult extends AbstractAgentBusMessage
 {
     /**

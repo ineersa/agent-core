@@ -3,9 +3,9 @@ namespace: "Contract\\Tool"
 fqcn: "Ineersa\\AgentCore\\Contract\\Tool"
 updatedAt: 2026-04-22
 description: "Tool execution contracts — platform invocation, model resolution, tool catalog discovery, tool executor, and idempotency key resolution."
-files[5]{file,type,summary}:
-  ModelResolverInterface.php,interface,Resolves the target AI model configuration from message context and default settings.
-  PlatformInterface.php,interface,Executes AI model invocations and returns structured provider responses.
-  ToolCatalogProviderInterface.php,interface,Resolves the available tool catalog from execution context.
-  ToolExecutorInterface.php,interface,Executes a tool call and returns the structured result.
-  ToolIdempotencyKeyResolverInterface.php,interface,Resolves idempotency keys for tool calls to ensure consistent deduplication.
+files[5]{file,type}:
+  ModelResolverInterface.php,interface
+  PlatformInterface.php,interface
+  ToolCatalogProviderInterface.php,interface
+  ToolExecutorInterface.php,interface
+  ToolIdempotencyKeyResolverInterface.php,interface

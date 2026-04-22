@@ -3,15 +3,15 @@ namespace: Contract
 fqcn: "Ineersa\\AgentCore\\Contract"
 updatedAt: 2026-04-22
 description: "Stable public interfaces for the agent loop: runner API, storage abstractions, tool execution, hook system, and extension seams. Implementations live in Infrastructure/."
-files[8]{file,type,summary}:
-  AgentRunnerInterface.php,interface,"Orchestrates agent execution runs through start, steer, follow-up, and cancel lifecycle operations."
-  ArtifactStoreInterface.php,interface,"Persists named execution artifacts (logs, intermediate outputs) to a storage backend."
-  CommandStoreInterface.php,interface,"Manages the lifecycle of pending commands per run — enqueue, idempotency checks, status queries, and state transitions."
-  EventStoreInterface.php,interface,Persists and retrieves execution events scoped to individual runs.
-  OutboxStoreInterface.php,interface,"Ensures reliable delivery of outbound events via enqueue, batch claim, and completion tracking."
-  PromptStateStoreInterface.php,interface,"Stores, fetches, and removes structured prompt state keyed by run identifier."
-  RunAccessStoreInterface.php,interface,Persists access scopes per run with atomic save and timestamp-based access tracking.
-  RunStoreInterface.php,interface,Persists run states with optimistic concurrency control via compare-and-swap and stale-run detection.
+files[8]{file,type}:
+  AgentRunnerInterface.php,interface
+  ArtifactStoreInterface.php,interface
+  CommandStoreInterface.php,interface
+  EventStoreInterface.php,interface
+  OutboxStoreInterface.php,interface
+  PromptStateStoreInterface.php,interface
+  RunAccessStoreInterface.php,interface
+  RunStoreInterface.php,interface
 subNamespaces[3]{namespace,fqcn,path,description,index}:
   Hook,"Ineersa\\AgentCore\\Contract\\Hook",Hook,"Hook interfaces for intercepting agent loop lifecycle: context transforms, LLM conversion, tool call boundaries, cancellation tokens, message providers.",Hook/ai-index.toon
   Extension,"Ineersa\\AgentCore\\Contract\\Extension",Extension,"Extension seam interfaces — command handlers, event subscribers, hook subscribers for third-party integrations.",Extension/ai-index.toon

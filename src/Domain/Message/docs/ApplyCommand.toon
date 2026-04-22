@@ -2,18 +2,8 @@ spec: agent-core.file-index/v1
 file: ApplyCommand.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\ApplyCommand"
 type: readonly final class
-summary: "Bus message commanding the application of an external command (steer, cancel, etc.) to an active run step."
-sections[2]:
-  - kind: classDoc
-    start: 7
-    end: 9
-    limit: 3
-  - kind: constructor
-    start: 12
-    end: 29
-    limit: 18
-    signatureLine: 18
-    commentStart: 12
+sections[1]{kind,start,end,limit,signatureLine,commentStart}:
+  constructor,9,26,18,15,9
 constructorInputs[8]{param,type,required}:
   $runId,string,true
   $turnNo,int,true
@@ -25,10 +15,10 @@ constructorInputs[8]{param,type,required}:
   $options,array,false
 methods[1]:
   - method: __construct
-    start: 12
-    end: 29
+    start: 9
+    end: 26
     limit: 18
-    symbolLine: 18
+    symbolLine: 15
     symbolColumn: 21
     signature: "public function __construct(string $runId, int $turnNo, string $stepId, int $attempt, string $idempotencyKey, string $kind, array $payload = [], array $options = [])"
     callees[1]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::__construct"

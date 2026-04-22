@@ -2,18 +2,8 @@ spec: agent-core.file-index/v1
 file: AgentMessage.php
 class: "Ineersa\\AgentCore\\Domain\\Message\\AgentMessage"
 type: readonly final class
-summary: "Represents a canonical transcript message at bundle boundaries, including role/content and JS-parity fields for tool calls, errors, and metadata."
-sections[2]:
-  - kind: classDoc
-    start: 7
-    end: 9
-    limit: 3
-  - kind: constructor
-    start: 12
-    end: 29
-    limit: 18
-    signatureLine: 18
-    commentStart: 12
+sections[1]{kind,start,end,limit,signatureLine,commentStart}:
+  constructor,9,26,18,15,9
 constructorInputs[9]{param,type,required}:
   $role,string,true
   $content,array,true
@@ -26,33 +16,33 @@ constructorInputs[9]{param,type,required}:
   $metadata,array,false
 methods[4]:
   - method: __construct
-    start: 12
-    end: 29
+    start: 9
+    end: 26
     limit: 18
-    symbolLine: 18
+    symbolLine: 15
     symbolColumn: 21
     signature: "public function __construct(string $role, array $content, ?DateTimeImmutable $timestamp = null, ?string $name = null, ?string $toolCallId = null, ?string $toolName = null, mixed $details = null, bool $isError = false, array $metadata = [])"
   - method: fromPayload
-    start: 31
-    end: 73
+    start: 28
+    end: 70
     limit: 43
-    symbolLine: 36
+    symbolLine: 33
     symbolColumn: 28
     signature: "static public function fromPayload(array $payload): ?self"
     callers[4]: "Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyPendingStopBoundaryCommands","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::messagesFromPayload","Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\Platform::resolveContextMessages"
   - method: isCustomRole
-    start: 75
-    end: 78
+    start: 72
+    end: 75
     limit: 4
-    symbolLine: 75
+    symbolLine: 72
     symbolColumn: 21
     signature: "public function isCustomRole(): bool"
     callers[1]: "Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\SymfonyMessageMapper::userText"
   - method: toArray
-    start: 80
-    end: 118
+    start: 77
+    end: 115
     limit: 39
-    symbolLine: 85
+    symbolLine: 82
     symbolColumn: 21
     signature: "public function toArray(): array"
     callees[1]: "DateTimeImmutable::format"

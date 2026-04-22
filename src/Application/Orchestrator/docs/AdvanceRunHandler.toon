@@ -2,17 +2,8 @@ spec: agent-core.file-index/v1
 file: AdvanceRunHandler.php
 class: "Ineersa\\AgentCore\\Application\\Orchestrator\\AdvanceRunHandler"
 type: readonly final class
-summary: The AdvanceRunHandler applies turn-start mailbox policy and prepares the next LLM execution turn when the run can continue.
-sections[2]:
-  - kind: classDoc
-    start: 15
-    end: 17
-    limit: 3
-  - kind: constructor
-    start: 20
-    end: 26
-    limit: 7
-    signatureLine: 20
+sections[1]{kind,start,end,limit,signatureLine}:
+  constructor,17,23,7,17
 constructorInputs[4]{param,type,required}:
   $commandMailboxPolicy,CommandMailboxPolicy,true
   $stateTools,RunMessageStateTools,true
@@ -25,34 +16,34 @@ wiring:
       autowire: true
       autoconfigure: true
       file: src/Application/Orchestrator/AdvanceRunHandler.php
-      line: 18
+      line: 15
       args:
         "$commandMailboxPolicy": "service(Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy)"
         "$metrics": "service(Ineersa\\AgentCore\\Application\\Handler\\RunMetrics)"
         "$stateTools": "service(Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools)"
         "$tracer": "service(Ineersa\\AgentCore\\Application\\Handler\\RunTracer)"
   injectedInto[1]{fqcn,file,line}:
-    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor",src/Application/Orchestrator/RunMessageProcessor.php,17
+    "Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor",src/Application/Orchestrator/RunMessageProcessor.php,14
 methods[3]:
   - method: __construct
-    start: 20
-    end: 26
+    start: 17
+    end: 23
     limit: 7
-    symbolLine: 20
+    symbolLine: 17
     symbolColumn: 21
     signature: "public function __construct(CommandMailboxPolicy $commandMailboxPolicy, RunMessageStateTools $stateTools, ?RunMetrics $metrics = null, ?RunTracer $tracer = null)"
   - method: supports
-    start: 28
-    end: 31
+    start: 25
+    end: 28
     limit: 4
-    symbolLine: 28
+    symbolLine: 25
     symbolColumn: 21
     signature: "public function supports(object $message): bool"
   - method: handle
-    start: 33
-    end: 144
+    start: 30
+    end: 141
     limit: 112
-    symbolLine: 33
+    symbolLine: 30
     symbolColumn: 21
     signature: "public function handle(object $message, RunState $state): HandlerResult"
     callees[7]: "Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::runId","Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy::applyPendingTurnStartCommands","Ineersa\\AgentCore\\Application\\Handler\\RunTracer::inSpan","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::eventsFromSpecs","Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageStateTools::copyState","Ineersa\\AgentCore\\Domain\\Message\\AbstractAgentBusMessage::stepId","Ineersa\\AgentCore\\Application\\Handler\\RunMetrics::recordTurnStarted"

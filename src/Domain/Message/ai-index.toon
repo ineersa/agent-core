@@ -3,18 +3,18 @@ namespace: "Domain\\Message"
 fqcn: "Ineersa\\AgentCore\\Domain\\Message"
 updatedAt: 2026-04-22
 description: "Message bus envelopes — AgentMessage DTO, MessageBag, bus commands, results, and outbox projection signals."
-files[14]{file,type,summary}:
-  AbstractAgentBusMessage.php,readonly abstract class,"Base value object for agent bus messages, carrying run/turn/step identity and idempotency metadata shared across all execution commands and results."
-  AdvanceRun.php,readonly final class,"Bus message commanding the advancement of a run to its next processing step, carrying a payload for the target state."
-  AgentBusMessageInterface.php,interface,"Defines the contract for domain messages dispatched via the agent bus, ensuring consistent metadata for execution tracking. It enforces the presence of unique identifiers and sequence numbers required for reliable event processing and state management."
-  AgentMessage.php,readonly final class,"Represents a canonical transcript message at bundle boundaries, including role/content and JS-parity fields for tool calls, errors, and metadata."
-  ApplyCommand.php,readonly final class,"Bus message commanding the application of an external command (steer, cancel, etc.) to an active run step."
-  CollectToolBatch.php,readonly final class,Bus message commanding the collection and dispatch of a batch of pending tool calls for parallel or sequential execution.
-  ExecuteLlmStep.php,readonly final class,"Bus message commanding the execution of a single LLM inference step, referencing context and tool snapshots."
-  ExecuteToolCall.php,readonly final class,Bus message commanding the execution of a single tool call with its arguments and optional schema.
-  LlmStepResult.php,readonly final class,"Result of a single LLM inference step, carrying the assistant message, usage statistics, and optional error."
-  MessageBag.php,readonly final class,"An immutable collection of domain message objects, providing empty-instance creation and typed retrieval."
-  ProjectJsonlOutbox.php,readonly final class,"Configuration value object for JSON Lines outbox delivery, specifying batch size and retry delay."
-  ProjectMercureOutbox.php,readonly final class,"Configuration value object for Mercure outbox delivery, specifying batch size and retry delay."
-  StartRun.php,readonly final class,"Bus message commanding the initiation of a new agent run, carrying the initial payload for execution."
-  ToolCallResult.php,readonly final class,"Result of a single tool call execution, carrying the tool identity, output content, and optional error."
+files[14]{file,type}:
+  AbstractAgentBusMessage.php,readonly abstract class
+  AdvanceRun.php,readonly final class
+  AgentBusMessageInterface.php,interface
+  AgentMessage.php,readonly final class
+  ApplyCommand.php,readonly final class
+  CollectToolBatch.php,readonly final class
+  ExecuteLlmStep.php,readonly final class
+  ExecuteToolCall.php,readonly final class
+  LlmStepResult.php,readonly final class
+  MessageBag.php,readonly final class
+  ProjectJsonlOutbox.php,readonly final class
+  ProjectMercureOutbox.php,readonly final class
+  StartRun.php,readonly final class
+  ToolCallResult.php,readonly final class

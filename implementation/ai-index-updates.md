@@ -46,26 +46,26 @@ wiring:
 
 ---
 
-## Phase 4 (Deferred): Summary Quality via Strict Agent (No CI Semantic Parser)
+## Phase 4 (Removed): Summary Curation Workflow
 
-### Goal
-Improve summary terminology quality using a strict, repeatable agent workflow instead of parser-based semantic lint.
+Summary-centric workflow was intentionally removed for experimentation:
 
-### Approach
-Create a dedicated summary-curator agent with namespace-specific rules and deterministic edit scope.
+- `dev:summaries` Castor task was deleted.
+- `scripts/generate-method-index.php` no longer reads or emits summary metadata.
+- Namespace `ai-index.toon` files no longer include `summary` in `files` entries.
+- Class docblock summary presence is no longer a quality gate.
+- `.agents/summary-curator.md` was removed.
 
-### Planned agent behavior
-1. Read changed PHP classes.
-2. Evaluate class docblock first summary sentence against namespace rules.
-3. Rewrite only summary sentence when terminology/responsibility is weak or wrong.
-4. Leave tags (`@param`, `@return`, etc.) intact.
-5. Re-run `LLM_MODE=true castor dev:summaries` and `LLM_MODE=true castor dev:check`.
+## Phase 5 (Implemented): Curated Description Maintainer Agent
 
-### Rule examples
-- `src/Domain/Event/**`: summary should use event terminology.
-- `src/Domain/Message/**`: avoid describing message DTOs as domain events unless explicitly intended.
-- `Execute*` message classes: describe as execution message/command/effect payloads.
+Added `.agents/index-maintainer.md` to maintain curated AI index descriptions in:
 
-### Guardrails
-- CI remains deterministic and enforces presence/format (`dev:summaries`, `dev:check`).
-- Agent improves wording quality; it does not become a hard semantic gate.
+- root `ai-index.toon`
+- namespace `src/**/ai-index.toon`
+
+The agent prompt now defines:
+
+- which fields are curated vs generated
+- one-sentence architecture-focused description style
+- schema expectations for root and namespace index files
+- required Castor regeneration/validation flow

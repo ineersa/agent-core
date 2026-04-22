@@ -2,15 +2,12 @@ spec: agent-core.file-index/v1
 file: Configuration.php
 class: "Ineersa\\AgentCore\\DependencyInjection\\Configuration"
 type: final class
-summary: "Defines the validated configuration tree for the AgentCore bundle (runtime, streaming, storage, tools, commands, events, checkpoints, retention)."
-sections[1]{kind,start,end,limit}:
-  classDoc,11,13,3
 methods[1]:
   - method: getConfigTreeBuilder
-    start: 16
-    end: 116
+    start: 13
+    end: 113
     limit: 101
-    symbolLine: 16
+    symbolLine: 13
     symbolColumn: 21
     signature: "public function getConfigTreeBuilder(): TreeBuilder"
     callees[21]: "Symfony\\Component\\Config\\Definition\\Builder\\TreeBuilder::getRootNode","Symfony\\Component\\Config\\Definition\\Builder\\ArrayNodeDefinition::addDefaultsIfNotSet","Symfony\\Component\\Config\\Definition\\Builder\\ArrayNodeDefinition::arrayPrototype","Symfony\\Component\\Config\\Definition\\Builder\\ArrayNodeDefinition::children","Symfony\\Component\\Config\\Definition\\Builder\\ArrayNodeDefinition::defaultValue","Symfony\\Component\\Config\\Definition\\Builder\\ArrayNodeDefinition::useAttributeAsKey","Symfony\\Component\\Config\\Definition\\Builder\\EnumNodeDefinition::values","Symfony\\Component\\Config\\Definition\\Builder\\ExprBuilder::end","Symfony\\Component\\Config\\Definition\\Builder\\ExprBuilder::ifTrue","Symfony\\Component\\Config\\Definition\\Builder\\ExprBuilder::thenInvalid","Symfony\\Component\\Config\\Definition\\Builder\\NodeBuilder::arrayNode","Symfony\\Component\\Config\\Definition\\Builder\\NodeBuilder::end","Symfony\\Component\\Config\\Definition\\Builder\\NodeBuilder::enumNode","Symfony\\Component\\Config\\Definition\\Builder\\NodeBuilder::integerNode","Symfony\\Component\\Config\\Definition\\Builder\\NodeBuilder::scalarNode","Symfony\\Component\\Config\\Definition\\Builder\\NodeDefinition::cannotBeEmpty","Symfony\\Component\\Config\\Definition\\Builder\\NodeDefinition::defaultNull","Symfony\\Component\\Config\\Definition\\Builder\\NodeDefinition::defaultValue","Symfony\\Component\\Config\\Definition\\Builder\\NodeDefinition::end","Symfony\\Component\\Config\\Definition\\Builder\\NodeDefinition::validate","Symfony\\Component\\Config\\Definition\\Builder\\NumericNodeDefinition::min"

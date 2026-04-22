@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Message;
 
-/**
- * Bus message commanding the collection and dispatch of a batch of pending tool calls for parallel or sequential execution.
- */
 final readonly class CollectToolBatch extends AbstractAgentBusMessage
 {
     /**

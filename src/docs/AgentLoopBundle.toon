@@ -2,8 +2,5 @@ spec: agent-core.file-index/v1
 file: AgentLoopBundle.php
 class: "Ineersa\\AgentCore\\AgentLoopBundle"
 type: final class
-summary: Symfony bundle entry point that registers the AgentCore extension for container configuration and service loading.
-sections[1]{kind,start,end,limit}:
-  classDoc,11,13,3
 methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  getContainerExtension,16,23,8,16,21,"public function getContainerExtension(): ?ExtensionInterface"
+  getContainerExtension,13,20,8,13,21,"public function getContainerExtension(): ?ExtensionInterface"

@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Command;
 
-/**
- * Discriminated command wrapper that classifies a pending command as core-routable, extension-delegated, or rejected.
- */
 final readonly class RoutedCommand
 {
     /**

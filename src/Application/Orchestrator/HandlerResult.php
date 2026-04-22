@@ -7,9 +7,6 @@ namespace Ineersa\AgentCore\Application\Orchestrator;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Run\RunState;
 
-/**
- * The HandlerResult captures the durable transition and post-commit work emitted by a run message handler.
- */
 final readonly class HandlerResult
 {
     /**

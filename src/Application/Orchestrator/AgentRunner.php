@@ -15,9 +15,6 @@ use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
-/**
- * Public API facade that dispatches start, continue, steer, and cancel commands to the agent message bus as idempotent execution messages.
- */
 final class AgentRunner implements AgentRunnerInterface
 {
     public function __construct(private readonly MessageBusInterface $commandBus)
