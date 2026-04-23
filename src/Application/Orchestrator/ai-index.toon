@@ -1,10 +1,10 @@
 spec: agent-core.ai-docs/v1
 namespace: "Application\\Orchestrator"
 fqcn: "Ineersa\\AgentCore\\Application\\Orchestrator"
-updatedAt: 2026-04-22
+updatedAt: 2026-04-23
 files[13]{file,type}:
   AdvanceRunHandler.php,readonly final class
-  AgentRunner.php,final class
+  AgentRunner.php,readonly final class
   ApplyCommandHandler.php,readonly final class
   CommandMailboxPolicy.php,readonly final class
   HandlerResult.php,readonly final class

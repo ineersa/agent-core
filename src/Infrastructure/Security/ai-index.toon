@@ -1,0 +1,6 @@
+spec: agent-core.ai-docs/v1
+namespace: Security
+fqcn: "Ineersa\\AgentCore\\Infrastructure\\Security"
+updatedAt: 2026-04-23
+files[1]{file,type}:
+  AllowAllAuthorizeRun.php,final class

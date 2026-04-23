@@ -1,0 +1,14 @@
+spec: agent-core.file-index/v1
+file: StartRunMetadataRequest.php
+class: "Ineersa\\AgentCore\\Api\\Dto\\StartRunMetadataRequest"
+type: final class
+sections[1]{kind,start,end,limit,signatureLine,commentStart}:
+  constructor,12,31,20,16,12
+constructorInputs[5]{param,type,required}:
+  $tenant_id,?string,true
+  $user_id,?string,true
+  $session,array,false
+  $model,?string,false
+  $tools_scope,?array,false
+methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
+  __construct,12,31,20,16,21,"public function __construct(?string $tenant_id, ?string $user_id, array $session = [], ?string $model = null, ?array $tools_scope = null)"

@@ -1,0 +1,22 @@
+spec: agent-core.file-index/v1
+file: StringUtils.php
+class: "Ineersa\\AgentCore\\Utils\\StringUtils"
+type: final class
+sections[1]{kind,start,end,limit,signatureLine}:
+  constructor,9,11,3,9
+methods[2]:
+  - method: __construct
+    start: 9
+    end: 11
+    limit: 3
+    symbolLine: 9
+    symbolColumn: 22
+    signature: private function __construct()
+  - method: normalizeNullable
+    start: 13
+    end: 22
+    limit: 10
+    symbolLine: 13
+    symbolColumn: 28
+    signature: "static public function normalizeNullable(mixed $value): ?string"
+    callers[7]: "Ineersa\\AgentCore\\Api\\Dto\\RunCommandRequest::$idempotency_key::set","Ineersa\\AgentCore\\Api\\Dto\\RunCommandRequest::$kind::set","Ineersa\\AgentCore\\Api\\Dto\\StartRunMetadataRequest::$model::set","Ineersa\\AgentCore\\Api\\Dto\\StartRunMetadataRequest::$tenant_id::set","Ineersa\\AgentCore\\Api\\Dto\\StartRunMetadataRequest::$user_id::set","Ineersa\\AgentCore\\Api\\Dto\\StartRunRequest::$prompt::set","Ineersa\\AgentCore\\Api\\Dto\\StartRunRequest::$system_prompt::set"

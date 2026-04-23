@@ -10,7 +10,7 @@ wiring:
   aliases[1]{serviceId,target}:
     "Ineersa\\AgentCore\\Contract\\RunAccessStoreInterface","Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunAccessStore"
   injectedInto[2]{fqcn,file,line}:
-    "Ineersa\\AgentCore\\Api\\Http\\RunApiController",src/Api/Http/RunApiController.php,29
+    "Ineersa\\AgentCore\\Api\\Http\\RunApiController",src/Api/Http/RunApiController.php,35
     "Ineersa\\AgentCore\\Api\\Http\\RunReadService",src/Api/Http/RunReadService.php,15
 methods[3]:
   - method: save

@@ -1,7 +1,7 @@
 spec: agent-core.ai-docs/v1
 namespace: "Domain\\Tool"
 fqcn: "Ineersa\\AgentCore\\Domain\\Tool"
-updatedAt: 2026-04-22
+updatedAt: 2026-04-23
 files[8]{file,type}:
   PlatformInvocationResult.php,readonly final class
   ProviderRequest.php,readonly final class

@@ -1,0 +1,16 @@
+spec: agent-core.file-index/v1
+file: AuthorizeRunInterface.php
+class: "Ineersa\\AgentCore\\Contract\\Api\\AuthorizeRunInterface"
+type: interface
+wiring:
+  aliases[1]{serviceId,target}:
+    "Ineersa\\AgentCore\\Contract\\Api\\AuthorizeRunInterface","Ineersa\\AgentCore\\Infrastructure\\Security\\AllowAllAuthorizeRun"
+methods[1]:
+  - method: authorize
+    start: 11
+    end: 16
+    limit: 6
+    symbolLine: 16
+    symbolColumn: 21
+    signature: "public function authorize(Request $request, string $route): void"
+    callers[1]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::authorize"

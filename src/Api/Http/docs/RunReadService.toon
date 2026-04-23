@@ -23,7 +23,7 @@ wiring:
         "$runLogReader": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader)"
         "$runStore": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunStore)"
   injectedInto[1]{fqcn,file,line}:
-    "Ineersa\\AgentCore\\Api\\Http\\RunApiController",src/Api/Http/RunApiController.php,29
+    "Ineersa\\AgentCore\\Api\\Http\\RunApiController",src/Api/Http/RunApiController.php,35
 methods[9]:
   - method: __construct
     start: 17

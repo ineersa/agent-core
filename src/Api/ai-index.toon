@@ -3,4 +3,4 @@ namespace: Api
 fqcn: "Ineersa\\AgentCore\\Api"
 description: "HTTP controllers, DTOs, and serializers for run lifecycle, commands, transcript reads, and event streaming."
 files[0]:
-updatedAt: 2026-04-22
+updatedAt: 2026-04-23

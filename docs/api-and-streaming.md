@@ -2,6 +2,19 @@
 
 `agent-core` exposes HTTP endpoints for run control/read APIs and uses Mercure for real-time event delivery.
 
+## Route import (bundle consumers)
+
+To activate API endpoints in a host app, import controller attributes via:
+
+```yaml
+# config/routes/agent_loop.yaml
+agent_loop_api:
+  resource: '@AgentLoopBundle/Api/Http/'
+  type: attribute
+```
+
+A ready-to-copy file is provided in this repository at `config/routes/agent_loop.yaml`.
+
 ## REST endpoints
 
 - **`POST /agent/runs`**

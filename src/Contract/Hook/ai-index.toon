@@ -1,7 +1,7 @@
 spec: agent-core.ai-docs/v1
 namespace: "Contract\\Hook"
 fqcn: "Ineersa\\AgentCore\\Contract\\Hook"
-updatedAt: 2026-04-22
+updatedAt: 2026-04-23
 files[7]{file,type}:
   BeforeProviderRequestHookInterface.php,interface
   CancellationTokenInterface.php,interface

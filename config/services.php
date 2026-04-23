@@ -47,6 +47,7 @@ use Ineersa\AgentCore\Command\AgentLoopRunRebuildHotStateCommand;
 use Ineersa\AgentCore\Command\AgentLoopRunReplayCommand;
 use Ineersa\AgentCore\Command\AgentLoopRunTailCommand;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
+use Ineersa\AgentCore\Contract\Api\AuthorizeRunInterface;
 use Ineersa\AgentCore\Contract\ArtifactStoreInterface;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
@@ -74,6 +75,7 @@ use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunAccessStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\Storage\LocalArtifactStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
+use Ineersa\AgentCore\Infrastructure\Security\AllowAllAuthorizeRun;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogWriter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Platform;
@@ -156,6 +158,9 @@ return static function (ContainerConfigurator $container): void {
     ;
     $services->set(RunTopicPolicy::class);
     $services->set(RunReadService::class);
+
+    $services->set(AllowAllAuthorizeRun::class);
+    $services->alias(AuthorizeRunInterface::class, AllowAllAuthorizeRun::class);
 
     $services->set(RunApiController::class)
         ->arg('$commandBus', service('agent.command.bus'))

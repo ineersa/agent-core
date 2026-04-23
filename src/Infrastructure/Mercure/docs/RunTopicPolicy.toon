@@ -6,7 +6,7 @@ wiring:
   serviceDefinitions[1]{serviceId,visibility,autowire,autoconfigure,file,line}:
     "Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunTopicPolicy",private,true,true,src/Infrastructure/Mercure/RunTopicPolicy.php,7
   injectedInto[2]{fqcn,file,line}:
-    "Ineersa\\AgentCore\\Api\\Http\\RunApiController",src/Api/Http/RunApiController.php,29
+    "Ineersa\\AgentCore\\Api\\Http\\RunApiController",src/Api/Http/RunApiController.php,35
     "Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunEventPublisher",src/Infrastructure/Mercure/RunEventPublisher.php,12
 methods[2]:
   - method: topicFor

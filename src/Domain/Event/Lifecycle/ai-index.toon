@@ -1,7 +1,7 @@
 spec: agent-core.ai-docs/v1
 namespace: "Domain\\Event\\Lifecycle"
 fqcn: "Ineersa\\AgentCore\\Domain\\Event\\Lifecycle"
-updatedAt: 2026-04-22
+updatedAt: 2026-04-23
 files[11]{file,type}:
   AbstractLifecycleRunEvent.php,readonly abstract class
   AgentEndEvent.php,readonly final class

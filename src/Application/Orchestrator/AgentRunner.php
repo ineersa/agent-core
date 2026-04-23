@@ -15,9 +15,9 @@ use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
-final class AgentRunner implements AgentRunnerInterface
+final readonly class AgentRunner implements AgentRunnerInterface
 {
-    public function __construct(private readonly MessageBusInterface $commandBus)
+    public function __construct(private MessageBusInterface $commandBus)
     {
     }
 

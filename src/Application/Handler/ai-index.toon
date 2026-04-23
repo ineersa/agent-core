@@ -1,7 +1,7 @@
 spec: agent-core.ai-docs/v1
 namespace: "Application\\Handler"
 fqcn: "Ineersa\\AgentCore\\Application\\Handler"
-updatedAt: 2026-04-22
+updatedAt: 2026-04-23
 files[25]{file,type}:
   CommandHandlerRegistry.php,final class
   CommandRouter.php,final class

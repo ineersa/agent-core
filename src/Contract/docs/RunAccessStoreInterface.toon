@@ -21,7 +21,7 @@ methods[3]:
     symbolLine: 13
     symbolColumn: 21
     signature: "public function get(string $runId): ?RunAccessScope"
-    callers[4]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::authorizeRun","Ineersa\\AgentCore\\Api\\Http\\RunReadService::replayAfter","Ineersa\\AgentCore\\Api\\Http\\RunReadService::summary","Ineersa\\AgentCore\\Api\\Http\\RunReadService::transcriptPage"
+    callers[3]: "Ineersa\\AgentCore\\Api\\Http\\RunReadService::replayAfter","Ineersa\\AgentCore\\Api\\Http\\RunReadService::summary","Ineersa\\AgentCore\\Api\\Http\\RunReadService::transcriptPage"
   - method: touch
     start: 15
     end: 15

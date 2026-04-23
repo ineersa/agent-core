@@ -1,0 +1,27 @@
+spec: agent-core.file-index/v1
+file: RunCommandRequest.php
+class: "Ineersa\\AgentCore\\Api\\Dto\\RunCommandRequest"
+type: final class
+sections[1]{kind,start,end,limit,signatureLine,commentStart}:
+  constructor,14,30,17,18,14
+constructorInputs[4]{param,type,required}:
+  $kind,?string,true
+  $idempotency_key,?string,true
+  $payload,array,false
+  $options,array,false
+methods[2]:
+  - method: __construct
+    start: 14
+    end: 30
+    limit: 17
+    symbolLine: 18
+    symbolColumn: 21
+    signature: "public function __construct(?string $kind, ?string $idempotency_key, array $payload = [], array $options = [])"
+  - method: validate
+    start: 32
+    end: 72
+    limit: 41
+    symbolLine: 33
+    symbolColumn: 21
+    signature: "public function validate(ExecutionContextInterface $context): void"
+    callees[1]: "Ineersa\\AgentCore\\Domain\\Command\\CoreCommandKind::isCore"

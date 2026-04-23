@@ -1,10 +1,10 @@
 spec: agent-core.file-index/v1
 file: RunApiController.php
 class: "Ineersa\\AgentCore\\Api\\Http\\RunApiController"
-type: final class
+type: readonly final class
 sections[1]{kind,start,end,limit,signatureLine}:
-  constructor,31,40,10,31
-constructorInputs[7]{param,type,required}:
+  constructor,37,47,11,37
+constructorInputs[8]{param,type,required}:
   $runner,AgentRunnerInterface,true
   $commandBus,MessageBusInterface,true
   $runStore,RunStoreInterface,true
@@ -12,6 +12,7 @@ constructorInputs[7]{param,type,required}:
   $runReadService,RunReadService,true
   $eventSerializer,RunEventSerializer,true
   $topicPolicy,RunTopicPolicy,true
+  $authorizeRun,AuthorizeRunInterface,true
 wiring:
   serviceDefinitions[1]:
     - serviceId: "Ineersa\\AgentCore\\Api\\Http\\RunApiController"
@@ -19,8 +20,9 @@ wiring:
       autowire: true
       autoconfigure: true
       file: src/Api/Http/RunApiController.php
-      line: 29
+      line: 35
       args:
+        "$authorizeRun": "service(Ineersa\\AgentCore\\Infrastructure\\Security\\AllowAllAuthorizeRun)"
         "$commandBus": service(agent.command.bus)
         "$eventSerializer": "service(Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer)"
         "$runAccessStore": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunAccessStore)"
@@ -28,101 +30,60 @@ wiring:
         "$runStore": "service(Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunStore)"
         "$runner": "service(Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner)"
         "$topicPolicy": "service(Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunTopicPolicy)"
-methods[12]:
+methods[7]:
   - method: __construct
-    start: 31
-    end: 40
-    limit: 10
-    symbolLine: 31
+    start: 37
+    end: 47
+    limit: 11
+    symbolLine: 37
     symbolColumn: 21
-    signature: "public function __construct(AgentRunnerInterface $runner, MessageBusInterface $commandBus, RunStoreInterface $runStore, RunAccessStoreInterface $runAccessStore, RunReadService $runReadService, RunEventSerializer $eventSerializer, RunTopicPolicy $topicPolicy)"
+    signature: "public function __construct(AgentRunnerInterface $runner, MessageBusInterface $commandBus, RunStoreInterface $runStore, RunAccessStoreInterface $runAccessStore, RunReadService $runReadService, RunEventSerializer $eventSerializer, RunTopicPolicy $topicPolicy, AuthorizeRunInterface $authorizeRun)"
   - method: startRun
-    start: 42
-    end: 115
-    limit: 74
-    symbolLine: 46
+    start: 49
+    end: 97
+    limit: 49
+    symbolLine: 50
     symbolColumn: 21
-    signature: "public function startRun(Request $request): JsonResponse"
-    callees[7]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::error","Ineersa\\AgentCore\\Api\\Http\\RunApiController::jsonBody","Ineersa\\AgentCore\\Api\\Http\\RunApiController::normalizeString","Ineersa\\AgentCore\\Api\\Http\\RunApiController::requestActor","Ineersa\\AgentCore\\Contract\\AgentRunnerInterface::start","Ineersa\\AgentCore\\Contract\\RunAccessStoreInterface::save","Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunTopicPolicy::topicFor"
+    signature: "public function startRun(Request $request, StartRunRequest $payload): JsonResponse"
+    callees[4]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::authorize","Ineersa\\AgentCore\\Contract\\AgentRunnerInterface::start","Ineersa\\AgentCore\\Contract\\RunAccessStoreInterface::save","Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunTopicPolicy::topicFor"
   - method: sendCommand
-    start: 117
-    end: 203
-    limit: 87
-    symbolLine: 121
+    start: 99
+    end: 142
+    limit: 44
+    symbolLine: 100
     symbolColumn: 21
-    signature: "public function sendCommand(string $runId, Request $request): JsonResponse"
-    callees[7]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::authorizeRun","Ineersa\\AgentCore\\Api\\Http\\RunApiController::error","Ineersa\\AgentCore\\Api\\Http\\RunApiController::jsonBody","Ineersa\\AgentCore\\Api\\Http\\RunApiController::normalizeString","Ineersa\\AgentCore\\Contract\\RunAccessStoreInterface::touch","Ineersa\\AgentCore\\Contract\\RunStoreInterface::get","Ineersa\\AgentCore\\Domain\\Command\\CoreCommandKind::isCore"
+    signature: "public function sendCommand(string $runId, Request $request, RunCommandRequest $payload): JsonResponse"
+    callees[3]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::authorize","Ineersa\\AgentCore\\Contract\\RunAccessStoreInterface::touch","Ineersa\\AgentCore\\Contract\\RunStoreInterface::get"
   - method: runSummary
-    start: 205
-    end: 224
-    limit: 20
-    symbolLine: 209
+    start: 144
+    end: 156
+    limit: 13
+    symbolLine: 145
     symbolColumn: 21
     signature: "public function runSummary(string $runId, Request $request): JsonResponse"
-    callees[4]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::authorizeRun","Ineersa\\AgentCore\\Api\\Http\\RunApiController::error","Ineersa\\AgentCore\\Api\\Http\\RunReadService::summary","Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunTopicPolicy::topicFor"
+    callees[3]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::authorize","Ineersa\\AgentCore\\Api\\Http\\RunReadService::summary","Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunTopicPolicy::topicFor"
   - method: transcriptPage
-    start: 226
-    end: 246
-    limit: 21
-    symbolLine: 230
-    symbolColumn: 21
-    signature: "public function transcriptPage(string $runId, Request $request): JsonResponse"
-    callees[4]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::authorizeRun","Ineersa\\AgentCore\\Api\\Http\\RunApiController::error","Ineersa\\AgentCore\\Api\\Http\\RunApiController::parseNonNegativeInt","Ineersa\\AgentCore\\Api\\Http\\RunReadService::transcriptPage"
-  - method: replayEvents
-    start: 248
-    end: 294
-    limit: 47
-    symbolLine: 252
-    symbolColumn: 21
-    signature: "public function replayEvents(string $runId, Request $request): JsonResponse"
-    callees[6]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::authorizeRun","Ineersa\\AgentCore\\Api\\Http\\RunApiController::error","Ineersa\\AgentCore\\Api\\Http\\RunApiController::parseNonNegativeInt","Ineersa\\AgentCore\\Api\\Http\\RunReadService::replayAfter","Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer::normalizeRunEvent","Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer::normalizeStreamEvent"
-  - method: authorizeRun
-    start: 296
-    end: 309
+    start: 158
+    end: 171
     limit: 14
-    symbolLine: 296
+    symbolLine: 159
+    symbolColumn: 21
+    signature: "public function transcriptPage(string $runId, Request $request, TranscriptPageQueryRequest $query): JsonResponse"
+    callees[2]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::authorize","Ineersa\\AgentCore\\Api\\Http\\RunReadService::transcriptPage"
+  - method: replayEvents
+    start: 173
+    end: 214
+    limit: 42
+    symbolLine: 174
+    symbolColumn: 21
+    signature: "public function replayEvents(string $runId, Request $request, ReplayEventsQueryRequest $query): JsonResponse"
+    callees[4]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::authorize","Ineersa\\AgentCore\\Api\\Http\\RunReadService::replayAfter","Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer::normalizeRunEvent","Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer::normalizeStreamEvent"
+  - method: authorize
+    start: 216
+    end: 220
+    limit: 5
+    symbolLine: 216
     symbolColumn: 22
-    signature: "private function authorizeRun(string $runId, Request $request): ?JsonResponse"
-    callees[3]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::error","Ineersa\\AgentCore\\Api\\Http\\RunApiController::requestActor","Ineersa\\AgentCore\\Contract\\RunAccessStoreInterface::get"
-    callers[4]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::replayEvents","Ineersa\\AgentCore\\Api\\Http\\RunApiController::runSummary","Ineersa\\AgentCore\\Api\\Http\\RunApiController::sendCommand","Ineersa\\AgentCore\\Api\\Http\\RunApiController::transcriptPage"
-  - method: requestActor
-    start: 311
-    end: 322
-    limit: 12
-    symbolLine: 316
-    symbolColumn: 22
-    signature: "private function requestActor(Request $request): array"
-    callees[1]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::normalizeString"
-    callers[2]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::authorizeRun","Ineersa\\AgentCore\\Api\\Http\\RunApiController::startRun"
-  - method: jsonBody
-    start: 324
-    end: 347
-    limit: 24
-    symbolLine: 329
-    symbolColumn: 22
-    signature: "private function jsonBody(Request $request): array"
-    callers[2]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::sendCommand","Ineersa\\AgentCore\\Api\\Http\\RunApiController::startRun"
-  - method: parseNonNegativeInt
-    start: 349
-    end: 364
-    limit: 16
-    symbolLine: 349
-    symbolColumn: 22
-    signature: "private function parseNonNegativeInt(mixed $value, string $fieldName): int"
-    callers[2]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::replayEvents","Ineersa\\AgentCore\\Api\\Http\\RunApiController::transcriptPage"
-  - method: normalizeString
-    start: 366
-    end: 375
-    limit: 10
-    symbolLine: 366
-    symbolColumn: 22
-    signature: "private function normalizeString(mixed $value): ?string"
-    callers[3]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::requestActor","Ineersa\\AgentCore\\Api\\Http\\RunApiController::sendCommand","Ineersa\\AgentCore\\Api\\Http\\RunApiController::startRun"
-  - method: error
-    start: 377
-    end: 380
-    limit: 4
-    symbolLine: 377
-    symbolColumn: 22
-    signature: "private function error(string $message, int $status): JsonResponse"
-    callers[6]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::authorizeRun","Ineersa\\AgentCore\\Api\\Http\\RunApiController::replayEvents","Ineersa\\AgentCore\\Api\\Http\\RunApiController::runSummary","Ineersa\\AgentCore\\Api\\Http\\RunApiController::sendCommand","Ineersa\\AgentCore\\Api\\Http\\RunApiController::startRun","Ineersa\\AgentCore\\Api\\Http\\RunApiController::transcriptPage"
+    signature: "private function authorize(Request $request): void"
+    callees[1]: "Ineersa\\AgentCore\\Contract\\Api\\AuthorizeRunInterface::authorize"
+    callers[5]: "Ineersa\\AgentCore\\Api\\Http\\RunApiController::replayEvents","Ineersa\\AgentCore\\Api\\Http\\RunApiController::runSummary","Ineersa\\AgentCore\\Api\\Http\\RunApiController::sendCommand","Ineersa\\AgentCore\\Api\\Http\\RunApiController::startRun","Ineersa\\AgentCore\\Api\\Http\\RunApiController::transcriptPage"

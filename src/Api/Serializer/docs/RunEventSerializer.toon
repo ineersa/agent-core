@@ -25,7 +25,7 @@ wiring:
       args:
         "$eventPayloadNormalizer": "service(Ineersa\\AgentCore\\Schema\\EventPayloadNormalizer)"
   injectedInto[4]{fqcn,file,line}:
-    "Ineersa\\AgentCore\\Api\\Http\\RunApiController",src/Api/Http/RunApiController.php,29
+    "Ineersa\\AgentCore\\Api\\Http\\RunApiController",src/Api/Http/RunApiController.php,35
     "Ineersa\\AgentCore\\Command\\AgentLoopRunReplayCommand",src/Command/AgentLoopRunReplayCommand.php,19
     "Ineersa\\AgentCore\\Command\\AgentLoopRunTailCommand",src/Command/AgentLoopRunTailCommand.php,19
     "Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunEventPublisher",src/Infrastructure/Mercure/RunEventPublisher.php,12

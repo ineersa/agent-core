@@ -76,6 +76,9 @@ final class TestKernel extends Kernel
             'secret' => 'test-secret',
             'test' => true,
             'http_method_override' => false,
+            'validation' => [
+                'enabled' => true,
+            ],
             'messenger' => [
                 'default_bus' => 'agent.command.bus',
             ],

@@ -1,7 +1,7 @@
 spec: agent-core.file-index/v1
 file: AgentRunner.php
 class: "Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner"
-type: final class
+type: readonly final class
 sections[1]{kind,start,end,limit,signatureLine}:
   constructor,20,22,3,20
 constructorInputs[1]{param,type,required}:
@@ -19,7 +19,7 @@ wiring:
   aliases[1]{serviceId,target}:
     "Ineersa\\AgentCore\\Contract\\AgentRunnerInterface","Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner"
   injectedInto[1]{fqcn,file,line}:
-    "Ineersa\\AgentCore\\Api\\Http\\RunApiController",src/Api/Http/RunApiController.php,29
+    "Ineersa\\AgentCore\\Api\\Http\\RunApiController",src/Api/Http/RunApiController.php,35
 methods[12]:
   - method: __construct
     start: 20
