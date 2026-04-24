@@ -1,0 +1,14 @@
+{
+  "bundles": {
+    "Ineersa\\AgentCore\\AgentLoopBundle": [
+      "all"
+    ]
+  },
+  "copy-from-recipe": {
+    "config/": "%CONFIG_DIR%/"
+  },
+  "aliases": [
+    "agent-core",
+    "agent-loop"
+  ]
+}

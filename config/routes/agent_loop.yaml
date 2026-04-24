@@ -1,6 +1,0 @@
-# Ready-to-copy route import for applications using ineersa/agent-core bundle.
-# Place this file in your app at config/routes/agent_loop.yaml.
-
-agent_loop_api:
-  resource: '@AgentLoopBundle/Api/Http/'
-  type: attribute

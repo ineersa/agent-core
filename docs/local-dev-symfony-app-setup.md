@@ -69,17 +69,7 @@ return [
 ];
 ```
 
-## 3) Import API routes
-
-Create `config/routes/agent_loop.yaml`:
-
-```yaml
-agent_loop_api:
-  resource: '@AgentLoopBundle/Api/Http/'
-  type: attribute
-```
-
-## 4) Add minimal bundle config
+## 3) Add minimal bundle config
 
 Create `config/packages/agent_loop.yaml`:
 
@@ -91,7 +81,15 @@ agent_loop:
     default_model: gpt-4o-mini
 ```
 
-## 5) Pick transport mode for development
+API routes are auto-registered by the bundle when `api.enabled` is `true` (default). To disable:
+
+```yaml
+agent_loop:
+  api:
+    enabled: false
+```
+
+## 4) Pick transport mode for development
 
 The bundle ships with in-memory transports by default. For a real app dev loop, choose one of these:
 
@@ -121,7 +119,7 @@ php bin/console messenger:consume agent_loop.execution -vv
 php bin/console messenger:consume agent_loop.publisher -vv
 ```
 
-## 6) Smoke test
+## 5) Smoke test
 
 Start a run:
 
@@ -144,7 +142,7 @@ Then inspect run summary:
 curl -sS http://localhost/agent/runs/<RUN_ID>
 ```
 
-## 7) Dev workflow tips
+## 6) Dev workflow tips
 
 - If you change DI wiring/config in the bundle, clear app cache:
   - `php bin/console cache:clear`

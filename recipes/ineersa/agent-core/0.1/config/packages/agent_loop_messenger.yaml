@@ -1,0 +1,13 @@
+framework:
+  messenger:
+    transports:
+      # Default recipe transport uses Doctrine-based persistent queues.
+      # Requires running messenger consumers for each transport:
+      #   php bin/console messenger:consume agent_loop.command -vv
+      #   php bin/console messenger:consume agent_loop.execution -vv
+      #   php bin/console messenger:consume agent_loop.publisher -vv
+      #
+      # For quick smoke tests without workers, override these to 'sync://' in app config.
+      agent_loop.command: 'doctrine://default?queue_name=agent_loop_command'
+      agent_loop.execution: 'doctrine://default?queue_name=agent_loop_execution'
+      agent_loop.publisher: 'doctrine://default?queue_name=agent_loop_publisher'

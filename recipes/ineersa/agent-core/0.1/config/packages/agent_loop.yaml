@@ -1,0 +1,5 @@
+agent_loop:
+  runtime: messenger
+  streaming: mercure
+  llm:
+    default_model: gpt-4o-mini

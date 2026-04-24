@@ -64,6 +64,10 @@ final class AgentLoopExtension extends Extension implements PrependExtensionInte
         $loader = new PhpFileLoader($container, new FileLocator(\dirname(__DIR__, 2).'/config'));
         $loader->load('services.php');
 
+        if ($config['api']['enabled']) {
+            $loader->load('api_routes.php');
+        }
+
         $container
             ->setAlias('agent_loop.run_log.storage', $config['storage']['run_log']['flysystem_storage'])
             ->setPublic(false)

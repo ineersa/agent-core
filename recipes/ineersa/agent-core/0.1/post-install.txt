@@ -1,0 +1,14 @@
+<bg=blue;fg=white> Agent Core installed </>
+
+The recipe configured agent-core with persistent async Doctrine transports.
+
+Start messenger consumers to process messages:
+  php bin/console messenger:consume agent_loop.command -vv
+  php bin/console messenger:consume agent_loop.execution -vv
+  php bin/console messenger:consume agent_loop.publisher -vv
+
+For quick smoke tests without workers, override transports to 'sync://'.
+
+Recommended docs:
+  - docs/local-dev-symfony-app-setup.md (in package source)
+  - docs/api-and-streaming.md

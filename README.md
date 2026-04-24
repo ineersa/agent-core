@@ -49,3 +49,4 @@ Use these for command/event/message topology (`command -> handler`, `event -> pr
 
 - Integrate local bundle into a Symfony app: `docs/local-dev-symfony-app-setup.md`
 - Helper script for link/copy/rollback into a target app: `./link`
+- Flex recipe scaffold + publishing notes: `docs/flex-recipe.md`

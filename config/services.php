@@ -162,11 +162,6 @@ return static function (ContainerConfigurator $container): void {
     $services->set(AllowAllAuthorizeRun::class);
     $services->alias(AuthorizeRunInterface::class, AllowAllAuthorizeRun::class);
 
-    $services->set(RunApiController::class)
-        ->arg('$commandBus', service('agent.command.bus'))
-        ->tag('controller.service_arguments')
-    ;
-
     $services->set(RunCommit::class);
 
     $services->set(CommandMailboxPolicy::class)
