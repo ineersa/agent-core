@@ -40,6 +40,19 @@ If any of these fail, the work is **not complete**.
   - property hooks
 - Apply these features pragmatically (readability first, no novelty for novelty’s sake).
 
+### DTO / Value Object and serialization policy (mandatory)
+
+- Prefer **DTOs / Value Objects** over associative arrays for internal data structures.
+- Avoid passing around `array<string, mixed>` when the shape is known.
+- If fields are known (e.g. options/config/state snapshots), model them as typed classes with explicit properties.
+- Treat key-heavy arrays and repeated key checks as a design smell; refactor to DTO/VO types.
+- Use arrays primarily at transport boundaries (raw HTTP payloads, persistence JSON blobs, external provider payloads).
+
+- Prefer **Symfony Serializer** for normalization/denormalization.
+- Do not hand-write repetitive array mapping when serializer-based normalization/denormalization can be used.
+- Leverage typed properties, constructor signatures, and serializer metadata/type information to keep mappings explicit and maintainable.
+- Keep manual mapping only for boundary-specific shaping where contracts require a precise external key format.
+
 <!-- ai-index:begin -->
 ## AI Documentation Index
 
