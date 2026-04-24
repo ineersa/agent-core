@@ -175,7 +175,9 @@ return static function (ContainerConfigurator $container): void {
 
     $services->set(RunMessageStateTools::class);
 
-    $services->set(StartRunHandler::class);
+    $services->set(StartRunHandler::class)
+        ->arg('$commandBus', service('agent.command.bus'))
+    ;
 
     $services->set(ApplyCommandHandler::class)
         ->arg('$maxPendingCommands', param('agent_loop.commands.max_pending_per_run'))

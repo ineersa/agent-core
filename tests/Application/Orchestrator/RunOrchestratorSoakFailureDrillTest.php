@@ -27,6 +27,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\StartRun;
+use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Mercure\RunEventPublisher;
@@ -37,6 +38,7 @@ use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogWriter;
+use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use League\Flysystem\Filesystem;
 use League\Flysystem\Local\LocalFilesystemAdapter;
 use PHPUnit\Framework\TestCase;
@@ -74,7 +76,7 @@ final class RunOrchestratorSoakFailureDrillTest extends TestCase
                 stepId: 'start-1',
                 attempt: 1,
                 idempotencyKey: sprintf('start-%04d', $index),
-                payload: ['messages' => []],
+                payload: new StartRunPayload(messages: []),
             ));
 
             $fixture->orchestrator->onAdvanceRun(new AdvanceRun(
@@ -133,7 +135,7 @@ final class RunOrchestratorSoakFailureDrillTest extends TestCase
             stepId: 'start-1',
             attempt: 1,
             idempotencyKey: 'start-storm-1',
-            payload: ['messages' => []],
+            payload: new StartRunPayload(messages: []),
         ));
 
         $fixture->orchestrator->onAdvanceRun(new AdvanceRun(
@@ -245,7 +247,7 @@ final class RunOrchestratorSoakFailureDrillTest extends TestCase
             stepId: 'start-1',
             attempt: 1,
             idempotencyKey: 'start-failure-drill-1',
-            payload: ['messages' => []],
+            payload: new StartRunPayload(messages: []),
         );
 
         $fixture->orchestrator->onStartRun($start);
@@ -311,7 +313,10 @@ final class RunOrchestratorSoakFailureDrillTest extends TestCase
             runCommit: $runCommit,
             stepDispatcher: $stepDispatcher,
             handlers: [
-                new StartRunHandler(stateTools: $stateTools),
+                new StartRunHandler(
+                    stateTools: $stateTools,
+                    normalizer: TestSerializerFactory::normalizer(),
+                ),
                 new ApplyCommandHandler(
                     commandStore: $commandStore,
                     commandRouter: $commandRouter,

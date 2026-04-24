@@ -5,12 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Contract;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
-use Ineersa\AgentCore\Domain\Run\RunHandle;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 
 interface AgentRunnerInterface
 {
-    public function start(StartRunInput $input): RunHandle;
+    public function start(StartRunInput $input): string;
 
     public function continue(string $runId): void;
 

@@ -30,6 +30,8 @@ use Ineersa\AgentCore\Command\AgentLoopRunReplayCommand;
 use Ineersa\AgentCore\Command\AgentLoopRunTailCommand;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\StartRun;
+use Ineersa\AgentCore\Domain\Message\StartRunPayload;
+use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Infrastructure\Mercure\RunEventPublisher;
 use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryOutboxStore;
@@ -143,11 +145,11 @@ final class KernelIntegrationTest extends TestCase
                 stepId: 'start-step-1',
                 attempt: 1,
                 idempotencyKey: 'idemp-start-1',
-                payload: [
-                    'system_prompt' => 'test',
-                    'messages' => [],
-                    'metadata' => [],
-                ],
+                payload: new StartRunPayload(
+                    systemPrompt: 'test',
+                    messages: [],
+                    metadata: new RunMetadata(),
+                ),
             ));
 
             $executionBus->dispatch(new ExecuteLlmStep(

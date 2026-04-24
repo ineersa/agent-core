@@ -100,10 +100,20 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             return new HandlerResult();
         }
 
-        $nextState = $this->stateTools->copyState($state, [
-            'version' => $state->version + 1,
-            'lastSeq' => $state->lastSeq + 1,
-        ]);
+        $nextState = new RunState(
+            runId: $state->runId,
+            status: $state->status,
+            version: $state->version + 1,
+            turnNo: $state->turnNo,
+            lastSeq: $state->lastSeq + 1,
+            isStreaming: $state->isStreaming,
+            streamingMessage: $state->streamingMessage,
+            pendingToolCalls: $state->pendingToolCalls,
+            errorMessage: $state->errorMessage,
+            messages: $state->messages,
+            activeStepId: $state->activeStepId,
+            retryableFailure: $state->retryableFailure,
+        );
 
         $queuedEvent = $this->stateTools->event(
             runId: $runId,
@@ -128,11 +138,20 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         $runId = $message->runId();
         $this->commandStore->markRejected($runId, $message->idempotencyKey(), $reason);
 
-        $nextState = $this->stateTools->copyState($state, [
-            'version' => $state->version + 1,
-            'lastSeq' => $state->lastSeq + 1,
-            'errorMessage' => $reason,
-        ]);
+        $nextState = new RunState(
+            runId: $state->runId,
+            status: $state->status,
+            version: $state->version + 1,
+            turnNo: $state->turnNo,
+            lastSeq: $state->lastSeq + 1,
+            isStreaming: $state->isStreaming,
+            streamingMessage: $state->streamingMessage,
+            pendingToolCalls: $state->pendingToolCalls,
+            errorMessage: $reason,
+            messages: $state->messages,
+            activeStepId: $state->activeStepId,
+            retryableFailure: $state->retryableFailure,
+        );
 
         $event = $this->stateTools->event(
             runId: $runId,
@@ -188,13 +207,20 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
 
         $events = $this->stateTools->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
 
-        $nextState = $this->stateTools->copyState($state, [
-            'status' => RunStatus::Cancelling,
-            'version' => $state->version + 1,
-            'lastSeq' => $state->lastSeq + \count($events),
-            'errorMessage' => $reason,
-            'retryableFailure' => false,
-        ]);
+        $nextState = new RunState(
+            runId: $state->runId,
+            status: RunStatus::Cancelling,
+            version: $state->version + 1,
+            turnNo: $state->turnNo,
+            lastSeq: $state->lastSeq + \count($events),
+            isStreaming: $state->isStreaming,
+            streamingMessage: $state->streamingMessage,
+            pendingToolCalls: $state->pendingToolCalls,
+            errorMessage: $reason,
+            messages: $state->messages,
+            activeStepId: $state->activeStepId,
+            retryableFailure: false,
+        );
 
         return new HandlerResult(
             nextState: $nextState,
@@ -215,13 +241,20 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         $runId = $message->runId();
         $this->commandStore->markApplied($runId, $message->idempotencyKey());
 
-        $nextState = $this->stateTools->copyState($state, [
-            'status' => RunStatus::Running,
-            'version' => $state->version + 1,
-            'lastSeq' => $state->lastSeq + 1,
-            'errorMessage' => null,
-            'retryableFailure' => false,
-        ]);
+        $nextState = new RunState(
+            runId: $state->runId,
+            status: RunStatus::Running,
+            version: $state->version + 1,
+            turnNo: $state->turnNo,
+            lastSeq: $state->lastSeq + 1,
+            isStreaming: $state->isStreaming,
+            streamingMessage: $state->streamingMessage,
+            pendingToolCalls: $state->pendingToolCalls,
+            errorMessage: null,
+            messages: $state->messages,
+            activeStepId: $state->activeStepId,
+            retryableFailure: false,
+        );
 
         $event = $this->stateTools->event(
             runId: $runId,
@@ -272,14 +305,20 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         $messages = $state->messages;
         $messages[] = $humanResponseMessage;
 
-        $nextState = $this->stateTools->copyState($state, [
-            'status' => RunStatus::Running,
-            'version' => $state->version + 1,
-            'lastSeq' => $state->lastSeq + 1,
-            'messages' => $messages,
-            'errorMessage' => null,
-            'retryableFailure' => false,
-        ]);
+        $nextState = new RunState(
+            runId: $state->runId,
+            status: RunStatus::Running,
+            version: $state->version + 1,
+            turnNo: $state->turnNo,
+            lastSeq: $state->lastSeq + 1,
+            isStreaming: $state->isStreaming,
+            streamingMessage: $state->streamingMessage,
+            pendingToolCalls: $state->pendingToolCalls,
+            errorMessage: null,
+            messages: $messages,
+            activeStepId: $state->activeStepId,
+            retryableFailure: false,
+        );
 
         $event = $this->stateTools->event(
             runId: $runId,

@@ -11,14 +11,13 @@ final readonly class StartRunInput
     /**
      * Initializes the run input with system prompt, messages, optional run ID, and metadata.
      *
-     * @param list<AgentMessage>   $messages
-     * @param array<string, mixed> $metadata
+     * @param list<AgentMessage> $messages
      */
     public function __construct(
         public string $systemPrompt,
         public array $messages = [],
         public ?string $runId = null,
-        public array $metadata = [],
+        public ?RunMetadata $metadata = null,
     ) {
     }
 }

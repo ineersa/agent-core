@@ -98,7 +98,7 @@ Define bundle API to mirror JS operations.
 ```php
 interface AgentRunnerInterface
 {
-    public function start(StartRunInput $input): RunHandle;
+    public function start(StartRunInput $input): string;
     public function continue(string $runId): void;
     public function steer(string $runId, AgentMessage $message): void;
     public function followUp(string $runId, AgentMessage $message): void;

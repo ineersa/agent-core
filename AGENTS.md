@@ -39,6 +39,8 @@ If any of these fail, the work is **not complete**.
   - pipe operator
   - property hooks
 - Apply these features pragmatically (readability first, no novelty for novelty’s sake).
+- Avoid pass-through intermediate variables that only rename single-use values; introduce locals only when they improve readability, reuse, or debugging.
+- Avoid defensive checks that duplicate guarantees already enforced by validated DTOs/contracts; keep only checks needed for real nullable/optional boundaries.
 
 ### DTO / Value Object and serialization policy (mandatory)
 

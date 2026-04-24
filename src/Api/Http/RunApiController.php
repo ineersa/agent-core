@@ -17,6 +17,7 @@ use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Run\RunAccessScope;
+use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Infrastructure\Mercure\RunTopicPolicy;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -52,47 +53,35 @@ final readonly class RunApiController
         #[MapRequestPayload(acceptFormat: 'json')] StartRunRequest $payload,
     ): JsonResponse {
         $this->authorize($request);
-        $prompt = $payload->prompt ?? '';
-        $systemPrompt = $payload->system_prompt ?? '';
-        $tenantId = $payload->metadata->tenant_id ?? '';
-        $userId = $payload->metadata->user_id ?? '';
-        $sessionMetadata = $payload->metadata->session;
+        $accessMetadata = $payload->metadata;
 
-        $metadata = [
-            'session' => $sessionMetadata,
-        ];
-
-        if (null !== $payload->metadata->model) {
-            $metadata['model'] = $payload->metadata->model;
-        }
-
-        if (null !== $payload->metadata->tools_scope) {
-            $metadata['tools_scope'] = $payload->metadata->tools_scope;
-        }
-
-        $runHandle = $this->runner->start(new StartRunInput(
-            systemPrompt: $systemPrompt,
+        $runId = $this->runner->start(new StartRunInput(
+            systemPrompt: $payload->system_prompt ?? '',
             messages: [new AgentMessage(
                 role: 'user',
                 content: [[
                     'type' => 'text',
-                    'text' => $prompt,
+                    'text' => $payload->prompt ?? '',
                 ]],
             )],
-            metadata: $metadata,
+            metadata: new RunMetadata(
+                session: $accessMetadata->session,
+                model: $accessMetadata->model,
+                toolsScope: $accessMetadata->tools_scope,
+            ),
         ));
 
         $this->runAccessStore->save(new RunAccessScope(
-            runId: $runHandle->runId,
-            tenantId: $tenantId,
-            userId: $userId,
-            sessionMetadata: $sessionMetadata,
+            runId: $runId,
+            tenantId: $accessMetadata->tenant_id ?? '',
+            userId: $accessMetadata->user_id ?? '',
+            sessionMetadata: $accessMetadata->session,
         ));
 
         return new JsonResponse([
-            'run_id' => $runHandle->runId,
+            'run_id' => $runId,
             'status' => 'queued',
-            'stream_topic' => $this->topicPolicy->topicFor($runHandle->runId),
+            'stream_topic' => $this->topicPolicy->topicFor($runId),
         ], Response::HTTP_ACCEPTED);
     }
 
@@ -105,13 +94,8 @@ final readonly class RunApiController
         $this->authorize($request);
         $kind = $payload->kind ?? '';
         $idempotencyKey = $payload->idempotency_key ?? '';
-        $commandPayload = $payload->payload;
-        $options = $payload->options;
 
-        $state = $this->runStore->get($runId);
-        if (null === $state) {
-            throw new NotFoundHttpException('Run not found.');
-        }
+        $state = $this->runStore->get($runId) ?? throw new NotFoundHttpException('Run not found.');
 
         $stepId = hash('sha256', $idempotencyKey)
                 |> (static fn ($x) => substr($x, 0, 16))
@@ -125,8 +109,8 @@ final readonly class RunApiController
                 attempt: 1,
                 idempotencyKey: $idempotencyKey,
                 kind: $kind,
-                payload: $commandPayload,
-                options: $options,
+                payload: $payload->payload,
+                options: $payload->options,
             ));
         } catch (ExceptionInterface $exception) {
             throw new \RuntimeException('Failed to dispatch API command message.', previous: $exception);

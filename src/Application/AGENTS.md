@@ -26,7 +26,7 @@ Note: `CollectToolBatch` is routed to `agent.execution.bus` in `config/messenger
   - dispatched by: `RunApiController::sendCommand()` for HTTP command submission
   - handled by: `RunOrchestrator::onApplyCommand()` -> `RunMessageProcessor` -> `ApplyCommandHandler`
 - `AdvanceRun`
-  - dispatched by: `ApplyCommandHandler` and `LlmStepResultHandler` follow-up callbacks, plus `AgentLoopResumeStaleRunsCommand::execute()`
+  - dispatched by: `StartRunHandler` (initial post-commit kickoff), `ApplyCommandHandler` and `LlmStepResultHandler` follow-up callbacks, plus `AgentLoopResumeStaleRunsCommand::execute()`
   - handled by: `RunOrchestrator::onAdvanceRun()` -> `RunMessageProcessor` -> `AdvanceRunHandler`
 - `ExecuteLlmStep`
   - dispatched by: `AdvanceRunHandler` through `RunMessageProcessor`/`RunCommit` effect dispatch

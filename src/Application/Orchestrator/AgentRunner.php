@@ -9,36 +9,49 @@ use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\StartRun;
-use Ineersa\AgentCore\Domain\Run\RunHandle;
-use Ineersa\AgentCore\Domain\Run\RunId;
+use Ineersa\AgentCore\Domain\Message\StartRunPayload;
+use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
+use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
+use Symfony\Component\Uid\Uuid;
 
 final readonly class AgentRunner implements AgentRunnerInterface
 {
-    public function __construct(private MessageBusInterface $commandBus)
-    {
+    public function __construct(
+        private MessageBusInterface $commandBus,
+        private NormalizerInterface $normalizer,
+    ) {
     }
 
-    public function start(StartRunInput $input): RunHandle
+    /**
+     * @throws \RuntimeException
+     */
+    public function start(StartRunInput $input): string
     {
-        $runId = $input->runId ?? (string) RunId::generate();
+        $runId = $input->runId ?? Uuid::v4()->toRfc4122();
         $stepId = $this->nextStepId('start');
-        $this->dispatch(new StartRun(
-            runId: $runId,
-            turnNo: 0,
-            stepId: $stepId,
-            attempt: 1,
-            idempotencyKey: $this->idempotencyKey($runId, $stepId),
-            payload: [
-                'system_prompt' => $input->systemPrompt,
-                'messages' => array_map($this->serializeMessage(...), $input->messages),
-                'metadata' => $input->metadata,
-            ],
-        ));
 
-        return new RunHandle($runId);
+        try {
+            $this->commandBus->dispatch(new StartRun(
+                runId: $runId,
+                turnNo: 0,
+                stepId: $stepId,
+                attempt: 1,
+                idempotencyKey: $this->idempotencyKey($runId, $stepId),
+                payload: new StartRunPayload(
+                    systemPrompt: $input->systemPrompt,
+                    messages: $input->messages,
+                    metadata: $input->metadata ?? new RunMetadata(),
+                ),
+            ));
+        } catch (ExceptionInterface $exception) {
+            throw new \RuntimeException('Failed to dispatch start-run message.', previous: $exception);
+        }
+
+        return $runId;
     }
 
     public function continue(string $runId): void
@@ -46,14 +59,30 @@ final readonly class AgentRunner implements AgentRunnerInterface
         $this->applyCoreCommand($runId, CoreCommandKind::Continue, []);
     }
 
+    /**
+     * @throws \Symfony\Component\Serializer\Exception\ExceptionInterface
+     */
     public function steer(string $runId, AgentMessage $message): void
     {
-        $this->applyCoreCommand($runId, CoreCommandKind::Steer, ['message' => $this->serializeMessage($message)]);
+        $payload = $this->normalizer->normalize(
+            $message,
+            context: [AbstractObjectNormalizer::SKIP_NULL_VALUES => true],
+        );
+
+        $this->applyCoreCommand($runId, CoreCommandKind::Steer, ['message' => $payload]);
     }
 
+    /**
+     * @throws \Symfony\Component\Serializer\Exception\ExceptionInterface
+     */
     public function followUp(string $runId, AgentMessage $message): void
     {
-        $this->applyCoreCommand($runId, CoreCommandKind::FollowUp, ['message' => $this->serializeMessage($message)]);
+        $payload = $this->normalizer->normalize(
+            $message,
+            context: [AbstractObjectNormalizer::SKIP_NULL_VALUES => true],
+        );
+
+        $this->applyCoreCommand($runId, CoreCommandKind::FollowUp, ['message' => $payload]);
     }
 
     public function cancel(string $runId, ?string $reason = null): void
@@ -78,25 +107,20 @@ final readonly class AgentRunner implements AgentRunnerInterface
     private function applyCoreCommand(string $runId, string $kind, array $payload): void
     {
         $stepId = $this->nextStepId($kind);
-        $this->dispatch(new ApplyCommand(
-            runId: $runId,
-            turnNo: 0,
-            stepId: $stepId,
-            attempt: 1,
-            idempotencyKey: $this->idempotencyKey($runId, $stepId),
-            kind: $kind,
-            payload: $payload,
-        ));
-    }
 
-    /**
-     * Converts agent message to serializable array.
-     *
-     * @return array<string, mixed>
-     */
-    private function serializeMessage(AgentMessage $message): array
-    {
-        return $message->toArray();
+        try {
+            $this->commandBus->dispatch(new ApplyCommand(
+                runId: $runId,
+                turnNo: 0,
+                stepId: $stepId,
+                attempt: 1,
+                idempotencyKey: $this->idempotencyKey($runId, $stepId),
+                kind: $kind,
+                payload: $payload,
+            ));
+        } catch (ExceptionInterface $exception) {
+            throw new \RuntimeException('Failed to dispatch command message.', previous: $exception);
+        }
     }
 
     private function nextStepId(string $prefix): string
@@ -107,14 +131,5 @@ final readonly class AgentRunner implements AgentRunnerInterface
     private function idempotencyKey(string $runId, string $stepId): string
     {
         return hash('sha256', \sprintf('%s|%s', $runId, $stepId));
-    }
-
-    private function dispatch(object $message): void
-    {
-        try {
-            $this->commandBus->dispatch($message);
-        } catch (ExceptionInterface $exception) {
-            throw new \RuntimeException('Failed to dispatch command message.', previous: $exception);
-        }
     }
 }

@@ -12,33 +12,6 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 final readonly class RunMessageStateTools
 {
     /**
-     * @param array<string, mixed> $overrides
-     */
-    public function copyState(RunState $state, array $overrides = []): RunState
-    {
-        return new RunState(
-            runId: $overrides['runId'] ?? $state->runId,
-            status: $overrides['status'] ?? $state->status,
-            version: $overrides['version'] ?? $state->version,
-            turnNo: $overrides['turnNo'] ?? $state->turnNo,
-            lastSeq: $overrides['lastSeq'] ?? $state->lastSeq,
-            isStreaming: $overrides['isStreaming'] ?? $state->isStreaming,
-            streamingMessage: \array_key_exists('streamingMessage', $overrides)
-                ? $overrides['streamingMessage']
-                : $state->streamingMessage,
-            pendingToolCalls: $overrides['pendingToolCalls'] ?? $state->pendingToolCalls,
-            errorMessage: \array_key_exists('errorMessage', $overrides)
-                ? $overrides['errorMessage']
-                : $state->errorMessage,
-            messages: $overrides['messages'] ?? $state->messages,
-            activeStepId: \array_key_exists('activeStepId', $overrides)
-                ? $overrides['activeStepId']
-                : $state->activeStepId,
-            retryableFailure: $overrides['retryableFailure'] ?? $state->retryableFailure,
-        );
-    }
-
-    /**
      * @param array<string, mixed> $payload
      */
     public function event(string $runId, int $seq, int $turnNo, string $type, array $payload = []): RunEvent
@@ -81,36 +54,6 @@ final readonly class RunMessageStateTools
         return $events;
     }
 
-    /**
-     * @param array<string, mixed> $payload
-     *
-     * @return list<AgentMessage>
-     */
-    public function messagesFromPayload(array $payload): array
-    {
-        $serializedMessages = $payload['messages'] ?? null;
-        if (!\is_array($serializedMessages)) {
-            return [];
-        }
-
-        $messages = [];
-
-        foreach ($serializedMessages as $serializedMessage) {
-            if (!\is_array($serializedMessage)) {
-                continue;
-            }
-
-            $message = AgentMessage::fromPayload($serializedMessage);
-            if (null === $message) {
-                continue;
-            }
-
-            $messages[] = $message;
-        }
-
-        return $messages;
-    }
-
     public function isStaleResult(RunState $state, int $turnNo, string $stepId): bool
     {
         if ($state->turnNo !== $turnNo) {
@@ -122,10 +65,20 @@ final readonly class RunMessageStateTools
 
     public function incrementStateVersion(RunState $state, int $eventCount): RunState
     {
-        return $this->copyState($state, [
-            'version' => $state->version + 1,
-            'lastSeq' => $state->lastSeq + $eventCount,
-        ]);
+        return new RunState(
+            runId: $state->runId,
+            status: $state->status,
+            version: $state->version + 1,
+            turnNo: $state->turnNo,
+            lastSeq: $state->lastSeq + $eventCount,
+            isStreaming: $state->isStreaming,
+            streamingMessage: $state->streamingMessage,
+            pendingToolCalls: $state->pendingToolCalls,
+            errorMessage: $state->errorMessage,
+            messages: $state->messages,
+            activeStepId: $state->activeStepId,
+            retryableFailure: $state->retryableFailure,
+        );
     }
 
     /**

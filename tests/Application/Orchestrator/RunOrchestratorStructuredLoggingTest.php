@@ -23,6 +23,7 @@ use Ineersa\AgentCore\Application\Orchestrator\RunOrchestrator;
 use Ineersa\AgentCore\Application\Orchestrator\StartRunHandler;
 use Ineersa\AgentCore\Application\Orchestrator\ToolCallResultHandler;
 use Ineersa\AgentCore\Domain\Message\StartRun;
+use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 use Ineersa\AgentCore\Infrastructure\Mercure\RunEventPublisher;
 use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
@@ -31,6 +32,7 @@ use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogWriter;
+use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use League\Flysystem\Filesystem;
 use League\Flysystem\Local\LocalFilesystemAdapter;
 use PHPUnit\Framework\TestCase;
@@ -98,7 +100,10 @@ final class RunOrchestratorStructuredLoggingTest extends TestCase
             runCommit: $runCommit,
             stepDispatcher: $stepDispatcher,
             handlers: [
-                new StartRunHandler(stateTools: $stateTools),
+                new StartRunHandler(
+                    stateTools: $stateTools,
+                    normalizer: TestSerializerFactory::normalizer(),
+                ),
                 new ApplyCommandHandler(
                     commandStore: $commandStore,
                     commandRouter: $commandRouter,
@@ -132,7 +137,7 @@ final class RunOrchestratorStructuredLoggingTest extends TestCase
             stepId: 'start-step-1',
             attempt: 1,
             idempotencyKey: 'start-idemp-1',
-            payload: ['messages' => []],
+            payload: new StartRunPayload(messages: []),
         ));
 
         self::assertNotEmpty($logger->records);

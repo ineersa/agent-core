@@ -77,15 +77,20 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             ];
 
             $events = $this->stateTools->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
-            $nextState = $this->stateTools->copyState($state, [
-                'status' => RunStatus::Cancelled,
-                'version' => $state->version + 1,
-                'lastSeq' => $state->lastSeq + \count($events),
-                'pendingToolCalls' => [],
-                'isStreaming' => false,
-                'streamingMessage' => null,
-                'retryableFailure' => false,
-            ]);
+            $nextState = new RunState(
+                runId: $state->runId,
+                status: RunStatus::Cancelled,
+                version: $state->version + 1,
+                turnNo: $state->turnNo,
+                lastSeq: $state->lastSeq + \count($events),
+                isStreaming: false,
+                streamingMessage: null,
+                pendingToolCalls: [],
+                errorMessage: $state->errorMessage,
+                messages: $state->messages,
+                activeStepId: $state->activeStepId,
+                retryableFailure: false,
+            );
 
             return new HandlerResult(
                 nextState: $nextState,
@@ -196,16 +201,20 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
 
         $events = $this->stateTools->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
 
-        $nextState = $this->stateTools->copyState($state, [
-            'status' => $status,
-            'version' => $state->version + 1,
-            'lastSeq' => $state->lastSeq + \count($events),
-            'isStreaming' => false,
-            'streamingMessage' => null,
-            'pendingToolCalls' => $pendingToolCalls,
-            'messages' => $messages,
-            'retryableFailure' => false,
-        ]);
+        $nextState = new RunState(
+            runId: $state->runId,
+            status: $status,
+            version: $state->version + 1,
+            turnNo: $state->turnNo,
+            lastSeq: $state->lastSeq + \count($events),
+            isStreaming: false,
+            streamingMessage: null,
+            pendingToolCalls: $pendingToolCalls,
+            errorMessage: $state->errorMessage,
+            messages: $messages,
+            activeStepId: $state->activeStepId,
+            retryableFailure: false,
+        );
 
         return new HandlerResult(
             nextState: $nextState,

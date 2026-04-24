@@ -5,11 +5,15 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Schema;
 
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
+use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\StartRun;
+use Ineersa\AgentCore\Domain\Message\StartRunPayload;
+use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Schema\CommandPayloadNormalizer;
+use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use PHPUnit\Framework\TestCase;
 
 final class CommandPayloadNormalizerGoldenTest extends TestCase
@@ -20,7 +24,7 @@ final class CommandPayloadNormalizerGoldenTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->normalizer = new CommandPayloadNormalizer();
+        $this->normalizer = new CommandPayloadNormalizer(TestSerializerFactory::normalizer());
     }
 
     public function testStartRunMatchesReferenceSchemaFixture(): void
@@ -31,14 +35,17 @@ final class CommandPayloadNormalizerGoldenTest extends TestCase
             stepId: 'start-1',
             attempt: 1,
             idempotencyKey: 'start:d2f2f4ab',
-            payload: [
-                'user_id' => '9fe6dfab-5e88-4c8f-89fa-72fe8dd57c08',
-                'initial_message' => [
-                    'role' => 'user',
-                    'content' => [['type' => 'text', 'text' => 'Analyze repo']],
-                    'timestamp' => 1770000000,
-                ],
-            ],
+            payload: new StartRunPayload(
+                systemPrompt: 'You are an expert code analyst.',
+                messages: [new AgentMessage(
+                    role: 'user',
+                    content: [['type' => 'text', 'text' => 'Analyze repo']],
+                )],
+                metadata: new RunMetadata(
+                    session: ['session_id' => 'sess-1'],
+                    model: 'default',
+                ),
+            ),
         ));
 
         self::assertSame($this->fixture('commands/start-run.json'), $payload);

@@ -44,3 +44,8 @@ Use these for command/event/message topology (`command -> handler`, `event -> pr
 - Dashboard spec: `docs/operations/agent-loop-observability-dashboard.md`
 - Alert rules: `docs/operations/agent-loop-alert-rules.yaml`
 - On-call recovery runbook: `docs/operations/agent-loop-oncall-runbook.md`
+
+## Local development docs
+
+- Integrate local bundle into a Symfony app: `docs/local-dev-symfony-app-setup.md`
+- Helper script for link/copy/rollback into a target app: `./link`

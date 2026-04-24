@@ -27,6 +27,7 @@ use Ineersa\AgentCore\Application\Orchestrator\ToolCallResultHandler;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\StartRun;
+use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 use Ineersa\AgentCore\Infrastructure\Mercure\RunEventPublisher;
 use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
@@ -35,6 +36,7 @@ use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogWriter;
+use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use League\Flysystem\Filesystem;
 use League\Flysystem\Local\LocalFilesystemAdapter;
 use PHPUnit\Framework\TestCase;
@@ -106,7 +108,10 @@ final class RunOrchestratorObservabilityTest extends TestCase
             runCommit: $runCommit,
             stepDispatcher: $stepDispatcher,
             handlers: [
-                new StartRunHandler(stateTools: $stateTools),
+                new StartRunHandler(
+                    stateTools: $stateTools,
+                    normalizer: TestSerializerFactory::normalizer(),
+                ),
                 new ApplyCommandHandler(
                     commandStore: $commandStore,
                     commandRouter: $commandRouter,
@@ -146,7 +151,7 @@ final class RunOrchestratorObservabilityTest extends TestCase
             stepId: 'start-1',
             attempt: 1,
             idempotencyKey: 'start-1',
-            payload: ['messages' => []],
+            payload: new StartRunPayload(messages: []),
         ));
 
         $orchestrator->onAdvanceRun(new AdvanceRun(

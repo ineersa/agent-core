@@ -47,7 +47,7 @@ Coordinates orchestration and runtime flow.
 ### 2) Domain (`src/Domain`)
 Framework-agnostic models and contracts.
 
-- **Run model**: `RunState`, `RunStatus`, `RunHandle`, `RunId`.
+- **Run model**: `RunState`, `RunStatus`, `StartRunInput` (run IDs are RFC4122 UUID strings).
 - **Commands/messages**: `StartRun`, `ApplyCommand`, `AdvanceRun`, `ExecuteLlmStep`, `ExecuteToolCall`, `LlmStepResult`, `ToolCallResult`.
 - **Events**: canonical `RunEvent` envelope with strict lifecycle ordering via `CoreLifecycleEventType::validateOrder()`.
 

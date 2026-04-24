@@ -1,0 +1,104 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+require __DIR__.'/vendor/autoload.php';
+
+use Symfony\Component\Filesystem\Filesystem;
+
+$copy = false !== $copyIndex = array_search('--copy', $argv, true);
+if ($copy) {
+    array_splice($argv, $copyIndex, 1);
+}
+
+$rollback = false !== $rollbackIndex = array_search('--rollback', $argv, true);
+if ($rollback) {
+    array_splice($argv, $rollbackIndex, 1);
+}
+
+$help = false !== $helpIndex = array_search('--help', $argv, true)
+    || false !== $helpShortIndex = array_search('-h', $argv, true);
+
+if ($help) {
+    echo 'Link local ineersa/agent-core checkout into a Symfony app vendor dir.'.PHP_EOL.PHP_EOL;
+    echo "Usage: {$argv[0]} /path/to/symfony-app [--copy] [--rollback]".PHP_EOL;
+    echo '  --copy      Copy files instead of creating symlink'.PHP_EOL;
+    echo '  --rollback  Remove linked/copied vendor package and clear cache'.PHP_EOL;
+    exit(0);
+}
+
+$pathToProject = $argv[1] ?? getcwd();
+$projectRoot = realpath($pathToProject);
+$packageRoot = realpath(__DIR__);
+
+if (false === $projectRoot || !is_dir($projectRoot)) {
+    fwrite(STDERR, "Project directory \"{$pathToProject}\" does not exist.".PHP_EOL);
+    exit(1);
+}
+
+if (false === $packageRoot) {
+    fwrite(STDERR, 'Could not resolve local package root.'.PHP_EOL);
+    exit(1);
+}
+
+$filesystem = new Filesystem();
+$vendorRoot = $projectRoot.'/vendor';
+$vendorNamespaceDir = $vendorRoot.'/ineersa';
+$vendorPackageDir = $vendorNamespaceDir.'/agent-core';
+
+if (!is_dir($vendorRoot)) {
+    fwrite(STDERR, "\"{$projectRoot}\" does not have a vendor directory. Run composer install first.".PHP_EOL);
+    exit(1);
+}
+
+if ($rollback) {
+    if ($filesystem->exists($vendorPackageDir)) {
+        $filesystem->remove($vendorPackageDir);
+        echo 'Removed vendor package at "'.$vendorPackageDir.'".'.PHP_EOL;
+    } else {
+        echo 'Nothing to rollback: vendor package is not present.'.PHP_EOL;
+    }
+
+    foreach (glob($projectRoot.'/var/cache/*', GLOB_NOSORT) ?: [] as $cacheDir) {
+        $filesystem->remove($cacheDir);
+    }
+
+    echo PHP_EOL;
+    echo 'Rollback done. Reinstall package from registry with:'.PHP_EOL;
+    echo '  composer update ineersa/agent-core -W'.PHP_EOL;
+
+    exit(0);
+}
+
+if (!is_dir($vendorPackageDir) && !is_link($vendorPackageDir)) {
+    fwrite(STDERR, 'Target app does not have ineersa/agent-core installed yet.'.PHP_EOL);
+    fwrite(STDERR, 'Run in target app: composer require ineersa/agent-core:@dev'.PHP_EOL);
+    exit(1);
+}
+
+if (!$copy && is_link($vendorPackageDir)) {
+    $currentTarget = realpath($vendorPackageDir);
+    if (false !== $currentTarget && $currentTarget === $packageRoot) {
+        echo 'ineersa/agent-core is already linked to this checkout, skipping.'.PHP_EOL;
+        exit(0);
+    }
+}
+
+$filesystem->mkdir($vendorNamespaceDir);
+$filesystem->remove($vendorPackageDir);
+
+if ('\\' === DIRECTORY_SEPARATOR || $copy) {
+    $filesystem->mirror($packageRoot, $vendorPackageDir, null, ['override' => true, 'delete' => true]);
+    echo 'ineersa/agent-core copied into "'.$vendorPackageDir.'" from "'.$packageRoot.'".'.PHP_EOL;
+} else {
+    $relativeSource = $filesystem->makePathRelative($packageRoot, dirname(realpath($vendorPackageDir) ?: $vendorNamespaceDir));
+    $filesystem->symlink($relativeSource, $vendorPackageDir);
+    echo 'ineersa/agent-core linked from "'.$packageRoot.'" to "'.$vendorPackageDir.'".'.PHP_EOL;
+}
+
+foreach (glob($projectRoot.'/var/cache/*', GLOB_NOSORT) ?: [] as $cacheDir) {
+    $filesystem->remove($cacheDir);
+}
+
+echo 'Cleared target app cache in var/cache/*.'.PHP_EOL;

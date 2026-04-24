@@ -54,15 +54,20 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             ];
 
             $events = $this->stateTools->eventsFromSpecs($runId, $preparedState->turnNo, $state->lastSeq + 1, $eventSpecs);
-            $nextState = $this->stateTools->copyState($preparedState, [
-                'status' => RunStatus::Cancelled,
-                'version' => $state->version + 1,
-                'lastSeq' => $state->lastSeq + \count($events),
-                'pendingToolCalls' => [],
-                'isStreaming' => false,
-                'streamingMessage' => null,
-                'retryableFailure' => false,
-            ]);
+            $nextState = new RunState(
+                runId: $preparedState->runId,
+                status: RunStatus::Cancelled,
+                version: $state->version + 1,
+                turnNo: $preparedState->turnNo,
+                lastSeq: $state->lastSeq + \count($events),
+                isStreaming: false,
+                streamingMessage: null,
+                pendingToolCalls: [],
+                errorMessage: $preparedState->errorMessage,
+                messages: $preparedState->messages,
+                activeStepId: $preparedState->activeStepId,
+                retryableFailure: false,
+            );
 
             return new HandlerResult(
                 nextState: $nextState,
@@ -76,10 +81,20 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             }
 
             $events = $this->stateTools->eventsFromSpecs($runId, $preparedState->turnNo, $state->lastSeq + 1, $boundaryEventSpecs);
-            $nextState = $this->stateTools->copyState($preparedState, [
-                'version' => $state->version + 1,
-                'lastSeq' => $state->lastSeq + \count($events),
-            ]);
+            $nextState = new RunState(
+                runId: $preparedState->runId,
+                status: $preparedState->status,
+                version: $state->version + 1,
+                turnNo: $preparedState->turnNo,
+                lastSeq: $state->lastSeq + \count($events),
+                isStreaming: $preparedState->isStreaming,
+                streamingMessage: $preparedState->streamingMessage,
+                pendingToolCalls: $preparedState->pendingToolCalls,
+                errorMessage: $preparedState->errorMessage,
+                messages: $preparedState->messages,
+                activeStepId: $preparedState->activeStepId,
+                retryableFailure: $preparedState->retryableFailure,
+            );
 
             return new HandlerResult(
                 nextState: $nextState,
@@ -114,16 +129,20 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
 
         $events = $this->stateTools->eventsFromSpecs($runId, $preparedState->turnNo, $state->lastSeq + 1, $eventSpecs);
 
-        $nextState = $this->stateTools->copyState($preparedState, [
-            'status' => RunStatus::Running,
-            'version' => $state->version + 1,
-            'turnNo' => $nextTurnNo,
-            'lastSeq' => $state->lastSeq + \count($events),
-            'isStreaming' => false,
-            'streamingMessage' => null,
-            'activeStepId' => $nextStepId,
-            'retryableFailure' => false,
-        ]);
+        $nextState = new RunState(
+            runId: $preparedState->runId,
+            status: RunStatus::Running,
+            version: $state->version + 1,
+            turnNo: $nextTurnNo,
+            lastSeq: $state->lastSeq + \count($events),
+            isStreaming: false,
+            streamingMessage: null,
+            pendingToolCalls: $preparedState->pendingToolCalls,
+            errorMessage: $preparedState->errorMessage,
+            messages: $preparedState->messages,
+            activeStepId: $nextStepId,
+            retryableFailure: false,
+        );
 
         $postCommit = [];
         if (null !== $this->metrics) {

@@ -11,9 +11,15 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
+use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 final class CommandPayloadNormalizer
 {
+    public function __construct(private readonly NormalizerInterface $normalizer)
+    {
+    }
+
     /**
      * Converts a known command or execution DTO into a transport payload.
      *
@@ -44,7 +50,7 @@ final class CommandPayloadNormalizer
             'command' => 'StartRun',
             'run_id' => $command->runId(),
             'idempotency_key' => $command->idempotencyKey(),
-        ], $command->payload, ['schema_version', 'command', 'run_id', 'idempotency_key']);
+        ], $this->normalizeStartRunPayload($command), ['schema_version', 'command', 'run_id', 'idempotency_key']);
     }
 
     /**
@@ -211,5 +217,49 @@ final class CommandPayloadNormalizer
         }
 
         return $envelope;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function normalizeStartRunPayload(StartRun $command): array
+    {
+        $payloadDto = $command->payload;
+        $ignoredAttributes = [];
+
+        if ('' === $payloadDto->systemPrompt) {
+            $ignoredAttributes[] = 'systemPrompt';
+        }
+
+        if ([] === $payloadDto->messages) {
+            $ignoredAttributes[] = 'messages';
+        }
+
+        if (
+            null === $payloadDto->metadata
+            || ([] === $payloadDto->metadata->session && null === $payloadDto->metadata->model && null === $payloadDto->metadata->toolsScope)
+        ) {
+            $ignoredAttributes[] = 'metadata';
+        }
+
+        $context = [AbstractObjectNormalizer::SKIP_NULL_VALUES => true];
+        if ([] !== $ignoredAttributes) {
+            $context[AbstractObjectNormalizer::IGNORED_ATTRIBUTES] = $ignoredAttributes;
+        }
+
+        try {
+            $payload = $this->normalizer->normalize(
+                $payloadDto,
+                context: $context,
+            );
+        } catch (\Throwable $exception) {
+            throw new \RuntimeException('Failed to normalize StartRun payload.', previous: $exception);
+        }
+
+        if (!\is_array($payload)) {
+            throw new \RuntimeException('StartRun payload normalization must return an array.');
+        }
+
+        return $payload;
     }
 }

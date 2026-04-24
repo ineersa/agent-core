@@ -23,9 +23,11 @@ use Ineersa\AgentCore\Application\Orchestrator\RunOrchestrator;
 use Ineersa\AgentCore\Application\Orchestrator\StartRunHandler;
 use Ineersa\AgentCore\Application\Orchestrator\ToolCallResultHandler;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
+use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\StartRun;
+use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Mercure\RunEventPublisher;
 use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
@@ -35,6 +37,7 @@ use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogWriter;
+use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use League\Flysystem\Filesystem;
 use League\Flysystem\Local\LocalFilesystemAdapter;
 use PHPUnit\Framework\TestCase;
@@ -288,7 +291,10 @@ final class CommandMailboxPolicyTest extends TestCase
             runCommit: $runCommit,
             stepDispatcher: $stepDispatcher,
             handlers: [
-                new StartRunHandler(stateTools: $stateTools),
+                new StartRunHandler(
+                    stateTools: $stateTools,
+                    normalizer: TestSerializerFactory::normalizer(),
+                ),
                 new ApplyCommandHandler(
                     commandStore: $commandStore,
                     commandRouter: $commandRouter,
@@ -330,15 +336,13 @@ final class CommandMailboxPolicyTest extends TestCase
             stepId: 'start-1',
             attempt: 1,
             idempotencyKey: 'start-idemp-1',
-            payload: [
-                'messages' => [[
-                    'role' => 'user',
-                    'content' => [[
-                        'type' => 'text',
-                        'text' => 'hello',
-                    ]],
+            payload: new StartRunPayload(messages: [new AgentMessage(
+                role: 'user',
+                content: [[
+                    'type' => 'text',
+                    'text' => 'hello',
                 ]],
-            ],
+            )]),
         );
     }
 
