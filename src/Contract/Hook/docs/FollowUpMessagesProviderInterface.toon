@@ -1,6 +1,0 @@
-spec: agent-core.file-index/v1
-file: FollowUpMessagesProviderInterface.php
-class: "Ineersa\\AgentCore\\Contract\\Hook\\FollowUpMessagesProviderInterface"
-type: interface
-methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  getFollowUpMessages,11,16,6,16,21,"public function getFollowUpMessages(): array"

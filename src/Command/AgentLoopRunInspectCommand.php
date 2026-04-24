@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Command;
 
+use Ineersa\AgentCore\Application\Dto\HotPromptStateSnapshot;
+use Ineersa\AgentCore\Application\Dto\PendingCommandSnapshot;
+use Ineersa\AgentCore\Application\Dto\RunDebugSnapshot;
+use Ineersa\AgentCore\Application\Dto\RunStateSnapshot;
 use Ineersa\AgentCore\Application\Handler\RunDebugService;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -32,7 +36,7 @@ final class AgentLoopRunInspectCommand extends Command
         $snapshot = $this->runDebugService->inspect($runId);
 
         if (true === $input->getOption('json')) {
-            $output->writeln($this->encodeJson($snapshot));
+            $output->writeln($this->encodeJson($this->snapshotToArray($snapshot)));
 
             return self::SUCCESS;
         }
@@ -40,59 +44,59 @@ final class AgentLoopRunInspectCommand extends Command
         $io = new SymfonyStyle($input, $output);
         $io->title(\sprintf('Run inspect: %s', $runId));
 
-        if (false === $snapshot['exists']) {
+        if (!$snapshot->exists) {
             $io->warning('No run state, persisted events, hot prompt snapshot, or pending commands were found.');
 
             return self::SUCCESS;
         }
 
-        if (\is_array($snapshot['state'])) {
-            $state = $snapshot['state'];
+        if (null !== $snapshot->state) {
+            $state = $snapshot->state;
 
             $io->section('State');
             $io->definitionList(
-                ['status' => (string) $state['status']],
-                ['version' => (string) $state['version']],
-                ['turn_no' => (string) $state['turn_no']],
-                ['last_seq' => (string) $state['last_seq']],
-                ['active_step_id' => (string) ($state['active_step_id'] ?? 'n/a')],
-                ['retryable_failure' => true === $state['retryable_failure'] ? 'yes' : 'no'],
-                ['messages_count' => (string) $state['messages_count']],
-                ['pending_tool_calls' => (string) $state['pending_tool_calls']],
+                ['status' => $state->status],
+                ['version' => (string) $state->version],
+                ['turn_no' => (string) $state->turnNo],
+                ['last_seq' => (string) $state->lastSeq],
+                ['active_step_id' => $state->activeStepId ?? 'n/a'],
+                ['retryable_failure' => $state->retryableFailure ? 'yes' : 'no'],
+                ['messages_count' => (string) $state->messagesCount],
+                ['pending_tool_calls' => (string) $state->pendingToolCalls],
             );
         } else {
             $io->section('State');
             $io->text('No in-memory RunState found.');
         }
 
-        $integrity = $snapshot['integrity'];
+        $integrity = $snapshot->integrity;
 
         $io->section('Replay integrity');
         $io->definitionList(
-            ['source' => (string) $integrity['source']],
-            ['event_count' => (string) $integrity['event_count']],
-            ['last_seq' => (string) $integrity['last_seq']],
-            ['is_contiguous' => true === $integrity['is_contiguous'] ? 'yes' : 'no'],
-            ['missing_sequences' => [] === $integrity['missing_sequences'] ? 'none' : implode(',', $integrity['missing_sequences'])],
+            ['source' => $integrity->source],
+            ['event_count' => (string) $integrity->eventCount],
+            ['last_seq' => (string) $integrity->lastSeq],
+            ['is_contiguous' => $integrity->isContiguous ? 'yes' : 'no'],
+            ['missing_sequences' => [] === $integrity->missingSequences ? 'none' : implode(',', $integrity->missingSequences)],
         );
 
-        if (\is_array($snapshot['hot_prompt_state'])) {
-            $hotPromptState = $snapshot['hot_prompt_state'];
+        if (null !== $snapshot->hotPromptState) {
+            $hotPromptState = $snapshot->hotPromptState;
 
             $io->section('Hot prompt state');
             $io->definitionList(
-                ['source' => (string) ($hotPromptState['source'] ?? 'unknown')],
-                ['event_count' => (string) $hotPromptState['event_count']],
-                ['last_seq' => (string) $hotPromptState['last_seq']],
-                ['token_estimate' => (string) $hotPromptState['token_estimate']],
-                ['messages_count' => (string) $hotPromptState['messages_count']],
-                ['is_contiguous' => true === $hotPromptState['is_contiguous'] ? 'yes' : 'no'],
-                ['missing_sequences' => [] === $hotPromptState['missing_sequences'] ? 'none' : implode(',', $hotPromptState['missing_sequences'])],
+                ['source' => $hotPromptState->source],
+                ['event_count' => (string) $hotPromptState->eventCount],
+                ['last_seq' => (string) $hotPromptState->lastSeq],
+                ['token_estimate' => (string) $hotPromptState->tokenEstimate],
+                ['messages_count' => (string) $hotPromptState->messagesCount],
+                ['is_contiguous' => $hotPromptState->isContiguous ? 'yes' : 'no'],
+                ['missing_sequences' => [] === $hotPromptState->missingSequences ? 'none' : implode(',', $hotPromptState->missingSequences)],
             );
         }
 
-        if (\is_array($snapshot['metrics'])) {
-            $metrics = $snapshot['metrics'];
+        if (\is_array($snapshot->metrics)) {
+            $metrics = $snapshot->metrics;
             $llm = \is_array($metrics['llm'] ?? null) ? $metrics['llm'] : [];
             $tools = \is_array($metrics['tools'] ?? null) ? $metrics['tools'] : [];
             $queueLag = \is_array($metrics['command_queue_lag'] ?? null) ? $metrics['command_queue_lag'] : [];
@@ -108,7 +112,7 @@ final class AgentLoopRunInspectCommand extends Command
             );
         }
 
-        $pendingCommands = $snapshot['pending_commands'];
+        $pendingCommands = $snapshot->pendingCommands;
         $io->section('Pending commands');
 
         if ([] === $pendingCommands) {
@@ -121,16 +125,140 @@ final class AgentLoopRunInspectCommand extends Command
 
         foreach ($pendingCommands as $pendingCommand) {
             $rows[] = [
-                (string) $pendingCommand['idempotency_key'],
-                (string) $pendingCommand['kind'],
-                implode(',', $pendingCommand['payload_keys']),
-                $this->encodeJson($pendingCommand['options']),
+                $pendingCommand->idempotencyKey,
+                $pendingCommand->kind,
+                implode(',', $pendingCommand->payloadKeys),
+                $this->encodeJson(['cancel_safe' => $pendingCommand->cancelSafe]),
             ];
         }
 
         $io->table(['idempotency_key', 'kind', 'payload_keys', 'options'], $rows);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @return array{
+     * run_id: string,
+     * exists: bool,
+     * state: array{
+     * status: string,
+     * version: int,
+     * turn_no: int,
+     * last_seq: int,
+     * active_step_id: ?string,
+     * retryable_failure: bool,
+     * messages_count: int,
+     * pending_tool_calls: int
+     * }|null,
+     * integrity: array{
+     * run_id: string,
+     * source: string,
+     * event_count: int,
+     * last_seq: int,
+     * missing_sequences: list<int>,
+     * is_contiguous: bool
+     * },
+     * hot_prompt_state: array{
+     * source: string,
+     * event_count: int,
+     * last_seq: int,
+     * token_estimate: int,
+     * is_contiguous: bool,
+     * missing_sequences: list<int>,
+     * messages_count: int,
+     * updated_at: ?string
+     * }|null,
+     * pending_commands: list<array{kind: string, idempotency_key: string, payload_keys: list<string>, options: array{cancel_safe: bool}}>,
+     * metrics: array<string, mixed>|null
+     * }
+     */
+    private function snapshotToArray(RunDebugSnapshot $snapshot): array
+    {
+        return [
+            'run_id' => $snapshot->runId,
+            'exists' => $snapshot->exists,
+            'state' => $this->runStateToArray($snapshot->state),
+            'integrity' => [
+                'run_id' => $snapshot->integrity->runId,
+                'source' => $snapshot->integrity->source,
+                'event_count' => $snapshot->integrity->eventCount,
+                'last_seq' => $snapshot->integrity->lastSeq,
+                'missing_sequences' => $snapshot->integrity->missingSequences,
+                'is_contiguous' => $snapshot->integrity->isContiguous,
+            ],
+            'hot_prompt_state' => $this->hotPromptStateToArray($snapshot->hotPromptState),
+            'pending_commands' => array_map(
+                static fn (PendingCommandSnapshot $pendingCommand): array => [
+                    'kind' => $pendingCommand->kind,
+                    'idempotency_key' => $pendingCommand->idempotencyKey,
+                    'payload_keys' => $pendingCommand->payloadKeys,
+                    'options' => ['cancel_safe' => $pendingCommand->cancelSafe],
+                ],
+                $snapshot->pendingCommands,
+            ),
+            'metrics' => $snapshot->metrics,
+        ];
+    }
+
+    /**
+     * @return array{
+     * status: string,
+     * version: int,
+     * turn_no: int,
+     * last_seq: int,
+     * active_step_id: ?string,
+     * retryable_failure: bool,
+     * messages_count: int,
+     * pending_tool_calls: int
+     * }|null
+     */
+    private function runStateToArray(?RunStateSnapshot $state): ?array
+    {
+        if (null === $state) {
+            return null;
+        }
+
+        return [
+            'status' => $state->status,
+            'version' => $state->version,
+            'turn_no' => $state->turnNo,
+            'last_seq' => $state->lastSeq,
+            'active_step_id' => $state->activeStepId,
+            'retryable_failure' => $state->retryableFailure,
+            'messages_count' => $state->messagesCount,
+            'pending_tool_calls' => $state->pendingToolCalls,
+        ];
+    }
+
+    /**
+     * @return array{
+     * source: string,
+     * event_count: int,
+     * last_seq: int,
+     * token_estimate: int,
+     * is_contiguous: bool,
+     * missing_sequences: list<int>,
+     * messages_count: int,
+     * updated_at: ?string
+     * }|null
+     */
+    private function hotPromptStateToArray(?HotPromptStateSnapshot $hotPromptState): ?array
+    {
+        if (null === $hotPromptState) {
+            return null;
+        }
+
+        return [
+            'source' => $hotPromptState->source,
+            'event_count' => $hotPromptState->eventCount,
+            'last_seq' => $hotPromptState->lastSeq,
+            'token_estimate' => $hotPromptState->tokenEstimate,
+            'is_contiguous' => $hotPromptState->isContiguous,
+            'missing_sequences' => $hotPromptState->missingSequences,
+            'messages_count' => $hotPromptState->messagesCount,
+            'updated_at' => $hotPromptState->updatedAt?->format(\DATE_ATOM),
+        ];
     }
 
     /**

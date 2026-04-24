@@ -11,6 +11,8 @@ use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Contract\Tool\PlatformInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
+use Ineersa\AgentCore\Domain\Tool\ModelInvocationRequest;
+use Ineersa\AgentCore\Domain\Tool\PlatformInvocationResult;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
@@ -27,9 +29,9 @@ final class ExecutionWorkerTest extends TestCase
     public function testLlmWorkerConvertsPlatformErrorsIntoStructuredResultMessage(): void
     {
         $platform = new class implements PlatformInterface {
-            public function invoke(string $model, array $input, array $options = []): array
+            public function invoke(ModelInvocationRequest $request): PlatformInvocationResult
             {
-                unset($model, $input, $options);
+                unset($request);
 
                 throw new \RuntimeException('Provider unavailable.');
             }
@@ -63,9 +65,9 @@ final class ExecutionWorkerTest extends TestCase
     public function testLlmWorkerRecordsLatencyErrorAndTracingSpans(): void
     {
         $platform = new class implements PlatformInterface {
-            public function invoke(string $model, array $input, array $options = []): array
+            public function invoke(ModelInvocationRequest $request): PlatformInvocationResult
             {
-                unset($model, $input, $options);
+                unset($request);
 
                 throw new \RuntimeException('Provider unavailable.');
             }

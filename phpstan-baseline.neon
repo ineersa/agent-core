@@ -163,6 +163,48 @@ parameters:
 			path: src/Domain/Event/BoundaryHookEvent.php
 
 		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Extension\\AfterTurnCommitEventSummary\:\:\$seq is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Domain/Extension/AfterTurnCommitEventSummary.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Extension\\AfterTurnCommitEventSummary\:\:\$type is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Domain/Extension/AfterTurnCommitEventSummary.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Extension\\AfterTurnCommitHookContext\:\:\$runId is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Domain/Extension/AfterTurnCommitHookContext.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Extension\\AfterTurnCommitHookContext\:\:\$turnNo is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Domain/Extension/AfterTurnCommitHookContext.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Extension\\AfterTurnCommitHookContext\:\:\$status is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Domain/Extension/AfterTurnCommitHookContext.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Extension\\AfterTurnCommitHookContext\:\:\$events is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Domain/Extension/AfterTurnCommitHookContext.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Extension\\AfterTurnCommitHookContext\:\:\$effectsCount is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Domain/Extension/AfterTurnCommitHookContext.php
+
+		-
 			message: '#^Unused Ineersa\\AgentCore\\Domain\\Event\\CoreLifecycleEventType\:\:eventClassMap$#'
 			identifier: shipmonk.deadMethod
 			count: 1

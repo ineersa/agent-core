@@ -1,9 +1,0 @@
-spec: agent-core.file-index/v1
-file: ArtifactStoreInterface.php
-class: "Ineersa\\AgentCore\\Contract\\ArtifactStoreInterface"
-type: interface
-wiring:
-  aliases[1]{serviceId,target}:
-    "Ineersa\\AgentCore\\Contract\\ArtifactStoreInterface","Ineersa\\AgentCore\\Infrastructure\\Storage\\LocalArtifactStore"
-methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  put,9,14,6,14,21,"public function put(string $runId, string $artifactName, string $content, array $metadata = []): string"

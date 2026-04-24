@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Handler;
 
+use Ineersa\AgentCore\Application\Dto\ReplayIntegrity;
+use Ineersa\AgentCore\Application\Dto\ResolvedReplayEvents;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\PromptStateStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Run\PromptState;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
 
 final readonly class ReplayService
@@ -21,42 +24,31 @@ final readonly class ReplayService
     }
 
     /**
-     * reconstructs current prompt state for a given run by replaying events.
-     *
-     * @return array{
-     * run_id: string,
-     * source: 'canonical_events'|'jsonl_fallback',
-     * event_count: int,
-     * last_seq: int,
-     * missing_sequences: list<int>,
-     * is_contiguous: bool,
-     * token_estimate: int,
-     * messages: list<array<string, mixed>>
-     * }
+     * Reconstructs current prompt state for a given run by replaying events.
      */
-    public function rebuildHotPromptState(string $runId): array
+    public function rebuildHotPromptState(string $runId): PromptState
     {
-        $rebuild = function () use ($runId): array {
-            [$events, $source] = $this->eventsForReplay($runId);
+        $rebuild = function () use ($runId): PromptState {
+            $resolvedReplayEvents = $this->eventsForReplay($runId);
 
-            $messages = $this->replayMessages($events);
-            $integrity = $this->verifyIntegrity($runId);
+            $messages = $this->replayMessages($resolvedReplayEvents->events);
+            $integrity = $this->integrityFromResolvedReplayEvents($runId, $resolvedReplayEvents);
 
-            $state = [
-                'run_id' => $runId,
-                'source' => $source,
-                'event_count' => $integrity['event_count'],
-                'last_seq' => $integrity['last_seq'],
-                'missing_sequences' => $integrity['missing_sequences'],
-                'is_contiguous' => $integrity['is_contiguous'],
-                'token_estimate' => $this->estimateTokens($messages),
-                'messages' => $messages,
-            ];
+            $promptState = new PromptState(
+                runId: $runId,
+                source: $resolvedReplayEvents->source,
+                eventCount: $integrity->eventCount,
+                lastSeq: $integrity->lastSeq,
+                missingSequences: $integrity->missingSequences,
+                isContiguous: $integrity->isContiguous,
+                tokenEstimate: $this->estimateTokens($messages),
+                messages: $messages,
+            );
 
-            $this->promptStateStore->save($runId, $state);
-            $this->metrics?->incrementReplayRebuildCount($source);
+            $this->promptStateStore->save($runId, $promptState);
+            $this->metrics?->incrementReplayRebuildCount($resolvedReplayEvents->source);
 
-            return $state;
+            return $promptState;
         };
 
         if (null === $this->tracer) {
@@ -69,49 +61,50 @@ final readonly class ReplayService
     }
 
     /**
-     * validates event sequence integrity and identifies missing sequences for a run.
-     *
-     * @return array{
-     * run_id: string,
-     * source: 'canonical_events'|'jsonl_fallback',
-     * event_count: int,
-     * last_seq: int,
-     * missing_sequences: list<int>,
-     * is_contiguous: bool
-     * }
+     * Validates event sequence integrity and identifies missing sequences for a run.
      */
-    public function verifyIntegrity(string $runId): array
+    public function verifyIntegrity(string $runId): ReplayIntegrity
     {
-        [$events, $source] = $this->eventsForReplay($runId);
-        $missingSequences = $this->missingSequences($events);
-
-        return [
-            'run_id' => $runId,
-            'source' => $source,
-            'event_count' => \count($events),
-            'last_seq' => [] === $events ? 0 : max(array_map(static fn (RunEvent $event): int => $event->seq, $events)),
-            'missing_sequences' => $missingSequences,
-            'is_contiguous' => [] === $missingSequences,
-        ];
+        return $this->integrityFromResolvedReplayEvents($runId, $this->eventsForReplay($runId));
     }
 
     /**
-     * fetches and sorts events required for replaying a specific run.
-     *
-     * @return array{0: list<RunEvent>, 1: 'canonical_events'|'jsonl_fallback'}
+     * Fetches and sorts events required for replaying a specific run.
      */
-    private function eventsForReplay(string $runId): array
+    private function eventsForReplay(string $runId): ResolvedReplayEvents
     {
         $events = $this->eventStore->allFor($runId);
         if ([] !== $events) {
-            return [$this->sortBySequence($events), 'canonical_events'];
+            return new ResolvedReplayEvents(
+                events: $this->sortBySequence($events),
+                source: 'canonical_events',
+            );
         }
 
-        return [$this->sortBySequence($this->runLogReader->allFor($runId)), 'jsonl_fallback'];
+        return new ResolvedReplayEvents(
+            events: $this->sortBySequence($this->runLogReader->allFor($runId)),
+            source: 'jsonl_fallback',
+        );
+    }
+
+    private function integrityFromResolvedReplayEvents(string $runId, ResolvedReplayEvents $resolvedReplayEvents): ReplayIntegrity
+    {
+        $missingSequences = $this->missingSequences($resolvedReplayEvents->events);
+
+        return new ReplayIntegrity(
+            runId: $runId,
+            source: $resolvedReplayEvents->source,
+            eventCount: \count($resolvedReplayEvents->events),
+            lastSeq: [] === $resolvedReplayEvents->events
+                ? 0
+                : max(array_map(static fn (RunEvent $event): int => $event->seq, $resolvedReplayEvents->events)),
+            missingSequences: $missingSequences,
+            isContiguous: [] === $missingSequences,
+        );
     }
 
     /**
-     * orders events by their sequence number to ensure correct replay order.
+     * Orders events by their sequence number to ensure correct replay order.
      *
      * @param list<RunEvent> $events
      *
@@ -125,7 +118,7 @@ final readonly class ReplayService
     }
 
     /**
-     * processes events to generate replayed message history.
+     * Processes events to generate replayed message history.
      *
      * @param list<RunEvent> $events
      *
@@ -169,7 +162,7 @@ final readonly class ReplayService
     }
 
     /**
-     * identifies gaps in event sequences for a given set of events.
+     * Identifies gaps in event sequences for a given set of events.
      *
      * @param list<RunEvent> $events
      *
@@ -197,7 +190,7 @@ final readonly class ReplayService
     }
 
     /**
-     * calculates approximate token count for a list of messages.
+     * Calculates approximate token count for a list of messages.
      *
      * @param list<array<string, mixed>> $messages
      */

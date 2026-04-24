@@ -5,49 +5,47 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Support\Fake;
 
 use Ineersa\AgentCore\Contract\Tool\PlatformInterface;
+use Ineersa\AgentCore\Domain\Tool\ModelInvocationRequest;
+use Ineersa\AgentCore\Domain\Tool\PlatformInvocationResult;
 
 final class FakePlatform implements PlatformInterface
 {
-    /** @var list<array<string, mixed>|\Throwable> */
+    /** @var list<PlatformInvocationResult|\Throwable> */
     private array $responses;
 
-    /** @var list<array{model: string, input: array<string, mixed>, options: array<string, mixed>}> */
+    /** @var list<ModelInvocationRequest> */
     public array $invocations = [];
 
     /**
-     * @param list<array<string, mixed>|\Throwable> $responses
+     * @param list<PlatformInvocationResult|\Throwable> $responses
      */
     public function __construct(array $responses = [])
     {
         $this->responses = array_values($responses);
     }
 
-    public function push(array|\Throwable $response): void
+    public function push(PlatformInvocationResult|\Throwable $response): void
     {
         $this->responses[] = $response;
     }
 
-    public function invoke(string $model, array $input, array $options = []): array
+    public function invoke(ModelInvocationRequest $request): PlatformInvocationResult
     {
-        $this->invocations[] = [
-            'model' => $model,
-            'input' => $input,
-            'options' => $options,
-        ];
+        $this->invocations[] = $request;
 
         if ([] === $this->responses) {
-            return [
-                'assistant_message' => [
+            return new PlatformInvocationResult(
+                assistantMessage: [
                     'role' => 'assistant',
                     'content' => [[
                         'type' => 'text',
                         'text' => 'fake-platform-default',
                     ]],
                 ],
-                'usage' => [],
-                'stop_reason' => 'stop',
-                'error' => null,
-            ];
+                usage: [],
+                stopReason: 'stop',
+                error: null,
+            );
         }
 
         $next = array_shift($this->responses);

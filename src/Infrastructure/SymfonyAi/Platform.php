@@ -15,6 +15,10 @@ use Ineersa\AgentCore\Contract\Tool\ModelResolverInterface;
 use Ineersa\AgentCore\Contract\Tool\PlatformInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\MessageBag;
+use Ineersa\AgentCore\Domain\Tool\ModelInvocationRequest;
+use Ineersa\AgentCore\Domain\Tool\ModelResolutionContext;
+use Ineersa\AgentCore\Domain\Tool\ModelResolutionOptions;
+use Ineersa\AgentCore\Domain\Tool\PlatformInvocationResult;
 
 final readonly class Platform implements PlatformInterface
 {
@@ -38,26 +42,31 @@ final readonly class Platform implements PlatformInterface
     ) {
     }
 
-    public function invoke(string $model, array $input, array $options = []): array
+    public function invoke(ModelInvocationRequest $request): PlatformInvocationResult
     {
-        $runContext = $this->runContextFrom($input);
-        $cancelToken = $this->cancellationToken($runContext['run_id'] ?? null, $options['cancel_token'] ?? null);
+        $runContext = $this->runContextFrom($request->input);
+        $cancelToken = $this->cancellationToken($runContext->runId, $request->options['cancel_token'] ?? null);
 
-        $messages = $this->resolveContextMessages($input, $runContext['run_id'] ?? null);
+        $messages = $this->resolveContextMessages($request->input, $runContext->runId);
         $messages = $this->applyTransformHooks($messages, $cancelToken);
 
         $llmMessages = $this->applyConvertHooks($messages, $cancelToken);
 
-        $providerModel = 'default' === $model ? $this->defaultModel : $model;
-        $providerOptions = $this->optionsWithoutInternalFields($options);
+        $providerModel = 'default' === $request->model ? $this->defaultModel : $request->model;
+        $providerOptions = $this->optionsWithoutInternalFields(new ModelResolutionOptions($request->options));
 
         if (null !== $this->modelResolver) {
-            $resolvedModel = $this->modelResolver->resolve($providerModel, $llmMessages, $runContext, $providerOptions);
+            $resolvedModel = $this->modelResolver->resolve(
+                $providerModel,
+                $llmMessages,
+                $runContext,
+                new ModelResolutionOptions($providerOptions),
+            );
             $providerModel = $resolvedModel->model;
             $providerOptions = array_replace($providerOptions, $resolvedModel->options);
         }
 
-        $tools = $this->toolCatalogResolver->resolveProviderPayload($runContext);
+        $tools = $this->toolCatalogResolver->resolveProviderPayload($runContext->asToolCatalogContext());
         if ([] !== $tools && !\array_key_exists('tools', $providerOptions)) {
             $providerOptions['tools'] = $tools;
         }
@@ -73,25 +82,21 @@ final readonly class Platform implements PlatformInterface
 
         $providerInput = $this->providerInputFrom($requestInput);
 
-        $result = $this->invoker->invoke(
+        return $this->invoker->invoke(
             model: $providerModel,
             input: $providerInput,
             toolDefinitions: $tools,
             options: $providerOptions,
             cancelToken: $cancelToken,
         );
-
-        return $result->toArray();
     }
 
     /**
-     * Constructs the run context array from the provided input payload.
+     * Constructs typed model resolution context from invocation input payload.
      *
      * @param array<string, mixed> $input
-     *
-     * @return array<string, mixed>
      */
-    private function runContextFrom(array $input): array
+    private function runContextFrom(array $input): ModelResolutionContext
     {
         $runId = \is_string($input['run_id'] ?? null) ? $input['run_id'] : null;
 
@@ -101,13 +106,13 @@ final readonly class Platform implements PlatformInterface
             }
         }
 
-        return array_filter([
-            'run_id' => $runId,
-            'turn_no' => \is_int($input['turn_no'] ?? null) ? $input['turn_no'] : null,
-            'step_id' => \is_string($input['step_id'] ?? null) ? $input['step_id'] : null,
-            'context_ref' => \is_string($input['context_ref'] ?? null) ? $input['context_ref'] : null,
-            'tools_ref' => \is_string($input['tools_ref'] ?? null) ? $input['tools_ref'] : null,
-        ], static fn (mixed $value): bool => null !== $value);
+        return new ModelResolutionContext(
+            runId: $runId,
+            turnNo: \is_int($input['turn_no'] ?? null) ? $input['turn_no'] : null,
+            stepId: \is_string($input['step_id'] ?? null) ? $input['step_id'] : null,
+            contextRef: \is_string($input['context_ref'] ?? null) ? $input['context_ref'] : null,
+            toolsRef: \is_string($input['tools_ref'] ?? null) ? $input['tools_ref'] : null,
+        );
     }
 
     /**
@@ -252,15 +257,11 @@ final readonly class Platform implements PlatformInterface
     /**
      * Filters out internal fields from options before passing to the provider.
      *
-     * @param array<string, mixed> $options
-     *
      * @return array<string, mixed>
      */
-    private function optionsWithoutInternalFields(array $options): array
+    private function optionsWithoutInternalFields(ModelResolutionOptions $options): array
     {
-        unset($options['cancel_token']);
-
-        return $options;
+        return $options->withoutKeys(['cancel_token'])->values;
     }
 
     private function cancellationToken(?string $runId, mixed $provided): CancellationTokenInterface

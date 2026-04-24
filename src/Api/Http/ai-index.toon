@@ -1,8 +1,0 @@
-spec: agent-core.ai-docs/v1
-namespace: Http
-fqcn: "Ineersa\\AgentCore\\Api\\Http"
-updatedAt: 2026-04-23
-files[2]{file,type}:
-  RunApiController.php,readonly final class
-  RunReadService.php,readonly final class
-description: "HTTP controllers for run start, commands, transcript reads, and event replay with tenant-scoped authorization."

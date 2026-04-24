@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Contract;
 
+use Ineersa\AgentCore\Domain\Artifact\ArtifactMetadata;
+
 interface ArtifactStoreInterface
 {
     /**
-     * persists an artifact with given run ID, name, content, and optional metadata.
-     *
-     * @param array<string, mixed> $metadata
+     * Persists an artifact with given run ID, name, content, and optional metadata.
      */
-    public function put(string $runId, string $artifactName, string $content, array $metadata = []): string;
+    public function put(string $runId, string $artifactName, string $content, ?ArtifactMetadata $metadata = null): string;
 }

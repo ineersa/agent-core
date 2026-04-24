@@ -6,3 +6,4 @@ config/reference.php
 .php-cs-fixer.cache
 callgraph.json
 callgraph.html
+*.toon

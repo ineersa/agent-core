@@ -1,6 +1,0 @@
-spec: agent-core.ai-docs/v1
-namespace: Api
-fqcn: "Ineersa\\AgentCore\\Contract\\Api"
-updatedAt: 2026-04-23
-files[1]{file,type}:
-  AuthorizeRunInterface.php,interface

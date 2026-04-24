@@ -4,12 +4,18 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Handler;
 
+use Ineersa\AgentCore\Application\Dto\HotPromptStateSnapshot;
+use Ineersa\AgentCore\Application\Dto\PendingCommandSnapshot;
+use Ineersa\AgentCore\Application\Dto\ResolvedReplayEvents;
+use Ineersa\AgentCore\Application\Dto\RunDebugSnapshot;
+use Ineersa\AgentCore\Application\Dto\RunStateSnapshot;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\PromptStateStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Run\PromptState;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
 
 final readonly class RunDebugService
@@ -27,82 +33,43 @@ final readonly class RunDebugService
 
     /**
      * Builds a consolidated debug snapshot for a run.
-     *
-     * @return array{
-     * run_id: string,
-     * exists: bool,
-     * state: array{
-     * status: string,
-     * version: int,
-     * turn_no: int,
-     * last_seq: int,
-     * active_step_id: ?string,
-     * retryable_failure: bool,
-     * messages_count: int,
-     * pending_tool_calls: int
-     * }|null,
-     * integrity: array{
-     * run_id: string,
-     * source: 'canonical_events'|'jsonl_fallback',
-     * event_count: int,
-     * last_seq: int,
-     * missing_sequences: list<int>,
-     * is_contiguous: bool
-     * },
-     * hot_prompt_state: array{
-     * source: ?string,
-     * event_count: int,
-     * last_seq: int,
-     * token_estimate: int,
-     * is_contiguous: bool,
-     * missing_sequences: list<int>,
-     * messages_count: int
-     * }|null,
-     * pending_commands: list<array{
-     * kind: string,
-     * idempotency_key: string,
-     * payload_keys: list<string>,
-     * options: array<string, mixed>
-     * }>,
-     * metrics: array<string, mixed>|null
-     * }
      */
-    public function inspect(string $runId): array
+    public function inspect(string $runId): RunDebugSnapshot
     {
         $state = $this->runStore->get($runId);
         $integrity = $this->replayService->verifyIntegrity($runId);
-        $hotPromptState = $this->normalizeHotPromptState($this->promptStateStore->get($runId));
+        $hotPromptState = HotPromptStateSnapshot::fromPromptState($this->promptStateStore->get($runId));
 
         $pendingCommands = array_map(
-            static fn (PendingCommand $command): array => [
-                'kind' => $command->kind,
-                'idempotency_key' => $command->idempotencyKey,
-                'payload_keys' => array_values(array_map('strval', array_keys($command->payload))),
-                'options' => $command->options,
-            ],
+            static fn (PendingCommand $command): PendingCommandSnapshot => new PendingCommandSnapshot(
+                kind: $command->kind,
+                idempotencyKey: $command->idempotencyKey,
+                payloadKeys: array_values(array_map('strval', array_keys($command->payload))),
+                cancelSafe: $command->options->safe,
+            ),
             $this->commandStore->pending($runId),
         );
 
-        return [
-            'run_id' => $runId,
-            'exists' => null !== $state || null !== $hotPromptState || [] !== $pendingCommands || $integrity['event_count'] > 0,
-            'state' => null === $state
+        return new RunDebugSnapshot(
+            runId: $runId,
+            exists: null !== $state || null !== $hotPromptState || [] !== $pendingCommands || $integrity->eventCount > 0,
+            state: null === $state
                 ? null
-                : [
-                    'status' => $state->status->value,
-                    'version' => $state->version,
-                    'turn_no' => $state->turnNo,
-                    'last_seq' => $state->lastSeq,
-                    'active_step_id' => $state->activeStepId,
-                    'retryable_failure' => $state->retryableFailure,
-                    'messages_count' => \count($state->messages),
-                    'pending_tool_calls' => \count($state->pendingToolCalls),
-                ],
-            'integrity' => $integrity,
-            'hot_prompt_state' => $hotPromptState,
-            'pending_commands' => $pendingCommands,
-            'metrics' => $this->metrics?->snapshot(),
-        ];
+                : new RunStateSnapshot(
+                    status: $state->status->value,
+                    version: $state->version,
+                    turnNo: $state->turnNo,
+                    lastSeq: $state->lastSeq,
+                    activeStepId: $state->activeStepId,
+                    retryableFailure: $state->retryableFailure,
+                    messagesCount: \count($state->messages),
+                    pendingToolCalls: \count($state->pendingToolCalls),
+                ),
+            integrity: $integrity,
+            hotPromptState: $hotPromptState,
+            pendingCommands: $pendingCommands,
+            metrics: $this->metrics?->snapshot(),
+        );
     }
 
     /**
@@ -120,14 +87,14 @@ final readonly class RunDebugService
      */
     public function replayAfter(string $runId, int $afterSeq = 0, int $limit = 200): array
     {
-        [$events, $source] = $this->eventsForRun($runId);
+        $resolvedReplayEvents = $this->eventsForRun($runId);
 
         $afterSeq = max(0, $afterSeq);
         $limitedTo = $this->clampLimit($limit, 1000);
 
         $filtered = [];
 
-        foreach ($events as $event) {
+        foreach ($resolvedReplayEvents->events as $event) {
             if ($event->seq <= $afterSeq) {
                 continue;
             }
@@ -139,7 +106,7 @@ final readonly class RunDebugService
 
         return [
             'run_id' => $runId,
-            'source' => $source,
+            'source' => $resolvedReplayEvents->source,
             'after_seq' => $afterSeq,
             'total_events' => \count($filtered),
             'resync_required' => [] !== $missingSequences,
@@ -161,94 +128,44 @@ final readonly class RunDebugService
      */
     public function tail(string $runId, int $limit = 25): array
     {
-        [$events, $source] = $this->eventsForRun($runId);
+        $resolvedReplayEvents = $this->eventsForRun($runId);
 
         $limitedTo = $this->clampLimit($limit, 500);
 
         return [
             'run_id' => $runId,
-            'source' => $source,
-            'total_events' => \count($events),
+            'source' => $resolvedReplayEvents->source,
+            'total_events' => \count($resolvedReplayEvents->events),
             'limit' => $limitedTo,
-            'events' => \array_slice($events, -$limitedTo),
+            'events' => \array_slice($resolvedReplayEvents->events, -$limitedTo),
         ];
     }
 
     /**
      * Rebuilds and stores hot prompt state for a run by replaying persisted events.
-     *
-     * @return array{
-     * run_id: string,
-     * source: 'canonical_events'|'jsonl_fallback',
-     * event_count: int,
-     * last_seq: int,
-     * missing_sequences: list<int>,
-     * is_contiguous: bool,
-     * token_estimate: int,
-     * messages: list<array<string, mixed>>
-     * }
      */
-    public function rebuildHotPromptState(string $runId): array
+    public function rebuildHotPromptState(string $runId): PromptState
     {
         return $this->replayService->rebuildHotPromptState($runId);
     }
 
     /**
-     * Normalizes stored hot prompt state into a stable debug shape.
-     *
-     * @param array<string, mixed>|null $state
-     *
-     * @return array{
-     * source: ?string,
-     * event_count: int,
-     * last_seq: int,
-     * token_estimate: int,
-     * is_contiguous: bool,
-     * missing_sequences: list<int>,
-     * messages_count: int
-     * }|null
-     */
-    private function normalizeHotPromptState(?array $state): ?array
-    {
-        if (null === $state) {
-            return null;
-        }
-
-        $messages = \is_array($state['messages'] ?? null) ? $state['messages'] : [];
-        $missingSequences = [];
-
-        foreach ($state['missing_sequences'] ?? [] as $sequence) {
-            if (!\is_int($sequence)) {
-                continue;
-            }
-
-            $missingSequences[] = $sequence;
-        }
-
-        return [
-            'source' => \is_string($state['source'] ?? null) ? $state['source'] : null,
-            'event_count' => \is_int($state['event_count'] ?? null) ? $state['event_count'] : 0,
-            'last_seq' => \is_int($state['last_seq'] ?? null) ? $state['last_seq'] : 0,
-            'token_estimate' => \is_int($state['token_estimate'] ?? null) ? $state['token_estimate'] : 0,
-            'is_contiguous' => true === ($state['is_contiguous'] ?? false),
-            'missing_sequences' => $missingSequences,
-            'messages_count' => \count($messages),
-        ];
-    }
-
-    /**
      * Resolves canonical events or JSONL fallback events for a run.
-     *
-     * @return array{0: list<RunEvent>, 1: 'canonical_events'|'jsonl_fallback'}
      */
-    private function eventsForRun(string $runId): array
+    private function eventsForRun(string $runId): ResolvedReplayEvents
     {
         $events = $this->eventStore->allFor($runId);
         if ([] !== $events) {
-            return [$this->sortBySequence($events), 'canonical_events'];
+            return new ResolvedReplayEvents(
+                events: $this->sortBySequence($events),
+                source: 'canonical_events',
+            );
         }
 
-        return [$this->sortBySequence($this->runLogReader->allFor($runId)), 'jsonl_fallback'];
+        return new ResolvedReplayEvents(
+            events: $this->sortBySequence($this->runLogReader->allFor($runId)),
+            source: 'jsonl_fallback',
+        );
     }
 
     /**

@@ -5,28 +5,29 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Infrastructure\Storage;
 
 use Ineersa\AgentCore\Contract\PromptStateStoreInterface;
+use Ineersa\AgentCore\Domain\Run\PromptState;
 
 final class HotPromptStateStore implements PromptStateStoreInterface
 {
-    /** @var array<string, array<string, mixed>> */
+    /** @var array<string, PromptState> */
     private array $states = [];
 
-    public function get(string $runId): ?array
+    public function get(string $runId): ?PromptState
     {
         return $this->states[$runId] ?? null;
     }
 
-    public function save(string $runId, array $state): void
+    public function save(string $runId, PromptState $state): void
     {
-        if (null !== $this->get($runId)) {
+        if ($state->runId !== $runId) {
+            throw new \InvalidArgumentException('PromptState runId must match persisted runId.');
+        }
+
+        if (isset($this->states[$runId])) {
             $this->delete($runId);
         }
 
-        $normalizedState = $state;
-        $updatedAt = new \DateTimeImmutable();
-        $normalizedState['updated_at'] = $updatedAt->format(\DATE_ATOM);
-
-        $this->states[$runId] = $normalizedState;
+        $this->states[$runId] = $state->withUpdatedAt(new \DateTimeImmutable());
     }
 
     public function delete(string $runId): void

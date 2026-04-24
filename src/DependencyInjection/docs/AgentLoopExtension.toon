@@ -1,7 +1,0 @@
-spec: agent-core.file-index/v1
-file: AgentLoopExtension.php
-class: "Ineersa\\AgentCore\\DependencyInjection\\AgentLoopExtension"
-type: final class
-methods[2]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  prepend,15,31,17,15,21,"public function prepend(ContainerBuilder $container): void"
-  load,33,71,39,38,21,"public function load(array $configs, ContainerBuilder $container): void"

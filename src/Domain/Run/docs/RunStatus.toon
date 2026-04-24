@@ -1,6 +1,0 @@
-spec: agent-core.file-index/v1
-file: RunStatus.php
-class: "Ineersa\\AgentCore\\Domain\\Run\\RunStatus"
-type: enum
-sections[1]{kind,start,end,limit}:
-  constants,9,15,7

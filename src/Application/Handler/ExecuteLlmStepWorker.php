@@ -7,6 +7,8 @@ namespace Ineersa\AgentCore\Application\Handler;
 use Ineersa\AgentCore\Contract\Tool\PlatformInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
+use Ineersa\AgentCore\Domain\Tool\ModelInvocationRequest;
+use Ineersa\AgentCore\Domain\Tool\PlatformInvocationResult;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -56,13 +58,16 @@ final readonly class ExecuteLlmStepWorker
         $startedAt = hrtime(true);
 
         try {
-            $invoke = fn (): array => $this->platform->invoke('default', [
-                'run_id' => $message->runId(),
-                'turn_no' => $message->turnNo(),
-                'step_id' => $message->stepId(),
-                'context_ref' => $message->contextRef,
-                'tools_ref' => $message->toolsRef,
-            ]);
+            $invoke = fn (): PlatformInvocationResult => $this->platform->invoke(new ModelInvocationRequest(
+                model: 'default',
+                input: [
+                    'run_id' => $message->runId(),
+                    'turn_no' => $message->turnNo(),
+                    'step_id' => $message->stepId(),
+                    'context_ref' => $message->contextRef,
+                    'tools_ref' => $message->toolsRef,
+                ],
+            ));
 
             $response = null === $this->tracer
                 ? $invoke()
@@ -74,20 +79,11 @@ final readonly class ExecuteLlmStepWorker
             ;
 
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
-            $this->metrics?->recordLlmLatency($durationMs, \is_array($response['error'] ?? null));
+            $this->metrics?->recordLlmLatency($durationMs, null !== $response->error);
 
-            $assistantMessage = null;
-            if (\is_array($response['assistant_message'] ?? null)) {
-                $assistantMessage = $response['assistant_message'];
-            } elseif (\is_string($response['text'] ?? null)) {
-                $assistantMessage = [
-                    'role' => 'assistant',
-                    'content' => [[
-                        'type' => 'text',
-                        'text' => $response['text'],
-                    ]],
-                ];
-            } elseif (null === ($response['stop_reason'] ?? null) && !\is_array($response['error'] ?? null)) {
+            $assistantMessage = $response->assistantMessage;
+            $hasStreamDeltas = [] !== $response->deltas();
+            if (null === $assistantMessage && !$hasStreamDeltas && null === $response->stopReason && null === $response->error) {
                 $assistantMessage = [
                     'role' => 'assistant',
                     'content' => [[
@@ -104,9 +100,9 @@ final readonly class ExecuteLlmStepWorker
                 attempt: $message->attempt(),
                 idempotencyKey: $message->idempotencyKey(),
                 assistantMessage: $assistantMessage,
-                usage: \is_array($response['usage'] ?? null) ? $response['usage'] : [],
-                stopReason: \is_string($response['stop_reason'] ?? null) ? $response['stop_reason'] : null,
-                error: \is_array($response['error'] ?? null) ? $response['error'] : null,
+                usage: $response->usage,
+                stopReason: $response->stopReason,
+                error: $response->error,
             );
         } catch (\Throwable $exception) {
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;

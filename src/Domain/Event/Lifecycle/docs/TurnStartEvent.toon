@@ -1,6 +1,0 @@
-spec: agent-core.file-index/v1
-file: TurnStartEvent.php
-class: "Ineersa\\AgentCore\\Domain\\Event\\Lifecycle\\TurnStartEvent"
-type: readonly final class
-sections[1]{kind,start,end,limit}:
-  constants,11,11,1

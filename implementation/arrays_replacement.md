@@ -12,10 +12,54 @@ This plan replaces structural arrays with explicit DTOs/ValueObjects, grouped by
 
 1. **Replace fixed-shape associative arrays** with `readonly` DTO/VO classes.
 2. **Replace tuple arrays** (`array{0: ..., 1: ...}`) with named result DTOs.
-3. **Keep truly polymorphic maps** (extension payloads, unknown provider metadata) as `array<string, mixed>` for now, but encapsulate behind typed wrappers.
-4. Use Symfony Serializer (`denormalize()` / `normalize()`) at boundaries for compatibility.
+3. **Do not introduce pass-through wrappers** (`public array $values`, `all()` only) for deterministic schemas. If we know keys, model them as typed properties (and nested objects where appropriate).
+4. **Keep truly polymorphic maps** (extension payloads, unknown provider metadata) as `array<string, mixed>` for now, but encapsulate behind typed wrappers with meaningful typed fields around the map.
+5. Use Symfony Serializer (`denormalize()` / `normalize()`) at boundaries to map transport payloads directly to typed DTOs/VOs.
+6. Do not add DTO/VO `fromArray()` / `toArray()` helpers; boundary conversion belongs to Symfony Serializer.
+
+### Refactor review guardrails (added 2026-04-23)
+
+- Public application services (`Application\Handler\*`) must not return shaped arrays when a DTO already exists for the same concept.
+- For known option bags (example: `array{cancel_safe?: bool}`), define typed option objects instead of `array<string, mixed>` pass-through storage.
+- Artifact metadata must expose typed fields (`mediaType`, `encoding`, etc.) and optional extension attributes, not a raw `values` bag.
+- PR review checklist for this stream:
+  1. Any new `array{...}` in public signatures? If yes, justify polymorphism or replace with DTO.
+  2. Any new DTO with only `array $values` + `all()`? Reject and redesign.
+  3. Any boundary still converting DTO → array manually in core services? Move conversion to transport boundary.
 
 ---
+
+## Progress snapshot (2026-04-23)
+
+### Completed
+
+- [x] Removed compatibility-track strategy from this plan (no adapters/shims, no `V2` track).
+- [x] Introduced and wired initial DTO/VO set for contract boundaries:
+  - `ModelInvocationRequest`
+  - `ModelResolutionContext`
+  - `ModelResolutionOptions`
+  - `ToolCatalogContext`
+  - `PromptState`
+  - `ArtifactMetadata` (typed fields + extension attributes)
+  - `AfterTurnCommitHookContext`
+  - `AfterTurnCommitEventSummary`
+  - `CommandCancellationOptions`
+- [x] Removed `CommandMappingPayload` pass-through wrapper; extension command payload remains explicit `array<string, mixed>` at polymorphic boundary.
+- [x] Updated primary contracts and core call sites to consume typed objects instead of structural arrays.
+- [x] Removed array return shapes in replay/debug hot-state path:
+  - `ReplayService::rebuildHotPromptState()` now returns `PromptState`
+  - `ReplayService::verifyIntegrity()` now returns `Application\Dto\ReplayIntegrity`
+  - `RunDebugService::inspect()` now returns `Application\Dto\RunDebugSnapshot`
+
+### In progress
+
+- [ ] Phase 1 response-shape cleanup in Application/Api (`LatencyHistogramSnapshot`, `ReplayIntegrity`, `RunSummaryResponse` and downstream callers).
+
+### Next
+
+- [ ] Phase 2 schema envelope cut (`EventEnvelope` + command/event envelope DTOs).
+- [ ] Phase 3 infrastructure/provider deep typing (`TokenUsage`, `StreamDelta`, `ResolvedProviderRequest`, `RunContext`).
+- [ ] Phase 5 domain payload deepening (`AgentMessage` content parts, set/map wrappers such as `PendingToolCallSet`).
 
 ## Namespace plan
 
@@ -58,7 +102,7 @@ This plan replaces structural arrays with explicit DTOs/ValueObjects, grouped by
 ### Replace
 
 - `Application\Handler\ReplayService`
-  - `rebuildHotPromptState()` → `Application\Dto\HotPromptStateRebuild`
+  - `rebuildHotPromptState()` → `Domain\Run\PromptState`
   - `verifyIntegrity()` → `Application\Dto\ReplayIntegrity`
   - `eventsForReplay()` tuple → `Application\Dto\ResolvedReplayEvents`
 
@@ -156,7 +200,7 @@ This plan replaces structural arrays with explicit DTOs/ValueObjects, grouped by
 
 ### Notes
 
-- This is a cross-boundary serialization namespace; move carefully with backward-compatible `toArray()` bridges first.
+- This is a cross-boundary serialization namespace; switch each boundary in one cut and update its consumers in the same phase.
 
 ---
 
@@ -182,15 +226,17 @@ This plan replaces structural arrays with explicit DTOs/ValueObjects, grouped by
 - `Contract\ArtifactStoreInterface::put(...)`
   - metadata array → `ArtifactMetadata`
 
-- `Contract\Extension\HookSubscriberInterface::handle(...)`
-  - context/result arrays → `HookContext` / `HookResult`
+- `Contract\Extension\HookSubscriberInterface::handleAfterTurnCommit(...)`
+  - `AFTER_TURN_COMMIT` context array → `AfterTurnCommitHookContext`
 
 - `Contract\Extension\CommandHandlerInterface::map(...)`
-  - payload/options arrays → `CommandMappingPayload` / `CommandMappingOptions`
+  - payload array remains explicit polymorphic map (`array<string, mixed>`)
+  - options array shape `array{cancel_safe?: bool}` → `CommandCancellationOptions`
 
 ### Notes
 
-- Contract changes are breaking changes; stage behind adapter interfaces or new `V2` contracts first.
+- Contract changes are intentional breaking changes in this stream.
+- Replace existing interfaces in place; do not introduce parallel `V2` interfaces.
 
 ---
 
@@ -251,7 +297,7 @@ to consume typed DTOs instead of nested array keys.
 
 1. `EventEnvelope` in `Schema`
 2. Command envelope DTO set in `Schema\CommandPayloadNormalizer`
-3. `RunEventSerializer` to return envelope DTOs (with `toArray()` bridge)
+3. `RunEventSerializer` to return envelope DTOs directly
 
 ### Phase 3 — Infrastructure/provider contracts
 
@@ -259,11 +305,11 @@ to consume typed DTOs instead of nested array keys.
 2. `StreamDelta` typed hierarchy
 3. `ResolvedProviderRequest` and `RunContext` VOs
 
-### Phase 4 — Contract hardening
+### Phase 4 — Contract hardening (breaking cut)
 
-1. Introduce `PlatformInterfaceV2` with request/result DTOs
-2. Introduce typed context/options VOs in model/tool catalog contracts
-3. Move prompt/artifact/hook contracts to typed payload objects
+1. Replace `PlatformInterface::invoke(...)` directly with request/result DTOs
+2. Replace context/options arrays in model/tool catalog contracts with typed VOs
+3. Move prompt/artifact/hook contracts to typed payload objects in place (no `V2` track)
 
 ### Phase 5 — Domain payload deepening
 
@@ -277,11 +323,13 @@ to consume typed DTOs instead of nested array keys.
 
 - Add DTO/VOs with:
   - `readonly` properties
-  - `fromArray()` / `toArray()` for compatibility
+  - strict constructor invariants
   - Symfony Serializer metadata where needed
 - Migrate call sites namespace-by-namespace.
-- Keep adapters while both forms coexist.
-- Remove array-key access only after each namespace is fully migrated.
+- No adapters, no compatibility shims, no parallel `V2` interface layer.
+- Do not implement DTO/VO `fromArray()` / `toArray()` compatibility methods.
+- Apply contract changes as a deliberate breaking cut.
+- Remove array-key access immediately as each namespace is migrated.
 
 ---
 

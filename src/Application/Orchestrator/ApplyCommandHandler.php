@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
+use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -90,7 +91,9 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             kind: $message->kind,
             idempotencyKey: $message->idempotencyKey(),
             payload: $message->payload,
-            options: $routedCommand->options,
+            options: new CommandCancellationOptions(
+                safe: true === ($routedCommand->options['cancel_safe'] ?? false),
+            ),
         );
 
         if (!$this->commandStore->enqueue($pendingCommand)) {

@@ -24,18 +24,10 @@ final readonly class PlatformInvocationResult
     }
 
     /**
-     * Converts the invocation result into a plain array representation.
-     *
-     * @return array<string, mixed>
+     * @return list<array<string, mixed>>
      */
-    public function toArray(): array
+    public function deltas(): array
     {
-        return [
-            'assistant_message' => $this->assistantMessage,
-            'deltas' => $this->deltas,
-            'usage' => $this->usage,
-            'stop_reason' => $this->stopReason,
-            'error' => $this->error,
-        ];
+        return $this->deltas;
     }
 }

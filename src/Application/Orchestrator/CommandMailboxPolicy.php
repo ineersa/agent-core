@@ -92,7 +92,9 @@ final readonly class CommandMailboxPolicy
                     'payload' => [
                         'kind' => CoreCommandKind::Steer,
                         'idempotency_key' => $pendingCommand->idempotencyKey,
-                        'options' => $pendingCommand->options,
+                        'options' => [
+                            'cancel_safe' => $pendingCommand->options->safe,
+                        ],
                     ],
                 ];
 
@@ -182,7 +184,9 @@ final readonly class CommandMailboxPolicy
                     'payload' => [
                         'kind' => $pendingCommand->kind,
                         'idempotency_key' => $pendingCommand->idempotencyKey,
-                        'options' => $pendingCommand->options,
+                        'options' => [
+                            'cancel_safe' => $pendingCommand->options->safe,
+                        ],
                     ],
                 ];
 
@@ -255,8 +259,15 @@ final readonly class CommandMailboxPolicy
             ]];
         }
 
+        $cancellation = $command->options;
+
         try {
-            $mappedObjects = $handler->map($state->runId, $command->kind, $command->payload, $command->options);
+            $mappedObjects = $handler->map(
+                $state->runId,
+                $command->kind,
+                $command->payload,
+                $cancellation,
+            );
         } catch (\Throwable $throwable) {
             $this->commandStore->markRejected($state->runId, $command->idempotencyKey, $throwable->getMessage());
 
@@ -277,7 +288,9 @@ final readonly class CommandMailboxPolicy
             'payload' => [
                 'kind' => $command->kind,
                 'idempotency_key' => $command->idempotencyKey,
-                'options' => $command->options,
+                'options' => [
+                    'cancel_safe' => $cancellation->safe,
+                ],
             ],
         ]];
 

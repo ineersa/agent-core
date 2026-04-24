@@ -1,6 +1,0 @@
-spec: agent-core.file-index/v1
-file: ToolExecutionMode.php
-class: "Ineersa\\AgentCore\\Domain\\Tool\\ToolExecutionMode"
-type: enum
-sections[1]{kind,start,end,limit}:
-  constants,9,11,3

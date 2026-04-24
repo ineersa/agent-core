@@ -1,6 +1,0 @@
-spec: agent-core.file-index/v1
-file: AgentLoopBundle.php
-class: "Ineersa\\AgentCore\\AgentLoopBundle"
-type: final class
-methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  getContainerExtension,13,20,8,13,21,"public function getContainerExtension(): ?ExtensionInterface"

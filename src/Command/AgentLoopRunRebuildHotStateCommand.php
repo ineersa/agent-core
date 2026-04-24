@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Command;
 
 use Ineersa\AgentCore\Application\Handler\RunDebugService;
+use Ineersa\AgentCore\Domain\Run\PromptState;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
@@ -32,7 +33,7 @@ final class AgentLoopRunRebuildHotStateCommand extends Command
         $state = $this->runDebugService->rebuildHotPromptState($runId);
 
         if (true === $input->getOption('json')) {
-            $output->writeln($this->encodeJson($state));
+            $output->writeln($this->encodeJson($this->promptStateToArray($state)));
 
             return self::SUCCESS;
         }
@@ -41,22 +42,48 @@ final class AgentLoopRunRebuildHotStateCommand extends Command
         $io->title(\sprintf('Rebuild hot prompt state: %s', $runId));
 
         $io->definitionList(
-            ['source' => (string) $state['source']],
-            ['event_count' => (string) $state['event_count']],
-            ['last_seq' => (string) $state['last_seq']],
-            ['is_contiguous' => true === $state['is_contiguous'] ? 'yes' : 'no'],
-            ['missing_sequences' => [] === $state['missing_sequences'] ? 'none' : implode(',', $state['missing_sequences'])],
-            ['token_estimate' => (string) $state['token_estimate']],
-            ['messages_count' => (string) \count($state['messages'])],
+            ['source' => $state->source],
+            ['event_count' => (string) $state->eventCount],
+            ['last_seq' => (string) $state->lastSeq],
+            ['is_contiguous' => $state->isContiguous ? 'yes' : 'no'],
+            ['missing_sequences' => [] === $state->missingSequences ? 'none' : implode(',', $state->missingSequences)],
+            ['token_estimate' => (string) $state->tokenEstimate],
+            ['messages_count' => (string) \count($state->messages)],
         );
 
-        if ([] !== $state['missing_sequences']) {
+        if ([] !== $state->missingSequences) {
             $io->warning('Sequence gaps were detected while rebuilding hot state.');
         }
 
         $io->success('Hot prompt state rebuild completed.');
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @return array{
+     * run_id: string,
+     * source: string,
+     * event_count: int,
+     * last_seq: int,
+     * missing_sequences: list<int>,
+     * is_contiguous: bool,
+     * token_estimate: int,
+     * messages: list<array<string, mixed>>
+     * }
+     */
+    private function promptStateToArray(PromptState $promptState): array
+    {
+        return [
+            'run_id' => $promptState->runId,
+            'source' => $promptState->source,
+            'event_count' => $promptState->eventCount,
+            'last_seq' => $promptState->lastSeq,
+            'missing_sequences' => $promptState->missingSequences,
+            'is_contiguous' => $promptState->isContiguous,
+            'token_estimate' => $promptState->tokenEstimate,
+            'messages' => $promptState->messages,
+        ];
     }
 
     /**

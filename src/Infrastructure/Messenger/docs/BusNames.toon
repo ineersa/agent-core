@@ -1,6 +1,0 @@
-spec: agent-core.file-index/v1
-file: BusNames.php
-class: "Ineersa\\AgentCore\\Infrastructure\\Messenger\\BusNames"
-type: final class
-sections[1]{kind,start,end,limit}:
-  constants,9,11,3

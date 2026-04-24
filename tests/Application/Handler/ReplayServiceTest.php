@@ -72,9 +72,9 @@ final class ReplayServiceTest extends TestCase
 
         $rebuiltState = $replayService->rebuildHotPromptState($runId);
 
-        self::assertSame('canonical_events', $rebuiltState['source']);
-        self::assertSame(2, $rebuiltState['last_seq']);
-        self::assertCount(2, $rebuiltState['messages']);
+        self::assertSame('canonical_events', $rebuiltState->source);
+        self::assertSame(2, $rebuiltState->lastSeq);
+        self::assertCount(2, $rebuiltState->messages);
         self::assertNotNull($hotPromptStore->get($runId));
 
         $hotPromptStore->delete($runId);
@@ -82,12 +82,12 @@ final class ReplayServiceTest extends TestCase
 
         $rebuiltAfterDelete = $replayService->rebuildHotPromptState($runId);
 
-        self::assertSame($rebuiltState['messages'], $rebuiltAfterDelete['messages']);
+        self::assertSame($rebuiltState->messages, $rebuiltAfterDelete->messages);
         self::assertNotNull($hotPromptStore->get($runId));
 
         $integrity = $replayService->verifyIntegrity($runId);
-        self::assertTrue($integrity['is_contiguous']);
-        self::assertSame([], $integrity['missing_sequences']);
+        self::assertTrue($integrity->isContiguous);
+        self::assertSame([], $integrity->missingSequences);
     }
 
     public function testRebuildFallsBackToJsonlWhenCanonicalEventsAreUnavailable(): void
@@ -119,11 +119,11 @@ final class ReplayServiceTest extends TestCase
 
         $rebuiltState = $replayService->rebuildHotPromptState($runId);
 
-        self::assertSame('jsonl_fallback', $rebuiltState['source']);
-        self::assertSame([2], $rebuiltState['missing_sequences']);
-        self::assertFalse($rebuiltState['is_contiguous']);
-        self::assertSame(3, $rebuiltState['last_seq']);
-        self::assertCount(1, $rebuiltState['messages']);
+        self::assertSame('jsonl_fallback', $rebuiltState->source);
+        self::assertSame([2], $rebuiltState->missingSequences);
+        self::assertFalse($rebuiltState->isContiguous);
+        self::assertSame(3, $rebuiltState->lastSeq);
+        self::assertCount(1, $rebuiltState->messages);
     }
 
     private function deleteDirectory(string $path): void

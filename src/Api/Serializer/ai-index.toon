@@ -1,7 +1,0 @@
-spec: agent-core.ai-docs/v1
-namespace: Serializer
-fqcn: "Ineersa\\AgentCore\\Api\\Serializer"
-updatedAt: 2026-04-23
-files[1]{file,type}:
-  RunEventSerializer.php,readonly final class
-description: Event-to-stream payload serialization for Mercure publishing and reconnect replay.

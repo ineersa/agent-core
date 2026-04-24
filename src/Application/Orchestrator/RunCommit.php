@@ -13,8 +13,8 @@ use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
-use Ineersa\AgentCore\Domain\Event\BoundaryHookName;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Psr\Log\LoggerInterface;
 
@@ -122,19 +122,9 @@ final readonly class RunCommit
             }
 
             try {
-                $this->hookDispatcher?->dispatch(BoundaryHookName::AFTER_TURN_COMMIT, [
-                    'run_id' => $nextState->runId,
-                    'turn_no' => $nextState->turnNo,
-                    'status' => $nextState->status->value,
-                    'events' => array_map(
-                        static fn (RunEvent $event): array => [
-                            'seq' => $event->seq,
-                            'type' => $event->type,
-                        ],
-                        $events,
-                    ),
-                    'effects_count' => \count($effects),
-                ]);
+                $this->hookDispatcher?->dispatchAfterTurnCommit(
+                    AfterTurnCommitHookContext::fromRunState($nextState, $events, \count($effects)),
+                );
             } catch (\Throwable $exception) {
                 $this->logger?->warning('agent_loop.commit.after_turn_commit_hook_failed', [
                     'run_id' => $nextState->runId,

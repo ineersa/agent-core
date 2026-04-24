@@ -13,16 +13,21 @@ use Ineersa\AgentCore\Contract\Tool\ModelResolverInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCatalogProviderInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\MessageBag;
+use Ineersa\AgentCore\Domain\Tool\ModelInvocationRequest;
+use Ineersa\AgentCore\Domain\Tool\ModelResolutionContext;
+use Ineersa\AgentCore\Domain\Tool\ModelResolutionOptions;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ProviderRequest;
 use Ineersa\AgentCore\Domain\Tool\ResolvedModel;
+use Ineersa\AgentCore\Domain\Tool\ToolCatalogContext;
 use Ineersa\AgentCore\Domain\Tool\ToolDefinition;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\Platform;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\SymfonyMessageMapper;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\SymfonyPlatformInvoker;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 
 final class PlatformIntegrationTest extends TestCase
 {
@@ -107,18 +112,24 @@ final class PlatformIntegrationTest extends TestCase
         };
 
         $modelResolver = new class implements ModelResolverInterface {
-            public function resolve(string $defaultModel, MessageBag $messages, array $context = [], array $options = []): ResolvedModel
-            {
+            public function resolve(
+                string $defaultModel,
+                MessageBag $messages,
+                ModelResolutionContext $context,
+                ModelResolutionOptions $options,
+            ): ResolvedModel {
+                unset($messages, $context, $options);
+
                 return new ResolvedModel($defaultModel.'-resolved', ['max_tokens' => 64]);
             }
         };
 
         $toolProvider = new class implements ToolCatalogProviderInterface {
-            public function resolveToolCatalog(array $context = []): array
+            public function resolveToolCatalog(ToolCatalogContext $context): array
             {
                 return [new ToolDefinition(
                     name: 'web_search',
-                    description: sprintf('Search docs for turn %d', (int) ($context['turn_no'] ?? 0)),
+                    description: sprintf('Search docs for turn %d', $context->turnNo ?? 0),
                     schema: [
                         'type' => 'object',
                         'properties' => [
@@ -133,7 +144,7 @@ final class PlatformIntegrationTest extends TestCase
         $platform = new Platform(
             invoker: new SymfonyPlatformInvoker($platformClient),
             runStore: $runStore,
-            toolCatalogResolver: new ToolCatalogResolver([$toolProvider]),
+            toolCatalogResolver: new ToolCatalogResolver([$toolProvider], new ObjectNormalizer()),
             messageMapper: new SymfonyMessageMapper(),
             transformContextHooks: [$transformHook],
             convertToLlmHooks: [$convertHook],
@@ -142,11 +153,14 @@ final class PlatformIntegrationTest extends TestCase
             defaultModel: 'gpt-test',
         );
 
-        $response = $platform->invoke('default', [
-            'run_id' => 'run-stage-05',
-            'turn_no' => 2,
-            'step_id' => 'turn-2-llm-1',
-        ]);
+        $response = $platform->invoke(new ModelInvocationRequest(
+            model: 'default',
+            input: [
+                'run_id' => 'run-stage-05',
+                'turn_no' => 2,
+                'step_id' => 'turn-2-llm-1',
+            ],
+        ));
 
         self::assertSame(['transform_context', 'convert_to_llm', 'before_provider_request'], $calls);
         self::assertSame('gpt-test-resolved-patched', $platformClient->capturedModel);
@@ -155,12 +169,12 @@ final class PlatformIntegrationTest extends TestCase
         self::assertSame(0.2, $platformClient->capturedOptions['temperature']);
         self::assertSame('Search docs for turn 2', $platformClient->capturedOptions['tools'][0]['function']['description']);
 
-        self::assertSame('assistant', $response['assistant_message']['role']);
-        self::assertSame('Hello world', $response['assistant_message']['content'][0]['text']);
-        self::assertNull($response['stop_reason']);
-        self::assertSame(7, $response['usage']['input_tokens']);
-        self::assertSame(3, $response['usage']['output_tokens']);
-        self::assertSame(10, $response['usage']['total_tokens']);
+        self::assertSame('assistant', $response->assistantMessage['role']);
+        self::assertSame('Hello world', $response->assistantMessage['content'][0]['text']);
+        self::assertNull($response->stopReason);
+        self::assertSame(7, $response->usage['input_tokens']);
+        self::assertSame(3, $response->usage['output_tokens']);
+        self::assertSame(10, $response->usage['total_tokens']);
     }
 
     public function testStreamingCancellationReturnsAbortedWithPartialOutput(): void
@@ -179,7 +193,7 @@ final class PlatformIntegrationTest extends TestCase
         $platform = new Platform(
             invoker: new SymfonyPlatformInvoker($platformClient),
             runStore: new InMemoryRunStore(),
-            toolCatalogResolver: new ToolCatalogResolver([]),
+            toolCatalogResolver: new ToolCatalogResolver([], new ObjectNormalizer()),
             messageMapper: new SymfonyMessageMapper(),
             transformContextHooks: [],
             convertToLlmHooks: [],
@@ -188,17 +202,21 @@ final class PlatformIntegrationTest extends TestCase
             defaultModel: 'gpt-test',
         );
 
-        $response = $platform->invoke('default', [
-            'messages' => [
-                ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'cancel me']]],
+        $response = $platform->invoke(new ModelInvocationRequest(
+            model: 'default',
+            input: [
+                'messages' => [
+                    ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'cancel me']]],
+                ],
             ],
-        ], [
-            'cancel_token' => new ToggleCancellationToken(),
-        ]);
+            options: [
+                'cancel_token' => new ToggleCancellationToken(),
+            ],
+        ));
 
-        self::assertSame('aborted', $response['stop_reason']);
-        self::assertSame('A', $response['assistant_message']['content'][0]['text']);
-        self::assertSame(15, $response['usage']['total_tokens']);
+        self::assertSame('aborted', $response->stopReason);
+        self::assertSame('A', $response->assistantMessage['content'][0]['text']);
+        self::assertSame(15, $response->usage['total_tokens']);
     }
 }
 

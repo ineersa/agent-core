@@ -1,6 +1,0 @@
-spec: agent-core.file-index/v1
-file: Configuration.php
-class: "Ineersa\\AgentCore\\DependencyInjection\\Configuration"
-type: final class
-methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  getConfigTreeBuilder,13,113,101,13,21,"public function getConfigTreeBuilder(): TreeBuilder"

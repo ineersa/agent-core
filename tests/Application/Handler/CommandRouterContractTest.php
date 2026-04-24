@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Tests\Application\Handler;
 use Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Contract\Extension\CommandHandlerInterface;
+use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use PHPUnit\Framework\TestCase;
 
@@ -26,8 +27,10 @@ final class CommandRouterContractTest extends TestCase
                     return 'ext:compaction:compact' === $kind;
                 }
 
-                public function map(string $runId, string $kind, array $payload, array $options = []): array
+                public function map(string $runId, string $kind, array $payload, CommandCancellationOptions $cancellation): array
                 {
+                    unset($runId, $kind, $payload, $cancellation);
+
                     return [];
                 }
             },
@@ -55,8 +58,10 @@ final class CommandRouterContractTest extends TestCase
                     return false;
                 }
 
-                public function map(string $runId, string $kind, array $payload, array $options = []): array
+                public function map(string $runId, string $kind, array $payload, CommandCancellationOptions $cancellation): array
                 {
+                    unset($runId, $kind, $payload, $cancellation);
+
                     return [];
                 }
             },
@@ -108,8 +113,10 @@ final class CommandRouterContractTest extends TestCase
                     return false;
                 }
 
-                public function map(string $runId, string $kind, array $payload, array $options = []): array
+                public function map(string $runId, string $kind, array $payload, CommandCancellationOptions $cancellation): array
                 {
+                    unset($runId, $kind, $payload, $cancellation);
+
                     return [];
                 }
             },

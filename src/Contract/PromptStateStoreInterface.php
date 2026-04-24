@@ -4,21 +4,19 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Contract;
 
+use Ineersa\AgentCore\Domain\Run\PromptState;
+
 interface PromptStateStoreInterface
 {
     /**
-     * Retrieves the state array for a given run ID or returns null if not found.
-     *
-     * @return array<string, mixed>|null
+     * Retrieves prompt state for a given run ID or returns null if not found.
      */
-    public function get(string $runId): ?array;
+    public function get(string $runId): ?PromptState;
 
     /**
-     * Persists the provided state array under the specified run ID.
-     *
-     * @param array<string, mixed> $state
+     * Persists prompt state under the specified run ID.
      */
-    public function save(string $runId, array $state): void;
+    public function save(string $runId, PromptState $state): void;
 
     public function delete(string $runId): void;
 }

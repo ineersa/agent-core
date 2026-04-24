@@ -1,9 +1,0 @@
-spec: agent-core.ai-docs/v1
-namespace: "Domain\\Command"
-fqcn: "Ineersa\\AgentCore\\Domain\\Command"
-updatedAt: 2026-04-23
-files[3]{file,type}:
-  CoreCommandKind.php,final class
-  PendingCommand.php,readonly final class
-  RoutedCommand.php,readonly final class
-description: "Command value objects for the agent loop — kind constants, pending queue items, and routed commands with core/extension/rejected discrimination."

@@ -1,6 +1,0 @@
-spec: agent-core.file-index/v1
-file: SteeringMessagesProviderInterface.php
-class: "Ineersa\\AgentCore\\Contract\\Hook\\SteeringMessagesProviderInterface"
-type: interface
-methods[1]{method,start,end,limit,symbolLine,symbolColumn,signature}:
-  getSteeringMessages,11,16,6,16,21,"public function getSteeringMessages(): array"

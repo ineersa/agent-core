@@ -3,7 +3,8 @@
     "toolPrefix": "server",
     "directTools": false,
     "disableProxyTool": false,
-    "toonEncode": ["jetbrains-index"]
+    "toonEncode": ["jetbrains-index"],
+    "captureStats": true
   },
   "mcpServers": {
     "jetbrains-index": {

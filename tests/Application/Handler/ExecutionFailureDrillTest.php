@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Tool\PlatformInvocationResult;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\Fake\FakePlatform;
 use Ineersa\AgentCore\Tests\Support\Fake\FakeToolExecutor;
@@ -23,30 +24,30 @@ final class ExecutionFailureDrillTest extends TestCase
     public function testLlmWorkerCanBeRetriedAfterCommandBusDispatchCrash(): void
     {
         $platform = new FakePlatform([
-            [
-                'assistant_message' => [
+            new PlatformInvocationResult(
+                assistantMessage: [
                     'role' => 'assistant',
                     'content' => [[
                         'type' => 'text',
                         'text' => 'first-attempt',
                     ]],
                 ],
-                'usage' => ['total_tokens' => 4],
-                'stop_reason' => 'stop',
-                'error' => null,
-            ],
-            [
-                'assistant_message' => [
+                usage: ['total_tokens' => 4],
+                stopReason: 'stop',
+                error: null,
+            ),
+            new PlatformInvocationResult(
+                assistantMessage: [
                     'role' => 'assistant',
                     'content' => [[
                         'type' => 'text',
                         'text' => 'retry-attempt',
                     ]],
                 ],
-                'usage' => ['total_tokens' => 4],
-                'stop_reason' => 'stop',
-                'error' => null,
-            ],
+                usage: ['total_tokens' => 4],
+                stopReason: 'stop',
+                error: null,
+            ),
         ]);
 
         $message = new ExecuteLlmStep(

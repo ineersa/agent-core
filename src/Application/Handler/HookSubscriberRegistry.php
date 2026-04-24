@@ -22,18 +22,10 @@ final class HookSubscriberRegistry
     }
 
     /**
-     * Retrieves subscribers registered for a specific hook name.
-     *
      * @return iterable<HookSubscriberInterface>
      */
-    public function subscribersFor(string $hookName): iterable
+    public function all(): iterable
     {
-        foreach ($this->subscribers as $subscriber) {
-            if (!\in_array($hookName, $subscriber::subscribedHooks(), true)) {
-                continue;
-            }
-
-            yield $subscriber;
-        }
+        return $this->subscribers;
     }
 }

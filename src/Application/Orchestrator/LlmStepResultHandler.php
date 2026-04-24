@@ -16,6 +16,7 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Tool\ToolCatalogContext;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -333,11 +334,11 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
 
         $schemas = [];
 
-        foreach ($this->toolCatalogResolver->resolve([
-            'run_id' => $runId,
-            'turn_no' => $turnNo,
-            'step_id' => $stepId,
-        ]) as $definition) {
+        foreach ($this->toolCatalogResolver->resolve(new ToolCatalogContext(
+            runId: $runId,
+            turnNo: $turnNo,
+            stepId: $stepId,
+        )) as $definition) {
             $schemas[$definition->name] = $definition->schema ?? ['type' => 'object'];
         }
 

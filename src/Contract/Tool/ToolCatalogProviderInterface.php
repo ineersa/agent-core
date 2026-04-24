@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Contract\Tool;
 
+use Ineersa\AgentCore\Domain\Tool\ToolCatalogContext;
 use Ineersa\AgentCore\Domain\Tool\ToolDefinition;
 
 interface ToolCatalogProviderInterface
@@ -11,9 +12,7 @@ interface ToolCatalogProviderInterface
     /**
      * Resolves and returns the tool catalog based on the provided context.
      *
-     * @param array<string, mixed> $context
-     *
      * @return list<ToolDefinition>
      */
-    public function resolveToolCatalog(array $context = []): array;
+    public function resolveToolCatalog(ToolCatalogContext $context): array;
 }
