@@ -14,6 +14,7 @@ use Ineersa\AgentCore\Domain\Tool\PlatformInvocationResult;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\Fake\FakePlatform;
 use Ineersa\AgentCore\Tests\Support\Fake\FakeToolExecutor;
+use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Exception\TransportException;
@@ -25,25 +26,13 @@ final class ExecutionFailureDrillTest extends TestCase
     {
         $platform = new FakePlatform([
             new PlatformInvocationResult(
-                assistantMessage: [
-                    'role' => 'assistant',
-                    'content' => [[
-                        'type' => 'text',
-                        'text' => 'first-attempt',
-                    ]],
-                ],
+                assistantMessage: SymfonyAiTestMessages::assistantText('first-attempt'),
                 usage: ['total_tokens' => 4],
                 stopReason: 'stop',
                 error: null,
             ),
             new PlatformInvocationResult(
-                assistantMessage: [
-                    'role' => 'assistant',
-                    'content' => [[
-                        'type' => 'text',
-                        'text' => 'retry-attempt',
-                    ]],
-                ],
+                assistantMessage: SymfonyAiTestMessages::assistantText('retry-attempt'),
                 usage: ['total_tokens' => 4],
                 stopReason: 'stop',
                 error: null,
@@ -63,6 +52,7 @@ final class ExecutionFailureDrillTest extends TestCase
         $failingWorker = new ExecuteLlmStepWorker(
             platform: $platform,
             commandBus: new FailingOnceMessageBus(new TransportException('simulated dispatch crash')),
+            defaultModel: 'test-model',
         );
 
         try {
@@ -73,7 +63,7 @@ final class ExecutionFailureDrillTest extends TestCase
         }
 
         $collectingBus = new DrillCollectingMessageBus();
-        $retryWorker = new ExecuteLlmStepWorker($platform, $collectingBus);
+        $retryWorker = new ExecuteLlmStepWorker($platform, $collectingBus, 'test-model');
         $retryWorker($message);
 
         self::assertCount(1, $collectingBus->messages);
@@ -81,7 +71,7 @@ final class ExecutionFailureDrillTest extends TestCase
 
         /** @var LlmStepResult $result */
         $result = $collectingBus->messages[0];
-        self::assertSame('retry-attempt', $result->assistantMessage['content'][0]['text']);
+        self::assertSame('retry-attempt', $result->assistantMessage?->getContent());
     }
 
     public function testToolWorkerCanBeRetriedAfterCommandBusDispatchCrash(): void

@@ -27,6 +27,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\StartRun;
+use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -93,13 +94,7 @@ final class RunOrchestratorSoakFailureDrillTest extends TestCase
                 stepId: $stepId,
                 attempt: 1,
                 idempotencyKey: sprintf('llm-%04d', $index),
-                assistantMessage: [
-                    'role' => 'assistant',
-                    'content' => [[
-                        'type' => 'text',
-                        'text' => sprintf('synthetic-run-%04d', $index),
-                    ]],
-                ],
+                assistantMessage: SymfonyAiTestMessages::assistantText(sprintf('synthetic-run-%04d', $index)),
                 usage: ['total_tokens' => 5],
                 stopReason: 'stop',
                 error: null,
@@ -152,24 +147,18 @@ final class RunOrchestratorSoakFailureDrillTest extends TestCase
             stepId: 'turn-1-llm-1',
             attempt: 1,
             idempotencyKey: 'llm-storm-1',
-            assistantMessage: [
-                'role' => 'assistant',
-                'content' => [],
-                'tool_calls' => [
-                    [
-                        'id' => 'call-b',
-                        'name' => 'beta',
-                        'arguments' => ['query' => 'beta'],
-                        'order_index' => 1,
-                    ],
-                    [
-                        'id' => 'call-a',
-                        'name' => 'alpha',
-                        'arguments' => ['query' => 'alpha'],
-                        'order_index' => 0,
-                    ],
+            assistantMessage: SymfonyAiTestMessages::assistantWithToolCalls([
+                [
+                    'id' => 'call-b',
+                    'name' => 'beta',
+                    'arguments' => ['query' => 'beta'],
                 ],
-            ],
+                [
+                    'id' => 'call-a',
+                    'name' => 'alpha',
+                    'arguments' => ['query' => 'alpha'],
+                ],
+            ]),
             usage: ['total_tokens' => 12],
             stopReason: 'tool_call',
             error: null,

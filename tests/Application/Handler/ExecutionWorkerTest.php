@@ -38,7 +38,7 @@ final class ExecutionWorkerTest extends TestCase
         };
 
         $commandBus = new CollectingMessageBus();
-        $worker = new ExecuteLlmStepWorker($platform, $commandBus);
+        $worker = new ExecuteLlmStepWorker($platform, $commandBus, 'test-model');
 
         $worker(new ExecuteLlmStep(
             runId: 'run-worker-1',
@@ -78,7 +78,7 @@ final class ExecutionWorkerTest extends TestCase
         $traceLogger = new WorkerTraceLogger();
         $tracer = new RunTracer($traceLogger);
 
-        $worker = new ExecuteLlmStepWorker($platform, $commandBus, $metrics, $tracer);
+        $worker = new ExecuteLlmStepWorker($platform, $commandBus, 'test-model', $metrics, $tracer);
 
         $worker(new ExecuteLlmStep(
             runId: 'run-worker-obs-1',

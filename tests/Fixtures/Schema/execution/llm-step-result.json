@@ -15,9 +15,7 @@
           "query": "symfony workflow"
         }
       }
-    ],
-    "stop_reason": "tool_call",
-    "timestamp": 1770001234
+    ]
   },
   "usage": {
     "input_tokens": 1234,

@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Tests\Support\Fake;
 use Ineersa\AgentCore\Contract\Tool\PlatformInterface;
 use Ineersa\AgentCore\Domain\Tool\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Tool\PlatformInvocationResult;
+use Symfony\AI\Platform\Message\AssistantMessage;
 
 final class FakePlatform implements PlatformInterface
 {
@@ -35,13 +36,7 @@ final class FakePlatform implements PlatformInterface
 
         if ([] === $this->responses) {
             return new PlatformInvocationResult(
-                assistantMessage: [
-                    'role' => 'assistant',
-                    'content' => [[
-                        'type' => 'text',
-                        'text' => 'fake-platform-default',
-                    ]],
-                ],
+                assistantMessage: new AssistantMessage(content: 'fake-platform-default'),
                 usage: [],
                 stopReason: 'stop',
                 error: null,

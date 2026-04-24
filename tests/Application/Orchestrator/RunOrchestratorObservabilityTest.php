@@ -36,6 +36,7 @@ use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogWriter;
+use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use League\Flysystem\Filesystem;
 use League\Flysystem\Local\LocalFilesystemAdapter;
@@ -180,13 +181,7 @@ final class RunOrchestratorObservabilityTest extends TestCase
             stepId: 'turn-1',
             attempt: 1,
             idempotencyKey: 'llm-ok-1',
-            assistantMessage: [
-                'role' => 'assistant',
-                'content' => [[
-                    'type' => 'text',
-                    'text' => 'done',
-                ]],
-            ],
+            assistantMessage: SymfonyAiTestMessages::assistantText('done'),
             usage: [],
             stopReason: 'stop',
             error: null,

@@ -8,6 +8,8 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
+use Symfony\AI\Platform\Message\AssistantMessage;
+use Symfony\AI\Platform\Result\ToolCall;
 
 final readonly class RunMessageStateTools
 {
@@ -81,41 +83,65 @@ final readonly class RunMessageStateTools
         );
     }
 
-    /**
-     * @param array<string, mixed> $assistantMessage
-     */
-    public function assistantMessage(array $assistantMessage): AgentMessage
+    public function assistantMessage(AssistantMessage $assistantMessage): AgentMessage
     {
         $content = [];
-        $rawContent = $assistantMessage['content'] ?? [];
-
-        if (\is_string($rawContent)) {
+        if (null !== $assistantMessage->getContent()) {
             $content[] = [
                 'type' => 'text',
-                'text' => $rawContent,
+                'text' => $assistantMessage->getContent(),
             ];
         }
 
-        if (\is_array($rawContent)) {
-            foreach ($rawContent as $contentPart) {
-                if (!\is_array($contentPart)) {
-                    continue;
-                }
-
-                $content[] = $contentPart;
-            }
-        }
-
         $metadata = [];
-        if (\is_array($assistantMessage['tool_calls'] ?? null)) {
-            $metadata['tool_calls'] = $assistantMessage['tool_calls'];
+        $toolCalls = $this->normalizeToolCalls($assistantMessage->getToolCalls());
+        if ([] !== $toolCalls) {
+            $metadata['tool_calls'] = $toolCalls;
         }
+
+        $details = array_filter([
+            'thinking' => $assistantMessage->getThinkingContent(),
+            'thinking_signature' => $assistantMessage->getThinkingSignature(),
+        ], static fn (mixed $value): bool => null !== $value);
 
         return new AgentMessage(
-            role: \is_string($assistantMessage['role'] ?? null) ? $assistantMessage['role'] : 'assistant',
+            role: 'assistant',
             content: $content,
+            details: [] !== $details ? $details : null,
             metadata: $metadata,
         );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function assistantMessagePayload(AssistantMessage $assistantMessage): array
+    {
+        $payload = [
+            'role' => 'assistant',
+            'content' => null === $assistantMessage->getContent()
+                ? null
+                : [[
+                    'type' => 'text',
+                    'text' => $assistantMessage->getContent(),
+                ]],
+        ];
+
+        $toolCalls = $this->normalizeToolCalls($assistantMessage->getToolCalls());
+        if ([] !== $toolCalls) {
+            $payload['tool_calls'] = $toolCalls;
+        }
+
+        $details = array_filter([
+            'thinking' => $assistantMessage->getThinkingContent(),
+            'thinking_signature' => $assistantMessage->getThinkingSignature(),
+        ], static fn (mixed $value): bool => null !== $value);
+
+        if ([] !== $details) {
+            $payload['details'] = $details;
+        }
+
+        return $payload;
     }
 
     /**
@@ -179,37 +205,23 @@ final readonly class RunMessageStateTools
     }
 
     /**
-     * @param array<string, mixed> $assistantMessage
-     *
      * @return list<array{id: string, name: string, args: array<string, mixed>, order_index: int, tool_idempotency_key: string|null}>
      */
-    public function extractToolCalls(array $assistantMessage): array
+    public function extractToolCalls(AssistantMessage $assistantMessage): array
     {
-        $rawToolCalls = $assistantMessage['tool_calls'] ?? null;
-        if (!\is_array($rawToolCalls)) {
-            return [];
-        }
-
         $toolCalls = [];
 
-        foreach ($rawToolCalls as $index => $rawToolCall) {
-            if (!\is_array($rawToolCall)) {
-                continue;
-            }
-
-            $id = $rawToolCall['id'] ?? null;
-            $name = $rawToolCall['name'] ?? null;
-
-            if (!\is_string($id) || !\is_string($name)) {
+        foreach ($assistantMessage->getToolCalls() ?? [] as $index => $toolCall) {
+            if (!$toolCall instanceof ToolCall) {
                 continue;
             }
 
             $toolCalls[] = [
-                'id' => $id,
-                'name' => $name,
-                'args' => \is_array($rawToolCall['arguments'] ?? null) ? $rawToolCall['arguments'] : [],
-                'order_index' => \is_int($rawToolCall['order_index'] ?? null) ? $rawToolCall['order_index'] : $index,
-                'tool_idempotency_key' => \is_string($rawToolCall['tool_idempotency_key'] ?? null) ? $rawToolCall['tool_idempotency_key'] : null,
+                'id' => $toolCall->getId(),
+                'name' => $toolCall->getName(),
+                'args' => $toolCall->getArguments(),
+                'order_index' => $index,
+                'tool_idempotency_key' => null,
             ];
         }
 
@@ -256,5 +268,34 @@ final readonly class RunMessageStateTools
         ];
 
         return array_filter($payload, static fn (mixed $value): bool => null !== $value);
+    }
+
+    /**
+     * @param ?list<ToolCall> $toolCalls
+     *
+     * @return list<array{id: string, name: string, arguments: array<string, mixed>, order_index: int}>
+     */
+    private function normalizeToolCalls(?array $toolCalls): array
+    {
+        if (null === $toolCalls) {
+            return [];
+        }
+
+        $normalized = [];
+
+        foreach ($toolCalls as $index => $toolCall) {
+            if (!$toolCall instanceof ToolCall) {
+                continue;
+            }
+
+            $normalized[] = [
+                'id' => $toolCall->getId(),
+                'name' => $toolCall->getName(),
+                'arguments' => $toolCall->getArguments(),
+                'order_index' => $index,
+            ];
+        }
+
+        return $normalized;
     }
 }

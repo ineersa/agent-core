@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Contract\Tool;
 
-use Ineersa\AgentCore\Domain\Message\MessageBag;
-use Ineersa\AgentCore\Domain\Tool\ModelResolutionContext;
+use Ineersa\AgentCore\Domain\Tool\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Tool\ModelResolutionOptions;
 use Ineersa\AgentCore\Domain\Tool\ResolvedModel;
+use Symfony\AI\Platform\Message\MessageBag;
 
 interface ModelResolverInterface
 {
@@ -17,7 +17,7 @@ interface ModelResolverInterface
     public function resolve(
         string $defaultModel,
         MessageBag $messages,
-        ModelResolutionContext $context,
+        ModelInvocationInput $input,
         ModelResolutionOptions $options,
     ): ResolvedModel;
 }

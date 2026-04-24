@@ -13,6 +13,7 @@ use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Schema\CommandPayloadNormalizer;
+use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use PHPUnit\Framework\TestCase;
 
@@ -129,17 +130,13 @@ final class CommandPayloadNormalizerGoldenTest extends TestCase
             stepId: 'turn-3-llm-1',
             attempt: 1,
             idempotencyKey: 'llm:turn-3-1',
-            assistantMessage: [
-                'role' => 'assistant',
-                'content' => null,
-                'tool_calls' => [[
+            assistantMessage: SymfonyAiTestMessages::assistantWithToolCalls([
+                [
                     'id' => 'call_tc_1',
                     'name' => 'web_search',
                     'arguments' => ['query' => 'symfony workflow'],
-                ]],
-                'stop_reason' => 'tool_call',
-                'timestamp' => 1770001234,
-            ],
+                ],
+            ]),
             usage: [
                 'input_tokens' => 1234,
                 'output_tokens' => 345,

@@ -4,45 +4,55 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi;
 
-use Ineersa\AgentCore\Application\Handler\ToolCatalogResolver;
 use Ineersa\AgentCore\Contract\Hook\BeforeProviderRequestHookInterface;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\ConvertToLlmHookInterface;
 use Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface;
 use Ineersa\AgentCore\Contract\Tool\ModelResolverInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolCatalogProviderInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
-use Ineersa\AgentCore\Domain\Message\MessageBag;
-use Ineersa\AgentCore\Domain\Tool\ModelInvocationRequest;
-use Ineersa\AgentCore\Domain\Tool\ModelResolutionContext;
-use Ineersa\AgentCore\Domain\Tool\ModelResolutionOptions;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Tool\ModelInvocationInput;
+use Ineersa\AgentCore\Domain\Tool\ModelInvocationOptions;
+use Ineersa\AgentCore\Domain\Tool\ModelInvocationRequest;
+use Ineersa\AgentCore\Domain\Tool\ModelResolutionOptions;
 use Ineersa\AgentCore\Domain\Tool\ProviderRequest;
 use Ineersa\AgentCore\Domain\Tool\ResolvedModel;
-use Ineersa\AgentCore\Domain\Tool\ToolCatalogContext;
-use Ineersa\AgentCore\Domain\Tool\ToolDefinition;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\Platform;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\SymfonyMessageMapper;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\SymfonyPlatformInvoker;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\BeforeProviderRequestSubscriber;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ModelResolverRoutingSubscriber;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\PlatformInvocationMetadata;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
+use Symfony\AI\Agent\Toolbox\ToolResult;
+use Symfony\AI\Agent\Toolbox\ToolboxInterface;
+use Symfony\AI\Platform\Model;
+use Symfony\AI\Platform\ModelCatalog\FallbackModelCatalog;
+use Symfony\AI\Platform\ModelClientInterface;
+use Symfony\AI\Platform\Platform;
+use Symfony\AI\Platform\PlatformInterface as SymfonyPlatformInterface;
+use Symfony\AI\Platform\PlainConverter;
+use Symfony\AI\Platform\Provider;
+use Symfony\AI\Platform\Result\DeferredResult;
+use Symfony\AI\Platform\Result\InMemoryRawResult;
+use Symfony\AI\Platform\Result\RawResultInterface;
+use Symfony\AI\Platform\Result\ResultInterface;
+use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
+use Symfony\AI\Platform\Result\StreamResult;
+use Symfony\AI\Platform\Result\ToolCall;
+use Symfony\AI\Platform\ResultConverterInterface;
+use Symfony\AI\Platform\TokenUsage\TokenUsageExtractorInterface;
+use Symfony\AI\Platform\TokenUsage\TokenUsageInterface;
+use Symfony\AI\Platform\Tool\ExecutionReference;
+use Symfony\AI\Platform\Tool\Tool;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 
 final class PlatformIntegrationTest extends TestCase
 {
     public function testPlatformInvokerAppliesHookChainAndInjectsDynamicToolDescriptions(): void
     {
-        $platformClient = new FakeSymfonyPlatform(
-            streamFactory: static fn (): iterable => [
-                new TextDelta('Hello'),
-                new TextDelta(' world'),
-            ],
-            metadata: new FakeMetadata([
-                'token_usage' => new FakeTokenUsage(promptTokens: 7, completionTokens: 3, totalTokens: 10),
-            ]),
-        );
-
         $runStore = new InMemoryRunStore();
         $runStore->compareAndSwap(new RunState(
             runId: 'run-stage-05',
@@ -80,16 +90,11 @@ final class PlatformIntegrationTest extends TestCase
             {
             }
 
-            public function convertToLlm(array $messages, ?CancellationTokenInterface $cancelToken = null): MessageBag
+            public function convertToLlm(array $messages, ?CancellationTokenInterface $cancelToken = null): \Symfony\AI\Platform\Message\MessageBag
             {
                 $this->calls[] = 'convert_to_llm';
 
-                return new MessageBag([
-                    (object) [
-                        'role' => 'user',
-                        'content' => 'converted',
-                    ],
-                ]);
+                return new \Symfony\AI\Platform\Message\MessageBag(\Symfony\AI\Platform\Message\Message::ofUser('converted'));
             }
         };
 
@@ -114,23 +119,24 @@ final class PlatformIntegrationTest extends TestCase
         $modelResolver = new class implements ModelResolverInterface {
             public function resolve(
                 string $defaultModel,
-                MessageBag $messages,
-                ModelResolutionContext $context,
+                \Symfony\AI\Platform\Message\MessageBag $messages,
+                ModelInvocationInput $input,
                 ModelResolutionOptions $options,
             ): ResolvedModel {
-                unset($messages, $context, $options);
+                unset($messages, $input, $options);
 
                 return new ResolvedModel($defaultModel.'-resolved', ['max_tokens' => 64]);
             }
         };
 
-        $toolProvider = new class implements ToolCatalogProviderInterface {
-            public function resolveToolCatalog(ToolCatalogContext $context): array
+        $toolbox = new class implements ToolboxInterface {
+            public function getTools(): array
             {
-                return [new ToolDefinition(
+                return [new Tool(
+                    reference: new ExecutionReference(self::class),
                     name: 'web_search',
-                    description: sprintf('Search docs for turn %d', $context->turnNo ?? 0),
-                    schema: [
+                    description: 'Search docs for turn 2',
+                    parameters: [
                         'type' => 'object',
                         'properties' => [
                             'query' => ['type' => 'string'],
@@ -139,38 +145,51 @@ final class PlatformIntegrationTest extends TestCase
                     ],
                 )];
             }
+
+            public function execute(ToolCall $toolCall): ToolResult
+            {
+                throw new \LogicException('Not used in this test.');
+            }
         };
 
-        $platform = new Platform(
-            invoker: new SymfonyPlatformInvoker($platformClient),
-            runStore: $runStore,
-            toolCatalogResolver: new ToolCatalogResolver([$toolProvider], new ObjectNormalizer()),
-            messageMapper: new SymfonyMessageMapper(),
-            transformContextHooks: [$transformHook],
-            convertToLlmHooks: [$convertHook],
+        $modelClient = new FakeSymfonyModelClient(new FakeTokenUsage(promptTokens: 7, completionTokens: 3, totalTokens: 10));
+        $platform = $this->createSymfonyPlatform(
+            modelClient: $modelClient,
+            streamFactory: static fn (): iterable => [
+                new TextDelta('Hello'),
+                new TextDelta(' world'),
+            ],
             beforeProviderRequestHooks: [$beforeProviderHook],
             modelResolver: $modelResolver,
-            defaultModel: 'gpt-test',
         );
 
-        $response = $platform->invoke(new ModelInvocationRequest(
-            model: 'default',
-            input: [
-                'run_id' => 'run-stage-05',
-                'turn_no' => 2,
-                'step_id' => 'turn-2-llm-1',
-            ],
+        $adapter = new LlmPlatformAdapter(
+            runStore: $runStore,
+            messageConverter: new AgentMessageConverter(),
+            toolDescriptionProcessor: new DynamicToolDescriptionProcessor($toolbox),
+            platform: $platform,
+            transformContextHooks: [$transformHook],
+            convertToLlmHooks: [$convertHook],
+        );
+
+        $response = $adapter->invoke(new ModelInvocationRequest(
+            model: 'gpt-test',
+            input: new ModelInvocationInput(
+                runId: 'run-stage-05',
+                turnNo: 2,
+                stepId: 'turn-2-llm-1',
+            ),
         ));
 
         self::assertSame(['transform_context', 'convert_to_llm', 'before_provider_request'], $calls);
-        self::assertSame('gpt-test-resolved-patched', $platformClient->capturedModel);
-        self::assertTrue($platformClient->capturedOptions['stream']);
-        self::assertSame(64, $platformClient->capturedOptions['max_tokens']);
-        self::assertSame(0.2, $platformClient->capturedOptions['temperature']);
-        self::assertSame('Search docs for turn 2', $platformClient->capturedOptions['tools'][0]['function']['description']);
+        self::assertSame('gpt-test-resolved-patched', $modelClient->capturedModel);
+        self::assertTrue($modelClient->capturedOptions['stream']);
+        self::assertSame(64, $modelClient->capturedOptions['max_tokens']);
+        self::assertSame(0.2, $modelClient->capturedOptions['temperature']);
+        self::assertSame('Search docs for turn 2', $modelClient->capturedOptions['tools'][0]['function']['description']);
+        self::assertArrayNotHasKey(PlatformInvocationMetadata::OPTION_KEY, $modelClient->capturedOptions);
 
-        self::assertSame('assistant', $response->assistantMessage['role']);
-        self::assertSame('Hello world', $response->assistantMessage['content'][0]['text']);
+        self::assertSame('Hello world', $response->assistantMessage?->getContent());
         self::assertNull($response->stopReason);
         self::assertSame(7, $response->usage['input_tokens']);
         self::assertSame(3, $response->usage['output_tokens']);
@@ -179,131 +198,143 @@ final class PlatformIntegrationTest extends TestCase
 
     public function testStreamingCancellationReturnsAbortedWithPartialOutput(): void
     {
-        $platformClient = new FakeSymfonyPlatform(
+        $platform = $this->createSymfonyPlatform(
+            modelClient: new FakeSymfonyModelClient(new FakeTokenUsage(promptTokens: 11, completionTokens: 4, totalTokens: 15)),
             streamFactory: static fn (): iterable => [
                 new TextDelta('A'),
                 new TextDelta('B'),
                 new TextDelta('C'),
             ],
-            metadata: new FakeMetadata([
-                'token_usage' => new FakeTokenUsage(promptTokens: 11, completionTokens: 4, totalTokens: 15),
-            ]),
         );
 
-        $platform = new Platform(
-            invoker: new SymfonyPlatformInvoker($platformClient),
+        $adapter = new LlmPlatformAdapter(
             runStore: new InMemoryRunStore(),
-            toolCatalogResolver: new ToolCatalogResolver([], new ObjectNormalizer()),
-            messageMapper: new SymfonyMessageMapper(),
+            messageConverter: new AgentMessageConverter(),
+            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
+            platform: $platform,
             transformContextHooks: [],
             convertToLlmHooks: [],
-            beforeProviderRequestHooks: [],
-            modelResolver: null,
-            defaultModel: 'gpt-test',
         );
 
-        $response = $platform->invoke(new ModelInvocationRequest(
-            model: 'default',
-            input: [
-                'messages' => [
-                    ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'cancel me']]],
-                ],
-            ],
-            options: [
-                'cancel_token' => new ToggleCancellationToken(),
-            ],
+        $response = $adapter->invoke(new ModelInvocationRequest(
+            model: 'gpt-test',
+            input: new ModelInvocationInput(
+                messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'cancel me']])],
+            ),
+            options: new ModelInvocationOptions(
+                cancelToken: new ToggleCancellationToken(),
+            ),
         ));
 
         self::assertSame('aborted', $response->stopReason);
-        self::assertSame('A', $response->assistantMessage['content'][0]['text']);
+        self::assertSame('A', $response->assistantMessage?->getContent());
         self::assertSame(15, $response->usage['total_tokens']);
+    }
+
+    /**
+     * @param iterable<BeforeProviderRequestHookInterface> $beforeProviderRequestHooks
+     * @param \Closure(): iterable<mixed>                 $streamFactory
+     */
+    private function createSymfonyPlatform(
+        FakeSymfonyModelClient $modelClient,
+        \Closure $streamFactory,
+        iterable $beforeProviderRequestHooks = [],
+        ?ModelResolverInterface $modelResolver = null,
+    ): SymfonyPlatformInterface {
+        $eventDispatcher = new EventDispatcher();
+        $eventDispatcher->addSubscriber(new ModelResolverRoutingSubscriber($modelResolver));
+        $eventDispatcher->addSubscriber(new BeforeProviderRequestSubscriber($beforeProviderRequestHooks));
+
+        return new Platform(
+            providers: [new Provider(
+                name: 'fake',
+                modelClients: [$modelClient],
+                resultConverters: [new FakeStreamResultConverter($streamFactory)],
+                modelCatalog: new FallbackModelCatalog(),
+                eventDispatcher: $eventDispatcher,
+            )],
+            eventDispatcher: $eventDispatcher,
+        );
     }
 }
 
-final class FakeSymfonyPlatform
+final class FakeSymfonyModelClient implements ModelClientInterface
 {
     public ?string $capturedModel = null;
 
     /** @var array<string, mixed> */
     public array $capturedOptions = [];
 
-    public mixed $capturedInput = null;
+    /** @var array<string, mixed>|string|null */
+    public array|string|null $capturedPayload = null;
 
+    public function __construct(
+        private readonly TokenUsageInterface $tokenUsage,
+    ) {
+    }
+
+    public function supports(Model $model): bool
+    {
+        return true;
+    }
+
+    public function request(Model $model, array|string $payload, array $options = []): RawResultInterface
+    {
+        $this->capturedModel = $model->getName();
+        $this->capturedPayload = $payload;
+        $this->capturedOptions = $options;
+
+        return new InMemoryRawResult(['token_usage' => $this->tokenUsage]);
+    }
+}
+
+final readonly class FakeStreamResultConverter implements ResultConverterInterface
+{
     /**
      * @param \Closure(): iterable<mixed> $streamFactory
      */
     public function __construct(
-        private readonly \Closure $streamFactory,
-        private readonly ?FakeMetadata $metadata = null,
+        private \Closure $streamFactory,
     ) {
     }
 
-    public function invoke(string $model, array|string|object $input, array $options = []): FakeDeferredResult
+    public function supports(Model $model): bool
     {
-        $this->capturedModel = $model;
-        $this->capturedInput = $input;
-        $this->capturedOptions = $options;
+        return true;
+    }
+
+    public function convert(RawResultInterface $result, array $options = []): ResultInterface
+    {
+        unset($result, $options);
 
         $streamFactory = $this->streamFactory;
 
-        return new FakeDeferredResult($streamFactory(), $this->metadata);
+        return new StreamResult((static function () use ($streamFactory): \Generator {
+            foreach ($streamFactory() as $delta) {
+                if ($delta instanceof TextDelta) {
+                    yield $delta;
+                }
+            }
+        })());
+    }
+
+    public function getTokenUsageExtractor(): ?TokenUsageExtractorInterface
+    {
+        return new class implements TokenUsageExtractorInterface {
+            public function extract(RawResultInterface $rawResult, array $options = []): ?TokenUsageInterface
+            {
+                unset($options);
+
+                $data = $rawResult->getData();
+                $tokenUsage = $data['token_usage'] ?? null;
+
+                return $tokenUsage instanceof TokenUsageInterface ? $tokenUsage : null;
+            }
+        };
     }
 }
 
-final readonly class FakeDeferredResult
-{
-    /**
-     * @param iterable<mixed> $stream
-     */
-    public function __construct(
-        private iterable $stream,
-        private ?FakeMetadata $metadata = null,
-    ) {
-    }
-
-    /**
-     * @return iterable<mixed>
-     */
-    public function asStream(): iterable
-    {
-        return $this->stream;
-    }
-
-    public function getMetadata(): ?FakeMetadata
-    {
-        return $this->metadata;
-    }
-}
-
-final readonly class FakeMetadata
-{
-    /**
-     * @param array<string, mixed> $entries
-     */
-    public function __construct(
-        private array $entries,
-    ) {
-    }
-
-    public function get(string $name): mixed
-    {
-        return $this->entries[$name] ?? null;
-    }
-}
-
-final readonly class TextDelta
-{
-    public function __construct(private string $text)
-    {
-    }
-
-    public function getText(): string
-    {
-        return $this->text;
-    }
-}
-
-final readonly class FakeTokenUsage
+final readonly class FakeTokenUsage implements TokenUsageInterface
 {
     public function __construct(
         private ?int $promptTokens = null,
@@ -320,6 +351,46 @@ final readonly class FakeTokenUsage
     public function getCompletionTokens(): ?int
     {
         return $this->completionTokens;
+    }
+
+    public function getThinkingTokens(): ?int
+    {
+        return null;
+    }
+
+    public function getToolTokens(): ?int
+    {
+        return null;
+    }
+
+    public function getCachedTokens(): ?int
+    {
+        return null;
+    }
+
+    public function getCacheCreationTokens(): ?int
+    {
+        return null;
+    }
+
+    public function getCacheReadTokens(): ?int
+    {
+        return null;
+    }
+
+    public function getRemainingTokens(): ?int
+    {
+        return null;
+    }
+
+    public function getRemainingTokensMinute(): ?int
+    {
+        return null;
+    }
+
+    public function getRemainingTokensMonth(): ?int
+    {
+        return null;
     }
 
     public function getTotalTokens(): ?int

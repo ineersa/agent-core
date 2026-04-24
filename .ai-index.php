@@ -7,6 +7,8 @@ use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\Config\Loader\LoaderInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\AI\Platform\PlatformInterface as SymfonyPlatformInterface;
+use Symfony\AI\Platform\Test\InMemoryPlatform;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\HttpKernel\KernelInterface;
@@ -67,7 +69,17 @@ return [
                         ],
                     ]);
 
-                    $container->extension('agent_loop', []);
+                    $container->extension('agent_loop', [
+                        'llm' => [
+                            'default_model' => 'ai-index-model',
+                        ],
+                    ]);
+
+                    $container->services()
+                        ->set(InMemoryPlatform::class)
+                        ->arg('$mockResult', 'ai-index-platform-response')
+                    ;
+                    $container->services()->alias(SymfonyPlatformInterface::class, InMemoryPlatform::class);
                 }
             };
         },

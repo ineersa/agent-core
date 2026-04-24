@@ -38,6 +38,7 @@ use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogWriter;
+use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use League\Flysystem\Filesystem;
 use League\Flysystem\Local\LocalFilesystemAdapter;
@@ -90,24 +91,18 @@ final class RunOrchestratorTopologyTest extends TestCase
             stepId: 'turn-1-llm-1',
             attempt: 1,
             idempotencyKey: 'llm-result-idemp-1',
-            assistantMessage: [
-                'role' => 'assistant',
-                'content' => [],
-                'tool_calls' => [
-                    [
-                        'id' => 'call-b',
-                        'name' => 'beta',
-                        'arguments' => ['query' => 'beta'],
-                        'order_index' => 1,
-                    ],
-                    [
-                        'id' => 'call-a',
-                        'name' => 'alpha',
-                        'arguments' => ['query' => 'alpha'],
-                        'order_index' => 0,
-                    ],
+            assistantMessage: SymfonyAiTestMessages::assistantWithToolCalls([
+                [
+                    'id' => 'call-b',
+                    'name' => 'beta',
+                    'arguments' => ['query' => 'beta'],
                 ],
-            ],
+                [
+                    'id' => 'call-a',
+                    'name' => 'alpha',
+                    'arguments' => ['query' => 'alpha'],
+                ],
+            ]),
             usage: ['total_tokens' => 10],
             stopReason: 'tool_call',
             error: null,
@@ -265,10 +260,7 @@ final class RunOrchestratorTopologyTest extends TestCase
             stepId: 'turn-1-llm-1',
             attempt: 1,
             idempotencyKey: 'llm-result-idemp-1',
-            assistantMessage: [
-                'role' => 'assistant',
-                'content' => [['type' => 'text', 'text' => 'partial']],
-            ],
+            assistantMessage: SymfonyAiTestMessages::assistantText('partial'),
             usage: ['total_tokens' => 5],
             stopReason: 'aborted',
             error: null,
@@ -315,21 +307,16 @@ final class RunOrchestratorTopologyTest extends TestCase
             stepId: 'turn-1-llm-1',
             attempt: 1,
             idempotencyKey: 'llm-result-idemp-1',
-            assistantMessage: [
-                'role' => 'assistant',
-                'content' => [],
-                'tool_calls' => [
-                    [
-                        'id' => 'call-ask',
-                        'name' => 'ask_user',
-                        'arguments' => [
-                            'prompt' => 'Approve deployment?',
-                            'schema' => ['type' => 'boolean'],
-                        ],
-                        'order_index' => 0,
+            assistantMessage: SymfonyAiTestMessages::assistantWithToolCalls([
+                [
+                    'id' => 'call-ask',
+                    'name' => 'ask_user',
+                    'arguments' => [
+                        'prompt' => 'Approve deployment?',
+                        'schema' => ['type' => 'boolean'],
                     ],
                 ],
-            ],
+            ]),
             usage: ['total_tokens' => 7],
             stopReason: 'tool_call',
             error: null,
@@ -398,18 +385,13 @@ final class RunOrchestratorTopologyTest extends TestCase
             stepId: 'turn-1-llm-1',
             attempt: 1,
             idempotencyKey: 'llm-result-idemp-1',
-            assistantMessage: [
-                'role' => 'assistant',
-                'content' => [],
-                'tool_calls' => [
-                    [
-                        'id' => 'call-stale',
-                        'name' => 'web_search',
-                        'arguments' => ['query' => 'later'],
-                        'order_index' => 0,
-                    ],
+            assistantMessage: SymfonyAiTestMessages::assistantWithToolCalls([
+                [
+                    'id' => 'call-stale',
+                    'name' => 'web_search',
+                    'arguments' => ['query' => 'later'],
                 ],
-            ],
+            ]),
             usage: ['total_tokens' => 9],
             stopReason: 'tool_call',
             error: null,

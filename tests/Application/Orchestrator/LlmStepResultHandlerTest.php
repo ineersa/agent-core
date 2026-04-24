@@ -16,6 +16,7 @@ use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
+use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -53,19 +54,13 @@ final class LlmStepResultHandlerTest extends TestCase
             stepId: 'turn-1-step',
             attempt: 1,
             idempotencyKey: 'llm-idempotency-1',
-            assistantMessage: [
-                'role' => 'assistant',
-                'content' => [[
-                    'type' => 'text',
-                    'text' => 'I will call a tool.',
-                ]],
-                'tool_calls' => [[
+            assistantMessage: SymfonyAiTestMessages::assistantWithToolCalls([
+                [
                     'id' => 'tool-call-1',
                     'name' => 'search_docs',
                     'arguments' => ['query' => 'agent-core'],
-                    'order_index' => 0,
-                ]],
-            ],
+                ],
+            ], 'I will call a tool.'),
             usage: ['total_tokens' => 12],
             stopReason: 'tool_call',
             error: null,

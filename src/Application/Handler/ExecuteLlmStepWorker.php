@@ -7,8 +7,10 @@ namespace Ineersa\AgentCore\Application\Handler;
 use Ineersa\AgentCore\Contract\Tool\PlatformInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
+use Ineersa\AgentCore\Domain\Tool\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Tool\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Tool\PlatformInvocationResult;
+use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -18,6 +20,7 @@ final readonly class ExecuteLlmStepWorker
     public function __construct(
         private PlatformInterface $platform,
         private MessageBusInterface $commandBus,
+        private string $defaultModel,
         private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
     ) {
@@ -59,14 +62,14 @@ final readonly class ExecuteLlmStepWorker
 
         try {
             $invoke = fn (): PlatformInvocationResult => $this->platform->invoke(new ModelInvocationRequest(
-                model: 'default',
-                input: [
-                    'run_id' => $message->runId(),
-                    'turn_no' => $message->turnNo(),
-                    'step_id' => $message->stepId(),
-                    'context_ref' => $message->contextRef,
-                    'tools_ref' => $message->toolsRef,
-                ],
+                model: $this->defaultModel,
+                input: new ModelInvocationInput(
+                    runId: $message->runId(),
+                    turnNo: $message->turnNo(),
+                    stepId: $message->stepId(),
+                    contextRef: $message->contextRef,
+                    toolsRef: $message->toolsRef,
+                ),
             ));
 
             $response = null === $this->tracer
@@ -84,13 +87,9 @@ final readonly class ExecuteLlmStepWorker
             $assistantMessage = $response->assistantMessage;
             $hasStreamDeltas = [] !== $response->deltas();
             if (null === $assistantMessage && !$hasStreamDeltas && null === $response->stopReason && null === $response->error) {
-                $assistantMessage = [
-                    'role' => 'assistant',
-                    'content' => [[
-                        'type' => 'text',
-                        'text' => \sprintf('LLM placeholder response for %s', $message->contextRef),
-                    ]],
-                ];
+                $assistantMessage = new AssistantMessage(
+                    content: \sprintf('LLM placeholder response for %s', $message->contextRef),
+                );
             }
 
             return new LlmStepResult(

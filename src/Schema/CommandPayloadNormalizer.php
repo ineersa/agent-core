@@ -11,6 +11,8 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Symfony\AI\Platform\Message\AssistantMessage;
+use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
@@ -130,7 +132,7 @@ final class CommandPayloadNormalizer
             'run_id' => $message->runId(),
             'turn_no' => $message->turnNo(),
             'step_id' => $message->stepId(),
-            'assistant_message' => $message->assistantMessage,
+            'assistant_message' => $this->normalizeAssistantMessage($message->assistantMessage),
             'usage' => $message->usage,
             'stop_reason' => $message->stopReason,
             'error' => $message->error,
@@ -195,6 +197,69 @@ final class CommandPayloadNormalizer
             CoreCommandKind::Continue => 'ApplyContinueCommand',
             default => 'ApplyCommand',
         };
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function normalizeAssistantMessage(?AssistantMessage $assistantMessage): ?array
+    {
+        if (null === $assistantMessage) {
+            return null;
+        }
+
+        $payload = [
+            'role' => 'assistant',
+            'content' => null === $assistantMessage->getContent()
+                ? null
+                : [[
+                    'type' => 'text',
+                    'text' => $assistantMessage->getContent(),
+                ]],
+        ];
+
+        $toolCalls = $this->normalizeToolCalls($assistantMessage->getToolCalls());
+        if ([] !== $toolCalls) {
+            $payload['tool_calls'] = $toolCalls;
+        }
+
+        $details = array_filter([
+            'thinking' => $assistantMessage->getThinkingContent(),
+            'thinking_signature' => $assistantMessage->getThinkingSignature(),
+        ], static fn (mixed $value): bool => null !== $value);
+
+        if ([] !== $details) {
+            $payload['details'] = $details;
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @param ?list<ToolCall> $toolCalls
+     *
+     * @return list<array{id: string, name: string, arguments: array<string, mixed>}>
+     */
+    private function normalizeToolCalls(?array $toolCalls): array
+    {
+        if (null === $toolCalls) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($toolCalls as $toolCall) {
+            if (!$toolCall instanceof ToolCall) {
+                continue;
+            }
+
+            $normalized[] = [
+                'id' => $toolCall->getId(),
+                'name' => $toolCall->getName(),
+                'arguments' => $toolCall->getArguments(),
+            ];
+        }
+
+        return $normalized;
     }
 
     /**

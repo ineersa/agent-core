@@ -42,8 +42,8 @@ Legend:
 
 | Baseline hook | Status | agent-core equivalent | Evidence |
 |---|---:|---|---|
-| `transformContext` | ✅ | `TransformContextHookInterface`, invoked in Platform chain | Interface: `src/Contract/Hook/TransformContextHookInterface.php:9`; invoke: `src/Infrastructure/SymfonyAi/Platform.php:47,164-169` |
-| `convertToLlm` | ✅ | `ConvertToLlmHookInterface`, invoked in Platform chain | Interface: `src/Contract/Hook/ConvertToLlmHookInterface.php:10`; invoke: `src/Infrastructure/SymfonyAi/Platform.php:49,180-185` |
+| `transformContext` | ✅ | `TransformContextHookInterface`, invoked in Symfony AI adapter chain | Interface: `src/Contract/Hook/TransformContextHookInterface.php:9`; invoke: `src/Infrastructure/SymfonyAi/LlmPlatformAdapter.php` |
+| `convertToLlm` | ✅ | `ConvertToLlmHookInterface`, invoked in Symfony AI adapter chain | Interface: `src/Contract/Hook/ConvertToLlmHookInterface.php:10`; invoke: `src/Infrastructure/SymfonyAi/LlmPlatformAdapter.php` |
 | `getApiKey` | ❌ | No per-call API key hook found | no symbol/hook in `src/Contract/Hook` or `Platform` |
 | `getSteeringMessages` | 🟡 | Interface exists, but not wired/invoked in runtime | `src/Contract/Hook/SteeringMessagesProviderInterface.php:9`; only doc mention in `docs/hooks.md:13` |
 | `getFollowUpMessages` | 🟡 | Interface exists, but not wired/invoked in runtime | `src/Contract/Hook/FollowUpMessagesProviderInterface.php:9`; only doc mention in `docs/hooks.md:13` |
@@ -65,8 +65,8 @@ Legend:
 | `input` | ❌ | No input interception hook equivalent | no equivalent in `src/Contract/Hook` |
 | `before_agent_start` | ❌ | No pre-start hook equivalent | no equivalent |
 | `context` | ✅ | Covered by `TransformContextHookInterface` | `src/Contract/Hook/TransformContextHookInterface.php:9` |
-| `before_provider_request` | ✅ | Covered by `BeforeProviderRequestHookInterface` | `src/Contract/Hook/BeforeProviderRequestHookInterface.php:9`; invoke in `Platform.php:67,199-210` |
-| `model_select` | 🟡 | Model resolution exists (`ModelResolverInterface`) but no model-select event | `src/Contract/Tool/ModelResolverInterface.php:10`; use in `Platform.php:55` |
+| `before_provider_request` | ✅ | Covered by `BeforeProviderRequestHookInterface` via native Symfony AI `InvocationEvent` subscriber | `src/Contract/Hook/BeforeProviderRequestHookInterface.php:9`; subscriber: `src/Infrastructure/SymfonyAi/BeforeProviderRequestSubscriber.php` |
+| `model_select` | ✅ | Covered by `ModelResolverInterface` via native Symfony AI `ModelRoutingEvent` subscriber | `src/Contract/Tool/ModelResolverInterface.php:11`; subscriber: `src/Infrastructure/SymfonyAi/ModelResolverRoutingSubscriber.php` |
 | `user_bash` | ❌ | No interactive shell hook/event layer | no equivalent in `src/**` |
 
 ---
@@ -114,6 +114,6 @@ Agent-core emits many non-pi baseline events, e.g.:
 ## Executive summary
 
 Compared to `pi-mono` baseline:
-- **Clearly covered**: provider-boundary hook chain (`transformContext`, `convertToLlm`, `before_provider_request`), and core tool execution boundaries (`tool_execution_start/end`) plus `agent_end`.
+- **Clearly covered**: provider-boundary hook chain (`transformContext`, `convertToLlm`) through `LlmPlatformAdapter`, plus native Symfony AI event-based seams for `before_provider_request` and `model_select`, and core tool execution boundaries (`tool_execution_start/end`) plus `agent_end`.
 - **Partially covered**: turn/message lifecycle parity (contract exists, runtime emission differs), tool interception (via Symfony Toolbox events instead of first-class agent-core hooks), model selection (resolver exists but no event).
 - **Not covered**: most session/UI extension events (`session_*`, `resources_discover`, `user_bash`, event bus, compaction/queue/auto-retry stream events), plus `getApiKey`, `message_update`, `tool_execution_update`, `agent_start`, `turn_end` runtime emission.

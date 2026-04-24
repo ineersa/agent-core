@@ -33,8 +33,8 @@
         "doctrine/migrations": "^3.8",
         "symfony/lock": "^8.0",
         "helgesverre/toon": "^3.1",
-        "symfony/ai-agent": "^0.7",
-        "symfony/ai-platform": "^0.7",
+        "symfony/ai-agent": "^0.8",
+        "symfony/ai-platform": "^0.8",
         "symfony/validator": "^8.0",
         "symfony/uid": "^8.0"
     },

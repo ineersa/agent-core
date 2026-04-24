@@ -13,18 +13,4 @@ final readonly class ModelResolutionOptions
         public array $values = [],
     ) {
     }
-
-    /**
-     * @param list<string> $keys
-     */
-    public function withoutKeys(array $keys): self
-    {
-        $filtered = $this->values;
-
-        foreach ($keys as $key) {
-            unset($filtered[$key]);
-        }
-
-        return new self($filtered);
-    }
 }

@@ -35,6 +35,8 @@ use Symfony\Component\Config\Loader\LoaderInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\HttpKernel\Kernel;
+use Symfony\AI\Platform\PlatformInterface as SymfonyPlatformInterface;
+use Symfony\AI\Platform\Test\InMemoryPlatform;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
 final class TestKernel extends Kernel
@@ -45,7 +47,11 @@ final class TestKernel extends Kernel
      * @param array<string, mixed> $agentLoopConfig
      */
     public function __construct(
-        private readonly array $agentLoopConfig = [],
+        private readonly array $agentLoopConfig = [
+            'llm' => [
+                'default_model' => 'test-model',
+            ],
+        ],
         string $environment = 'test',
         bool $debug = true,
     ) {
@@ -87,6 +93,11 @@ final class TestKernel extends Kernel
         $container->extension('agent_loop', $this->agentLoopConfig);
 
         $services = $container->services();
+
+        $services->set(InMemoryPlatform::class)
+            ->arg('$mockResult', 'test-platform-response')
+        ;
+        $services->alias(SymfonyPlatformInterface::class, InMemoryPlatform::class);
 
         foreach ([
             'test.agent_runner' => AgentRunner::class,

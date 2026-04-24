@@ -8,7 +8,6 @@ use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
-use Ineersa\AgentCore\Application\Handler\ToolCatalogResolver;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionPolicyResolver;
 use Ineersa\AgentCore\Domain\Event\CoreLifecycleEventType;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
@@ -16,8 +15,10 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Domain\Tool\ToolCatalogContext;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Symfony\AI\Agent\Toolbox\ToolboxInterface;
+use Symfony\AI\Platform\Message\AssistantMessage;
+use Symfony\AI\Platform\Tool\Tool;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
@@ -29,7 +30,7 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
         private RunMessageStateTools $stateTools,
         private StepDispatcher $stepDispatcher,
         private ?ToolExecutionPolicyResolver $toolExecutionPolicyResolver = null,
-        private ?ToolCatalogResolver $toolCatalogResolver = null,
+        private ?ToolboxInterface $toolbox = null,
         private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
         private ?MessageBusInterface $commandBus = null,
@@ -157,9 +158,9 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
             );
         }
 
-        $assistantMessage = $message->assistantMessage ?? [];
+        $assistantMessage = $message->assistantMessage ?? new AssistantMessage();
         $toolCalls = $this->stateTools->extractToolCalls($assistantMessage);
-        $toolSchemas = $this->resolveToolSchemas($runId, $state->turnNo, $message->stepId());
+        $toolSchemas = $this->resolveToolSchemas();
 
         $messages = $state->messages;
         $messages[] = $this->stateTools->assistantMessage($assistantMessage);
@@ -168,6 +169,8 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
         foreach ($toolCalls as $toolCall) {
             $pendingToolCalls[$toolCall['id']] = false;
         }
+
+        $assistantMessagePayload = $this->stateTools->assistantMessagePayload($assistantMessage);
 
         $effects = [];
         foreach ($toolCalls as $toolCall) {
@@ -187,7 +190,7 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
                 mode: $policy['mode']->value,
                 timeoutSeconds: $policy['timeout_seconds'],
                 maxParallelism: $policy['max_parallelism'],
-                assistantMessage: $assistantMessage,
+                assistantMessage: $assistantMessagePayload,
                 argSchema: $toolSchemas[$toolCall['name']] ?? null,
             );
         }
@@ -348,20 +351,20 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
     /**
      * @return array<string, array<string, mixed>>
      */
-    private function resolveToolSchemas(string $runId, int $turnNo, string $stepId): array
+    private function resolveToolSchemas(): array
     {
-        if (null === $this->toolCatalogResolver) {
+        if (null === $this->toolbox) {
             return [];
         }
 
         $schemas = [];
 
-        foreach ($this->toolCatalogResolver->resolve(new ToolCatalogContext(
-            runId: $runId,
-            turnNo: $turnNo,
-            stepId: $stepId,
-        )) as $definition) {
-            $schemas[$definition->name] = $definition->schema ?? ['type' => 'object'];
+        foreach ($this->toolbox->getTools() as $tool) {
+            if (!$tool instanceof Tool) {
+                continue;
+            }
+
+            $schemas[$tool->getName()] = $tool->getParameters() ?? ['type' => 'object'];
         }
 
         return $schemas;

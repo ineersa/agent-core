@@ -24,7 +24,6 @@ use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
-use Ineersa\AgentCore\Application\Handler\ToolCatalogResolver;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionPolicyResolver;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
@@ -61,8 +60,8 @@ use Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface;
 use Ineersa\AgentCore\Contract\PromptStateStoreInterface;
 use Ineersa\AgentCore\Contract\RunAccessStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ModelResolverInterface;
 use Ineersa\AgentCore\Contract\Tool\PlatformInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolCatalogProviderInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolIdempotencyKeyResolverInterface;
 use Ineersa\AgentCore\Infrastructure\Mercure\RunEventPublisher;
@@ -78,12 +77,14 @@ use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
 use Ineersa\AgentCore\Infrastructure\Security\AllowAllAuthorizeRun;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogWriter;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\Platform;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\BeforeProviderRequestSubscriber;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\ModelResolverRoutingSubscriber;
 use Ineersa\AgentCore\Schema\CommandPayloadNormalizer;
 use Ineersa\AgentCore\Schema\EventNameMap;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\SymfonyMessageMapper;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\SymfonyPlatformInvoker;
 use League\Flysystem\Filesystem;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use League\Flysystem\Local\LocalFilesystemAdapter;
@@ -136,11 +137,6 @@ return static function (ContainerConfigurator $container): void {
     ;
 
     $services
-        ->instanceof(ToolCatalogProviderInterface::class)
-        ->tag('agent_loop.tool_catalog_provider')
-    ;
-
-    $services
         ->instanceof(RunMessageHandler::class)
         ->tag('agent_loop.orchestrator.message_handler')
     ;
@@ -182,6 +178,7 @@ return static function (ContainerConfigurator $container): void {
     $services->set(AdvanceRunHandler::class);
 
     $services->set(LlmStepResultHandler::class)
+        ->arg('$toolbox', service(ToolboxInterface::class)->nullOnInvalid())
         ->arg('$commandBus', service('agent.command.bus'))
     ;
 
@@ -244,23 +241,26 @@ return static function (ContainerConfigurator $container): void {
     $services->set(HookDispatcher::class);
     $services->set(RunEventDispatcher::class);
 
-    $services->set(ToolCatalogResolver::class)
-        ->arg('$providers', tagged_iterator('agent_loop.tool_catalog_provider'))
+    $services->set(AgentMessageConverter::class);
+
+    $services->set(DynamicToolDescriptionProcessor::class)
+        ->arg('$toolbox', service(ToolboxInterface::class)->nullOnInvalid())
     ;
 
-    $services->set(SymfonyMessageMapper::class);
-
-    $services->set(SymfonyPlatformInvoker::class)
-        ->arg('$platform', service('Symfony\\AI\\Platform\\PlatformInterface')->nullOnInvalid())
+    $services->set(ModelResolverRoutingSubscriber::class)
+        ->arg('$modelResolver', service(ModelResolverInterface::class)->nullOnInvalid())
     ;
 
-    $services->set(Platform::class)
+    $services->set(BeforeProviderRequestSubscriber::class)
+        ->arg('$hooks', tagged_iterator('agent_loop.hook.before_provider_request'))
+    ;
+
+    $services->set(LlmPlatformAdapter::class)
+        ->arg('$platform', service('Symfony\\AI\\Platform\\PlatformInterface'))
         ->arg('$transformContextHooks', tagged_iterator('agent_loop.hook.transform_context'))
         ->arg('$convertToLlmHooks', tagged_iterator('agent_loop.hook.convert_to_llm'))
-        ->arg('$beforeProviderRequestHooks', tagged_iterator('agent_loop.hook.before_provider_request'))
-        ->arg('$defaultModel', param('agent_loop.llm.default_model'))
     ;
-    $services->alias(PlatformInterface::class, Platform::class);
+    $services->alias(PlatformInterface::class, LlmPlatformAdapter::class);
 
     $services->set(ToolExecutor::class)
         ->arg('$defaultMode', param('agent_loop.tools.defaults.mode'))
@@ -275,6 +275,7 @@ return static function (ContainerConfigurator $container): void {
 
     $services->set(ExecuteLlmStepWorker::class)
         ->arg('$commandBus', service('agent.command.bus'))
+        ->arg('$defaultModel', param('agent_loop.llm.default_model'))
     ;
 
     $services->set(ExecuteToolCallWorker::class)

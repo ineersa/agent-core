@@ -16,11 +16,18 @@ final class ConfigurationTest extends TestCase
     public function testDefaultConfigurationValues(): void
     {
         $processor = new Processor();
-        $config = $processor->processConfiguration(new Configuration(), [[]]);
+        $config = $processor->processConfiguration(new Configuration(), [[
+            'llm' => [
+                'default_model' => 'test-model',
+            ],
+        ]]);
 
         self::assertSame('messenger', $config['runtime']);
         self::assertSame('mercure', $config['streaming']);
-        self::assertSame('gpt-4o-mini', $config['llm']['default_model']);
+        self::assertSame('test-model', $config['llm']['default_model']);
+        self::assertSame('openai', $config['llm']['platform']);
+        self::assertNull($config['llm']['api_key']);
+        self::assertNull($config['llm']['base_url']);
         self::assertSame('agent_loop.run_logs', $config['storage']['run_log']['flysystem_storage']);
         self::assertSame('%kernel.project_dir%/var/agent-runs', $config['storage']['run_log']['base_path']);
         self::assertSame('doctrine', $config['storage']['hot_prompt']['backend']);
@@ -40,6 +47,16 @@ final class ConfigurationTest extends TestCase
         self::assertSame(7, $config['retention']['archive_after_days']);
     }
 
+    public function testDefaultModelIsRequired(): void
+    {
+        $processor = new Processor();
+
+        $this->expectException(InvalidConfigurationException::class);
+        $this->expectExceptionMessage('agent_loop.llm.default_model must be configured and non-empty.');
+
+        $processor->processConfiguration(new Configuration(), [[]]);
+    }
+
     public function testInvalidCommandPrefixIsRejected(): void
     {
         $processor = new Processor();
@@ -48,6 +65,9 @@ final class ConfigurationTest extends TestCase
         $this->expectExceptionMessage('agent_loop.commands.custom_kind_prefix must start with "ext:".');
 
         $processor->processConfiguration(new Configuration(), [[
+            'llm' => [
+                'default_model' => 'test-model',
+            ],
             'commands' => [
                 'custom_kind_prefix' => 'custom:',
             ],
@@ -62,6 +82,9 @@ final class ConfigurationTest extends TestCase
         $this->expectExceptionMessage('agent_loop.events.custom_type_prefix must start with "ext_".');
 
         $processor->processConfiguration(new Configuration(), [[
+            'llm' => [
+                'default_model' => 'test-model',
+            ],
             'events' => [
                 'custom_type_prefix' => 'custom_',
             ],

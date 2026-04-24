@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Contract\Hook;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
-use Ineersa\AgentCore\Domain\Message\MessageBag;
+use Symfony\AI\Platform\Message\MessageBag;
 
 interface ConvertToLlmHookInterface
 {
     /**
-     * Transforms an array of messages into a MessageBag with optional cancellation support.
+     * Transforms an array of messages into a Symfony AI MessageBag with optional cancellation support.
      *
      * @param list<AgentMessage> $messages
      */

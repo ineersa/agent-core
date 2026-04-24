@@ -10,9 +10,10 @@ use Ineersa\AgentCore\Contract\Hook\ConvertToLlmHookInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
-use Ineersa\AgentCore\Domain\Message\MessageBag;
 use Ineersa\AgentCore\Domain\Tool\ProviderRequest;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Message\Message;
+use Symfony\AI\Platform\Message\MessageBag;
 
 final class HookParityContractTest extends TestCase
 {
@@ -42,7 +43,7 @@ final class HookParityContractTest extends TestCase
             {
                 $this->recorder->record('convert_to_llm');
 
-                return new MessageBag([new \stdClass()]);
+                return new MessageBag(Message::ofUser('converted'));
             }
         };
 
@@ -75,7 +76,7 @@ final class HookParityContractTest extends TestCase
 
         self::assertSame(['transform_context', 'convert_to_llm', 'before_provider_request'], $recorder->calls);
         self::assertSame('model-a-override', $payload['request']['model']);
-        self::assertCount(1, $payload['llm_messages']->all());
+        self::assertCount(1, $payload['llm_messages']->getMessages());
     }
 
     /**
