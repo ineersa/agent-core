@@ -60,7 +60,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         return $this->consumeStream(
             $this->platform->invoke(
                 $input->getModel(),
-                ['message_bag' => $input->getMessageBag()],
+                $input->getMessageBag(),
                 PlatformInvocationMetadata::inject(
                     array_replace($input->getOptions(), ['stream' => true]),
                     new PlatformInvocationMetadata($request->input, $cancelToken),

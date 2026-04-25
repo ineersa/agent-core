@@ -25,9 +25,6 @@ final class ConfigurationTest extends TestCase
         self::assertSame('messenger', $config['runtime']);
         self::assertSame('mercure', $config['streaming']);
         self::assertSame('test-model', $config['llm']['default_model']);
-        self::assertSame('openai', $config['llm']['platform']);
-        self::assertNull($config['llm']['api_key']);
-        self::assertNull($config['llm']['base_url']);
         self::assertSame('agent_loop.run_logs', $config['storage']['run_log']['flysystem_storage']);
         self::assertSame('%kernel.project_dir%/var/agent-runs', $config['storage']['run_log']['base_path']);
         self::assertSame('doctrine', $config['storage']['hot_prompt']['backend']);
@@ -47,14 +44,12 @@ final class ConfigurationTest extends TestCase
         self::assertSame(7, $config['retention']['archive_after_days']);
     }
 
-    public function testDefaultModelIsRequired(): void
+    public function testDefaultModelIsNullWhenNotConfigured(): void
     {
         $processor = new Processor();
+        $config = $processor->processConfiguration(new Configuration(), [[]]);
 
-        $this->expectException(InvalidConfigurationException::class);
-        $this->expectExceptionMessage('agent_loop.llm.default_model must be configured and non-empty.');
-
-        $processor->processConfiguration(new Configuration(), [[]]);
+        self::assertNull($config['llm']['default_model']);
     }
 
     public function testInvalidCommandPrefixIsRejected(): void

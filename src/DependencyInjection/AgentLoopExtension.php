@@ -43,10 +43,11 @@ final class AgentLoopExtension extends Extension implements PrependExtensionInte
         $container->setParameter('agent_loop.config', $config);
         $container->setParameter('agent_loop.runtime', $config['runtime']);
         $container->setParameter('agent_loop.streaming', $config['streaming']);
-        $container->setParameter('agent_loop.llm.default_model', $config['llm']['default_model']);
-        $container->setParameter('agent_loop.llm.platform', $config['llm']['platform']);
-        $container->setParameter('agent_loop.llm.api_key', $config['llm']['api_key']);
-        $container->setParameter('agent_loop.llm.base_url', $config['llm']['base_url']);
+        $defaultModel = $config['llm']['default_model'];
+        $container->setParameter(
+            'agent_loop.llm.default_model',
+            $defaultModel ?? '%env(AI_MODEL)%',
+        );
         $container->setParameter('agent_loop.storage.run_log.base_path', $config['storage']['run_log']['base_path']);
         $container->setParameter('agent_loop.storage.run_log.flysystem_storage', $config['storage']['run_log']['flysystem_storage']);
         $container->setParameter('agent_loop.storage.hot_prompt.backend', $config['storage']['hot_prompt']['backend']);

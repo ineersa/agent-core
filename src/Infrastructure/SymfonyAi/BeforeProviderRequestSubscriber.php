@@ -32,14 +32,17 @@ final readonly class BeforeProviderRequestSubscriber implements EventSubscriberI
         $metadata = PlatformInvocationMetadata::extract($event->getOptions());
         $input = $event->getInput();
 
-        if (!\is_array($input)) {
+        $isMessageBag = $input instanceof \Symfony\AI\Platform\Message\MessageBag;
+
+        if (!\is_array($input) && !$isMessageBag) {
             $event->setOptions($options);
 
             return;
         }
 
+        // Wrap MessageBag as array so hooks receive a consistent array shape.
+        $resolvedInput = $isMessageBag ? ['message_bag' => $input] : $input;
         $resolvedModel = $event->getModel()->getName();
-        $resolvedInput = $input;
         $resolvedOptions = $options;
 
         foreach ($this->hooks as $hook) {
@@ -62,7 +65,8 @@ final readonly class BeforeProviderRequestSubscriber implements EventSubscriberI
             ));
         }
 
-        $event->setInput($resolvedInput);
+        // Unwrap if we wrapped it.
+        $event->setInput($isMessageBag && isset($resolvedInput['message_bag']) ? $resolvedInput['message_bag'] : $resolvedInput);
         $event->setOptions($resolvedOptions);
     }
 }

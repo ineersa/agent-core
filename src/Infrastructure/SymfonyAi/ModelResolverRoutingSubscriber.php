@@ -31,12 +31,12 @@ final readonly class ModelResolverRoutingSubscriber implements EventSubscriberIn
         }
 
         $input = $event->getInput();
-        if (!\is_array($input)) {
-            return;
-        }
 
-        $messageBag = $input['message_bag'] ?? null;
-        if (!$messageBag instanceof MessageBag) {
+        if ($input instanceof MessageBag) {
+            $messageBag = $input;
+        } elseif (\is_array($input) && ($input['message_bag'] ?? null) instanceof MessageBag) {
+            $messageBag = $input['message_bag'];
+        } else {
             return;
         }
 

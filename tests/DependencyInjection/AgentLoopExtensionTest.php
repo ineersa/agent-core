@@ -48,9 +48,6 @@ final class AgentLoopExtensionTest extends TestCase
         self::assertSame('messenger', $container->getParameter('agent_loop.runtime'));
         self::assertSame('mercure', $container->getParameter('agent_loop.streaming'));
         self::assertSame('test-model', $container->getParameter('agent_loop.llm.default_model'));
-        self::assertSame('openai', $container->getParameter('agent_loop.llm.platform'));
-        self::assertNull($container->getParameter('agent_loop.llm.api_key'));
-        self::assertNull($container->getParameter('agent_loop.llm.base_url'));
         self::assertSame('agent_loop.run_logs', $container->getParameter('agent_loop.storage.run_log.flysystem_storage'));
         self::assertSame('one_at_a_time', $container->getParameter('agent_loop.commands.steer_drain_mode'));
         self::assertSame(120, $container->getParameter('agent_loop.commands.resume_stale_after_seconds'));
