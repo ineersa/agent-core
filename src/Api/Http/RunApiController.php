@@ -27,6 +27,7 @@ use Symfony\Component\HttpKernel\Attribute\AsController;
 use Symfony\Component\HttpKernel\Attribute\MapQueryString;
 use Symfony\Component\HttpKernel\Attribute\MapRequestPayload;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Component\Mercure\Authorization;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Attribute\Route;
@@ -44,6 +45,7 @@ final readonly class RunApiController
         private RunEventSerializer $eventSerializer,
         private RunTopicPolicy $topicPolicy,
         private AuthorizeRunInterface $authorizeRun,
+        private ?Authorization $mercureAuthorization = null,
     ) {
     }
 
@@ -78,10 +80,14 @@ final readonly class RunApiController
             sessionMetadata: $accessMetadata->session,
         ));
 
+        $topic = $this->topicPolicy->topicFor($runId);
+
+        $this->mercureAuthorization?->setCookie($request, subscribe: $topic);
+
         return new JsonResponse([
             'run_id' => $runId,
             'status' => 'queued',
-            'stream_topic' => $this->topicPolicy->topicFor($runId),
+            'stream_topic' => $topic,
         ], Response::HTTP_ACCEPTED);
     }
 
