@@ -81,13 +81,7 @@ agent_loop:
     default_model: gpt-4o-mini
 ```
 
-API routes are auto-registered by the bundle when `api.enabled` is `true` (default). To disable:
-
-```yaml
-agent_loop:
-  api:
-    enabled: false
-```
+The bundle does not ship HTTP controllers. Create your own controller that uses `AgentRunnerInterface`, `RunReadService`, etc. See `docs/architecture.md` for available services.
 
 ## 4) Pick transport mode for development
 

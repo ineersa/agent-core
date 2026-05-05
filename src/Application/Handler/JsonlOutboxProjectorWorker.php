@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Handler;
 
+use Ineersa\AgentCore\Contract\OutboxProjectorInterface;
 use Ineersa\AgentCore\Contract\OutboxStoreInterface;
 use Ineersa\AgentCore\Domain\Event\OutboxSink;
 use Ineersa\AgentCore\Domain\Message\ProjectJsonlOutbox;
@@ -11,7 +12,7 @@ use Ineersa\AgentCore\Infrastructure\Storage\RunLogWriter;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
 #[AsMessageHandler(bus: 'agent.publisher.bus')]
-final readonly class JsonlOutboxProjectorWorker
+final readonly class JsonlOutboxProjectorWorker implements OutboxProjectorInterface
 {
     public function __construct(
         private OutboxStoreInterface $outboxStore,
@@ -21,7 +22,16 @@ final readonly class JsonlOutboxProjectorWorker
 
     public function __invoke(ProjectJsonlOutbox $message): void
     {
-        $batchSize = max(1, $message->batchSize);
+        $this->processBatch($message->batchSize, $message->retryDelaySeconds);
+    }
+
+    public function sink(): OutboxSink
+    {
+        return OutboxSink::Jsonl;
+    }
+
+    public function processBatch(int $batchSize = 100, int $retryDelaySeconds = 30): void
+    {
         $now = new \DateTimeImmutable();
 
         foreach ($this->outboxStore->claim(OutboxSink::Jsonl, $batchSize, $now) as $entry) {
@@ -29,7 +39,7 @@ final readonly class JsonlOutboxProjectorWorker
                 continue;
             }
 
-            $retryDelay = max(1, $message->retryDelaySeconds + $entry->attempts - 1);
+            $retryDelay = max(1, $retryDelaySeconds + $entry->attempts - 1);
 
             try {
                 $this->runLogWriter->append($entry->event);

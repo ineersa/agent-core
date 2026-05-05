@@ -15,16 +15,45 @@ This repository now includes a ready recipe skeleton at:
   - requires running messenger consumers
   - override to `sync://` for quick smoke tests without workers
 
-### API routes (auto-registered, no recipe file needed)
+### API routes
 
-Routes are registered automatically via the `routing.controller` tag on `RunApiController` when `agent_loop.api.enabled` is `true` (the default). No route YAML file is needed.
+The bundle does not ship HTTP controllers. Consuming applications should create their own controllers using the bundle's public contracts (`AgentRunnerInterface`, `RunReadService`, `RunStoreInterface`, `EventStoreInterface`, etc.).
 
-To disable the API routes:
+See `docs/architecture.md` for the full list of available services.
+
+### Outbox projectors
+
+The bundle ships two built-in outbox projectors:
+
+- **JSONL** (`JsonlOutboxProjectorWorker`) — persists events to JSONL run logs via Flysystem.
+- **Mercure** (`MercureOutboxProjectorWorker`) — publishes events to Mercure hub for real-time streaming.
+
+Both are enabled by default. To disable one or both:
 
 ```yaml
+# config/packages/agent_loop.yaml
 agent_loop:
-  api:
-    enabled: false
+    outbox:
+        jsonl: false
+        mercure: false
+```
+
+When disabled, the worker service is not registered at all — no autowiring, no Messenger handler, no tag.
+
+To add a custom projector (e.g., SSE, WebSocket, Redis Pub/Sub), implement `OutboxProjectorInterface`. It will be auto-tagged and collected by `OutboxProjector`:
+
+```php
+use Ineersa\AgentCore\Contract\OutboxProjectorInterface;
+use Ineersa\AgentCore\Domain\Event\OutboxSink;
+
+final readonly class SseOutboxProjector implements OutboxProjectorInterface
+{
+    public function sink(): OutboxSink { return OutboxSink::from('sse'); }
+    public function processBatch(int $batchSize = 100, int $retryDelaySeconds = 30): void
+    {
+        // claim from outbox, push to SSE stream
+    }
+}
 ```
 
 ## Publishing the recipe

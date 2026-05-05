@@ -157,7 +157,7 @@ function check(): void
             test();
         },
         'index' => static function (): void {
-            index_methods(all: true, force: true, skipNamespace: false);
+            index_methods(all: true, force: true, skipNamespace: false, skipWiring: true);
         },
     ] as $step => $runner) {
         try {
@@ -201,6 +201,8 @@ function index_methods(
     bool $force = false,
     #[AsOption(description: 'Skip namespace index regeneration')]
     bool $skipNamespace = false,
+    #[AsOption(description: 'Skip wiring export pre-step')]
+    bool $skipWiring = false,
 ): void {
     $command = 'vendor/bin/ai-index generate';
 
@@ -218,6 +220,9 @@ function index_methods(
     }
     if ($skipNamespace) {
         $command .= ' --skip-namespace';
+    }
+    if ($skipWiring) {
+        $command .= ' --skip-wiring';
     }
     if ([] !== $targets) {
         $command .= ' -- '.implode(' ', array_map('escapeshellarg', $targets));

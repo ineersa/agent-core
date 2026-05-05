@@ -1,52 +1,178 @@
 parameters:
 	ignoreErrors:
 		-
-			message: '#^Method Ineersa\\AgentCore\\AgentLoopBundle\:\:getContainerExtension\(\) never returns null so it can be removed from the return type\.$#'
-			identifier: return.unusedType
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\HotPromptStateSnapshot\:\:\$eventCount is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
 			count: 1
-			path: src/AgentLoopBundle.php
+			path: src/Application/Dto/HotPromptStateSnapshot.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Api\\Dto\\ReplayEventsQueryRequest\:\:__construct$#'
-			identifier: shipmonk.deadMethod
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\HotPromptStateSnapshot\:\:\$isContiguous is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
 			count: 1
-			path: src/Api/Dto/ReplayEventsQueryRequest.php
+			path: src/Application/Dto/HotPromptStateSnapshot.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Api\\Dto\\RunCommandRequest\:\:__construct$#'
-			identifier: shipmonk.deadMethod
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\HotPromptStateSnapshot\:\:\$lastSeq is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
 			count: 1
-			path: src/Api/Dto/RunCommandRequest.php
+			path: src/Application/Dto/HotPromptStateSnapshot.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Api\\Dto\\StartRunMetadataRequest\:\:__construct$#'
-			identifier: shipmonk.deadMethod
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\HotPromptStateSnapshot\:\:\$messagesCount is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
 			count: 1
-			path: src/Api/Dto/StartRunMetadataRequest.php
+			path: src/Application/Dto/HotPromptStateSnapshot.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Api\\Dto\\StartRunRequest\:\:__construct$#'
-			identifier: shipmonk.deadMethod
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\HotPromptStateSnapshot\:\:\$missingSequences is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
 			count: 1
-			path: src/Api/Dto/StartRunRequest.php
+			path: src/Application/Dto/HotPromptStateSnapshot.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Api\\Dto\\TranscriptPageQueryRequest\:\:__construct$#'
-			identifier: shipmonk.deadMethod
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\HotPromptStateSnapshot\:\:\$source is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
 			count: 1
-			path: src/Api/Dto/TranscriptPageQueryRequest.php
+			path: src/Application/Dto/HotPromptStateSnapshot.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Api\\Http\\RunReadService\:\:__construct$#'
-			identifier: shipmonk.deadMethod
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\HotPromptStateSnapshot\:\:\$tokenEstimate is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
 			count: 1
-			path: src/Api/Http/RunReadService.php
+			path: src/Application/Dto/HotPromptStateSnapshot.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Api\\Serializer\\RunEventSerializer\:\:fromRunEvent$#'
-			identifier: shipmonk.deadMethod
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\HotPromptStateSnapshot\:\:\$updatedAt is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
 			count: 1
-			path: src/Api/Serializer/RunEventSerializer.php
+			path: src/Application/Dto/HotPromptStateSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\PendingCommandSnapshot\:\:\$cancelSafe is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Application/Dto/PendingCommandSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\PendingCommandSnapshot\:\:\$idempotencyKey is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Application/Dto/PendingCommandSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\PendingCommandSnapshot\:\:\$kind is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Application/Dto/PendingCommandSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\PendingCommandSnapshot\:\:\$payloadKeys is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Application/Dto/PendingCommandSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\ReplayIntegrity\:\:\$runId is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Application/Dto/ReplayIntegrity.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\ReplayIntegrity\:\:\$source is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Application/Dto/ReplayIntegrity.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunDebugSnapshot\:\:\$exists is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Application/Dto/RunDebugSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunDebugSnapshot\:\:\$hotPromptState is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Application/Dto/RunDebugSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunDebugSnapshot\:\:\$integrity is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Application/Dto/RunDebugSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunDebugSnapshot\:\:\$metrics is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Application/Dto/RunDebugSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunDebugSnapshot\:\:\$pendingCommands is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Application/Dto/RunDebugSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunDebugSnapshot\:\:\$runId is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Application/Dto/RunDebugSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunDebugSnapshot\:\:\$state is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Application/Dto/RunDebugSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunStateSnapshot\:\:\$activeStepId is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Application/Dto/RunStateSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunStateSnapshot\:\:\$lastSeq is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Application/Dto/RunStateSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunStateSnapshot\:\:\$messagesCount is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Application/Dto/RunStateSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunStateSnapshot\:\:\$pendingToolCalls is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Application/Dto/RunStateSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunStateSnapshot\:\:\$retryableFailure is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Application/Dto/RunStateSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunStateSnapshot\:\:\$status is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Application/Dto/RunStateSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunStateSnapshot\:\:\$turnNo is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Application/Dto/RunStateSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunStateSnapshot\:\:\$version is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Application/Dto/RunStateSnapshot.php
 
 		-
 			message: '#^Unused Ineersa\\AgentCore\\Application\\Handler\\CommandHandlerRegistry\:\:__construct$#'
@@ -59,12 +185,6 @@ parameters:
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/Application/Handler/CommandRouter.php
-
-		-
-			message: '#^Unused Ineersa\\AgentCore\\Application\\Handler\\EventSubscriberRegistry\:\:__construct$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Application/Handler/EventSubscriberRegistry.php
 
 		-
 			message: '#^Unused Ineersa\\AgentCore\\Application\\Handler\\ExecuteLlmStepWorker\:\:__construct$#'
@@ -91,6 +211,12 @@ parameters:
 			path: src/Application/Handler/HookSubscriberRegistry.php
 
 		-
+			message: '#^Unused Ineersa\\AgentCore\\Application\\Handler\\JsonlOutboxProjectorWorker\:\:__construct$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Application/Handler/JsonlOutboxProjectorWorker.php
+
+		-
 			message: '#^Unused Ineersa\\AgentCore\\Application\\Handler\\OutboxProjector\:\:__construct$#'
 			identifier: shipmonk.deadMethod
 			count: 1
@@ -109,40 +235,28 @@ parameters:
 			path: src/Application/Handler/RunDebugService.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Application\\Handler\\RunEventDispatcher\:\:__construct$#'
+			message: '#^Unused Ineersa\\AgentCore\\Application\\Handler\\RunDebugService\:\:inspect$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Application/Handler/RunEventDispatcher.php
+			path: src/Application/Handler/RunDebugService.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Application\\Handler\\RunEventDispatcher\:\:dispatch$#'
+			message: '#^Unused Ineersa\\AgentCore\\Application\\Handler\\RunDebugService\:\:rebuildHotPromptState$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Application/Handler/RunEventDispatcher.php
+			path: src/Application/Handler/RunDebugService.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\BeforeProviderRequestSubscriber\:\:__construct$#'
+			message: '#^Unused Ineersa\\AgentCore\\Application\\Handler\\RunDebugService\:\:replayAfter$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Infrastructure/SymfonyAi/BeforeProviderRequestSubscriber.php
+			path: src/Application/Handler/RunDebugService.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\BeforeProviderRequestSubscriber\:\:getSubscribedEvents$#'
+			message: '#^Unused Ineersa\\AgentCore\\Application\\Handler\\RunDebugService\:\:tail$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Infrastructure/SymfonyAi/BeforeProviderRequestSubscriber.php
-
-		-
-			message: '#^Unused Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\ModelResolverRoutingSubscriber\:\:__construct$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Infrastructure/SymfonyAi/ModelResolverRoutingSubscriber.php
-
-		-
-			message: '#^Unused Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\ModelResolverRoutingSubscriber\:\:getSubscribedEvents$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Infrastructure/SymfonyAi/ModelResolverRoutingSubscriber.php
+			path: src/Application/Handler/RunDebugService.php
 
 		-
 			message: '#^Unused Ineersa\\AgentCore\\Application\\Handler\\RunLockManager\:\:__construct$#'
@@ -187,130 +301,154 @@ parameters:
 			path: src/Application/Handler/ToolExecutor.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Application\\Orchestrator\\AdvanceRunHandler\:\:__construct$#'
+			message: '#^Unused Ineersa\\AgentCore\\Application\\Pipeline\\AdvanceRunHandler\:\:__construct$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Application/Orchestrator/AdvanceRunHandler.php
+			path: src/Application/Pipeline/AdvanceRunHandler.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner\:\:__construct$#'
+			message: '#^Unused Ineersa\\AgentCore\\Application\\Pipeline\\AgentRunner\:\:__construct$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Application/Orchestrator/AgentRunner.php
+			path: src/Application/Pipeline/AgentRunner.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner\:\:answerHuman$#'
+			message: '#^Unused Ineersa\\AgentCore\\Application\\Pipeline\\AgentRunner\:\:answerHuman$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Application/Orchestrator/AgentRunner.php
+			path: src/Application/Pipeline/AgentRunner.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner\:\:cancel$#'
+			message: '#^Unused Ineersa\\AgentCore\\Application\\Pipeline\\AgentRunner\:\:cancel$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Application/Orchestrator/AgentRunner.php
+			path: src/Application/Pipeline/AgentRunner.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner\:\:continue$#'
+			message: '#^Unused Ineersa\\AgentCore\\Application\\Pipeline\\AgentRunner\:\:continue$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Application/Orchestrator/AgentRunner.php
+			path: src/Application/Pipeline/AgentRunner.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner\:\:followUp$#'
+			message: '#^Unused Ineersa\\AgentCore\\Application\\Pipeline\\AgentRunner\:\:followUp$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Application/Orchestrator/AgentRunner.php
+			path: src/Application/Pipeline/AgentRunner.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Application\\Orchestrator\\AgentRunner\:\:steer$#'
+			message: '#^Unused Ineersa\\AgentCore\\Application\\Pipeline\\AgentRunner\:\:start$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Application/Orchestrator/AgentRunner.php
+			path: src/Application/Pipeline/AgentRunner.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Application\\Orchestrator\\ApplyCommandHandler\:\:__construct$#'
+			message: '#^Unused Ineersa\\AgentCore\\Application\\Pipeline\\AgentRunner\:\:steer$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Application/Orchestrator/ApplyCommandHandler.php
+			path: src/Application/Pipeline/AgentRunner.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Application\\Orchestrator\\CommandMailboxPolicy\:\:__construct$#'
+			message: '#^Unused Ineersa\\AgentCore\\Application\\Pipeline\\ApplyCommandHandler\:\:__construct$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Application/Orchestrator/CommandMailboxPolicy.php
+			path: src/Application/Pipeline/ApplyCommandHandler.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Application\\Orchestrator\\LlmStepResultHandler\:\:__construct$#'
+			message: '#^Unused Ineersa\\AgentCore\\Application\\Pipeline\\CommandMailboxPolicy\:\:__construct$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Application/Orchestrator/LlmStepResultHandler.php
+			path: src/Application/Pipeline/CommandMailboxPolicy.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Application\\Orchestrator\\RunCommit\:\:__construct$#'
+			message: '#^Unused Ineersa\\AgentCore\\Application\\Pipeline\\LlmStepResultHandler\:\:__construct$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Application/Orchestrator/RunCommit.php
+			path: src/Application/Pipeline/LlmStepResultHandler.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Application\\Orchestrator\\RunMessageProcessor\:\:__construct$#'
+			message: '#^Unused Ineersa\\AgentCore\\Application\\Pipeline\\RunCommit\:\:__construct$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Application/Orchestrator/RunMessageProcessor.php
+			path: src/Application/Pipeline/RunCommit.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Application\\Orchestrator\\RunOrchestrator\:\:__construct$#'
+			message: '#^Unused Ineersa\\AgentCore\\Application\\Pipeline\\RunMessageProcessor\:\:__construct$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Application/Orchestrator/RunOrchestrator.php
+			path: src/Application/Pipeline/RunMessageProcessor.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Application\\Orchestrator\\StartRunHandler\:\:__construct$#'
+			message: '#^Unused Ineersa\\AgentCore\\Application\\Pipeline\\RunMessageStateTools\:\:__construct$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Application/Orchestrator/StartRunHandler.php
+			path: src/Application/Pipeline/RunMessageStateTools.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Application\\Orchestrator\\ToolCallResultHandler\:\:__construct$#'
+			message: '#^Unused Ineersa\\AgentCore\\Application\\Pipeline\\RunOrchestrator\:\:__construct$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Application/Orchestrator/ToolCallResultHandler.php
+			path: src/Application/Pipeline/RunOrchestrator.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Command\\AgentLoopHealthCommand\:\:execute$#'
+			message: '#^Unused Ineersa\\AgentCore\\Application\\Pipeline\\StartRunHandler\:\:__construct$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Command/AgentLoopHealthCommand.php
+			path: src/Application/Pipeline/StartRunHandler.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Command\\AgentLoopResumeStaleRunsCommand\:\:execute$#'
+			message: '#^Unused Ineersa\\AgentCore\\Application\\Pipeline\\ToolCallResultHandler\:\:__construct$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Command/AgentLoopResumeStaleRunsCommand.php
+			path: src/Application/Pipeline/ToolCallResultHandler.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Command\\AgentLoopRunInspectCommand\:\:execute$#'
-			identifier: shipmonk.deadMethod
+			message: '#^Method Ineersa\\AgentCore\\Application\\RunReadService\:\:replayAfter\(\) never returns null so it can be removed from the return type\.$#'
+			identifier: return.unusedType
 			count: 1
-			path: src/Command/AgentLoopRunInspectCommand.php
+			path: src/Application/RunReadService.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Command\\AgentLoopRunRebuildHotStateCommand\:\:execute$#'
-			identifier: shipmonk.deadMethod
+			message: '#^Method Ineersa\\AgentCore\\Application\\RunReadService\:\:summary\(\) never returns null so it can be removed from the return type\.$#'
+			identifier: return.unusedType
 			count: 1
-			path: src/Command/AgentLoopRunRebuildHotStateCommand.php
+			path: src/Application/RunReadService.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Command\\AgentLoopRunReplayCommand\:\:execute$#'
-			identifier: shipmonk.deadMethod
+			message: '#^Method Ineersa\\AgentCore\\Application\\RunReadService\:\:transcriptPage\(\) never returns null so it can be removed from the return type\.$#'
+			identifier: return.unusedType
 			count: 1
-			path: src/Command/AgentLoopRunReplayCommand.php
+			path: src/Application/RunReadService.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Command\\AgentLoopRunTailCommand\:\:execute$#'
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Event\\RunEvent\:\:\$createdAt \(DateTimeImmutable\) on left side of \?\? is not nullable\.$#'
+			identifier: nullCoalesce.property
+			count: 2
+			path: src/Application/RunReadService.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Application\\RunReadService\:\:__construct$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Command/AgentLoopRunTailCommand.php
+			path: src/Application/RunReadService.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Application\\RunReadService\:\:replayAfter$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Application/RunReadService.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Application\\RunReadService\:\:summary$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Application/RunReadService.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Application\\RunReadService\:\:transcriptPage$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Application/RunReadService.php
 
 		-
 			message: '#^Unused Ineersa\\AgentCore\\Contract\\AgentRunnerInterface\:\:answerHuman$#'
@@ -337,28 +475,28 @@ parameters:
 			path: src/Contract/AgentRunnerInterface.php
 
 		-
+			message: '#^Unused Ineersa\\AgentCore\\Contract\\AgentRunnerInterface\:\:start$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Contract/AgentRunnerInterface.php
+
+		-
 			message: '#^Unused Ineersa\\AgentCore\\Contract\\AgentRunnerInterface\:\:steer$#'
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/Contract/AgentRunnerInterface.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Contract\\ArtifactStoreInterface\:\:put$#'
+			message: '#^Unused Ineersa\\AgentCore\\Contract\\Extension\\EventSubscriberInterface\:\:onEvent$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Contract/ArtifactStoreInterface.php
+			path: src/Contract/Extension/EventSubscriberInterface.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Contract\\Hook\\FollowUpMessagesProviderInterface\:\:getFollowUpMessages$#'
+			message: '#^Unused Ineersa\\AgentCore\\Contract\\Extension\\EventSubscriberInterface\:\:subscribedEventTypes$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Contract/Hook/FollowUpMessagesProviderInterface.php
-
-		-
-			message: '#^Unused Ineersa\\AgentCore\\Contract\\Hook\\SteeringMessagesProviderInterface\:\:getSteeringMessages$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Contract/Hook/SteeringMessagesProviderInterface.php
+			path: src/Contract/Extension/EventSubscriberInterface.php
 
 		-
 			message: '#^Unused Ineersa\\AgentCore\\Contract\\PromptStateStoreInterface\:\:delete$#'
@@ -367,16 +505,10 @@ parameters:
 			path: src/Contract/PromptStateStoreInterface.php
 
 		-
-			message: '#^PHPDoc tag @var with type Symfony\\Component\\Config\\Definition\\Builder\\ArrayNodeDefinition is not subtype of type Symfony\\Component\\Config\\Definition\\Builder\\ArrayNodeDefinition\<Symfony\\Component\\Config\\Definition\\Builder\\TreeBuilder\<''array''\>\>\.$#'
-			identifier: varTag.type
-			count: 1
-			path: src/DependencyInjection/Configuration.php
-
-		-
-			message: '#^Unused Ineersa\\AgentCore\\Domain\\Artifact\\ArtifactMetadata\:\:__construct$#'
+			message: '#^Unused Ineersa\\AgentCore\\Contract\\RunStoreInterface\:\:findRunningStaleBefore$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Domain/Artifact/ArtifactMetadata.php
+			path: src/Contract/RunStoreInterface.php
 
 		-
 			message: '#^Property Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand\:\:\$kind is never read$#'
@@ -505,22 +637,70 @@ parameters:
 			path: src/Domain/Message/AgentBusMessageInterface.php
 
 		-
-			message: '#^Property Ineersa\\AgentCore\\Domain\\Message\\CollectToolBatch\:\:\$toolCallIds is never read$#'
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Message\\ExecuteToolCall\:\:\$assistantMessage is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
-			path: src/Domain/Message/CollectToolBatch.php
+			path: src/Domain/Message/ExecuteToolCall.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Domain\\Message\\CollectToolBatch\:\:__construct$#'
+			message: '#^Unused Ineersa\\AgentCore\\Domain\\Message\\ProjectJsonlOutbox\:\:__construct$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Domain/Message/CollectToolBatch.php
+			path: src/Domain/Message/ProjectJsonlOutbox.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Message\\StartRunPayload\:\:\$metadata is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Domain/Message/StartRunPayload.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Message\\StartRunPayload\:\:\$systemPrompt is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Domain/Message/StartRunPayload.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Run\\RunAccessScope\:\:\$updatedAt is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Domain/Run/RunAccessScope.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Domain\\Run\\RunAccessScope\:\:withUpdatedAt$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Domain/Run/RunAccessScope.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Run\\RunMetadata\:\:\$model is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Domain/Run/RunMetadata.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Run\\RunMetadata\:\:\$session is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Domain/Run/RunMetadata.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Run\\RunMetadata\:\:\$toolsScope is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Domain/Run/RunMetadata.php
 
 		-
 			message: '#^Method Ineersa\\AgentCore\\Domain\\Run\\RunState\:\:__construct\(\) has parameter \$streamingMessage with no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
 			path: src/Domain/Run/RunState.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Domain\\Run\\StartRunInput\:\:__construct$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Domain/Run/StartRunInput.php
 
 		-
 			message: '#^Property Ineersa\\AgentCore\\Domain\\Tool\\ModelInvocationInput\:\:\$contextRef is never read$#'
@@ -571,12 +751,6 @@ parameters:
 			path: src/Domain/Tool/ToolCall.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Infrastructure\\Mercure\\RunEventPublisher\:\:__construct$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Infrastructure/Mercure/RunEventPublisher.php
-
-		-
 			message: '#^Unused Ineersa\\AgentCore\\Infrastructure\\Messenger\\BusNames\:\:Command$#'
 			identifier: shipmonk.deadConstant
 			count: 1
@@ -601,16 +775,10 @@ parameters:
 			path: src/Infrastructure/Storage/InMemoryPromptStateStore.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Infrastructure\\Storage\\LocalArtifactStore\:\:__construct$#'
+			message: '#^Unused Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunStore\:\:findRunningStaleBefore$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Infrastructure/Storage/LocalArtifactStore.php
-
-		-
-			message: '#^Unused Ineersa\\AgentCore\\Infrastructure\\Storage\\LocalArtifactStore\:\:put$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Infrastructure/Storage/LocalArtifactStore.php
+			path: src/Infrastructure/Storage/InMemoryRunStore.php
 
 		-
 			message: '#^Unused Ineersa\\AgentCore\\Infrastructure\\Storage\\RunLogReader\:\:__construct$#'
@@ -625,6 +793,18 @@ parameters:
 			path: src/Infrastructure/Storage/RunLogWriter.php
 
 		-
+			message: '#^Unused Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\BeforeProviderRequestSubscriber\:\:__construct$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Infrastructure/SymfonyAi/BeforeProviderRequestSubscriber.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\BeforeProviderRequestSubscriber\:\:getSubscribedEvents$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Infrastructure/SymfonyAi/BeforeProviderRequestSubscriber.php
+
+		-
 			message: '#^Unused Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\DynamicToolDescriptionProcessor\:\:__construct$#'
 			identifier: shipmonk.deadMethod
 			count: 1
@@ -637,19 +817,13 @@ parameters:
 			path: src/Infrastructure/SymfonyAi/LlmPlatformAdapter.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer\:\:__construct$#'
+			message: '#^Unused Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\ModelResolverRoutingSubscriber\:\:__construct$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Schema/CommandPayloadNormalizer.php
+			path: src/Infrastructure/SymfonyAi/ModelResolverRoutingSubscriber.php
 
 		-
-			message: '#^Unused Ineersa\\AgentCore\\Schema\\CommandPayloadNormalizer\:\:normalize$#'
+			message: '#^Unused Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\ModelResolverRoutingSubscriber\:\:getSubscribedEvents$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/Schema/CommandPayloadNormalizer.php
-
-		-
-			message: '#^Unused Ineersa\\AgentCore\\Schema\\EventNameMap\:\:mapping$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Schema/EventNameMap.php
+			path: src/Infrastructure/SymfonyAi/ModelResolverRoutingSubscriber.php

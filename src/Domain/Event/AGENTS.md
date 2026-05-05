@@ -5,13 +5,15 @@
 ## Event -> projector/listener map
 
 - `RunEvent` is the canonical persisted event envelope.
-- After commit, events are projected by `OutboxProjector` (application layer) into:
+- After commit, events are projected by `OutboxProjector` (application layer) through `OutboxProjectorInterface` tagged services.
+- Built-in projectors:
   - JSONL outbox sink -> `JsonlOutboxProjectorWorker` -> `RunLogWriter`
   - Mercure outbox sink -> `MercureOutboxProjectorWorker` -> `RunEventPublisher`
     - topic policy: `agent/runs/{runId}` (`RunTopicPolicy`)
     - event id: `seq`
     - event type: lifecycle `type`
     - `message_update` may be coalesced in a short publish window; `message_end` and `turn_end` are always published
+- Consuming apps can add custom projectors by implementing `OutboxProjectorInterface`.
 - In-process listeners consume events through:
   - `RunEventDispatcher`
   - `EventSubscriberRegistry`

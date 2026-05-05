@@ -42,7 +42,7 @@ Coordinates orchestration and runtime flow.
 - **`RunMessageProcessor`**: shared lock/idempotency/load/handler/commit pipeline.
 - **Message handlers** (`src/Application/Orchestrator`): `StartRunHandler`, `ApplyCommandHandler`, `AdvanceRunHandler`, `LlmStepResultHandler`, `ToolCallResultHandler`.
 - **`RunCommit`**: CAS persistence + event append + outbox projection + replay rebuild + effect dispatch + hook dispatch + commit metrics.
-- **Workers** (`src/Application/Handler`): `ExecuteLlmStepWorker`, `ExecuteToolCallWorker`, plus outbox projector workers.
+- **Workers** (`src/Application/Handler`): `ExecuteLlmStepWorker`, `ExecuteToolCallWorker`, plus pluggable outbox projector workers (`OutboxProjectorInterface`).
 
 ### 2) Domain (`src/Domain`)
 Framework-agnostic models and contracts.
@@ -60,17 +60,17 @@ Concrete adapters used by the runtime.
   - `RunEventStore`
   - `InMemoryRunAccessStore`
   - `HotPromptStateStore` / `InMemoryPromptStateStore`
-- **Run logs**: JSONL append/read via `RunLogWriter` and `RunLogReader` (Flysystem).
-- **Mercure streaming**: `RunEventPublisher` publishes to `agent/runs/{runId}` (with `message_update` coalescing).
+- **Run logs**: JSONL append/read via `RunLogWriter` and `RunLogReader` (Flysystem). Built-in `JsonlOutboxProjectorWorker` is registered when `agent_loop.outbox.jsonl` is `true` (default).
+- **Mercure streaming**: `RunEventPublisher` publishes to `agent/runs/{runId}` (with `message_update` coalescing). Built-in `MercureOutboxProjectorWorker` is registered when `agent_loop.outbox.mercure` is `true` (default).
 - **Symfony AI bridge**: platform/tool invocation adapters.
 - **Doctrine namespace currently provides migration scaffolding** (`src/Infrastructure/Doctrine/Migrations`) rather than the active default storage backend.
 
-### 4) API (`src/Api`)
-Transport-facing HTTP layer.
+### 4) Schema (`src/Schema`)
+Shared payload contracts, event-name mapping, and command/event normalizers.
 
-- `RunApiController`: start run, send command, run summary, transcript page, replay events.
-- `RunReadService`: read-model composition and replay-source fallback (`canonical_events` -> `jsonl_fallback`).
 - `RunEventSerializer` / `RunStreamEvent`: domain-to-transport event mapping.
+- `EventPayloadNormalizer` / `CommandPayloadNormalizer`: structured normalization of domain payloads.
+- `EventNameMap`: internal-to-public event type mapping.
 
 ## Runtime Data Flow
 

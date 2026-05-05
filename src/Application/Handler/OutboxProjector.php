@@ -4,39 +4,41 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Handler;
 
+use Ineersa\AgentCore\Contract\OutboxProjectorInterface;
 use Ineersa\AgentCore\Contract\OutboxStoreInterface;
 use Ineersa\AgentCore\Domain\Event\OutboxSink;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Domain\Message\ProjectJsonlOutbox;
-use Ineersa\AgentCore\Domain\Message\ProjectMercureOutbox;
-use Ineersa\AgentCore\Infrastructure\Mercure\RunEventPublisher;
-use Ineersa\AgentCore\Infrastructure\Storage\RunLogWriter;
 
 final readonly class OutboxProjector
 {
+    /**
+     * @param iterable<OutboxProjectorInterface> $projectors
+     */
     public function __construct(
         private OutboxStoreInterface $outboxStore,
-        private RunLogWriter $runLogWriter,
-        private RunEventPublisher $runEventPublisher,
+        private iterable $projectors,
     ) {
     }
 
     /**
-     * processes an array of events by writing run logs and publishing run events.
+     * Enqueues events into each registered sink and processes them.
      *
      * @param list<RunEvent> $events
      */
     public function project(array $events): void
     {
-        foreach ($events as $event) {
-            $this->outboxStore->enqueue($event, OutboxSink::Jsonl);
-            $this->outboxStore->enqueue($event, OutboxSink::Mercure);
+        /** @var array<OutboxSink, OutboxProjectorInterface> $sinkMap */
+        $sinkMap = [];
+        foreach ($this->projectors as $projector) {
+            $sinkMap[$projector->sink()->value] = $projector;
         }
 
-        $jsonlWorker = new JsonlOutboxProjectorWorker($this->outboxStore, $this->runLogWriter);
-        $mercureWorker = new MercureOutboxProjectorWorker($this->outboxStore, $this->runEventPublisher);
+        foreach ($sinkMap as $sink => $projector) {
+            foreach ($events as $event) {
+                $this->outboxStore->enqueue($event, $projector->sink());
+            }
 
-        $jsonlWorker(new ProjectJsonlOutbox());
-        $mercureWorker(new ProjectMercureOutbox());
+            $projector->processBatch();
+        }
     }
 }

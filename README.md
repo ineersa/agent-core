@@ -13,20 +13,13 @@ agent_loop_api:
 
 A ready-to-copy file is provided in this repository at `config/routes/agent_loop.yaml`.
 
-## Security model for API endpoints
+## Security model
 
 ### Authorization extension point
 
-`RunApiController` now delegates API authorization to:
+The bundle ships a permissive default (`AllowAllAuthorizeRun` for `AuthorizeRunInterface`). Host applications should override the service alias for `AuthorizeRunInterface` to enforce tenant/user ownership, voters, ACL, or custom policy logic.
 
-- **Interface**: `Ineersa\AgentCore\Contract\Api\AuthorizeRunInterface`
-- **Method**: `authorize(Request $request, string $route): void`
-- **Invocation point**: at the very start of each `RunApiController` route handler.
-
-`authorize()` should throw a 403 HTTP exception (for example, `AccessDeniedHttpException`) when access must be denied.
-
-Default bundle implementation is permissive (`AllowAllAuthorizeRun`).
-Host applications should override the service alias for `AuthorizeRunInterface` to enforce tenant/user ownership, voters, ACL, or custom policy logic.
+Authorization is an application-level concern — the bundle provides the contract, the consuming app implements enforcement in its own controllers.
 
 ## Architecture notes
 

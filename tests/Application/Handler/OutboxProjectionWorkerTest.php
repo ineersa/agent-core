@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Application\Handler;
 
 use Ineersa\AgentCore\Application\Handler\JsonlOutboxProjectorWorker;
-use Ineersa\AgentCore\Application\Handler\MercureOutboxProjectorWorker;
+
 use Ineersa\AgentCore\Application\Handler\OutboxProjector;
 use Ineersa\AgentCore\Domain\Event\OutboxSink;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\ProjectJsonlOutbox;
-use Ineersa\AgentCore\Domain\Message\ProjectMercureOutbox;
-use Ineersa\AgentCore\Infrastructure\Mercure\RunEventPublisher;
+
+
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryOutboxStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogWriter;
@@ -41,11 +41,10 @@ final class OutboxProjectionWorkerTest extends TestCase
 
         $outboxStore = new InMemoryOutboxStore();
         $runLogWriter = new RunLogWriter($filesystem);
-        $runEventPublisher = new RunEventPublisher();
 
-        $projector = new OutboxProjector($outboxStore, $runLogWriter, $runEventPublisher);
         $jsonlWorker = new JsonlOutboxProjectorWorker($outboxStore, $runLogWriter);
-        $mercureWorker = new MercureOutboxProjectorWorker($outboxStore, $runEventPublisher);
+
+        $projector = new OutboxProjector($outboxStore, [$jsonlWorker]);
 
         $event = new RunEvent(
             runId: 'run-outbox-1',
@@ -60,7 +59,6 @@ final class OutboxProjectionWorkerTest extends TestCase
         $projector->project([$event]);
 
         $jsonlWorker->__invoke(new ProjectJsonlOutbox());
-        $mercureWorker->__invoke(new ProjectMercureOutbox());
 
         $reader = new RunLogReader($filesystem);
         $events = $reader->allFor('run-outbox-1');
@@ -69,11 +67,9 @@ final class OutboxProjectionWorkerTest extends TestCase
         self::assertSame('agent_command_rejected', $events[0]->type);
 
         self::assertSame([], $outboxStore->claim(OutboxSink::Jsonl));
-        self::assertSame([], $outboxStore->claim(OutboxSink::Mercure));
 
-        // Re-running workers should be a no-op.
+        // Re-running worker should be a no-op.
         $jsonlWorker->__invoke(new ProjectJsonlOutbox());
-        $mercureWorker->__invoke(new ProjectMercureOutbox());
 
         self::assertCount(1, $reader->allFor('run-outbox-1'));
     }

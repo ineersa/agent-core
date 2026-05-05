@@ -8,13 +8,6 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 
 final readonly class EventPayloadNormalizer
 {
-    private EventNameMap $eventNameMap;
-
-    public function __construct(?EventNameMap $eventNameMap = null)
-    {
-        $this->eventNameMap = $eventNameMap ?? new EventNameMap();
-    }
-
     /**
      * Converts a RunEvent into the canonical serialized payload shape.
      *
@@ -108,12 +101,12 @@ final readonly class EventPayloadNormalizer
 
     public function toPublicType(string $internalType): string
     {
-        return $this->eventNameMap->toPublic($internalType);
+        return $internalType;
     }
 
     public function toInternalType(string $publicType): string
     {
-        return $this->eventNameMap->toInternal($publicType);
+        return $publicType;
     }
 
     private function isCompatibleSchemaVersion(string $schemaVersion): bool
