@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace App;
 
-use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
-use Symfony\Component\HttpKernel\Kernel as BaseKernel;
+use Symfony\Component\DependencyInjection\Kernel\AbstractKernel;
+use Symfony\Component\DependencyInjection\Kernel\KernelTrait;
 
-class Kernel extends BaseKernel
+class Kernel extends AbstractKernel
 {
-    use MicroKernelTrait;
+    use KernelTrait;
 
     public function registerBundles(): iterable
     {

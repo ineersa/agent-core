@@ -1,5 +1,5 @@
-/vendor/
-/var/
+vendor/
+var/
 /.php-cs-fixer.cache
 
 # Generated artifacts

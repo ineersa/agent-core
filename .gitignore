@@ -21,3 +21,6 @@ callgraph.html
 # Symfony-generated files
 /apps/coding-agent/config/reference.php
 /apps/coding-agent/var/cache/
+.castor.stub.php
+/.playwright-cli/
+/.vera/

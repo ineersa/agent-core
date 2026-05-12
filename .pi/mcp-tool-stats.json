@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-05-05T20:12:10.141Z",
+  "updatedAt": "2026-05-12T23:40:37.447Z",
   "projectRoot": "/home/ineersa/projects/agent-core",
   "servers": {
     "jetbrains-index": {
@@ -169,6 +169,47 @@
       },
       "lastCalledAt": "2026-05-05T20:12:10.141Z",
       "lastSuccessAt": "2026-05-05T20:12:10.141Z"
+    },
+    "librarian": {
+      "calls": 12,
+      "success": 12,
+      "errors": 0,
+      "proxyCalls": 0,
+      "directCalls": 12,
+      "tools": {
+        "search-libraries": {
+          "calls": 4,
+          "success": 4,
+          "errors": 0,
+          "proxyCalls": 0,
+          "directCalls": 4,
+          "errorCodes": {},
+          "lastCalledAt": "2026-05-12T23:40:15.006Z",
+          "lastSuccessAt": "2026-05-12T23:40:15.006Z"
+        },
+        "semantic-search": {
+          "calls": 3,
+          "success": 3,
+          "errors": 0,
+          "proxyCalls": 0,
+          "directCalls": 3,
+          "errorCodes": {},
+          "lastCalledAt": "2026-05-12T23:40:35.414Z",
+          "lastSuccessAt": "2026-05-12T23:40:35.414Z"
+        },
+        "read": {
+          "calls": 5,
+          "success": 5,
+          "errors": 0,
+          "proxyCalls": 0,
+          "directCalls": 5,
+          "errorCodes": {},
+          "lastCalledAt": "2026-05-12T23:40:37.447Z",
+          "lastSuccessAt": "2026-05-12T23:40:37.447Z"
+        }
+      },
+      "lastCalledAt": "2026-05-12T23:40:37.447Z",
+      "lastSuccessAt": "2026-05-12T23:40:37.447Z"
     }
   }
 }

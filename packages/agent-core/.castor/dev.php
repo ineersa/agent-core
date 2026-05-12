@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace dev;
 
-use Castor\Attribute\AsArgument;
-use Castor\Attribute\AsOption;
 use Castor\Attribute\AsTask;
 
 use function CastorTasks\dev_php_exec;
@@ -156,9 +154,6 @@ function check(): void
         'test' => static function (): void {
             test();
         },
-        'index' => static function (): void {
-            index_methods(all: true, force: true, skipNamespace: false, skipWiring: true);
-        },
     ] as $step => $runner) {
         try {
             $runner();
@@ -178,78 +173,4 @@ function check(): void
 function quality(): void
 {
     check();
-}
-
-/**
- * Generate per-file method indexes.
- *
- * Defaults to changed files when no targets/options are provided.
- *
- * @param list<string> $targets
- */
-#[AsTask(description: 'Generate per-file method indexes (no LLM, includes DI wiring export)')]
-function index_methods(
-    #[AsArgument(description: 'Optional PHP files/directories to process')]
-    array $targets = [],
-    #[AsOption(description: 'Process all PHP files under src/')]
-    bool $all = false,
-    #[AsOption(description: 'Process only git-changed files')]
-    bool $changed = false,
-    #[AsOption(description: 'Show planned writes without modifying files')]
-    bool $dryRun = false,
-    #[AsOption(description: 'Regenerate even when generated indexes are newer than source')]
-    bool $force = false,
-    #[AsOption(description: 'Skip namespace index regeneration')]
-    bool $skipNamespace = false,
-    #[AsOption(description: 'Skip wiring export pre-step')]
-    bool $skipWiring = false,
-): void {
-    $command = 'vendor/bin/ai-index generate';
-
-    if ($all) {
-        $command .= ' --all';
-    }
-    if ($changed) {
-        $command .= ' --changed';
-    }
-    if ($dryRun) {
-        $command .= ' --dry-run';
-    }
-    if ($force) {
-        $command .= ' --force';
-    }
-    if ($skipNamespace) {
-        $command .= ' --skip-namespace';
-    }
-    if ($skipWiring) {
-        $command .= ' --skip-wiring';
-    }
-    if ([] !== $targets) {
-        $command .= ' -- '.implode(' ', array_map('escapeshellarg', $targets));
-    }
-
-    dev_php_exec($command);
-}
-
-/** Generate callgraph.json via PHPStan call-graph extension. */
-#[AsTask(description: 'Generate callgraph.json from PHPStan call-graph analysis')]
-function callgraph(): void
-{
-    $command = 'vendor/bin/phpstan analyse -c vendor/ineersa/call-graph/callgraph.neon ./src';
-
-    if (!is_llm_mode()) {
-        dev_php_exec($command);
-
-        return;
-    }
-
-    $process = run_quiet_command($command);
-    persist_process_output($process, 'callgraph.log');
-
-    if (0 !== $process->getExitCode()) {
-        throw new \RuntimeException(\sprintf('callgraph failed; log=%s', relative_report_path('callgraph.log')));
-    }
-
-    $generated = file_exists('callgraph.json') ? 'yes' : 'no';
-    echo \sprintf('callgraph: ok (generated=%s)', $generated).\PHP_EOL;
 }
