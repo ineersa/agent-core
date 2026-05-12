@@ -1,10 +1,23 @@
 /vendor/
-/var/
-.idea/*
-composer.lock
-config/reference.php
-.php-cs-fixer.cache
+/.php-cs-fixer.cache
+/.idea/
+
+# Package vendors (each manages its own)
+/packages/agent-core/vendor/
+/packages/agent-core/.php-cs-fixer.cache
+/packages/tui-bundle/vendor/
+/packages/tui-bundle/composer.lock
+
+# App outputs
+/apps/coding-agent/vendor/
+/apps/coding-agent/var/
+/apps/coding-agent/.php-cs-fixer.cache
+
+# Generated artifacts (generated within packages)
 callgraph.json
 callgraph.html
 *.toon
-.pi/mcp-tool-stats.json
+
+# Symfony-generated files
+/apps/coding-agent/config/reference.php
+/apps/coding-agent/var/cache/

@@ -1,0 +1,12 @@
+framework:
+    secret: '%env(APP_SECRET)%'
+    # Enable session for web interface
+    session:
+        handler_id: null
+        cookie_secure: auto
+        cookie_samesite: lax
+    # Disable esi/fragments
+    esi: false
+    fragments: false
+    php_errors:
+        log: true

@@ -1,0 +1,8 @@
+/vendor/
+/var/
+/.php-cs-fixer.cache
+
+# Generated artifacts
+callgraph.json
+callgraph.html
+*.toon

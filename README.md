@@ -1,45 +1,55 @@
-# Agentic loop core
+# Agent Core Monorepo
 
-## API routes (bundle consumers)
+Monorepo for the agent-core PHP library and its ecosystem.
 
-To enable HTTP API endpoints from this bundle in your Symfony app, import controller attributes:
+## Structure
 
-```yaml
-# config/routes/agent_loop.yaml
-agent_loop_api:
-  resource: '@AgentLoopBundle/Api/Http/'
-  type: attribute
+```
+├── packages/
+│   ├── agent-core/            # ineersa/agent-core library
+│   │   ├── src/               # Pipeline, Domain, Contract, Infrastructure
+│   │   ├── tests/
+│   │   ├── castor.php         # Package-level task runner
+│   │   └── composer.json
+│   └── tui-bundle/            # ineersa/tui-bundle (Symfony TUI)
+│       ├── src/
+│       ├── tests/
+│       └── composer.json
+├── apps/
+│   └── coding-agent/          # Symfony CLI application
+│       ├── bin/console
+│       ├── src/
+│       ├── config/
+│       └── composer.json
+├── docs/
+│   └── archive/implementation/  # Archived stage plans
+├── .pi/plans/                 # Active plans
+├── castor.php                 # Root orchestrator
+└── composer.json              # Root: orchestration only
 ```
 
-A ready-to-copy file is provided in this repository at `config/routes/agent_loop.yaml`.
+## Getting Started
 
-## Security model
+```bash
+# Install root dependencies (castor)
+composer install
 
-### Authorization extension point
+# Install all workspace dependencies
+castor install
 
-The bundle ships a permissive default (`AllowAllAuthorizeRun` for `AuthorizeRunInterface`). Host applications should override the service alias for `AuthorizeRunInterface` to enforce tenant/user ownership, voters, ACL, or custom policy logic.
+# Run QA across all workspaces
+castor check
+```
 
-Authorization is an application-level concern — the bundle provides the contract, the consuming app implements enforcement in its own controllers.
+## Workspace Commands
 
-## Architecture notes
-
-Relationship maps live in nested AGENTS.md files (not in TOON indexes):
-
-- `src/Application/AGENTS.md`
-- `src/Domain/AGENTS.md`
-- `src/Domain/Message/AGENTS.md`
-- `src/Domain/Event/AGENTS.md`
-
-Use these for command/event/message topology (`command -> handler`, `event -> projector/listener`, `message -> dispatched-by/handled-by`).
-
-## Operations docs
-
-- Dashboard spec: `docs/operations/agent-loop-observability-dashboard.md`
-- Alert rules: `docs/operations/agent-loop-alert-rules.yaml`
-- On-call recovery runbook: `docs/operations/agent-loop-oncall-runbook.md`
-
-## Local development docs
-
-- Integrate local bundle into a Symfony app: `docs/local-dev-symfony-app-setup.md`
-- Helper script for link/copy/rollback into a target app: `./link`
-- Flex recipe scaffold + publishing notes: `docs/flex-recipe.md`
+| Command | Description |
+|---------|-------------|
+| `castor check` | Run QA in all workspaces |
+| `castor install` | Install all dependencies |
+| `castor lib:check` | Run agent-core library QA |
+| `castor lib:test` | Run agent-core library tests |
+| `castor lib:cs-fix` | Run CS fixer on agent-core |
+| `castor lib:phpstan` | Run PHPStan on agent-core |
+| `castor tui:validate` | Validate tui-bundle composer.json |
+| `castor app:check` | Run coding-agent app QA |

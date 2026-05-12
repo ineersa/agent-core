@@ -1,0 +1,10 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Session;
+
+final class Skills
+{
+    // Skill definition loader (reusable sub-agent instructions)
+}
