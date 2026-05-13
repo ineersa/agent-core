@@ -50,8 +50,67 @@ castor cs-check     # PHP CS Fixer (dry-run check only)
 | Layer | Location | Owns | Must not depend on |
 |-------|----------|------|--------------------|
 | Core library | `src/AgentCore/` | Domain model, pipeline, contracts, in-memory stores | `CodingAgent`, `Tui`, `HttpKernel`, `FrameworkBundle` |
-| TUI presentation | `src/Tui/` | Terminal UI: screens, widgets, theme, keybinding, renderer | `AgentCore`, `HttpKernel`, `FrameworkBundle` |
+| TUI presentation | `src/Tui/` | Terminal UI: application screens, layout composition, widgets, status/footer extensibility, slot registry | `AgentCore`, `HttpKernel`, `FrameworkBundle` |
 | Application | `src/CodingAgent/` | HTTP-less CLI app, commands, runtime boundary, tools, extensions, session, wiring | (may depend on both) |
+
+## TUI architecture
+
+The TUI follows a single-column layout with extensible slots inspired by pi-mono's ExtensionUIContext pattern:
+
+```text
+header
+─────────────────
+transcript / history
+pending messages
+working status
+status panel (keyed entries)
+above-editor extension widgets
+─────────────────
+editor
+below-editor extension widgets
+─────────────────
+footer
+```
+
+### Key contracts
+
+| Interface/Class | File | Role |
+|-----------------|------|------|
+| `TuiWidget` | `src/Tui/Widget/TuiWidget.php` | Lightweight renderable interface (`render(TuiRenderContext): list<string>`) |
+| `TuiSlotRegistry` | `src/Tui/Layout/TuiSlotRegistry.php` | Central registry for replaceable slots (header, footer, editor, widgets, status, working state, input handlers) |
+| `ChatLayout` | `src/Tui/Layout/ChatLayout.php` | Composes widgets in the defined order; merges default and replacement widgets |
+| `TuiExtensionContext` | `src/Tui/Extension/TuiExtensionContext.php` | Extension contract for slot manipulation; extensions receive this, never mutate widgets directly |
+| `SlotBasedTuiExtensionContext` | `src/Tui/Extension/SlotBasedTuiExtensionContext.php` | Concrete implementation delegating to `TuiSlotRegistry` |
+| `FooterDataProvider` | `src/Tui/Footer/FooterDataProvider.php` | Aggregates `FooterSegmentProvider` instances; exposes read-only projection for extensions |
+| `FooterSegmentProvider` | `src/Tui/Footer/FooterSegmentProvider.php` | Extension interface: return `list<FooterSegment>` with priority-sorted ordering |
+| `FooterBarWidget` | `src/Tui/Footer/FooterBarWidget.php` | Renders segments with priority, right-aligned status entries, width truncation |
+
+### Extension/override points
+
+Extensions use `TuiExtensionContext` to interact with the TUI. All overrides are slot-based:
+
+| Method | Effect |
+|--------|--------|
+| `setHeader(?TuiWidget)` | Replace the header widget |
+| `setFooter(?TuiWidget)` | Replace the footer bar |
+| `setEditorComponent(?TuiWidget)` | Replace the prompt editor |
+| `setWidget(key, ?TuiWidget, placement)` | Add/remove widgets above or below the editor |
+| `setStatus(key, ?string)` | Set/remove a status entry in the status panel |
+| `setWorkingMessage(?string)` | Override the working indicator text |
+| `setWorkingVisible(bool)` | Show/hide the working indicator row |
+| `onTerminalInput(callable)` | Register a raw terminal input interceptor |
+
+### Default widgets
+
+| Widget | File | Renders |
+|--------|------|--------|
+| `HeaderWidget` | `src/Tui/Header/HeaderWidget.php` | `◆ Agent Core` |
+| `TranscriptWidget` | `src/Tui/Transcript/TranscriptWidget.php` | Transcript entries with role prefixes (❯ user, ◇ assistant, ● tool) |
+| `PendingMessagesWidget` | `src/Tui/Transcript/PendingMessagesWidget.php` | Queued messages during compaction; empty when nothing pending |
+| `WorkingStatusWidget` | `src/Tui/Status/WorkingStatusWidget.php` | `● idle` or `◐ Working: ...`; can be hidden |
+| `StatusPanelWidget` | `src/Tui/Status/StatusPanelWidget.php` | Renders keyed status entries from `setStatus()` |
+| `PromptEditorWidget` | `src/Tui/Editor/PromptEditorWidget.php` | `❯ Type a message...` |
+| `FooterBarWidget` | `src/Tui/Footer/FooterBarWidget.php` | Single-line: `◆ agent-core` with priority-sorted segments and right-aligned status |
 
 ## Runtime architecture
 

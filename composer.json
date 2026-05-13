@@ -45,7 +45,8 @@
     "autoload-dev": {
         "psr-4": {
             "Ineersa\\CodingAgent\\Tests\\": "tests/CodingAgent/",
-            "Ineersa\\AgentCore\\Tests\\": "tests/AgentCore/"
+            "Ineersa\\AgentCore\\Tests\\": "tests/AgentCore/",
+            "Ineersa\\Tui\\Tests\\": "tests/Tui/"
         }
     },
     "minimum-stability": "dev",

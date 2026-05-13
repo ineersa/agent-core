@@ -695,3 +695,243 @@ parameters:
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/CodingAgent/Runtime/Protocol/RuntimeEventMapper.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Editor\\PromptEditorWidget\:\:setPlaceholder$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Editor/PromptEditorWidget.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Editor\\PromptEditorWidget\:\:setPromptText$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Editor/PromptEditorWidget.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Extension\\SlotBasedTuiExtensionContext\:\:onTerminalInput$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Extension/SlotBasedTuiExtensionContext.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Extension\\SlotBasedTuiExtensionContext\:\:setEditorComponent$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Extension/SlotBasedTuiExtensionContext.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Extension\\SlotBasedTuiExtensionContext\:\:setFooter$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Extension/SlotBasedTuiExtensionContext.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Extension\\SlotBasedTuiExtensionContext\:\:setHeader$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Extension/SlotBasedTuiExtensionContext.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Extension\\SlotBasedTuiExtensionContext\:\:setStatus$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Extension/SlotBasedTuiExtensionContext.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Extension\\SlotBasedTuiExtensionContext\:\:setWidget$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Extension/SlotBasedTuiExtensionContext.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Extension\\SlotBasedTuiExtensionContext\:\:setWorkingMessage$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Extension/SlotBasedTuiExtensionContext.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Extension\\SlotBasedTuiExtensionContext\:\:setWorkingVisible$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Extension/SlotBasedTuiExtensionContext.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Extension\\TuiExtensionContext\:\:onTerminalInput$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Extension/TuiExtensionContext.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Extension\\TuiExtensionContext\:\:setEditorComponent$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Extension/TuiExtensionContext.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Extension\\TuiExtensionContext\:\:setFooter$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Extension/TuiExtensionContext.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Extension\\TuiExtensionContext\:\:setHeader$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Extension/TuiExtensionContext.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Extension\\TuiExtensionContext\:\:setStatus$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Extension/TuiExtensionContext.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Extension\\TuiExtensionContext\:\:setWidget$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Extension/TuiExtensionContext.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Extension\\TuiExtensionContext\:\:setWorkingMessage$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Extension/TuiExtensionContext.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Extension\\TuiExtensionContext\:\:setWorkingVisible$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Extension/TuiExtensionContext.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Footer\\FooterDataProvider\:\:readonly$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Footer/FooterDataProvider.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Footer\\FooterDataProvider\:\:setStatus$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Footer/FooterDataProvider.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Footer\\ReadonlyFooterDataProvider\:\:getSegments$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Footer/ReadonlyFooterDataProvider.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Footer\\ReadonlyFooterDataProvider\:\:getStatusEntries$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Footer/ReadonlyFooterDataProvider.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Layout\\TuiSlotRegistry\:\:getInputHandlers$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Layout/TuiSlotRegistry.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Layout\\TuiSlotRegistry\:\:getWorkingMessage$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Layout/TuiSlotRegistry.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Layout\\TuiSlotRegistry\:\:isWorkingVisible$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Layout/TuiSlotRegistry.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Status\\StatusPanelWidget\:\:getEntries$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Status/StatusPanelWidget.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Status\\StatusPanelWidget\:\:setEntry$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Status/StatusPanelWidget.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Status\\WorkingStatusWidget\:\:getMessage$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Status/WorkingStatusWidget.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Status\\WorkingStatusWidget\:\:isVisible$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Status/WorkingStatusWidget.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Status\\WorkingStatusWidget\:\:setMessage$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Status/WorkingStatusWidget.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Status\\WorkingStatusWidget\:\:setVisible$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Status/WorkingStatusWidget.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Transcript\\PendingMessagesWidget\:\:addMessage$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Transcript/PendingMessagesWidget.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Transcript\\PendingMessagesWidget\:\:clear$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Transcript/PendingMessagesWidget.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Transcript\\PendingMessagesWidget\:\:setMessages$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Transcript/PendingMessagesWidget.php
+
+		-
+			message: '#^Property Ineersa\\Tui\\Transcript\\TranscriptEntry\:\:\$style is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Tui/Transcript/TranscriptEntry.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Transcript\\TranscriptWidget\:\:addEntry$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Transcript/TranscriptWidget.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Transcript\\TranscriptWidget\:\:getEntries$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Transcript/TranscriptWidget.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Transcript\\TranscriptWidget\:\:setEntries$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Transcript/TranscriptWidget.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Widget\\TuiRenderContext\:\:withHeight$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Widget/TuiRenderContext.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Widget\\TuiRenderContext\:\:withWidth$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Widget/TuiRenderContext.php

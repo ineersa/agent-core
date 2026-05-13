@@ -12,6 +12,9 @@
         <testsuite name="coding-agent">
             <directory>tests/CodingAgent</directory>
         </testsuite>
+        <testsuite name="tui">
+            <directory>tests/Tui</directory>
+        </testsuite>
     </testsuites>
     <source>
         <include>

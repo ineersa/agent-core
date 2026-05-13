@@ -63,6 +63,34 @@ castor check  # deptrac + phpunit
 5. ✅ **Docs updated**: `AGENTS.md` rewritten for modular monolith, old workspace references removed.
 6. ✅ **TuiBundle migrated to `src/Tui/`**: `src/TuiBundle/` deleted, `src/CodingAgent/TUI/` moved to `src/Tui/Application/` and `src/Tui/Widget/` under namespace `Ineersa\Tui\`. Bundle registration removed from `bundles.php`. Deptrac layers updated.
 
-## Remaining / future
+## Phase 3 — Single-column TUI layout + slot extensibility (complete 2026-05-13)
 
-- No further architecture-migration work planned. The project is a single modular monolith.
+1. ✅ **TuiWidget interface + TuiRenderContext**: Lightweight renderable abstraction independent of Symfony `AbstractWidget`. Render method returns `list<string>`.
+2. ✅ **WidgetPlacement enum**: `AboveEditor` / `BelowEditor` placement for extension widgets.
+3. ✅ **TuiSlotRegistry**: Central registry for replaceable slots (header, footer, editor, widget slots, status entries, working state, input handlers).
+4. ✅ **ChatLayout**: Composes widgets in pi-mono-inspired order: header → transcript → pending → working → status → above-editor widgets → editor → below-editor widgets → footer.
+5. ✅ **TuiExtensionContext interface + SlotBasedTuiExtensionContext**: Slot-based extension contract (not direct widget mutation). Methods: `setHeader`, `setFooter`, `setEditorComponent`, `setWidget`, `setStatus`, `setWorkingMessage`, `setWorkingVisible`, `onTerminalInput`.
+6. ✅ **Default widgets**: HeaderWidget, TranscriptWidget (w/ TranscriptEntry role prefixes), PendingMessagesWidget, WorkingStatusWidget, StatusPanelWidget, PromptEditorWidget.
+7. ✅ **Footer extensibility**: FooterSegmentProvider interface, FooterDataProvider with priority-sorted segments, ReadonlyFooterDataProvider projection, FooterBarWidget with width truncation.
+8. ✅ **InteractiveMode integration**: Builds default ChatLayout with all widgets, renders initial screen, supports `OutputInterface` and `StartRunRequest`.
+9. ✅ **AgentCommand updated**: Passes `OutputInterface` and `StartRunRequest` to `InteractiveMode::run()`.
+10. ✅ **Deptrac layers updated**: TuiApplication, TuiLayout, TuiExtension, TuiHeader, TuiTranscript, TuiStatus, TuiEditor, TuiFooter, TuiWidget — all with appropriate dependency rules.
+11. ✅ **59 PHPUnit tests**: Layout, slot registry, extension context, footer, widgets, editor, header — 148 assertions.
+12. ✅ **PHPStan baseline regenerated**: 160 errors absorbed.
+13. ✅ **All QA passes**: deptrac 0 violations, phpunit 138 tests / 7517 assertions, phpstan no errors, cs-fixer 0 files.
+14. ✅ **Console modes work**: `agent --prompt='hello'` renders layout, `agent --headless` still works.
+
+### Design decisions
+
+- No `Chrome` naming — explicit directory names (`Header/`, `Transcript/`, `Status/`, `Editor/`, `Footer/`, `Layout/`, `Widget/`, `Extension/`).
+- TUI is a logical module under `src/Tui/`; `TuiBundle` removed.
+- `TuiWidget` is independent of Symfony `AbstractWidget` (avoids overcommitting to experimental `@experimental` API).
+- Status and footer extensibility uses provider pattern, not direct widget mutation.
+- Extension context interface ready for future extension wiring.
+
+## Next after Phase 3
+
+- Wire actual Symfony TUI event loop in `InteractiveMode::run()` (instead of returning early).
+- Create Symfony `AbstractWidget` adapters for `TuiWidget` implementations.
+- Wire extension loader + `TuiExtensionContext` for extension-provided status/footer/widgets.
+- Add process transport heartbeat/reconnection.

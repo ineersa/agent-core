@@ -3,8 +3,8 @@
 # Run: vendor/bin/deptrac analyze --config-file=depfile.yaml
 #
 # These rules enforce the runtime boundary:
-#   - TuiApplication may depend only on Runtime Contract/Protocol, TuiWidget, and Symfony TUI/Console.
-#   - TuiWidget must not depend on CodingAgent or AgentCore.
+#   - TuiApplication may depend only on Runtime Contract/Protocol, Tui internals, and Symfony TUI/Console.
+#   - TuiWidget and sub-widgets must not depend on CodingAgent or AgentCore.
 #   - AgentCore must not depend on CodingAgent, Tui, Symfony TUI, HttpKernel, or FrameworkBundle.
 
 parameters:
@@ -19,6 +19,41 @@ parameters:
       collectors:
         - type: directory
           value: src/Tui/Application/.*
+
+    - name: TuiLayout
+      collectors:
+        - type: directory
+          value: src/Tui/Layout/.*
+
+    - name: TuiExtension
+      collectors:
+        - type: directory
+          value: src/Tui/Extension/.*
+
+    - name: TuiHeader
+      collectors:
+        - type: directory
+          value: src/Tui/Header/.*
+
+    - name: TuiTranscript
+      collectors:
+        - type: directory
+          value: src/Tui/Transcript/.*
+
+    - name: TuiStatus
+      collectors:
+        - type: directory
+          value: src/Tui/Status/.*
+
+    - name: TuiEditor
+      collectors:
+        - type: directory
+          value: src/Tui/Editor/.*
+
+    - name: TuiFooter
+      collectors:
+        - type: directory
+          value: src/Tui/Footer/.*
 
     - name: TuiWidget
       collectors:
@@ -68,13 +103,45 @@ parameters:
   ruleset:
     TuiApplication:
       - AppRuntimeContract
+      - TuiLayout
+      - TuiExtension
+      - TuiHeader
+      - TuiTranscript
+      - TuiStatus
+      - TuiEditor
+      - TuiFooter
       - TuiWidget
       - SymfonyTui
       - SymfonyConsole
 
-    TuiWidget:
-      - SymfonyTui
-      - SymfonyConsole
+    TuiLayout:
+      - TuiWidget
+      - TuiHeader
+      - TuiTranscript
+      - TuiStatus
+      - TuiEditor
+      - TuiFooter
+
+    TuiExtension:
+      - TuiLayout
+      - TuiWidget
+
+    TuiHeader:
+      - TuiWidget
+
+    TuiTranscript:
+      - TuiWidget
+
+    TuiStatus:
+      - TuiWidget
+
+    TuiEditor:
+      - TuiWidget
+
+    TuiFooter:
+      - TuiWidget
+
+    TuiWidget: ~
 
     AppRuntimeInternals:
       - AppRuntimeContract
@@ -90,6 +157,13 @@ parameters:
       - AppRuntimeContract
       - AppRuntimeInternals
       - TuiApplication
+      - TuiHeader
+      - TuiTranscript
+      - TuiStatus
+      - TuiEditor
+      - TuiFooter
+      - TuiLayout
+      - TuiWidget
       - SymfonyConsole
 
     AgentCore: ~

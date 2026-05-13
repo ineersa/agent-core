@@ -81,7 +81,11 @@ final class AgentCommand
             $output->writeln(\sprintf('Run ID: <comment>%s</comment>', $handle->runId));
         }
 
-        return $this->interactiveMode->run($client);
+        return $this->interactiveMode->run(
+            client: $client,
+            output: $output,
+            request: '' !== $prompt ? new StartRunRequest(prompt: $prompt) : null,
+        );
     }
 
     private function runHeadless(OutputInterface $output): int
