@@ -1,0 +1,703 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\HotPromptStateSnapshot\:\:\$eventCount is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/HotPromptStateSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\HotPromptStateSnapshot\:\:\$isContiguous is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/HotPromptStateSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\HotPromptStateSnapshot\:\:\$lastSeq is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/HotPromptStateSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\HotPromptStateSnapshot\:\:\$messagesCount is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/HotPromptStateSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\HotPromptStateSnapshot\:\:\$missingSequences is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/HotPromptStateSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\HotPromptStateSnapshot\:\:\$source is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/HotPromptStateSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\HotPromptStateSnapshot\:\:\$tokenEstimate is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/HotPromptStateSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\HotPromptStateSnapshot\:\:\$updatedAt is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/HotPromptStateSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\PendingCommandSnapshot\:\:\$cancelSafe is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/PendingCommandSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\PendingCommandSnapshot\:\:\$idempotencyKey is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/PendingCommandSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\PendingCommandSnapshot\:\:\$kind is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/PendingCommandSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\PendingCommandSnapshot\:\:\$payloadKeys is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/PendingCommandSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\ReplayIntegrity\:\:\$runId is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/ReplayIntegrity.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\ReplayIntegrity\:\:\$source is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/ReplayIntegrity.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunDebugSnapshot\:\:\$exists is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/RunDebugSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunDebugSnapshot\:\:\$hotPromptState is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/RunDebugSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunDebugSnapshot\:\:\$integrity is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/RunDebugSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunDebugSnapshot\:\:\$metrics is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/RunDebugSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunDebugSnapshot\:\:\$pendingCommands is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/RunDebugSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunDebugSnapshot\:\:\$runId is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/RunDebugSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunDebugSnapshot\:\:\$state is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/RunDebugSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunStateSnapshot\:\:\$activeStepId is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/RunStateSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunStateSnapshot\:\:\$lastSeq is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/RunStateSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunStateSnapshot\:\:\$messagesCount is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/RunStateSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunStateSnapshot\:\:\$pendingToolCalls is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/RunStateSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunStateSnapshot\:\:\$retryableFailure is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/RunStateSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunStateSnapshot\:\:\$status is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/RunStateSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunStateSnapshot\:\:\$turnNo is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/RunStateSnapshot.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunStateSnapshot\:\:\$version is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Application/Dto/RunStateSnapshot.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Application\\Handler\\RunDebugService\:\:inspect$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/AgentCore/Application/Handler/RunDebugService.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Application\\Handler\\RunDebugService\:\:rebuildHotPromptState$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/AgentCore/Application/Handler/RunDebugService.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Application\\Handler\\RunDebugService\:\:replayAfter$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/AgentCore/Application/Handler/RunDebugService.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Application\\Handler\\RunDebugService\:\:tail$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/AgentCore/Application/Handler/RunDebugService.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Application\\Handler\\StepDispatcher\:\:publish$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/AgentCore/Application/Handler/StepDispatcher.php
+
+		-
+			message: '#^Method Ineersa\\AgentCore\\Application\\RunReadService\:\:replayAfter\(\) never returns null so it can be removed from the return type\.$#'
+			identifier: return.unusedType
+			count: 1
+			path: src/AgentCore/Application/RunReadService.php
+
+		-
+			message: '#^Method Ineersa\\AgentCore\\Application\\RunReadService\:\:summary\(\) never returns null so it can be removed from the return type\.$#'
+			identifier: return.unusedType
+			count: 1
+			path: src/AgentCore/Application/RunReadService.php
+
+		-
+			message: '#^Method Ineersa\\AgentCore\\Application\\RunReadService\:\:transcriptPage\(\) never returns null so it can be removed from the return type\.$#'
+			identifier: return.unusedType
+			count: 1
+			path: src/AgentCore/Application/RunReadService.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Event\\RunEvent\:\:\$createdAt \(DateTimeImmutable\) on left side of \?\? is not nullable\.$#'
+			identifier: nullCoalesce.property
+			count: 2
+			path: src/AgentCore/Application/RunReadService.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Application\\RunReadService\:\:replayAfter$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/AgentCore/Application/RunReadService.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Application\\RunReadService\:\:summary$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/AgentCore/Application/RunReadService.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Application\\RunReadService\:\:transcriptPage$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/AgentCore/Application/RunReadService.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Contract\\Extension\\EventSubscriberInterface\:\:onEvent$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/AgentCore/Contract/Extension/EventSubscriberInterface.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Contract\\Extension\\EventSubscriberInterface\:\:subscribedEventTypes$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/AgentCore/Contract/Extension/EventSubscriberInterface.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Contract\\PromptStateStoreInterface\:\:delete$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/AgentCore/Contract/PromptStateStoreInterface.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Contract\\RunStoreInterface\:\:findRunningStaleBefore$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/AgentCore/Contract/RunStoreInterface.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand\:\:\$kind is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Command/RoutedCommand.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Command\\RoutedCommand\:\:\$payload is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Command/RoutedCommand.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Event\\BoundaryHookEvent\:\:\$hookName is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Event/BoundaryHookEvent.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Domain\\Event\\CoreLifecycleEventType\:\:eventClassMap$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/AgentCore/Domain/Event/CoreLifecycleEventType.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Domain\\Event\\CoreLifecycleEventType\:\:validateOrder$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/AgentCore/Domain/Event/CoreLifecycleEventType.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Domain\\Event\\RunEvent\:\:extension$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/AgentCore/Domain/Event/RunEvent.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Domain\\Event\\RunEvent\:\:isExtensionEvent$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/AgentCore/Domain/Event/RunEvent.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Extension\\AfterTurnCommitEventSummary\:\:\$seq is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Extension/AfterTurnCommitEventSummary.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Extension\\AfterTurnCommitEventSummary\:\:\$type is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Extension/AfterTurnCommitEventSummary.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Extension\\AfterTurnCommitHookContext\:\:\$effectsCount is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Extension/AfterTurnCommitHookContext.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Extension\\AfterTurnCommitHookContext\:\:\$events is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Extension/AfterTurnCommitHookContext.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Extension\\AfterTurnCommitHookContext\:\:\$runId is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Extension/AfterTurnCommitHookContext.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Extension\\AfterTurnCommitHookContext\:\:\$status is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Extension/AfterTurnCommitHookContext.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Extension\\AfterTurnCommitHookContext\:\:\$turnNo is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Extension/AfterTurnCommitHookContext.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Message\\AdvanceRun\:\:\$payload is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Message/AdvanceRun.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Domain\\Message\\AgentBusMessageInterface\:\:attempt$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/AgentCore/Domain/Message/AgentBusMessageInterface.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Domain\\Message\\AgentBusMessageInterface\:\:idempotencyKey$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/AgentCore/Domain/Message/AgentBusMessageInterface.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Domain\\Message\\AgentBusMessageInterface\:\:runId$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/AgentCore/Domain/Message/AgentBusMessageInterface.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Domain\\Message\\AgentBusMessageInterface\:\:stepId$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/AgentCore/Domain/Message/AgentBusMessageInterface.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Domain\\Message\\AgentBusMessageInterface\:\:turnNo$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/AgentCore/Domain/Message/AgentBusMessageInterface.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Message\\ExecuteToolCall\:\:\$assistantMessage is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Message/ExecuteToolCall.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Message\\StartRunPayload\:\:\$metadata is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Message/StartRunPayload.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Message\\StartRunPayload\:\:\$systemPrompt is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Message/StartRunPayload.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Run\\RunAccessScope\:\:\$updatedAt is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Run/RunAccessScope.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Domain\\Run\\RunAccessScope\:\:withUpdatedAt$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/AgentCore/Domain/Run/RunAccessScope.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Run\\RunMetadata\:\:\$model is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Run/RunMetadata.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Run\\RunMetadata\:\:\$session is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Run/RunMetadata.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Run\\RunMetadata\:\:\$toolsScope is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Run/RunMetadata.php
+
+		-
+			message: '#^Method Ineersa\\AgentCore\\Domain\\Run\\RunState\:\:__construct\(\) has parameter \$streamingMessage with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/AgentCore/Domain/Run/RunState.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Tool\\ModelInvocationInput\:\:\$contextRef is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Tool/ModelInvocationInput.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Tool\\ModelInvocationInput\:\:\$stepId is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Tool/ModelInvocationInput.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Tool\\ModelInvocationInput\:\:\$toolsRef is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Tool/ModelInvocationInput.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Tool\\ModelInvocationInput\:\:\$turnNo is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Tool/ModelInvocationInput.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Tool\\ModelResolutionOptions\:\:\$values is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Tool/ModelResolutionOptions.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Tool\\ToolCall\:\:\$orderIndex is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Tool/ToolCall.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Infrastructure\\Messenger\\BusNames\:\:Command$#'
+			identifier: shipmonk.deadConstant
+			count: 1
+			path: src/AgentCore/Infrastructure/Messenger/BusNames.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Infrastructure\\Messenger\\BusNames\:\:Execution$#'
+			identifier: shipmonk.deadConstant
+			count: 1
+			path: src/AgentCore/Infrastructure/Messenger/BusNames.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Infrastructure\\Messenger\\BusNames\:\:Publisher$#'
+			identifier: shipmonk.deadConstant
+			count: 1
+			path: src/AgentCore/Infrastructure/Messenger/BusNames.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryPromptStateStore\:\:delete$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/AgentCore/Infrastructure/Storage/InMemoryPromptStateStore.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Infrastructure\\Storage\\InMemoryRunStore\:\:findRunningStaleBefore$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/AgentCore/Infrastructure/Storage/InMemoryRunStore.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\BeforeProviderRequestSubscriber\:\:getSubscribedEvents$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/AgentCore/Infrastructure/SymfonyAi/BeforeProviderRequestSubscriber.php
+
+		-
+			message: '#^Unused Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\ModelResolverRoutingSubscriber\:\:getSubscribedEvents$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/AgentCore/Infrastructure/SymfonyAi/ModelResolverRoutingSubscriber.php
+
+		-
+			message: '#^Parameter \#1 \$event of static method Ineersa\\CodingAgent\\Runtime\\Protocol\\JsonlCodec\:\:encodeEvent\(\) expects Ineersa\\CodingAgent\\Runtime\\Protocol\\RuntimeEvent, Ineersa\\CodingAgent\\Runtime\\Contract\\RuntimeEvent given\.$#'
+			identifier: argument.type
+			count: 3
+			path: src/CodingAgent/CLI/AgentCommand.php
+
+		-
+			message: '#^Method Ineersa\\CodingAgent\\Kernel\:\:registerBundles\(\) return type has no value type specified in iterable type iterable\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/CodingAgent/Kernel.php
+
+		-
+			message: '#^Method Ineersa\\CodingAgent\\Runtime\\Contract\\AgentSessionClient\:\:events\(\) has invalid return type Ineersa\\CodingAgent\\Runtime\\Contract\\RuntimeEvent\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/CodingAgent/Runtime/Contract/AgentSessionClient.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Runtime\\Contract\\AgentSessionClient\:\:cancel$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Runtime/Contract/AgentSessionClient.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Runtime\\Contract\\AgentSessionClient\:\:events$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Runtime/Contract/AgentSessionClient.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Runtime\\Contract\\AgentSessionClient\:\:send$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Runtime/Contract/AgentSessionClient.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Runtime\\Contract\\RunHandle\:\:\$status is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Runtime/Contract/RunHandle.php
+
+		-
+			message: '#^Generator expects value type Ineersa\\CodingAgent\\Runtime\\Contract\\RuntimeEvent, Ineersa\\CodingAgent\\Runtime\\Protocol\\RuntimeEvent given\.$#'
+			identifier: generator.valueType
+			count: 1
+			path: src/CodingAgent/Runtime/InProcess/InProcessAgentSessionClient.php
+
+		-
+			message: '#^Method Ineersa\\CodingAgent\\Runtime\\InProcess\\InProcessAgentSessionClient\:\:events\(\) has invalid return type Ineersa\\CodingAgent\\Runtime\\Contract\\RuntimeEvent\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/CodingAgent/Runtime/InProcess/InProcessAgentSessionClient.php
+
+		-
+			message: '#^PHPDoc tag @return with type int is incompatible with native type string\.$#'
+			identifier: return.phpDocType
+			count: 1
+			path: src/CodingAgent/Runtime/Process/AgentProcessSupervisor.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Runtime\\Process\\AgentProcessSupervisor\:\:\$heartbeatInterval is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Runtime/Process/AgentProcessSupervisor.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Runtime\\Process\\AgentProcessSupervisor\:\:\$heartbeatInterval is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/CodingAgent/Runtime/Process/AgentProcessSupervisor.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Runtime\\Process\\AgentProcessSupervisor\:\:\$maxRestarts is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Runtime/Process/AgentProcessSupervisor.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Runtime\\Process\\AgentProcessSupervisor\:\:\$maxRestarts is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/CodingAgent/Runtime/Process/AgentProcessSupervisor.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Runtime\\Process\\AgentProcessSupervisor\:\:\$restartCount is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Runtime/Process/AgentProcessSupervisor.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Runtime\\Process\\AgentProcessSupervisor\:\:getErrorOutput$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Runtime/Process/AgentProcessSupervisor.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Runtime\\Process\\AgentProcessSupervisor\:\:restart$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Runtime/Process/AgentProcessSupervisor.php
+
+		-
+			message: '#^Call to an undefined method Symfony\\Component\\Process\\Process\:\:getInputStream\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: src/CodingAgent/Runtime/Process/JsonlProcessAgentSessionClient.php
+
+		-
+			message: '#^Call to function array_filter\(\) requires parameter \#2 to be passed to avoid loose comparison semantics\.$#'
+			identifier: arrayFilter.strict
+			count: 1
+			path: src/CodingAgent/Runtime/Process/JsonlProcessAgentSessionClient.php
+
+		-
+			message: '#^Generator expects value type Ineersa\\CodingAgent\\Runtime\\Contract\\RuntimeEvent, Ineersa\\CodingAgent\\Runtime\\Protocol\\RuntimeEvent given\.$#'
+			identifier: generator.valueType
+			count: 2
+			path: src/CodingAgent/Runtime/Process/JsonlProcessAgentSessionClient.php
+
+		-
+			message: '#^Method Ineersa\\CodingAgent\\Runtime\\Process\\JsonlProcessAgentSessionClient\:\:events\(\) has invalid return type Ineersa\\CodingAgent\\Runtime\\Contract\\RuntimeEvent\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/CodingAgent/Runtime/Process/JsonlProcessAgentSessionClient.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Runtime\\Process\\JsonlProcessAgentSessionClient\:\:\$codec is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Runtime/Process/JsonlProcessAgentSessionClient.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Runtime\\Process\\JsonlProcessAgentSessionClient\:\:\$codec is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/CodingAgent/Runtime/Process/JsonlProcessAgentSessionClient.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Runtime\\Process\\JsonlProcessAgentSessionClient\:\:\$runIdMap is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Runtime/Process/JsonlProcessAgentSessionClient.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Runtime\\Process\\JsonlProcessAgentSessionClient\:\:\$runIdMap is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/CodingAgent/Runtime/Process/JsonlProcessAgentSessionClient.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Runtime\\Process\\JsonlProcessAgentSessionClient\:\:cancel$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Runtime/Process/JsonlProcessAgentSessionClient.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Runtime\\Process\\JsonlProcessAgentSessionClient\:\:events$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Runtime/Process/JsonlProcessAgentSessionClient.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Runtime\\Process\\JsonlProcessAgentSessionClient\:\:send$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Runtime/Process/JsonlProcessAgentSessionClient.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Runtime\\Protocol\\RuntimeEventMapper\:\:toRunEventData$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Runtime/Protocol/RuntimeEventMapper.php
+
+		-
+			message: '#^Method Ineersa\\TuiBundle\\TuiBundle\:\:loadExtension\(\) has parameter \$config with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/TuiBundle/TuiBundle.php

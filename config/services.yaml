@@ -1,0 +1,10 @@
+services:
+  _defaults:
+    autowire: true
+    autoconfigure: true
+
+  Ineersa\CodingAgent\:
+    resource: '../src/CodingAgent/'
+
+  Ineersa\AgentCore\:
+    resource: '../src/AgentCore/'
