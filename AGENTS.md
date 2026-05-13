@@ -33,6 +33,7 @@ castor lib:check  # QA for agent-core library only
 - `ConsoleBundle` pulls in `ServicesBundle` via Symfony's `#[RequiredBundle]` chain.
 - Do not reintroduce `FrameworkBundle`, `HttpKernel`, `public/index.php`, or FrameworkBundle-only config for the console app.
 - Commands should prefer Symfony 8.1 invokable command style (`__invoke()`) and console argument resolvers over manual `InputInterface` parsing when practical.
+- Configuration files in `apps/coding-agent/config/` should prefer YAML over PHP. The only PHP config file kept is `config/bundles.php` (required by Symfony for bundle registration); all other settings use YAML.
 
 ## Architecture boundaries
 
@@ -41,6 +42,20 @@ castor lib:check  # QA for agent-core library only
 | Core library | `packages/agent-core/` | Domain model, pipeline, contracts, in-memory stores |
 | TUI rendering | `packages/tui-bundle/` | Symfony TUI integration, terminal engine, keybindings, themes, widgets |
 | Application | `apps/coding-agent/` | HTTP-less CLI app, commands, tools, extensions, session, TUI wiring |
+
+## Runtime architecture
+
+The app follows a strict layered boundary:
+
+- `src/TUI/` depends only on `Runtime/Contract`, `Runtime/Protocol`, `TuiBundle`, and `Symfony Tui`.
+- `src/Runtime/Contract/` and `Protocol/` define the canonical runtime event/command DTOs and the `AgentSessionClient` interface.
+- `src/Runtime/InProcess/` and `Process/` implement `AgentSessionClient` using agent-core services or a subprocess.
+- `src/CLI/` wires everything together via the single `agent` command.
+
+The TUI must **never** import `Ineersa\AgentCore\Application`, `Ineersa\AgentCore\Infrastructure`, or `Symfony\Component\Messenger` directly.
+
+Boundary enforcement is automated via Deptrac in the coding-agent Castor QA.
+Run: `castor dev:deptrac` from `apps/coding-agent/` or `castor check` from root.
 
 ## AGENTS.md map
 

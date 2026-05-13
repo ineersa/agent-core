@@ -1,0 +1,41 @@
+services:
+  _defaults:
+    autowire: true
+    autoconfigure: true
+
+  serializer.normalizer.object:
+    class: Symfony\Component\Serializer\Normalizer\ObjectNormalizer
+
+  serializer.normalizer.datetime:
+    class: Symfony\Component\Serializer\Normalizer\DateTimeNormalizer
+
+  serializer.normalizer.enum:
+    class: Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer
+
+  serializer.normalizer.json_serializable:
+    class: Symfony\Component\Serializer\Normalizer\JsonSerializableNormalizer
+
+  serializer.encoder.json:
+    class: Symfony\Component\Serializer\Encoder\JsonEncoder
+
+  serializer:
+    class: Symfony\Component\Serializer\Serializer
+    arguments:
+      $normalizers:
+        - '@serializer.normalizer.datetime'
+        - '@serializer.normalizer.enum'
+        - '@serializer.normalizer.object'
+      $encoders:
+        - '@serializer.encoder.json'
+
+  Symfony\Component\Serializer\Serializer:
+    alias: serializer
+
+  Symfony\Component\Serializer\SerializerInterface:
+    alias: serializer
+
+  Symfony\Component\Serializer\Normalizer\NormalizerInterface:
+    alias: serializer
+
+  Symfony\Component\Serializer\Normalizer\DenormalizerInterface:
+    alias: serializer

@@ -1,0 +1,28 @@
+services:
+  _defaults:
+    autowire: true
+    autoconfigure: true
+
+  agent.command.bus:
+    class: Symfony\Component\Messenger\MessageBus
+    arguments:
+      - []
+    public: true
+
+  agent.execution.bus:
+    class: Symfony\Component\Messenger\MessageBus
+    arguments:
+      - []
+    public: true
+
+  agent.publisher.bus:
+    class: Symfony\Component\Messenger\MessageBus
+    arguments:
+      - []
+    public: true
+
+  Symfony\Component\Messenger\MessageBus $commandBus:
+    alias: agent.command.bus
+
+  Symfony\Component\Messenger\MessageBusInterface:
+    alias: agent.command.bus

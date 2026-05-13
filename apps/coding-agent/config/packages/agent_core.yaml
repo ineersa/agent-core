@@ -12,3 +12,8 @@ services:
 
   Ineersa\AgentCore\Contract\CommandStoreInterface:
     alias: Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore
+
+  Ineersa\AgentCore\Contract\AgentRunnerInterface:
+    alias: Ineersa\AgentCore\Application\Pipeline\AgentRunner
+
+  App\Runtime\Protocol\RuntimeEventMapper: ~
