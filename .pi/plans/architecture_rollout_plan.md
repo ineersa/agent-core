@@ -14,7 +14,7 @@ The project was converted from a multi-workspace monorepo (root + `apps/coding-a
 |----------|-----|-----------|
 | `packages/agent-core/src/` | `src/AgentCore/` | `Ineersa\AgentCore\` (unchanged) |
 | `apps/coding-agent/src/` | `src/CodingAgent/` | `App\` → `Ineersa\CodingAgent\` |
-| `packages/tui-bundle/src/` | `src/TuiBundle/` | `Ineersa\TuiBundle\` (unchanged) |
+| `packages/tui-bundle/src/` | `src/TuiBundle/` (Phase 1) → `src/Tui/` (Phase 2) | `Ineersa\TuiBundle\` (Phase 1) → `Ineersa\Tui\` (Phase 2) |
 
 ### Entry point & config
 
@@ -61,6 +61,7 @@ castor check  # deptrac + phpunit
 3. ✅ **Full QA wired into `castor check`**: Now runs deptrac + phpunit + phpstan + cs-fixer dry-run. Individual tasks also available.
 4. ✅ **Gitignore cleaned**: Legacy entries removed, only root-prefixed ignores remain.
 5. ✅ **Docs updated**: `AGENTS.md` rewritten for modular monolith, old workspace references removed.
+6. ✅ **TuiBundle migrated to `src/Tui/`**: `src/TuiBundle/` deleted, `src/CodingAgent/TUI/` moved to `src/Tui/Application/` and `src/Tui/Widget/` under namespace `Ineersa\Tui\`. Bundle registration removed from `bundles.php`. Deptrac layers updated.
 
 ## Remaining / future
 

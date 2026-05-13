@@ -7,8 +7,8 @@
 ```
 src/
   AgentCore/       Core agent loop, domain model, contracts, infrastructure (Ineersa\AgentCore)
-  CodingAgent/     Symfony 8.1 HTTP-less CLI app: commands, runtime, tools, TUI wiring (Ineersa\CodingAgent)
-  TuiBundle/       Symfony TUI bundle: terminal engine, keybindings, themes, widgets (Ineersa\TuiBundle)
+  CodingAgent/     Symfony 8.1 HTTP-less CLI app: commands, runtime, tools, extensions (Ineersa\CodingAgent)
+  Tui/             Terminal UI: screens, widgets, theme, keybinding, renderer (Ineersa\Tui)
 
 tests/
   AgentCore/       AgentCore test suite (Ineersa\AgentCore\Tests)
@@ -39,7 +39,7 @@ castor cs-check     # PHP CS Fixer (dry-run check only)
 - The application targets Symfony 8.1 HTTP-less architecture.
 - Boots with `Symfony\Component\DependencyInjection\Kernel\AbstractKernel` + `KernelTrait`.
 - `bin/console` uses `Symfony\Component\Console\Application` with the kernel container as the third constructor argument.
-- `config/bundles.php` registers `Symfony\Component\Console\ConsoleBundle` and `Ineersa\TuiBundle\TuiBundle`.
+- `config/bundles.php` registers `Symfony\Component\Console\ConsoleBundle`.
 - `ConsoleBundle` pulls in `ServicesBundle` via Symfony's `#[RequiredBundle]` chain.
 - Do not reintroduce `FrameworkBundle`, `HttpKernel`, `public/index.php`, or FrameworkBundle-only config.
 - Commands should prefer Symfony 8.1 invokable command style (`__invoke()`) and console argument resolvers over manual `InputInterface` parsing when practical.
@@ -49,18 +49,18 @@ castor cs-check     # PHP CS Fixer (dry-run check only)
 
 | Layer | Location | Owns | Must not depend on |
 |-------|----------|------|--------------------|
-| Core library | `src/AgentCore/` | Domain model, pipeline, contracts, in-memory stores | `CodingAgent`, `TuiBundle`, `HttpKernel`, `FrameworkBundle` |
-| TUI rendering | `src/TuiBundle/` | Symfony TUI integration, terminal engine, keybindings, themes, widgets | `AgentCore`, `CodingAgent`, `HttpKernel`, `FrameworkBundle` |
-| Application | `src/CodingAgent/` | HTTP-less CLI app, commands, runtime boundary, tools, extensions, session, TUI wiring | (may depend on both) |
+| Core library | `src/AgentCore/` | Domain model, pipeline, contracts, in-memory stores | `CodingAgent`, `Tui`, `HttpKernel`, `FrameworkBundle` |
+| TUI presentation | `src/Tui/` | Terminal UI: screens, widgets, theme, keybinding, renderer | `AgentCore`, `HttpKernel`, `FrameworkBundle` |
+| Application | `src/CodingAgent/` | HTTP-less CLI app, commands, runtime boundary, tools, extensions, session, wiring | (may depend on both) |
 
 ## Runtime architecture
 
 The app follows a strict layered boundary for runtime/TUI communication:
 
-- `src/CodingAgent/TUI/` depends only on `Runtime/Contract`, `Runtime/Protocol`, `TuiBundle`, and `Symfony Tui`.
+- `src/Tui/` depends on `CodingAgent/Runtime/Contract`, `CodingAgent/Runtime/Protocol`, and `Symfony Tui`.
 - `src/CodingAgent/Runtime/Contract/` and `Protocol/` define the canonical runtime event/command DTOs and the `AgentSessionClient` interface.
 - `src/CodingAgent/Runtime/InProcess/` and `Process/` implement `AgentSessionClient` using agent-core services or a subprocess.
-- `src/CodingAgent/CLI/` wires everything together via the single `agent` command.
+- `src/CodingAgent/CLI/` wires everything together via the single `agent` command, delegating to `Ineersa\Tui\Application\InteractiveMode` for TUI mode.
 
 The TUI must **never** import `Ineersa\AgentCore\Application`, `Ineersa\AgentCore\Infrastructure`, or `Symfony\Component\Messenger` directly.
 

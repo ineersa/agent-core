@@ -695,9 +695,3 @@ parameters:
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/CodingAgent/Runtime/Protocol/RuntimeEventMapper.php
-
-		-
-			message: '#^Method Ineersa\\TuiBundle\\TuiBundle\:\:loadExtension\(\) has parameter \$config with no value type specified in iterable type array\.$#'
-			identifier: missingType.iterableValue
-			count: 1
-			path: src/TuiBundle/TuiBundle.php

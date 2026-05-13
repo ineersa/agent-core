@@ -3,10 +3,9 @@
 # Run: vendor/bin/deptrac analyze --config-file=depfile.yaml
 #
 # These rules enforce the runtime boundary:
-#   - TUI may only depend on Runtime Contract/Protocol, TuiBundle, and Symfony TUI.
-#   - TUI must not import AgentCore Application/Infrastructure or Messenger.
-#   - TuiBundle must not depend on CodingAgent or AgentCore.
-#   - AgentCore must not depend on CodingAgent, TuiBundle, Symfony TUI, HttpKernel, or FrameworkBundle.
+#   - TuiApplication may depend only on Runtime Contract/Protocol, TuiWidget, and Symfony TUI/Console.
+#   - TuiWidget must not depend on CodingAgent or AgentCore.
+#   - AgentCore must not depend on CodingAgent, Tui, Symfony TUI, HttpKernel, or FrameworkBundle.
 
 parameters:
   paths:
@@ -16,10 +15,15 @@ parameters:
     - .*Test\.php$
 
   layers:
-    - name: AppTui
+    - name: TuiApplication
       collectors:
         - type: directory
-          value: src/CodingAgent/TUI/.*
+          value: src/Tui/Application/.*
+
+    - name: TuiWidget
+      collectors:
+        - type: directory
+          value: src/Tui/Widget/.*
 
     - name: AppRuntimeContract
       collectors:
@@ -35,11 +39,6 @@ parameters:
       collectors:
         - type: directory
           value: src/CodingAgent/CLI/.*
-
-    - name: TuiBundle
-      collectors:
-        - type: classNameRegex
-          value: '#^Ineersa\\\\TuiBundle\\\\#i'
 
     - name: AgentCore
       collectors:
@@ -67,9 +66,13 @@ parameters:
           value: '#^(Symfony\\\\Component\\\\HttpKernel|Symfony\\\\Bundle\\\\FrameworkBundle)\\\\#i'
 
   ruleset:
-    AppTui:
+    TuiApplication:
       - AppRuntimeContract
-      - TuiBundle
+      - TuiWidget
+      - SymfonyTui
+      - SymfonyConsole
+
+    TuiWidget:
       - SymfonyTui
       - SymfonyConsole
 
@@ -86,12 +89,7 @@ parameters:
     AppCli:
       - AppRuntimeContract
       - AppRuntimeInternals
-      - AppTui
-      - TuiBundle
-      - SymfonyConsole
-
-    TuiBundle:
-      - SymfonyTui
+      - TuiApplication
       - SymfonyConsole
 
     AgentCore: ~

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\TUI;
+namespace Ineersa\Tui\Application;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Symfony\Component\Console\Command\Command;

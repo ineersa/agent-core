@@ -8,3 +8,6 @@ services:
 
   Ineersa\AgentCore\:
     resource: '../src/AgentCore/'
+
+  Ineersa\Tui\:
+    resource: '../src/Tui/'

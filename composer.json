@@ -39,7 +39,7 @@
         "psr-4": {
             "Ineersa\\AgentCore\\": "src/AgentCore/",
             "Ineersa\\CodingAgent\\": "src/CodingAgent/",
-            "Ineersa\\TuiBundle\\": "src/TuiBundle/"
+            "Ineersa\\Tui\\": "src/Tui/"
         }
     },
     "autoload-dev": {
