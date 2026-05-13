@@ -1,0 +1,23 @@
+# Hatfield built-in defaults.
+#
+# These are the base settings shipped with the application.
+# They can be overridden by:
+#   1. ~/.hatfield/settings.yaml  (global user settings)
+#   2. <project>/.hatfield/settings.yaml  (project-local settings)
+#
+# Precedence: defaults < home < project
+#
+# Path placeholders supported:
+#   %kernel.project_dir%  App installation directory
+#   ~                     Home directory
+#   relative paths        Resolved against the settings file's containing directory
+
+tui:
+    theme: cyberpunk
+    theme_paths:
+        - '%kernel.project_dir%/config/themes'
+        - '.hatfield/themes'
+        - '~/.hatfield/themes'
+
+sessions:
+    path: '.hatfield/sessions'

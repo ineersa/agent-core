@@ -41,12 +41,12 @@ final class TranscriptWidget implements TuiWidget
     public function render(TuiRenderContext $context): array
     {
         if ([] === $this->entries) {
-            return ['  Welcome to Agent Core. Type a message below to start.'];
+            return [$context->theme->muted('  Welcome to Agent Core. Type a message below to start.')];
         }
 
         $lines = [];
         foreach ($this->entries as $entry) {
-            $lines[] = $entry->render();
+            $lines[] = $entry->render($context);
         }
 
         return $lines;

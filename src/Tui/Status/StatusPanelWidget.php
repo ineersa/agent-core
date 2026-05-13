@@ -56,7 +56,7 @@ final class StatusPanelWidget implements TuiWidget
 
         $lines = [];
         foreach ($this->entries as $key => $text) {
-            $lines[] = \sprintf('  %-12s %s', $key, $text);
+            $lines[] = $context->theme->muted(\sprintf('  %-12s %s', $key, $text));
         }
 
         return $lines;

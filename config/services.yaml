@@ -11,3 +11,15 @@ services:
 
   Ineersa\Tui\:
     resource: '../src/Tui/'
+
+  # ─── Hatfield config services ───
+
+  Ineersa\CodingAgent\Config\SettingsPathResolver:
+    arguments:
+      $projectDir: '%kernel.project_dir%'
+
+  Ineersa\CodingAgent\Config\AppConfigLoader: ~
+
+  Ineersa\CodingAgent\Config\AppConfigResolver:
+    arguments:
+      $projectDir: '%kernel.project_dir%'

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Editor;
 
+use Ineersa\Tui\Theme\ThemeColor;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\TuiWidget;
 
@@ -37,11 +38,13 @@ final class PromptEditorWidget implements TuiWidget
         $prompt = '' !== $this->promptText ? $this->promptText : $this->placeholder;
         $line = \sprintf('  ❯ %s', $prompt);
 
+        $styledLine = $context->theme->color(ThemeColor::Prompt, $line);
+
         // If the prompt has content, show a second line for cursor
         if ('' !== $this->promptText) {
-            return [$line, ''];
+            return [$styledLine, ''];
         }
 
-        return [$line];
+        return [$styledLine];
     }
 }

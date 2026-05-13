@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
+use Ineersa\Tui\Theme\ThemeColor;
+use Ineersa\Tui\Widget\TuiRenderContext;
+
 /**
  * A single entry in the conversation transcript.
  *
@@ -24,9 +27,11 @@ final readonly class TranscriptEntry
     }
 
     /**
-     * Render this entry as a display line.
+     * Render this entry as a display line, applying theme colors via the context.
+     *
+     * For backwards compatibility, a render() without context uses no styling.
      */
-    public function render(): string
+    public function render(TuiRenderContext $context): string
     {
         $prefix = match ($this->role) {
             'user' => '  ❯',
@@ -35,6 +40,18 @@ final readonly class TranscriptEntry
             default => '  ',
         };
 
-        return \sprintf('%s %s', $prefix, $this->text);
+        $roleColor = match ($this->role) {
+            'user' => ThemeColor::UserMessage,
+            'assistant' => ThemeColor::AssistantMessage,
+            'tool' => ThemeColor::Tool,
+            default => ThemeColor::SystemMessage,
+        };
+
+        $line = \sprintf('%s %s', $prefix, $this->text);
+
+        // If user_message has no color, use accent; otherwise use role default
+        $colorSpec = $context->theme->color($roleColor, '');
+
+        return $context->theme->color($roleColor, $line);
     }
 }

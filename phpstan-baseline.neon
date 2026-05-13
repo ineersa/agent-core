@@ -529,6 +529,42 @@ parameters:
 			path: src/CodingAgent/CLI/AgentCommand.php
 
 		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\AppConfig\:\:\$raw is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/AppConfig.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\AppConfig\:\:\$sessions is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/AppConfig.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\AppConfigResolver\:\:clearCache$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Config/AppConfigResolver.php
+
+		-
+			message: '#^Offset ''dir'' on array\{name\: string, passwd\: string, uid\: int, gid\: int, gecos\: string, dir\: string, shell\: string\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: src/CodingAgent/Config/SettingsPathResolver.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\SettingsPathResolver\:\:getProjectDir$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Config/SettingsPathResolver.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\SettingsPathResolver\:\:resolveList$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Config/SettingsPathResolver.php
+
+		-
 			message: '#^Method Ineersa\\CodingAgent\\Kernel\:\:registerBundles\(\) return type has no value type specified in iterable type iterable\.$#'
 			identifier: missingType.iterableValue
 			count: 1
@@ -695,6 +731,18 @@ parameters:
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/CodingAgent/Runtime/Protocol/RuntimeEventMapper.php
+
+		-
+			message: '#^Property Ineersa\\Tui\\Application\\InteractiveMode\:\:\$themeCache is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/Tui/Application/InteractiveMode.php
+
+		-
+			message: '#^Property Ineersa\\Tui\\Application\\InteractiveMode\:\:\$themeCache is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/Tui/Application/InteractiveMode.php
 
 		-
 			message: '#^Unused Ineersa\\Tui\\Editor\\PromptEditorWidget\:\:setPlaceholder$#'
@@ -883,6 +931,360 @@ parameters:
 			path: src/Tui/Status/WorkingStatusWidget.php
 
 		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\DefaultTheme\:\:accent$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Theme/DefaultTheme.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\DefaultTheme\:\:error$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Theme/DefaultTheme.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\DefaultTheme\:\:getPalette$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Theme/DefaultTheme.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\DefaultTheme\:\:name$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Theme/DefaultTheme.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\DefaultTheme\:\:success$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Theme/DefaultTheme.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\DefaultTheme\:\:text$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Theme/DefaultTheme.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\DefaultTheme\:\:warning$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Theme/DefaultTheme.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:BashMode$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:Border$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:BorderAccent$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:BorderMuted$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:DiffAdded$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:DiffContext$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:DiffRemoved$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:Dim$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:MarkdownCode$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:MarkdownCodeBlock$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:MarkdownCodeBlockBorder$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:MarkdownHeading$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:MarkdownHr$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:MarkdownLink$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:MarkdownLinkUrl$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:MarkdownListBullet$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:MarkdownQuote$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:MarkdownQuoteBorder$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:SyntaxComment$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:SyntaxFunction$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:SyntaxKeyword$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:SyntaxNumber$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:SyntaxOperator$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:SyntaxPunctuation$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:SyntaxString$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:SyntaxType$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:SyntaxVariable$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:ThinkingHigh$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:ThinkingLow$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:ThinkingMedium$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:ThinkingMinimal$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:ThinkingOff$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:ThinkingText$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:ThinkingXhigh$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:ToolErrorBg$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:ToolOutput$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:ToolPendingBg$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:ToolSuccessBg$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:ToolTitle$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:UserMessageBg$#'
+			identifier: shipmonk.deadEnumCase
+			count: 1
+			path: src/Tui/Theme/ThemeColor.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemePalette\:\:has$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Theme/ThemePalette.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemePalette\:\:withOverrides$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Theme/ThemePalette.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeRegistry\:\:get$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Theme/ThemeRegistry.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeRegistry\:\:getDefaultName$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Theme/ThemeRegistry.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeRegistry\:\:getNames$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Theme/ThemeRegistry.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeRegistry\:\:has$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Theme/ThemeRegistry.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\TuiTheme\:\:accent$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Theme/TuiTheme.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\TuiTheme\:\:error$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Theme/TuiTheme.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\TuiTheme\:\:name$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Theme/TuiTheme.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\TuiTheme\:\:success$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Theme/TuiTheme.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\TuiTheme\:\:text$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Theme/TuiTheme.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\TuiTheme\:\:warning$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Theme/TuiTheme.php
+
+		-
 			message: '#^Unused Ineersa\\Tui\\Transcript\\PendingMessagesWidget\:\:addMessage$#'
 			identifier: shipmonk.deadMethod
 			count: 1
@@ -926,6 +1328,12 @@ parameters:
 
 		-
 			message: '#^Unused Ineersa\\Tui\\Widget\\TuiRenderContext\:\:withHeight$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Widget/TuiRenderContext.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Widget\\TuiRenderContext\:\:withTheme$#'
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/Tui/Widget/TuiRenderContext.php

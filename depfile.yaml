@@ -60,6 +60,11 @@ parameters:
         - type: directory
           value: src/Tui/Widget/.*
 
+    - name: TuiTheme
+      collectors:
+        - type: directory
+          value: src/Tui/Theme/.*
+
     - name: AppRuntimeContract
       collectors:
         - type: directory
@@ -69,6 +74,11 @@ parameters:
       collectors:
         - type: directory
           value: src/CodingAgent/Runtime/(InProcess|Process)/.*
+
+    - name: AppConfig
+      collectors:
+        - type: directory
+          value: src/CodingAgent/Config/.*
 
     - name: AppCli
       collectors:
@@ -95,6 +105,11 @@ parameters:
         - type: classNameRegex
           value: '#^Symfony\\\\Component\\\\Messenger\\\\#i'
 
+    - name: SymfonyYaml
+      collectors:
+        - type: classNameRegex
+          value: '#^Symfony\\Component\\Yaml\\#i'
+
     - name: ForbiddenHttp
       collectors:
         - type: classNameRegex
@@ -103,6 +118,7 @@ parameters:
   ruleset:
     TuiApplication:
       - AppRuntimeContract
+      - AppConfig
       - TuiLayout
       - TuiExtension
       - TuiHeader
@@ -111,11 +127,13 @@ parameters:
       - TuiEditor
       - TuiFooter
       - TuiWidget
+      - TuiTheme
       - SymfonyTui
       - SymfonyConsole
 
     TuiLayout:
       - TuiWidget
+      - TuiTheme
       - TuiHeader
       - TuiTranscript
       - TuiStatus
@@ -125,23 +143,35 @@ parameters:
     TuiExtension:
       - TuiLayout
       - TuiWidget
+      - TuiTheme
 
     TuiHeader:
       - TuiWidget
+      - TuiTheme
 
     TuiTranscript:
       - TuiWidget
+      - TuiTheme
 
     TuiStatus:
       - TuiWidget
+      - TuiTheme
 
     TuiEditor:
       - TuiWidget
+      - TuiTheme
 
     TuiFooter:
       - TuiWidget
+      - TuiTheme
 
-    TuiWidget: ~
+    TuiWidget:
+      - TuiTheme
+
+    TuiTheme:
+      - SymfonyTui
+      - SymfonyConsole
+      - SymfonyYaml
 
     AppRuntimeInternals:
       - AppRuntimeContract
@@ -152,6 +182,11 @@ parameters:
     AppRuntimeContract:
       - AgentCore
       - SymfonyConsole
+
+    AppConfig:
+      - SymfonyTui
+      - SymfonyConsole
+      - SymfonyYaml
 
     AppCli:
       - AppRuntimeContract
@@ -164,10 +199,12 @@ parameters:
       - TuiFooter
       - TuiLayout
       - TuiWidget
+      - TuiTheme
       - SymfonyConsole
 
     AgentCore: ~
     SymfonyTui: ~
     SymfonyConsole: ~
     SymfonyMessenger: ~
+    SymfonyYaml: ~
     ForbiddenHttp: ~

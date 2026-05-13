@@ -1,0 +1,30 @@
+# Project settings override home settings (~/.hatfield/settings.yaml)
+# which in turn override built-in defaults.
+#
+# When adding new settings keys, update this file and AGENTS.md.
+
+tui:
+    # Available built-in themes:
+    #   cyberpunk, catppuccin-mocha, nord, gruvbox-dark, oh-p-dark, tokyo-night
+    #
+    # Theme name — choose from a built-in theme or a custom theme from
+    # one of the theme_paths directories.
+    theme: cyberpunk
+
+    # Extra search paths for custom theme YAML files.
+    # Note: if uncommented, this replaces the default paths entirely,
+    # not appends. Include any built-in paths you still want.
+    # Default built-in paths are:
+    #   '%kernel.project_dir%/config/themes'
+    #   '.hatfield/themes'
+    #   '~/.hatfield/themes'
+    # theme_paths:
+    #     - '%kernel.project_dir%/config/themes'
+    #     - '.hatfield/themes'
+    #     - '~/.hatfield/themes'
+    #     - .hatfield/themes/custom
+
+# Session storage directory for agent runs.
+# Defaults to .hatfield/sessions/ (ignored by git via .hatfield/.gitignore).
+# sessions:
+#     path: .hatfield/sessions

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Layout;
 
+use Ineersa\Tui\Theme\ThemeColor;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\TuiWidget;
 use Ineersa\Tui\Widget\WidgetPlacement;
@@ -62,7 +63,8 @@ final class ChatLayout
 
         // 2. Separator after header
         if ([] !== $lines) {
-            $lines[] = str_repeat('─', $context->terminalWidth);
+            $sep = str_repeat('─', $context->terminalWidth);
+            $lines[] = $context->theme->color(ThemeColor::Separator, $sep);
         }
 
         // 3. Transcript / history
@@ -93,7 +95,8 @@ final class ChatLayout
         }
 
         // 8. Editor separator
-        $lines[] = str_repeat('─', $context->terminalWidth);
+        $editorSep = str_repeat('─', $context->terminalWidth);
+        $lines[] = $context->theme->color(ThemeColor::Separator, $editorSep);
 
         // 9. Editor (replacement or default)
         $editorWidget = $this->registry->getEditorComponent() ?? $this->editor;
@@ -105,7 +108,8 @@ final class ChatLayout
         }
 
         // 11. Footer separator
-        $lines[] = str_repeat('─', $context->terminalWidth);
+        $footerSep = str_repeat('─', $context->terminalWidth);
+        $lines[] = $context->theme->color(ThemeColor::Separator, $footerSep);
 
         // 12. Footer (replacement or default)
         $footerWidget = $this->registry->getFooter() ?? $this->footer;

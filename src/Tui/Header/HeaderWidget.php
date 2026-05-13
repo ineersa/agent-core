@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Header;
 
+use Ineersa\Tui\Theme\ThemeColor;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\TuiWidget;
 
@@ -24,6 +25,6 @@ final class HeaderWidget implements TuiWidget
     {
         $title = \sprintf('  ◆ %s', $this->title);
 
-        return [$title];
+        return [$context->theme->color(ThemeColor::Header, $title)];
     }
 }

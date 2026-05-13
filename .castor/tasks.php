@@ -89,6 +89,44 @@ function phpstan(): void
 }
 
 /**
+ * Remove generated QA caches.
+ */
+#[AsTask(name: 'cache:clear', description: 'Remove generated QA caches (deptrac, php-cs-fixer, phpstan)')]
+function cache_clear(): void
+{
+    $files = [
+        __DIR__.'/../.deptrac.cache',
+        __DIR__.'/../.php-cs-fixer.cache',
+    ];
+    $dirs = [
+        __DIR__.'/../var/phpstan',
+    ];
+
+    foreach ($files as $file) {
+        if (is_file($file)) {
+            unlink($file);
+            echo 'Removed '.basename($file).\PHP_EOL;
+        }
+    }
+
+    foreach ($dirs as $dir) {
+        if (is_dir($dir)) {
+            $it = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+                RecursiveIteratorIterator::CHILD_FIRST
+            );
+            foreach ($it as $entry) {
+                $entry->isDir() ? rmdir((string) $entry) : unlink((string) $entry);
+            }
+            rmdir($dir);
+            echo 'Removed '.basename($dir).' directory'.\PHP_EOL;
+        }
+    }
+
+    echo 'cache:clear done'."\n";
+}
+
+/**
  * Install dependencies.
  */
 #[AsTask(description: 'Install dependencies')]

@@ -1,0 +1,13 @@
+# Hatfield runtime/generated directories.
+#
+# settings.yaml and theme YAML files are tracked so they can be shared
+# with the project team. Only transient data is ignored.
+#
+# If you need custom themes for the whole team, add .yaml files here
+# and reference them in settings.yaml, or commit theme YAML files in
+# config/themes/ for shared built-in themes.
+
+sessions/
+tmp/
+cache/
+logs/

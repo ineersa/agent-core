@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Status;
 
+use Ineersa\Tui\Theme\ThemeColor;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\TuiWidget;
 
@@ -47,8 +48,12 @@ final class WorkingStatusWidget implements TuiWidget
             return [];
         }
 
-        $indicator = '' !== $this->message ? \sprintf('◐ %s', $this->message) : '● idle';
+        $indicator = '' !== $this->message
+            ? \sprintf('◐ %s', $this->message)
+            : '● idle';
 
-        return [\sprintf('  %s', $indicator)];
+        $line = \sprintf('  %s', $indicator);
+
+        return [$context->theme->color(ThemeColor::Working, $line)];
     }
 }

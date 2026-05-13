@@ -1,4 +1,8 @@
 {
   "packages": [],
-  "theme": "cyberpunk"
+  "theme": "cyberpunk",
+  "pi-fork": {
+    "defaultModel": "deepseek/deepseek-v4-flash",
+    "defaultThinking": "xhigh"
+  }
 }

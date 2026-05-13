@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Footer;
 
+use Ineersa\Tui\Theme\ThemeColor;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\TuiWidget;
 
@@ -40,7 +41,7 @@ final class FooterBarWidget implements TuiWidget
         }
 
         if ([] === $parts && [] === $statusParts) {
-            return ['  ◆ agent-core  |  type /help for commands'];
+            return [$context->theme->color(ThemeColor::Footer, '  ◆ agent-core  |  type /help for commands')];
         }
 
         $left = implode(' · ', $parts);
@@ -57,6 +58,6 @@ final class FooterBarWidget implements TuiWidget
             $combined = \sprintf('%s%s%s', $left, $separator, $right);
         }
 
-        return [\sprintf('  %s', $combined)];
+        return [$context->theme->color(ThemeColor::Footer, \sprintf('  %s', $combined))];
     }
 }

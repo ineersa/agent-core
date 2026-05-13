@@ -43,7 +43,7 @@ final class PendingMessagesWidget implements TuiWidget
 
         $lines = [];
         foreach ($this->messages as $msg) {
-            $lines[] = \sprintf('  ⏳ %s', $msg);
+            $lines[] = $context->theme->muted(\sprintf('  ⏳ %s', $msg));
         }
 
         return $lines;

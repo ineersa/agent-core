@@ -24,15 +24,24 @@ phpstan.dist.neon  PHPStan config (baseline in phpstan-baseline.neon)
 
 ## Development
 
+Prefer Castor tasks over raw tool commands. Run `castor list` to discover
+all available tasks.
+
 ```bash
 castor install      # composer install
-castor check        # Full QA: deptrac, phpunit, phpstan, cs-fixer check
-castor deptrac      # Deptrac boundary enforcement
+castor check        # Full QA (deptrac + phpunit + phpstan + cs-fixer)
 castor test         # PHPUnit tests
+castor deptrac      # Deptrac boundary enforcement
 castor phpstan      # PHPStan static analysis
 castor cs-fix       # PHP CS Fixer (fix in place)
 castor cs-check     # PHP CS Fixer (dry-run check only)
+castor cache:clear  # Remove generated QA caches (deptrac, php-cs-fixer, phpstan)
 ```
+
+Using Castor ensures consistent flags and ordering. Raw commands
+(`vendor/bin/phpunit`, `vendor/bin/deptrac`, etc.) are acceptable for
+debugging individual failures but should not be used for normal
+validation.
 
 ## Symfony setup
 
@@ -44,6 +53,35 @@ castor cs-check     # PHP CS Fixer (dry-run check only)
 - Do not reintroduce `FrameworkBundle`, `HttpKernel`, `public/index.php`, or FrameworkBundle-only config.
 - Commands should prefer Symfony 8.1 invokable command style (`__invoke()`) and console argument resolvers over manual `InputInterface` parsing when practical.
 - Configuration files in `config/` should prefer YAML over PHP. The only PHP config file kept is `config/bundles.php` (required by Symfony for bundle registration); all other settings use YAML.
+
+## Hatfield settings
+
+User-facing configuration uses the Hatfield settings system:
+
+- **Global:** `~/.hatfield/settings.yaml` (user-level settings)
+- **Project:** `<project>/.hatfield/settings.yaml` (project-local overrides)
+- **Defaults:** `config/hatfield.defaults.yaml` (shipped with the app)
+
+Precedence: built-in defaults < home settings < project settings.
+
+The `.hatfield/` directory is **tracked** (not gitignored) so project
+settings can be shared. Only runtime subdirectories (`sessions/`, `tmp/`,
+`cache/`, `logs/`) are ignored via `.hatfield/.gitignore`.
+
+Theme selection and theme search paths are configured via Hatfield settings,
+not via Symfony container parameters. The `AppConfigResolver` service
+loads and merges all layers at runtime.
+
+The committed `.hatfield/settings.yaml` in this project serves as both
+the project-local settings file and the example. When adding new
+settings keys, update `docs/settings.md` and keep
+`.hatfield/settings.yaml` comments in sync.
+
+**Do not recreate `.hatfield.example/`** — the `.hatfield.example/`
+directory has been removed. All example/commented settings live inside
+`.hatfield/settings.yaml`.
+
+See `docs/settings.md` for full documentation.
 
 ## Architecture boundaries
 
@@ -112,6 +150,21 @@ Extensions use `TuiExtensionContext` to interact with the TUI. All overrides are
 | `PromptEditorWidget` | `src/Tui/Editor/PromptEditorWidget.php` | `❯ Type a message...` |
 | `FooterBarWidget` | `src/Tui/Footer/FooterBarWidget.php` | Single-line: `◆ agent-core` with priority-sorted segments and right-aligned status |
 
+### Theme system
+
+Semantic color tokens (`ThemeColor` enum) mapped to ANSI colors via YAML theme files.
+
+- **Interface:** `TuiTheme` (`src/Tui/Theme/TuiTheme.php`) — `accent()`, `muted()`, `error()`, `color()`
+- **Tokens:** `ThemeColor` enum (`src/Tui/Theme/ThemeColor.php`) — 50+ semantic colors
+- **Palette:** `ThemePalette` (`src/Tui/Theme/ThemePalette.php`) — immutable map with var/alias resolution
+- **Implementation:** `DefaultTheme` (`src/Tui/Theme/DefaultTheme.php`) — Symfony TUI `Style`-backed
+- **Registry:** `ThemeRegistry` (`src/Tui/Theme/ThemeRegistry.php`) — built-in themes, default `cyberpunk`
+- **Loader:** `ThemeLoader` (`src/Tui/Theme/ThemeLoader.php`) — YAML theme file loading
+- **Config:** Hatfield settings (`~/.hatfield/settings.yaml` / `<project>/.hatfield/settings.yaml`) — see `docs/settings.md`
+- **Themes:** `config/themes/*.yaml` — 6 built-in themes (cyberpunk, catppuccin-mocha, nord, gruvbox-dark, oh-p-dark, tokyo-night)
+
+See `docs/tui-architecture.md` for full TUI documentation.
+
 ## Runtime architecture
 
 The app follows a strict layered boundary for runtime/TUI communication:
@@ -137,3 +190,5 @@ Architecture documentation within the source tree:
 | `src/AgentCore/Application/AGENTS.md` | Command→handler topology, message dispatch flow, event projectors, observability wiring |
 | `src/AgentCore/Infrastructure/Doctrine/AGENTS.md` | Doctrine persistence schema migration notes |
 | `.pi/plans/architecture_rollout_plan.md` | Architecture rollout plan and history |
+| `docs/tui-architecture.md` | Full TUI architecture: layout, widgets, slots, theme system, built-in themes |
+| `docs/settings.md` | Hatfield settings: global/project config, YAML format, theme selection, precedence |
