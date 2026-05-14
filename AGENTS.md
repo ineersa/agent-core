@@ -89,7 +89,17 @@ settings keys, update `docs/settings.md` and keep
 directory has been removed. All example/commented settings live inside
 `.hatfield/settings.yaml`.
 
-See `docs/settings.md` for full documentation.
+**Session storage:** `session_id === run_id` — a single identity for
+both the TUI session and the AgentCore run. Each session is a
+self-contained directory under `.hatfield/sessions/<id>/` with
+`metadata.yaml`, canonical `events.jsonl` and `state.json` for
+AgentCore, plus `transcript.jsonl` and `runtime-events.jsonl` as
+projections. The directory name is the canonical ID; embedded IDs in
+files are validated on read. See `docs/session-storage.md` for full
+details including locking, resume flow, future fork tree design, and
+known gaps.
+
+See `docs/settings.md` for full settings documentation.
 
 ## Architecture boundaries
 
@@ -202,3 +212,4 @@ Architecture documentation within the source tree:
 | `docs/tui-testing.md` | TUI tmux testing: `run:agent`, `run:agent-test`, snapshots, keybindings, golden e2e tests |
 | `tests/Tui/Snapshots/` | Golden TUI snapshot fixtures for e2e comparison |
 | `docs/settings.md` | Hatfield settings: global/project config, YAML format, theme selection, precedence |
+| `docs/session-storage.md` | Session storage: directory layout, file purposes, ID rules, resume/fork flows, locking, backward compat |

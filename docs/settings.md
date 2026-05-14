@@ -88,18 +88,13 @@ tui:
 ### `sessions.path`
 
 Directory where session/run data is stored. Each session equals
-one agent run (session_id === run_id). The directory layout:
-
-```text
-.hatfield/sessions/<id>/
-  metadata.yaml        # session_id, run_id, parent_id, root_id, etc.
-  state.json           # AgentCore RunState hot state cache
-  events.jsonl         # AgentCore RunEvent canonical stream
-  transcript.jsonl     # TUI transcript projection
-  runtime-events.jsonl # Runtime protocol event log
-```
+one agent run (session_id === run_id).
 
 **Default:** `.hatfield/sessions`
+
+See [Session Storage](session-storage.md) for the full directory layout,
+file purposes, resume flow, locking, future fork tree design, and
+backward compatibility.
 
 ## Adding a custom theme
 
