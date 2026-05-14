@@ -3,7 +3,7 @@
 # Run: vendor/bin/deptrac analyze --config-file=depfile.yaml
 #
 # These rules enforce the runtime boundary:
-#   - TuiApplication may depend only on Runtime Contract/Protocol, Tui internals, and Symfony TUI/Console.
+#   - TuiApplication may depend only on Runtime Contract/Protocol, Session, Tui internals, and Symfony TUI/Console.
 #   - TuiWidget and sub-widgets must not depend on CodingAgent or AgentCore.
 #   - AgentCore must not depend on CodingAgent, Tui, Symfony TUI, HttpKernel, or FrameworkBundle.
 
@@ -80,6 +80,11 @@ parameters:
         - type: directory
           value: src/CodingAgent/Config/.*
 
+    - name: AppSession
+      collectors:
+        - type: directory
+          value: src/CodingAgent/Session/.*
+
     - name: AppCli
       collectors:
         - type: directory
@@ -105,6 +110,16 @@ parameters:
         - type: classNameRegex
           value: '#^Symfony\\\\Component\\\\Messenger\\\\#i'
 
+    - name: SymfonyLock
+      collectors:
+        - type: classNameRegex
+          value: '#^Symfony\\\\Component\\\\Lock\\\\#i'
+
+    - name: SymfonySerializer
+      collectors:
+        - type: classNameRegex
+          value: '#^Symfony\\\\Component\\\\Serializer\\\\#i'
+
     - name: SymfonyYaml
       collectors:
         - type: classNameRegex
@@ -118,6 +133,7 @@ parameters:
   ruleset:
     TuiApplication:
       - AppRuntimeContract
+      - AppSession
       - AppConfig
       - TuiLayout
       - TuiExtension
@@ -188,9 +204,16 @@ parameters:
       - SymfonyConsole
       - SymfonyYaml
 
+    AppSession:
+      - AppConfig
+      - SymfonyConsole
+      - SymfonyLock
+      - SymfonyYaml
+
     AppCli:
       - AppRuntimeContract
       - AppRuntimeInternals
+      - AppSession
       - TuiApplication
       - TuiHeader
       - TuiTranscript
@@ -202,9 +225,13 @@ parameters:
       - TuiTheme
       - SymfonyConsole
 
-    AgentCore: ~
+    AgentCore:
+      - SymfonyLock
+      - SymfonySerializer
     SymfonyTui: ~
     SymfonyConsole: ~
     SymfonyMessenger: ~
+    SymfonyLock: ~
+    SymfonySerializer: ~
     SymfonyYaml: ~
     ForbiddenHttp: ~

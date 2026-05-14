@@ -12,7 +12,6 @@ use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 
 /**
@@ -39,7 +38,7 @@ final readonly class InProcessAgentSessionClient implements AgentSessionClient
         $input = new StartRunInput(
             systemPrompt: $request->prompt,
             messages: [],
-            runId: null,
+            runId: '' !== $request->runId ? $request->runId : null,
         );
 
         $runId = $this->runner->start($input);

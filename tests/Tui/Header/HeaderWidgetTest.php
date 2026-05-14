@@ -12,21 +12,34 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(HeaderWidget::class)]
 final class HeaderWidgetTest extends TestCase
 {
-    public function testDefaultTitle(): void
+    public function testDefaultLogoRendersMultipleLines(): void
     {
         $widget = new HeaderWidget();
         $lines = $widget->render(new TuiRenderContext());
 
-        self::assertCount(1, $lines);
-        self::assertStringContainsString('Agent Core', $lines[0]);
+        self::assertGreaterThan(1, count($lines), 'Logo should render multiple lines');
+        self::assertStringContainsString('█', $lines[0], 'Logo first line should contain box drawing chars');
     }
 
-    public function testCustomTitle(): void
+    public function testCustomTextRenders(): void
     {
         $widget = new HeaderWidget('My Custom App');
         $lines = $widget->render(new TuiRenderContext());
 
         self::assertCount(1, $lines);
         self::assertStringContainsString('My Custom App', $lines[0]);
+    }
+
+    public function testLogoContentContainsBoxDrawingChars(): void
+    {
+        $widget = new HeaderWidget();
+        $allText = implode("\n", $widget->render(new TuiRenderContext()));
+
+        // The logo uses Unicode box-drawing characters to spell HATFIELD
+        self::assertStringContainsString('█', $allText);
+        self::assertStringContainsString('╗', $allText);
+        self::assertStringContainsString('╚', $allText);
+        self::assertStringContainsString('╔', $allText);
+        self::assertStringContainsString('═', $allText);
     }
 }

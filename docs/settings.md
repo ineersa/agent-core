@@ -9,8 +9,8 @@ settings in the home directory, overridden by project-local settings.
 ```text
 ~/.hatfield/settings.yaml       # Global user settings
 <project>/.hatfield/settings.yaml  # Project-local overrides
+.hatfield/sessions/    # Session/run storage (session_id === run_id)
 <project>/.hatfield/themes/      # Custom project themes
-<project>/.hatfield/sessions/    # Session storage (future)
 ```
 
 ## Precedence
@@ -87,7 +87,17 @@ tui:
 
 ### `sessions.path`
 
-Directory where session data is stored (future use).
+Directory where session/run data is stored. Each session equals
+one agent run (session_id === run_id). The directory layout:
+
+```text
+.hatfield/sessions/<id>/
+  metadata.yaml        # session_id, run_id, parent_id, root_id, etc.
+  state.json           # AgentCore RunState hot state cache
+  events.jsonl         # AgentCore RunEvent canonical stream
+  transcript.jsonl     # TUI transcript projection
+  runtime-events.jsonl # Runtime protocol event log
+```
 
 **Default:** `.hatfield/sessions`
 

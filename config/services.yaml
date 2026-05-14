@@ -12,6 +12,18 @@ services:
   Ineersa\Tui\:
     resource: '../src/Tui/'
 
+  # ─── File-backed agent-core stores ───
+  # These need explicit wiring because $projectDir is a string that
+  # cannot be autowired.
+
+  Ineersa\AgentCore\Infrastructure\Storage\SessionRunStore:
+    arguments:
+      $projectDir: '%kernel.project_dir%'
+
+  Ineersa\AgentCore\Infrastructure\Storage\SessionRunEventStore:
+    arguments:
+      $projectDir: '%kernel.project_dir%'
+
   # ─── Hatfield config services ───
 
   Ineersa\CodingAgent\Config\SettingsPathResolver:
@@ -21,5 +33,9 @@ services:
   Ineersa\CodingAgent\Config\AppConfigLoader: ~
 
   Ineersa\CodingAgent\Config\AppConfigResolver:
+    arguments:
+      $projectDir: '%kernel.project_dir%'
+
+  Ineersa\CodingAgent\Session\HatfieldSessionStore:
     arguments:
       $projectDir: '%kernel.project_dir%'

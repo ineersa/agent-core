@@ -9,29 +9,10 @@ const VERSION_CHECK_PATTERN = /\bCASTOR_DISABLE_VERSION_CHECK\s*=/;
 const NO_COLOR_PATTERN = /\bNO_COLOR\s*=/;
 const CL_COLOR_PATTERN = /\bCLICOLOR\s*=/;
 
-// Stop at shell operators so pipes/redirections are not swallowed into args.
-const CASTOR_LIST_PATTERN = /((?:^|\s|&&\s*|\|\|\s*|;\s*)(?:vendor\/bin\/)?castor\s+list\b)((?:\s+[^\s|;&>]+)*)/g;
+const CASTOR_LIST_PATTERN = /((?:^|\s|&&\s*|\|\|\s*|;\s*)(?:vendor\/bin\/)?castor\s+list\b)/g;
 
 function applyLlmFriendlyListDefaults(command: string): string {
-	return command.replace(CASTOR_LIST_PATTERN, (_match, prefix: string, args: string) => {
-		const hasRaw = /\s--raw\b/.test(args);
-		const hasFormat = /\s--format(?:=|\s)/.test(args);
-		const hasShort = /\s--short\b/.test(args);
-		const hasNoAnsi = /\s--no-ansi\b/.test(args);
-
-		let suffix = args;
-		if (!hasRaw && !hasFormat) {
-			suffix += " --format=md";
-		}
-		if (!hasRaw && !hasShort) {
-			suffix += " --short";
-		}
-		if (!hasNoAnsi) {
-			suffix += " --no-ansi";
-		}
-
-		return `${prefix}${suffix}`;
-	});
+	return command.replace(CASTOR_LIST_PATTERN, "$1 --format=md --short --no-ansi");
 }
 
 export default function (pi: ExtensionAPI) {

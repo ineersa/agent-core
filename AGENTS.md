@@ -36,7 +36,15 @@ castor phpstan      # PHPStan static analysis
 castor cs-fix       # PHP CS Fixer (fix in place)
 castor cs-check     # PHP CS Fixer (dry-run check only)
 castor cache:clear  # Remove generated QA caches (deptrac, php-cs-fixer, phpstan)
+castor run:agent       # Launch the agent TUI in a tmux session
+castor run:agent-test   # Deterministic tmux session for snapshot testing
+castor test:tui         # Run TUI e2e snapshot tests (requires tmux, NOT in check)
+castor test:tui-update  # Run TUI e2e tests and update golden snapshots
 ```
+
+`castor check` does NOT run tmux e2e tests (`tui-e2e` group) because they
+require tmux and are environment-sensitive. Use `castor test:tui`
+explicitly when testing TUI rendering changes.
 
 Using Castor ensures consistent flags and ordering. Raw commands
 (`vendor/bin/phpunit`, `vendor/bin/deptrac`, etc.) are acceptable for
@@ -142,7 +150,7 @@ Extensions use `TuiExtensionContext` to interact with the TUI. All overrides are
 
 | Widget | File | Renders |
 |--------|------|--------|
-| `HeaderWidget` | `src/Tui/Header/HeaderWidget.php` | `◆ Agent Core` |
+| `HeaderWidget` | `src/Tui/Header/HeaderWidget.php` | Hatfield ASCII logo (box-drawing characters) |
 | `TranscriptWidget` | `src/Tui/Transcript/TranscriptWidget.php` | Transcript entries with role prefixes (❯ user, ◇ assistant, ● tool) |
 | `PendingMessagesWidget` | `src/Tui/Transcript/PendingMessagesWidget.php` | Queued messages during compaction; empty when nothing pending |
 | `WorkingStatusWidget` | `src/Tui/Status/WorkingStatusWidget.php` | `● idle` or `◐ Working: ...`; can be hidden |
@@ -191,4 +199,6 @@ Architecture documentation within the source tree:
 | `src/AgentCore/Infrastructure/Doctrine/AGENTS.md` | Doctrine persistence schema migration notes |
 | `.pi/plans/architecture_rollout_plan.md` | Architecture rollout plan and history |
 | `docs/tui-architecture.md` | Full TUI architecture: layout, widgets, slots, theme system, built-in themes |
+| `docs/tui-testing.md` | TUI tmux testing: `run:agent`, `run:agent-test`, snapshots, keybindings, golden e2e tests |
+| `tests/Tui/Snapshots/` | Golden TUI snapshot fixtures for e2e comparison |
 | `docs/settings.md` | Hatfield settings: global/project config, YAML format, theme selection, precedence |

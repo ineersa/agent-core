@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Application\InteractiveMode;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
@@ -22,11 +23,16 @@ use Symfony\Component\Console\Output\OutputInterface;
  * Unified agent command — TUI (default) or headless JSONL mode.
  *
  * Usage:
- *   agent                         # Interactive TUI mode (in-process transport)
- *   agent --headless              # JSONL protocol on stdin/stdout
- *   agent --prompt="Do X"         # TUI with initial prompt
- *   agent --resume=<runId>        # Resume existing run
- *   agent --transport=process     # Use process-isolated transport in TUI mode
+ *   agent                              # Interactive TUI mode (in-process transport)
+ *   agent --headless                   # JSONL protocol on stdin/stdout
+ *   agent --prompt="Do X"              # TUI with initial prompt
+ *   agent --resume=<sessionId>         # Resume existing session (loads transcript)
+ *   agent --transport=process          # Use process-isolated transport in TUI mode
+ *
+ * Session persistence:
+ *   Every TUI session creates a directory under .hatfield/sessions/<session-id>/
+ *   containing metadata.yaml, transcript.jsonl, and runtime-events.jsonl.
+ *   Use --resume to reload a previous session with its full transcript.
  */
 #[AsCommand(name: 'agent', description: 'Agent session — TUI (default) or headless JSONL runtime')]
 final class AgentCommand
@@ -35,6 +41,7 @@ final class AgentCommand
         private InProcessAgentSessionClient $inProcessClient,
         private JsonlProcessAgentSessionClient $processClient,
         private InteractiveMode $interactiveMode,
+        private HatfieldSessionStore $sessionStore,
     ) {
     }
 
@@ -48,7 +55,7 @@ final class AgentCommand
         #[Option(description: 'Initial prompt for a new run')]
         string $prompt = '',
 
-        #[Option(description: 'Resume an existing run by ID')]
+        #[Option(description: 'Resume an existing session by ID')]
         string $resume = '',
 
         ?OutputInterface $output = null,
@@ -67,24 +74,22 @@ final class AgentCommand
     private function runTui(string $transport, string $prompt, string $resume, OutputInterface $output): int
     {
         $client = $this->resolveClient($transport);
+        $projectCwd = getcwd() ?: '';
 
-        $handle = null;
+        $sessionId = '';
         if ('' !== $resume) {
-            $handle = $client->resume($resume);
-            $output->writeln(\sprintf('<info>Resumed run %s</info>', $resume));
-        } elseif ('' !== $prompt) {
-            $handle = $client->start(new StartRunRequest(prompt: $prompt));
-            $output->writeln(\sprintf('<info>Started run %s</info>', $handle->runId));
-        }
-
-        if (null !== $handle) {
-            $output->writeln(\sprintf('Run ID: <comment>%s</comment>', $handle->runId));
+            $sessionId = $resume;
+            if (!$this->sessionStore->exists($projectCwd, $sessionId)) {
+                throw new \RuntimeException(\sprintf('Session not found: "%s". Use --prompt to start a new session.', $sessionId));
+            }
         }
 
         return $this->interactiveMode->run(
             client: $client,
             output: $output,
-            request: '' !== $prompt ? new StartRunRequest(prompt: $prompt) : null,
+            request: '' !== $prompt ? new StartRunRequest(prompt: $prompt, cwd: $projectCwd) : null,
+            sessionId: $sessionId,
+            projectCwd: $projectCwd,
         );
     }
 
@@ -95,7 +100,6 @@ final class AgentCommand
             throw new \RuntimeException('Cannot open stdin for headless mode');
         }
 
-        // Write protocol header — one event to signal readiness
         $output->write(JsonlCodec::encodeEvent(new RuntimeEvent(
             type: 'runtime_ready',
             runId: '',

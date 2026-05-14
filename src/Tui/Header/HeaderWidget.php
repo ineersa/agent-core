@@ -9,22 +9,34 @@ use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\TuiWidget;
 
 /**
- * Default header widget.
- *
- * Displays the application name with a simple ASCII separator.
+ * Default header widget with the Hatfield ASCII logo.
  */
 final class HeaderWidget implements TuiWidget
 {
+    private const HATFIELD_LOGO = <<<'ASCII'
+██╗ ██╗      ██╗  ██╗ █████╗ ████████╗███████╗██╗███████╗██╗     ██████╗     ██╗██╗██╗
+╚██╗╚██╗     ██║  ██║██╔══██╗╚══██╔══╝██╔════╝██║██╔════╝██║     ██╔══██╗    ██║██║██║
+ ╚██╗╚██╗    ███████║███████║   ██║   █████╗  ██║█████╗  ██║     ██║  ██║    ██║██║██║
+ ██╔╝██╔╝    ██╔══██║██╔══██║   ██║   ██╔══╝  ██║██╔══╝  ██║     ██║  ██║    ╚═╝╚═╝╚═╝
+██╔╝██╔╝     ██║  ██║██║  ██║   ██║   ██║     ██║███████╗███████╗██████╔╝    ██╗██╗██╗
+╚═╝ ╚═╝      ╚═╝  ╚═╝╚═╝  ╚═╝   ╚═╝   ╚═╝     ╚═╝╚══════╝╚══════╝╚═════╝     ╚═╝╚═╝╚═╝
+ASCII;
+
     public function __construct(
-        private readonly string $title = 'Agent Core',
+        private readonly string $text = self::HATFIELD_LOGO,
     ) {
     }
 
     /** @return list<string> */
     public function render(TuiRenderContext $context): array
     {
-        $title = \sprintf('  ◆ %s', $this->title);
+        $lines = explode("\n", $this->text);
+        $result = [];
 
-        return [$context->theme->color(ThemeColor::Header, $title)];
+        foreach ($lines as $line) {
+            $result[] = $context->theme->color(ThemeColor::Header, '  '.rtrim($line));
+        }
+
+        return $result;
     }
 }

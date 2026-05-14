@@ -2,6 +2,54 @@
 
 This document describes the terminal UI architecture for the `ineersa/agent-core` coding agent.
 
+## Event loop
+
+The TUI runs an interactive event loop powered by **Symfony TUI**
+(`Symfony\Component\Tui\Tui`) with **Revolt** as the event loop backend.
+
+Entry point: `Ineersa\Tui\Application\InteractiveMode::run()` creates a
+`Tui` instance, builds the widget tree, registers event listeners, and
+calls `$tui->run()` which blocks until a listener calls `$tui->stop()`.
+
+### Keybindings
+
+| Key | Action |
+|-----|--------|
+| Enter | Submit current prompt to agent |
+| Ctrl+D | Exit TUI cleanly |
+| Ctrl+C | Cancel / clear editor (press twice within 1.5s to exit) |
+| Shift+Enter | Insert newline in editor |
+| Escape | Cancel / clear editor |
+| Arrow keys | Navigate cursor |
+| Ctrl+A / Home | Move to line start |
+| Ctrl+E / End | Move to line end |
+| Ctrl+W | Delete word backward |
+| Ctrl+K | Delete to end of line |
+| Ctrl+U | Delete to start of line |
+
+### Event flow
+
+```
+Terminal → InputEvent → [Ctrl+D/Ctrl+C interceptors] → EditorWidget
+                                                        ↓
+                                                    SubmitEvent / CancelEvent
+                                                        ↓
+                              InteractiveMode listeners → AgentSessionClient
+```
+
+- **`InputEvent`** (priority 100): intercepts Ctrl+D (stop TUI) and Ctrl+C (double-press tracking). All other input propagates to the focused widget.
+- **`SubmitEvent`**: user pressed Enter in `EditorWidget`. Listener appends message to transcript, sends to `AgentSessionClient`, clears editor.
+- **`CancelEvent`**: user pressed Escape. Listener clears editor.
+- **`QuitEvent`**: dispatched by event interceptors on exit. Listener calls `$tui->stop()`.
+- **`TickEvent`**: called every frame. Placeholder for future async agent event polling.
+
+### Ctrl+C double-press mechanism
+
+Single Ctrl+C clears the editor if text is present, or shows
+"Press Ctrl+C again to exit" in the status panel if empty.
+A second Ctrl+C within 1.5 seconds exits the TUI.
+Any other key resets the double-press timer.
+
 ## Layout
 
 Single-column vertical layout with extensible slots:
@@ -157,6 +205,15 @@ Theme color tokens should use the semantic names defined in `ThemeColor` (lowerc
 
 - Intentional explicit naming. No `Chrome` naming.
 - Directory structure is flat by domain: `src/Tui/Theme/`, `src/Tui/Status/`, `src/Tui/Footer/`.
+
+## Header
+
+The header widget displays the **Hatfield ASCII logo** using Unicode
+box-drawing characters.
+
+File: `src/Tui/Header/HeaderWidget.php`
+
+The logo is styled with the `ThemeColor::Header` semantic color.
 
 ## Dependency boundaries
 

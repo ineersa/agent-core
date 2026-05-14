@@ -73,12 +73,6 @@ parameters:
 			path: src/AgentCore/Application/Dto/PendingCommandSnapshot.php
 
 		-
-			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\ReplayIntegrity\:\:\$runId is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/AgentCore/Application/Dto/ReplayIntegrity.php
-
-		-
 			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\ReplayIntegrity\:\:\$source is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
@@ -110,12 +104,6 @@ parameters:
 
 		-
 			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunDebugSnapshot\:\:\$pendingCommands is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/AgentCore/Application/Dto/RunDebugSnapshot.php
-
-		-
-			message: '#^Property Ineersa\\AgentCore\\Application\\Dto\\RunDebugSnapshot\:\:\$runId is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
 			path: src/AgentCore/Application/Dto/RunDebugSnapshot.php
@@ -313,18 +301,6 @@ parameters:
 			path: src/AgentCore/Domain/Event/RunEvent.php
 
 		-
-			message: '#^Property Ineersa\\AgentCore\\Domain\\Extension\\AfterTurnCommitEventSummary\:\:\$seq is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/AgentCore/Domain/Extension/AfterTurnCommitEventSummary.php
-
-		-
-			message: '#^Property Ineersa\\AgentCore\\Domain\\Extension\\AfterTurnCommitEventSummary\:\:\$type is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/AgentCore/Domain/Extension/AfterTurnCommitEventSummary.php
-
-		-
 			message: '#^Property Ineersa\\AgentCore\\Domain\\Extension\\AfterTurnCommitHookContext\:\:\$effectsCount is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
@@ -332,12 +308,6 @@ parameters:
 
 		-
 			message: '#^Property Ineersa\\AgentCore\\Domain\\Extension\\AfterTurnCommitHookContext\:\:\$events is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/AgentCore/Domain/Extension/AfterTurnCommitHookContext.php
-
-		-
-			message: '#^Property Ineersa\\AgentCore\\Domain\\Extension\\AfterTurnCommitHookContext\:\:\$runId is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
 			path: src/AgentCore/Domain/Extension/AfterTurnCommitHookContext.php
@@ -511,6 +481,12 @@ parameters:
 			path: src/AgentCore/Infrastructure/Storage/InMemoryRunStore.php
 
 		-
+			message: '#^Unused Ineersa\\AgentCore\\Infrastructure\\Storage\\SessionRunStore\:\:findRunningStaleBefore$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/AgentCore/Infrastructure/Storage/SessionRunStore.php
+
+		-
 			message: '#^Unused Ineersa\\AgentCore\\Infrastructure\\SymfonyAi\\BeforeProviderRequestSubscriber\:\:getSubscribedEvents$#'
 			identifier: shipmonk.deadMethod
 			count: 1
@@ -529,13 +505,13 @@ parameters:
 			path: src/CodingAgent/CLI/AgentCommand.php
 
 		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\AppConfig\:\:\$raw is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
+			message: '#^Short ternary operator is not allowed\. Use null coalesce operator if applicable or consider using long ternary\.$#'
+			identifier: ternary.shortNotAllowed
 			count: 1
-			path: src/CodingAgent/Config/AppConfig.php
+			path: src/CodingAgent/CLI/AgentCommand.php
 
 		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\AppConfig\:\:\$sessions is never read$#'
+			message: '#^Property Ineersa\\CodingAgent\\Config\\AppConfig\:\:\$raw is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
 			path: src/CodingAgent/Config/AppConfig.php
@@ -578,18 +554,6 @@ parameters:
 
 		-
 			message: '#^Unused Ineersa\\CodingAgent\\Runtime\\Contract\\AgentSessionClient\:\:cancel$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Runtime/Contract/AgentSessionClient.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Runtime\\Contract\\AgentSessionClient\:\:events$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Runtime/Contract/AgentSessionClient.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Runtime\\Contract\\AgentSessionClient\:\:send$#'
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/CodingAgent/Runtime/Contract/AgentSessionClient.php
@@ -715,22 +679,76 @@ parameters:
 			path: src/CodingAgent/Runtime/Process/JsonlProcessAgentSessionClient.php
 
 		-
-			message: '#^Unused Ineersa\\CodingAgent\\Runtime\\Process\\JsonlProcessAgentSessionClient\:\:events$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Runtime/Process/JsonlProcessAgentSessionClient.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Runtime\\Process\\JsonlProcessAgentSessionClient\:\:send$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Runtime/Process/JsonlProcessAgentSessionClient.php
-
-		-
 			message: '#^Unused Ineersa\\CodingAgent\\Runtime\\Protocol\\RuntimeEventMapper\:\:toRunEventData$#'
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/CodingAgent/Runtime/Protocol/RuntimeEventMapper.php
+
+		-
+			message: '#^Method Ineersa\\CodingAgent\\Session\\HatfieldSessionStore\:\:appendRuntimeEvent\(\) has parameter \$event with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/CodingAgent/Session/HatfieldSessionStore.php
+
+		-
+			message: '#^Short ternary operator is not allowed\. Use null coalesce operator if applicable or consider using long ternary\.$#'
+			identifier: ternary.shortNotAllowed
+			count: 2
+			path: src/CodingAgent/Session/HatfieldSessionStore.php
+
+		-
+			message: '#^Access to property \$runId on an unknown class Ineersa\\CodingAgent\\Runtime\\Contract\\RuntimeEvent\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Tui/Application/InteractiveMode.php
+
+		-
+			message: '#^Access to property \$seq on an unknown class Ineersa\\CodingAgent\\Runtime\\Contract\\RuntimeEvent\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Tui/Application/InteractiveMode.php
+
+		-
+			message: '#^Access to property \$type on an unknown class Ineersa\\CodingAgent\\Runtime\\Contract\\RuntimeEvent\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Tui/Application/InteractiveMode.php
+
+		-
+			message: '#^Call to an undefined method Symfony\\Component\\Tui\\Event\\SubmitEvent\:\:getText\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: src/Tui/Application/InteractiveMode.php
+
+		-
+			message: '#^Call to an undefined method Symfony\\Component\\Tui\\Widget\\AbstractWidget\:\:setText\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: src/Tui/Application/InteractiveMode.php
+
+		-
+			message: '#^Call to function is_array\(\) with array will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: src/Tui/Application/InteractiveMode.php
+
+		-
+			message: '#^Call to method toArray\(\) on an unknown class Ineersa\\CodingAgent\\Runtime\\Contract\\RuntimeEvent\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Tui/Application/InteractiveMode.php
+
+		-
+			message: '#^PHPDoc tag @var for constant Ineersa\\Tui\\Application\\InteractiveMode\:\:POLL_INTERVAL with type int is incompatible with native type float\.$#'
+			identifier: classConstant.phpDocType
+			count: 1
+			path: src/Tui/Application/InteractiveMode.php
+
+		-
+			message: '#^Parameter \#1 \$event of static method Ineersa\\Tui\\Application\\InteractiveMode\:\:formatEventForTranscript\(\) expects Ineersa\\CodingAgent\\Runtime\\Protocol\\RuntimeEvent, Ineersa\\CodingAgent\\Runtime\\Contract\\RuntimeEvent given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Tui/Application/InteractiveMode.php
 
 		-
 			message: '#^Property Ineersa\\Tui\\Application\\InteractiveMode\:\:\$themeCache is never read$#'
@@ -741,6 +759,24 @@ parameters:
 		-
 			message: '#^Property Ineersa\\Tui\\Application\\InteractiveMode\:\:\$themeCache is never read, only written\.$#'
 			identifier: property.onlyWritten
+			count: 1
+			path: src/Tui/Application/InteractiveMode.php
+
+		-
+			message: '#^Short ternary operator is not allowed\. Use null coalesce operator if applicable or consider using long ternary\.$#'
+			identifier: ternary.shortNotAllowed
+			count: 1
+			path: src/Tui/Application/InteractiveMode.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type Symfony\\Component\\Tui\\Widget\\AbstractWidget\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 2
+			path: src/Tui/Application/InteractiveMode.php
+
+		-
+			message: '#^Using nullsafe property access "\?\-\>prompt" on left side of \?\? is unnecessary\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
 			count: 1
 			path: src/Tui/Application/InteractiveMode.php
 
@@ -853,6 +889,12 @@ parameters:
 			path: src/Tui/Extension/TuiExtensionContext.php
 
 		-
+			message: '#^Unused Ineersa\\Tui\\Footer\\FooterDataProvider\:\:addProvider$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Footer/FooterDataProvider.php
+
+		-
 			message: '#^Unused Ineersa\\Tui\\Footer\\FooterDataProvider\:\:readonly$#'
 			identifier: shipmonk.deadMethod
 			count: 1
@@ -875,6 +917,12 @@ parameters:
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/Tui/Footer/ReadonlyFooterDataProvider.php
+
+		-
+			message: '#^Unused Ineersa\\Tui\\Layout\\ChatLayout\:\:render$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Layout/ChatLayout.php
 
 		-
 			message: '#^Unused Ineersa\\Tui\\Layout\\TuiSlotRegistry\:\:getInputHandlers$#'
@@ -931,18 +979,6 @@ parameters:
 			path: src/Tui/Status/WorkingStatusWidget.php
 
 		-
-			message: '#^Unused Ineersa\\Tui\\Theme\\DefaultTheme\:\:accent$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Tui/Theme/DefaultTheme.php
-
-		-
-			message: '#^Unused Ineersa\\Tui\\Theme\\DefaultTheme\:\:error$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Tui/Theme/DefaultTheme.php
-
-		-
 			message: '#^Unused Ineersa\\Tui\\Theme\\DefaultTheme\:\:getPalette$#'
 			identifier: shipmonk.deadMethod
 			count: 1
@@ -956,18 +992,6 @@ parameters:
 
 		-
 			message: '#^Unused Ineersa\\Tui\\Theme\\DefaultTheme\:\:success$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Tui/Theme/DefaultTheme.php
-
-		-
-			message: '#^Unused Ineersa\\Tui\\Theme\\DefaultTheme\:\:text$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Tui/Theme/DefaultTheme.php
-
-		-
-			message: '#^Unused Ineersa\\Tui\\Theme\\DefaultTheme\:\:warning$#'
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/Tui/Theme/DefaultTheme.php
@@ -1249,18 +1273,6 @@ parameters:
 			path: src/Tui/Theme/ThemeRegistry.php
 
 		-
-			message: '#^Unused Ineersa\\Tui\\Theme\\TuiTheme\:\:accent$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Tui/Theme/TuiTheme.php
-
-		-
-			message: '#^Unused Ineersa\\Tui\\Theme\\TuiTheme\:\:error$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Tui/Theme/TuiTheme.php
-
-		-
 			message: '#^Unused Ineersa\\Tui\\Theme\\TuiTheme\:\:name$#'
 			identifier: shipmonk.deadMethod
 			count: 1
@@ -1268,18 +1280,6 @@ parameters:
 
 		-
 			message: '#^Unused Ineersa\\Tui\\Theme\\TuiTheme\:\:success$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Tui/Theme/TuiTheme.php
-
-		-
-			message: '#^Unused Ineersa\\Tui\\Theme\\TuiTheme\:\:text$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Tui/Theme/TuiTheme.php
-
-		-
-			message: '#^Unused Ineersa\\Tui\\Theme\\TuiTheme\:\:warning$#'
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/Tui/Theme/TuiTheme.php
