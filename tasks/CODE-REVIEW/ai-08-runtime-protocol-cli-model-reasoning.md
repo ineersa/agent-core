@@ -23,12 +23,12 @@ Scope:
 - Suggested validation: `castor test --filter Runtime`; `castor deptrac`.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/ai-08-runtime-protocol-cli-model-reasoning
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-08-runtime-protocol-cli-model-reasoning
 Fork run: a75hrv2dqf1k
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/8
+PR Status: open
 Started: 2026-05-16T22:30:54.786Z
 Completed:
 
@@ -50,3 +50,11 @@ Completed:
 ## Task workflow update - 2026-05-16T22:43:23.696Z
 - Validation: AI-08 worktree: `castor test` before changes passed: 234 tests, 7773 assertions, 1 notice.; AI-08 worktree: `castor test` after changes passed: 234 tests, 7773 assertions, 1 notice.; AI-08 worktree: `castor deptrac` passed: 0 violations, 323 allowed, 69 uncovered.; AI-08 worktree: `castor phpstan` initially found expected dead property for RunMetadata::$reasoning; after baseline update, passed with no errors.; AI-08 worktree: `castor check` passed: deptrac + phpunit + phpstan + cs-fixer.; AI-08 worktree: `php bin/console agent --help` shows `--model` and `--reasoning` options.
 - Summary: AI-08 implementation complete in worktree commit b1ed50aa. Added optional model/reasoning plumbing through StartRunRequest, RunMetadata, AgentCommand CLI/headless JSONL handling, InProcessAgentSessionClient, JsonlProcessAgentSessionClient, and SessionInitializer. Added phpstan baseline entry for RunMetadata::$reasoning until AI-10 consumes it. No model selection/provider routing implemented.
+
+## Task workflow update - 2026-05-16T22:43:41.274Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/ai-08-runtime-protocol-cli-model-reasoning to origin.
+- branch 'task/ai-08-runtime-protocol-cli-model-reasoning' set up to track 'origin/task/ai-08-runtime-protocol-cli-model-reasoning'.
+- Created PR: https://github.com/ineersa/agent-core/pull/8
+- Validation: `castor test` passed after changes: 234 tests, 7773 assertions, 1 notice.; `castor deptrac` passed: 0 violations.; `castor phpstan` passed after adding expected temporary baseline for RunMetadata::$reasoning until AI-10 reads it.; `castor check` passed.; `php bin/console agent --help` shows `--model` and `--reasoning` options.
+- Summary: AI-08 ready for review. Worktree branch committed at b1ed50aa with runtime protocol/CLI plumbing for optional model and reasoning fields. No model selection or provider routing behavior included.

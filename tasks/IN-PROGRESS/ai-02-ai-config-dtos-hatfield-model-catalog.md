@@ -45,3 +45,7 @@ Completed:
 ## Task workflow update - 2026-05-16T22:32:11.164Z
 - Recorded fork run: 4s33fnreimt8
 - Summary: Launched implementation fork 4s33fnreimt8 in worktree /home/ineersa/projects/agent-core-worktrees/ai-02-ai-config-dtos-hatfield-model-catalog.
+
+## Task workflow update - 2026-05-16T22:46:28.739Z
+- Validation: AI-02 worktree: focused new tests passed: AiModelRefTest 10 tests/22 assertions; AiConfigTest 14 tests/81 assertions; HatfieldModelCatalogTest 18 tests/45 assertions.; AI-02 worktree: existing config/session tests passed: 47 tests, 115 assertions.; AI-02 worktree: `castor test` passed: 276 tests, 7921 assertions, 1 PHPUnit notice.; AI-02 worktree: `castor deptrac` passed: 0 violations, 66 uncovered, 323 allowed.; AI-02 worktree: initial `castor phpstan` reported 35 expected dead-code findings for new catalog/DTO APIs that downstream tasks will consume; added temporary baselines in phpstan-baseline.neon.; AI-02 worktree: `castor phpstan` passed after baseline update.; AI-02 worktree: `castor cs-fix` applied formatting to new AI config classes.; AI-02 worktree: full `castor check` passed.
+- Summary: AI-02 implementation complete. Worktree has commits ea8410dc (AI config DTOs/catalog implementation) and 31813e32 (CS-fixer formatting plus temporary PHPStan baselines for DTO/catalog APIs until downstream AI-04/AI-07/AI-10 consumers land). Added typed AI config DTOs, AppConfig ai parsing, and HatfieldModelCatalog with explicit-only model lookup.
