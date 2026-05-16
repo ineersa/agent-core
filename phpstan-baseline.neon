@@ -553,10 +553,16 @@ parameters:
 			path: src/CodingAgent/Config/SettingsPathResolver.php
 
 		-
-			message: '#^Unused Ineersa\\CodingAgent\\Config\\SettingsPathResolver\:\:getProjectDir$#'
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\SettingsPathResolver\:\:getAppRoot$#'
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/CodingAgent/Config/SettingsPathResolver.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\AppResourceLocator\:\:getAppRoot$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Config/AppResourceLocator.php
 
 		-
 			message: '#^Unused Ineersa\\CodingAgent\\Config\\SettingsPathResolver\:\:resolveList$#'

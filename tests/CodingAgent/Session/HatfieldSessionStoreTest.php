@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Session;
 
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppConfigResolver;
+use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\TranscriptEntry;
@@ -45,7 +46,8 @@ YAML);
 
         $pathResolver = new SettingsPathResolver($this->tempDir);
         $loader = new AppConfigLoader($pathResolver);
-        $configResolver = new AppConfigResolver($loader, $this->tempDir);
+        $resources = new AppResourceLocator($this->tempDir);
+        $configResolver = new AppConfigResolver($loader, $resources);
 
         $this->store = new HatfieldSessionStore($configResolver, $this->tempDir);
     }
@@ -225,7 +227,8 @@ YAML);
         try {
             $pathResolver2 = new SettingsPathResolver($tempDir2);
             $loader2 = new AppConfigLoader($pathResolver2);
-            $resolver2 = new AppConfigResolver($loader2, $tempDir2);
+            $resources2 = new AppResourceLocator($tempDir2);
+            $resolver2 = new AppConfigResolver($loader2, $resources2);
             $store2 = new HatfieldSessionStore($resolver2, $tempDir2);
 
             $id1 = $this->store->createSession($this->tempDir, 'project one');
