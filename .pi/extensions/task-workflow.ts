@@ -53,6 +53,7 @@ const MoveTaskParams = Type.Object({
 	cleanupWorktree: Type.Optional(Type.Boolean({ description: "After successful merge, remove the worktree. Default true." })),
 	deleteBranch: Type.Optional(Type.Boolean({ description: "After successful merge, delete the task branch. Default false." })),
 	requireCleanMain: Type.Optional(Type.Boolean({ description: "Require the integration checkout to be clean before merge. Default true." })),
+	cleanupStaleIndexEntries: Type.Optional(Type.Boolean({ description: "Before DONE merge, reset stale staged-add/deleted worktree entries (AD) in the integration checkout. Default false." })),
 	prTitle: Type.Optional(Type.String({ description: "Title for GitHub PR when moving to CODE-REVIEW. Defaults to task title." })),
 	prBody: Type.Optional(Type.String({ description: "Body for GitHub PR when moving to CODE-REVIEW." })),
 	prBaseBranch: Type.Optional(Type.String({ description: "Base branch for PR. Defaults to repository default branch." })),
@@ -290,11 +291,48 @@ async function createWorktreeForTask(
 	return { branch, worktree, output: result.stdout || result.stderr, veraCopied, vendorCopied };
 }
 
+function staleAddedDeletedPaths(status: string): string[] {
+	return status
+		.split("\n")
+		.map((line) => line.trimEnd())
+		.filter((line) => line.startsWith("AD "))
+		.map((line) => line.slice(3).trim())
+		.filter(Boolean);
+}
+
+function formatDirtyIntegrationCheckoutMessage(branch: string, status: string): string {
+	const lines = status.trimEnd().split("\n").filter(Boolean);
+	const stalePaths = staleAddedDeletedPaths(status);
+	const untracked = lines.filter((line) => line.startsWith("??"));
+	const staged = lines.filter((line) => !line.startsWith("??") && line[0] !== " ");
+	const unstaged = lines.filter((line) => !line.startsWith("??") && line.length > 1 && line[1] !== " ");
+
+	const sections = [
+		`Integration checkout is not clean; refusing to merge ${branch}.`,
+		"",
+		"Status:",
+		status.trimEnd(),
+		"",
+		"Categorized:",
+		`- staged changes: ${staged.length}`,
+		`- unstaged changes: ${unstaged.length}`,
+		`- untracked files: ${untracked.length}`,
+		`- stale staged-add/deleted-worktree entries (AD): ${stalePaths.length}`,
+		"",
+		"Suggested fixes:",
+		"- Commit or stash unrelated integration-checkout changes before moving the task to DONE.",
+		"- If the dirty status is only stale AD entries, retry move_task with cleanupStaleIndexEntries=true.",
+		"- Use requireCleanMain=false only when you intentionally want to merge into a dirty checkout.",
+	];
+
+	return sections.join("\n");
+}
+
 async function mergeTaskBranch(
 	pi: ExtensionAPI,
 	root: string,
 	task: TaskInfo,
-	options: { cleanupWorktree: boolean; deleteBranch: boolean; requireCleanMain: boolean },
+	options: { cleanupWorktree: boolean; deleteBranch: boolean; requireCleanMain: boolean; cleanupStaleIndexEntries: boolean },
 	signal?: AbortSignal,
 ): Promise<string[]> {
 	const branch = task.branch;
@@ -303,10 +341,19 @@ async function mergeTaskBranch(
 		return ["No Branch/Worktree metadata found; moved task without git merge."];
 	}
 
+	const notes: string[] = [];
 	if (options.requireCleanMain) {
-		const mainStatus = await gitOk(pi, root, ["status", "--porcelain"], signal);
+		let mainStatus = await gitOk(pi, root, ["status", "--porcelain"], signal);
+		if (mainStatus.stdout.trim() !== "" && options.cleanupStaleIndexEntries) {
+			const stalePaths = staleAddedDeletedPaths(mainStatus.stdout);
+			if (stalePaths.length > 0) {
+				await gitOk(pi, root, ["reset", "HEAD", "--", ...stalePaths], signal);
+				notes.push(`Reset stale staged entries: ${stalePaths.join(", ")}.`);
+				mainStatus = await gitOk(pi, root, ["status", "--porcelain"], signal);
+			}
+		}
 		if (mainStatus.stdout.trim() !== "") {
-			throw new Error(`Integration checkout is not clean; refusing to merge ${branch}. Commit/stash current changes or pass requireCleanMain=false.\n${mainStatus.stdout}`);
+			throw new Error(formatDirtyIntegrationCheckoutMessage(branch, mainStatus.stdout));
 		}
 	}
 
@@ -321,7 +368,7 @@ async function mergeTaskBranch(
 		throw new Error(`Merge of ${branch} failed. Resolve conflicts in integration checkout, then retry move_task.\nConflicts:\n${conflicts.stdout || "(none reported)"}\n\n${merge.stderr || merge.stdout}`);
 	}
 
-	const notes = [`Merged ${branch} into integration checkout.`, (merge.stdout || merge.stderr).trim()].filter(Boolean);
+	notes.push(...[`Merged ${branch} into integration checkout.`, (merge.stdout || merge.stderr).trim()].filter(Boolean));
 
 	if (options.cleanupWorktree) {
 		const remove = await git(pi, root, ["worktree", "remove", worktree], signal);
@@ -445,6 +492,7 @@ This project uses a repo-local lightweight issue tracker under tasks/TODO, tasks
 - When claiming a task, call move_task with to="IN-PROGRESS". That creates a task/<slug> git branch and sibling worktree at ../<repo>-worktrees/<slug>, copies vendor/ and .vera/ into the worktree when they exist, then records metadata in the task file.
 - When implementation is complete and committed, the parent/orchestrator/user calls move_task with to="CODE-REVIEW". This pushes the task branch to the remote and creates a GitHub PR via the gh CLI. The PR URL is stored in the task metadata.
 - After code review and PR approval, the parent/orchestrator/user calls move_task with to="DONE". It attempts a git merge back into the integration checkout and reports conflicts without moving the task to DONE if the merge fails.
+- move_task with to="DONE" requires a clean integration checkout by default. If it reports stale AD entries from staged additions deleted in the worktree, retry with cleanupStaleIndexEntries=true; do not commit unrelated staged changes just to satisfy the task workflow.
 - IDE tools are scoped to the current checkout and may not index sibling worktrees. move_task copies .vera when available so semantic-search can work in the worktree, but prefer absolute-path read/edit/bash operations or open a separate pi session rooted at the worktree when IDE indexes are unavailable.
 `;
 }
@@ -589,6 +637,7 @@ export default function (pi: ExtensionAPI) {
 						cleanupWorktree: params.cleanupWorktree ?? true,
 						deleteBranch: params.deleteBranch ?? false,
 						requireCleanMain: params.requireCleanMain ?? true,
+						cleanupStaleIndexEntries: params.cleanupStaleIndexEntries ?? false,
 					}, signal);
 					text = updateField(text, "Status", "DONE");
 					text = updateField(text, "Completed", new Date().toISOString());

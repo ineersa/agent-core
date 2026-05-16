@@ -28,6 +28,8 @@ Use the pi `task_list`, `create_task`, `move_task`, and `update_task` extension 
    - reuses an existing PR if one already exists for the branch
 6. After PR review and approval, move it to `DONE` with `move_task`. This merges the task branch into the integration checkout. If conflicts occur, the task stays in its current status.
 
+`move_task` requires a clean integration checkout before merging to `DONE`. If it reports only stale `AD` entries (staged additions that were deleted from the worktree), retry with `cleanupStaleIndexEntries: true` to reset those index entries. Do not auto-commit unrelated staged changes just to complete the workflow.
+
 To remove an abandoned worktree, use Castor so Git metadata is cleaned up too:
 
 ```bash
