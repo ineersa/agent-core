@@ -43,14 +43,14 @@ Risk notes:
 - Full project validation passes with `castor check`.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/2026-05-16-upgrade-symfony-ai-packages-to-0-9
 Worktree: /home/ineersa/projects/agent-core-worktrees/2026-05-16-upgrade-symfony-ai-packages-to-0-9
 Fork run: copbu0v2llm0
 PR URL: https://github.com/ineersa/agent-core/pull/6
-PR Status: open
+PR Status: merged
 Started: 2026-05-16T17:49:49.826Z
-Completed:
+Completed: 2026-05-16T18:45:05.706Z
 
 ## Work log
 - Created: 2026-05-16T17:47:56.824Z
@@ -81,3 +81,24 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/6
 - Validation: Changed files include `composer.json`, `composer.lock`, Symfony AI adapter/converter/normalizer source, worker/tool-call extraction changes, and tests/fakes updated for Symfony AI 0.9 `AssistantMessage` ContentInterface API.; Validation from fork: PlatformIntegrationTest passed (2 tests, 15 assertions); ToolExecutor tests passed (5 tests, 17 assertions); full PHPUnit excluding tui-e2e passed (228 tests, 7750 assertions); deptrac passed; CS fixer passed; full PHPStan/castor check blocked only by pre-existing `.castor/tasks.php:191` short-ternary issue.
 - Summary: Implementation complete in worktree commit `214b4271`. Ready for code review.
+
+## Task workflow update - 2026-05-16T18:45:05.706Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/2026-05-16-upgrade-symfony-ai-packages-to-0-9 into integration checkout.
+- Merge made by the 'ort' strategy.
+ composer.json                                      |  4 +-
+ composer.lock                                      | 42 ++++++++---------
+ .../Application/Handler/ExecuteLlmStepWorker.php   |  3 +-
+ .../Application/Pipeline/ToolCallExtractor.php     |  2 +-
+ .../Domain/Message/AgentMessageNormalizer.php      | 55 +++++++++++++++++-----
+ .../SymfonyAi/AgentMessageConverter.php            | 40 +++++++++++++---
+ .../SymfonyAi/LlmPlatformAdapter.php               | 28 ++++++++---
+ .../Handler/ExecutionFailureDrillTest.php          |  2 +-
+ .../SymfonyAi/PlatformIntegrationTest.php          |  4 +-
+ tests/AgentCore/Support/Fake/FakePlatform.php      |  3 +-
+ tests/AgentCore/Support/SymfonyAiTestMessages.php  | 30 +++++++-----
+ 11 files changed, 149 insertions(+), 64 deletions(-)
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/2026-05-16-upgrade-symfony-ai-packages-to-0-9.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR merged: https://github.com/ineersa/agent-core/pull/6
+- Summary: PR #6 was merged on GitHub. Marking task done and syncing integration checkout.
