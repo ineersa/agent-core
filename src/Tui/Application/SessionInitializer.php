@@ -57,6 +57,8 @@ final readonly class SessionInitializer
                 runId: $sessionId,
                 cwd: $request->cwd,
                 options: $request->options,
+                model: $request->model,
+                reasoning: $request->reasoning,
             );
         } elseif (null !== $request) {
             $state->request = $request;

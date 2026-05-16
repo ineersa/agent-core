@@ -58,6 +58,12 @@ final class AgentCommand
         #[Option(description: 'Resume an existing session by ID')]
         string $resume = '',
 
+        #[Option(description: 'Model identifier (e.g. deepseek/deepseek-v4-pro)')]
+        string $model = '',
+
+        #[Option(description: 'Reasoning/thinking level: off, minimal, low, medium, high, xhigh')]
+        string $reasoning = '',
+
         ?OutputInterface $output = null,
     ): int {
         if (null === $output) {
@@ -68,10 +74,10 @@ final class AgentCommand
             return $this->runHeadless($output);
         }
 
-        return $this->runTui($transport, $prompt, $resume);
+        return $this->runTui($transport, $prompt, $resume, $model, $reasoning);
     }
 
-    private function runTui(string $transport, string $prompt, string $resume): int
+    private function runTui(string $transport, string $prompt, string $resume, string $model = '', string $reasoning = ''): int
     {
         $client = $this->resolveClient($transport);
         $projectCwd = getcwd() ?: '';
@@ -86,7 +92,12 @@ final class AgentCommand
 
         return $this->interactiveMode->run(
             client: $client,
-            request: '' !== $prompt ? new StartRunRequest(prompt: $prompt, cwd: $projectCwd) : null,
+            request: '' !== $prompt ? new StartRunRequest(
+                prompt: $prompt,
+                cwd: $projectCwd,
+                model: '' !== $model ? $model : null,
+                reasoning: '' !== $reasoning ? $reasoning : null,
+            ) : null,
             sessionId: $sessionId,
             projectCwd: $projectCwd,
         );
@@ -149,8 +160,14 @@ final class AgentCommand
     private function handleHeadlessStart(RuntimeCommand $command, OutputInterface $output): void
     {
         $prompt = (string) ($command->payload['prompt'] ?? '');
+        $model = isset($command->payload['model']) ? (string) $command->payload['model'] : null;
+        $reasoning = isset($command->payload['reasoning']) ? (string) $command->payload['reasoning'] : null;
         $client = $this->inProcessClient;
-        $handle = $client->start(new StartRunRequest(prompt: $prompt));
+        $handle = $client->start(new StartRunRequest(
+            prompt: $prompt,
+            model: '' !== $model ? $model : null,
+            reasoning: '' !== $reasoning ? $reasoning : null,
+        ));
 
         $output->write(JsonlCodec::encodeEvent(new RuntimeEvent(
             type: 'run_started',
