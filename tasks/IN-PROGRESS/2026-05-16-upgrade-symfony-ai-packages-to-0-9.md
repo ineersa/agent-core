@@ -43,14 +43,22 @@ Risk notes:
 - Full project validation passes with `castor check`.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/2026-05-16-upgrade-symfony-ai-packages-to-0-9
+Worktree: /home/ineersa/projects/agent-core-worktrees/2026-05-16-upgrade-symfony-ai-packages-to-0-9
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-16T17:49:49.826Z
 Completed:
 
 ## Work log
 - Created: 2026-05-16T17:47:56.824Z
+
+## Task workflow update - 2026-05-16T17:49:49.826Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/2026-05-16-upgrade-symfony-ai-packages-to-0-9.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/2026-05-16-upgrade-symfony-ai-packages-to-0-9.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/2026-05-16-upgrade-symfony-ai-packages-to-0-9.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/2026-05-16-upgrade-symfony-ai-packages-to-0-9.
+- Summary: Claiming task for forked implementation.
