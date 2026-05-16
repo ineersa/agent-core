@@ -22,12 +22,12 @@ Scope:
 - Suggested validation: `castor test --filter Settings`.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/ai-03-home-settings-bootstrap-comment-preserving-writer
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-03-home-settings-bootstrap-comment-preserving-writer
 Fork run: uzteevsbgpnz
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/10
+PR Status: open
 Started: 2026-05-16T22:30:47.734Z
 Completed:
 
@@ -49,3 +49,11 @@ Completed:
 ## Task workflow update - 2026-05-16T23:03:44.408Z
 - Validation: AI-03 worktree: `composer dump-autoload` OK.; AI-03 worktree: `php bin/console --no-interaction` boots successfully.; AI-03 fork manual integration checks passed: home settings bootstrapped from template, bootstrap idempotent, writer replaces/uncomments/inserts/appends scalar keys while preserving comments, missing file throws RuntimeException, YAML scalar quoting behaves as intended.; AI-03 worktree: `castor test` passed: 234 tests, 7773 assertions, 1 PHPUnit notice.; AI-03 worktree: `castor deptrac` passed: 0 violations.; AI-03 worktree: `castor phpstan` passed after baseline entry for HomeSettingsWriter::writeScalar until downstream consumer lands.; AI-03 worktree: `castor cs-check` passed after cs-fix.; Parent verification: full `castor check` passed: deptrac 0 violations; phpunit 234 tests/7773 assertions/1 notice; phpstan OK; cs-check OK.
 - Summary: AI-03 implementation complete in worktree commit 1eb6661f. Added HomeSettingsTemplate, HomeSettingsWriter, first-launch home settings bootstrap in AppConfigLoader, DI registrations, and PHPStan baseline entry for the writer API until AI-07 consumes it. Scope intentionally excludes model selection/favorites/runtime resolution.
+
+## Task workflow update - 2026-05-16T23:03:59.240Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/ai-03-home-settings-bootstrap-comment-preserving-writer to origin.
+- branch 'task/ai-03-home-settings-bootstrap-comment-preserving-writer' set up to track 'origin/task/ai-03-home-settings-bootstrap-comment-preserving-writer'.
+- Created PR: https://github.com/ineersa/agent-core/pull/10
+- Validation: Fork validation: `composer dump-autoload` OK and `php bin/console --no-interaction` boots.; Manual integration checks passed for bootstrap idempotency and writer replace/uncomment/insert/append/comment-preservation/quoting/error paths.; `castor test` passed: 234 tests, 7773 assertions, 1 PHPUnit notice.; `castor deptrac` passed: 0 violations.; `castor phpstan` passed after expected temporary baseline for writer API until AI-07 consumes it.; `castor cs-check` passed after cs-fix.; Parent verification: full `castor check` passed.
+- Summary: AI-03 ready for review. Added first-launch home settings bootstrap from a commented template and a comment-preserving scalar writer for ai.default_model / ai.default_reasoning persistence. Implementation commit 1eb6661f.
