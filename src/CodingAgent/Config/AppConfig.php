@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
+use Ineersa\CodingAgent\Config\Ai\AiConfig;
+
 /**
  * Resolved Hatfield application configuration.
  *
@@ -13,6 +15,7 @@ namespace Ineersa\CodingAgent\Config;
  * Sections (more will be added as the app grows):
  *  - tui       Theme, theme paths, terminal settings
  *  - sessions  Session storage location
+ *  - ai        AI provider and model configuration
  */
 final readonly class AppConfig
 {
@@ -20,6 +23,7 @@ final readonly class AppConfig
         public TuiConfig $tui,
         /** @var array<string, mixed> */
         public array $sessions = [],
+        public ?AiConfig $ai = null,
         /** @var array<string, mixed> Raw merged data for forward compatibility */
         public array $raw = [],
     ) {
@@ -35,6 +39,7 @@ final readonly class AppConfig
         return new self(
             tui: TuiConfig::fromArray((array) ($data['tui'] ?? [])),
             sessions: (array) ($data['sessions'] ?? []),
+            ai: AiConfig::optionalFromArray($data),
             raw: $data,
         );
     }
