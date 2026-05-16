@@ -43,12 +43,12 @@ Risk notes:
 - Full project validation passes with `castor check`.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/2026-05-16-upgrade-symfony-ai-packages-to-0-9
 Worktree: /home/ineersa/projects/agent-core-worktrees/2026-05-16-upgrade-symfony-ai-packages-to-0-9
 Fork run: copbu0v2llm0
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/6
+PR Status: open
 Started: 2026-05-16T17:49:49.826Z
 Completed:
 
@@ -73,3 +73,11 @@ Completed:
 ## Task workflow update - 2026-05-16T18:38:44.959Z
 - Validation: `php vendor/bin/phpunit tests/AgentCore/Infrastructure/SymfonyAi/PlatformIntegrationTest.php`: passed (2 tests, 15 assertions).; `php vendor/bin/phpunit tests/AgentCore/Application/Handler/ --filter=ToolExecutor`: passed (5 tests, 17 assertions).; `php vendor/bin/phpunit --exclude-group tui-e2e`: passed (228 tests, 7750 assertions, 1 pre-existing notice).; `vendor/bin/phpstan analyse -c phpstan.dist.neon --no-progress`: only pre-existing `.castor/tasks.php:191` short-ternary issue remains.; `vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php --dry-run --diff`: passed.; `castor check`: deptrac passed, phpunit passed, cs-fixer passed; blocked at PHPStan by pre-existing `.castor/tasks.php:191` issue.
 - Summary: Fork copbu0v2llm0 completed implementation. Commit `214b4271` on task branch upgrades `symfony/ai-agent` and `symfony/ai-platform` to `^0.9`, updates `composer.lock` with minimal churn (`symfony/ai-agent`, `symfony/ai-platform`, `symfony/string`), adapts source/tests for the Symfony AI 0.9 `AssistantMessage` ContentInterface redesign, and reviews new 0.9 delta types (`BinaryDelta`, `ChoiceDelta`, `MetadataDelta`, `ThinkingStart`) as intentionally ignored by the existing catch-all unless follow-up support is needed.
+
+## Task workflow update - 2026-05-16T18:39:01.023Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/2026-05-16-upgrade-symfony-ai-packages-to-0-9 to origin.
+- branch 'task/2026-05-16-upgrade-symfony-ai-packages-to-0-9' set up to track 'origin/task/2026-05-16-upgrade-symfony-ai-packages-to-0-9'.
+- Created PR: https://github.com/ineersa/agent-core/pull/6
+- Validation: Changed files include `composer.json`, `composer.lock`, Symfony AI adapter/converter/normalizer source, worker/tool-call extraction changes, and tests/fakes updated for Symfony AI 0.9 `AssistantMessage` ContentInterface API.; Validation from fork: PlatformIntegrationTest passed (2 tests, 15 assertions); ToolExecutor tests passed (5 tests, 17 assertions); full PHPUnit excluding tui-e2e passed (228 tests, 7750 assertions); deptrac passed; CS fixer passed; full PHPStan/castor check blocked only by pre-existing `.castor/tasks.php:191` short-ternary issue.
+- Summary: Implementation complete in worktree commit `214b4271`. Ready for code review.
