@@ -11,12 +11,12 @@ Separate bundled application resources from the active project cwd. AppConfigRes
 - castor check passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/2026-05-16-make-hatfield-config-defaults-and-themes-phar-safe
 Worktree: /home/ineersa/projects/agent-core-worktrees/2026-05-16-make-hatfield-config-defaults-and-themes-phar-safe
 Fork run: 6olw83ugqqk8
 Started: 2026-05-16T17:49:33.123Z
-Completed:
+Completed: 2026-05-16T18:24:34.670Z
 
 ## Work log
 - Created: 2026-05-16T01:22:11.088Z
@@ -37,7 +37,7 @@ Completed:
 - Validation: `vendor/bin/phpunit tests/CodingAgent/Config/ --colors=always`: passed (33 tests, 55 assertions).; `vendor/bin/phpunit tests/CodingAgent/Session/ tests/Tui/Theme/ --colors=always`: passed (41 tests, 109 assertions).; `vendor/bin/phpunit --exclude-group tui-e2e --colors=always`: passed (228 tests, 7750 assertions) with 1 pre-existing PHPUnit notice/skipped test.; `castor deptrac`: passed (0 violations).; `vendor/bin/phpstan analyse -c phpstan.dist.neon --no-progress`: passed.; `vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php --dry-run --diff`: passed.; `castor check`: passed (`quality: ok`).
 - Summary: Fork 6olw83ugqqk8 completed implementation. Commit `eea069fd257437a9250950a055c0ce1ae0cb8487` on task branch introduces `AppResourceLocator` to separate bundled app resources from active project cwd, updates AppConfigResolver/ThemeFactory/settings path wiring, updates tests and PHPStan baseline, and fixes pre-existing `.castor/tasks.php` PHPStan short-ternary issue that blocked full validation.
 PR URL: https://github.com/ineersa/agent-core/pull/4
-PR Status: open
+PR Status: merged
 
 ## Task workflow update - 2026-05-16T18:17:00.412Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -46,3 +46,26 @@ PR Status: open
 - Created PR: https://github.com/ineersa/agent-core/pull/4
 - Validation: Changed files include new `src/CodingAgent/Config/AppResourceLocator.php`, config resolver/theme factory/service wiring updates, tests, PHPStan baseline, and `.castor/tasks.php` short-ternary fix.; Validation from fork: `vendor/bin/phpunit tests/CodingAgent/Config/` passed (33 tests, 55 assertions); `vendor/bin/phpunit tests/CodingAgent/Session/ tests/Tui/Theme/` passed (41 tests, 109 assertions); `vendor/bin/phpunit --exclude-group tui-e2e` passed (228 tests, 7750 assertions); `castor deptrac` passed; PHPStan passed; CS fixer passed; full `castor check` passed (`quality: ok`).
 - Summary: Implementation complete in worktree commit `eea069fd257437a9250950a055c0ce1ae0cb8487`. Ready for code review.
+
+## Task workflow update - 2026-05-16T18:24:34.670Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/2026-05-16-make-hatfield-config-defaults-and-themes-phar-safe into integration checkout.
+- Merge made by the 'ort' strategy.
+ .castor/tasks.php                                  |  3 +-
+ config/services.yaml                               | 10 +++--
+ phpstan-baseline.neon                              |  8 +++-
+ src/CodingAgent/Config/AppConfigLoader.php         |  4 +-
+ src/CodingAgent/Config/AppConfigResolver.php       | 11 +----
+ src/CodingAgent/Config/AppResourceLocator.php      | 49 ++++++++++++++++++++++
+ src/CodingAgent/Config/SettingsPathResolver.php    | 14 ++++---
+ src/Tui/Application/ThemeFactory.php               |  4 +-
+ tests/CodingAgent/Config/AppConfigLoaderTest.php   |  2 +-
+ tests/CodingAgent/Config/AppConfigResolverTest.php | 16 +++----
+ .../Config/SettingsPathResolverTest.php            | 10 ++---
+ .../Session/HatfieldSessionStoreTest.php           |  7 +++-
+ 12 files changed, 99 insertions(+), 39 deletions(-)
+ create mode 100644 src/CodingAgent/Config/AppResourceLocator.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/2026-05-16-make-hatfield-config-defaults-and-themes-phar-safe.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR merged: https://github.com/ineersa/agent-core/pull/4
+- Summary: PR #4 was merged on GitHub. Marking task done and syncing integration checkout.
