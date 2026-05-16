@@ -10,13 +10,13 @@ Depends on: AI-01.
 Parallelism: can run alongside AI-03 and AI-08 after AI-01; unblocks AI-04, AI-06, AI-07.
 
 Scope:
-- Add DTOs under `src/CodingAgent/Config/Ai/` or equivalent: `AiConfig`, `AiProviderConfig`, `AiModelDefinition`, `AiCost`, `AiCompat`, `AiModelRef`.
+- Add DTOs under `src/CodingAgent/Config/Ai/` or equivalent: `AiConfig`, `AiProviderConfig`, `AiModelDefinition`, `AiCost`, `AiCompatibility`, `AiModelReference`.
 - Extend `AppConfig::fromArray()` to parse `ai` while preserving unknown/raw settings.
 - Implement `HatfieldModelCatalog` with provider/model lookup, `requireModel`, `allModels`, and `isAvailable` for enabled/listed models only.
 - Explicit-only behavior: unknown model names are rejected for every provider, including llama.cpp.
 
 ## Acceptance criteria
-- Rich model metadata parses: context window, max tokens, input modalities, tool-calling, reasoning, thinking map, cost, compat.
+- Rich model metadata parses: context window, max tokens, input modalities, tool-calling, reasoning, thinking map, cost, compatibility.
 - `provider/model` parsing rejects malformed values and unknown providers/models.
 - llama.cpp only exposes listed models such as `llama_cpp/flash`.
 - Suggested validation: `castor test --filter Ai`; `castor phpstan`.
