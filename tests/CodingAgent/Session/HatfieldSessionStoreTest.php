@@ -303,7 +303,8 @@ YAML);
         try {
             $pathResolver2 = new SettingsPathResolver($tempDir2);
             $loader2 = new AppConfigLoader($pathResolver2);
-            $resolver2 = new AppConfigResolver($loader2, $tempDir2);
+            $resources2 = new AppResourceLocator($tempDir2);
+            $resolver2 = new AppConfigResolver($loader2, $resources2);
             $store2 = new HatfieldSessionStore($resolver2, $tempDir2);
 
             $basePath1 = $this->store->resolveSessionsBasePath($this->tempDir);

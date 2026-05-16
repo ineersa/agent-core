@@ -96,6 +96,290 @@ See [Session Storage](session-storage.md) for the full directory layout,
 file purposes, resume flow, locking, future fork tree design, and
 backward compatibility.
 
+### `ai.default_model`
+
+The default model used for new agent sessions. Format is
+`provider_id/model_name`.
+
+**Default:** first available configured model (when absent).
+
+**Example:** `deepseek/deepseek-v4-pro`
+
+Precedence: CLI option > session metadata > `ai.default_model` > first available.
+
+### `ai.default_reasoning`
+
+The default reasoning/thinking level for new sessions.
+
+**User-facing values:** `off`, `minimal`, `low`, `medium`, `high`, `xhigh`
+
+**Default:** `medium` (when absent).
+
+The user-facing level is translated to provider-specific options
+through the selected model's `thinking_level_map`.
+
+### `ai.providers`
+
+A map of provider IDs to provider configuration. Each provider exposes
+one or more explicitly listed models.
+
+**Key:** provider ID — used in model references as `provider_id/model_name`.
+
+Every model must be explicitly listed under its provider. Unknown model
+names are rejected, even for local providers that could serve arbitrary
+loaded models (e.g. llama.cpp).
+
+#### Provider keys
+
+| Key | Type | Required | Description |
+|-----|------|----------|-------------|
+| `type` | string | yes | Provider type. Currently `generic` (OpenAI chat-completions-style). |
+| `enabled` | bool | yes | Whether the provider is available. |
+| `base_url` | string | yes | API base URL. |
+| `api` | string | yes | API protocol. Currently `openai-completions`. |
+| `api_key` | string | yes | API key. Use `env:VAR` to reference an environment variable. |
+| `completions_path` | string | no | Chat completions endpoint path. Default: `/chat/completions`. |
+| `embeddings_path` | string | no | Embeddings endpoint path (if supported). |
+| `supports_completions` | bool | no | Enable completions client. Default: `true`. |
+| `supports_embeddings` | bool | no | Enable embeddings client. Default: `false`. |
+| `compat` | map | no | Provider-level transport quirks (see below). |
+| `models` | map | yes | Model definitions keyed by model name. |
+
+#### Compat keys
+
+Provider `compat` documents transport quirks for providers that are
+OpenAI chat-completions-style but not fully OpenAI-compatible.
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `supports_developer_role` | bool | Whether the provider accepts the OpenAI `developer` role. When `false`, map to `system` role. |
+| `supports_reasoning_effort` | bool | Whether the provider accepts `reasoning_effort`. When `false`, do not send this parameter. |
+| `thinking_format` | string | How reasoning is signalled. `zai` means `enable_thinking: boolean` instead of `reasoning_effort`. |
+
+Model-level `compat`:
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `zai_tool_stream` | bool | Whether the model supports streaming tool-call deltas (z.ai provider only). |
+
+These are **internal Hatfield metadata** consumed by the request-shaping
+layer. They are not native to Symfony's generic bridge.
+
+#### Model keys
+
+Each model entry under `providers.<id>.models` supports:
+
+| Key | Type | Required | Description |
+|-----|------|----------|-------------|
+| `name` | string | no | Human-readable display name. Defaults to the model key. |
+| `context_window` | int | yes | Maximum context window in tokens. |
+| `max_tokens` | int | yes | Maximum output tokens. |
+| `input` | list | yes | Supported input modalities: `text`, `image`. |
+| `tool_calling` | bool | yes | Whether the model supports tool/function calling. |
+| `reasoning` | bool | yes | Whether the model supports thinking/reasoning. |
+| `thinking_level_map` | map | no | Maps user-facing levels to provider values (e.g. `{ minimal: high, xhigh: max }`). |
+| `compat` | map | no | Model-level compat quirks. |
+| `cost` | map | no | Cost breakdown: `input`, `output`, `cache_read`, `cache_write` (per 1M tokens). |
+
+### Reasoning / thinking levels
+
+User-facing reasoning levels:
+
+```text
+off | minimal | low | medium | high | xhigh
+```
+
+These are global session/user settings. On each turn the selected
+model's `thinking_level_map` translates the user-facing level into a
+provider-specific value.
+
+- If the model has `reasoning: false` or the selected level maps to
+  `null`, reasoning options are omitted.
+- For z.ai (binary reasoning), map any non-off level through
+  `thinking_level_map` to `enabled` and send `enable_thinking: true`.
+- For providers with `compat.supports_reasoning_effort: false`, never
+  send the `reasoning_effort` parameter.
+
+### Configured providers
+
+The following providers are documented as examples. Enable and configure
+them in your home settings (`~/.hatfield/settings.yaml`).
+
+#### deepseek
+
+OpenAI chat-completions-style provider. Requires `DEEPSEEK_API_KEY` environment variable.
+
+Seed models: `deepseek-v4-pro`, `deepseek-v4-flash`.
+
+#### llama_cpp
+
+Local OpenAI-compatible server. Uses `dummy` API key.
+
+Seed model: `flash` (200k context, 65,536 max tokens, text+image, tool calling).
+
+#### zai
+
+z.ai GLM models via OpenAI chat-completions-style API. Requires `ZAI_API_KEY` environment variable.
+
+**Compat quirks:**
+
+- No developer role — role mapping sends `system` instead of `developer`.
+- No reasoning effort — use `enable_thinking` (binary) rather than `reasoning_effort`.
+- `thinking_format: zai` — signals the request mapper to use z.ai reasoning conventions.
+- `zai_tool_stream` — per-model flag for streaming tool-call deltas; enabled on `glm-5.1` and `glm-5v-turbo`.
+
+Seed models: `glm-5.1`, `glm-5v-turbo`.
+
+All z.ai models have zero cost (plan-based billing).
+
+### Model reference format
+
+Model references use the format `provider_id/model_name`:
+
+```text
+deepseek/deepseek-v4-pro
+llama_cpp/flash
+zai/glm-5.1
+```
+
+Models can only be selected if their provider is `enabled: true` and the
+model is explicitly listed under that provider's `models` block.
+
+### Example: full ai section
+
+```yaml
+ai:
+    default_model: deepseek/deepseek-v4-pro
+    default_reasoning: medium
+
+    providers:
+        deepseek:
+            type: generic
+            enabled: true
+            base_url: https://api.deepseek.com
+            api: openai-completions
+            api_key: env:DEEPSEEK_API_KEY
+            completions_path: /chat/completions
+            supports_completions: true
+            supports_embeddings: false
+            models:
+                deepseek-v4-pro:
+                    name: DeepSeek V4 Pro
+                    context_window: 1000000
+                    max_tokens: 384000
+                    input: [text]
+                    tool_calling: true
+                    reasoning: true
+                    thinking_level_map:
+                        minimal: high
+                        low: high
+                        medium: high
+                        high: high
+                        xhigh: max
+                    cost:
+                        input: 0.435
+                        output: 0.87
+                        cache_read: 0.003625
+                        cache_write: 0
+                deepseek-v4-flash:
+                    name: DeepSeek V4 Flash
+                    context_window: 1000000
+                    max_tokens: 384000
+                    input: [text]
+                    tool_calling: true
+                    reasoning: true
+                    thinking_level_map:
+                        minimal: high
+                        low: high
+                        medium: high
+                        high: high
+                        xhigh: max
+                    cost:
+                        input: 0.14
+                        output: 0.28
+                        cache_read: 0.0028
+                        cache_write: 0
+
+        llama_cpp:
+            type: generic
+            enabled: true
+            base_url: http://192.168.2.38:8052/v1
+            api: openai-completions
+            api_key: dummy
+            completions_path: /chat/completions
+            embeddings_path: /embeddings
+            supports_completions: true
+            supports_embeddings: false
+            models:
+                flash:
+                    name: flash
+                    context_window: 200000
+                    max_tokens: 65536
+                    input: [text, image]
+                    tool_calling: true
+                    reasoning: false
+                    cost:
+                        input: 0
+                        output: 0
+                        cache_read: 0
+                        cache_write: 0
+
+        zai:
+            type: generic
+            enabled: true
+            base_url: https://api.z.ai/api/coding/paas/v4
+            api: openai-completions
+            api_key: env:ZAI_API_KEY
+            completions_path: /chat/completions
+            supports_completions: true
+            supports_embeddings: false
+            compat:
+                supports_developer_role: false
+                supports_reasoning_effort: false
+                thinking_format: zai
+            models:
+                glm-5.1:
+                    name: GLM 5.1
+                    context_window: 200000
+                    max_tokens: 131072
+                    input: [text]
+                    tool_calling: true
+                    reasoning: true
+                    thinking_level_map:
+                        minimal: enabled
+                        low: enabled
+                        medium: enabled
+                        high: enabled
+                        xhigh: enabled
+                    compat:
+                        zai_tool_stream: true
+                    cost:
+                        input: 0
+                        output: 0
+                        cache_read: 0
+                        cache_write: 0
+                glm-5v-turbo:
+                    name: GLM 5V Turbo
+                    context_window: 200000
+                    max_tokens: 131072
+                    input: [text, image]
+                    tool_calling: true
+                    reasoning: true
+                    thinking_level_map:
+                        minimal: enabled
+                        low: enabled
+                        medium: enabled
+                        high: enabled
+                        xhigh: enabled
+                    compat:
+                        zai_tool_stream: true
+                    cost:
+                        input: 0
+                        output: 0
+                        cache_read: 0
+                        cache_write: 0
+```
+
 ## Adding a custom theme
 
 1. Create your theme YAML file:
