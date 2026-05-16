@@ -22,14 +22,22 @@ Scope:
 - Suggested validation: `castor test --filter Settings`.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/ai-03-home-settings-bootstrap-comment-preserving-writer
+Worktree: /home/ineersa/projects/agent-core-worktrees/ai-03-home-settings-bootstrap-comment-preserving-writer
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-16T22:30:47.734Z
 Completed:
 
 ## Work log
 - Created: 2026-05-16T22:01:55.475Z
+
+## Task workflow update - 2026-05-16T22:30:47.734Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/ai-03-home-settings-bootstrap-comment-preserving-writer.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/ai-03-home-settings-bootstrap-comment-preserving-writer.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/ai-03-home-settings-bootstrap-comment-preserving-writer.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/ai-03-home-settings-bootstrap-comment-preserving-writer.
+- Summary: Starting Batch B task AI-03 after AI-01 completion: home settings bootstrap and comment-preserving writer.
