@@ -23,14 +23,22 @@ Scope:
 - Suggested validation: `castor test --filter Runtime`; `castor deptrac`.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/ai-08-runtime-protocol-cli-model-reasoning
+Worktree: /home/ineersa/projects/agent-core-worktrees/ai-08-runtime-protocol-cli-model-reasoning
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-16T22:30:54.786Z
 Completed:
 
 ## Work log
 - Created: 2026-05-16T22:02:34.212Z
+
+## Task workflow update - 2026-05-16T22:30:54.786Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/ai-08-runtime-protocol-cli-model-reasoning.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/ai-08-runtime-protocol-cli-model-reasoning.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/ai-08-runtime-protocol-cli-model-reasoning.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/ai-08-runtime-protocol-cli-model-reasoning.
+- Summary: Starting Batch B task AI-08 after AI-01 completion: runtime protocol and CLI inputs for model/reasoning.
