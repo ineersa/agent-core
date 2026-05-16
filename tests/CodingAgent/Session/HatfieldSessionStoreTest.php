@@ -276,6 +276,49 @@ YAML);
         self::assertSame($explicitId, $meta['run_id'], 'run_id must equal session_id');
     }
 
+    public function testResolveSessionsBasePath(): void
+    {
+        $basePath = $this->store->resolveSessionsBasePath($this->tempDir);
+
+        self::assertSame($this->tempDir.'/.hatfield/sessions', $basePath);
+
+        // The resolved base path must match what createSession uses
+        $sessionId = $this->store->createSession($this->tempDir);
+        $expectedSessionDir = $basePath.'/'.$sessionId;
+        self::assertDirectoryExists($expectedSessionDir);
+    }
+
+    public function testResolveSessionsBasePathForDifferentProjects(): void
+    {
+        $tempDir2 = sys_get_temp_dir().'/hatfield-session-test-resolve-'.getmypid();
+        if (is_dir($tempDir2)) {
+            $this->rmDir($tempDir2);
+        }
+        mkdir($tempDir2, 0777, true);
+        mkdir($tempDir2.'/.hatfield', 0777, true);
+        mkdir($tempDir2.'/config', 0777, true);
+        file_put_contents($tempDir2.'/config/hatfield.defaults.yaml', "tui:\n    theme: cyberpunk\nsessions:\n    path: .hatfield/sessions\n");
+        file_put_contents($tempDir2.'/.hatfield/settings.yaml', '');
+
+        try {
+            $pathResolver2 = new SettingsPathResolver($tempDir2);
+            $loader2 = new AppConfigLoader($pathResolver2);
+            $resolver2 = new AppConfigResolver($loader2, $tempDir2);
+            $store2 = new HatfieldSessionStore($resolver2, $tempDir2);
+
+            $basePath1 = $this->store->resolveSessionsBasePath($this->tempDir);
+            $basePath2 = $store2->resolveSessionsBasePath($tempDir2);
+
+            self::assertNotSame($basePath1, $basePath2, 'Different projects must resolve different sessions base paths');
+            self::assertSame($this->tempDir.'/.hatfield/sessions', $basePath1);
+            self::assertSame($tempDir2.'/.hatfield/sessions', $basePath2);
+        } finally {
+            if (is_dir($tempDir2)) {
+                $this->rmDir($tempDir2);
+            }
+        }
+    }
+
     private function rmDir(string $dir): void
     {
         if (!is_dir($dir)) {

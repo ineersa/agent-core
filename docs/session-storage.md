@@ -248,6 +248,38 @@ php bin/console agent --prompt="Hello"
    `SessionRunStore::compareAndSwap()` and `SessionRunEventStore::append()`,
    creating `state.json` and `events.jsonl` entries.
 
+## Sessions base path resolution
+
+All stores must agree on the sessions base directory. This is resolved in
+layers:
+
+```text
+InteractiveMode::run()
+  │
+  ├─► HatfieldSessionStore::resolveSessionsBasePath(cwd)
+  │     ├─ Uses AppConfigResolver::resolve(cwd) to load Hatfield settings
+  │     ├─ Reads sessions.path from config (defaults to .hatfield/sessions)
+  │     └─ Returns absolute path (resolved relative to project cwd)
+  │
+  ├─► AgentSessionClient::initializeSessionsBasePath(path)
+  │     ├─ InProcessAgentSessionClient: delegates to SessionRunStore::setSessionsBasePath()
+  │     │   and SessionRunEventStore::setSessionsBasePath()
+  │     └─ JsonlProcessAgentSessionClient: no-op (TODO: pass via subprocess env)
+  │
+  └─ Now all stores (HatfieldSessionStore, SessionRunStore, SessionRunEventStore)
+     read/write from the same resolved sessions base directory.
+```
+
+**Default behavior:** When no `sessions.path` is configured in Hatfield
+settings, both `HatfieldSessionStore` and the AgentCore stores default to
+`<projectCwd>/.hatfield/sessions`.
+
+**PHAR distribution:** The AgentCore stores default to
+`%kernel.project_dir%/.hatfield/sessions` at construction time, but
+`initializeSessionsBasePath()` overrides this before any run operations
+begin, ensuring sessions are stored under the user's project directory
+regardless of where the PHAR binary was extracted.
+
 ## Concurrency and locking
 
 All writes to session files are protected by Symfony Lock with `FlockStore`:

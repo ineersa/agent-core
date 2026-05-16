@@ -247,6 +247,22 @@ final class HatfieldSessionStore
 
     /**
      * Resolve the sessions base directory from Hatfield config.
+     *
+     * Public so the runtime layer can communicate the resolved path
+     * to AgentCore stores, ensuring all stores agree on the same
+     * session directory for a given run.
+     *
+     * @param string $projectCwd The active project working directory
+     *
+     * @return string Absolute path to the sessions base directory
+     */
+    public function resolveSessionsBasePath(string $projectCwd): string
+    {
+        return $this->getSessionsDir($projectCwd);
+    }
+
+    /**
+     * Resolve the sessions base directory from Hatfield config.
      */
     private function getSessionsDir(string $projectCwd): string
     {

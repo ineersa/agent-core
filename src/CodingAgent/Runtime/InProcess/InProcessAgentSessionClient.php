@@ -8,6 +8,8 @@ use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
+use Ineersa\AgentCore\Infrastructure\Storage\SessionRunEventStore;
+use Ineersa\AgentCore\Infrastructure\Storage\SessionRunStore;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
@@ -24,12 +26,13 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
  * This is the default transport during development. It must stay
  * behaviorally equivalent to JsonlProcessAgentSessionClient.
  */
-final readonly class InProcessAgentSessionClient implements AgentSessionClient
+final class InProcessAgentSessionClient implements AgentSessionClient
 {
     public function __construct(
-        private AgentRunnerInterface $runner,
-        private EventStoreInterface $eventStore,
-        private RuntimeEventMapper $mapper,
+        private readonly AgentRunnerInterface $runner,
+        private readonly EventStoreInterface $eventStore,
+        private readonly RuntimeEventMapper $mapper,
+        private readonly SessionRunStore $runStore,
     ) {
     }
 
@@ -91,5 +94,14 @@ final readonly class InProcessAgentSessionClient implements AgentSessionClient
     public function cancel(string $runId): void
     {
         $this->runner->cancel($runId);
+    }
+
+    public function initializeSessionsBasePath(string $sessionsBasePath): void
+    {
+        $this->runStore->setSessionsBasePath($sessionsBasePath);
+
+        if ($this->eventStore instanceof SessionRunEventStore) {
+            $this->eventStore->setSessionsBasePath($sessionsBasePath);
+        }
     }
 }

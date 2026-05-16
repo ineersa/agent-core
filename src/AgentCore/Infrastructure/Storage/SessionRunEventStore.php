@@ -22,15 +22,29 @@ use Symfony\Component\Lock\Store\FlockStore;
  * Directory name is canonical; embedded runId in each event
  * must match. Mismatches throw on read.
  */
-final readonly class SessionRunEventStore implements EventStoreInterface
+final class SessionRunEventStore implements EventStoreInterface
 {
     private readonly LockFactory $lockFactory;
+    private string $sessionsBasePath;
 
     public function __construct(
-        private string $projectDir,
-        private EventPayloadNormalizer $eventPayloadNormalizer = new EventPayloadNormalizer(),
+        string $projectDir,
+        private readonly EventPayloadNormalizer $eventPayloadNormalizer = new EventPayloadNormalizer(),
     ) {
         $this->lockFactory = new LockFactory(new FlockStore());
+        $this->sessionsBasePath = $projectDir.'/.hatfield/sessions';
+    }
+
+    /**
+     * Set the sessions base directory.
+     *
+     * Called by the CodingAgent runtime layer before any run operations
+     * to ensure the store writes to the active project cwd, not the app
+     * install root. Required for PHAR distribution.
+     */
+    public function setSessionsBasePath(string $path): void
+    {
+        $this->sessionsBasePath = $path;
     }
 
     public function append(RunEvent $event): void
@@ -115,7 +129,7 @@ final readonly class SessionRunEventStore implements EventStoreInterface
 
     private function sessionsDir(): string
     {
-        return $this->projectDir.'/.hatfield/sessions';
+        return $this->sessionsBasePath;
     }
 
     private function eventsPath(string $runId): string
