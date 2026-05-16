@@ -175,6 +175,193 @@ YAML
         self::assertStringContainsString('.hatfield/sessions', (string) $config->sessions['path']);
     }
 
+    // ── overlayConfig() unit tests (no file I/O) ──────────────────────────
+
+    public function testOverlayConfigScalarOverride(): void
+    {
+        $base = ['theme' => 'cyberpunk', 'version' => 1];
+        $over = ['theme' => 'nord'];
+
+        $result = $this->loader->overlayConfig($base, $over);
+
+        self::assertSame('nord', $result['theme']);
+        self::assertSame(1, $result['version']);
+    }
+
+    public function testOverlayConfigScalarWinsNotArray(): void
+    {
+        // This is the core reason array_merge_recursive() is unsuitable:
+        // scalar overrides must win, not become an array of two values.
+        $base = ['theme' => 'cyberpunk'];
+        $over = ['theme' => 'nord'];
+
+        $result = $this->loader->overlayConfig($base, $over);
+
+        self::assertIsString($result['theme']);
+        self::assertSame('nord', $result['theme']);
+    }
+
+    public function testOverlayConfigNestedAssociativeDeepOverlay(): void
+    {
+        $base = [
+            'tui' => [
+                'theme' => 'cyberpunk',
+                'options' => [
+                    'animations' => true,
+                    'fps' => 60,
+                ],
+            ],
+        ];
+
+        $over = [
+            'tui' => [
+                'theme' => 'nord',
+                'options' => [
+                    'fps' => 30,
+                ],
+            ],
+        ];
+
+        $result = $this->loader->overlayConfig($base, $over);
+
+        self::assertSame('nord', $result['tui']['theme']);
+        // Deeper associative key not touched by overlay survives
+        self::assertTrue($result['tui']['options']['animations']);
+        // Deeper associative key in overlay replaces base value
+        self::assertSame(30, $result['tui']['options']['fps']);
+    }
+
+    public function testOverlayConfigListReplacesEntirely(): void
+    {
+        $base = ['paths' => ['/default/a', '/default/b', '/default/c']];
+        $over = ['paths' => ['/project/x']];
+
+        $result = $this->loader->overlayConfig($base, $over);
+
+        self::assertCount(1, $result['paths']);
+        self::assertSame('/project/x', $result['paths'][0]);
+    }
+
+    public function testOverlayConfigListDoesNotIndexMerge(): void
+    {
+        // array_replace_recursive() would do index-based partial replacement
+        // where $base[0] gets replaced but $base[1] survives. Our overlay
+        // must replace the whole list.
+        $base = ['items' => ['A', 'B', 'C']];
+        $over = ['items' => ['X']];
+
+        $result = $this->loader->overlayConfig($base, $over);
+
+        self::assertSame(['X'], $result['items']);
+    }
+
+    public function testOverlayConfigNullOverridesValue(): void
+    {
+        $base = ['key' => 'present'];
+        $over = ['key' => null];
+
+        $result = $this->loader->overlayConfig($base, $over);
+
+        self::assertNull($result['key']);
+    }
+
+    public function testOverlayConfigNewKeyAdded(): void
+    {
+        $base = ['existing' => true];
+        $over = ['new_key' => 'added'];
+
+        $result = $this->loader->overlayConfig($base, $over);
+
+        self::assertTrue($result['existing']);
+        self::assertSame('added', $result['new_key']);
+    }
+
+    public function testOverlayConfigBoolOverride(): void
+    {
+        $base = ['enabled' => false];
+        $over = ['enabled' => true];
+
+        $result = $this->loader->overlayConfig($base, $over);
+
+        self::assertTrue($result['enabled']);
+    }
+
+    public function testOverlayConfigIntOverride(): void
+    {
+        $base = ['limit' => 100];
+        $over = ['limit' => 50];
+
+        $result = $this->loader->overlayConfig($base, $over);
+
+        self::assertSame(50, $result['limit']);
+    }
+
+    public function testOverlayConfigMixedTypeOverride(): void
+    {
+        // Higher layer can change the type of a key completely.
+        $base = ['key' => 'string'];
+        $over = ['key' => ['nested' => 'value']];
+
+        $result = $this->loader->overlayConfig($base, $over);
+
+        self::assertIsArray($result['key']);
+        self::assertSame('value', $result['key']['nested']);
+    }
+
+    // ── Integration-style tests via load() ─────────────────────────────────
+
+    public function testDeepNestedMergePreservesUnchangedDeepKeys(): void
+    {
+        $projectCwd = $this->tmpDir.'/project';
+        mkdir($projectCwd, 0755, true);
+        mkdir($projectCwd.'/.hatfield', 0755, true);
+
+        // Project overrides only tui.theme — tui.theme_paths from defaults survive
+        file_put_contents($projectCwd.'/.hatfield/settings.yaml', <<<'YAML'
+tui:
+    theme: gruvbox-dark
+YAML
+        );
+
+        $config = $this->loader->load($this->defaultsPath, $projectCwd);
+
+        self::assertSame('gruvbox-dark', $config->tui->theme);
+        self::assertNotEmpty($config->tui->themePaths);
+        self::assertContains('/app/config/themes', $config->tui->themePaths);
+    }
+
+    public function testHomeThenProjectLayeredOverlay(): void
+    {
+        $projectCwd = $this->tmpDir.'/project';
+        mkdir($projectCwd, 0755, true);
+        mkdir($projectCwd.'/.hatfield', 0755, true);
+
+        // Home overrides theme, adds custom list
+        file_put_contents($this->homeDir.'/.hatfield/settings.yaml', <<<'YAML'
+tui:
+    theme: home-theme
+    theme_paths:
+        - '/home/custom'
+YAML
+        );
+
+        // Project only overrides theme again — leaves home's theme_paths in place
+        file_put_contents($projectCwd.'/.hatfield/settings.yaml', <<<'YAML'
+tui:
+    theme: project-theme
+YAML
+        );
+
+        $config = $this->loader->load($this->defaultsPath, $projectCwd);
+
+        // Project scalar wins
+        self::assertSame('project-theme', $config->tui->theme);
+        // Home's list replaced defaults; project didn't touch list, so home's list survives
+        self::assertCount(1, $config->tui->themePaths);
+        self::assertContains('/home/custom', $config->tui->themePaths);
+        self::assertNotContains('/app/config/themes', $config->tui->themePaths);
+    }
+
     private function removeDir(string $dir): void
     {
         if (!is_dir($dir)) {
