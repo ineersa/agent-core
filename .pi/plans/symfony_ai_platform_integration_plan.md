@@ -137,7 +137,7 @@ ai:
             completions_path: /chat/completions
             supports_completions: true
             supports_embeddings: false
-            compat:
+            compatibility:
                 supports_developer_role: false
                 supports_reasoning_effort: false
                 thinking_format: zai
@@ -155,7 +155,7 @@ ai:
                         medium: enabled
                         high: enabled
                         xhigh: enabled
-                    compat:
+                    compatibility:
                         zai_tool_stream: true
                     cost:
                         input: 0
@@ -175,7 +175,7 @@ ai:
                         medium: enabled
                         high: enabled
                         xhigh: enabled
-                    compat:
+                    compatibility:
                         zai_tool_stream: true
                     cost:
                         input: 0
@@ -210,7 +210,7 @@ Example service responsibility:
 interface ReasoningOptionsResolver
 {
     /** @return array<string, mixed> */
-    public function optionsFor(AiModelRef $model, string $reasoningLevel): array;
+    public function optionsFor(AiModelReference $model, string $reasoningLevel): array;
 }
 ```
 
@@ -219,8 +219,8 @@ For first pass, the resolver should:
 - Return `[]` for `off` or non-reasoning models.
 - Use the model's `thinking_level_map` to translate `minimal|low|medium|high|xhigh` into provider values.
 - Map the translated value to provider options only where we have confirmed semantics; otherwise omit it.
-- For `compat.thinking_format: zai`, send `enable_thinking: true` for any mapped non-off value and never send OpenAI-style `reasoning_effort`.
-- If `compat.supports_reasoning_effort: false`, do not send `reasoning_effort` even when the model has `reasoning: true`.
+- For `compatibility.thinking_format: zai`, send `enable_thinking: true` for any mapped non-off value and never send OpenAI-style `reasoning_effort`.
+- If `compatibility.supports_reasoning_effort: false`, do not send `reasoning_effort` even when the model has `reasoning: true`.
 - Never assume Symfony bridge catalogs know the current model's reasoning support or token limits.
 
 ## New application services / DTOs
@@ -241,7 +241,7 @@ Add under `src/CodingAgent/Config/Ai/` or similar:
   - `string $api` (`openai-completions` initially)
   - `?string $apiKey`
   - provider-specific paths/options
-  - `?AiCompat $compat`
+  - `?AiCompatibility $compatibility`
   - `array<string, AiModelDefinition> $models`
 - `AiModelDefinition`
   - `string $id`
@@ -252,15 +252,15 @@ Add under `src/CodingAgent/Config/Ai/` or similar:
   - `bool $toolCalling`
   - `bool $reasoning`
   - `array<string, string|null> $thinkingLevelMap`
-  - `?AiCompat $compat`
+  - `?AiCompatibility $compatibility`
   - `?AiCost $cost`
-- `AiCompat`
+- `AiCompatibility`
   - `?bool $supportsDeveloperRole`
   - `?bool $supportsReasoningEffort`
   - `?string $thinkingFormat` (`zai` initially)
   - `?bool $zaiToolStream`
   - Keep this intentionally small and explicit; it documents provider/model transport quirks we actually consume.
-- `AiModelRef`
+- `AiModelReference`
   - `string $providerId`
   - `string $modelName`
   - parse/format `provider/model`
@@ -330,23 +330,23 @@ Our catalog is an application-level model registry, similar in spirit to Pi's `m
 - tool-calling support,
 - reasoning support,
 - thinking/reasoning level map,
-- provider/model compat quirks that affect request shaping or stream parsing,
+- provider/model compatibility quirks that affect request shaping or stream parsing,
 - Symfony capability projection.
 
 Symfony model catalogs should be generated views over this registry. Their role is only to satisfy Symfony Platform routing and model construction.
 
-### Compat metadata
+### Compatibility metadata
 
-We need a small compat layer for providers that are OpenAI chat-completions-style but not actually OpenAI-compatible in every detail. This is internal Hatfield metadata, not something Symfony's generic bridge understands by itself.
+We need a small compatibility layer for providers that are OpenAI chat-completions-style but not actually OpenAI-compatible in every detail. This is internal Hatfield metadata, not something Symfony's generic bridge understands by itself.
 
-Initial supported compat keys:
+Initial supported compatibility keys:
 
 - `supports_developer_role: false` — do not emit OpenAI `developer` role; use system/user/assistant/tool roles only.
 - `supports_reasoning_effort: false` — do not send `reasoning_effort`.
 - `thinking_format: zai` — z.ai uses `enable_thinking: boolean` instead of OpenAI reasoning effort.
 - `zai_tool_stream: true|false` — model-level note for z.ai streaming tool-call behavior.
 
-The option/message mapping layer should consume compat metadata and produce final Symfony invocation options/messages. Do not rely on Symfony bridge model catalogs for these quirks.
+The option/message mapping layer should consume compatibility metadata and produce final Symfony invocation options/messages. Do not rely on Symfony bridge model catalogs for these quirks.
 
 ### Model availability policy
 
@@ -408,10 +408,10 @@ final class ProjectedSymfonyModelCatalog extends AbstractModelCatalog
 Create `ModelSelectionService` with these responsibilities:
 
 ```php
-resolveInitialModel(string $cwd, string $sessionId = '', ?string $explicit = null): AiModelRef
-getCurrentModel(string $cwd, string $sessionId): AiModelRef
-changeModel(string $cwd, string $sessionId, AiModelRef $model): void
-getAvailableModels(): list<AiModelRef>
+resolveInitialModel(string $cwd, string $sessionId = '', ?string $explicit = null): AiModelReference
+getCurrentModel(string $cwd, string $sessionId): AiModelReference
+changeModel(string $cwd, string $sessionId, AiModelReference $model): void
+getAvailableModels(): list<AiModelReference>
 ```
 
 Resolution order:
@@ -510,7 +510,7 @@ new StartRunInput(
 Use the existing Symfony AI `ModelRoutingEvent` path. Implement a production `ModelResolverInterface` that:
 
 1. Reads current model/reasoning from session metadata using `ModelInvocationInput::$runId`.
-2. Parses `provider/model` into `AiModelRef`.
+2. Parses `provider/model` into `AiModelReference`.
 3. Returns raw model name plus options merged with reasoning options.
 4. Also communicates selected provider to routing.
 
@@ -702,12 +702,12 @@ Keep focused unit tests for pure configuration/model-registry behavior:
 
 - Config parsing/merge for `ai` section.
 - Secret resolver (`env:VAR`, null, plain values).
-- `AiModelRef` parsing/formatting.
-- Hatfield model catalog parses rich model metadata: context window, max tokens, cost, input modalities, tool-calling, reasoning, thinking-level map, and compat metadata.
+- `AiModelReference` parsing/formatting.
+- Hatfield model catalog parses rich model metadata: context window, max tokens, cost, input modalities, tool-calling, reasoning, thinking-level map, and compatibility metadata.
 - Projected Symfony catalog supports only configured models for every provider.
 - Model/favorite selection priority: explicit > session > settings > first available.
 - Reasoning selection priority mirrors model selection.
-- z.ai compat mapping sends `enable_thinking` for non-off reasoning and never sends `reasoning_effort`.
+- z.ai compatibility mapping sends `enable_thinking` for non-off reasoning and never sends `reasoning_effort`.
 
 Full default validation:
 
@@ -735,7 +735,7 @@ AI-01 Settings schema/docs
   ├─ AI-02 Catalog DTOs and parser
   │   ├─ AI-04 Symfony catalog projector
   │   │   └─ AI-05 Configured generic provider platform
-  │   ├─ AI-06 Reasoning/compat option resolver
+  │   ├─ AI-06 Reasoning/compatibility option resolver
   │   │   └─ AI-09 z.ai request-shaping integration
   │   └─ AI-07 Model selection service
   │       └─ AI-10 AgentCore per-turn model routing
@@ -776,7 +776,7 @@ Scope:
   - `llama_cpp/flash`
   - `zai/glm-5.1`
   - `zai/glm-5v-turbo`
-- Include z.ai compat notes: no developer role, no reasoning effort, `thinking_format: zai`, `zai_tool_stream` on supported models.
+- Include z.ai compatibility notes: no developer role, no reasoning effort, `thinking_format: zai`, `zai_tool_stream` on supported models.
 
 Acceptance:
 
@@ -801,20 +801,20 @@ Scope:
   - `AiProviderConfig`
   - `AiModelDefinition`
   - `AiCost`
-  - `AiCompat`
-  - `AiModelRef`
+  - `AiCompatibility`
+  - `AiModelReference`
 - Extend `AppConfig::fromArray()` to parse `ai` while preserving unknown/raw settings.
 - Implement `HatfieldModelCatalog` with methods roughly equivalent to:
   - `getProvider(string $id): ?AiProviderConfig`
-  - `getModel(AiModelRef|string $ref): ?AiModelDefinition`
-  - `requireModel(AiModelRef|string $ref): AiModelDefinition`
-  - `allModels(): list<AiModelRef>`
-  - `isAvailable(AiModelRef|string $ref): bool` for configured/enabled/listed models only.
+  - `getModel(AiModelReference|string $ref): ?AiModelDefinition`
+  - `requireModel(AiModelReference|string $ref): AiModelDefinition`
+  - `allModels(): list<AiModelReference>`
+  - `isAvailable(AiModelReference|string $ref): bool` for configured/enabled/listed models only.
 - Explicit-only behavior: unknown model names are rejected for every provider, including llama.cpp.
 
 Acceptance:
 
-- Rich model metadata parses: context window, max tokens, input modalities, tool-calling, reasoning, thinking map, cost, compat.
+- Rich model metadata parses: context window, max tokens, input modalities, tool-calling, reasoning, thinking map, cost, compatibility.
 - `provider/model` parsing rejects malformed values and unknown providers/models.
 - llama.cpp only exposes listed models such as `llama_cpp/flash`.
 
@@ -908,18 +908,18 @@ castor test --filter Platform
 castor deptrac
 ```
 
-### AI-06 — Implement reasoning and compat option resolver
+### AI-06 — Implement reasoning and compatibility option resolver
 
 Goal: convert global reasoning level + model metadata into provider invocation options.
 
 Scope:
 
 - Implement `ReasoningOptionsResolver`.
-- Inputs: `AiModelRef`, user-facing level `off|minimal|low|medium|high|xhigh`.
+- Inputs: `AiModelReference`, user-facing level `off|minimal|low|medium|high|xhigh`.
 - Behavior:
   - return `[]` for `off`, non-reasoning models, missing map, or null map value;
   - use `thinking_level_map` for model-specific translation;
-  - for `compat.thinking_format: zai`, emit `enable_thinking: true` for mapped non-off levels;
+  - for `compatibility.thinking_format: zai`, emit `enable_thinking: true` for mapped non-off levels;
   - for `supports_reasoning_effort: false`, never emit `reasoning_effort`;
   - leave room for future OpenAI-style mappings but do not invent unsupported semantics.
 
@@ -991,14 +991,14 @@ castor test --filter Runtime
 castor deptrac
 ```
 
-### AI-09 — Apply compat-aware message/options shaping before provider invocation
+### AI-09 — Apply compatibility-aware message/options shaping before provider invocation
 
-Goal: ensure generic providers receive provider-specific request shapes without scattering compat checks.
+Goal: ensure generic providers receive provider-specific request shapes without scattering compatibility checks.
 
 Scope:
 
 - Integrate `ReasoningOptionsResolver` into the existing pre-provider hook/subscriber path.
-- Add a focused mapper for provider/model compat quirks.
+- Add a focused mapper for provider/model compatibility quirks.
 - z.ai behavior:
   - no OpenAI `developer` role if `supports_developer_role: false`,
   - send `enable_thinking` for non-off reasoning,
@@ -1169,7 +1169,7 @@ Resolved:
 - z.ai provider ID should be `zai`, base URL `https://api.z.ai/api/coding/paas/v4`, env key `ZAI_API_KEY`, and default candidate model `glm-5.1`.
 - z.ai direct-provider models are explicit catalog entries. Pi currently knows `glm-4.5-air`, `glm-4.7`, `glm-5-turbo`, `glm-5.1`, and `glm-5v-turbo`; seed only the models we intend to expose first and expand later.
 - z.ai reasoning is binary from our perspective: map any non-off thinking level through `thinking_level_map` to an enabled value and send `enable_thinking`, not `reasoning_effort`.
-- z.ai requires explicit compat metadata for OpenAI-different behavior: no developer role, no reasoning effort, `thinking_format: zai`, and model-level `zai_tool_stream`.
+- z.ai requires explicit compatibility metadata for OpenAI-different behavior: no developer role, no reasoning effort, `thinking_format: zai`, and model-level `zai_tool_stream`.
 - llama.cpp `flash` metadata comes from the provided Pi config: 200k context, 65,536 max tokens, text+image input, zero cost, and tool-calling enabled.
 - DeepSeek should use the generic chat-completions provider, not the Symfony DeepSeek bridge.
 - Reasoning level is global user/session state; model-specific maps translate it to provider values.

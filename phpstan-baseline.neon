@@ -1235,3 +1235,214 @@ parameters:
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/Tui/Widget/TuiRenderContext.php
+
+		# Temporary AI-02 catalog DTO/API baselines. Remove as AI-04/AI-07/AI-10 consume these APIs.
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCompatibility\:\:\$supportsDeveloperRole is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiCompatibility.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCompatibility\:\:\$supportsReasoningEffort is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiCompatibility.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCompatibility\:\:\$thinkingFormat is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiCompatibility.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCompatibility\:\:\$zaiToolStream is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiCompatibility.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiConfig\:\:\$defaultReasoning is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiConfig.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCost\:\:\$cacheRead is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiCost.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCost\:\:\$cacheWrite is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiCost.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCost\:\:\$input is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiCost.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCost\:\:\$output is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiCost.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$compatibility is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$contextWindow is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$cost is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$id is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$input is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$maxTokens is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$name is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$reasoning is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$thinkingLevelMap is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$toolCalling is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\Ai\\AiModelReference\:\:parse$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiModelReference.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$api is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$apiKey is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$baseUrl is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$compatibility is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$completionsPath is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$embeddingsPath is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$supportsCompletions is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$supportsEmbeddings is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$type is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\Ai\\HatfieldModelCatalog\:\:config$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Config/Ai/HatfieldModelCatalog.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\Ai\\HatfieldModelCatalog\:\:defaultModelReference$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Config/Ai/HatfieldModelCatalog.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\Ai\\HatfieldModelCatalog\:\:firstAvailableModel$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Config/Ai/HatfieldModelCatalog.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\Ai\\HatfieldModelCatalog\:\:isAvailable$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Config/Ai/HatfieldModelCatalog.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\Ai\\HatfieldModelCatalog\:\:requireModel$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Config/Ai/HatfieldModelCatalog.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\AppConfig\:\:\$ai is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/AppConfig.php
