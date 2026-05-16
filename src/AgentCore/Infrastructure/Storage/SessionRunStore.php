@@ -21,15 +21,29 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
  * Directory name is canonical; the embedded runId inside state.json
  * is validated on read. Mismatches cause runtime errors.
  */
-final readonly class SessionRunStore implements RunStoreInterface
+final class SessionRunStore implements RunStoreInterface
 {
     private readonly LockFactory $lockFactory;
+    private string $sessionsBasePath;
 
     public function __construct(
-        private string $projectDir,
-        private NormalizerInterface&DenormalizerInterface $serializer,
+        string $projectDir,
+        private readonly NormalizerInterface&DenormalizerInterface $serializer,
     ) {
         $this->lockFactory = new LockFactory(new FlockStore());
+        $this->sessionsBasePath = $projectDir.'/.hatfield/sessions';
+    }
+
+    /**
+     * Set the sessions base directory.
+     *
+     * Called by the CodingAgent runtime layer before any run operations
+     * to ensure the store writes to the active project cwd, not the app
+     * install root. Required for PHAR distribution.
+     */
+    public function setSessionsBasePath(string $path): void
+    {
+        $this->sessionsBasePath = $path;
     }
 
     public function get(string $runId): ?RunState
@@ -144,7 +158,7 @@ final readonly class SessionRunStore implements RunStoreInterface
 
     private function sessionsDir(): string
     {
-        return $this->projectDir.'/.hatfield/sessions';
+        return $this->sessionsBasePath;
     }
 
     private function statePath(string $runId): string

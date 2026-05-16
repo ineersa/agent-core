@@ -68,6 +68,10 @@ final readonly class InteractiveMode
         $cwd = '' !== $projectCwd ? $projectCwd : (getcwd() ?: $this->sessionStore->getProjectDir());
         $theme = $this->themeFactory->create($cwd, $theme);
 
+        // ── Configure storage to use active project cwd ──
+        $sessionsBasePath = $this->sessionStore->resolveSessionsBasePath($cwd);
+        $client->initializeSessionsBasePath($sessionsBasePath);
+
         // ── Initialize session ──
         $state = $this->sessionInit->initialize($cwd, $sessionId, $request);
         $state->transcript = $this->sessionInit->buildInitialTranscript($state);

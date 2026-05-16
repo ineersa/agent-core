@@ -169,6 +169,16 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->writeCommand($cmd);
     }
 
+    public function initializeSessionsBasePath(string $sessionsBasePath): void
+    {
+        // For process transport, the headless subprocess resolves its own
+        // sessions path from its kernel.project_dir. The cwd/sessions-path
+        // should be passed through process environment or spawn args.
+        //
+        // TODO: Pass cwd/sessions-path through process environment/spawn args
+        //       so the subprocess stores sessions in the user project directory.
+    }
+
     private function ensureProcessRunning(): void
     {
         if (null !== $this->process && $this->process->isRunning()) {
