@@ -22,12 +22,12 @@ Scope:
 - Suggested validation: `castor test --filter Ai`; `castor phpstan`.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/ai-02-ai-config-dtos-hatfield-model-catalog
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-02-ai-config-dtos-hatfield-model-catalog
 Fork run: 4s33fnreimt8
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/9
+PR Status: open
 Started: 2026-05-16T22:30:38.613Z
 Completed:
 
@@ -49,3 +49,11 @@ Completed:
 ## Task workflow update - 2026-05-16T22:46:28.739Z
 - Validation: AI-02 worktree: focused new tests passed: AiModelRefTest 10 tests/22 assertions; AiConfigTest 14 tests/81 assertions; HatfieldModelCatalogTest 18 tests/45 assertions.; AI-02 worktree: existing config/session tests passed: 47 tests, 115 assertions.; AI-02 worktree: `castor test` passed: 276 tests, 7921 assertions, 1 PHPUnit notice.; AI-02 worktree: `castor deptrac` passed: 0 violations, 66 uncovered, 323 allowed.; AI-02 worktree: initial `castor phpstan` reported 35 expected dead-code findings for new catalog/DTO APIs that downstream tasks will consume; added temporary baselines in phpstan-baseline.neon.; AI-02 worktree: `castor phpstan` passed after baseline update.; AI-02 worktree: `castor cs-fix` applied formatting to new AI config classes.; AI-02 worktree: full `castor check` passed.
 - Summary: AI-02 implementation complete. Worktree has commits ea8410dc (AI config DTOs/catalog implementation) and 31813e32 (CS-fixer formatting plus temporary PHPStan baselines for DTO/catalog APIs until downstream AI-04/AI-07/AI-10 consumers land). Added typed AI config DTOs, AppConfig ai parsing, and HatfieldModelCatalog with explicit-only model lookup.
+
+## Task workflow update - 2026-05-16T22:46:50.877Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/ai-02-ai-config-dtos-hatfield-model-catalog to origin.
+- branch 'task/ai-02-ai-config-dtos-hatfield-model-catalog' set up to track 'origin/task/ai-02-ai-config-dtos-hatfield-model-catalog'.
+- Created PR: https://github.com/ineersa/agent-core/pull/9
+- Validation: Focused AI config/catalog tests passed: AiModelRefTest 10 tests/22 assertions; AiConfigTest 14 tests/81 assertions; HatfieldModelCatalogTest 18 tests/45 assertions.; Existing config/session tests passed: 47 tests, 115 assertions.; `castor test` passed: 276 tests, 7921 assertions, 1 PHPUnit notice.; `castor deptrac` passed: 0 violations.; `castor phpstan` passed after temporary baselines for AI catalog DTO/API members that downstream tasks will consume.; `castor cs-fix` applied formatting; full `castor check` passed.
+- Summary: AI-02 ready for review. Added typed AI config DTOs, AppConfig ai parsing, and HatfieldModelCatalog with explicit-only model lookup. Branch includes implementation commit ea8410dc and cleanup/baseline commit 31813e32.
