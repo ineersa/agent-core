@@ -5,46 +5,41 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Config;
 
 /**
- * Writes targeted scalar values into the home settings YAML file
- * without destroying hand-written comments or unrelated keys.
+ * Persists home AI defaults (currently default_model and default_reasoning)
+ * into ~/.hatfield/settings.yaml while preserving comments and unrelated keys.
  *
- * This service uses a line-based text replacement strategy instead
- * of a Yaml::parse() / Yaml::dump() round-trip, which would strip
- * all comments.
+ * Uses line-based text replacement so hand-written YAML comments survive.
+ * A Yaml::parse() / Yaml::dump() round-trip would strip all comments.
  *
- * Limitations:
- *  - Only scalar (string/number/boolean) values at supported key paths.
- *  - Handles both block-style (indented) and inline flow-style YAML.
- *  - When the key does not exist, it inserts after the nearest ancestor.
- *  - When the key is commented out, it uncomments and replaces.
- *  - Deeply nested map/list insertion is not supported; the immediate
- *    ancestor mapping must already exist.
+ * For now, exactly two keys are supported:
+ *  - ai.default_model
+ *  - ai.default_reasoning
  *
- * Supported key paths (as of AI-03):
- *  - ['ai', 'default_model']
- *  - ['ai', 'default_reasoning']
- *
- * Fallback behaviour:
- *  - If the file does not exist, a {@see \RuntimeException} is thrown
- *    (callers should bootstrap first).
- *  - If insertion would require creating a parent section, the method
- *    falls back to appending the key path to the end of the file.
+ * If the ai: section is absent, it is appended at the end of the file.
  */
 final class HomeSettingsWriter
 {
+    public function writeDefaultModel(string $filePath, string $model): void
+    {
+        $this->writeAiKey($filePath, 'default_model', $model);
+    }
+
+    public function writeDefaultReasoning(string $filePath, string $reasoning): void
+    {
+        $this->writeAiKey($filePath, 'default_reasoning', $reasoning);
+    }
+
     /**
-     * Write a scalar value at a YAML key path.
-     *
-     * @param string       $filePath Absolute path to the YAML file
-     * @param list<string> $keyPath  Top-down key segments (e.g. ['ai', 'default_model'])
-     * @param string       $value    New scalar value (will be YAML-quoted if needed)
-     *
-     * @throws \RuntimeException if the file does not exist or is not writable
+     * @throws \RuntimeException if the file does not exist, is not readable, or is not writable
      */
-    public function writeScalar(string $filePath, array $keyPath, string $value): void
+    private function writeAiKey(string $filePath, string $key, string $value): void
     {
         if (!file_exists($filePath)) {
             throw new \RuntimeException("Home settings file does not exist: {$filePath}");
+        }
+
+        if (!is_readable($filePath)) {
+            throw new \RuntimeException("Home settings file is not readable: {$filePath}");
         }
 
         if (!is_writable($filePath)) {
@@ -66,7 +61,7 @@ final class HomeSettingsWriter
 
         $lines = explode("\n", $content);
 
-        $newLines = $this->replaceOrInsert($lines, $keyPath, $value);
+        $newLines = $this->replaceOrInsertAiKey($lines, $key, $value);
 
         $result = implode($originalEol, $newLines);
 
@@ -76,49 +71,38 @@ final class HomeSettingsWriter
     }
 
     /**
-     * @param list<string> $lines
-     * @param list<string> $keyPath
+     * @param list<string> $lines (normalized \n line endings)
+     * @param string       $key   Key name under ai: (e.g. "default_model")
+     * @param string       $value New scalar YAML value
      *
      * @return list<string>
      */
-    private function replaceOrInsert(array $lines, array $keyPath, string $value): array
+    private function replaceOrInsertAiKey(array $lines, string $key, string $value): array
     {
-        // Find all top-level key positions (non-commented, zero-indent)
-        $sectionPositions = $this->findTopLevelSections($lines);
+        // Locate the top-level ai: section
+        $aiLine = $this->findTopLevelKey($lines, 'ai');
 
-        $targetSection = $keyPath[0];
-
-        if (!isset($sectionPositions[$targetSection])) {
-            // Section does not exist — append at end of file
-            return $this->appendNewSection($lines, $keyPath, $value);
+        if (null === $aiLine) {
+            return $this->appendAiSection($lines, $key, $value);
         }
 
-        $sectionStart = $sectionPositions[$targetSection];
+        // Find the end of the ai: section (next top-level key, or EOF)
+        $sectionEnd = $this->findSectionEnd($lines, $aiLine);
 
-        // Determine the end of this section (next top-level key, or EOF)
-        $sectionEnd = \count($lines);
-        foreach ($sectionPositions as $pos) {
-            if ($pos > $sectionStart) {
-                $sectionEnd = $pos;
-                break;
-            }
-        }
+        // Detect indentation of entries within the ai: section
+        $indent = $this->detectIndent($lines, $aiLine + 1, $sectionEnd);
 
-        // Detect indentation level of entries within this section
-        $indent = $this->detectSectionIndent($lines, $sectionStart + 1, $sectionEnd);
-
-        // Try to find the target key within the section
-        $targetKey = $keyPath[1] ?? '';
-        $keyLine = $this->findKeyInSection($lines, $sectionStart + 1, $sectionEnd, $indent, $targetKey);
+        // Try to find the key within the ai: section (active or commented)
+        $keyLine = $this->findKeyInSection($lines, $aiLine + 1, $sectionEnd, $indent, $key);
 
         if (null !== $keyLine) {
-            // Key exists (active or commented) — replace in place
-            $lines[$keyLine] = $this->replaceValueOnLine($lines[$keyLine], $targetKey, $indent, $value);
+            // Key exists — replace in place (uncommenting if needed)
+            $lines[$keyLine] = $this->replaceKeyLine($lines[$keyLine], $key, $indent, $value);
         } else {
-            // Key does not exist — insert after the first active entry
-            $insertAt = $sectionStart + 1;
+            // Key not present — insert after the first active entry in the section
+            $insertAt = $aiLine + 1;
 
-            for ($i = $sectionStart + 1; $i < $sectionEnd; ++$i) {
+            for ($i = $aiLine + 1; $i < $sectionEnd; ++$i) {
                 $trimmed = ltrim($lines[$i]);
 
                 if ('' !== $trimmed && !str_starts_with($trimmed, '#')) {
@@ -127,7 +111,7 @@ final class HomeSettingsWriter
                 }
             }
 
-            $newLine = str_repeat(' ', $indent).$targetKey.': '.$this->yamlValue($value);
+            $newLine = str_repeat(' ', $indent).$key.': '.$this->yamlValue($value);
             array_splice($lines, $insertAt, 0, [$newLine]);
         }
 
@@ -135,16 +119,12 @@ final class HomeSettingsWriter
     }
 
     /**
-     * Find all top-level (unindented) non-comment keys and their line numbers.
+     * Find a top-level (zero-indent) non-commented YAML key.
      *
      * @param list<string> $lines
-     *
-     * @return array<string, int> key name => line index
      */
-    private function findTopLevelSections(array $lines): array
+    private function findTopLevelKey(array $lines, string $keyName): ?int
     {
-        $positions = [];
-
         foreach ($lines as $i => $line) {
             $trimmed = ltrim($line);
 
@@ -152,23 +132,49 @@ final class HomeSettingsWriter
                 continue;
             }
 
-            // Top-level key: no leading whitespace before first non-space char
-            if (str_starts_with($line, $trimmed)) {
-                if (preg_match('/^([a-zA-Z_][a-zA-Z0-9_]*)\s*:/', $trimmed, $m)) {
-                    $positions[$m[1]] = $i;
-                }
+            // Top-level: no leading whitespace
+            if (!str_starts_with($line, $trimmed)) {
+                continue;
+            }
+
+            if (preg_match('/^'.preg_quote($keyName, '/').'\s*:/', $trimmed)) {
+                return $i;
             }
         }
 
-        return $positions;
+        return null;
     }
 
     /**
-     * Detect the indentation level used within a section.
+     * Find the end of a section starting at the given line.
+     * Returns the line index of the next top-level key, or count($lines).
      *
      * @param list<string> $lines
      */
-    private function detectSectionIndent(array $lines, int $from, int $to): int
+    private function findSectionEnd(array $lines, int $sectionLine): int
+    {
+        for ($i = $sectionLine + 1, $max = \count($lines); $i < $max; ++$i) {
+            $trimmed = ltrim($lines[$i]);
+
+            if ('' === $trimmed || str_starts_with($trimmed, '#')) {
+                continue;
+            }
+
+            // Top-level key — new section starts
+            if (str_starts_with($lines[$i], $trimmed)) {
+                return $i;
+            }
+        }
+
+        return \count($lines);
+    }
+
+    /**
+     * Detect indentation level of entries within a section.
+     *
+     * @param list<string> $lines
+     */
+    private function detectIndent(array $lines, int $from, int $to): int
     {
         for ($i = $from; $i < $to; ++$i) {
             $trimmed = ltrim($lines[$i]);
@@ -184,19 +190,16 @@ final class HomeSettingsWriter
             }
         }
 
-        return 4; // sensible default
+        return 4;
     }
 
     /**
-     * Find a key within a section, returning its line index or null.
-     *
-     * Looks for both active and commented-out keys.
+     * Find a key within a section (active or commented-out).
      *
      * @param list<string> $lines
      */
     private function findKeyInSection(array $lines, int $from, int $to, int $indent, string $key): ?int
     {
-        // Accept indentation within ±2 of the section style
         $minIndent = max(2, $indent - 2);
         $maxIndent = $indent + 2;
 
@@ -208,12 +211,12 @@ final class HomeSettingsWriter
                 continue;
             }
 
-            // Match active key: "key: value"
+            // Active key:  "key: value"
             if (preg_match('/^'.preg_quote($key, '/').'\s*:/', $trimmed)) {
                 return $i;
             }
 
-            // Match commented key: "# key: value"
+            // Commented key: "# key: value"
             if (preg_match('/^#\s*'.preg_quote($key, '/').'\s*:/', $trimmed)) {
                 return $i;
             }
@@ -223,46 +226,37 @@ final class HomeSettingsWriter
     }
 
     /**
-     * Replace the value portion of a line containing a YAML key.
+     * Replace the value on a key line, uncommenting if it was commented out.
      */
-    private function replaceValueOnLine(string $line, string $key, int $indent, string $value): string
+    private function replaceKeyLine(string $line, string $key, int $indent, string $value): string
     {
         $trimmed = ltrim($line);
-        $leading = \strlen($line) - \strlen($trimmed);
-
-        // Was it a commented line? If so, uncomment and fix indentation.
         $wasCommented = str_starts_with($trimmed, '#');
 
         if ($wasCommented) {
             $trimmed = preg_replace('/^#\s*/', '', $trimmed);
-            $leading = $indent;
         }
 
-        $yamlValue = $this->yamlValue($value);
-
-        return str_repeat(' ', $leading).$key.': '.$yamlValue;
+        return str_repeat(' ', $indent).$key.': '.$this->yamlValue($value);
     }
 
     /**
-     * Append a new top-level section with the given key and value.
+     * Append a new ai: section with the given key and value.
      *
      * @param list<string> $lines
-     * @param list<string> $keyPath
      *
      * @return list<string>
      */
-    private function appendNewSection(array $lines, array $keyPath, string $value): array
+    private function appendAiSection(array $lines, string $key, string $value): array
     {
         // Ensure a blank line before the new section
         if (\count($lines) > 0 && '' !== end($lines)) {
             $lines[] = '';
         }
 
-        $section = $keyPath[0];
-        $key = $keyPath[1] ?? '';
         $indent = 4;
 
-        $lines[] = $section.':';
+        $lines[] = 'ai:';
         $lines[] = str_repeat(' ', $indent).$key.': '.$this->yamlValue($value);
 
         return $lines;
