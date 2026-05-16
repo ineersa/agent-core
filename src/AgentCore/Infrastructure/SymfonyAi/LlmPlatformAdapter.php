@@ -16,6 +16,9 @@ use Ineersa\AgentCore\Domain\Tool\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Tool\PlatformInvocationResult;
 use Symfony\AI\Agent\Input;
 use Symfony\AI\Platform\Message\AssistantMessage;
+use Symfony\AI\Platform\Message\Content\ContentInterface;
+use Symfony\AI\Platform\Message\Content\Text;
+use Symfony\AI\Platform\Message\Content\Thinking;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\PlatformInterface as SymfonyPlatformInterface;
 use Symfony\AI\Platform\Result\DeferredResult;
@@ -242,12 +245,25 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             return null;
         }
 
-        return new AssistantMessage(
-            content: '' !== $text ? $text : null,
-            toolCalls: [] !== $toolCalls ? $toolCalls : null,
-            thinkingContent: '' !== $thinking ? $thinking : null,
-            thinkingSignature: $thinkingSignature,
-        );
+        /** @var ContentInterface[] $contentParts */
+        $contentParts = [];
+
+        if ('' !== $text) {
+            $contentParts[] = new Text($text);
+        }
+
+        if ('' !== $thinking || null !== $thinkingSignature) {
+            $contentParts[] = new Thinking(
+                content: $thinking,
+                signature: $thinkingSignature,
+            );
+        }
+
+        foreach ($toolCalls as $toolCall) {
+            $contentParts[] = $toolCall;
+        }
+
+        return new AssistantMessage(...$contentParts);
     }
 
     private function resolveStopReason(?AssistantMessage $assistantMessage): ?string

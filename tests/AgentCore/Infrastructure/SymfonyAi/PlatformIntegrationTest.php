@@ -189,7 +189,7 @@ final class PlatformIntegrationTest extends TestCase
         self::assertSame('Search docs for turn 2', $modelClient->capturedOptions['tools'][0]['function']['description']);
         self::assertArrayNotHasKey(PlatformInvocationMetadata::OPTION_KEY, $modelClient->capturedOptions);
 
-        self::assertSame('Hello world', $response->assistantMessage?->getContent());
+        self::assertSame('Hello world', $response->assistantMessage?->asText());
         self::assertNull($response->stopReason);
         self::assertSame(7, $response->usage['input_tokens']);
         self::assertSame(3, $response->usage['output_tokens']);
@@ -227,7 +227,7 @@ final class PlatformIntegrationTest extends TestCase
         ));
 
         self::assertSame('aborted', $response->stopReason);
-        self::assertSame('A', $response->assistantMessage?->getContent());
+        self::assertSame('A', $response->assistantMessage?->asText());
         self::assertSame(15, $response->usage['total_tokens']);
     }
 

@@ -17,7 +17,7 @@ final readonly class ToolCallExtractor
     {
         $toolCalls = [];
 
-        foreach ($assistantMessage->getToolCalls() ?? [] as $index => $toolCall) {
+        foreach ($assistantMessage->getToolCalls() as $index => $toolCall) {
             if (!$toolCall instanceof ToolCall) {
                 continue;
             }

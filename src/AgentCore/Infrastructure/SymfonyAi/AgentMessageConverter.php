@@ -6,6 +6,8 @@ namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Symfony\AI\Platform\Message\AssistantMessage;
+use Symfony\AI\Platform\Message\Content\Text;
+use Symfony\AI\Platform\Message\Content\Thinking;
 use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Message\MessageInterface;
@@ -33,12 +35,7 @@ final class AgentMessageConverter
 
         $converted = match ($message->role) {
             'system' => Message::forSystem($textContent),
-            'assistant' => new AssistantMessage(
-                content: '' === $textContent ? null : $textContent,
-                toolCalls: $this->assistantToolCalls($message),
-                thinkingContent: \is_string($message->details['thinking'] ?? null) ? $message->details['thinking'] : null,
-                thinkingSignature: \is_string($message->details['thinking_signature'] ?? null) ? $message->details['thinking_signature'] : null,
-            ),
+            'assistant' => $this->buildAssistantMessage($textContent, $message),
             'tool' => $this->toToolCallMessage($message),
             default => Message::ofUser($this->userText($message, $textContent)),
         };
@@ -105,6 +102,37 @@ final class AgentMessageConverter
         }
 
         return [] === $toolCalls ? null : $toolCalls;
+    }
+
+    /**
+     * Builds an AssistantMessage using the 0.9 ContentInterface-based constructor.
+     */
+    private function buildAssistantMessage(string $textContent, AgentMessage $message): AssistantMessage
+    {
+        $contentParts = [];
+
+        if ('' !== $textContent) {
+            $contentParts[] = new Text($textContent);
+        }
+
+        $thinkingContent = \is_string($message->details['thinking'] ?? null) ? $message->details['thinking'] : null;
+        $thinkingSignature = \is_string($message->details['thinking_signature'] ?? null) ? $message->details['thinking_signature'] : null;
+
+        if (null !== $thinkingContent || null !== $thinkingSignature) {
+            $contentParts[] = new Thinking(
+                content: $thinkingContent ?? '',
+                signature: $thinkingSignature,
+            );
+        }
+
+        $toolCalls = $this->assistantToolCalls($message);
+        if (null !== $toolCalls) {
+            foreach ($toolCalls as $toolCall) {
+                $contentParts[] = $toolCall;
+            }
+        }
+
+        return new AssistantMessage(...$contentParts);
     }
 
     private function userText(AgentMessage $message, string $textContent): string

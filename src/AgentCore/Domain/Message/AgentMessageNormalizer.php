@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Domain\Message;
 
 use Symfony\AI\Platform\Message\AssistantMessage;
+use Symfony\AI\Platform\Message\Content\Thinking;
 use Symfony\AI\Platform\Result\ToolCall;
 
 final readonly class AgentMessageNormalizer
@@ -12,10 +13,11 @@ final readonly class AgentMessageNormalizer
     public function assistantMessage(AssistantMessage $assistantMessage): AgentMessage
     {
         $content = [];
-        if (null !== $assistantMessage->getContent()) {
+        $text = $assistantMessage->asText();
+        if (null !== $text) {
             $content[] = [
                 'type' => 'text',
-                'text' => $assistantMessage->getContent(),
+                'text' => $text,
             ];
         }
 
@@ -25,10 +27,7 @@ final readonly class AgentMessageNormalizer
             $metadata['tool_calls'] = $toolCalls;
         }
 
-        $details = array_filter([
-            'thinking' => $assistantMessage->getThinkingContent(),
-            'thinking_signature' => $assistantMessage->getThinkingSignature(),
-        ], static fn (mixed $value): bool => null !== $value);
+        $details = $this->extractThinkingDetails($assistantMessage);
 
         return new AgentMessage(
             role: 'assistant',
@@ -43,13 +42,15 @@ final readonly class AgentMessageNormalizer
      */
     public function assistantMessagePayload(AssistantMessage $assistantMessage): array
     {
+        $text = $assistantMessage->asText();
+
         $payload = [
             'role' => 'assistant',
-            'content' => null === $assistantMessage->getContent()
+            'content' => null === $text
                 ? null
                 : [[
                     'type' => 'text',
-                    'text' => $assistantMessage->getContent(),
+                    'text' => $text,
                 ]],
         ];
 
@@ -58,10 +59,7 @@ final readonly class AgentMessageNormalizer
             $payload['tool_calls'] = $toolCalls;
         }
 
-        $details = array_filter([
-            'thinking' => $assistantMessage->getThinkingContent(),
-            'thinking_signature' => $assistantMessage->getThinkingSignature(),
-        ], static fn (mixed $value): bool => null !== $value);
+        $details = $this->extractThinkingDetails($assistantMessage);
 
         if ([] !== $details) {
             $payload['details'] = $details;
@@ -128,6 +126,39 @@ final readonly class AgentMessageNormalizer
                 'order_index' => $result->orderIndex,
             ],
         );
+    }
+
+    /**
+     * Extracts thinking details from the 0.9 content-based AssistantMessage.
+     *
+     * @return array{thinking?: string|null, thinking_signature?: string|null}
+     */
+    private function extractThinkingDetails(AssistantMessage $assistantMessage): array
+    {
+        if (!$assistantMessage->hasThinking()) {
+            return [];
+        }
+
+        $thinkingParts = $assistantMessage->getThinking();
+
+        // Concatenate all thinking content blocks.
+        $thinkingContent = implode('', array_map(
+            static fn (Thinking $t): string => $t->getContent(),
+            $thinkingParts,
+        ));
+
+        // Signatures are per-part; we keep the last non-null signature (there is typically at most one).
+        $thinkingSignature = null;
+        foreach ($thinkingParts as $part) {
+            if (null !== $part->getSignature()) {
+                $thinkingSignature = $part->getSignature();
+            }
+        }
+
+        return array_filter([
+            'thinking' => '' !== $thinkingContent ? $thinkingContent : null,
+            'thinking_signature' => $thinkingSignature,
+        ], static fn (mixed $value): bool => null !== $value);
     }
 
     /**
