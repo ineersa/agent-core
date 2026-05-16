@@ -62,3 +62,7 @@ Completed:
 ## Task workflow update - 2026-05-16T23:45:41.290Z
 - Recorded fork run: a6j7rpbxooyp
 - Summary: Launched fork a6j7rpbxooyp to resolve PR #8 merge conflicts. Scope: update AI-08 branch against current main, preserve optional model/reasoning runtime protocol/CLI plumbing, avoid stale task-file states, align with merged AI-02 naming where conflicts touch docs/tasks, run castor check, commit and push branch.
+
+## Task workflow update - 2026-05-16T23:59:27.789Z
+- Validation: Fork validation: `castor deptrac` passed: 0 violations, 69 uncovered, 323 allowed.; Fork validation: `castor test` passed: 276 tests, 7921 assertions, 1 PHPUnit notice.; Fork validation: `castor phpstan` passed: 0 errors.; Fork validation: `castor cs-check` clean.; Fork validation: full `castor check` passed.; GitHub mergeability check: PR #8 is MERGEABLE / CLEAN at head 6bffaa02e5aff369a3bbb070e106a49de90116b5.
+- Summary: PR #8 merge conflicts resolved by fork a6j7rpbxooyp and pushed. Branch was merged with origin/main and stale branch-local task files for AI-02/AI-03 IN-PROGRESS copies were removed. No AI-08 source code changes were needed. PR #8 head verified at 6bffaa02e5aff369a3bbb070e106a49de90116b5 and GitHub reports mergeable.
