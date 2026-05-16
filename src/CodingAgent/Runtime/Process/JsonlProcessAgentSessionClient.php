@@ -38,6 +38,26 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         private readonly JsonlCodec $codec = new JsonlCodec(),
     ) {
         $this->eventBuffer = new \SplQueue();
+
+        /*
+         * SOURCE-CHECKOUT ASSUMPTION:
+         *
+         * dirname(__DIR__, 4) walks up from
+         *   src/CodingAgent/Runtime/Process/
+         * to the project root, where bin/console lives.
+         *
+         * This depends on the source-tree layout and will NOT work inside
+         * a PHAR, Docker image, or other redistributable build where the
+         * executable binary and source tree are packaged differently.
+         *
+         * TODO: Replace with a SelfExecutableLocator / BinaryLocator that
+         * resolves the headless-agent binary path from:
+         *   1. An explicit config/key (e.g., agent.runtime.binary_path).
+         *   2. Phar::running() / PHP_BINARY introspection inside a PHAR.
+         *   3. PATH-based discovery (e.g., `which agent-core-headless`).
+         *
+         * See: src/CodingAgent/Runtime/Process/AGENTS.md
+         */
         $this->projectDir = \dirname(__DIR__, 4);
     }
 
@@ -155,6 +175,16 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             return;
         }
 
+        /*
+         * TODO: Replace hard-coded bin/console path with the
+         * SelfExecutableLocator pattern (see constructor docblock and
+         * src/CodingAgent/Runtime/Process/AGENTS.md).
+         *
+         * In a PHAR/distribution build there is no bin/console — the
+         * binary is the PHAR itself or a renamed shim.  The locator
+         * should return the correct binary path for the current build
+         * type (source checkout, PHAR, Docker, etc.).
+         */
         $consolePath = $this->projectDir.'/bin/console';
 
         if (!is_file($consolePath)) {
