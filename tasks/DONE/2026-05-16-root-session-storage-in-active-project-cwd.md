@@ -12,12 +12,12 @@ Session persistence should use the user project cwd/session config, not the app 
 - castor check passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/2026-05-16-root-session-storage-in-active-project-cwd
 Worktree: /home/ineersa/projects/agent-core-worktrees/2026-05-16-root-session-storage-in-active-project-cwd
 Fork run: cozv1blzbi34
 Started: 2026-05-16T17:49:44.465Z
-Completed:
+Completed: 2026-05-16T18:27:23.543Z
 
 ## Work log
 - Created: 2026-05-16T01:22:15.792Z
@@ -38,7 +38,7 @@ Completed:
 - Validation: `php vendor/bin/phpunit tests/AgentCore/Infrastructure/Storage/ tests/CodingAgent/Session/`: passed (25 tests, 116 assertions).; `php vendor/bin/phpunit`: passed (236 tests, 7782 assertions).; `php vendor/bin/deptrac analyze --config-file=depfile.yaml --no-progress`: passed (0 violations).; `php vendor/bin/phpstan analyze --no-progress <7 changed src files>`: passed.; `php vendor/bin/php-cs-fixer fix --dry-run --diff --path-mode intersection src/`: passed.; Full PHPStan noted a pre-existing `.castor/tasks.php` short-ternary issue, unrelated to this task.
 - Summary: Fork cozv1blzbi34 completed implementation. Commit `8fe3738f8af89dba3a60402395575af86a3ac71c` on task branch makes session storage use active project cwd/session config by adding sessions-base-path initialization through `AgentSessionClient`, propagating it from `InteractiveMode` to in-process AgentCore stores, exposing `HatfieldSessionStore::resolveSessionsBasePath()`, and updating docs/tests. Process transport currently has a no-op/TODO for passing sessions path to subprocess, documented as follow-up.
 PR URL: https://github.com/ineersa/agent-core/pull/5
-PR Status: open
+PR Status: merged
 
 ## Task workflow update - 2026-05-16T18:17:15.835Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -47,3 +47,26 @@ PR Status: open
 - Created PR: https://github.com/ineersa/agent-core/pull/5
 - Validation: Changed files include session storage docs, AgentCore session stores, runtime client contract/implementations, HatfieldSessionStore, InteractiveMode, and targeted tests.; Validation from fork: `php vendor/bin/phpunit tests/AgentCore/Infrastructure/Storage/ tests/CodingAgent/Session/` passed (25 tests, 116 assertions); `php vendor/bin/phpunit` passed (236 tests, 7782 assertions); deptrac passed (0 violations); PHPStan on changed src files passed; CS fixer dry-run passed. Full PHPStan noted pre-existing `.castor/tasks.php` short-ternary issue unrelated to this task.
 - Summary: Implementation complete in worktree commit `8fe3738f8af89dba3a60402395575af86a3ac71c`. Ready for code review.
+
+## Task workflow update - 2026-05-16T18:27:23.543Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/2026-05-16-root-session-storage-in-active-project-cwd into integration checkout.
+- Auto-merging src/CodingAgent/Runtime/Process/JsonlProcessAgentSessionClient.php
+Auto-merging tests/CodingAgent/Session/HatfieldSessionStoreTest.php
+Merge made by the 'ort' strategy.
+ docs/session-storage.md                            | 32 +++++++++
+ .../Storage/SessionRunEventStore.php               | 22 +++++--
+ .../Infrastructure/Storage/SessionRunStore.php     | 22 +++++--
+ .../Runtime/Contract/AgentSessionClient.php        | 12 ++++
+ .../InProcess/InProcessAgentSessionClient.php      | 20 ++++--
+ .../Process/JsonlProcessAgentSessionClient.php     | 10 +++
+ src/CodingAgent/Session/HatfieldSessionStore.php   | 16 +++++
+ src/Tui/Application/InteractiveMode.php            |  4 ++
+ .../Storage/SessionRunEventStoreTest.php           | 76 ++++++++++++++++++++++
+ .../Infrastructure/Storage/SessionRunStoreTest.php | 65 ++++++++++++++++++
+ .../Session/HatfieldSessionStoreTest.php           | 43 ++++++++++++
+ 11 files changed, 310 insertions(+), 12 deletions(-)
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/2026-05-16-root-session-storage-in-active-project-cwd.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR merged: https://github.com/ineersa/agent-core/pull/5
+- Summary: PR #5 was merged on GitHub. Marking task done and syncing integration checkout.
