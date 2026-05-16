@@ -45,7 +45,6 @@ final class AppConfigLoader
 {
     public function __construct(
         private readonly SettingsPathResolver $pathResolver,
-        private readonly ?HomeSettingsTemplate $homeTemplate = null,
     ) {
     }
 
@@ -63,10 +62,11 @@ final class AppConfigLoader
         // Layer 2: Home settings (~/.hatfield/settings.yaml)
         $homeSettingsPath = $this->pathResolver->getHomeDir().'/.hatfield/settings.yaml';
 
-        // Bootstrap the home settings file from the template if it does not
-        // exist yet (first-launch behaviour).
-        if (null !== $this->homeTemplate && !is_readable($homeSettingsPath)) {
-            $this->bootstrapHomeSettings($homeSettingsPath);
+        // Bootstrap the home settings file by copying the built-in defaults
+        // if it does not exist yet (first-launch behaviour). Do not overwrite
+        // an existing home file.
+        if (!is_readable($homeSettingsPath) && is_readable($defaultsPath)) {
+            $this->bootstrapHomeSettings($defaultsPath, $homeSettingsPath);
         }
 
         $homeSettings = $this->loadYamlFile($homeSettingsPath);
@@ -194,24 +194,22 @@ final class AppConfigLoader
     }
 
     /**
-     * Create the home settings file from the shipped template on first launch.
+     * Create the home settings file by copying the built-in defaults on first launch.
      *
-     * Creates any missing parent directories and writes the template content.
-     * The template is designed so the user can fill in secrets and customize
-     * providers without losing built-in documentation.
+     * Users edit the copied file to set personal API keys, default model,
+     * reasoning level, and other overrides. The file is never auto-overwritten.
+     *
+     * The {@see config/hatfield.defaults.yaml} file is designed with comments
+     * that double as documentation, so the copied home file is self-documenting.
      */
-    private function bootstrapHomeSettings(string $homeSettingsPath): void
+    private function bootstrapHomeSettings(string $defaultsPath, string $homeSettingsPath): void
     {
-        if (null === $this->homeTemplate) {
-            return;
-        }
-
         $dir = \dirname($homeSettingsPath);
 
         if (!is_dir($dir)) {
             mkdir($dir, 0755, true);
         }
 
-        file_put_contents($homeSettingsPath, $this->homeTemplate->getContent());
+        copy($defaultsPath, $homeSettingsPath);
     }
 }
