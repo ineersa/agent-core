@@ -11,12 +11,20 @@ Separate bundled application resources from the active project cwd. AppConfigRes
 - castor check passes.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/2026-05-16-make-hatfield-config-defaults-and-themes-phar-safe
+Worktree: /home/ineersa/projects/agent-core-worktrees/2026-05-16-make-hatfield-config-defaults-and-themes-phar-safe
 Fork run:
-Started:
+Started: 2026-05-16T17:49:33.123Z
 Completed:
 
 ## Work log
 - Created: 2026-05-16T01:22:11.088Z
+
+## Task workflow update - 2026-05-16T17:49:33.123Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/2026-05-16-make-hatfield-config-defaults-and-themes-phar-safe.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/2026-05-16-make-hatfield-config-defaults-and-themes-phar-safe.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/2026-05-16-make-hatfield-config-defaults-and-themes-phar-safe.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/2026-05-16-make-hatfield-config-defaults-and-themes-phar-safe.
+- Summary: Claiming task for forked implementation.
