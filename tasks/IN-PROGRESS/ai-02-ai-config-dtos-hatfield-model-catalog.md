@@ -22,14 +22,22 @@ Scope:
 - Suggested validation: `castor test --filter Ai`; `castor phpstan`.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/ai-02-ai-config-dtos-hatfield-model-catalog
+Worktree: /home/ineersa/projects/agent-core-worktrees/ai-02-ai-config-dtos-hatfield-model-catalog
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-16T22:30:38.613Z
 Completed:
 
 ## Work log
 - Created: 2026-05-16T22:01:55.475Z
+
+## Task workflow update - 2026-05-16T22:30:38.614Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/ai-02-ai-config-dtos-hatfield-model-catalog.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/ai-02-ai-config-dtos-hatfield-model-catalog.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/ai-02-ai-config-dtos-hatfield-model-catalog.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/ai-02-ai-config-dtos-hatfield-model-catalog.
+- Summary: Starting Batch B task AI-02 after AI-01 completion: config DTOs and Hatfield model catalog.
