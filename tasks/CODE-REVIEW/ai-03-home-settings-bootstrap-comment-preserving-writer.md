@@ -61,3 +61,7 @@ Completed:
 ## Task workflow update - 2026-05-16T23:12:19.976Z
 - Recorded fork run: ufow0nb9dkw2
 - Summary: Launched fork ufow0nb9dkw2 to rewrite AI-03 per review/user decision: remove duplicated HomeSettingsTemplate PHP heredoc, bootstrap missing ~/.hatfield/settings.yaml by copying config/hatfield.defaults.yaml, update docs/settings.md to tell users to edit the copied home defaults, keep HomeSettingsWriter, run castor check, commit and push PR #10 updates.
+
+## Task workflow update - 2026-05-16T23:30:08.732Z
+- Validation: Fork validation: `composer dump-autoload --quiet && castor check` passed.; Fork validation: `castor deptrac` passed: 0 violations, 66 uncovered, 323 allowed.; Fork validation: `castor test` passed: 234 tests, 7773 assertions, 1 PHPUnit notice.; Fork validation: `castor phpstan` passed: 0 errors.; Fork validation: `castor cs-check` clean.; Fork validation: `php bin/console --no-interaction` boots.; Parent verification: PR #10 head is 53c60e9f49ed7c1214862cae1b764e6152e6cf36.
+- Summary: PR #10 review concern addressed by fork ufow0nb9dkw2 and pushed to branch. Added commit 53c60e9f replacing duplicated HomeSettingsTemplate PHP heredoc with first-launch copy of config/hatfield.defaults.yaml to ~/.hatfield/settings.yaml. Removed HomeSettingsTemplate service registration, kept HomeSettingsWriter, and documented the copied-home-defaults workflow in docs/settings.md. PR #10 head verified at 53c60e9f49ed7c1214862cae1b764e6152e6cf36.
