@@ -17,20 +17,13 @@ namespace Ineersa\CodingAgent\Config;
  */
 final class AppConfigResolver
 {
-    /**
-     * Path to the built-in defaults YAML file (bundled with the app).
-     */
-    private string $defaultsPath;
-
     /** @var array<string, AppConfig> Cache keyed by resolved project cwd */
     private array $cache = [];
 
     public function __construct(
         private readonly AppConfigLoader $loader,
-        string $projectDir,
+        private readonly AppResourceLocator $resources,
     ) {
-        // Built-in defaults live alongside the app installation
-        $this->defaultsPath = rtrim($projectDir, '/').'/config/hatfield.defaults.yaml';
     }
 
     /**
@@ -50,7 +43,7 @@ final class AppConfigResolver
             return $this->cache[$key];
         }
 
-        $config = $this->loader->load($this->defaultsPath, $key);
+        $config = $this->loader->load($this->resources->getDefaultsPath(), $key);
         $this->cache[$key] = $config;
 
         return $config;

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Application;
 
 use Ineersa\CodingAgent\Config\AppConfigResolver;
+use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemeLoader;
 use Ineersa\Tui\Theme\ThemeRegistry;
@@ -22,6 +23,7 @@ final class ThemeFactory
 {
     public function __construct(
         private readonly AppConfigResolver $configResolver,
+        private readonly AppResourceLocator $resources,
     ) {
     }
 
@@ -62,7 +64,7 @@ final class ThemeFactory
             }
         }
 
-        $builtinPath = \dirname(__DIR__, 3).'/config/themes';
+        $builtinPath = $this->resources->getBuiltinThemesPath();
         $builtins = $loader->loadDirectory($builtinPath);
         foreach ($builtins as $palette) {
             if (!isset($allPalettes[$palette->name])) {

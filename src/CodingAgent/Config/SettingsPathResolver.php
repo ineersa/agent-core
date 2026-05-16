@@ -14,7 +14,8 @@ namespace Ineersa\CodingAgent\Config;
  *
  * Design note:
  *  Relative paths in home settings resolve relative to $homeDir.
- *  Relative paths in project settings resolve relative to $projectDir (cwd).
+ *  Relative paths in project settings resolve relative to the caller-provided
+ *  base dir (typically the project cwd).
  *  This is determined by the caller, not by this resolver.
  */
 final class SettingsPathResolver
@@ -22,7 +23,7 @@ final class SettingsPathResolver
     private readonly string $homeDir;
 
     public function __construct(
-        private readonly string $projectDir,
+        private readonly string $appRoot,
         ?string $homeDir = null,
     ) {
         // Resolve home directory: explicit arg > HOME env var > getpwuid > /tmp
@@ -51,7 +52,7 @@ final class SettingsPathResolver
         // Expand known placeholders
         $resolved = str_replace(
             ['%kernel.project_dir%'],
-            [$this->projectDir],
+            [$this->appRoot],
             $path,
         );
 
@@ -83,9 +84,12 @@ final class SettingsPathResolver
         );
     }
 
-    public function getProjectDir(): string
+    /**
+     * The application installation root (value of %kernel.project_dir%).
+     */
+    public function getAppRoot(): string
     {
-        return $this->projectDir;
+        return $this->appRoot;
     }
 
     public function getHomeDir(): string

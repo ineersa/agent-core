@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Config;
 
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppConfigResolver;
+use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use PHPUnit\Framework\TestCase;
 
@@ -23,8 +24,9 @@ class AppConfigResolverTest extends TestCase
         mkdir($this->homeDir, 0755, true);
         mkdir($this->homeDir.'/.hatfield', 0755, true);
 
-        // Create a defaults file
-        $defaultsPath = $this->tmpDir.'/defaults.yaml';
+        // Create a defaults file in a temp location
+        $defaultsPath = $this->tmpDir.'/config/hatfield.defaults.yaml';
+        mkdir($this->tmpDir.'/config', 0755, true);
         file_put_contents($defaultsPath, <<<'YAML'
 tui:
     theme: cyberpunk
@@ -36,19 +38,17 @@ YAML
         );
 
         $pathResolver = new SettingsPathResolver(
-            projectDir: '/app',
+            appRoot: '/app',
             homeDir: $this->homeDir,
         );
         $loader = new AppConfigLoader($pathResolver);
 
+        $resources = new AppResourceLocator($this->tmpDir);
+
         $this->resolver = new AppConfigResolver(
             loader: $loader,
-            projectDir: '/app',
+            resources: $resources,
         );
-
-        // Swap in our temp defaults path via reflection (tests need control)
-        $ref = new \ReflectionProperty($this->resolver, 'defaultsPath');
-        $ref->setValue($this->resolver, $defaultsPath);
     }
 
     protected function tearDown(): void

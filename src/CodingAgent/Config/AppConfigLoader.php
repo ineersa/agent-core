@@ -35,9 +35,9 @@ use Symfony\Component\Yaml\Yaml;
  *    whole-list replace is intended.
  *
  * Path resolution:
- *  - %kernel.project_dir% → app install directory
+ *  - %kernel.project_dir% → app install directory (via SettingsPathResolver::$appRoot)
  *  - ~ → home directory
- *  - Relative paths in defaults resolve against projectDir
+ *  - Relative paths in defaults resolve against projectCwd
  *  - Relative paths in home settings resolve against homeDir
  *  - Relative paths in project settings resolve against projectCwd
  */

@@ -188,7 +188,8 @@ function relative_to_project(string $path): string
         return $path;
     }
 
-    $realPath = realpath($path) ?: $path;
+    $resolved = realpath($path);
+    $realPath = false !== $resolved ? $resolved : $path;
     $relative = preg_replace('#^'.preg_quote($root.'/', '#').'#', '', $realPath);
 
     return $relative ?? $realPath;

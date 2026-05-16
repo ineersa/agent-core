@@ -25,7 +25,7 @@ class AppConfigLoaderTest extends TestCase
         mkdir($this->homeDir.'/.hatfield', 0755, true);
 
         $this->pathResolver = new SettingsPathResolver(
-            projectDir: '/app',
+            appRoot: '/app',
             homeDir: $this->homeDir,
         );
         $this->loader = new AppConfigLoader($this->pathResolver);
