@@ -10,12 +10,12 @@ JsonlProcessAgentSessionClient currently assumes a source checkout and spawns bi
 - castor check passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/2026-05-16-document-phar-safe-process-transport-follow-up
 Worktree: /home/ineersa/projects/agent-core-worktrees/2026-05-16-document-phar-safe-process-transport-follow-up
 Fork run: vrd2dxwnotxy
 Started: 2026-05-16T17:49:06.561Z
-Completed:
+Completed: 2026-05-16T18:20:11.270Z
 
 ## Work log
 - Created: 2026-05-16T01:22:20.671Z
@@ -36,7 +36,7 @@ Completed:
 - Validation: `castor check` in worktree: deptrac passed, phpunit passed (228 tests, 7750 assertions), cs-fixer passed; full check blocked by pre-existing PHPStan error in `.castor/tasks.php:191` unrelated to this task.; `vendor/bin/phpstan analyse ... JsonlProcessAgentSessionClient.php`: passed.; `vendor/bin/php-cs-fixer fix --dry-run ... JsonlProcessAgentSessionClient.php`: passed.
 - Summary: Fork vrd2dxwnotxy completed implementation. Commit `9a2d54c86ff9bf5f511c2982040ecad0730e00b1` on task branch documents source-checkout assumptions in `JsonlProcessAgentSessionClient` and adds `src/CodingAgent/Runtime/Process/AGENTS.md` with the future SelfExecutableLocator/BinaryLocator strategy. Behavior unchanged.
 PR URL: https://github.com/ineersa/agent-core/pull/3
-PR Status: open
+PR Status: merged
 
 ## Task workflow update - 2026-05-16T18:16:44.008Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -45,3 +45,16 @@ PR Status: open
 - Created PR: https://github.com/ineersa/agent-core/pull/3
 - Validation: Changed files: `src/CodingAgent/Runtime/Process/JsonlProcessAgentSessionClient.php`, `src/CodingAgent/Runtime/Process/AGENTS.md`.; Validation from fork: deptrac passed, phpunit passed (228 tests, 7750 assertions), changed-file PHPStan passed, changed-file CS fixer passed; full `castor check` blocked by pre-existing `.castor/tasks.php:191` PHPStan issue unrelated to the task.
 - Summary: Implementation complete in worktree commit `9a2d54c86ff9bf5f511c2982040ecad0730e00b1`. Ready for code review.
+
+## Task workflow update - 2026-05-16T18:20:11.270Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/2026-05-16-document-phar-safe-process-transport-follow-up into integration checkout.
+- Merge made by the 'ort' strategy.
+ src/CodingAgent/Runtime/Process/AGENTS.md          | 78 ++++++++++++++++++++++
+ .../Process/JsonlProcessAgentSessionClient.php     | 30 +++++++++
+ 2 files changed, 108 insertions(+)
+ create mode 100644 src/CodingAgent/Runtime/Process/AGENTS.md
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/2026-05-16-document-phar-safe-process-transport-follow-up.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR merged: https://github.com/ineersa/agent-core/pull/3
+- Summary: PR #3 was merged on GitHub. Marking task done and syncing integration checkout.
