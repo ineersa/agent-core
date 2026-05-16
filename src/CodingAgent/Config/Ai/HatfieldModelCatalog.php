@@ -62,8 +62,6 @@ final readonly class HatfieldModelCatalog
     /**
      * Get a model definition, throwing if not found.
      *
-     * @param AiModelRef|string $ref
-     *
      * @throws \RuntimeException if the model is not in the catalog
      */
     public function requireModel(AiModelRef|string $ref): AiModelDefinition
@@ -72,9 +70,7 @@ final readonly class HatfieldModelCatalog
 
         if (null === $model) {
             $refStr = \is_string($ref) ? $ref : $ref->toString();
-            throw new \RuntimeException(
-                \sprintf('Model "%s" is not available in the configured AI providers.', $refStr),
-            );
+            throw new \RuntimeException(\sprintf('Model "%s" is not available in the configured AI providers.', $refStr));
         }
 
         return $model;
@@ -82,8 +78,6 @@ final readonly class HatfieldModelCatalog
 
     /**
      * Check whether a model is available (configured, enabled, and listed).
-     *
-     * @param AiModelRef|string $ref
      */
     public function isAvailable(AiModelRef|string $ref): bool
     {

@@ -12,9 +12,9 @@ namespace Ineersa\CodingAgent\Config\Ai;
 final readonly class AiConfig
 {
     /**
-     * @param string|null                      $defaultModel    Default model in provider/model format
-     * @param string|null                      $defaultReasoning Default reasoning level
-     * @param array<string, AiProviderConfig>   $providers       Enabled providers keyed by provider ID
+     * @param string|null                     $defaultModel     Default model in provider/model format
+     * @param string|null                     $defaultReasoning Default reasoning level
+     * @param array<string, AiProviderConfig> $providers        Enabled providers keyed by provider ID
      */
     public function __construct(
         public ?string $defaultModel = null,
@@ -52,9 +52,7 @@ final readonly class AiConfig
                 }
 
                 if (!\is_array($providerData)) {
-                    throw new \RuntimeException(
-                        \sprintf('Provider "%s" must be an associative array in AI config.', $providerId),
-                    );
+                    throw new \RuntimeException(\sprintf('Provider "%s" must be an associative array in AI config.', $providerId));
                 }
 
                 $providers[$providerId] = AiProviderConfig::fromArray($providerData, $providerId);

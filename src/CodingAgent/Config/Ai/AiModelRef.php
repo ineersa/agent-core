@@ -28,12 +28,7 @@ final readonly class AiModelRef
         $parts = explode('/', $ref, 2);
 
         if (2 !== \count($parts) || '' === $parts[0] || '' === $parts[1]) {
-            throw new \InvalidArgumentException(
-                \sprintf(
-                    'Invalid model reference "%s". Expected format: provider/model (e.g. deepseek/deepseek-v4-pro).',
-                    $ref,
-                ),
-            );
+            throw new \InvalidArgumentException(\sprintf('Invalid model reference "%s". Expected format: provider/model (e.g. deepseek/deepseek-v4-pro).', $ref));
         }
 
         return new self(

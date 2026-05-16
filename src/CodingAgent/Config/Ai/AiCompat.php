@@ -14,17 +14,17 @@ namespace Ineersa\CodingAgent\Config\Ai;
 final readonly class AiCompat
 {
     /**
-     * @param bool|null $supportsDeveloperRole Whether the provider supports the OpenAI
-     *                                         developer role. false means only
-     *                                         system/user/assistant/tool roles.
-     * @param bool|null $supportsReasoningEffort Whether the provider accepts
-     *                                          reasoning_effort. false means
-     *                                          reasoning must use another mechanism.
-     * @param string|null $thinkingFormat The non-OpenAI thinking format name
-     *                                   (e.g. zai for enable_thinking boolean).
-     *                                   null means standard OpenAI reasoning_effort.
-     * @param bool|null $zaiToolStream Whether this model supports z.ai streaming
-     *                                 tool calls.
+     * @param bool|null   $supportsDeveloperRole   Whether the provider supports the OpenAI
+     *                                             developer role. false means only
+     *                                             system/user/assistant/tool roles.
+     * @param bool|null   $supportsReasoningEffort Whether the provider accepts
+     *                                             reasoning_effort. false means
+     *                                             reasoning must use another mechanism.
+     * @param string|null $thinkingFormat          The non-OpenAI thinking format name
+     *                                             (e.g. zai for enable_thinking boolean).
+     *                                             null means standard OpenAI reasoning_effort.
+     * @param bool|null   $zaiToolStream           Whether this model supports z.ai streaming
+     *                                             tool calls.
      */
     public function __construct(
         public ?bool $supportsDeveloperRole = null,

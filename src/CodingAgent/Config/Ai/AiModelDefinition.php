@@ -14,17 +14,17 @@ namespace Ineersa\CodingAgent\Config\Ai;
 final readonly class AiModelDefinition
 {
     /**
-     * @param string                  $id              Model name used in API requests (e.g. glm-5.1, deepseek-v4-pro)
-     * @param string|null             $name            Human-readable display name (e.g. "GLM 5.1")
-     * @param int|null                $contextWindow   Max context window in tokens
-     * @param int|null                $maxTokens       Max output tokens
-     * @param list<string>            $input           Accepted input modalities (text, image, etc.)
-     * @param bool                    $toolCalling     Whether this model supports tool/function calling
-     * @param bool                    $reasoning       Whether this model supports reasoning/thinking
+     * @param string                     $id               Model name used in API requests (e.g. glm-5.1, deepseek-v4-pro)
+     * @param string|null                $name             Human-readable display name (e.g. "GLM 5.1")
+     * @param int|null                   $contextWindow    Max context window in tokens
+     * @param int|null                   $maxTokens        Max output tokens
+     * @param list<string>               $input            Accepted input modalities (text, image, etc.)
+     * @param bool                       $toolCalling      Whether this model supports tool/function calling
+     * @param bool                       $reasoning        Whether this model supports reasoning/thinking
      * @param array<string, string|null> $thinkingLevelMap Map from user-facing reasoning level
      *                                                     to provider-specific value (e.g. minimal→high, xhigh→max)
-     * @param AiCompat|null           $compat           Per-model compat overrides
-     * @param AiCost|null             $cost             Token pricing
+     * @param AiCompat|null              $compat           Per-model compat overrides
+     * @param AiCost|null                $cost             Token pricing
      */
     public function __construct(
         public string $id,
