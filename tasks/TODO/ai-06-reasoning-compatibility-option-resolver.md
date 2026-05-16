@@ -1,7 +1,7 @@
-# AI-06 Implement reasoning and compat option resolver
+# AI-06 Implement reasoning and compatibility option resolver
 
 ## Goal
-Plan reference: .pi/plans/symfony_ai_platform_integration_plan.md#ai-06--implement-reasoning-and-compat-option-resolver
+Plan reference: .pi/plans/symfony_ai_platform_integration_plan.md#ai-06--implement-reasoning-and-compatibility-option-resolver
 
 Goal: convert global reasoning level + model metadata into provider invocation options.
 
@@ -11,10 +11,10 @@ Parallelism: can run alongside AI-04 and most of AI-07 after AI-02; unblocks AI-
 
 Scope:
 - Implement `ReasoningOptionsResolver`.
-- Inputs: `AiModelRef`, user-facing level `off|minimal|low|medium|high|xhigh`.
+- Inputs: `AiModelReference`, user-facing level `off|minimal|low|medium|high|xhigh`.
 - Return `[]` for `off`, non-reasoning models, missing map, or null map value.
 - Use `thinking_level_map` for model-specific translation.
-- For `compat.thinking_format: zai`, emit `enable_thinking: true` for mapped non-off levels.
+- For `compatibility.thinking_format: zai`, emit `enable_thinking: true` for mapped non-off levels.
 - For `supports_reasoning_effort: false`, never emit `reasoning_effort`.
 - Leave room for future OpenAI-style mappings but do not invent unsupported semantics.
 
