@@ -185,3 +185,39 @@ function summarize_junit_xml(string $xmlPath): string
         (int) ($attributes['skipped'] ?? 0),
     );
 }
+
+function xml_escape(string $value): string
+{
+    return htmlspecialchars($value, \ENT_XML1 | \ENT_QUOTES, 'UTF-8');
+}
+
+function build_idea_run_config_xml(string $commandName, string $description): string
+{
+    $configurationName = 'castor '.$commandName;
+    $command = 'castor '.$commandName;
+
+    $configurationNameXml = xml_escape($configurationName);
+    $commandXml = xml_escape($command);
+    $descriptionXml = xml_escape($description);
+
+    return <<<XML
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="{$configurationNameXml}" type="ShConfigurationType" factoryName="Shell Script" singleton="false">
+    <option name="SCRIPT_TEXT" value="{$commandXml}" />
+    <option name="INDEPENDENT_SCRIPT_PATH" value="true" />
+    <option name="SCRIPT_PATH" value="" />
+    <option name="SCRIPT_OPTIONS" value="" />
+    <option name="INDEPENDENT_INTERPRETER_PATH" value="true" />
+    <option name="INTERPRETER_PATH" value="/bin/bash" />
+    <option name="INTERPRETER_OPTIONS" value="" />
+    <option name="INDEPENDENT_SCRIPT_WORKING_DIRECTORY" value="true" />
+    <option name="SCRIPT_WORKING_DIRECTORY" value="\$PROJECT_DIR\$" />
+    <option name="EXECUTE_IN_TERMINAL" value="false" />
+    <option name="EXECUTE_SCRIPT_FILE" value="false" />
+    <envs />
+    <method v="2" />
+  </configuration>
+  <!-- {$descriptionXml} -->
+</component>
+XML;
+}

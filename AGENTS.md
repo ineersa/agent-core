@@ -36,10 +36,12 @@ castor phpstan      # PHPStan static analysis
 castor cs-fix       # PHP CS Fixer (fix in place)
 castor cs-check     # PHP CS Fixer (dry-run check only)
 castor cache:clear  # Remove generated QA caches (deptrac, php-cs-fixer, phpstan)
+castor idea:run-configs  # Generate PhpStorm run configurations for Castor tasks
 castor run:agent       # Launch the agent TUI in a tmux session
 castor run:agent-test   # Deterministic tmux session for snapshot testing
 castor test:tui         # Run TUI e2e snapshot tests (requires tmux, NOT in check)
 castor test:tui-update  # Run TUI e2e tests and update golden snapshots
+castor worktree:remove <slug-or-path> --force [--delete-branch]  # Remove task worktree
 ```
 
 `castor check` does NOT run tmux e2e tests (`tui-e2e` group) because they

@@ -14,16 +14,17 @@
   the authoritative identity. Embedded IDs inside files are validated on read and
   must match the directory name. A mismatch indicates data corruption.
 - **Append-only event stream.** `events.jsonl` is the canonical record of
-  everything that happened in a run. `state.json` is a write-through cache.
-  `transcript.jsonl` and `runtime-events.jsonl` are projections/debug logs that
-  can be rebuilt from the canonical stream if necessary.
+  everything that happened in a run. `state.json` is a materialized RunState
+  snapshot and concurrency checkpoint. `transcript.jsonl` and
+  `runtime-events.jsonl` are projections/debug logs that can be rebuilt from the
+  canonical stream if necessary.
 
 ## Directory layout
 
 ```text
 .hatfield/sessions/<id>/
   metadata.yaml            Identity, tree, and session metadata
-  state.json               AgentCore RunState hot state / cache
+  state.json               AgentCore RunState materialized snapshot/checkpoint
   events.jsonl             AgentCore RunEvent canonical event stream
   transcript.jsonl         TUI/user-facing transcript projection
   runtime-events.jsonl     Runtime protocol event log (projection/debug)
@@ -35,7 +36,7 @@
 | File | Canonical? | Written by | Read by | Format |
 |------|-----------|------------|---------|--------|
 | `metadata.yaml` | Yes (identity/tree) | `HatfieldSessionStore` | `HatfieldSessionStore`, TUI, future fork/lister | YAML |
-| `state.json` | No — cache of canonical events | `SessionRunStore::compareAndSwap()` | `SessionRunStore::get()`, resume flow | JSON (Symfony Serializer) |
+| `state.json` | No — materialized snapshot/checkpoint | `SessionRunStore::compareAndSwap()` | `SessionRunStore::get()`, resume flow | JSON (Symfony Serializer) |
 | `events.jsonl` | **Yes — canonical domain event stream** | `SessionRunEventStore::append()` | `SessionRunEventStore::allFor()`, `InProcessAgentSessionClient::events()`, TUI tick callback | JSONL (EventPayloadNormalizer) |
 | `transcript.jsonl` | No — TUI projection | `HatfieldSessionStore::appendTranscriptEntry()` | `HatfieldSessionStore::getTranscript()`, resume display | JSONL (TranscriptEntry DTO) |
 | `runtime-events.jsonl` | No — protocol projection/debug | TUI tick callback | Debugging, future replay | JSONL (RuntimeEvent DTO) |
@@ -54,6 +55,39 @@ prompt: 'Write a README'
 ```
 
 Future forking will add optional keys (see [Future fork tree](#future-fork-tree)).
+
+### Storage model at a glance
+
+```text
+Canonical history
+┌──────────────────────────────────────────────────────────┐
+│ events.jsonl                                             │
+│ append-only AgentCore RunEvent stream                    │
+│ source for replay, audit, projections, and future forks  │
+└───────────────┬──────────────────────────────────────────┘
+                │ materializes current run state
+                ▼
+Current-state snapshot / checkpoint
+┌──────────────────────────────────────────────────────────┐
+│ state.json                                               │
+│ serialized RunState used for fast resume + CAS version   │
+│ operationally required today; not auto-rebuilt yet       │
+└───────────────┬──────────────────────────────────────────┘
+                │ projects user/protocol views
+                ▼
+TUI/protocol projections
+┌──────────────────────────┐   ┌──────────────────────────┐
+│ transcript.jsonl         │   │ runtime-events.jsonl     │
+│ user-facing transcript   │   │ protocol/debug event log │
+└──────────────────────────┘   └──────────────────────────┘
+```
+
+In the current local filesystem implementation, both the canonical stream and
+materialized snapshot live under `.hatfield/sessions/<id>/`. In a future
+web/server deployment, the same concepts may be backed by database rows/tables
+for hot state and events, with JSONL files acting as cold archives or exported
+projections. The local Hatfield path intentionally keeps those roles explicit
+without requiring database infrastructure.
 
 ### state.json
 
@@ -81,6 +115,12 @@ Written atomically by `SessionRunStore::compareAndSwap()` under a Symfony Lock
 (`FlockStore`). `compareAndSwap()` reads the current version, compares it to the
 expected version, and writes only if they match — preventing race conditions
 in concurrent message processing.
+
+Although `state.json` is conceptually derivable from the canonical event stream,
+the current resume flow reads it directly. There is not yet an automatic
+"rebuild state from `events.jsonl` when `state.json` is missing or corrupt"
+fallback, so it should be treated as a required materialized snapshot today, not
+as a disposable cache.
 
 ### events.jsonl
 
@@ -347,6 +387,8 @@ embedded IDs.
 | Attachments storage (`attachments/`) | Low | Directory created in layout docs but not yet used. Will store pasted files, images, diffs. |
 | Session rename / alias | Low | Session IDs are 12-char hex — not human-memorable. Aliases or titles would help. |
 | Runtime event streaming | Medium | Current polling is synchronous full-scan. Incremental delivery would improve large sessions. |
+| Rebuild `state.json` from `events.jsonl` | Medium | Would make the materialized snapshot fully recoverable and justify treating it as a disposable cache. |
+| Cold archive / Flysystem projection wiring | Low | Outbox/Flysystem-style JSONL archive pieces should remain future wiring unless a web/server deployment needs database-backed hot state plus file-backed cold exports. |
 
 ## Related documents
 
