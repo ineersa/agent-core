@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Runtime\InProcess;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Infrastructure\Storage\SessionRunEventStore;
 use Ineersa\AgentCore\Infrastructure\Storage\SessionRunStore;
@@ -38,10 +39,15 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
     public function start(StartRunRequest $request): RunHandle
     {
+        $metadata = null !== $request->model || null !== $request->reasoning
+            ? new RunMetadata(model: $request->model, reasoning: $request->reasoning)
+            : null;
+
         $input = new StartRunInput(
             systemPrompt: $request->prompt,
             messages: [],
             runId: '' !== $request->runId ? $request->runId : null,
+            metadata: $metadata,
         );
 
         $runId = $this->runner->start($input);
