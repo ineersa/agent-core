@@ -33,3 +33,7 @@ Completed:
 ## Task workflow update - 2026-05-16T17:50:39.771Z
 - Recorded fork run: cozv1blzbi34
 - Fork cozv1blzbi34 launched for implementation in `/home/ineersa/projects/agent-core-worktrees/2026-05-16-root-session-storage-in-active-project-cwd`.
+
+## Task workflow update - 2026-05-16T18:10:57.275Z
+- Validation: `php vendor/bin/phpunit tests/AgentCore/Infrastructure/Storage/ tests/CodingAgent/Session/`: passed (25 tests, 116 assertions).; `php vendor/bin/phpunit`: passed (236 tests, 7782 assertions).; `php vendor/bin/deptrac analyze --config-file=depfile.yaml --no-progress`: passed (0 violations).; `php vendor/bin/phpstan analyze --no-progress <7 changed src files>`: passed.; `php vendor/bin/php-cs-fixer fix --dry-run --diff --path-mode intersection src/`: passed.; Full PHPStan noted a pre-existing `.castor/tasks.php` short-ternary issue, unrelated to this task.
+- Summary: Fork cozv1blzbi34 completed implementation. Commit `8fe3738f8af89dba3a60402395575af86a3ac71c` on task branch makes session storage use active project cwd/session config by adding sessions-base-path initialization through `AgentSessionClient`, propagating it from `InteractiveMode` to in-process AgentCore stores, exposing `HatfieldSessionStore::resolveSessionsBasePath()`, and updating docs/tests. Process transport currently has a no-op/TODO for passing sessions path to subprocess, documented as follow-up.
