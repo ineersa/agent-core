@@ -25,7 +25,7 @@ Scope:
 Status: CODE-REVIEW
 Branch: task/ai-02-ai-config-dtos-hatfield-model-catalog
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-02-ai-config-dtos-hatfield-model-catalog
-Fork run: 4s33fnreimt8
+Fork run: bxnoltgwdx16
 PR URL: https://github.com/ineersa/agent-core/pull/9
 PR Status: open
 Started: 2026-05-16T22:30:38.613Z
@@ -57,3 +57,7 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/9
 - Validation: Focused AI config/catalog tests passed: AiModelRefTest 10 tests/22 assertions; AiConfigTest 14 tests/81 assertions; HatfieldModelCatalogTest 18 tests/45 assertions.; Existing config/session tests passed: 47 tests, 115 assertions.; `castor test` passed: 276 tests, 7921 assertions, 1 PHPUnit notice.; `castor deptrac` passed: 0 violations.; `castor phpstan` passed after temporary baselines for AI catalog DTO/API members that downstream tasks will consume.; `castor cs-fix` applied formatting; full `castor check` passed.
 - Summary: AI-02 ready for review. Added typed AI config DTOs, AppConfig ai parsing, and HatfieldModelCatalog with explicit-only model lookup. Branch includes implementation commit ea8410dc and cleanup/baseline commit 31813e32.
+
+## Task workflow update - 2026-05-16T23:06:06.338Z
+- Recorded fork run: bxnoltgwdx16
+- Summary: Launched fork bxnoltgwdx16 to address PR #9 comments: rename AiCompat/compat terminology to AiCompatibility/compatibility, rename AiModelRef to AiModelReference, set AiCompatibility supportsDeveloperRole=false and supportsReasoningEffort=true defaults, update plan/task/docs references, run castor check, commit and push branch updates.
