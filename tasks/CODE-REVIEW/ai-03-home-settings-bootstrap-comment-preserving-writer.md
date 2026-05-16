@@ -25,7 +25,7 @@ Scope:
 Status: CODE-REVIEW
 Branch: task/ai-03-home-settings-bootstrap-comment-preserving-writer
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-03-home-settings-bootstrap-comment-preserving-writer
-Fork run: ufow0nb9dkw2
+Fork run: kxm2g6sqrhnu
 PR URL: https://github.com/ineersa/agent-core/pull/10
 PR Status: open
 Started: 2026-05-16T22:30:47.734Z
@@ -65,3 +65,7 @@ Completed:
 ## Task workflow update - 2026-05-16T23:30:08.732Z
 - Validation: Fork validation: `composer dump-autoload --quiet && castor check` passed.; Fork validation: `castor deptrac` passed: 0 violations, 66 uncovered, 323 allowed.; Fork validation: `castor test` passed: 234 tests, 7773 assertions, 1 PHPUnit notice.; Fork validation: `castor phpstan` passed: 0 errors.; Fork validation: `castor cs-check` clean.; Fork validation: `php bin/console --no-interaction` boots.; Parent verification: PR #10 head is 53c60e9f49ed7c1214862cae1b764e6152e6cf36.
 - Summary: PR #10 review concern addressed by fork ufow0nb9dkw2 and pushed to branch. Added commit 53c60e9f replacing duplicated HomeSettingsTemplate PHP heredoc with first-launch copy of config/hatfield.defaults.yaml to ~/.hatfield/settings.yaml. Removed HomeSettingsTemplate service registration, kept HomeSettingsWriter, and documented the copied-home-defaults workflow in docs/settings.md. PR #10 head verified at 53c60e9f49ed7c1214862cae1b764e6152e6cf36.
+
+## Task workflow update - 2026-05-16T23:40:34.069Z
+- Recorded fork run: kxm2g6sqrhnu
+- Summary: Launched fork kxm2g6sqrhnu to simplify HomeSettingsWriter per review: replace generic writeScalar/key-path YAML editor API with explicit writeDefaultModel/writeDefaultReasoning-style methods, simplify internals and docblock around only ai.default_model and ai.default_reasoning, update docs/baseline references, add focused tests if practical, run castor check, commit and push PR #10 branch.
