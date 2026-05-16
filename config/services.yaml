@@ -31,15 +31,17 @@ services:
 
   # ─── Hatfield config services ───
 
+  Ineersa\CodingAgent\Config\AppResourceLocator:
+    arguments:
+      $appRoot: '%kernel.project_dir%'
+
   Ineersa\CodingAgent\Config\SettingsPathResolver:
     arguments:
-      $projectDir: '%kernel.project_dir%'
+      $appRoot: '%kernel.project_dir%'
 
   Ineersa\CodingAgent\Config\AppConfigLoader: ~
 
-  Ineersa\CodingAgent\Config\AppConfigResolver:
-    arguments:
-      $projectDir: '%kernel.project_dir%'
+  Ineersa\CodingAgent\Config\AppConfigResolver: ~
 
   Ineersa\CodingAgent\Session\HatfieldSessionStore:
     arguments:

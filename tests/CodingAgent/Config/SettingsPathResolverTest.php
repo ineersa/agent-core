@@ -9,16 +9,16 @@ use PHPUnit\Framework\TestCase;
 
 class SettingsPathResolverTest extends TestCase
 {
-    private string $projectDir;
+    private string $appRoot;
     private string $homeDir;
     private SettingsPathResolver $resolver;
 
     protected function setUp(): void
     {
-        $this->projectDir = '/app';
+        $this->appRoot = '/app';
         $this->homeDir = '/home/user';
         $this->resolver = new SettingsPathResolver(
-            projectDir: $this->projectDir,
+            appRoot: $this->appRoot,
             homeDir: $this->homeDir,
         );
     }
@@ -69,9 +69,9 @@ class SettingsPathResolverTest extends TestCase
         ], $result);
     }
 
-    public function testGetProjectDir(): void
+    public function testGetAppRoot(): void
     {
-        self::assertSame('/app', $this->resolver->getProjectDir());
+        self::assertSame('/app', $this->resolver->getAppRoot());
     }
 
     public function testGetHomeDir(): void
