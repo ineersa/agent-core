@@ -12,12 +12,20 @@ Session persistence should use the user project cwd/session config, not the app 
 - castor check passes.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/2026-05-16-root-session-storage-in-active-project-cwd
+Worktree: /home/ineersa/projects/agent-core-worktrees/2026-05-16-root-session-storage-in-active-project-cwd
 Fork run:
-Started:
+Started: 2026-05-16T17:49:44.465Z
 Completed:
 
 ## Work log
 - Created: 2026-05-16T01:22:15.792Z
+
+## Task workflow update - 2026-05-16T17:49:44.465Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/2026-05-16-root-session-storage-in-active-project-cwd.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/2026-05-16-root-session-storage-in-active-project-cwd.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/2026-05-16-root-session-storage-in-active-project-cwd.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/2026-05-16-root-session-storage-in-active-project-cwd.
+- Summary: Claiming task for forked implementation.
