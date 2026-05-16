@@ -25,7 +25,7 @@ Scope:
 Status: CODE-REVIEW
 Branch: task/ai-03-home-settings-bootstrap-comment-preserving-writer
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-03-home-settings-bootstrap-comment-preserving-writer
-Fork run: uzteevsbgpnz
+Fork run: ufow0nb9dkw2
 PR URL: https://github.com/ineersa/agent-core/pull/10
 PR Status: open
 Started: 2026-05-16T22:30:47.734Z
@@ -57,3 +57,7 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/10
 - Validation: Fork validation: `composer dump-autoload` OK and `php bin/console --no-interaction` boots.; Manual integration checks passed for bootstrap idempotency and writer replace/uncomment/insert/append/comment-preservation/quoting/error paths.; `castor test` passed: 234 tests, 7773 assertions, 1 PHPUnit notice.; `castor deptrac` passed: 0 violations.; `castor phpstan` passed after expected temporary baseline for writer API until AI-07 consumes it.; `castor cs-check` passed after cs-fix.; Parent verification: full `castor check` passed.
 - Summary: AI-03 ready for review. Added first-launch home settings bootstrap from a commented template and a comment-preserving scalar writer for ai.default_model / ai.default_reasoning persistence. Implementation commit 1eb6661f.
+
+## Task workflow update - 2026-05-16T23:12:19.976Z
+- Recorded fork run: ufow0nb9dkw2
+- Summary: Launched fork ufow0nb9dkw2 to rewrite AI-03 per review/user decision: remove duplicated HomeSettingsTemplate PHP heredoc, bootstrap missing ~/.hatfield/settings.yaml by copying config/hatfield.defaults.yaml, update docs/settings.md to tell users to edit the copied home defaults, keep HomeSettingsWriter, run castor check, commit and push PR #10 updates.
