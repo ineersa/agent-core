@@ -46,3 +46,7 @@ Completed:
 ## Task workflow update - 2026-05-16T22:32:11.151Z
 - Recorded fork run: a75hrv2dqf1k
 - Summary: Launched implementation fork a75hrv2dqf1k in worktree /home/ineersa/projects/agent-core-worktrees/ai-08-runtime-protocol-cli-model-reasoning.
+
+## Task workflow update - 2026-05-16T22:43:23.696Z
+- Validation: AI-08 worktree: `castor test` before changes passed: 234 tests, 7773 assertions, 1 notice.; AI-08 worktree: `castor test` after changes passed: 234 tests, 7773 assertions, 1 notice.; AI-08 worktree: `castor deptrac` passed: 0 violations, 323 allowed, 69 uncovered.; AI-08 worktree: `castor phpstan` initially found expected dead property for RunMetadata::$reasoning; after baseline update, passed with no errors.; AI-08 worktree: `castor check` passed: deptrac + phpunit + phpstan + cs-fixer.; AI-08 worktree: `php bin/console agent --help` shows `--model` and `--reasoning` options.
+- Summary: AI-08 implementation complete in worktree commit b1ed50aa. Added optional model/reasoning plumbing through StartRunRequest, RunMetadata, AgentCommand CLI/headless JSONL handling, InProcessAgentSessionClient, JsonlProcessAgentSessionClient, and SessionInitializer. Added phpstan baseline entry for RunMetadata::$reasoning until AI-10 consumes it. No model selection/provider routing implemented.
