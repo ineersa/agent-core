@@ -1229,3 +1229,9 @@ parameters:
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/Tui/Widget/TuiRenderContext.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\HomeSettingsWriter\:\:writeScalar$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Config/HomeSettingsWriter.php

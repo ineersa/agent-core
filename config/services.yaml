@@ -39,6 +39,10 @@ services:
     arguments:
       $appRoot: '%kernel.project_dir%'
 
+  Ineersa\CodingAgent\Config\HomeSettingsTemplate: ~
+
+  Ineersa\CodingAgent\Config\HomeSettingsWriter: ~
+
   Ineersa\CodingAgent\Config\AppConfigLoader: ~
 
   Ineersa\CodingAgent\Config\AppConfigResolver: ~

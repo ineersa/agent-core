@@ -45,6 +45,7 @@ final class AppConfigLoader
 {
     public function __construct(
         private readonly SettingsPathResolver $pathResolver,
+        private readonly ?HomeSettingsTemplate $homeTemplate = null,
     ) {
     }
 
@@ -61,6 +62,13 @@ final class AppConfigLoader
 
         // Layer 2: Home settings (~/.hatfield/settings.yaml)
         $homeSettingsPath = $this->pathResolver->getHomeDir().'/.hatfield/settings.yaml';
+
+        // Bootstrap the home settings file from the template if it does not
+        // exist yet (first-launch behaviour).
+        if (null !== $this->homeTemplate && !is_readable($homeSettingsPath)) {
+            $this->bootstrapHomeSettings($homeSettingsPath);
+        }
+
         $homeSettings = $this->loadYamlFile($homeSettingsPath);
         if ([] !== $homeSettings) {
             $merged = $this->overlayConfig($merged, $homeSettings);
@@ -183,5 +191,27 @@ final class AppConfigLoader
         }
 
         return array_keys($arr) !== range(0, \count($arr) - 1);
+    }
+
+    /**
+     * Create the home settings file from the shipped template on first launch.
+     *
+     * Creates any missing parent directories and writes the template content.
+     * The template is designed so the user can fill in secrets and customize
+     * providers without losing built-in documentation.
+     */
+    private function bootstrapHomeSettings(string $homeSettingsPath): void
+    {
+        if (null === $this->homeTemplate) {
+            return;
+        }
+
+        $dir = \dirname($homeSettingsPath);
+
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+
+        file_put_contents($homeSettingsPath, $this->homeTemplate->getContent());
     }
 }
