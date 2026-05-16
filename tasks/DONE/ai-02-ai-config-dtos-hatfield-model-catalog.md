@@ -22,14 +22,14 @@ Scope:
 - Suggested validation: `castor test --filter Ai`; `castor phpstan`.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/ai-02-ai-config-dtos-hatfield-model-catalog
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-02-ai-config-dtos-hatfield-model-catalog
 Fork run: bxnoltgwdx16
 PR URL: https://github.com/ineersa/agent-core/pull/9
-PR Status: open
+PR Status: merged
 Started: 2026-05-16T22:30:38.613Z
-Completed:
+Completed: 2026-05-16T23:27:15.936Z
 
 ## Work log
 - Created: 2026-05-16T22:01:55.475Z
@@ -65,3 +65,12 @@ Completed:
 ## Task workflow update - 2026-05-16T23:20:32.231Z
 - Validation: Fork validation: `castor deptrac` passed: 0 violations, 66 uncovered, 323 allowed.; Fork validation: `castor test` passed: 276 tests, 7921 assertions, 1 PHPUnit notice.; Fork validation: `castor phpstan` passed after cache clear and baseline updates.; Fork validation: `castor cs-check` passed after cs-fix.; Fork validation: full `castor check` passed.; Fork verification: no remaining old references for AiCompat/AiModelRef/"compat" in source/config/docs/plan/task/baseline scopes checked by fork.; Parent verification: PR #9 head is a0b3b276f5dacfded427a71860b3ca0a24711f4c.
 - Summary: PR #9 review comments addressed by fork bxnoltgwdx16 and pushed to branch. Added commits 5c9c3df9, a6894f47, and a0b3b276. Changes: AiCompat→AiCompatibility, AiModelRef→AiModelReference, HatfieldModelCatalog::defaultModelRef()→defaultModelReference(), YAML/docs/task/plan key compat→compatibility, boolean defaults set to supportsDeveloperRole=false, supportsReasoningEffort=true, zaiToolStream=false. AI-06 task file renamed on the branch to match compatibility terminology. No downstream runtime behavior added.
+
+## Task workflow update - 2026-05-16T23:27:15.936Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/ai-02-ai-config-dtos-hatfield-model-catalog into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/ai-02-ai-config-dtos-hatfield-model-catalog.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR #9 merged: https://github.com/ineersa/agent-core/pull/9; Final branch validation before merge: full `castor check` passed; PHPUnit 276 tests/7921 assertions; deptrac 0 violations; PHPStan and CS check passed.; Local merge conflict resolution: removed stale tasks/TODO/ai-02-ai-config-dtos-hatfield-model-catalog.md from branch merge; code/config/docs changes merged.
+- Summary: PR #9 merged on GitHub at 2026-05-16T23:26:14Z with merge commit 21b53c34d114270f1940799f4fb9424ccd5921e3. Local integration merge initially conflicted only on stale tasks/TODO/ai-02 task file (branch modified old TODO copy while main had moved it to CODE-REVIEW); resolved by deleting the stale TODO copy and keeping the tracked CODE-REVIEW task. AI-02 complete: typed AI config DTOs and HatfieldModelCatalog landed with review-requested naming/default updates (AiCompatibility, AiModelReference, compatibility YAML key).
