@@ -117,7 +117,7 @@ ai:
             # - Binary reasoning via enable_thinking (no reasoning_effort).
             # - thinking_format: zai signals this quirk to the request mapper.
             # - zai_tool_stream is a per-model flag for streaming tool calls.
-            compat:
+            compatibility:
                 supports_developer_role: false
                 supports_reasoning_effort: false
                 thinking_format: zai
@@ -130,7 +130,7 @@ ai:
                     tool_calling: true
                     reasoning: true
                     thinking_level_map: { minimal: enabled, low: enabled, medium: enabled, high: enabled, xhigh: enabled }
-                    compat: { zai_tool_stream: true }
+                    compatibility: { zai_tool_stream: true }
                     cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
                 glm-5v-turbo:
                     name: GLM 5V Turbo
@@ -140,5 +140,5 @@ ai:
                     tool_calling: true
                     reasoning: true
                     thinking_level_map: { minimal: enabled, low: enabled, medium: enabled, high: enabled, xhigh: enabled }
-                    compat: { zai_tool_stream: true }
+                    compatibility: { zai_tool_stream: true }
                     cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }

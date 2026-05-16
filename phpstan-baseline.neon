@@ -1232,28 +1232,28 @@ parameters:
 
 		# Temporary AI-02 catalog DTO/API baselines. Remove as AI-04/AI-07/AI-10 consume these APIs.
 		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCompat\:\:\$supportsDeveloperRole is never read$#'
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCompatibility\:\:\$supportsDeveloperRole is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
-			path: src/CodingAgent/Config/Ai/AiCompat.php
+			path: src/CodingAgent/Config/Ai/AiCompatibility.php
 
 		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCompat\:\:\$supportsReasoningEffort is never read$#'
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCompatibility\:\:\$supportsReasoningEffort is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
-			path: src/CodingAgent/Config/Ai/AiCompat.php
+			path: src/CodingAgent/Config/Ai/AiCompatibility.php
 
 		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCompat\:\:\$thinkingFormat is never read$#'
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCompatibility\:\:\$thinkingFormat is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
-			path: src/CodingAgent/Config/Ai/AiCompat.php
+			path: src/CodingAgent/Config/Ai/AiCompatibility.php
 
 		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCompat\:\:\$zaiToolStream is never read$#'
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCompatibility\:\:\$zaiToolStream is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
-			path: src/CodingAgent/Config/Ai/AiCompat.php
+			path: src/CodingAgent/Config/Ai/AiCompatibility.php
 
 		-
 			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiConfig\:\:\$defaultReasoning is never read$#'
@@ -1286,7 +1286,7 @@ parameters:
 			path: src/CodingAgent/Config/Ai/AiCost.php
 
 		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$compat is never read$#'
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$compatibility is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
 			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
@@ -1346,10 +1346,10 @@ parameters:
 			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
 
 		-
-			message: '#^Unused Ineersa\\CodingAgent\\Config\\Ai\\AiModelRef\:\:parse$#'
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\Ai\\AiModelReference\:\:parse$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/CodingAgent/Config/Ai/AiModelRef.php
+			path: src/CodingAgent/Config/Ai/AiModelReference.php
 
 		-
 			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$api is never read$#'
@@ -1370,7 +1370,7 @@ parameters:
 			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
 
 		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$compat is never read$#'
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$compatibility is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
 			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
@@ -1412,7 +1412,7 @@ parameters:
 			path: src/CodingAgent/Config/Ai/HatfieldModelCatalog.php
 
 		-
-			message: '#^Unused Ineersa\\CodingAgent\\Config\\Ai\\HatfieldModelCatalog\:\:defaultModelRef$#'
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\Ai\\HatfieldModelCatalog\:\:defaultModelReference$#'
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/CodingAgent/Config/Ai/HatfieldModelCatalog.php

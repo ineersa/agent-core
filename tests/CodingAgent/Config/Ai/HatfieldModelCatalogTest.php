@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Config\Ai;
 
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
-use Ineersa\CodingAgent\Config\Ai\AiModelRef;
+use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use PHPUnit\Framework\TestCase;
 
@@ -93,10 +93,10 @@ class HatfieldModelCatalogTest extends TestCase
         self::assertSame('DeepSeek V4 Pro', $model->name);
     }
 
-    public function testGetModelByRef(): void
+    public function testGetModelByReference(): void
     {
         $catalog = $this->createCatalog();
-        $ref = AiModelRef::parse('zai/glm-5.1');
+        $ref = AiModelReference::parse('zai/glm-5.1');
 
         $model = $catalog->getModel($ref);
         self::assertNotNull($model);
@@ -125,7 +125,7 @@ class HatfieldModelCatalogTest extends TestCase
         self::assertNull($catalog->getModel('disabled/hidden'));
     }
 
-    public function testGetModelReturnsNullForInvalidRef(): void
+    public function testGetModelReturnsNullForInvalidReference(): void
     {
         $catalog = $this->createCatalog();
 
@@ -173,7 +173,7 @@ class HatfieldModelCatalogTest extends TestCase
 
         self::assertCount(5, $all, '5 models across 3 enabled providers');
 
-        $refs = array_map(static fn (AiModelRef $r) => $r->toString(), $all);
+        $refs = array_map(static fn (AiModelReference $r) => $r->toString(), $all);
         self::assertContains('deepseek/deepseek-v4-pro', $refs);
         self::assertContains('deepseek/deepseek-v4-flash', $refs);
         self::assertContains('llama_cpp/flash', $refs);
@@ -186,23 +186,23 @@ class HatfieldModelCatalogTest extends TestCase
         $catalog = $this->createCatalog();
         $all = $catalog->allModels();
 
-        $refs = array_map(static fn (AiModelRef $r) => $r->toString(), $all);
+        $refs = array_map(static fn (AiModelReference $r) => $r->toString(), $all);
         self::assertNotContains('disabled/hidden', $refs);
     }
 
-    public function testDefaultModelRef(): void
+    public function testDefaultModelReference(): void
     {
         $catalog = $this->createCatalog();
 
-        $ref = $catalog->defaultModelRef();
+        $ref = $catalog->defaultModelReference();
         self::assertNotNull($ref);
         self::assertSame('deepseek/deepseek-v4-pro', $ref->toString());
     }
 
-    public function testDefaultModelRefNullWhenAbsent(): void
+    public function testDefaultModelReferenceNullWhenAbsent(): void
     {
         $emptyCatalog = new HatfieldModelCatalog(AiConfig::fromArray([]));
-        self::assertNull($emptyCatalog->defaultModelRef());
+        self::assertNull($emptyCatalog->defaultModelReference());
     }
 
     public function testFirstAvailableModel(): void

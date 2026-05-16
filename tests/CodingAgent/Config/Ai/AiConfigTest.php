@@ -6,10 +6,10 @@ namespace Ineersa\CodingAgent\Tests\Config\Ai;
 
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiCost;
-use Ineersa\CodingAgent\Config\Ai\AiCompat;
+use Ineersa\CodingAgent\Config\Ai\AiCompatibility;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
-use Ineersa\CodingAgent\Config\Ai\AiModelRef;
+use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use PHPUnit\Framework\TestCase;
@@ -114,7 +114,7 @@ class AiConfigTest extends TestCase
         self::assertSame('/chat/completions', $provider->completionsPath);
         self::assertTrue($provider->supportsCompletions);
         self::assertFalse($provider->supportsEmbeddings);
-        self::assertNull($provider->compat);
+        self::assertNull($provider->compatibility);
 
         $model = $provider->models['deepseek-v4-pro'] ?? null;
         self::assertNotNull($model);
@@ -131,10 +131,10 @@ class AiConfigTest extends TestCase
         self::assertSame(0.87, $model->cost->output);
         self::assertSame(0.003625, $model->cost->cacheRead);
         self::assertSame(0.0, $model->cost->cacheWrite);
-        self::assertNull($model->compat);
+        self::assertNull($model->compatibility);
     }
 
-    public function testZaiProviderParsingWithCompat(): void
+    public function testZaiProviderParsingWithCompatibility(): void
     {
         $data = $this->minimalConfig();
         $data['ai'] = [
@@ -149,7 +149,7 @@ class AiConfigTest extends TestCase
                     'completions_path' => '/chat/completions',
                     'supports_completions' => true,
                     'supports_embeddings' => false,
-                    'compat' => [
+                    'compatibility' => [
                         'supports_developer_role' => false,
                         'supports_reasoning_effort' => false,
                         'thinking_format' => 'zai',
@@ -169,7 +169,7 @@ class AiConfigTest extends TestCase
                                 'high' => 'enabled',
                                 'xhigh' => 'enabled',
                             ],
-                            'compat' => ['zai_tool_stream' => true],
+                            'compatibility' => ['zai_tool_stream' => true],
                             'cost' => ['input' => 0, 'output' => 0, 'cache_read' => 0, 'cache_write' => 0],
                         ],
                     ],
@@ -183,17 +183,17 @@ class AiConfigTest extends TestCase
 
         $provider = $ai->providers['zai'] ?? null;
         self::assertNotNull($provider);
-        self::assertNotNull($provider->compat);
-        self::assertFalse($provider->compat->supportsDeveloperRole);
-        self::assertFalse($provider->compat->supportsReasoningEffort);
-        self::assertSame('zai', $provider->compat->thinkingFormat);
-        self::assertNull($provider->compat->zaiToolStream);
+        self::assertNotNull($provider->compatibility);
+        self::assertFalse($provider->compatibility->supportsDeveloperRole);
+        self::assertFalse($provider->compatibility->supportsReasoningEffort);
+        self::assertSame('zai', $provider->compatibility->thinkingFormat);
+        self::assertFalse($provider->compatibility->zaiToolStream);
 
         $model = $provider->models['glm-5.1'] ?? null;
         self::assertNotNull($model);
-        self::assertNotNull($model->compat);
-        self::assertTrue($model->compat->zaiToolStream);
-        self::assertNull($model->compat->thinkingFormat, 'model-level compat does not repeat provider thinking_format');
+        self::assertNotNull($model->compatibility);
+        self::assertTrue($model->compatibility->zaiToolStream);
+        self::assertNull($model->compatibility->thinkingFormat, 'model-level compatibility does not repeat provider thinking_format');
         self::assertSame(0.0, $model->cost->input);
     }
 
@@ -324,27 +324,27 @@ class AiConfigTest extends TestCase
         self::assertSame(0.0, $cost->cacheWrite);
     }
 
-    public function testCompatFromEmptyArray(): void
+    public function testCompatibilityFromEmptyArray(): void
     {
-        $compat = AiCompat::fromArray([]);
-        self::assertNull($compat->supportsDeveloperRole);
-        self::assertNull($compat->supportsReasoningEffort);
-        self::assertNull($compat->thinkingFormat);
-        self::assertNull($compat->zaiToolStream);
+        $compatibility = AiCompatibility::fromArray([]);
+        self::assertFalse($compatibility->supportsDeveloperRole);
+        self::assertTrue($compatibility->supportsReasoningEffort);
+        self::assertNull($compatibility->thinkingFormat);
+        self::assertFalse($compatibility->zaiToolStream);
     }
 
-    public function testCompatFromNonBoolValuesIgnores(): void
+    public function testCompatibilityFromNonBoolValuesFallsBackToDefault(): void
     {
-        $compat = AiCompat::fromArray([
+        $compatibility = AiCompatibility::fromArray([
             'supports_developer_role' => 'not-a-bool',
             'supports_reasoning_effort' => 0,
             'thinking_format' => 'zai',
         ]);
 
-        // String/int values that aren't booleans should result in null
-        self::assertNull($compat->supportsDeveloperRole);
-        self::assertNull($compat->supportsReasoningEffort);
-        self::assertSame('zai', $compat->thinkingFormat);
+        // Non-boolean values fall back to constructor defaults (false, true)
+        self::assertFalse($compatibility->supportsDeveloperRole);
+        self::assertTrue($compatibility->supportsReasoningEffort);
+        self::assertSame('zai', $compatibility->thinkingFormat);
     }
 
     public function testRawSettingsPreservedInRaw(): void

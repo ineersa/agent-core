@@ -10,7 +10,7 @@ namespace Ineersa\CodingAgent\Config\Ai;
  * Format: provider/model — parsed from a single string (e.g. deepseek/deepseek-v4-pro)
  * and rendered back to the same string form.
  */
-final readonly class AiModelRef
+final readonly class AiModelReference
 {
     public function __construct(
         public string $providerId,

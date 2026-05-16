@@ -9,7 +9,7 @@ namespace Ineersa\CodingAgent\Config\Ai;
  *
  * Owns all model metadata the agent needs: context window, max tokens,
  * input modalities, tool-calling, reasoning, thinking-level map,
- * cost, and provider-specific compat quirks.
+ * cost, and provider-specific compatibility quirks.
  */
 final readonly class AiModelDefinition
 {
@@ -23,7 +23,7 @@ final readonly class AiModelDefinition
      * @param bool                       $reasoning        Whether this model supports reasoning/thinking
      * @param array<string, string|null> $thinkingLevelMap Map from user-facing reasoning level
      *                                                     to provider-specific value (e.g. minimal→high, xhigh→max)
-     * @param AiCompat|null              $compat           Per-model compat overrides
+     * @param AiCompatibility|null       $compatibility    Per-model compatibility overrides
      * @param AiCost|null                $cost             Token pricing
      */
     public function __construct(
@@ -35,7 +35,7 @@ final readonly class AiModelDefinition
         public bool $toolCalling = false,
         public bool $reasoning = false,
         public array $thinkingLevelMap = [],
-        public ?AiCompat $compat = null,
+        public ?AiCompatibility $compatibility = null,
         public ?AiCost $cost = null,
     ) {
     }
@@ -57,7 +57,7 @@ final readonly class AiModelDefinition
                 static fn (mixed $v): ?string => \is_string($v) ? $v : (\is_scalar($v) ? (string) $v : null),
                 $data['thinking_level_map'],
             ) : [],
-            compat: isset($data['compat']) && \is_array($data['compat']) ? AiCompat::fromArray($data['compat']) : null,
+            compatibility: isset($data['compatibility']) && \is_array($data['compatibility']) ? AiCompatibility::fromArray($data['compatibility']) : null,
             cost: isset($data['cost']) && \is_array($data['cost']) ? AiCost::fromArray($data['cost']) : null,
         );
     }

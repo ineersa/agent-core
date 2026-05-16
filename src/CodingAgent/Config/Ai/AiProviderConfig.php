@@ -13,7 +13,7 @@ namespace Ineersa\CodingAgent\Config\Ai;
 final readonly class AiProviderConfig
 {
     /**
-     * @param string                           $id                  Provider ID used in model refs (e.g. deepseek, llama_cpp, zai)
+     * @param string                           $id                  Provider ID used in model references (e.g. deepseek, llama_cpp, zai)
      * @param string                           $type                Provider type (generic for OpenAI-completions-style)
      * @param bool                             $enabled             Whether this provider is active
      * @param string                           $baseUrl             Base URL for the provider's API
@@ -23,7 +23,7 @@ final readonly class AiProviderConfig
      * @param string|null                      $embeddingsPath      Embeddings endpoint path (e.g. /embeddings)
      * @param bool                             $supportsCompletions Whether chat completions are supported
      * @param bool                             $supportsEmbeddings  Whether embeddings are supported
-     * @param AiCompat|null                    $compat              Provider-level compat metadata
+     * @param AiCompatibility|null             $compatibility       Provider-level compatibility metadata
      * @param array<string, AiModelDefinition> $models              Exposed models keyed by model name
      */
     public function __construct(
@@ -37,7 +37,7 @@ final readonly class AiProviderConfig
         public ?string $embeddingsPath = null,
         public bool $supportsCompletions = true,
         public bool $supportsEmbeddings = false,
-        public ?AiCompat $compat = null,
+        public ?AiCompatibility $compatibility = null,
         public array $models = [],
     ) {
     }
@@ -69,7 +69,7 @@ final readonly class AiProviderConfig
             embeddingsPath: isset($data['embeddings_path']) ? (string) $data['embeddings_path'] : null,
             supportsCompletions: (bool) ($data['supports_completions'] ?? true),
             supportsEmbeddings: (bool) ($data['supports_embeddings'] ?? false),
-            compat: isset($data['compat']) && \is_array($data['compat']) ? AiCompat::fromArray($data['compat']) : null,
+            compatibility: isset($data['compatibility']) && \is_array($data['compatibility']) ? AiCompatibility::fromArray($data['compatibility']) : null,
             models: $models,
         );
     }

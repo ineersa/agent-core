@@ -40,12 +40,12 @@ final readonly class HatfieldModelCatalog
     /**
      * Get a model definition by reference or string.
      *
-     * @param AiModelRef|string $ref Model reference or "provider/model" string
+     * @param AiModelReference|string $ref Model reference or "provider/model" string
      */
-    public function getModel(AiModelRef|string $ref): ?AiModelDefinition
+    public function getModel(AiModelReference|string $ref): ?AiModelDefinition
     {
         if (\is_string($ref)) {
-            $ref = AiModelRef::tryParse($ref);
+            $ref = AiModelReference::tryParse($ref);
             if (null === $ref) {
                 return null;
             }
@@ -64,7 +64,7 @@ final readonly class HatfieldModelCatalog
      *
      * @throws \RuntimeException if the model is not in the catalog
      */
-    public function requireModel(AiModelRef|string $ref): AiModelDefinition
+    public function requireModel(AiModelReference|string $ref): AiModelDefinition
     {
         $model = $this->getModel($ref);
 
@@ -79,7 +79,7 @@ final readonly class HatfieldModelCatalog
     /**
      * Check whether a model is available (configured, enabled, and listed).
      */
-    public function isAvailable(AiModelRef|string $ref): bool
+    public function isAvailable(AiModelReference|string $ref): bool
     {
         return null !== $this->getModel($ref);
     }
@@ -87,7 +87,7 @@ final readonly class HatfieldModelCatalog
     /**
      * Return all available model references across all enabled providers.
      *
-     * @return list<AiModelRef>
+     * @return list<AiModelReference>
      */
     public function allModels(): array
     {
@@ -99,7 +99,7 @@ final readonly class HatfieldModelCatalog
             }
 
             foreach ($provider->models as $modelName => $model) {
-                $refs[] = new AiModelRef($provider->id, $modelName);
+                $refs[] = new AiModelReference($provider->id, $modelName);
             }
         }
 
@@ -109,19 +109,19 @@ final readonly class HatfieldModelCatalog
     /**
      * Get the default model reference from config, or null.
      */
-    public function defaultModelRef(): ?AiModelRef
+    public function defaultModelReference(): ?AiModelReference
     {
         if (null === $this->config->defaultModel || '' === $this->config->defaultModel) {
             return null;
         }
 
-        return AiModelRef::tryParse($this->config->defaultModel);
+        return AiModelReference::tryParse($this->config->defaultModel);
     }
 
     /**
      * Get the first available model across all providers.
      */
-    public function firstAvailableModel(): ?AiModelRef
+    public function firstAvailableModel(): ?AiModelReference
     {
         $all = $this->allModels();
 
