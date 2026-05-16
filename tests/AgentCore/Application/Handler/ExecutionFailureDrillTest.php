@@ -71,7 +71,7 @@ final class ExecutionFailureDrillTest extends TestCase
 
         /** @var LlmStepResult $result */
         $result = $collectingBus->messages[0];
-        self::assertSame('retry-attempt', $result->assistantMessage?->getContent());
+        self::assertSame('retry-attempt', $result->assistantMessage?->asText());
     }
 
     public function testToolWorkerCanBeRetriedAfterCommandBusDispatchCrash(): void

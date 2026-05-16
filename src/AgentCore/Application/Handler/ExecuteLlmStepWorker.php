@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Domain\Tool\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Tool\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Tool\PlatformInvocationResult;
 use Symfony\AI\Platform\Message\AssistantMessage;
+use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -88,7 +89,7 @@ final readonly class ExecuteLlmStepWorker
             $hasStreamDeltas = [] !== $response->deltas();
             if (null === $assistantMessage && !$hasStreamDeltas && null === $response->stopReason && null === $response->error) {
                 $assistantMessage = new AssistantMessage(
-                    content: \sprintf('LLM placeholder response for %s', $message->contextRef),
+                    new Text(\sprintf('LLM placeholder response for %s', $message->contextRef)),
                 );
             }
 
