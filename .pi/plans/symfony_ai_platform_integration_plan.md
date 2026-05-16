@@ -4,7 +4,25 @@
 
 Planning draft created 2026-05-16.
 
+Updated against `task/2026-05-16-upgrade-symfony-ai-packages-to-0-9` / PR #6, which migrates AgentCore to Symfony AI 0.9 and the new `AssistantMessage` content-part API.
+
 This plan covers wiring Symfony AI Platform into Hatfield/AgentCore after the separate Symfony AI `0.9` upgrade task lands. The goal is to make the existing `LlmPlatformAdapter` talk to configured real providers, persist model/reasoning selection, and allow per-turn model changes.
+
+## Symfony AI 0.9 migration impact
+
+The 0.9 branch does not change the provider/settings architecture in this plan, but it changes the message API assumptions implementations must use:
+
+- `AssistantMessage` is now constructed from variadic content parts (`Text`, `Thinking`, `ToolCall`, etc.), not named `content`, `toolCalls`, `thinkingContent`, `thinkingSignature` arguments.
+- Reading assistant text should use `AssistantMessage::asText()`.
+- Reading tool calls should use `AssistantMessage::getToolCalls()`.
+- Reading thinking should use `AssistantMessage::hasThinking()` / `getThinking()` returning `Content\Thinking` parts.
+- Existing 0.9 migration reviewed new delta types (`BinaryDelta`, `ChoiceDelta`, `MetadataDelta`, `ThinkingStart`) and intentionally leaves them ignored by `LlmPlatformAdapter` unless we add product behavior for them.
+
+Implications for this platform work:
+
+- Any tests/fakes for configured providers must build 0.9-style `AssistantMessage` objects, e.g. `new AssistantMessage(new Text('...'))`.
+- Reasoning-level selection is an invocation-option concern. Do not conflate it with returned `Content\Thinking` blocks; those are response content extracted after provider invocation.
+- Provider integrations should pass model/reasoning through `ModelRoutingEvent` options and let the existing 0.9-compatible adapter/converter handle response content.
 
 ## Scope decisions
 
