@@ -26,7 +26,7 @@ Scope:
 Status: CODE-REVIEW
 Branch: task/ai-08-runtime-protocol-cli-model-reasoning
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-08-runtime-protocol-cli-model-reasoning
-Fork run: a75hrv2dqf1k
+Fork run: a6j7rpbxooyp
 PR URL: https://github.com/ineersa/agent-core/pull/8
 PR Status: open
 Started: 2026-05-16T22:30:54.786Z
@@ -58,3 +58,7 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/8
 - Validation: `castor test` passed after changes: 234 tests, 7773 assertions, 1 notice.; `castor deptrac` passed: 0 violations.; `castor phpstan` passed after adding expected temporary baseline for RunMetadata::$reasoning until AI-10 reads it.; `castor check` passed.; `php bin/console agent --help` shows `--model` and `--reasoning` options.
 - Summary: AI-08 ready for review. Worktree branch committed at b1ed50aa with runtime protocol/CLI plumbing for optional model and reasoning fields. No model selection or provider routing behavior included.
+
+## Task workflow update - 2026-05-16T23:45:41.290Z
+- Recorded fork run: a6j7rpbxooyp
+- Summary: Launched fork a6j7rpbxooyp to resolve PR #8 merge conflicts. Scope: update AI-08 branch against current main, preserve optional model/reasoning runtime protocol/CLI plumbing, avoid stale task-file states, align with merged AI-02 naming where conflicts touch docs/tasks, run castor check, commit and push branch.
