@@ -427,6 +427,12 @@ parameters:
 			path: src/AgentCore/Domain/Run/RunMetadata.php
 
 		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Run\\RunMetadata\:\:\$reasoning is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Run/RunMetadata.php
+
+		-
 			message: '#^Property Ineersa\\AgentCore\\Domain\\Run\\RunMetadata\:\:\$session is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1

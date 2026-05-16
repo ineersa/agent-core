@@ -15,6 +15,7 @@ final readonly class RunMetadata
     public function __construct(
         public array $session = [],
         public ?string $model = null,
+        public ?string $reasoning = null,
         #[SerializedName('tools_scope')]
         public ?array $toolsScope = null,
     ) {

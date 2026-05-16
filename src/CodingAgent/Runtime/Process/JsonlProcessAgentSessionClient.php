@@ -73,11 +73,13 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $cmd = new RuntimeCommand(
             id: uniqid('cmd_', true),
             type: 'start_run',
-            payload: [
+            payload: array_filter([
                 'prompt' => $request->prompt,
                 'cwd' => $request->cwd,
                 'options' => $request->options,
-            ],
+                'model' => $request->model,
+                'reasoning' => $request->reasoning,
+            ], static fn (mixed $v) => null !== $v),
         );
 
         $this->writeCommand($cmd);
