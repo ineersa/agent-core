@@ -31,3 +31,7 @@ Completed:
 ## Task workflow update - 2026-05-16T17:50:39.770Z
 - Recorded fork run: vrd2dxwnotxy
 - Fork vrd2dxwnotxy launched for implementation in `/home/ineersa/projects/agent-core-worktrees/2026-05-16-document-phar-safe-process-transport-follow-up`.
+
+## Task workflow update - 2026-05-16T17:57:54.356Z
+- Validation: `castor check` in worktree: deptrac passed, phpunit passed (228 tests, 7750 assertions), cs-fixer passed; full check blocked by pre-existing PHPStan error in `.castor/tasks.php:191` unrelated to this task.; `vendor/bin/phpstan analyse ... JsonlProcessAgentSessionClient.php`: passed.; `vendor/bin/php-cs-fixer fix --dry-run ... JsonlProcessAgentSessionClient.php`: passed.
+- Summary: Fork vrd2dxwnotxy completed implementation. Commit `9a2d54c86ff9bf5f511c2982040ecad0730e00b1` on task branch documents source-checkout assumptions in `JsonlProcessAgentSessionClient` and adds `src/CodingAgent/Runtime/Process/AGENTS.md` with the future SelfExecutableLocator/BinaryLocator strategy. Behavior unchanged.
