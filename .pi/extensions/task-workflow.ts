@@ -379,6 +379,14 @@ async function mergeTaskBranch(
 		notes.push(del.code === 0 ? `Deleted branch ${branch}.` : `Branch deletion failed: ${del.stderr || del.stdout}`);
 	}
 
+	// Sync local main with remote (user merges PRs via GitHub UI)
+	const pull = await git(pi, root, ["pull"], signal);
+	if (pull.code === 0) {
+		notes.push(`Pulled integration checkout: ${(pull.stdout || pull.stderr).trim()}.`);
+	} else {
+		notes.push(`Pull warning: ${(pull.stderr || pull.stdout).trim()}`);
+	}
+
 	return notes;
 }
 
@@ -489,9 +497,9 @@ This project uses a repo-local lightweight issue tracker under tasks/TODO, tasks
 - Use create_task when the user asks to track new follow-up work.
 - Use update_task to update task metadata or append work log entries without moving the task file.
 - Use move_task to change task status instead of moving task files manually.
-- When claiming a task, call move_task with to="IN-PROGRESS". That creates a task/<slug> git branch and sibling worktree at ../<repo>-worktrees/<slug>, copies vendor/ and .vera/ into the worktree when they exist, then records metadata in the task file.
+- When claiming a task, call move_task with to="IN-PROGRESS". This requires a clean integration checkout (commit/stash first). It creates a task/<slug> git branch and sibling worktree at ../<repo>-worktrees/<slug>, copies vendor/ and .vera/ into the worktree when they exist, then records metadata in the task file.
 - When implementation is complete and committed, the parent/orchestrator/user calls move_task with to="CODE-REVIEW". This pushes the task branch to the remote and creates a GitHub PR via the gh CLI. The PR URL is stored in the task metadata.
-- After code review and PR approval, the parent/orchestrator/user calls move_task with to="DONE". It attempts a git merge back into the integration checkout and reports conflicts without moving the task to DONE if the merge fails.
+- After code review and PR approval, the parent/orchestrator/user calls move_task with to="DONE". It attempts a git merge back into the integration checkout and reports conflicts without moving the task to DONE if the merge fails. After a successful merge, it runs git pull to sync with remote changes from GitHub PR merges.
 - move_task with to="DONE" requires a clean integration checkout by default. If it reports stale AD entries from staged additions deleted in the worktree, retry with cleanupStaleIndexEntries=true; do not commit unrelated staged changes just to satisfy the task workflow.
 - IDE tools are scoped to the current checkout and may not index sibling worktrees. move_task copies .vera when available so semantic-search can work in the worktree, but prefer absolute-path read/edit/bash operations or open a separate pi session rooted at the worktree when IDE indexes are unavailable.
 `;
@@ -567,8 +575,12 @@ export default function (pi: ExtensionAPI) {
 				let text = await readFile(task.path, "utf8");
 				let notes: string[] = [`Moved ${task.status} → ${to}.`];
 
-				// TODO → IN-PROGRESS: create worktree
+				// TODO → IN-PROGRESS: create worktree (requires clean integration checkout)
 				if (task.status === "TODO" && to === "IN-PROGRESS") {
+					const mainStatus = await gitOk(pi, root, ["status", "--porcelain"], signal);
+					if (mainStatus.stdout.trim() !== "") {
+						throw new Error(`Integration checkout is not clean; commit or stash changes before claiming a task.\n${mainStatus.stdout}`);
+					}
 					const worktree = await createWorktreeForTask(pi, root, task, params.worktreeBase, signal);
 					text = updateField(text, "Status", "IN-PROGRESS");
 					text = updateField(text, "Branch", worktree.branch);

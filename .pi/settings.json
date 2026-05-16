@@ -2,8 +2,8 @@
   "packages": [],
   "theme": "cyberpunk",
   "observational-memory": {
-    "observationThresholdTokens": 2000,
-    "compactionThresholdTokens": 60000,
+    "observationThresholdTokens": 5000,
+    "compactionThresholdTokens": 80000,
     "reflectionThresholdTokens": 30000,
     "passive": false,
     "compactionModel": {
