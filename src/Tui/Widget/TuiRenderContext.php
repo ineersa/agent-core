@@ -16,11 +16,15 @@ use Ineersa\Tui\Theme\TuiTheme;
  */
 final readonly class TuiRenderContext
 {
+    /**
+     * Convenience default used only by unit tests;
+     * production code must always supply the real theme.
+     */
     public function __construct(
         public int $terminalWidth = 80,
         public int $terminalHeight = 24,
         public TuiTheme $theme = new DefaultTheme(
-            new ThemePalette(name: 'cyberpunk', colors: []),
+            new ThemePalette(name: '__test_context__', colors: []),
         ),
     ) {
     }

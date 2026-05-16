@@ -17,4 +17,4 @@ callgraph.html
 # Deptrac cache
 /.deptrac.cache
 
-# Hatfield is not ignored — see .hatfield/.gitignore for what is ignored inside it
+/.aiassistant/

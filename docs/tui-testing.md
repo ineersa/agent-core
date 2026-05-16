@@ -19,7 +19,9 @@ via Ctrl+D or double Ctrl+C.
 current session. This keeps your existing session layout intact.
 
 **Outside tmux:** creates a new session named `hatfield-agent` (or
-attaches to it if it already exists).
+attaches to it if it already exists). This task attaches tmux directly
+to the caller's TTY rather than through Castor's process runner so raw
+keys and terminal dimensions pass through correctly.
 
 The command run in the tmux pane/window is simply:
 
@@ -49,7 +51,8 @@ Creates a deterministic, reproducible tmux session for snapshot testing.
 
 Behavior:
 - Session name: `hatfield-agent-test`
-- Fixed dimensions: 120×40 columns/rows
+- Fixed dimensions: 120×40 columns/rows (forced with `resize-window`
+  after session creation for tmux servers that ignore `new-session -x/-y`)
 - Runs the agent with `--prompt='hello from tui test'`
 - The TUI event loop blocks indefinitely — the session stays alive
   until the user exits (Ctrl+D or double Ctrl+C)
@@ -219,8 +222,21 @@ brew install tmux           # macOS
 
 **Session already exists but pane is dead**
 ```bash
+tmux kill-session -t hatfield-agent
+castor run:agent
+
+# or for the deterministic test session
 tmux kill-session -t hatfield-agent-test
 castor run:agent-test
+```
+
+**Keys show up as escape sequences / Ctrl keys do not work**
+This usually means tmux was attached through a non-TTY wrapper or you are
+attached to a stale session. Kill and recreate the session:
+
+```bash
+tmux kill-session -t hatfield-agent
+castor run:agent
 ```
 
 **Snapshot is empty or truncated**

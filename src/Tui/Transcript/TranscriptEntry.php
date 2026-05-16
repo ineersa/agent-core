@@ -49,9 +49,12 @@ final readonly class TranscriptEntry
 
         $line = \sprintf('%s %s', $prefix, $this->text);
 
-        // If user_message has no color, use accent; otherwise use role default
-        $colorSpec = $context->theme->color($roleColor, '');
-
-        return $context->theme->color($roleColor, $line);
+        return match ($this->style) {
+            'accent' => $context->theme->accent($line),
+            'muted' => $context->theme->muted($line),
+            'warning' => $context->theme->warning($line),
+            'error' => $context->theme->error($line),
+            default => $context->theme->color($roleColor, $line),
+        };
     }
 }

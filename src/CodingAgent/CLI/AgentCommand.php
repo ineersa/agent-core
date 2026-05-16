@@ -68,10 +68,10 @@ final class AgentCommand
             return $this->runHeadless($output);
         }
 
-        return $this->runTui($transport, $prompt, $resume, $output);
+        return $this->runTui($transport, $prompt, $resume);
     }
 
-    private function runTui(string $transport, string $prompt, string $resume, OutputInterface $output): int
+    private function runTui(string $transport, string $prompt, string $resume): int
     {
         $client = $this->resolveClient($transport);
         $projectCwd = getcwd() ?: '';
@@ -86,7 +86,6 @@ final class AgentCommand
 
         return $this->interactiveMode->run(
             client: $client,
-            output: $output,
             request: '' !== $prompt ? new StartRunRequest(prompt: $prompt, cwd: $projectCwd) : null,
             sessionId: $sessionId,
             projectCwd: $projectCwd,

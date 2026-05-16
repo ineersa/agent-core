@@ -12,13 +12,13 @@ use Symfony\Component\Yaml\Yaml;
  * Expected format:
  *
  * ```yaml
- * name: cyberpunk
+ * name: custom-theme
  * vars:
- *   neon: "#ff00ff"
- *   electric: "#00ffff"
+ *   accent_color: "#ff00ff"
+ *   muted_color: "#718096"
  * colors:
- *   accent: electric
- *   muted: "#718096"
+ *   accent: accent_color
+ *   muted: muted_color
  *   error: "#ff3366"
  *   ...
  * ```

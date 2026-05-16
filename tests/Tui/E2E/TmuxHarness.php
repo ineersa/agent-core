@@ -89,6 +89,15 @@ final class TmuxHarness
             ));
         }
 
+        // Some tmux servers ignore new-session -x/-y and keep the global
+        // default-size (often 80x24). Force the requested deterministic size.
+        shell_exec(sprintf(
+            'tmux resize-window -t %s -x %d -y %d 2>/dev/null',
+            escapeshellarg($session),
+            $width,
+            $height,
+        ));
+
         return new TmuxPane(
             session: $session,
             paneId: $paneId,

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Contract;
 
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+
 /**
  * Runtime boundary between TUI/presentation and the agent runtime.
  *

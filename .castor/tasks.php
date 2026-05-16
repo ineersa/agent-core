@@ -180,6 +180,23 @@ function check_tmux(): void
 }
 
 /**
+ * Run an interactive/fullscreen command directly on the caller's TTY.
+ *
+ * Castor\run() is ideal for QA commands, but it launches through Symfony
+ * Process pipes. That can break tmux attach sessions: terminal size falls
+ * back to 80x24 and raw key sequences/control keys may not pass through
+ * cleanly. Use passthru() for commands that must own the terminal.
+ */
+function run_interactive(string $command): void
+{
+    passthru($command, $exitCode);
+
+    if (0 !== $exitCode) {
+        throw new RuntimeException(sprintf('Interactive command failed with exit code %d: %s', $exitCode, $command));
+    }
+}
+
+/**
  * Launch the agent TUI in a tmux session.
  *
  * Inside tmux: creates a new window named "hatfield-agent".
@@ -197,7 +214,7 @@ function run_agent(): void
     $insideTmux = false !== getenv('TMUX');
 
     $innerCmd = sprintf(
-        'cd %s && php bin/console agent',
+        'cd %s && exec php bin/console agent',
         escapeshellarg($root)
     );
 
@@ -209,8 +226,8 @@ function run_agent(): void
         ));
         echo "Created tmux window '{$session}'.\n";
     } else {
-        run(sprintf(
-            'tmux new-session -A -s %s bash -c %s',
+        run_interactive(sprintf(
+            'tmux new-session -A -s %s bash -lc %s',
             escapeshellarg($session),
             escapeshellarg($innerCmd)
         ));
@@ -276,6 +293,15 @@ function run_agent_test(): void
 
         return;
     }
+
+    // Some tmux servers ignore new-session -x/-y and keep the global
+    // default-size (often 80x24). Force the intended deterministic size.
+    shell_exec(sprintf(
+        'tmux resize-window -t %s -x %d -y %d 2>/dev/null',
+        escapeshellarg($session),
+        $width,
+        $height
+    ));
 
     // Wait for the command to start and render.
     sleep(2);

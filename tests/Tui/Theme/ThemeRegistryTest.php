@@ -12,45 +12,43 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(ThemeRegistry::class)]
 final class ThemeRegistryTest extends TestCase
 {
-    public function testDefaultThemeIsCyberpunk(): void
+    public function testGetOrThrowReturnsThemeWhenFound(): void
     {
         $registry = new ThemeRegistry(
             builtin: [
                 new ThemePalette('cyberpunk', ['accent' => '#00ffff']),
                 new ThemePalette('nord', ['accent' => '#88c0d0']),
             ],
-            defaultName: 'cyberpunk',
         );
 
-        $theme = $registry->getDefault();
+        $theme = $registry->getOrThrow('cyberpunk');
 
         self::assertSame('cyberpunk', $theme->name);
         self::assertSame('#00ffff', $theme->get(\Ineersa\Tui\Theme\ThemeColor::Accent));
     }
 
-    public function testGetOrDefaultReturnsDefaultWhenMissing(): void
+    public function testGetOrThrowThrowsWhenMissing(): void
     {
         $registry = new ThemeRegistry(
             builtin: [new ThemePalette('cyberpunk', ['accent' => '#00ffff'])],
-            defaultName: 'cyberpunk',
         );
 
-        $theme = $registry->getOrDefault('nonexistent');
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Theme "nonexistent" is not registered');
 
-        self::assertSame('cyberpunk', $theme->name);
+        $registry->getOrThrow('nonexistent');
     }
 
-    public function testGetOrDefaultReturnsExactWhenFound(): void
+    public function testGetOrThrowReturnsExactWhenFound(): void
     {
         $registry = new ThemeRegistry(
             builtin: [
                 new ThemePalette('cyberpunk', ['accent' => '#00ffff']),
                 new ThemePalette('nord', ['accent' => '#88c0d0']),
             ],
-            defaultName: 'cyberpunk',
         );
 
-        $theme = $registry->getOrDefault('nord');
+        $theme = $registry->getOrThrow('nord');
 
         self::assertSame('nord', $theme->name);
         self::assertSame('#88c0d0', $theme->get(\Ineersa\Tui\Theme\ThemeColor::Accent));
@@ -100,8 +98,15 @@ final class ThemeRegistryTest extends TestCase
 
     public function testDefaultName(): void
     {
-        $registry = new ThemeRegistry(defaultName: 'tokyo-night');
+        $registry = new ThemeRegistry(
+            builtin: [
+                new ThemePalette('cyberpunk'),
+                new ThemePalette('tokyo-night'),
+            ],
+        );
 
-        self::assertSame('tokyo-night', $registry->getDefaultName());
+        self::assertTrue($registry->has('tokyo-night'));
+        $theme = $registry->getOrThrow('tokyo-night');
+        self::assertSame('tokyo-night', $theme->name);
     }
 }

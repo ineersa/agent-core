@@ -16,7 +16,7 @@ namespace Ineersa\Tui\Theme;
 interface TuiTheme
 {
     /**
-     * Human-readable theme name (e.g. "cyberpunk", "nord").
+     * Human-readable theme name from the resolved theme palette.
      */
     public function name(): string;
 

@@ -114,8 +114,43 @@ One JSON object per line, produced by `RuntimeEvent::toArray()`:
 {"v":"1.0","type":"run_started","run_id":"a1b2c3d4e5f6","seq":1,"payload":{"run_id":"a1b2c3d4e5f6","status":"running"}}
 ```
 
-This file is primarily a debug/log projection. The canonical source of events is
-`events.jsonl`.
+This file is a debug/projection log. The canonical source of events is `events.jsonl`.
+
+### Runtime event → transcript projection
+
+The TUI layer reads runtime events and projects them into the user-visible transcript:
+
+```
+events.jsonl                    RuntimeEventPoller             transcript.jsonl
+(canonical)                     (src/Tui/Runtime/)             (projection)
+────────────────────────────────────────────────────────────────────────────────
+                                ┌──────────────────┐
+ SessionRunEventStore::allFor() │ RuntimeEventPoller│  formatEventToEntry()
+ ──────────────────────────────▶│ ::poll()           │──────────────────────▶
+ (InProcessAgentSessionClient)  │                    │
+                                │ • throttle (50ms)  │  RuntimeEvent
+ from process stdout (JSONL)    │ • dedup by seq     │  → TranscriptEntry
+ ──────────────────────────────▶│ • persist runtime  │  (plain model, no theme)
+ (JsonlProcessAgentSessionClt)  │ • map to transcript│
+                                └────────┬───────────┘
+                                         │
+                                         ▼
+                                  TuiSessionState
+                                  $state->transcript[]
+                                         │
+                                         ▼
+                                  ChatScreen::appendTranscript()
+                                         │
+                                         ▼
+                                  TranscriptWidget → live display
+                                  (role prefixes + theme applied
+                                   by TranscriptEntry::render())
+```
+
+Key: runtime events flow through `RuntimeEventPoller` which produces plain
+`TranscriptEntry` objects. Theming and role-based display prefixes (❯ ◇ ●)
+are applied at render time by `TranscriptEntry::render()` in the TUI widget
+layer — not during persistence.
 
 ## ID rules and integrity checks
 
@@ -147,8 +182,8 @@ php bin/console agent --resume a1b2c3d4e5f6
 ```
 
 1. `AgentCommand` validates the session directory exists via `HatfieldSessionStore::exists()`.
-2. `InteractiveMode::run()` loads metadata, transcript, and runtime events from disk.
-3. If metadata contains a `run_id`, calls `AgentSessionClient::resume($runId)`.
+2. `SessionInitializer::initialize()` loads metadata, transcript, and runtime events from disk, populating a `TuiSessionState` (in `src/Tui/Runtime/`).
+3. If metadata contains a `run_id`, `InteractiveMode::startOrResumeRun()` calls `AgentSessionClient::resume($runId)`.
 4. The AgentCore `SessionRunStore::get($runId)` loads `state.json` and the pipeline
    continues from the persisted state.
 5. The TUI tick callback polls `AgentSessionClient::events($runId)`, which reads
@@ -163,7 +198,7 @@ for both the TUI session context and the AgentCore run.
 php bin/console agent --prompt="Hello"
 ```
 
-1. `InteractiveMode::run()` calls `$sessionStore->generateId()` → 12-char hex.
+1. `SessionInitializer::initialize()` calls `$sessionStore->generateId()` → 12-char hex, creates a `TuiSessionState` (in `src/Tui/Runtime/`).
 2. `$sessionStore->createSession(cwd, prompt, sessionId)` creates the
    self-contained directory with empty files.
 3. A `StartRunRequest` is created with `runId: sessionId`.

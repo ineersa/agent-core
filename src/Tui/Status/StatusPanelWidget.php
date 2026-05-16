@@ -40,6 +40,16 @@ final class StatusPanelWidget implements TuiWidget
     }
 
     /**
+     * Replace all status entries.
+     *
+     * @param array<string, string> $entries
+     */
+    public function setEntries(array $entries): void
+    {
+        $this->entries = $entries;
+    }
+
+    /**
      * @return array<string, string>
      */
     public function getEntries(): array

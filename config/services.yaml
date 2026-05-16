@@ -1,7 +1,12 @@
+# yaml-language-server: $schema=../vendor/symfony/dependency-injection/Loader/schema/services.schema.json
 services:
   _defaults:
     autowire: true
     autoconfigure: true
+
+  _instanceof:
+    Ineersa\Tui\Listener\TuiListenerRegistrar:
+      tags: ['app.tui_listener']
 
   Ineersa\CodingAgent\:
     resource: '../src/CodingAgent/'
@@ -39,3 +44,7 @@ services:
   Ineersa\CodingAgent\Session\HatfieldSessionStore:
     arguments:
       $projectDir: '%kernel.project_dir%'
+
+  Ineersa\Tui\Application\InteractiveMode:
+    arguments:
+      $listenerRegistrars: !tagged_iterator app.tui_listener

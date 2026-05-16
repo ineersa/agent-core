@@ -7,10 +7,11 @@ namespace Ineersa\Tui\Theme;
 /**
  * Registry of built-in and user-loaded TUI themes.
  *
- * Provides theme lookup by name and a default fallback.
- * The built-in themes are loaded from YAML files under config/themes/.
+ * Provides theme lookup by name. The default theme is driven by
+ * application config ({@see config/hatfield.defaults.yaml}) — this
+ * registry itself carries no opinion about which theme is "default".
  *
- * Users can override the default theme via config.
+ * The built-in themes are loaded from YAML files under config/themes/.
  */
 final class ThemeRegistry
 {
@@ -18,12 +19,10 @@ final class ThemeRegistry
     private array $themes = [];
 
     /**
-     * @param list<ThemePalette> $builtin     Built-in theme palettes
-     * @param string             $defaultName Default theme to use when lookup fails
+     * @param list<ThemePalette> $builtin Built-in theme palettes
      */
     public function __construct(
         array $builtin = [],
-        private readonly string $defaultName = 'cyberpunk',
     ) {
         foreach ($builtin as $palette) {
             $this->register($palette);
@@ -49,28 +48,24 @@ final class ThemeRegistry
     }
 
     /**
-     * Get the palette for the given name, or the default if not found.
+     * Look up a palette by name, throwing if not found.
+     *
+     * Used by the theme factory when the name is driven by config
+     * and a missing theme is a configuration error.
+     *
+     * @throws \RuntimeException if the theme is not registered
      */
-    public function getOrDefault(string $name): ThemePalette
+    public function getOrThrow(string $name): ThemePalette
     {
-        return $this->themes[$name] ?? $this->getDefault();
-    }
+        $palette = $this->themes[$name] ?? null;
+        if (null === $palette) {
+            $allNames = $this->getNames();
+            $names = [] !== $allNames ? implode(', ', $allNames) : '(none)';
 
-    /**
-     * Get the default theme palette.
-     */
-    public function getDefault(): ThemePalette
-    {
-        return $this->themes[$this->defaultName]
-            ?? throw new \RuntimeException("Default theme '{$this->defaultName}' not registered.");
-    }
+            throw new \RuntimeException(\sprintf('Theme "%s" is not registered. Available themes: %s.', $name, $names));
+        }
 
-    /**
-     * Get the default theme name.
-     */
-    public function getDefaultName(): string
-    {
-        return $this->defaultName;
+        return $palette;
     }
 
     /**

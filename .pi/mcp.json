@@ -3,15 +3,8 @@
     "toolPrefix": "server",
     "directTools": false,
     "disableProxyTool": false,
-    "toonEncode": ["jetbrains-index"],
-    "captureStats": true
+    "captureStats": false
   },
   "mcpServers": {
-    "jetbrains-index": {
-      "url": "http://127.0.0.1:29175/index-mcp/streamable-http",
-      "headers": {},
-      "directTools": true,
-      "exposeResources": false
-    }
   }
 }

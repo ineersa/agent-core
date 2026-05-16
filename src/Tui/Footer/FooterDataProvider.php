@@ -57,6 +57,16 @@ final class FooterDataProvider
     }
 
     /**
+     * Replace all footer status entries.
+     *
+     * @param array<string, string> $entries
+     */
+    public function setStatusEntries(array $entries): void
+    {
+        $this->statusEntries = $entries;
+    }
+
+    /**
      * @return array<string, string>
      */
     public function getStatusEntries(): array

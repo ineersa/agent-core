@@ -17,7 +17,7 @@ namespace Ineersa\CodingAgent\Config;
 final readonly class AppConfig
 {
     public function __construct(
-        public TuiConfig $tui = new TuiConfig(),
+        public TuiConfig $tui,
         /** @var array<string, mixed> */
         public array $sessions = [],
         /** @var array<string, mixed> Raw merged data for forward compatibility */

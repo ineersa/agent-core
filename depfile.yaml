@@ -60,6 +60,21 @@ parameters:
         - type: directory
           value: src/Tui/Widget/.*
 
+    - name: TuiListener
+      collectors:
+        - type: directory
+          value: src/Tui/Listener/.*
+
+    - name: TuiRuntime
+      collectors:
+        - type: directory
+          value: src/Tui/Runtime/.*
+
+    - name: TuiScreen
+      collectors:
+        - type: directory
+          value: src/Tui/Screen/.*
+
     - name: TuiTheme
       collectors:
         - type: directory
@@ -137,6 +152,9 @@ parameters:
       - AppConfig
       - TuiLayout
       - TuiExtension
+      - TuiListener
+      - TuiRuntime
+      - TuiScreen
       - TuiHeader
       - TuiTranscript
       - TuiStatus
@@ -146,6 +164,35 @@ parameters:
       - TuiTheme
       - SymfonyTui
       - SymfonyConsole
+
+    TuiListener:
+      - AppRuntimeContract
+      - AppSession
+      - TuiRuntime
+      - TuiScreen
+      - TuiTranscript
+      - TuiTheme
+      - SymfonyTui
+
+    TuiRuntime:
+      - AppRuntimeContract
+      - AppSession
+      - TuiTranscript
+      - TuiScreen
+      - TuiTheme
+      - SymfonyTui
+
+    TuiScreen:
+      - TuiLayout
+      - TuiExtension
+      - TuiHeader
+      - TuiTranscript
+      - TuiStatus
+      - TuiEditor
+      - TuiFooter
+      - TuiWidget
+      - TuiTheme
+      - SymfonyTui
 
     TuiLayout:
       - TuiWidget
@@ -183,6 +230,7 @@ parameters:
 
     TuiWidget:
       - TuiTheme
+      - SymfonyTui
 
     TuiTheme:
       - SymfonyTui
@@ -215,6 +263,7 @@ parameters:
       - AppRuntimeInternals
       - AppSession
       - TuiApplication
+      - TuiListener
       - TuiHeader
       - TuiTranscript
       - TuiStatus
