@@ -22,14 +22,21 @@ Scope:
 - Suggested validation: `castor test --filter Compat`; `castor test --filter PlatformIntegration`.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/ai-09-compat-aware-request-shaping
+Worktree: /home/ineersa/projects/agent-core-worktrees/ai-09-compat-aware-request-shaping
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-17T03:14:30.931Z
 Completed:
 
 ## Work log
 - Created: 2026-05-16T22:02:34.212Z
+
+## Task workflow update - 2026-05-17T03:14:30.931Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/ai-09-compat-aware-request-shaping.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/ai-09-compat-aware-request-shaping.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/ai-09-compat-aware-request-shaping.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/ai-09-compat-aware-request-shaping.
