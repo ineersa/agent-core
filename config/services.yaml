@@ -81,7 +81,24 @@ services:
   Symfony\AI\Platform\PlatformInterface:
     factory: ['@Ineersa\CodingAgent\Infrastructure\SymfonyAi\ConfiguredSymfonyAiPlatformFactory', 'createPlatform']
 
-  # Temporary default model binding — AI-10 per-turn routing replaces this.
+  # Default model binding (fallback when no resolver or no session context).
   Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker:
     arguments:
       $defaultModel: '%app.default_model%'
+
+  # ─── AI-10 Per-turn model/reasoning routing ───
+
+  Ineersa\CodingAgent\Config\SessionAwareModelResolver: ~
+
+  Ineersa\AgentCore\Contract\Tool\ModelResolverInterface:
+    alias: Ineersa\CodingAgent\Config\SessionAwareModelResolver
+
+  Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderRegistry: ~
+
+  Ineersa\AgentCore\Contract\Tool\ProviderRegistryInterface:
+    alias: Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderRegistry
+
+  Ineersa\AgentCore\Infrastructure\SymfonyAi\ModelResolverRoutingSubscriber:
+    arguments:
+      $modelResolver: '@Ineersa\AgentCore\Contract\Tool\ModelResolverInterface'
+      $providerRegistry: '@Ineersa\AgentCore\Contract\Tool\ProviderRegistryInterface'

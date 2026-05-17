@@ -22,7 +22,7 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * This service is the bridge between Hatfield's user-facing model
  * config and Symfony AI Platform's provider model.
  */
-final class SymfonyAiProviderFactory
+class SymfonyAiProviderFactory
 {
     public function __construct(
         private readonly AppConfig $appConfig,

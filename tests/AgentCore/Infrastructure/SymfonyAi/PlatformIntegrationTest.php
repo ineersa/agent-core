@@ -125,7 +125,7 @@ final class PlatformIntegrationTest extends TestCase
             ): ResolvedModel {
                 unset($messages, $input, $options);
 
-                return new ResolvedModel($defaultModel.'-resolved', ['max_tokens' => 64]);
+                return new ResolvedModel(model: $defaultModel.'-resolved', options: ['max_tokens' => 64]);
             }
         };
 
