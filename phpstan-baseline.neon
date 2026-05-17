@@ -1244,18 +1244,6 @@ parameters:
 			path: src/CodingAgent/Config/Ai/AiCompatibility.php
 
 		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCompatibility\:\:\$supportsReasoningEffort is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiCompatibility.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCompatibility\:\:\$thinkingFormat is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiCompatibility.php
-
-		-
 			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCompatibility\:\:\$zaiToolStream is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
@@ -1290,12 +1278,6 @@ parameters:
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
 			path: src/CodingAgent/Config/Ai/AiCost.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$compatibility is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
 
 		-
 			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$contextWindow is never read$#'
@@ -1334,12 +1316,6 @@ parameters:
 			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
 
 		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$thinkingLevelMap is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
-
-		-
 			message: '#^Unused Ineersa\\CodingAgent\\Config\\Ai\\AiModelReference\:\:parse$#'
 			identifier: shipmonk.deadMethod
 			count: 1
@@ -1359,12 +1335,6 @@ parameters:
 
 		-
 			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$baseUrl is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$compatibility is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
 			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
@@ -1447,3 +1417,12 @@ parameters:
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/CodingAgent/Config/HomeSettingsWriter.php
+
+		# Temporary AI-06 ReasoningOptionsResolver baseline. Remove when AI-07/AI-10
+		# production code calls ReasoningOptionsResolver::resolve.
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\ReasoningOptionsResolver\:\:resolve$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Config/ReasoningOptionsResolver.php
+
