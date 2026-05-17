@@ -23,14 +23,14 @@ Scope:
 - Suggested validation: `castor test --filter Runtime`; `castor deptrac`.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/ai-08-runtime-protocol-cli-model-reasoning
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-08-runtime-protocol-cli-model-reasoning
 Fork run: a6j7rpbxooyp
 PR URL: https://github.com/ineersa/agent-core/pull/8
-PR Status: open
+PR Status: merged
 Started: 2026-05-16T22:30:54.786Z
-Completed:
+Completed: 2026-05-16T23:59:58.079Z
 
 ## Work log
 - Created: 2026-05-16T22:02:34.212Z
@@ -66,3 +66,20 @@ Completed:
 ## Task workflow update - 2026-05-16T23:59:27.789Z
 - Validation: Fork validation: `castor deptrac` passed: 0 violations, 69 uncovered, 323 allowed.; Fork validation: `castor test` passed: 276 tests, 7921 assertions, 1 PHPUnit notice.; Fork validation: `castor phpstan` passed: 0 errors.; Fork validation: `castor cs-check` clean.; Fork validation: full `castor check` passed.; GitHub mergeability check: PR #8 is MERGEABLE / CLEAN at head 6bffaa02e5aff369a3bbb070e106a49de90116b5.
 - Summary: PR #8 merge conflicts resolved by fork a6j7rpbxooyp and pushed. Branch was merged with origin/main and stale branch-local task files for AI-02/AI-03 IN-PROGRESS copies were removed. No AI-08 source code changes were needed. PR #8 head verified at 6bffaa02e5aff369a3bbb070e106a49de90116b5 and GitHub reports mergeable.
+
+## Task workflow update - 2026-05-16T23:59:58.079Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/ai-08-runtime-protocol-cli-model-reasoning into integration checkout.
+- Merge made by the 'ort' strategy.
+ phpstan-baseline.neon                              |  6 ++++++
+ src/AgentCore/Domain/Run/RunMetadata.php           |  1 +
+ src/CodingAgent/CLI/AgentCommand.php               | 25 ++++++++++++++++++----
+ .../Runtime/Contract/StartRunRequest.php           |  2 ++
+ .../InProcess/InProcessAgentSessionClient.php      |  6 ++++++
+ .../Process/JsonlProcessAgentSessionClient.php     |  6 ++++--
+ src/Tui/Application/SessionInitializer.php         |  2 ++
+ 7 files changed, 42 insertions(+), 6 deletions(-)
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/ai-08-runtime-protocol-cli-model-reasoning.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR #8 merged: https://github.com/ineersa/agent-core/pull/8; Final branch validation before merge: full `castor check` passed; PHPUnit 276 tests/7921 assertions; deptrac 0 violations; PHPStan 0 errors; CS clean.; GitHub reported PR #8 MERGEABLE/CLEAN before merge at head 6bffaa02e5aff369a3bbb070e106a49de90116b5.
+- Summary: PR #8 merged on GitHub at 2026-05-16T23:59:33Z with merge commit 1b099338164fca40f096f7189bb702aee4c0ee69. AI-08 complete: optional model/reasoning runtime protocol and CLI inputs landed, with conflicts resolved beforehand by removing stale task metadata only.
