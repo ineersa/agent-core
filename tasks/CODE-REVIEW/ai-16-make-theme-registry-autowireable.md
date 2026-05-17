@@ -174,12 +174,12 @@ public function __construct(
 - castor check green
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/ai-16-make-theme-registry-autowireable
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-16-make-theme-registry-autowireable
 Fork run: 0ckd60jp2uwo
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/17
+PR Status: open
 Started: 2026-05-17T20:48:08.230Z
 Completed:
 
@@ -196,3 +196,11 @@ Completed:
 ## Task workflow update - 2026-05-17T20:48:34.113Z
 - Recorded fork run: 0ckd60jp2uwo
 - Summary: Started AI-16 implementation in background fork 0ckd60jp2uwo. Scope: ThemeRegistry absorbs ThemeLoader and becomes autowireable from AppConfig/AppResourceLocator, ThemeFactory simplified, inject LockFactory into HatfieldSessionStore, inject EventPayloadNormalizer into run event stores, inject ToolExecutionResultStore into ToolExecutor, inject EventFactory/ToolCallExtractor into RunMessageStateTools, update tests/DI, validate with Castor. Fork instructed to work only inside /home/ineersa/projects/agent-core-worktrees/ai-16-make-theme-registry-autowireable and verify main untouched.
+
+## Task workflow update - 2026-05-17T21:16:23.459Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/ai-16-make-theme-registry-autowireable to origin.
+- branch 'task/ai-16-make-theme-registry-autowireable' set up to track 'origin/task/ai-16-make-theme-registry-autowireable'.
+- Created PR: https://github.com/ineersa/agent-core/pull/17
+- Validation: php bin/console --no-interaction: passed; castor test: passed (328 tests, 8046 assertions); castor deptrac: passed (0 violations); castor phpstan: passed (0 errors; baseline 235); castor cs-check: passed; main checkout verified untouched by fork except unrelated pre-existing task metadata
+- Summary: AI-16 completed in commit d0be494f on branch task/ai-16-make-theme-registry-autowireable and pushed. ThemeLoader logic moved into autowireable ThemeRegistry (AppConfig + AppResourceLocator); ThemeLoader and ThemeLoaderTest deleted; ThemeFactory simplified to AppConfig + ThemeRegistry with no buildTheme/resources/cwd; callers/tests updated. Manual new constructions replaced with DI: LockFactory in HatfieldSessionStore, EventPayloadNormalizer in RunLogWriter/RunLogReader/SessionRunEventStore, ToolExecutionResultStore in ToolExecutor, EventFactory and ToolCallExtractor in RunMessageStateTools. services.yaml now wires FlockStore/PersistingStoreInterface/LockFactory. depfile/phpstan-baseline updated.
