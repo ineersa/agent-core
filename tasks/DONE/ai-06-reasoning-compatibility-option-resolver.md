@@ -25,14 +25,14 @@ Scope:
 - Suggested validation: `castor test --filter Reasoning`.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/ai-06-reasoning-compatibility-option-resolver
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-06-reasoning-compatibility-option-resolver
 Fork run: bqx25cppiqnc
 PR URL: https://github.com/ineersa/agent-core/pull/12
-PR Status: open
+PR Status: merged
 Started: 2026-05-17T00:47:51.323Z
-Completed:
+Completed: 2026-05-17T01:25:58.720Z
 
 ## Work log
 - Created: 2026-05-16T22:01:55.475Z
@@ -58,3 +58,17 @@ Completed:
 ## Task workflow update - 2026-05-17T01:21:52.242Z
 - Recorded fork run: bqx25cppiqnc
 - Summary: Launched fork bqx25cppiqnc to resolve PR #12 phpstan-baseline.neon merge conflict against main (which now includes AI-04's merged baseline removals). Scope: merge origin/main, resolve baseline by keeping net result of both removals plus AI-06 new entry, handle stale task files, run castor check, push, verify mergeable.
+
+## Task workflow update - 2026-05-17T01:25:58.720Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/ai-06-reasoning-compatibility-option-resolver into integration checkout.
+- Merge made by the 'ort' strategy.
+ phpstan-baseline.neon                              |  39 +--
+ .../Config/ReasoningOptionsResolver.php            | 106 ++++++
+ .../Config/ReasoningOptionsResolverTest.php        | 382 +++++++++++++++++++++
+ 3 files changed, 497 insertions(+), 30 deletions(-)
+ create mode 100644 src/CodingAgent/Config/ReasoningOptionsResolver.php
+ create mode 100644 tests/CodingAgent/Config/ReasoningOptionsResolverTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/ai-06-reasoning-compatibility-option-resolver.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Summary: PR #12 merged on GitHub at 2026-05-17T01:25:24Z with merge commit 42782219af08faeb14f35463113156953a17cb72. AI-06 complete: ReasoningOptionsResolver converting global reasoning level + model metadata to provider invocation options, supporting z.ai enable_thinking, standard reasoning_effort, compatibility-based suppression, 16 focused tests. Merge conflict in phpstan-baseline.neon resolved via fork bqx25cppiqnc before merge.
