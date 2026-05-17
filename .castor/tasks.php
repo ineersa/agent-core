@@ -61,10 +61,10 @@ function deptrac(): void
  * TUI e2e tests require tmux and are environment-sensitive.
  * Run them explicitly with "castor test:tui".
  */
-#[AsTask(description: 'Run PHPUnit tests (excludes tmux e2e)')]
+#[AsTask(description: 'Run PHPUnit tests (excludes tmux e2e and real LLM smoke tests)')]
 function test(): void
 {
-    run('vendor/bin/phpunit --exclude-group tui-e2e --colors=always');
+    run('vendor/bin/phpunit --exclude-group tui-e2e --exclude-group llm-real --colors=always');
 }
 
 /**
@@ -360,6 +360,23 @@ function test_tui(): void
  * Use after intentional rendering changes.  Review the diff
  * before committing updated fixtures.
  */
+/**
+ * Run the opt-in real llama.cpp smoke test.
+ *
+ * Requires environment:
+ *   LLAMA_CPP_SMOKE_TEST=1
+ *   LLAMA_CPP_BASE_URL   (e.g. http://192.168.2.38:8052/v1)
+ *   LLAMA_CPP_MODEL      (optional, default: flash)
+ *   LLAMA_CPP_API_KEY    (optional, default: dummy)
+ *
+ * The test is skipped automatically when LLAMA_CPP_SMOKE_TEST is not set.
+ */
+#[AsTask(name: 'test:llm-real', description: 'Run opt-in real llama.cpp smoke test (requires LLAMA_CPP_SMOKE_TEST=1 and LLAMA_CPP_BASE_URL env vars)')]
+function test_llm_real(): void
+{
+    run('vendor/bin/phpunit --group llm-real --colors=always');
+}
+
 #[AsTask(name: 'test:tui-update', description: 'Run TUI e2e tests and update golden snapshots')]
 function test_tui_update(): void
 {
