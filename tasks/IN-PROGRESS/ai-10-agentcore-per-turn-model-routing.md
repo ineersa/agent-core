@@ -23,14 +23,25 @@ Scope:
 - Suggested validation: `castor test --filter ExecuteLlmStepWorker`; `castor test --filter ModelResolver`; `castor deptrac`.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
-Fork run:
+Status: IN-PROGRESS
+Branch: task/ai-10-agentcore-per-turn-model-routing
+Worktree: /home/ineersa/projects/agent-core-worktrees/ai-10-agentcore-per-turn-model-routing
+Fork run: yvvavqya5kov
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-17T21:42:59.913Z
 Completed:
 
 ## Work log
 - Created: 2026-05-16T22:02:34.212Z
+
+## Task workflow update - 2026-05-17T21:42:59.913Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/ai-10-agentcore-per-turn-model-routing.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/ai-10-agentcore-per-turn-model-routing.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/ai-10-agentcore-per-turn-model-routing.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/ai-10-agentcore-per-turn-model-routing.
+
+## Task workflow update - 2026-05-17T21:43:36.747Z
+- Recorded fork run: yvvavqya5kov
+- Summary: Started AI-10 implementation in background fork yvvavqya5kov. Scope: route per-turn model/reasoning through AgentCore after AI-05/07/08/09/15/16, extend ResolvedModel with provider ID, resolve selected model/reasoning from ModelSelectionService/run/session metadata, pass resolved model/options/_hatfield_reasoning to platform invocation, update ModelResolverRoutingSubscriber to set explicit provider via provider registry/factory, populate/use RunMetadata.model, preserve current AppConfig/DI changes and avoid AppConfigResolver/projectCwd regressions.
