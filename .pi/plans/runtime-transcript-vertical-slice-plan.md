@@ -518,25 +518,78 @@ Out of scope for this slice:
    - Output: current list of `TranscriptBlock`s, plus incremental append/update operations if helpful.
    - Tests should cover text deltas, thinking deltas, tool lifecycle, cancellation, and replay idempotence.
 
-4. **RuntimeEventPoller refactor**
+4. **RuntimeEventMapper normalization**
+   - Map the important AgentCore events into the stable runtime event names.
+   - Preserve raw event details only as debug metadata where useful.
+
+5. **RuntimeEventPoller refactor**
    - Stop formatting raw events directly into one-line entries.
    - Poll events, persist them, feed them into `TranscriptProjector`, then update `TuiSessionState` transcript blocks/entries.
 
-5. **Basic renderer**
+6. **Basic renderer**
    - Render `UserMessage`, `AssistantMessage`, `AssistantThinking`, `ToolCall`, `Cancelled`, and `Error` blocks.
    - Start plain; richer markdown/widget rendering can come later.
 
-6. **Session replay**
+7. **Session replay**
    - On resume, load `runtime-events.jsonl` and rebuild transcript blocks.
    - `transcript.jsonl` can remain a cache/projection, but replay from runtime events should be possible and tested.
 
-7. **Vertical slice test**
+8. **Vertical slice test**
    - Prefer a trace replay/provider fixture from AI-11 for deterministic testing.
    - Assert user prompt, assistant response, runtime events, transcript blocks, and session files.
 
-8. **Manual smoke**
+9. **Manual smoke**
    - Use `castor run:agent` against a configured local/remote model.
    - Verify prompt submission, streaming text, persisted events, resume display.
+
+### Implementation order and task graph
+
+The work is split into small tasks for smaller models. Each task should have a narrow scope, clear exclusions, and focused tests.
+
+#### Task list
+
+| Task | Title | Depends on | Can run in parallel with | Notes |
+|------|-------|------------|--------------------------|-------|
+| RTVS-01 | Runtime event contract constants and docs | none | RTVS-02 | Pure protocol/documentation task. Keep `RuntimeEvent` DTO shape unchanged. |
+| RTVS-02 | Transcript projection DTOs | none | RTVS-01, RTVS-05, RTVS-06 | Add scalar DTOs under `CodingAgent/Runtime/Projection`; no TUI rendering. |
+| RTVS-03 | TranscriptProjector assistant/user stream support | RTVS-01, RTVS-02 | RTVS-04, RTVS-05 | Covers user messages, assistant text/thinking deltas, message completion/failure. |
+| RTVS-04 | TranscriptProjector tool/HITL/cancel support | RTVS-01, RTVS-02 | RTVS-03, RTVS-05 | Covers tool previews, HITL blocks, approval blocks, cancellation/error blocks. |
+| RTVS-05 | RuntimeEventMapper normalization | RTVS-01 | RTVS-02, RTVS-03, RTVS-04 | Maps AgentCore events to stable runtime event names. No TUI changes. |
+| RTVS-06 | Basic TranscriptBlock renderer in TUI | RTVS-02 | RTVS-03, RTVS-04, RTVS-05 | Renders block DTOs plainly. No polling/session integration. |
+| RTVS-07 | RuntimeEventPoller projection integration | RTVS-03, RTVS-04, RTVS-05, RTVS-06 | none after dependencies | Replaces direct raw-event-to-TranscriptEntry formatting with projector + renderer path. |
+| RTVS-08 | Session replay from runtime events | RTVS-07 | RTVS-09 prep if fixtures are ready | Rebuild transcript blocks from `runtime-events.jsonl`; `transcript.jsonl` is projection/cache data. |
+| RTVS-09 | Deterministic vertical slice tests | RTVS-07, RTVS-08, AI-11 preferred | none after dependencies | Use replay/provider fixture; assert prompt, assistant response, runtime events, transcript blocks, files. |
+| RTVS-10 | Manual smoke and docs | RTVS-09, AI-12 optional | none | Run `castor run:agent`; document smoke path and known limitations. |
+
+#### Dependency waves
+
+1. **Foundation wave**
+   - RTVS-01 and RTVS-02 can start immediately and in parallel.
+
+2. **Projection wave**
+   - RTVS-03 and RTVS-04 can run in parallel after RTVS-01/02.
+   - RTVS-05 can run after RTVS-01 and can overlap with DTO/projector work if event contracts are stable.
+   - RTVS-06 can run after RTVS-02 and can use hand-authored sample blocks while projector work continues.
+
+3. **Integration wave**
+   - RTVS-07 waits for assistant/user projector support, tool/HITL/cancel projector support, mapper normalization, and basic renderer.
+
+4. **Replay/test wave**
+   - RTVS-08 waits for RTVS-07.
+   - RTVS-09 waits for RTVS-07/08 and should prefer AI-11 trace replay fixtures if available.
+
+5. **Smoke/documentation wave**
+   - RTVS-10 waits for deterministic tests. AI-12 real-model smoke is optional but useful.
+
+#### Parallelization guidance
+
+- Safe parallel tracks:
+  - RTVS-01 + RTVS-02.
+  - RTVS-03 + RTVS-04 once event names and DTO shape are agreed.
+  - RTVS-05 can overlap with projector work, but whoever integrates must reconcile exact payload fields.
+  - RTVS-06 can be built from static fixture blocks before the projector is complete.
+- Avoid parallel edits to `RuntimeEventPoller` and session replay files. Keep RTVS-07/08 serialized.
+- Keep HITL widget binding out of this plan except for transcript projection; local TUI question widgets live in `.pi/plans/tui-question-hitl-plan.md`.
 
 ### Acceptance criteria
 
