@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
-use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Central model/reasoning selection with four-tier priority and persistence.
@@ -32,8 +30,9 @@ final class ModelSelectionService
 
     public function __construct(
         private readonly AppConfigResolver $configResolver,
-        private readonly HomeSettingsWriter $homeWriter,
         private readonly SettingsPathResolver $pathResolver,
+        private readonly HomeSettingsWriter $homeWriter,
+        private readonly SessionMetadataStore $sessionMetaStore,
     ) {
     }
 
@@ -55,7 +54,11 @@ final class ModelSelectionService
         string $sessionId = '',
         string $projectCwd = '',
     ): ?AiModelReference {
-        $catalog = $this->createCatalog($projectCwd);
+        $catalog = $this->catalog($projectCwd);
+
+        if (null === $catalog) {
+            return null;
+        }
 
         // 1. Explicit request
         if (null !== $explicitModel) {
@@ -67,7 +70,7 @@ final class ModelSelectionService
 
         // 2. Session metadata
         if ('' !== $sessionId) {
-            $meta = $this->readSessionMetadata($sessionId, $projectCwd);
+            $meta = $this->sessionMetaStore->readSessionMetadata($sessionId);
             $sessionModel = \is_string($meta['model'] ?? null) ? $meta['model'] : null;
             if (null !== $sessionModel) {
                 $ref = AiModelReference::tryParse($sessionModel);
@@ -94,7 +97,9 @@ final class ModelSelectionService
      */
     public function getAvailableModels(string $projectCwd = ''): array
     {
-        return $this->createCatalog($projectCwd)->allModels();
+        $catalog = $this->catalog($projectCwd);
+
+        return null !== $catalog ? $catalog->allModels() : [];
     }
 
     // ──────────────────────────────────────────────
@@ -122,7 +127,7 @@ final class ModelSelectionService
 
         // 2. Session metadata
         if ('' !== $sessionId) {
-            $meta = $this->readSessionMetadata($sessionId, $projectCwd);
+            $meta = $this->sessionMetaStore->readSessionMetadata($sessionId);
             $sessionReasoning = \is_string($meta['reasoning'] ?? null) ? $meta['reasoning'] : null;
             if (null !== $sessionReasoning) {
                 return $sessionReasoning;
@@ -158,7 +163,11 @@ final class ModelSelectionService
         string $sessionId,
         string $projectCwd = '',
     ): void {
-        $catalog = $this->createCatalog($projectCwd);
+        $catalog = $this->catalog($projectCwd);
+
+        if (null === $catalog) {
+            throw new \RuntimeException('No AI configuration available.');
+        }
 
         if (!$catalog->isAvailable($model)) {
             throw new \RuntimeException(\sprintf('Model "%s" is not available.', $model->toString()));
@@ -169,7 +178,7 @@ final class ModelSelectionService
         $this->homeWriter->writeDefaultModel($homePath, $model->toString());
 
         // Persist current state to session metadata
-        $this->writeSessionMetadata($sessionId, $projectCwd, [
+        $this->sessionMetaStore->writeSessionMetadata($sessionId, [
             'model' => $model->toString(),
             'model_provider' => $model->providerId,
             'model_name' => $model->modelName,
@@ -202,97 +211,22 @@ final class ModelSelectionService
         $this->homeWriter->writeDefaultReasoning($homePath, $level);
 
         // Persist current state to session metadata
-        $this->writeSessionMetadata($sessionId, $projectCwd, [
+        $this->sessionMetaStore->writeSessionMetadata($sessionId, [
             'reasoning' => $level,
         ]);
     }
 
     // ──────────────────────────────────────────────
-    //  Private: catalog
+    //  Private
     // ──────────────────────────────────────────────
 
     /**
-     * Build a HatfieldModelCatalog from the resolved AI config.
-     */
-    private function createCatalog(string $projectCwd): HatfieldModelCatalog
-    {
-        $config = $this->configResolver->resolve($projectCwd);
-        $aiConfig = $config->ai ?? AiConfig::fromArray([]);
-
-        return new HatfieldModelCatalog($aiConfig);
-    }
-
-    // ──────────────────────────────────────────────
-    //  Private: session metadata
-    // ──────────────────────────────────────────────
-
-    /**
-     * Read session metadata as an associative array.
+     * Resolve the catalog from the cached project config.
      *
-     * @return array<string, mixed> Empty array if the session/metadata don't exist
+     * @return HatfieldModelCatalog|null null when no AI section is configured
      */
-    private function readSessionMetadata(string $sessionId, string $projectCwd): array
+    private function catalog(string $projectCwd): ?HatfieldModelCatalog
     {
-        $path = $this->sessionMetadataPath($sessionId, $projectCwd);
-
-        if (!is_readable($path)) {
-            return [];
-        }
-
-        $data = Yaml::parseFile($path);
-
-        return \is_array($data) ? $data : [];
-    }
-
-    /**
-     * Write session metadata, merging $fields into the existing file.
-     *
-     * Preserves all existing metadata keys; only overwrites those
-     * present in $fields. Updates the updated_at timestamp.
-     *
-     * @param array<string, string> $fields Key-value pairs to set
-     */
-    private function writeSessionMetadata(string $sessionId, string $projectCwd, array $fields): void
-    {
-        $existing = $this->readSessionMetadata($sessionId, $projectCwd);
-        $merged = array_merge($existing, $fields);
-        $merged['updated_at'] = date('c');
-
-        $dir = \dirname($this->sessionMetadataPath($sessionId, $projectCwd));
-        if (!is_dir($dir)) {
-            mkdir($dir, 0777, true);
-        }
-
-        file_put_contents(
-            $this->sessionMetadataPath($sessionId, $projectCwd),
-            Yaml::dump($merged, 4, 2),
-        );
-    }
-
-    /**
-     * Full path to a session's metadata.yaml file.
-     */
-    private function sessionMetadataPath(string $sessionId, string $projectCwd): string
-    {
-        return $this->sessionBasePath($projectCwd).'/'.$sessionId.'/metadata.yaml';
-    }
-
-    /**
-     * Resolve the sessions base directory from Hatfield config.
-     *
-     * Uses sessions.path from config or defaults to $cwd/.hatfield/sessions.
-     */
-    private function sessionBasePath(string $projectCwd): string
-    {
-        $current = getcwd();
-        $cwd = '' !== $projectCwd ? $projectCwd : (false !== $current ? $current : '/');
-        $config = $this->configResolver->resolve($cwd);
-        $path = (string) ($config->sessions['path'] ?? '');
-
-        if ('' === $path) {
-            $path = rtrim($cwd, '/').'/.hatfield/sessions';
-        }
-
-        return $path;
+        return $this->configResolver->resolve($projectCwd)->catalog;
     }
 }

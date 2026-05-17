@@ -4,14 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Config;
 
-use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
-use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppConfigResolver;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\HomeSettingsWriter;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
+use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
@@ -21,6 +20,7 @@ class ModelSelectionServiceTest extends TestCase
     private string $tempDir;
     private string $homeDir;
     private ModelSelectionService $service;
+    private SessionMetadataStore $sessionMetaStore;
 
     protected function setUp(): void
     {
@@ -44,10 +44,14 @@ class ModelSelectionServiceTest extends TestCase
 
         $homeWriter = new HomeSettingsWriter();
 
+        $this->sessionMetaStore = new SessionMetadataStore();
+        $this->sessionMetaStore->setSessionsBasePath($this->projectCwd().'/.hatfield/sessions');
+
         $this->service = new ModelSelectionService(
             $configResolver,
-            $homeWriter,
             $pathResolver,
+            $homeWriter,
+            $this->sessionMetaStore,
         );
     }
 

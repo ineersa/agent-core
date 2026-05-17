@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Infrastructure\Storage\SessionRunEventStore;
 use Ineersa\AgentCore\Infrastructure\Storage\SessionRunStore;
+use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
@@ -34,6 +35,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly EventStoreInterface $eventStore,
         private readonly RuntimeEventMapper $mapper,
         private readonly SessionRunStore $runStore,
+        private readonly SessionMetadataStore $sessionMetadataStore,
     ) {
     }
 
@@ -109,5 +111,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         if ($this->eventStore instanceof SessionRunEventStore) {
             $this->eventStore->setSessionsBasePath($sessionsBasePath);
         }
+
+        $this->sessionMetadataStore->setSessionsBasePath($sessionsBasePath);
     }
 }

@@ -250,6 +250,7 @@ parameters:
     AppRuntimeInternals:
       - AppRuntimeContract
       - AgentCore
+      - AppConfig
       - SymfonyConsole
       - SymfonyMessenger
 
