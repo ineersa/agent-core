@@ -74,7 +74,7 @@ final class RunOrchestratorObservabilityTest extends TestCase
         $commandStore = new InMemoryCommandStore();
 
         $outboxStore = new InMemoryOutboxStore();
-        $runLogWriter = new RunLogWriter($filesystem);
+        $runLogWriter = new RunLogWriter($filesystem, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer());
 
         $jsonlWorker = new JsonlOutboxProjectorWorker($outboxStore, $runLogWriter);
 
@@ -90,7 +90,7 @@ final class RunOrchestratorObservabilityTest extends TestCase
             commandStore: $commandStore,
             commandRouter: $commandRouter,
         );
-        $stateTools = new RunMessageStateTools();
+        $stateTools = new RunMessageStateTools(new \Ineersa\AgentCore\Domain\Event\EventFactory(), new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor());
         $toolBatchCollector = new ToolBatchCollector();
 
         $runCommit = new RunCommit(
@@ -98,7 +98,7 @@ final class RunOrchestratorObservabilityTest extends TestCase
             eventStore: $eventStore,
             commandStore: $commandStore,
             outboxProjector: $outboxProjector,
-            replayService: new ReplayService($eventStore, new RunLogReader($filesystem), new HotPromptStateStore(), $metrics, $tracer),
+            replayService: new ReplayService($eventStore, new RunLogReader($filesystem, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer()), new HotPromptStateStore(), $metrics, $tracer),
             stepDispatcher: $stepDispatcher,
             logger: $traceLogger,
             metrics: $metrics,

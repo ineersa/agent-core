@@ -1345,6 +1345,12 @@ parameters:
 			path: src/Tui/Theme/ThemeRegistry.php
 
 		-
+			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeRegistry\:\:register$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Theme/ThemeRegistry.php
+
+		-
 			message: '#^Unused Ineersa\\Tui\\Theme\\TuiTheme\:\:name$#'
 			identifier: shipmonk.deadMethod
 			count: 1

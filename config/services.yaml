@@ -17,9 +17,15 @@ services:
   Ineersa\Tui\:
     resource: '../src/Tui/'
 
+  # ─── Symfony infrastructure (not covered by namespace autowiring) ───
+
+  Symfony\Component\Lock\Store\FlockStore: ~
+  Symfony\Component\Lock\PersistingStoreInterface:
+    alias: Symfony\Component\Lock\Store\FlockStore
+  Symfony\Component\Lock\LockFactory: ~
   # ─── File-backed agent-core stores ───
   # These need explicit wiring because $projectDir is a string that
-  # cannot be autowired.
+  # cannot be autowired. LockFactory is autowired via the service above.
 
   Ineersa\AgentCore\Infrastructure\Storage\SessionRunStore:
     arguments:

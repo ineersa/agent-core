@@ -22,7 +22,7 @@ final class StartRunHandlerTest extends TestCase
     public function testHandleBuildsRunStartedTransitionWithoutReducer(): void
     {
         $handler = new StartRunHandler(
-            stateTools: new RunMessageStateTools(),
+            stateTools: new RunMessageStateTools(new \Ineersa\AgentCore\Domain\Event\EventFactory(), new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor()),
             normalizer: TestSerializerFactory::normalizer(),
         );
 
@@ -88,7 +88,7 @@ final class StartRunHandlerTest extends TestCase
         $commandBus = new StartRunRecordingBus();
 
         $handler = new StartRunHandler(
-            stateTools: new RunMessageStateTools(),
+            stateTools: new RunMessageStateTools(new \Ineersa\AgentCore\Domain\Event\EventFactory(), new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor()),
             normalizer: TestSerializerFactory::normalizer(),
             commandBus: $commandBus,
         );

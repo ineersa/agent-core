@@ -4,33 +4,57 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Theme;
 
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\AppResourceLocator;
+use Symfony\Component\Yaml\Yaml;
+
 /**
  * Registry of built-in and user-loaded TUI themes.
  *
- * Provides theme lookup by name. The default theme is driven by
- * application config ({@see config/hatfield.defaults.yaml}) — this
- * registry itself carries no opinion about which theme is "default".
+ * Self-loads palettes from config/hatfield theme paths at construction.
+ * User-configured theme paths override built-in themes of the same name.
  *
- * The built-in themes are loaded from YAML files under config/themes/.
+ * The default theme name is driven by application config
+ * ({@see config/hatfield.defaults.yaml}) — this registry itself carries
+ * no opinion about which theme is "default".
  */
 final class ThemeRegistry
 {
     /** @var array<string, ThemePalette> */
     private array $themes = [];
 
-    /**
-     * @param list<ThemePalette> $builtin Built-in theme palettes
-     */
     public function __construct(
-        array $builtin = [],
+        AppConfig $appConfig,
+        AppResourceLocator $resources,
     ) {
-        foreach ($builtin as $palette) {
-            $this->register($palette);
+        $tuiConfig = $appConfig->tui;
+
+        // Load user-configured theme paths first (higher priority — they
+        // override built-in themes with the same name).
+        foreach ($tuiConfig->themePaths as $path) {
+            foreach ($this->loadDirectory($path) as $palette) {
+                if (!isset($this->themes[$palette->name])) {
+                    $this->themes[$palette->name] = $palette;
+                }
+            }
+        }
+
+        // Load built-in themes second (lower priority — only fills gaps).
+        $builtinPath = $resources->getBuiltinThemesPath();
+        foreach ($this->loadDirectory($builtinPath) as $palette) {
+            if (!isset($this->themes[$palette->name])) {
+                $this->themes[$palette->name] = $palette;
+            }
         }
     }
 
     /**
-     * Register a palette in the registry.
+     * Register a palette in the registry (runtime additions only).
+     *
+     * Registration at construction time is handled by the constructor
+     * loading from Hatfield theme paths. This method exists for
+     * programmatic registration post-construction — e.g. when a test
+     * or extension wants to add a palette without writing a YAML file.
      */
     public function register(ThemePalette $palette): void
     {
@@ -75,7 +99,10 @@ final class ThemeRegistry
      */
     public function getNames(): array
     {
-        return array_keys($this->themes);
+        $names = array_keys($this->themes);
+        sort($names);
+
+        return $names;
     }
 
     /**
@@ -84,5 +111,60 @@ final class ThemeRegistry
     public function has(string $name): bool
     {
         return isset($this->themes[$name]);
+    }
+
+    /**
+     * Load a palette from a YAML file path.
+     *
+     * @throws \RuntimeException if the file is not readable or parseable
+     */
+    private function loadFile(string $path): ThemePalette
+    {
+        if (!is_readable($path)) {
+            throw new \RuntimeException("Theme file not readable: {$path}");
+        }
+
+        $yaml = file_get_contents($path);
+        if (false === $yaml) {
+            throw new \RuntimeException("Failed to read theme file: {$path}");
+        }
+
+        $data = Yaml::parse($yaml);
+        if (!\is_array($data)) {
+            throw new \RuntimeException("Invalid YAML structure in theme file: {$path}");
+        }
+
+        return ThemePalette::fromArray($data);
+    }
+
+    /**
+     * Load all YAML theme files from a directory.
+     *
+     * Scans for *.yaml and *.yml files (non-recursive).
+     *
+     * @return list<ThemePalette>
+     */
+    private function loadDirectory(string $dir): array
+    {
+        if (!is_dir($dir)) {
+            return [];
+        }
+
+        $palettes = [];
+        $files = glob($dir.'/*.{yaml,yml}', \GLOB_BRACE);
+
+        if (false === $files) {
+            return [];
+        }
+
+        foreach ($files as $file) {
+            try {
+                $palettes[] = $this->loadFile($file);
+            } catch (\RuntimeException) {
+                // Skip unparseable theme files; the caller may log or ignore
+            }
+        }
+
+        return $palettes;
     }
 }

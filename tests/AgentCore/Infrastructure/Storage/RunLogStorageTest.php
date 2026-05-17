@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Tests\Infrastructure\Storage;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogWriter;
+use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use League\Flysystem\Filesystem;
 use League\Flysystem\Local\LocalFilesystemAdapter;
 use PHPUnit\Framework\TestCase;
@@ -29,8 +30,8 @@ final class RunLogStorageTest extends TestCase
     public function testWriterAndReaderRoundTripAcrossMonthlyPartitions(): void
     {
         $filesystem = new Filesystem(new LocalFilesystemAdapter($this->basePath));
-        $writer = new RunLogWriter($filesystem);
-        $reader = new RunLogReader($filesystem);
+        $writer = new RunLogWriter($filesystem, new EventPayloadNormalizer());
+        $reader = new RunLogReader($filesystem, new EventPayloadNormalizer());
 
         $runId = 'run-42';
 
@@ -71,7 +72,7 @@ final class RunLogStorageTest extends TestCase
     public function testReaderSkipsMalformedLines(): void
     {
         $filesystem = new Filesystem(new LocalFilesystemAdapter($this->basePath));
-        $reader = new RunLogReader($filesystem);
+        $reader = new RunLogReader($filesystem, new EventPayloadNormalizer());
 
         $runId = 'run-malformed';
 
