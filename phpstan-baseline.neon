@@ -1316,12 +1316,6 @@ parameters:
 			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
 
 		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$toolCalling is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
-
-		-
 			message: '#^Unused Ineersa\\CodingAgent\\Config\\Ai\\AiModelReference\:\:parse$#'
 			identifier: shipmonk.deadMethod
 			count: 1
