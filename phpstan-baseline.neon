@@ -535,12 +535,6 @@ parameters:
 			path: src/AgentCore/Infrastructure/SymfonyAi/ModelResolverRoutingSubscriber.php
 
 		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCompatibility\:\:\$supportsDeveloperRole is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiCompatibility.php
-
-		-
 			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCompatibility\:\:\$zaiToolStream is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
@@ -725,12 +719,6 @@ parameters:
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/CodingAgent/Config/ModelSelectionService.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Config\\ReasoningOptionsResolver\:\:resolve$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Config/ReasoningOptionsResolver.php
 
 		-
 			message: '#^Offset ''dir'' on array\{name\: string, passwd\: string, uid\: int, gid\: int, gecos\: string, dir\: string, shell\: string\} on left side of \?\? always exists and is not nullable\.$#'
