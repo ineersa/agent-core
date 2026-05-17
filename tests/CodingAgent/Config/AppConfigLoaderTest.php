@@ -15,6 +15,7 @@ class AppConfigLoaderTest extends TestCase
     private AppConfigLoader $loader;
     private SettingsPathResolver $pathResolver;
     private string $defaultsPath;
+    private string|false $originalCwd;
 
     protected function setUp(): void
     {
@@ -43,30 +44,43 @@ sessions:
     path: '.hatfield/sessions'
 YAML
         );
+
+        $this->originalCwd = getcwd();
     }
 
     protected function tearDown(): void
     {
+        // Restore original working directory
+        if (false !== $this->originalCwd) {
+            chdir($this->originalCwd);
+        }
+
         // Clean up temp directory
         $this->removeDir($this->tmpDir);
+    }
+
+    private function chdirToProject(string $projectCwd): void
+    {
+        mkdir($projectCwd, 0755, true);
+        chdir($projectCwd);
     }
 
     public function testLoadDefaultsOnly(): void
     {
         $projectCwd = $this->tmpDir.'/project';
-        mkdir($projectCwd, 0755, true);
+        $this->chdirToProject($projectCwd);
 
-        $config = $this->loader->load($this->defaultsPath, $projectCwd);
+        $config = $this->loader->load($this->defaultsPath);
 
-        self::assertSame('cyberpunk', $config->tui->theme);
-        self::assertNotEmpty($config->tui->themePaths);
-        self::assertContains('/app/config/themes', $config->tui->themePaths);
+        self::assertSame('cyberpunk', $config['tui']['theme']);
+        self::assertNotEmpty($config['tui']['theme_paths']);
+        self::assertContains('/app/config/themes', $config['tui']['theme_paths']);
     }
 
     public function testHomeSettingsOverrideDefaults(): void
     {
         $projectCwd = $this->tmpDir.'/project';
-        mkdir($projectCwd, 0755, true);
+        $this->chdirToProject($projectCwd);
 
         // Create home settings that changes the theme
         file_put_contents($this->homeDir.'/.hatfield/settings.yaml', <<<'YAML'
@@ -75,18 +89,18 @@ tui:
 YAML
         );
 
-        $config = $this->loader->load($this->defaultsPath, $projectCwd);
+        $config = $this->loader->load($this->defaultsPath);
 
-        self::assertSame('tokyo-night', $config->tui->theme);
+        self::assertSame('tokyo-night', $config['tui']['theme']);
         // Home should still have the default paths (merged, not replaced)
-        self::assertNotEmpty($config->tui->themePaths);
-        self::assertContains('/app/config/themes', $config->tui->themePaths);
+        self::assertNotEmpty($config['tui']['theme_paths']);
+        self::assertContains('/app/config/themes', $config['tui']['theme_paths']);
     }
 
     public function testProjectSettingsOverrideHomeSettings(): void
     {
         $projectCwd = $this->tmpDir.'/project';
-        mkdir($projectCwd, 0755, true);
+        $this->chdirToProject($projectCwd);
         mkdir($projectCwd.'/.hatfield', 0755, true);
 
         // Home says tokyo-night
@@ -103,26 +117,26 @@ tui:
 YAML
         );
 
-        $config = $this->loader->load($this->defaultsPath, $projectCwd);
+        $config = $this->loader->load($this->defaultsPath);
 
-        self::assertSame('nord', $config->tui->theme);
+        self::assertSame('nord', $config['tui']['theme']);
     }
 
     public function testMissingSettingsFilesAreIgnored(): void
     {
         $projectCwd = $this->tmpDir.'/project_no_hatfield';
-        mkdir($projectCwd, 0755, true);
+        $this->chdirToProject($projectCwd);
         // No .hatfield/ created — should not error
 
-        $config = $this->loader->load($this->defaultsPath, $projectCwd);
+        $config = $this->loader->load($this->defaultsPath);
 
-        self::assertSame('cyberpunk', $config->tui->theme);
+        self::assertSame('cyberpunk', $config['tui']['theme']);
     }
 
     public function testNestedMergePreservesUnchangedKeys(): void
     {
         $projectCwd = $this->tmpDir.'/project';
-        mkdir($projectCwd, 0755, true);
+        $this->chdirToProject($projectCwd);
         mkdir($projectCwd.'/.hatfield', 0755, true);
 
         // Project only sets theme, not theme_paths
@@ -132,19 +146,19 @@ tui:
 YAML
         );
 
-        $config = $this->loader->load($this->defaultsPath, $projectCwd);
+        $config = $this->loader->load($this->defaultsPath);
 
         // Theme overridden
-        self::assertSame('nord', $config->tui->theme);
+        self::assertSame('nord', $config['tui']['theme']);
         // theme_paths still from defaults (not wiped)
-        self::assertNotEmpty($config->tui->themePaths);
-        self::assertContains('/app/config/themes', $config->tui->themePaths);
+        self::assertNotEmpty($config['tui']['theme_paths']);
+        self::assertContains('/app/config/themes', $config['tui']['theme_paths']);
     }
 
     public function testListArraysReplaceNotMerge(): void
     {
         $projectCwd = $this->tmpDir.'/project';
-        mkdir($projectCwd, 0755, true);
+        $this->chdirToProject($projectCwd);
         mkdir($projectCwd.'/.hatfield', 0755, true);
 
         // Project specifies a new theme_paths list — should replace defaults
@@ -156,23 +170,23 @@ tui:
 YAML
         );
 
-        $config = $this->loader->load($this->defaultsPath, $projectCwd);
+        $config = $this->loader->load($this->defaultsPath);
 
         // theme_paths from project (not merged with defaults)
-        self::assertCount(2, $config->tui->themePaths);
-        self::assertContains('/custom/themes', $config->tui->themePaths);
-        self::assertNotContains('/app/config/themes', $config->tui->themePaths);
+        self::assertCount(2, $config['tui']['theme_paths']);
+        self::assertContains('/custom/themes', $config['tui']['theme_paths']);
+        self::assertNotContains('/app/config/themes', $config['tui']['theme_paths']);
     }
 
     public function testSessionsPathResolved(): void
     {
         $projectCwd = $this->tmpDir.'/project';
-        mkdir($projectCwd, 0755, true);
+        $this->chdirToProject($projectCwd);
 
-        $config = $this->loader->load($this->defaultsPath, $projectCwd);
+        $config = $this->loader->load($this->defaultsPath);
 
-        self::assertArrayHasKey('path', $config->sessions);
-        self::assertStringContainsString('.hatfield/sessions', (string) $config->sessions['path']);
+        self::assertArrayHasKey('path', $config['sessions']);
+        self::assertStringContainsString('.hatfield/sessions', (string) $config['sessions']['path']);
     }
 
     // ── overlayConfig() unit tests (no file I/O) ──────────────────────────
@@ -313,7 +327,7 @@ YAML
     public function testDeepNestedMergePreservesUnchangedDeepKeys(): void
     {
         $projectCwd = $this->tmpDir.'/project';
-        mkdir($projectCwd, 0755, true);
+        $this->chdirToProject($projectCwd);
         mkdir($projectCwd.'/.hatfield', 0755, true);
 
         // Project overrides only tui.theme — tui.theme_paths from defaults survive
@@ -323,17 +337,17 @@ tui:
 YAML
         );
 
-        $config = $this->loader->load($this->defaultsPath, $projectCwd);
+        $config = $this->loader->load($this->defaultsPath);
 
-        self::assertSame('gruvbox-dark', $config->tui->theme);
-        self::assertNotEmpty($config->tui->themePaths);
-        self::assertContains('/app/config/themes', $config->tui->themePaths);
+        self::assertSame('gruvbox-dark', $config['tui']['theme']);
+        self::assertNotEmpty($config['tui']['theme_paths']);
+        self::assertContains('/app/config/themes', $config['tui']['theme_paths']);
     }
 
     public function testHomeThenProjectLayeredOverlay(): void
     {
         $projectCwd = $this->tmpDir.'/project';
-        mkdir($projectCwd, 0755, true);
+        $this->chdirToProject($projectCwd);
         mkdir($projectCwd.'/.hatfield', 0755, true);
 
         // Home overrides theme, adds custom list
@@ -352,14 +366,14 @@ tui:
 YAML
         );
 
-        $config = $this->loader->load($this->defaultsPath, $projectCwd);
+        $config = $this->loader->load($this->defaultsPath);
 
         // Project scalar wins
-        self::assertSame('project-theme', $config->tui->theme);
+        self::assertSame('project-theme', $config['tui']['theme']);
         // Home's list replaced defaults; project didn't touch list, so home's list survives
-        self::assertCount(1, $config->tui->themePaths);
-        self::assertContains('/home/custom', $config->tui->themePaths);
-        self::assertNotContains('/app/config/themes', $config->tui->themePaths);
+        self::assertCount(1, $config['tui']['theme_paths']);
+        self::assertContains('/home/custom', $config['tui']['theme_paths']);
+        self::assertNotContains('/app/config/themes', $config['tui']['theme_paths']);
     }
 
     private function removeDir(string $dir): void

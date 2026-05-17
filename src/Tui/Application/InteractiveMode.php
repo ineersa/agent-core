@@ -50,11 +50,10 @@ final readonly class InteractiveMode
     /**
      * Run the interactive TUI for a given session client.
      *
-     * @param AgentSessionClient   $client     The runtime session client
-     * @param StartRunRequest|null $request    Optional pre-configured start request (from AgentCommand)
-     * @param TuiTheme|null        $theme      Pre-resolved theme (for testing)
-     * @param string               $sessionId  Existing session ID to resume; empty = new session
-     * @param string               $projectCwd Project working directory
+     * @param AgentSessionClient   $client    The runtime session client
+     * @param StartRunRequest|null $request   Optional pre-configured start request (from AgentCommand)
+     * @param TuiTheme|null        $theme     Pre-resolved theme (for testing)
+     * @param string               $sessionId Existing session ID to resume; empty = new session
      *
      * @return int Console exit code
      */
@@ -63,17 +62,15 @@ final readonly class InteractiveMode
         ?StartRunRequest $request = null,
         ?TuiTheme $theme = null,
         string $sessionId = '',
-        string $projectCwd = '',
     ): int {
-        $cwd = '' !== $projectCwd ? $projectCwd : (getcwd() ?: $this->sessionStore->getProjectDir());
-        $theme = $this->themeFactory->create($cwd, $theme);
+        $theme = $this->themeFactory->create($theme);
 
         // ── Configure storage to use active project cwd ──
-        $sessionsBasePath = $this->sessionStore->resolveSessionsBasePath($cwd);
+        $sessionsBasePath = $this->sessionStore->resolveSessionsBasePath();
         $client->initializeSessionsBasePath($sessionsBasePath);
 
         // ── Initialize session ──
-        $state = $this->sessionInit->initialize($cwd, $sessionId, $request);
+        $state = $this->sessionInit->initialize($sessionId, $request);
         $state->transcript = $this->sessionInit->buildInitialTranscript($state);
 
         // ── Build screen and mount widget tree ──
@@ -125,7 +122,6 @@ final readonly class InteractiveMode
                 style: 'accent',
             );
             $this->sessionStore->appendTranscriptEntry(
-                $state->cwd,
                 $state->sessionId,
                 new PersistedTranscriptEntry(
                     role: 'system',
@@ -133,13 +129,13 @@ final readonly class InteractiveMode
                     meta: ['run_id' => $state->handle->runId],
                 ),
             );
-            $this->sessionStore->updateMetadata($state->cwd, $state->sessionId, [
+            $this->sessionStore->updateMetadata($state->sessionId, [
                 'run_id' => $state->handle->runId,
                 'prompt' => $state->request->prompt,
             ]);
             $screen->setTranscriptEntries($state->transcript);
         } elseif ($state->resuming) {
-            $meta = $this->sessionStore->loadMetadata($state->cwd, $state->sessionId);
+            $meta = $this->sessionStore->loadMetadata($state->sessionId);
             $existingRunId = $meta['run_id'] ?? null;
             if (\is_string($existingRunId) && '' !== $existingRunId) {
                 try {

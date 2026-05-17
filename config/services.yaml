@@ -43,11 +43,7 @@ services:
 
   Ineersa\CodingAgent\Config\AppConfigLoader: ~
 
-  Ineersa\CodingAgent\Config\AppConfigResolver: ~
-
-  Ineersa\CodingAgent\Session\HatfieldSessionStore:
-    arguments:
-      $projectDir: '%kernel.project_dir%'
+  Ineersa\CodingAgent\Session\HatfieldSessionStore: ~
 
   Ineersa\Tui\Application\InteractiveMode:
     arguments:

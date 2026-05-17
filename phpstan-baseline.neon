@@ -535,10 +535,148 @@ parameters:
 			path: src/AgentCore/Infrastructure/SymfonyAi/ModelResolverRoutingSubscriber.php
 
 		-
-			message: '#^Short ternary operator is not allowed\. Use null coalesce operator if applicable or consider using long ternary\.$#'
-			identifier: ternary.shortNotAllowed
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCompatibility\:\:\$supportsDeveloperRole is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
 			count: 1
-			path: src/CodingAgent/CLI/AgentCommand.php
+			path: src/CodingAgent/Config/Ai/AiCompatibility.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCompatibility\:\:\$zaiToolStream is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiCompatibility.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCost\:\:\$cacheRead is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiCost.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCost\:\:\$cacheWrite is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiCost.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCost\:\:\$input is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiCost.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCost\:\:\$output is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiCost.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$contextWindow is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$cost is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$id is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$input is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$maxTokens is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$name is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\Ai\\AiModelReference\:\:parse$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiModelReference.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$api is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$apiKey is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$baseUrl is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$completionsPath is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$embeddingsPath is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$supportsCompletions is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$supportsEmbeddings is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$type is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\Ai\\HatfieldModelCatalog\:\:config$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Config/Ai/HatfieldModelCatalog.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\Ai\\HatfieldModelCatalog\:\:requireModel$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Config/Ai/HatfieldModelCatalog.php
+
+		-
+			message: '#^Method Ineersa\\CodingAgent\\Config\\AppConfig\:\:fromArray\(\) has parameter \$data with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/CodingAgent/Config/AppConfig.php
 
 		-
 			message: '#^Property Ineersa\\CodingAgent\\Config\\AppConfig\:\:\$raw is never read$#'
@@ -547,10 +685,166 @@ parameters:
 			path: src/CodingAgent/Config/AppConfig.php
 
 		-
-			message: '#^Unused Ineersa\\CodingAgent\\Config\\AppConfigResolver\:\:clearCache$#'
+			message: '#^Property Ineersa\\CodingAgent\\Config\\AppConfig\:\:\$raw type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/CodingAgent/Config/AppConfig.php
+
+		-
+			message: '#^Property Ineersa\\CodingAgent\\Config\\AppConfig\:\:\$sessions type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/CodingAgent/Config/AppConfig.php
+
+		-
+			message: '#^Readonly property Ineersa\\CodingAgent\\Config\\AppConfig\:\:\$ai is assigned outside of the constructor\.$#'
+			identifier: property.readOnlyAssignNotInConstructor
+			count: 1
+			path: src/CodingAgent/Config/AppConfig.php
+
+		-
+			message: '#^Readonly property Ineersa\\CodingAgent\\Config\\AppConfig\:\:\$catalog is assigned outside of the constructor\.$#'
+			identifier: property.readOnlyAssignNotInConstructor
+			count: 1
+			path: src/CodingAgent/Config/AppConfig.php
+
+		-
+			message: '#^Readonly property Ineersa\\CodingAgent\\Config\\AppConfig\:\:\$cwd is assigned outside of the constructor\.$#'
+			identifier: property.readOnlyAssignNotInConstructor
+			count: 1
+			path: src/CodingAgent/Config/AppConfig.php
+
+		-
+			message: '#^Readonly property Ineersa\\CodingAgent\\Config\\AppConfig\:\:\$raw is assigned outside of the constructor\.$#'
+			identifier: property.readOnlyAssignNotInConstructor
+			count: 1
+			path: src/CodingAgent/Config/AppConfig.php
+
+		-
+			message: '#^Readonly property Ineersa\\CodingAgent\\Config\\AppConfig\:\:\$sessions is assigned outside of the constructor\.$#'
+			identifier: property.readOnlyAssignNotInConstructor
+			count: 1
+			path: src/CodingAgent/Config/AppConfig.php
+
+		-
+			message: '#^Readonly property Ineersa\\CodingAgent\\Config\\AppConfig\:\:\$tui is assigned outside of the constructor\.$#'
+			identifier: property.readOnlyAssignNotInConstructor
+			count: 1
+			path: src/CodingAgent/Config/AppConfig.php
+
+		-
+			message: '#^Short ternary operator is not allowed\. Use null coalesce operator if applicable or consider using long ternary\.$#'
+			identifier: ternary.shortNotAllowed
+			count: 2
+			path: src/CodingAgent/Config/AppConfig.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\AppConfig\:\:fromArray$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/CodingAgent/Config/AppConfigResolver.php
+			path: src/CodingAgent/Config/AppConfig.php
+
+		-
+			message: '#^Method Ineersa\\CodingAgent\\Config\\AppConfigLoader\:\:isAssoc\(\) has parameter \$arr with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/CodingAgent/Config/AppConfigLoader.php
+
+		-
+			message: '#^Method Ineersa\\CodingAgent\\Config\\AppConfigLoader\:\:load\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/CodingAgent/Config/AppConfigLoader.php
+
+		-
+			message: '#^Method Ineersa\\CodingAgent\\Config\\AppConfigLoader\:\:loadYamlFile\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/CodingAgent/Config/AppConfigLoader.php
+
+		-
+			message: '#^Method Ineersa\\CodingAgent\\Config\\AppConfigLoader\:\:overlayConfig\(\) has parameter \$base with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/CodingAgent/Config/AppConfigLoader.php
+
+		-
+			message: '#^Method Ineersa\\CodingAgent\\Config\\AppConfigLoader\:\:overlayConfig\(\) has parameter \$over with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/CodingAgent/Config/AppConfigLoader.php
+
+		-
+			message: '#^Method Ineersa\\CodingAgent\\Config\\AppConfigLoader\:\:overlayConfig\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/CodingAgent/Config/AppConfigLoader.php
+
+		-
+			message: '#^Method Ineersa\\CodingAgent\\Config\\AppConfigLoader\:\:resolveConfigPaths\(\) has parameter \$data with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/CodingAgent/Config/AppConfigLoader.php
+
+		-
+			message: '#^Method Ineersa\\CodingAgent\\Config\\AppConfigLoader\:\:resolveConfigPaths\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/CodingAgent/Config/AppConfigLoader.php
+
+		-
+			message: '#^Short ternary operator is not allowed\. Use null coalesce operator if applicable or consider using long ternary\.$#'
+			identifier: ternary.shortNotAllowed
+			count: 2
+			path: src/CodingAgent/Config/AppConfigLoader.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\AppResourceLocator\:\:getAppRoot$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Config/AppResourceLocator.php
+
+		-
+			message: '#^Method Ineersa\\CodingAgent\\Config\\ModelSelectionService\:\:getAvailableModels\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/CodingAgent/Config/ModelSelectionService.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\ModelSelectionService\:\:changeModel$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Config/ModelSelectionService.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\ModelSelectionService\:\:changeReasoning$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Config/ModelSelectionService.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\ModelSelectionService\:\:getAvailableModels$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Config/ModelSelectionService.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\ModelSelectionService\:\:resolveInitialModel$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Config/ModelSelectionService.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\ModelSelectionService\:\:resolveInitialReasoning$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Config/ModelSelectionService.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\ReasoningOptionsResolver\:\:resolve$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Config/ReasoningOptionsResolver.php
 
 		-
 			message: '#^Offset ''dir'' on array\{name\: string, passwd\: string, uid\: int, gid\: int, gecos\: string, dir\: string, shell\: string\} on left side of \?\? always exists and is not nullable\.$#'
@@ -563,12 +857,6 @@ parameters:
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/CodingAgent/Config/SettingsPathResolver.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Config\\AppResourceLocator\:\:getAppRoot$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Config/AppResourceLocator.php
 
 		-
 			message: '#^Unused Ineersa\\CodingAgent\\Config\\SettingsPathResolver\:\:resolveList$#'
@@ -697,16 +985,22 @@ parameters:
 			path: src/CodingAgent/Session/HatfieldSessionStore.php
 
 		-
-			message: '#^Short ternary operator is not allowed\. Use null coalesce operator if applicable or consider using long ternary\.$#'
-			identifier: ternary.shortNotAllowed
-			count: 2
+			message: '#^Method Ineersa\\CodingAgent\\Session\\HatfieldSessionStore\:\:getTranscript\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
 			path: src/CodingAgent/Session/HatfieldSessionStore.php
 
 		-
-			message: '#^Short ternary operator is not allowed\. Use null coalesce operator if applicable or consider using long ternary\.$#'
-			identifier: ternary.shortNotAllowed
+			message: '#^Method Ineersa\\CodingAgent\\Session\\HatfieldSessionStore\:\:loadMetadata\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
 			count: 1
-			path: src/Tui/Application/InteractiveMode.php
+			path: src/CodingAgent/Session/HatfieldSessionStore.php
+
+		-
+			message: '#^Method Ineersa\\CodingAgent\\Session\\HatfieldSessionStore\:\:updateMetadata\(\) has parameter \$meta with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/CodingAgent/Session/HatfieldSessionStore.php
 
 		-
 			message: '#^Unused Ineersa\\Tui\\Editor\\PromptEditorWidget\:\:setPlaceholder$#'
@@ -1235,183 +1529,4 @@ parameters:
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/Tui/Widget/TuiRenderContext.php
-
-		# Temporary AI-02 catalog DTO/API baselines. Remove as AI-04/AI-07/AI-10 consume these APIs.
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCompatibility\:\:\$supportsDeveloperRole is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiCompatibility.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCompatibility\:\:\$zaiToolStream is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiCompatibility.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCost\:\:\$cacheRead is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiCost.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCost\:\:\$cacheWrite is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiCost.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCost\:\:\$input is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiCost.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCost\:\:\$output is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiCost.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$contextWindow is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$cost is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$id is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$input is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$maxTokens is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$name is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Config\\Ai\\AiModelReference\:\:parse$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiModelReference.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$api is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$apiKey is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$baseUrl is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$completionsPath is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$embeddingsPath is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$supportsCompletions is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$supportsEmbeddings is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$type is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Config\\Ai\\HatfieldModelCatalog\:\:config$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Config/Ai/HatfieldModelCatalog.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Config\\Ai\\HatfieldModelCatalog\:\:requireModel$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Config/Ai/HatfieldModelCatalog.php
-
-		# Temporary AI-07 ModelSelectionService baselines. Remove when AI-09/AI-10
-		# production code calls these methods.
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Config\\ModelSelectionService\:\:resolveInitialModel$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Config/ModelSelectionService.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Config\\ModelSelectionService\:\:getAvailableModels$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Config/ModelSelectionService.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Config\\ModelSelectionService\:\:resolveInitialReasoning$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Config/ModelSelectionService.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Config\\ModelSelectionService\:\:changeModel$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Config/ModelSelectionService.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Config\\ModelSelectionService\:\:changeReasoning$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Config/ModelSelectionService.php
-
-		# Temporary AI-06 ReasoningOptionsResolver baseline. Remove when AI-07/AI-10
-		# production code calls ReasoningOptionsResolver::resolve.
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Config\\ReasoningOptionsResolver\:\:resolve$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Config/ReasoningOptionsResolver.php
 

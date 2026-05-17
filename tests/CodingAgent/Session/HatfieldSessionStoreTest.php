@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
+use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
-use Ineersa\CodingAgent\Config\AppConfigResolver;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -16,6 +16,7 @@ final class HatfieldSessionStoreTest extends TestCase
 {
     private string $tempDir = '';
     private HatfieldSessionStore $store;
+    private string|false $originalCwd;
 
     protected function setUp(): void
     {
@@ -44,26 +45,46 @@ YAML);
         // Write empty project settings
         file_put_contents($this->tempDir.'/.hatfield/settings.yaml', '');
 
-        $pathResolver = new SettingsPathResolver($this->tempDir);
-        $loader = new AppConfigLoader($pathResolver);
-        $resources = new AppResourceLocator($this->tempDir);
-        $configResolver = new AppConfigResolver($loader, $resources);
+        $this->originalCwd = getcwd();
+        chdir($this->tempDir);
 
-        $this->store = new HatfieldSessionStore($configResolver, $this->tempDir);
+        $appConfig = $this->createAppConfig($this->tempDir);
+        $this->store = new HatfieldSessionStore($appConfig);
     }
 
     protected function tearDown(): void
     {
         parent::tearDown();
 
+        if (false !== $this->originalCwd) {
+            chdir($this->originalCwd);
+        }
+
         if (is_dir($this->tempDir)) {
             $this->rmDir($this->tempDir);
         }
     }
 
+    private function createAppConfig(string $projectDir): AppConfig
+    {
+        $prevCwd = getcwd();
+        chdir($projectDir);
+        try {
+            $pathResolver = new SettingsPathResolver($projectDir);
+            $loader = new AppConfigLoader($pathResolver);
+            $resources = new AppResourceLocator($projectDir);
+
+            return new AppConfig($loader, $resources);
+        } finally {
+            if (false !== $prevCwd) {
+                chdir($prevCwd);
+            }
+        }
+    }
+
     public function testCreateSessionCreatesDirectoryAndMetadata(): void
     {
-        $sessionId = $this->store->createSession($this->tempDir, 'Hello');
+        $sessionId = $this->store->createSession('Hello');
 
         // Directory exists
         $sessionPath = $this->tempDir.'/.hatfield/sessions/'.$sessionId;
@@ -71,7 +92,7 @@ YAML);
 
         // Metadata YAML created
         self::assertFileExists($sessionPath.'/metadata.yaml');
-        $meta = $this->store->loadMetadata($this->tempDir, $sessionId);
+        $meta = $this->store->loadMetadata($sessionId);
         self::assertNotNull($meta);
         self::assertSame($sessionId, $meta['session_id']);
         self::assertSame($sessionId, $meta['run_id'], 'session_id must equal run_id');
@@ -87,27 +108,27 @@ YAML);
         self::assertFileExists($sessionPath.'/runtime-events.jsonl');
 
         // Empty transcript
-        $entries = $this->store->getTranscript($this->tempDir, $sessionId);
+        $entries = $this->store->getTranscript($sessionId);
         self::assertCount(0, $entries);
     }
 
     public function testAppendAndLoadTranscript(): void
     {
-        $sessionId = $this->store->createSession($this->tempDir);
+        $sessionId = $this->store->createSession();
 
-        $this->store->appendTranscriptEntry($this->tempDir, $sessionId, new TranscriptEntry(
+        $this->store->appendTranscriptEntry($sessionId, new TranscriptEntry(
             role: 'user',
             text: 'Hello world',
             meta: ['session_id' => $sessionId],
         ));
 
-        $this->store->appendTranscriptEntry($this->tempDir, $sessionId, new TranscriptEntry(
+        $this->store->appendTranscriptEntry($sessionId, new TranscriptEntry(
             role: 'assistant',
             text: 'Hi there!',
             meta: ['run_id' => 'abc123', 'seq' => 1],
         ));
 
-        $entries = $this->store->getTranscript($this->tempDir, $sessionId);
+        $entries = $this->store->getTranscript($sessionId);
         self::assertCount(2, $entries);
 
         self::assertSame('user', $entries[0]->role);
@@ -119,16 +140,16 @@ YAML);
 
     public function testAppendTranscriptPreservesOrder(): void
     {
-        $sessionId = $this->store->createSession($this->tempDir);
+        $sessionId = $this->store->createSession();
 
         for ($i = 1; $i <= 5; ++$i) {
-            $this->store->appendTranscriptEntry($this->tempDir, $sessionId, new TranscriptEntry(
+            $this->store->appendTranscriptEntry($sessionId, new TranscriptEntry(
                 role: 'user',
                 text: "Message {$i}",
             ));
         }
 
-        $entries = $this->store->getTranscript($this->tempDir, $sessionId);
+        $entries = $this->store->getTranscript($sessionId);
         self::assertCount(5, $entries);
         self::assertSame('Message 1', $entries[0]->text);
         self::assertSame('Message 5', $entries[4]->text);
@@ -136,25 +157,25 @@ YAML);
 
     public function testResumeMissingSessionReturnsNull(): void
     {
-        $meta = $this->store->loadMetadata($this->tempDir, 'nonexistent');
+        $meta = $this->store->loadMetadata('nonexistent');
         self::assertNull($meta);
     }
 
     public function testExistsReturnsFalseForMissingSession(): void
     {
-        self::assertFalse($this->store->exists($this->tempDir, 'nonexistent'));
+        self::assertFalse($this->store->exists('nonexistent'));
     }
 
     public function testUpdateMetadataMergesFields(): void
     {
-        $sessionId = $this->store->createSession($this->tempDir);
+        $sessionId = $this->store->createSession();
 
-        $this->store->updateMetadata($this->tempDir, $sessionId, [
+        $this->store->updateMetadata($sessionId, [
             'run_id' => 'run-456',
             'model' => 'deepseek-v4',
         ]);
 
-        $meta = $this->store->loadMetadata($this->tempDir, $sessionId);
+        $meta = $this->store->loadMetadata($sessionId);
         self::assertNotNull($meta);
         self::assertSame('run-456', $meta['run_id']);
         self::assertSame('deepseek-v4', $meta['model']);
@@ -164,9 +185,9 @@ YAML);
 
     public function testAppendRuntimeEvent(): void
     {
-        $sessionId = $this->store->createSession($this->tempDir);
+        $sessionId = $this->store->createSession();
 
-        $this->store->appendRuntimeEvent($this->tempDir, $sessionId, [
+        $this->store->appendRuntimeEvent($sessionId, [
             'v' => 1,
             'type' => 'run_started',
             'runId' => 'abc',
@@ -225,14 +246,11 @@ YAML);
         file_put_contents($tempDir2.'/.hatfield/settings.yaml', '');
 
         try {
-            $pathResolver2 = new SettingsPathResolver($tempDir2);
-            $loader2 = new AppConfigLoader($pathResolver2);
-            $resources2 = new AppResourceLocator($tempDir2);
-            $resolver2 = new AppConfigResolver($loader2, $resources2);
-            $store2 = new HatfieldSessionStore($resolver2, $tempDir2);
+            $appConfig2 = $this->createAppConfig($tempDir2);
+            $store2 = new HatfieldSessionStore($appConfig2);
 
-            $id1 = $this->store->createSession($this->tempDir, 'project one');
-            $id2 = $store2->createSession($tempDir2, 'project two');
+            $id1 = $this->store->createSession('project one');
+            $id2 = $store2->createSession('project two');
 
             // Different sessions
             self::assertNotSame($id1, $id2);
@@ -241,9 +259,9 @@ YAML);
             self::assertDirectoryExists($this->tempDir.'/.hatfield/sessions/'.$id1);
             self::assertDirectoryExists($tempDir2.'/.hatfield/sessions/'.$id2);
 
-            // Cross-project lookup returns null
-            self::assertNull($this->store->loadMetadata($tempDir2, $id1));
-            self::assertNull($store2->loadMetadata($this->tempDir, $id2));
+            // Cross-project lookup returns null (different stores)
+            self::assertNull($store2->loadMetadata($id1));
+            self::assertNull($this->store->loadMetadata($id2));
         } finally {
             if (is_dir($tempDir2)) {
                 $this->rmDir($tempDir2);
@@ -265,12 +283,12 @@ YAML);
     public function testCreateSessionWithExplicitId(): void
     {
         $explicitId = 'aaabbbcccddd';
-        $returnedId = $this->store->createSession($this->tempDir, 'test', $explicitId);
+        $returnedId = $this->store->createSession('test', $explicitId);
 
         self::assertSame($explicitId, $returnedId);
         self::assertDirectoryExists($this->tempDir.'/.hatfield/sessions/'.$explicitId);
 
-        $meta = $this->store->loadMetadata($this->tempDir, $explicitId);
+        $meta = $this->store->loadMetadata($explicitId);
         self::assertNotNull($meta);
         self::assertSame($explicitId, $meta['session_id']);
         self::assertSame($explicitId, $meta['run_id'], 'run_id must equal session_id');
@@ -278,12 +296,12 @@ YAML);
 
     public function testResolveSessionsBasePath(): void
     {
-        $basePath = $this->store->resolveSessionsBasePath($this->tempDir);
+        $basePath = $this->store->resolveSessionsBasePath();
 
         self::assertSame($this->tempDir.'/.hatfield/sessions', $basePath);
 
         // The resolved base path must match what createSession uses
-        $sessionId = $this->store->createSession($this->tempDir);
+        $sessionId = $this->store->createSession();
         $expectedSessionDir = $basePath.'/'.$sessionId;
         self::assertDirectoryExists($expectedSessionDir);
     }
@@ -301,14 +319,11 @@ YAML);
         file_put_contents($tempDir2.'/.hatfield/settings.yaml', '');
 
         try {
-            $pathResolver2 = new SettingsPathResolver($tempDir2);
-            $loader2 = new AppConfigLoader($pathResolver2);
-            $resources2 = new AppResourceLocator($tempDir2);
-            $resolver2 = new AppConfigResolver($loader2, $resources2);
-            $store2 = new HatfieldSessionStore($resolver2, $tempDir2);
+            $appConfig2 = $this->createAppConfig($tempDir2);
+            $store2 = new HatfieldSessionStore($appConfig2);
 
-            $basePath1 = $this->store->resolveSessionsBasePath($this->tempDir);
-            $basePath2 = $store2->resolveSessionsBasePath($tempDir2);
+            $basePath1 = $this->store->resolveSessionsBasePath();
+            $basePath2 = $store2->resolveSessionsBasePath();
 
             self::assertNotSame($basePath1, $basePath2, 'Different projects must resolve different sessions base paths');
             self::assertSame($this->tempDir.'/.hatfield/sessions', $basePath1);

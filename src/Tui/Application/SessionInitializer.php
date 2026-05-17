@@ -31,24 +31,22 @@ final readonly class SessionInitializer
     /**
      * Initialize session state and return ready-to-use TuiSessionState.
      *
-     * @param string               $cwd       Project working directory
      * @param string               $sessionId Existing session ID to resume; empty = new session
      * @param StartRunRequest|null $request   Optional pre-configured start request
      */
     public function initialize(
-        string $cwd,
         string $sessionId = '',
         ?StartRunRequest $request = null,
     ): TuiSessionState {
-        $resuming = '' !== $sessionId && $this->sessionStore->exists($cwd, $sessionId);
+        $resuming = '' !== $sessionId && $this->sessionStore->exists($sessionId);
 
         if (!$resuming) {
             $sessionId = $this->sessionStore->generateId();
             $promptText = null !== $request ? $request->prompt : '';
-            $this->sessionStore->createSession($cwd, $promptText, $sessionId);
+            $this->sessionStore->createSession($promptText, $sessionId);
         }
 
-        $state = new TuiSessionState($sessionId, $cwd, $resuming);
+        $state = new TuiSessionState($sessionId, $resuming);
 
         // Inject session ID as the run ID when starting with an initial prompt
         if (null !== $request && '' !== $request->prompt && '' === $request->runId) {
@@ -78,7 +76,7 @@ final readonly class SessionInitializer
     public function buildInitialTranscript(TuiSessionState $state): array
     {
         if ($state->resuming) {
-            $entries = $this->loadTranscriptEntries($state->cwd, $state->sessionId);
+            $entries = $this->loadTranscriptEntries($state->sessionId);
             if ([] === $entries) {
                 return [new TranscriptEntry(
                     text: 'Session '.$state->sessionId.' — no messages yet.',
@@ -91,7 +89,6 @@ final readonly class SessionInitializer
 
         // Persist initial system entry for new sessions
         $this->sessionStore->appendTranscriptEntry(
-            $state->cwd,
             $state->sessionId,
             new PersistedTranscriptEntry(
                 role: 'system',
@@ -111,9 +108,9 @@ final readonly class SessionInitializer
      *
      * @return list<TranscriptEntry>
      */
-    private function loadTranscriptEntries(string $projectCwd, string $sessionId): array
+    private function loadTranscriptEntries(string $sessionId): array
     {
-        $persisted = $this->sessionStore->getTranscript($projectCwd, $sessionId);
+        $persisted = $this->sessionStore->getTranscript($sessionId);
         if ([] === $persisted) {
             return [];
         }
