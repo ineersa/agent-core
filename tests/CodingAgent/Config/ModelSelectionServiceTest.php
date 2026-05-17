@@ -34,6 +34,8 @@ class ModelSelectionServiceTest extends TestCase
         $resources = new AppResourceLocator($this->tempDir);
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $loader = new AppConfigLoader($pathResolver);
+        // HomeSettingsWriter needs SettingsPathResolver for internal home path resolution
+        $homeWriter = new HomeSettingsWriter($pathResolver);
 
         // We need to provide a defaults file so the loader works
         $defaultsPath = $this->tempDir.'/config/hatfield.defaults.yaml';
@@ -41,15 +43,11 @@ class ModelSelectionServiceTest extends TestCase
         file_put_contents($defaultsPath, "tui:\n    theme: cyberpunk\n");
 
         $configResolver = new AppConfigResolver($loader, $resources);
-
-        $homeWriter = new HomeSettingsWriter();
-
         $this->sessionMetaStore = new SessionMetadataStore();
         $this->sessionMetaStore->setSessionsBasePath($this->projectCwd().'/.hatfield/sessions');
 
         $this->service = new ModelSelectionService(
             $configResolver,
-            $pathResolver,
             $homeWriter,
             $this->sessionMetaStore,
         );

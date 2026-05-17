@@ -30,7 +30,6 @@ final class ModelSelectionService
 
     public function __construct(
         private readonly AppConfigResolver $configResolver,
-        private readonly SettingsPathResolver $pathResolver,
         private readonly HomeSettingsWriter $homeWriter,
         private readonly SessionMetadataStore $sessionMetaStore,
     ) {
@@ -174,8 +173,7 @@ final class ModelSelectionService
         }
 
         // Persist default to home settings
-        $homePath = $this->pathResolver->getHomeDir().'/.hatfield/settings.yaml';
-        $this->homeWriter->writeDefaultModel($homePath, $model->toString());
+        $this->homeWriter->writeDefaultModel($model->toString());
 
         // Persist current state to session metadata
         $this->sessionMetaStore->writeSessionMetadata($sessionId, [
@@ -207,8 +205,7 @@ final class ModelSelectionService
         $this->configResolver->resolve($projectCwd);
 
         // Persist default to home settings
-        $homePath = $this->pathResolver->getHomeDir().'/.hatfield/settings.yaml';
-        $this->homeWriter->writeDefaultReasoning($homePath, $level);
+        $this->homeWriter->writeDefaultReasoning($level);
 
         // Persist current state to session metadata
         $this->sessionMetaStore->writeSessionMetadata($sessionId, [

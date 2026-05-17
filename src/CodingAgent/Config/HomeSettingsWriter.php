@@ -13,14 +13,24 @@ namespace Ineersa\CodingAgent\Config;
  */
 final class HomeSettingsWriter
 {
-    public function writeDefaultModel(string $filePath, string $model): void
-    {
-        $this->writeAiKey($filePath, 'default_model', $model);
+    public function __construct(
+        private readonly SettingsPathResolver $pathResolver,
+    ) {
     }
 
-    public function writeDefaultReasoning(string $filePath, string $reasoning): void
+    public function writeDefaultModel(string $model): void
     {
-        $this->writeAiKey($filePath, 'default_reasoning', $reasoning);
+        $this->writeAiKey($this->homeSettingsPath(), 'default_model', $model);
+    }
+
+    public function writeDefaultReasoning(string $reasoning): void
+    {
+        $this->writeAiKey($this->homeSettingsPath(), 'default_reasoning', $reasoning);
+    }
+
+    private function homeSettingsPath(): string
+    {
+        return $this->pathResolver->getHomeDir().'/.hatfield/settings.yaml';
     }
 
     /**

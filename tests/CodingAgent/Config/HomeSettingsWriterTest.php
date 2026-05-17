@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Config;
 
 use Ineersa\CodingAgent\Config\HomeSettingsWriter;
+use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
 
@@ -17,9 +18,10 @@ class HomeSettingsWriterTest extends TestCase
     protected function setUp(): void
     {
         $this->tmpDir = \sys_get_temp_dir() . '/hatfield_writer_' . \bin2hex(\random_bytes(8));
-        \mkdir($this->tmpDir, 0o755, true);
-        $this->file = $this->tmpDir . '/settings.yaml';
-        $this->writer = new HomeSettingsWriter();
+        \mkdir($this->tmpDir . '/.hatfield', 0o755, true);
+        $this->file = $this->tmpDir . '/.hatfield/settings.yaml';
+        $pathResolver = new SettingsPathResolver('/app', $this->tmpDir);
+        $this->writer = new HomeSettingsWriter($pathResolver);
     }
 
     protected function tearDown(): void
@@ -48,7 +50,7 @@ class HomeSettingsWriterTest extends TestCase
     public function testReplacesActiveModel(): void
     {
         $this->write("ai:\n    default_model: old\n    default_reasoning: medium\n");
-        $this->writer->writeDefaultModel($this->file, 'zai/glm-5.1');
+        $this->writer->writeDefaultModel('zai/glm-5.1');
 
         $p = $this->parse();
         self::assertSame('zai/glm-5.1', $p['ai']['default_model'] ?? null);
@@ -58,7 +60,7 @@ class HomeSettingsWriterTest extends TestCase
     public function testUncommentsModel(): void
     {
         $this->write("ai:\n# default_model: old\n");
-        $this->writer->writeDefaultModel($this->file, 'deepseek/deepseek-v4-pro');
+        $this->writer->writeDefaultModel('deepseek/deepseek-v4-pro');
 
         self::assertStringContainsString(
             'default_model: deepseek/deepseek-v4-pro',
@@ -71,7 +73,7 @@ class HomeSettingsWriterTest extends TestCase
     public function testInsertsModelWhenAiSectionExists(): void
     {
         $this->write("ai:\n    default_reasoning: medium\n");
-        $this->writer->writeDefaultModel($this->file, 'zai/glm-5.1');
+        $this->writer->writeDefaultModel('zai/glm-5.1');
 
         $p = $this->parse();
         self::assertSame('zai/glm-5.1', $p['ai']['default_model'] ?? null);
@@ -80,7 +82,7 @@ class HomeSettingsWriterTest extends TestCase
     public function testAppendsAiSectionForModel(): void
     {
         $this->write("tui:\n    theme: cyberpunk\n");
-        $this->writer->writeDefaultModel($this->file, 'llama_cpp/flash');
+        $this->writer->writeDefaultModel('llama_cpp/flash');
 
         $p = $this->parse();
         self::assertSame('llama_cpp/flash', $p['ai']['default_model'] ?? null);
@@ -90,7 +92,7 @@ class HomeSettingsWriterTest extends TestCase
     public function testPreservesCommentsOnModelWrite(): void
     {
         $this->write("# my settings\nai:\n    # model note\n    default_reasoning: medium\n    # end note\n");
-        $this->writer->writeDefaultModel($this->file, 'zai/glm-5.1');
+        $this->writer->writeDefaultModel('zai/glm-5.1');
 
         $result = $this->read();
         self::assertStringContainsString('# my settings', $result);
@@ -103,7 +105,7 @@ class HomeSettingsWriterTest extends TestCase
     public function testReplacesAndUncommentsReasoning(): void
     {
         $this->write("ai:\n    default_model: deepseek/deepseek-v4-pro\n#   default_reasoning: low\n");
-        $this->writer->writeDefaultReasoning($this->file, 'xhigh');
+        $this->writer->writeDefaultReasoning('xhigh');
 
         $p = $this->parse();
         self::assertSame('xhigh', $p['ai']['default_reasoning'] ?? null);
@@ -112,7 +114,7 @@ class HomeSettingsWriterTest extends TestCase
     public function testInsertsReasoningWhenAbsent(): void
     {
         $this->write("ai:\n    default_model: deepseek/deepseek-v4-pro\n");
-        $this->writer->writeDefaultReasoning($this->file, 'minimal');
+        $this->writer->writeDefaultReasoning('minimal');
 
         $p = $this->parse();
         self::assertSame('minimal', $p['ai']['default_reasoning'] ?? null);
@@ -123,7 +125,7 @@ class HomeSettingsWriterTest extends TestCase
     public function testQuotesColonAndHash(): void
     {
         $this->write("ai:\n    default_model: old\n");
-        $this->writer->writeDefaultModel($this->file, 'model:with:colons#hash');
+        $this->writer->writeDefaultModel('model:with:colons#hash');
 
         $result = $this->read();
         self::assertStringContainsString("default_model: 'model:with:colons#hash'", $result);
@@ -132,7 +134,7 @@ class HomeSettingsWriterTest extends TestCase
     public function testDoesNotQuoteNormalValues(): void
     {
         $this->write("ai:\n    default_model: old\n");
-        $this->writer->writeDefaultModel($this->file, 'zai/glm-5.1');
+        $this->writer->writeDefaultModel('zai/glm-5.1');
 
         self::assertStringNotContainsString("'zai/glm-5.1'", $this->read());
     }
@@ -140,7 +142,7 @@ class HomeSettingsWriterTest extends TestCase
     public function testQuotesEmptyValue(): void
     {
         $this->write("ai:\n    default_model: old\n");
-        $this->writer->writeDefaultModel($this->file, '');
+        $this->writer->writeDefaultModel('');
 
         self::assertStringContainsString("default_model: ''", $this->read());
     }
@@ -152,7 +154,8 @@ class HomeSettingsWriterTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Cannot read');
 
-        $this->writer->writeDefaultModel('/nonexistent/path.yaml', 'x');
+        $writer = new HomeSettingsWriter(new SettingsPathResolver('/app', '/nonexistent'));
+        $writer->writeDefaultModel('x');
     }
 
     // ── Helper ─────────────────────────────────────────────────────────
