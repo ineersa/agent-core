@@ -1,4 +1,8 @@
 # yaml-language-server: $schema=../vendor/symfony/dependency-injection/Loader/schema/services.schema.json
+parameters:
+    # Temporary default model — AI-10 per-turn routing replaces this.
+    app.default_model: 'deepseek/deepseek-v4-pro'
+
 services:
   _defaults:
     autowire: true
@@ -52,3 +56,15 @@ services:
   Ineersa\Tui\Application\InteractiveMode:
     arguments:
       $listenerRegistrars: !tagged_iterator app.tui_listener
+
+  # ─── Symfony AI Platform wiring ───
+
+  Symfony\AI\Platform\PlatformInterface:
+    factory: ['@Ineersa\CodingAgent\Infrastructure\SymfonyAi\ConfiguredSymfonyAiPlatformFactory', 'createPlatform']
+    arguments:
+      $projectCwd: '%kernel.project_dir%'
+
+  # Temporary default model binding — AI-10 per-turn routing replaces this.
+  Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker:
+    arguments:
+      $defaultModel: '%app.default_model%'

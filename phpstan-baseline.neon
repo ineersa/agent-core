@@ -1321,41 +1321,6 @@ parameters:
 			count: 1
 			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
 
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$apiKey is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$baseUrl is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$completionsPath is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$embeddingsPath is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$supportsCompletions is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$supportsEmbeddings is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
 
 		-
 			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$type is never read$#'
@@ -1363,11 +1328,6 @@ parameters:
 			count: 1
 			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
 
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Config\\Ai\\HatfieldModelCatalog\:\:config$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Config/Ai/HatfieldModelCatalog.php
 
 		-
 			message: '#^Unused Ineersa\\CodingAgent\\Config\\Ai\\HatfieldModelCatalog\:\:requireModel$#'
@@ -1414,4 +1374,12 @@ parameters:
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/CodingAgent/Config/ReasoningOptionsResolver.php
+
+		# Temporary AI-05 Symfony AI Platform factory baselines.
+		# Remove when AI-10 wires per-turn model routing through the Platform.
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Infrastructure\\SymfonyAi\\ConfiguredSymfonyAiPlatformFactory\:\:createPlatform$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Infrastructure/SymfonyAi/ConfiguredSymfonyAiPlatformFactory.php
 
