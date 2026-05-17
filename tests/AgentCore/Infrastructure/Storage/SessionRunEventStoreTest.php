@@ -30,6 +30,7 @@ final class SessionRunEventStoreTest extends TestCase
         $this->store = new SessionRunEventStore(
             projectDir: $this->projectDir,
             eventPayloadNormalizer: new EventPayloadNormalizer(),
+            lockFactory: new LockFactory(new FlockStore()),
         );
     }
 
@@ -111,6 +112,7 @@ final class SessionRunEventStoreTest extends TestCase
         $newStore = new SessionRunEventStore(
             projectDir: $this->projectDir,
             eventPayloadNormalizer: new EventPayloadNormalizer(),
+            lockFactory: new LockFactory(new FlockStore()),
         );
 
         $events = $newStore->allFor($runId);

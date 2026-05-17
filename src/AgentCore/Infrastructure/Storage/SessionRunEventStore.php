@@ -8,7 +8,6 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
 
 /**
  * File-backed EventStoreInterface implementation.
@@ -24,14 +23,13 @@ use Symfony\Component\Lock\Store\FlockStore;
  */
 final class SessionRunEventStore implements EventStoreInterface
 {
-    private readonly LockFactory $lockFactory;
     private string $sessionsBasePath;
 
     public function __construct(
         string $projectDir,
-        private readonly EventPayloadNormalizer $eventPayloadNormalizer = new EventPayloadNormalizer(),
+        private readonly EventPayloadNormalizer $eventPayloadNormalizer,
+        private readonly LockFactory $lockFactory,
     ) {
-        $this->lockFactory = new LockFactory(new FlockStore());
         $this->sessionsBasePath = $projectDir.'/.hatfield/sessions';
     }
 

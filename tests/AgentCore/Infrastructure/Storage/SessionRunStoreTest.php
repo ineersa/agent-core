@@ -40,6 +40,7 @@ final class SessionRunStoreTest extends TestCase
         $this->store = new SessionRunStore(
             projectDir: $this->projectDir,
             serializer: $serializer,
+            lockFactory: new LockFactory(new FlockStore()),
         );
     }
 
@@ -117,6 +118,7 @@ final class SessionRunStoreTest extends TestCase
         $newStore = new SessionRunStore(
             projectDir: $this->projectDir,
             serializer: $serializer,
+            lockFactory: new LockFactory(new FlockStore()),
         );
 
         $loaded = $newStore->get($runId);

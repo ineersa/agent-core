@@ -15,6 +15,7 @@ use Ineersa\AgentCore\Domain\Message\ProjectJsonlOutbox;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryOutboxStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
 use Ineersa\AgentCore\Infrastructure\Storage\RunLogWriter;
+use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use League\Flysystem\Filesystem;
 use League\Flysystem\FilesystemOperator;
 use League\Flysystem\Local\LocalFilesystemAdapter;
@@ -40,7 +41,7 @@ final class OutboxProjectionWorkerTest extends TestCase
         $filesystem = new Filesystem(new LocalFilesystemAdapter($this->basePath));
 
         $outboxStore = new InMemoryOutboxStore();
-        $runLogWriter = new RunLogWriter($filesystem);
+        $runLogWriter = new RunLogWriter($filesystem, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer());
 
         $jsonlWorker = new JsonlOutboxProjectorWorker($outboxStore, $runLogWriter);
 
@@ -60,7 +61,7 @@ final class OutboxProjectionWorkerTest extends TestCase
 
         $jsonlWorker->__invoke(new ProjectJsonlOutbox());
 
-        $reader = new RunLogReader($filesystem);
+        $reader = new RunLogReader($filesystem, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer());
         $events = $reader->allFor('run-outbox-1');
 
         self::assertCount(1, $events, 'Duplicate outbox enqueue should not duplicate projected JSONL event.');
@@ -82,7 +83,7 @@ final class OutboxProjectionWorkerTest extends TestCase
         $failingFilesystem->method('fileExists')->willReturn(false);
         $failingFilesystem->method('write')->willThrowException(new \RuntimeException('disk full'));
 
-        $jsonlWorker = new JsonlOutboxProjectorWorker($outboxStore, new RunLogWriter($failingFilesystem));
+        $jsonlWorker = new JsonlOutboxProjectorWorker($outboxStore, new RunLogWriter($failingFilesystem, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer()));
 
         $event = new RunEvent(
             runId: 'run-outbox-failure-1',

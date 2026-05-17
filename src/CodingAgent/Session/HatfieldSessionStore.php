@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Session;
 
 use Ineersa\CodingAgent\Config\AppConfig;
 use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -30,12 +29,10 @@ use Symfony\Component\Yaml\Yaml;
  */
 final class HatfieldSessionStore
 {
-    private readonly LockFactory $lockFactory;
-
     public function __construct(
         private readonly AppConfig $appConfig,
+        private readonly LockFactory $lockFactory,
     ) {
-        $this->lockFactory = new LockFactory(new FlockStore());
     }
 
     /**

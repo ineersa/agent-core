@@ -22,8 +22,6 @@ final class ToolExecutor implements ToolExecutorInterface
 {
     private ToolExecutionPolicyResolver $policyResolver;
 
-    private ToolExecutionResultStore $resultStore;
-
     private ?FaultTolerantToolbox $faultTolerantToolbox;
 
     /**
@@ -33,13 +31,12 @@ final class ToolExecutor implements ToolExecutorInterface
         string $defaultMode,
         int $defaultTimeoutSeconds,
         int $maxParallelism,
+        private readonly ToolExecutionResultStore $resultStore,
         array $overrides = [],
         ?ToolboxInterface $toolbox = null,
-        ?ToolExecutionResultStore $resultStore = null,
         private readonly ?ToolIdempotencyKeyResolverInterface $toolIdempotencyKeyResolver = null,
     ) {
         $this->policyResolver = new ToolExecutionPolicyResolver($defaultMode, $defaultTimeoutSeconds, $maxParallelism, $overrides);
-        $this->resultStore = $resultStore ?? new ToolExecutionResultStore();
         $this->faultTolerantToolbox = null !== $toolbox ? new FaultTolerantToolbox($toolbox) : null;
     }
 
