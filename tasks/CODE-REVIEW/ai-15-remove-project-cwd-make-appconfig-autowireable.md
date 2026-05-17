@@ -129,3 +129,7 @@ Completed:
 ## Task workflow update - 2026-05-17T19:57:42.084Z
 - Recorded fork run: dfkadj622em0
 - Summary: Launched fork dfkadj622em0 to address PR #16 review comments: throw if getcwd() fails instead of masking with '/', restore stripped comments/docs in AppConfigLoader, ModelSelectionService, and HatfieldSessionStore, keep AppConfig public readonly style as non-blocking preference unless trivial. Fork instructed to operate only inside AI-15 worktree with absolute paths and verify main checkout untouched.
+
+## Task workflow update - 2026-05-17T20:07:47.572Z
+- Validation: php bin/console --no-interaction: passed; castor test: passed (329 tests, 8048 assertions, 1 pre-existing notice); castor deptrac: passed (0 violations); castor phpstan: passed (0 errors); castor cs-fix + castor cs-check: passed; castor check: passed (quality: ok); main checkout verified clean by fork
+- Summary: PR #16 review comments addressed by fork dfkadj622em0 in commit ef2dbfb9, pushed to branch task/ai-15-remove-project-cwd-make-appconfig-autowireable. Changes: AppConfig and AppConfigLoader now throw RuntimeException if getcwd() fails instead of falling back to '/', restored stripped comments/docs in AppConfigLoader, ModelSelectionService, and HatfieldSessionStore, regenerated phpstan-baseline.neon. Public readonly vs getters review note intentionally left unchanged as non-blocking preference.
