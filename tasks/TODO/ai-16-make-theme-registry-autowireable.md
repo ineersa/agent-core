@@ -120,22 +120,57 @@ public function __construct(
 
 Remove the inline `new LockFactory(new FlockStore())`.
 
+### 8. Inject `EventPayloadNormalizer` into stores
+
+`RunLogWriter`, `RunLogReader`, and `SessionRunEventStore` currently use `new EventPayloadNormalizer()` as constructor default values. Inject it via autowiring — all three are in the `Ineersa\AgentCore\` namespace and `EventPayloadNormalizer` has a zero-arg constructor.
+
+```php
+// Before (default property value)
+private readonly EventPayloadNormalizer $eventPayloadNormalizer = new EventPayloadNormalizer(),
+
+// or nullable fallback
+$this->eventPayloadNormalizer = $eventPayloadNormalizer ?? new EventPayloadNormalizer();
+
+// After (constructor injection)
+public function __construct(
+    ...,
+    private readonly EventPayloadNormalizer $eventPayloadNormalizer,
+) {}
+```
+
+### 9. Inject `ToolExecutionResultStore` into `ToolExecutor`
+
+`ToolExecutor` uses nullable fallback: `$resultStore ?? new ToolExecutionResultStore()`. Inject it. `ToolExecutionResultStore` has a zero-arg constructor and is in `Ineersa\AgentCore\` namespace.
+
+### 10. Inject `EventFactory` and `ToolCallExtractor` into `RunMessageStateTools`
+
+Both use default property values with `new`. Inject them via constructor — both have zero-arg constructors.
+
+```php
+// Before
+private EventFactory $eventFactory = new EventFactory(),
+private ToolCallExtractor $toolCallExtractor = new ToolCallExtractor(),
+
+// After
+public function __construct(
+    ...,
+    private readonly EventFactory $eventFactory,
+    private readonly ToolCallExtractor $toolCallExtractor,
+) {}
+```
+
 ## Depends on
 
 - AI-15 (AppConfig must be autowireable first)
-
-## Acceptance criteria
-
-- `ThemeLoader` class deleted
-- `ThemeRegistry` self-loads palettes from config
-- `ThemeFactory::buildTheme()` removed
-- `castor check` green
 
 ## Acceptance criteria
 - ThemeLoader class deleted, logic moved into ThemeRegistry
 - ThemeRegistry is autowireable — loads palettes from AppConfig + built-in path
 - ThemeFactory simplified — injects ThemeRegistry, no buildTheme(), no resources dep
 - HatfieldSessionStore injects LockFactory instead of manual construction
+- EventPayloadNormalizer injected into RunLogWriter, RunLogReader, SessionRunEventStore
+- ToolExecutionResultStore injected into ToolExecutor
+- EventFactory and ToolCallExtractor injected into RunMessageStateTools
 - castor check green
 
 ## Workflow metadata
