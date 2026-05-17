@@ -22,14 +22,14 @@ Scope:
 - Suggested validation: `castor test --filter Settings`.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/ai-03-home-settings-bootstrap-comment-preserving-writer
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-03-home-settings-bootstrap-comment-preserving-writer
 Fork run: datzj9x6vz4w
 PR URL: https://github.com/ineersa/agent-core/pull/10
-PR Status: open
+PR Status: merged
 Started: 2026-05-16T22:30:47.734Z
-Completed:
+Completed: 2026-05-17T00:33:00.087Z
 
 ## Work log
 - Created: 2026-05-16T22:01:55.475Z
@@ -89,3 +89,21 @@ Completed:
 ## Task workflow update - 2026-05-17T00:12:14.845Z
 - Validation: Fork validation: `castor deptrac` passed: 0 violations, 69 uncovered, 323 allowed.; Fork validation: `castor test` passed: 287 tests, 7938 assertions, 1 PHPUnit notice.; Fork validation: `castor phpstan` passed: 0 errors.; Fork validation: `castor cs-check` clean.; Fork validation: full `castor check` passed.; Parent verification: PR #10 head is a24b95687ac1e8f72a27e11b038bd5fb09f46b16 and mergeable=MERGEABLE.
 - Summary: PR #10 merge conflict resolved by fork datzj9x6vz4w and pushed. Added merge commit a24b9568 merging origin/main and resolving the phpstan-baseline.neon conflict by keeping both temporary AI-02 catalog DTO/API baselines and AI-03 HomeSettingsWriter writeDefaultModel/writeDefaultReasoning baselines, with clarifying comments. No source/config/test behavior changes in conflict resolution. PR #10 head verified at a24b95687ac1e8f72a27e11b038bd5fb09f46b16 and GitHub reports MERGEABLE.
+
+## Task workflow update - 2026-05-17T00:33:00.087Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/ai-03-home-settings-bootstrap-comment-preserving-writer into integration checkout.
+- Merge made by the 'ort' strategy.
+ config/services.yaml                               |   2 +
+ docs/settings.md                                   |  13 +-
+ phpstan-baseline.neon                              |  13 ++
+ src/CodingAgent/Config/AppConfigLoader.php         |  28 ++++
+ src/CodingAgent/Config/HomeSettingsWriter.php      |  72 ++++++++
+ .../CodingAgent/Config/HomeSettingsWriterTest.php  | 183 +++++++++++++++++++++
+ 6 files changed, 310 insertions(+), 1 deletion(-)
+ create mode 100644 src/CodingAgent/Config/HomeSettingsWriter.php
+ create mode 100644 tests/CodingAgent/Config/HomeSettingsWriterTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/ai-03-home-settings-bootstrap-comment-preserving-writer.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR #10 merged: https://github.com/ineersa/agent-core/pull/10; Final branch validation before merge: full `castor check` passed; PHPUnit 287 tests/7938 assertions; deptrac 0 violations; PHPStan 0 errors; CS clean.; GitHub reported PR #10 MERGEABLE before merge at head a24b95687ac1e8f72a27e11b038bd5fb09f46b16.
+- Summary: PR #10 merged on GitHub at 2026-05-17T00:32:30Z with merge commit c9b071a63da3504328ff87af110714c446a2dacc. AI-03 complete: first-launch home settings bootstrap now copies config/hatfield.defaults.yaml to ~/.hatfield/settings.yaml; HomeSettingsWriter provides minimal explicit writeDefaultModel/writeDefaultReasoning methods; docs updated; writer tests added.
