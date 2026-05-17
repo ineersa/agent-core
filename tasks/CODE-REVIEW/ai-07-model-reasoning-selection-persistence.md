@@ -26,7 +26,7 @@ Scope:
 Status: CODE-REVIEW
 Branch: task/ai-07-model-reasoning-selection-persistence
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-07-model-reasoning-selection-persistence
-Fork run: k3iy1ja8fe75
+Fork run: wffz81bijh8q
 PR URL: https://github.com/ineersa/agent-core/pull/13
 PR Status: open
 Started: 2026-05-17T01:27:21.764Z
@@ -52,3 +52,7 @@ Completed:
 - branch 'task/ai-07-model-reasoning-selection-persistence' set up to track 'origin/task/ai-07-model-reasoning-selection-persistence'.
 - Created PR: https://github.com/ineersa/agent-core/pull/13
 - Summary: AI-07 implemented by fork k3iy1ja8fe75 in commit 2b58610a. Added ModelSelectionService (294 lines) with 4-tier model priority (explicit → session metadata → ai.default_model → first available) and 3-tier reasoning priority (explicit → session metadata → ai.default_reasoning → medium). Persists via HomeSettingsWriter::writeDefaultModel/writeDefaultReasoning and session metadata YAML. 18 tests covering priority chain, dual persistence, edge cases. Cleaned up 7 stale PHPStan baselines for properties now read by the service.
+
+## Task workflow update - 2026-05-17T02:34:04.586Z
+- Recorded fork run: wffz81bijh8q
+- Summary: Launched fork wffz81bijh8q to refactor AI-07 per PR #13 review: move HatfieldModelCatalog onto AppConfig (created once during resolution, cached), extract SessionMetadataStore (read/write session metadata, setSessionsBasePath), wire setSessionsBasePath in InProcessAgentSessionClient, strip ModelSelectionService of all private helpers (createCatalog, read/write session metadata, path resolution), simplify to ~150 lines.
