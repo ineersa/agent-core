@@ -23,12 +23,12 @@ Scope:
 - Suggested validation: `castor test --filter ModelSelection`.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/ai-07-model-reasoning-selection-persistence
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-07-model-reasoning-selection-persistence
 Fork run: k3iy1ja8fe75
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/13
+PR Status: open
 Started: 2026-05-17T01:27:21.764Z
 Completed:
 
@@ -45,3 +45,10 @@ Completed:
 ## Task workflow update - 2026-05-17T01:32:34.831Z
 - Recorded fork run: k3iy1ja8fe75
 - Summary: Launched fork k3iy1ja8fe75 to implement AI-07 in worktree /home/ineersa/projects/agent-core-worktrees/ai-07-model-reasoning-selection-persistence. Scope: add ModelSelectionService with 4-tier priority (explicit → session metadata → ai.default_model → first available), reasoning mirror with fallback to ai.default_reasoning/medium, persistence via HomeSettingsWriter and session metadata, catalog validation via HatfieldModelCatalog::isAvailable(), focused tests.
+
+## Task workflow update - 2026-05-17T01:52:51.000Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/ai-07-model-reasoning-selection-persistence to origin.
+- branch 'task/ai-07-model-reasoning-selection-persistence' set up to track 'origin/task/ai-07-model-reasoning-selection-persistence'.
+- Created PR: https://github.com/ineersa/agent-core/pull/13
+- Summary: AI-07 implemented by fork k3iy1ja8fe75 in commit 2b58610a. Added ModelSelectionService (294 lines) with 4-tier model priority (explicit → session metadata → ai.default_model → first available) and 3-tier reasoning priority (explicit → session metadata → ai.default_reasoning → medium). Persists via HomeSettingsWriter::writeDefaultModel/writeDefaultReasoning and session metadata YAML. 18 tests covering priority chain, dual persistence, edge cases. Cleaned up 7 stale PHPStan baselines for properties now read by the service.
