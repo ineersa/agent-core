@@ -91,7 +91,7 @@ When `$projectCwd` is removed, the fallback becomes `$this->appConfig->cwd` inst
 Status: IN-PROGRESS
 Branch: task/ai-15-remove-project-cwd-make-appconfig-autowireable
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-15-remove-project-cwd-make-appconfig-autowireable
-Fork run:
+Fork run: 6abi1xrg60r8
 PR URL:
 PR Status:
 Started: 2026-05-17T03:52:50.643Z
@@ -106,3 +106,7 @@ Completed:
 - Created worktree /home/ineersa/projects/agent-core-worktrees/ai-15-remove-project-cwd-make-appconfig-autowireable.
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/ai-15-remove-project-cwd-make-appconfig-autowireable.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/ai-15-remove-project-cwd-make-appconfig-autowireable.
+
+## Task workflow update - 2026-05-17T03:54:21.950Z
+- Recorded fork run: 6abi1xrg60r8
+- Summary: Launched fork 6abi1xrg60r8 to implement AI-15: delete AppConfigResolver, make AppConfig self-hydrating DI service (calls AppConfigLoader in constructor via getcwd()), remove $projectCwd from ~30 method signatures across ModelSelectionService, HatfieldSessionStore, InteractiveMode, SessionInitializer, ThemeFactory, AgentCommand.
