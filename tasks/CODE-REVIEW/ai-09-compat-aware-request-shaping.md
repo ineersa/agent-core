@@ -22,12 +22,12 @@ Scope:
 - Suggested validation: `castor test --filter Compat`; `castor test --filter PlatformIntegration`.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/ai-09-compat-aware-request-shaping
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-09-compat-aware-request-shaping
 Fork run: uyayt31896pf
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/15
+PR Status: open
 Started: 2026-05-17T03:14:30.931Z
 Completed:
 
@@ -44,3 +44,10 @@ Completed:
 ## Task workflow update - 2026-05-17T03:15:40.420Z
 - Recorded fork run: uyayt31896pf
 - Summary: Launched fork uyayt31896pf for AI-09: build CompatRequestShaper (reasoning options via ReasoningOptionsResolver, z.ai enable_thinking, reasoning_effort suppression, developer role suppression), integrate with BeforeProviderRequestSubscriber, focused tests. Logic layer independent of AI-05 Platform.
+
+## Task workflow update - 2026-05-17T03:36:03.334Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/ai-09-compat-aware-request-shaping to origin.
+- branch 'task/ai-09-compat-aware-request-shaping' set up to track 'origin/task/ai-09-compat-aware-request-shaping'.
+- Created PR: https://github.com/ineersa/agent-core/pull/15
+- Summary: AI-09 implemented by fork uyayt31896pf in commit a188b673. Added CompatRequestShaper (112 lines) with BeforeProviderRequestHookInterface, ConfigProvider interface + adapter, auto-registered via _instanceof tag. 11 tests. AI-10 unblocked — can set _hatfield_reasoning in InvocationEvent options.
