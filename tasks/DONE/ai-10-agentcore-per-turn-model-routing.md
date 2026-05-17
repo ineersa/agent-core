@@ -23,14 +23,14 @@ Scope:
 - Suggested validation: `castor test --filter ExecuteLlmStepWorker`; `castor test --filter ModelResolver`; `castor deptrac`.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/ai-10-agentcore-per-turn-model-routing
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-10-agentcore-per-turn-model-routing
 Fork run: ywzesdh62wta
 PR URL: https://github.com/ineersa/agent-core/pull/18
-PR Status: open
+PR Status: merged
 Started: 2026-05-17T21:42:59.913Z
-Completed:
+Completed: 2026-05-17T22:11:42.242Z
 
 ## Work log
 - Created: 2026-05-16T22:02:34.212Z
@@ -65,3 +65,59 @@ Completed:
 ## Task workflow update - 2026-05-17T22:09:07.905Z
 - Validation: composer dump-autoload: passed; php bin/console --no-interaction: passed; castor test: passed (349 tests, 8096 assertions, 1 pre-existing notice); castor deptrac: passed (0 violations, 329 allowed); vendor/bin/phpstan analyse: passed (0 errors; baseline 225); castor cs-fix + castor cs-check: clean; castor check: quality ok; main checkout untouched except pre-existing untracked .pi/plans/runtime-transcript-vertical-slice-plan.md
 - Summary: PR #18 review comments addressed by fork ywzesdh62wta in commit 7a69a94d, pushed to branch. Moved model/platform/provider-request DTOs out of AgentCore\Domain\Tool into AgentCore\Domain\Model (ModelInvocationInput/Options/Request, ModelResolutionOptions, PlatformInvocationResult, ProviderRequest, ResolvedModel). Moved model/platform contracts out of AgentCore\Contract\Tool into AgentCore\Contract\Model (ModelResolverInterface, PlatformInterface, ProviderRegistryInterface). Added ProviderRequestOptionKeys shared constants and updated ModelResolverRoutingSubscriber + CompatRequestShaper to use them, eliminating duplicated _hatfield_reasoning literal without AgentCore depending on CodingAgent. Updated use statements/services/tests and regenerated PHPStan baseline.
+
+## Task workflow update - 2026-05-17T22:11:42.242Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/ai-10-agentcore-per-turn-model-routing into integration checkout.
+- Merge made by the 'ort' strategy.
+ config/services.yaml                               |  19 +-
+ phpstan-baseline.neon                              |  67 +++---
+ .../Application/Handler/ExecuteLlmStepWorker.php   |   8 +-
+ .../Hook/BeforeProviderRequestHookInterface.php    |   2 +-
+ .../{Tool => Model}/ModelResolverInterface.php     |   8 +-
+ .../Contract/{Tool => Model}/PlatformInterface.php |   6 +-
+ .../Contract/Model/ProviderRegistryInterface.php   |  23 ++
+ .../{Tool => Model}/ModelInvocationInput.php       |   2 +-
+ .../{Tool => Model}/ModelInvocationOptions.php     |   2 +-
+ .../{Tool => Model}/ModelInvocationRequest.php     |   2 +-
+ .../{Tool => Model}/ModelResolutionOptions.php     |   2 +-
+ .../{Tool => Model}/PlatformInvocationResult.php   |   2 +-
+ .../Domain/{Tool => Model}/ProviderRequest.php     |   2 +-
+ .../Domain/Model/ProviderRequestOptionKeys.php     |  37 +++
+ src/AgentCore/Domain/Model/ResolvedModel.php       |  27 +++
+ src/AgentCore/Domain/Tool/ResolvedModel.php        |  19 --
+ .../SymfonyAi/LlmPlatformAdapter.php               |   8 +-
+ .../SymfonyAi/ModelResolverRoutingSubscriber.php   |  26 ++-
+ .../SymfonyAi/PlatformInvocationMetadata.php       |   2 +-
+ src/CodingAgent/Config/CompatRequestShaper.php     |   7 +-
+ .../Config/SessionAwareModelResolver.php           |  71 ++++++
+ .../SymfonyAi/SymfonyAiProviderFactory.php         |   2 +-
+ .../SymfonyAi/SymfonyAiProviderRegistry.php        |  52 +++++
+ .../Handler/ExecutionFailureDrillTest.php          |   2 +-
+ .../Application/Handler/ExecutionWorkerTest.php    |   6 +-
+ .../AgentCore/Contract/HookParityContractTest.php  |   2 +-
+ .../SymfonyAi/PlatformIntegrationTest.php          |  16 +-
+ tests/AgentCore/Support/Fake/FakePlatform.php      |   6 +-
+ .../Config/SessionAwareModelResolverTest.php       | 253 +++++++++++++++++++++
+ .../SymfonyAi/SymfonyAiProviderRegistryTest.php    | 134 +++++++++++
+ 30 files changed, 709 insertions(+), 106 deletions(-)
+ rename src/AgentCore/Contract/{Tool => Model}/ModelResolverInterface.php (66%)
+ rename src/AgentCore/Contract/{Tool => Model}/PlatformInterface.php (60%)
+ create mode 100644 src/AgentCore/Contract/Model/ProviderRegistryInterface.php
+ rename src/AgentCore/Domain/{Tool => Model}/ModelInvocationInput.php (91%)
+ rename src/AgentCore/Domain/{Tool => Model}/ModelInvocationOptions.php (86%)
+ rename src/AgentCore/Domain/{Tool => Model}/ModelInvocationRequest.php (87%)
+ rename src/AgentCore/Domain/{Tool => Model}/ModelResolutionOptions.php (84%)
+ rename src/AgentCore/Domain/{Tool => Model}/PlatformInvocationResult.php (94%)
+ rename src/AgentCore/Domain/{Tool => Model}/ProviderRequest.php (96%)
+ create mode 100644 src/AgentCore/Domain/Model/ProviderRequestOptionKeys.php
+ create mode 100644 src/AgentCore/Domain/Model/ResolvedModel.php
+ delete mode 100644 src/AgentCore/Domain/Tool/ResolvedModel.php
+ create mode 100644 src/CodingAgent/Config/SessionAwareModelResolver.php
+ create mode 100644 src/CodingAgent/Infrastructure/SymfonyAi/SymfonyAiProviderRegistry.php
+ create mode 100644 tests/CodingAgent/Config/SessionAwareModelResolverTest.php
+ create mode 100644 tests/CodingAgent/Infrastructure/SymfonyAi/SymfonyAiProviderRegistryTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/ai-10-agentcore-per-turn-model-routing.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR #18 merged; Final validation from review-fix fork: composer dump-autoload passed; php bin/console boot passed; castor test passed (349 tests, 8096 assertions, 1 pre-existing notice); castor deptrac passed (0 violations); phpstan passed; cs-fix/cs-check clean; castor check quality ok
+- Summary: PR #18 merged. AI-10 complete: per-turn model/reasoning routing implemented through AgentCore, explicit provider routing via ProviderRegistryInterface/SymfonyAiProviderRegistry, _hatfield_reasoning passed for compat shaping, model/platform namespaces cleaned up after review, and shared ProviderRequestOptionKeys introduced.
