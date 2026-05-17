@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
-use Ineersa\AgentCore\Domain\Tool\ModelInvocationInput;
+use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 
 final readonly class PlatformInvocationMetadata
 {

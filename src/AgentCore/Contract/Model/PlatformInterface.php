@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Contract\Tool;
+namespace Ineersa\AgentCore\Contract\Model;
 
-use Ineersa\AgentCore\Domain\Tool\ModelInvocationRequest;
-use Ineersa\AgentCore\Domain\Tool\PlatformInvocationResult;
+use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
+use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 
 interface PlatformInterface
 {

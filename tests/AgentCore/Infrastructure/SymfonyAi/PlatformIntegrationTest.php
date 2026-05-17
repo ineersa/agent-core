@@ -8,16 +8,16 @@ use Ineersa\AgentCore\Contract\Hook\BeforeProviderRequestHookInterface;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\ConvertToLlmHookInterface;
 use Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface;
-use Ineersa\AgentCore\Contract\Tool\ModelResolverInterface;
+use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Domain\Tool\ModelInvocationInput;
-use Ineersa\AgentCore\Domain\Tool\ModelInvocationOptions;
-use Ineersa\AgentCore\Domain\Tool\ModelInvocationRequest;
-use Ineersa\AgentCore\Domain\Tool\ModelResolutionOptions;
-use Ineersa\AgentCore\Domain\Tool\ProviderRequest;
-use Ineersa\AgentCore\Domain\Tool\ResolvedModel;
+use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
+use Ineersa\AgentCore\Domain\Model\ModelInvocationOptions;
+use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
+use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
+use Ineersa\AgentCore\Domain\Model\ProviderRequest;
+use Ineersa\AgentCore\Domain\Model\ResolvedModel;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\BeforeProviderRequestSubscriber;
@@ -125,7 +125,7 @@ final class PlatformIntegrationTest extends TestCase
             ): ResolvedModel {
                 unset($messages, $input, $options);
 
-                return new ResolvedModel($defaultModel.'-resolved', ['max_tokens' => 64]);
+                return new ResolvedModel(model: $defaultModel.'-resolved', options: ['max_tokens' => 64]);
             }
         };
 

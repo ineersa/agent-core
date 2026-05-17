@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Contract\Tool;
+namespace Ineersa\AgentCore\Contract\Model;
 
-use Ineersa\AgentCore\Domain\Tool\ModelInvocationInput;
-use Ineersa\AgentCore\Domain\Tool\ModelResolutionOptions;
-use Ineersa\AgentCore\Domain\Tool\ResolvedModel;
+use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
+use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
+use Ineersa\AgentCore\Domain\Model\ResolvedModel;
 use Symfony\AI\Platform\Message\MessageBag;
 
 interface ModelResolverInterface
