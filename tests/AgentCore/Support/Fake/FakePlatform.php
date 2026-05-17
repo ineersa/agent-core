@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Support\Fake;
 
-use Ineersa\AgentCore\Contract\Tool\PlatformInterface;
-use Ineersa\AgentCore\Domain\Tool\ModelInvocationRequest;
-use Ineersa\AgentCore\Domain\Tool\PlatformInvocationResult;
+use Ineersa\AgentCore\Contract\Model\PlatformInterface;
+use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
+use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\Text;
 

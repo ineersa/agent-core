@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Domain\Tool;
+namespace Ineersa\AgentCore\Domain\Model;
 
 /**
  * Resolved model identifier, optional provider ID, reasoning level, and invocation options.

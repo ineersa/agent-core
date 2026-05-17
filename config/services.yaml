@@ -90,15 +90,15 @@ services:
 
   Ineersa\CodingAgent\Config\SessionAwareModelResolver: ~
 
-  Ineersa\AgentCore\Contract\Tool\ModelResolverInterface:
+  Ineersa\AgentCore\Contract\Model\ModelResolverInterface:
     alias: Ineersa\CodingAgent\Config\SessionAwareModelResolver
 
   Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderRegistry: ~
 
-  Ineersa\AgentCore\Contract\Tool\ProviderRegistryInterface:
+  Ineersa\AgentCore\Contract\Model\ProviderRegistryInterface:
     alias: Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderRegistry
 
   Ineersa\AgentCore\Infrastructure\SymfonyAi\ModelResolverRoutingSubscriber:
     arguments:
-      $modelResolver: '@Ineersa\AgentCore\Contract\Tool\ModelResolverInterface'
-      $providerRegistry: '@Ineersa\AgentCore\Contract\Tool\ProviderRegistryInterface'
+      $modelResolver: '@Ineersa\AgentCore\Contract\Model\ModelResolverInterface'
+      $providerRegistry: '@Ineersa\AgentCore\Contract\Model\ProviderRegistryInterface'

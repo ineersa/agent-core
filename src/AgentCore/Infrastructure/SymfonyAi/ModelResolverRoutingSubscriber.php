@@ -4,20 +4,16 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 
-use Ineersa\AgentCore\Contract\Tool\ModelResolverInterface;
-use Ineersa\AgentCore\Contract\Tool\ProviderRegistryInterface;
-use Ineersa\AgentCore\Domain\Tool\ModelResolutionOptions;
+use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
+use Ineersa\AgentCore\Contract\Model\ProviderRegistryInterface;
+use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
+use Ineersa\AgentCore\Domain\Model\ProviderRequestOptionKeys;
 use Symfony\AI\Platform\Event\ModelRoutingEvent;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 final readonly class ModelResolverRoutingSubscriber implements EventSubscriberInterface
 {
-    /**
-     * Internal option key consumed by {@see CompatRequestShaper}.
-     */
-    private const string REASONING_OPTION = '_hatfield_reasoning';
-
     public function __construct(
         private ?ModelResolverInterface $modelResolver = null,
         private ?ProviderRegistryInterface $providerRegistry = null,
@@ -66,7 +62,7 @@ final readonly class ModelResolverRoutingSubscriber implements EventSubscriberIn
 
         // Attach reasoning level so CompatRequestShaper can shape provider options.
         if ('' !== $resolvedModel->reasoning) {
-            $newOptions[self::REASONING_OPTION] = $resolvedModel->reasoning;
+            $newOptions[ProviderRequestOptionKeys::REASONING] = $resolvedModel->reasoning;
         }
 
         $event->setOptions(PlatformInvocationMetadata::inject($newOptions, $metadata));

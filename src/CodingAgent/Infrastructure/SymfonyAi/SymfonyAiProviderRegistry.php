@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi;
 
-use Ineersa\AgentCore\Contract\Tool\ProviderRegistryInterface;
+use Ineersa\AgentCore\Contract\Model\ProviderRegistryInterface;
 use Symfony\AI\Platform\ProviderInterface;
 
 /**

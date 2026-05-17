@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
-use Ineersa\AgentCore\Contract\Tool\ModelResolverInterface;
-use Ineersa\AgentCore\Domain\Tool\ModelInvocationInput;
-use Ineersa\AgentCore\Domain\Tool\ModelResolutionOptions;
-use Ineersa\AgentCore\Domain\Tool\ResolvedModel;
+use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
+use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
+use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
+use Ineersa\AgentCore\Domain\Model\ResolvedModel;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Symfony\AI\Platform\Message\MessageBag;
 

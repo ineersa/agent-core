@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Contract\Tool;
+namespace Ineersa\AgentCore\Contract\Model;
 
 use Symfony\AI\Platform\ProviderInterface;
 
