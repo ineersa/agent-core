@@ -1334,19 +1334,7 @@ parameters:
 			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
 
 		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$reasoning is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
-
-		-
 			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$thinkingLevelMap is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$toolCalling is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
 			path: src/CodingAgent/Config/Ai/AiModelDefinition.php

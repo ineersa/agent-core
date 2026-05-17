@@ -105,6 +105,11 @@ parameters:
         - type: directory
           value: src/CodingAgent/CLI/.*
 
+    - name: AppInfrastructureSymfonyAi
+      collectors:
+        - type: directory
+          value: src/CodingAgent/Infrastructure/SymfonyAi/.*
+
     - name: AgentCore
       collectors:
         - type: classNameRegex
@@ -139,6 +144,11 @@ parameters:
       collectors:
         - type: classNameRegex
           value: '#^Symfony\\Component\\Yaml\\#i'
+
+    - name: SymfonyAiPlatform
+      collectors:
+        - type: classNameRegex
+          value: '#^Symfony\\\\AI\\\\Platform\\\\#i'
 
     - name: ForbiddenHttp
       collectors:
@@ -252,6 +262,10 @@ parameters:
       - SymfonyConsole
       - SymfonyYaml
 
+    AppInfrastructureSymfonyAi:
+      - AppConfig
+      - SymfonyAiPlatform
+
     AppSession:
       - AppConfig
       - SymfonyConsole
@@ -278,6 +292,7 @@ parameters:
       - SymfonyLock
       - SymfonySerializer
     SymfonyTui: ~
+    SymfonyAiPlatform: ~
     SymfonyConsole: ~
     SymfonyMessenger: ~
     SymfonyLock: ~
