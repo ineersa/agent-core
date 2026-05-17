@@ -29,7 +29,7 @@ final class AppConfig
         AppConfigLoader $loader,
         AppResourceLocator $resources,
     ) {
-        $this->cwd = getcwd() ?: '/';
+        $this->cwd = self::resolveCurrentWorkingDirectory();
         $data = $loader->load($resources->getDefaultsPath());
         $this->tui = TuiConfig::fromArray((array) ($data['tui'] ?? []));
         $this->sessions = (array) ($data['sessions'] ?? []);
@@ -49,7 +49,7 @@ final class AppConfig
         $instance = (new \ReflectionClass(self::class))->newInstanceWithoutConstructor();
 
         \Closure::bind(function () use ($data): void {
-            $this->cwd = getcwd() ?: '/';
+            $this->cwd = self::resolveCurrentWorkingDirectory();
             $this->tui = TuiConfig::fromArray((array) ($data['tui'] ?? []));
             $this->sessions = (array) ($data['sessions'] ?? []);
             $ai = AiConfig::optionalFromArray($data);
@@ -59,5 +59,22 @@ final class AppConfig
         }, null, self::class)->call($instance);
 
         return $instance;
+    }
+
+    /**
+     * Throws early when the process has no working directory rather than
+     * silently falling back to "/" and producing broken paths downstream.
+     *
+     * @throws \RuntimeException
+     */
+    private static function resolveCurrentWorkingDirectory(): string
+    {
+        $cwd = getcwd();
+
+        if (false === $cwd) {
+            throw new \RuntimeException('No current working directory available.');
+        }
+
+        return $cwd;
     }
 }
