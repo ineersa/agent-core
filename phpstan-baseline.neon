@@ -1250,12 +1250,6 @@ parameters:
 			path: src/CodingAgent/Config/Ai/AiCompatibility.php
 
 		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiConfig\:\:\$defaultReasoning is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiConfig.php
-
-		-
 			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCost\:\:\$cacheRead is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
@@ -1376,47 +1370,42 @@ parameters:
 			path: src/CodingAgent/Config/Ai/HatfieldModelCatalog.php
 
 		-
-			message: '#^Unused Ineersa\\CodingAgent\\Config\\Ai\\HatfieldModelCatalog\:\:defaultModelReference$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Config/Ai/HatfieldModelCatalog.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Config\\Ai\\HatfieldModelCatalog\:\:firstAvailableModel$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Config/Ai/HatfieldModelCatalog.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Config\\Ai\\HatfieldModelCatalog\:\:isAvailable$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Config/Ai/HatfieldModelCatalog.php
-
-		-
 			message: '#^Unused Ineersa\\CodingAgent\\Config\\Ai\\HatfieldModelCatalog\:\:requireModel$#'
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/CodingAgent/Config/Ai/HatfieldModelCatalog.php
 
+		# Temporary AI-07 ModelSelectionService baselines. Remove when AI-09/AI-10
+		# production code calls these methods.
 		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\AppConfig\:\:\$ai is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/AppConfig.php
-		# Temporary AI-03 HomeSettingsWriter baselines. Remove when AI-07 production
-		# calls writeDefaultModel / writeDefaultReasoning.
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Config\\HomeSettingsWriter\:\:writeDefaultModel$#'
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\ModelSelectionService\:\:resolveInitialModel$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/CodingAgent/Config/HomeSettingsWriter.php
+			path: src/CodingAgent/Config/ModelSelectionService.php
 
 		-
-			message: '#^Unused Ineersa\\CodingAgent\\Config\\HomeSettingsWriter\:\:writeDefaultReasoning$#'
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\ModelSelectionService\:\:getAvailableModels$#'
 			identifier: shipmonk.deadMethod
 			count: 1
-			path: src/CodingAgent/Config/HomeSettingsWriter.php
+			path: src/CodingAgent/Config/ModelSelectionService.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\ModelSelectionService\:\:resolveInitialReasoning$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Config/ModelSelectionService.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\ModelSelectionService\:\:changeModel$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Config/ModelSelectionService.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\ModelSelectionService\:\:changeReasoning$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Config/ModelSelectionService.php
 
 		# Temporary AI-06 ReasoningOptionsResolver baseline. Remove when AI-07/AI-10
 		# production code calls ReasoningOptionsResolver::resolve.
