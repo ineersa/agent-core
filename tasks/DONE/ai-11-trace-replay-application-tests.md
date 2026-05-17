@@ -22,14 +22,14 @@ Scope:
 - Suggested validation: `castor test --filter TraceReplay`.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/ai-11-trace-replay-application-tests
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-11-trace-replay-application-tests
 Fork run: ufad6uzbrw8k
 PR URL: https://github.com/ineersa/agent-core/pull/19
-PR Status: open
+PR Status: merged
 Started: 2026-05-17T22:14:04.277Z
-Completed:
+Completed: 2026-05-17T22:20:49.121Z
 
 ## Work log
 - Created: 2026-05-16T22:02:34.213Z
@@ -56,3 +56,17 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/19
 - Validation: php bin/console --no-interaction: passed; vendor/bin/phpunit --filter TraceReplay: passed (4 tests, 26 assertions); castor test: passed (353 tests, 8122 assertions, 1 pre-existing notice); castor deptrac: passed (0 violations, 329 allowed); vendor/bin/phpstan analyse: passed (0 errors); castor cs-fix + castor cs-check: clean
 - Summary: AI-11 ready for review. Implemented offline fixture-driven trace replay application tests in commit 4994ce8e: real Symfony Platform + test model client/result converter, real ModelResolverRoutingSubscriber/SessionAwareModelResolver path, real LlmPlatformAdapter replay of streamed deltas, session metadata model/reasoning resume checks, and usage capture assertions. No production source changes.
+
+## Task workflow update - 2026-05-17T22:20:49.121Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/ai-11-trace-replay-application-tests into integration checkout.
+- Merge made by the 'ort' strategy.
+ .../Fixtures/traces/successful-response.json       |  22 +
+ .../Infrastructure/SymfonyAi/TraceReplayTest.php   | 723 +++++++++++++++++++++
+ 2 files changed, 745 insertions(+)
+ create mode 100644 tests/AgentCore/Fixtures/traces/successful-response.json
+ create mode 100644 tests/AgentCore/Infrastructure/SymfonyAi/TraceReplayTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/ai-11-trace-replay-application-tests.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR #19 merged; Final validation from implementation fork: php bin/console boot passed; TraceReplay tests passed (4 tests, 26 assertions); castor test passed (353 tests, 8122 assertions, 1 pre-existing notice); deptrac passed; phpstan passed; CS clean
+- Summary: PR #19 merged. AI-11 complete: offline trace replay application tests added with curated fixture and real Symfony Platform + ModelResolverRoutingSubscriber + LlmPlatformAdapter path; covers successful assistant replay, usage capture, model/reasoning session metadata resolution, resume behavior, persistence, and thinking deltas. No production source changes.
