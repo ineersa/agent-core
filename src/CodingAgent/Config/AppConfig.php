@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Config;
 
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
+use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 
 /**
  * Resolved Hatfield application configuration.
@@ -26,6 +27,7 @@ final readonly class AppConfig
         public ?AiConfig $ai = null,
         /** @var array<string, mixed> Raw merged data for forward compatibility */
         public array $raw = [],
+        public ?HatfieldModelCatalog $catalog = null,
     ) {
     }
 
@@ -36,11 +38,15 @@ final readonly class AppConfig
      */
     public static function fromArray(array $data): self
     {
+        $aiConfig = AiConfig::optionalFromArray($data);
+        $catalog = null !== $aiConfig ? new HatfieldModelCatalog($aiConfig) : null;
+
         return new self(
             tui: TuiConfig::fromArray((array) ($data['tui'] ?? [])),
             sessions: (array) ($data['sessions'] ?? []),
-            ai: AiConfig::optionalFromArray($data),
+            ai: $aiConfig,
             raw: $data,
+            catalog: $catalog,
         );
     }
 }
