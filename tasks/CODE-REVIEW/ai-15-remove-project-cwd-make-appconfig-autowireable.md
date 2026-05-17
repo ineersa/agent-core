@@ -91,7 +91,7 @@ When `$projectCwd` is removed, the fallback becomes `$this->appConfig->cwd` inst
 Status: CODE-REVIEW
 Branch: task/ai-15-remove-project-cwd-make-appconfig-autowireable
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-15-remove-project-cwd-make-appconfig-autowireable
-Fork run: dfkadj622em0
+Fork run: gh6p7vi5eree
 PR URL: https://github.com/ineersa/agent-core/pull/16
 PR Status: open
 Started: 2026-05-17T03:52:50.643Z
@@ -133,3 +133,7 @@ Completed:
 ## Task workflow update - 2026-05-17T20:07:47.572Z
 - Validation: php bin/console --no-interaction: passed; castor test: passed (329 tests, 8048 assertions, 1 pre-existing notice); castor deptrac: passed (0 violations); castor phpstan: passed (0 errors); castor cs-fix + castor cs-check: passed; castor check: passed (quality: ok); main checkout verified clean by fork
 - Summary: PR #16 review comments addressed by fork dfkadj622em0 in commit ef2dbfb9, pushed to branch task/ai-15-remove-project-cwd-make-appconfig-autowireable. Changes: AppConfig and AppConfigLoader now throw RuntimeException if getcwd() fails instead of falling back to '/', restored stripped comments/docs in AppConfigLoader, ModelSelectionService, and HatfieldSessionStore, regenerated phpstan-baseline.neon. Public readonly vs getters review note intentionally left unchanged as non-blocking preference.
+
+## Task workflow update - 2026-05-17T20:31:36.474Z
+- Recorded fork run: gh6p7vi5eree
+- Summary: Launched fork gh6p7vi5eree for second round of PR #16 review fixes: restore AppConfig conceptual class docs, remove AppConfig::fromArray() and Reflection/Closure constructor-bypass test helper from production, redesign tests to use production constructor/temp config fixtures, add AGENTS.md instruction forbidding production APIs/helpers solely for tests and constructor/property bypasses, restore AppConfigLoader relative-path comment.
