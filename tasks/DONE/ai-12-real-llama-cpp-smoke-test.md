@@ -23,14 +23,14 @@ Scope:
 - Suggested validation: exact Castor task/name TBD, e.g. `castor test:llm-real`.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/ai-12-real-llama-cpp-smoke-test
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-12-real-llama-cpp-smoke-test
 Fork run: h3g97wjipi3c
 PR URL: https://github.com/ineersa/agent-core/pull/20
-PR Status: open
+PR Status: merged
 Started: 2026-05-17T22:21:19.224Z
-Completed:
+Completed: 2026-05-17T23:48:17.165Z
 
 ## Work log
 - Created: 2026-05-16T22:02:34.212Z
@@ -61,3 +61,16 @@ Completed:
 ## Task workflow update - 2026-05-17T23:46:12.633Z
 - Validation: castor test:llm-real: passed against configured llama.cpp endpoint (1 test, 5 assertions); castor test: passed (353 tests, 8122 assertions, 1 PHPUnit notice); castor deptrac: passed (0 violations, 329 allowed); castor phpstan: passed (0 errors); castor cs-check: clean; castor list: shows test:llm-real task
 - Summary: Follow-up fix after user ran `castor test:llm-real` and it skipped. Commit d6a9db50 pushed to PR #20. Changed `test:llm-real` Castor task to set `LLAMA_CPP_SMOKE_TEST=1` automatically, so running the explicit task no longer skips. Updated LlamaCppSmokeTest to read llama_cpp base URL/model/api key/completions path from project .hatfield/settings.yaml with env overrides, pass configured completions path to GenericFactory, and use a projected model catalog/provider registry that matches the resolved `llama_cpp/<model>` ref. Verified against real configured endpoint: `castor test:llm-real` passed (1 test, 5 assertions).
+
+## Task workflow update - 2026-05-17T23:48:17.165Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/ai-12-real-llama-cpp-smoke-test into integration checkout.
+- Merge made by the 'ort' strategy.
+ .castor/tasks.php                                  |  22 +-
+ .../Infrastructure/SymfonyAi/LlamaCppSmokeTest.php | 359 +++++++++++++++++++++
+ 2 files changed, 379 insertions(+), 2 deletions(-)
+ create mode 100644 tests/AgentCore/Infrastructure/SymfonyAi/LlamaCppSmokeTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/ai-12-real-llama-cpp-smoke-test.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR #20 merged; castor test:llm-real passed against configured llama.cpp endpoint (1 test, 5 assertions); castor test passed (353 tests, 8122 assertions, 1 PHPUnit notice); castor deptrac passed (0 violations); castor phpstan passed (0 errors); castor cs-check clean
+- Summary: PR #20 merged. AI-12 complete: opt-in real llama.cpp smoke test added with `castor test:llm-real`, which now enables the test automatically, reads configured llama_cpp provider settings from .hatfield/settings.yaml with env overrides, calls real generic provider path through Platform/ModelResolverRoutingSubscriber/LlmPlatformAdapter, asserts non-empty response and session metadata preservation, while default castor test/check remains network-free.
