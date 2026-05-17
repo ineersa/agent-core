@@ -28,15 +28,13 @@ final class ConfiguredSymfonyAiPlatformFactory
     }
 
     /**
-     * Create the multi-provider Platform for a given project directory.
-     *
-     * @param string $projectCwd Project working directory (default: process cwd)
+     * Create the multi-provider Platform from the current Hatfield config.
      *
      * @throws \RuntimeException when no providers are configured
      */
-    public function createPlatform(string $projectCwd = ''): Platform
+    public function createPlatform(): Platform
     {
-        $providers = $this->providerFactory->createProviders($projectCwd);
+        $providers = $this->providerFactory->createProviders();
 
         if ([] === $providers) {
             throw new \RuntimeException('No AI providers are enabled. Check your .hatfield/settings.yaml ai section.');

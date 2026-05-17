@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi;
 
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
-use Ineersa\CodingAgent\Config\AppConfigResolver;
+use Ineersa\CodingAgent\Config\AppConfig;
 use Symfony\AI\Platform\Bridge\Generic\Factory as GenericFactory;
 use Symfony\AI\Platform\ProviderInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
@@ -13,9 +13,11 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 /**
  * Creates Symfony AI Provider instances from Hatfield AI settings.
  *
- * For each enabled provider in the Hatfield catalog, this factory
- * constructs a generic-chat-completions Provider with a projected
- * model catalog derived from Hatfield's rich model definitions.
+ * Reads the merged Hatfield config from {@see AppConfig} (autowired DI
+ * service built by {@see AppConfig::fromContainer}). For each enabled
+ * provider in the Hatfield catalog it constructs a generic-chat-completions
+ * Provider with a projected model catalog derived from Hatfield's rich
+ * model definitions.
  *
  * This service is the bridge between Hatfield's user-facing model
  * config and Symfony AI Platform's provider model.
@@ -23,22 +25,19 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 final class SymfonyAiProviderFactory
 {
     public function __construct(
-        private readonly AppConfigResolver $configResolver,
+        private readonly AppConfig $appConfig,
         private readonly EventDispatcherInterface $eventDispatcher,
     ) {
     }
 
     /**
-     * Create all enabled providers for the given project directory.
-     *
-     * @param string $projectCwd Project working directory (default: process cwd)
+     * Create all enabled providers from the current Hatfield config.
      *
      * @return array<string, ProviderInterface> Providers keyed by Hatfield provider ID
      */
-    public function createProviders(string $projectCwd = ''): array
+    public function createProviders(): array
     {
-        $config = $this->configResolver->resolve($projectCwd);
-        $catalog = $config->catalog;
+        $catalog = $this->appConfig->catalog;
 
         if (null === $catalog) {
             return [];

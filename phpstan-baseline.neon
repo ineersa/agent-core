@@ -619,52 +619,10 @@ parameters:
 			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
 
 		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$apiKey is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$baseUrl is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$completionsPath is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$embeddingsPath is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$supportsCompletions is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$supportsEmbeddings is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
-
-		-
 			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiProviderConfig\:\:\$type is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
 			path: src/CodingAgent/Config/Ai/AiProviderConfig.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Config\\Ai\\HatfieldModelCatalog\:\:config$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Config/Ai/HatfieldModelCatalog.php
 
 		-
 			message: '#^Unused Ineersa\\CodingAgent\\Config\\Ai\\HatfieldModelCatalog\:\:requireModel$#'
@@ -749,6 +707,12 @@ parameters:
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/CodingAgent/Config/SettingsPathResolver.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Infrastructure\\SymfonyAi\\ConfiguredSymfonyAiPlatformFactory\:\:createPlatform$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Infrastructure/SymfonyAi/ConfiguredSymfonyAiPlatformFactory.php
 
 		-
 			message: '#^Method Ineersa\\CodingAgent\\Kernel\:\:registerBundles\(\) return type has no value type specified in iterable type iterable\.$#'

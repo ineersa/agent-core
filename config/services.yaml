@@ -68,11 +68,11 @@ services:
       $listenerRegistrars: !tagged_iterator app.tui_listener
 
   # ─── Symfony AI Platform wiring ───
+  # PlatformInterface reads Hatfield config from autowired AppConfig,
+  # so no explicit arguments are needed here.
 
   Symfony\AI\Platform\PlatformInterface:
     factory: ['@Ineersa\CodingAgent\Infrastructure\SymfonyAi\ConfiguredSymfonyAiPlatformFactory', 'createPlatform']
-    arguments:
-      $projectCwd: '%kernel.project_dir%'
 
   # Temporary default model binding — AI-10 per-turn routing replaces this.
   Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker:
