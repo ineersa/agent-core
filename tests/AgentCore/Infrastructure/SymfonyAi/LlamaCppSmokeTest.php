@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi;
 
+use Ineersa\AgentCore\Contract\Model\ProviderRegistryInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
@@ -23,12 +24,13 @@ use Ineersa\CodingAgent\Config\SessionAwareModelResolver;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\Generic\Factory as GenericFactory;
-use Symfony\AI\Platform\ModelCatalog\FallbackModelCatalog;
 use Symfony\AI\Platform\Platform;
 use Symfony\AI\Platform\PlatformInterface as SymfonyPlatformInterface;
+use Symfony\AI\Platform\ProviderInterface;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Yaml\Yaml;
 
@@ -36,9 +38,8 @@ use Symfony\Component\Yaml\Yaml;
  * Opt-in real llama.cpp smoke test.
  *
  * Proves the configured generic provider can call a real llama.cpp
- * OpenAI chat-completions-style endpoint. Requires environment
- * configuration to enable (see docs).
- *
+ * OpenAI chat-completions-style endpoint. The default PHPUnit suite excludes
+ * this group; run it explicitly with `castor test:llm-real`.
  */
 #[Group('llm-real')]
 final class LlamaCppSmokeTest extends TestCase
@@ -54,18 +55,8 @@ final class LlamaCppSmokeTest extends TestCase
 
         if (false === getenv('LLAMA_CPP_SMOKE_TEST') || '' === getenv('LLAMA_CPP_SMOKE_TEST')) {
             self::markTestSkipped(
-                'LLAMA_CPP_SMOKE_TEST is not set. '
-                .'Set LLAMA_CPP_SMOKE_TEST=1 and configure LLAMA_CPP_BASE_URL '
-                .'to run the real llama.cpp smoke test.'
-            );
-        }
-
-        $baseUrl = getenv('LLAMA_CPP_BASE_URL');
-        if (false === $baseUrl || '' === $baseUrl) {
-            self::markTestSkipped(
-                'LLAMA_CPP_BASE_URL is not set. '
-                .'Configure LLAMA_CPP_BASE_URL (e.g. http://192.168.2.38:8052/v1) '
-                .'when LLAMA_CPP_SMOKE_TEST is enabled.'
+                'LLAMA_CPP_SMOKE_TEST is not set. Run `castor test:llm-real` or set '
+                .'LLAMA_CPP_SMOKE_TEST=1 to enable the real llama.cpp smoke test.'
             );
         }
 
@@ -94,9 +85,11 @@ final class LlamaCppSmokeTest extends TestCase
 
     public function testRealLlamaCppInvocation(): void
     {
-        $baseUrl = getenv('LLAMA_CPP_BASE_URL');
-        $modelName = getenv('LLAMA_CPP_MODEL') ?: 'flash';
-        $apiKey = false !== getenv('LLAMA_CPP_API_KEY') ? getenv('LLAMA_CPP_API_KEY') : 'dummy';
+        $llamaCpp = $this->resolveLlamaCppSettings();
+        $baseUrl = $llamaCpp['base_url'];
+        $modelName = $llamaCpp['model'];
+        $apiKey = $llamaCpp['api_key'];
+        $completionsPath = $llamaCpp['completions_path'];
         $modelRef = 'llama_cpp/'.$modelName;
 
         // ── Session metadata: pre-set model and reasoning ──
@@ -106,21 +99,41 @@ final class LlamaCppSmokeTest extends TestCase
         ]);
 
         // ── Real model resolution from session metadata ──
-        $modelResolver = $this->createSessionAwareResolver($modelRef, $modelName);
+        $appConfig = $this->makeAppConfig($modelRef, $modelName, $baseUrl, $apiKey, $completionsPath);
+        $modelResolver = $this->createSessionAwareResolver($appConfig);
         $eventDispatcher = new EventDispatcher();
-        $eventDispatcher->addSubscriber(new ModelResolverRoutingSubscriber($modelResolver));
+
+        $providerConfig = $appConfig->catalog?->getProvider('llama_cpp');
+        self::assertNotNull($providerConfig, 'Expected llama_cpp provider in test AppConfig');
+        $modelDefinition = $providerConfig->models[$modelName] ?? null;
+        self::assertNotNull($modelDefinition, 'Expected configured llama_cpp model in test AppConfig');
 
         // ── Build the real Platform with a live Provider ──
         $provider = GenericFactory::createProvider(
             baseUrl: $baseUrl,
             apiKey: $apiKey,
             httpClient: null,
-            modelCatalog: new FallbackModelCatalog(),
+            modelCatalog: new ProjectedSymfonyModelCatalog([$modelRef => $modelDefinition]),
             eventDispatcher: $eventDispatcher,
             supportsCompletions: true,
             supportsEmbeddings: false,
+            completionsPath: $completionsPath,
             name: 'llama_cpp',
         );
+
+        $eventDispatcher->addSubscriber(new ModelResolverRoutingSubscriber(
+            $modelResolver,
+            new class($provider) implements ProviderRegistryInterface {
+                public function __construct(private readonly ProviderInterface $provider)
+                {
+                }
+
+                public function get(string $id): ?ProviderInterface
+                {
+                    return 'llama_cpp' === $id ? $this->provider : null;
+                }
+            },
+        ));
 
         $platform = new Platform(
             providers: [$provider],
@@ -191,11 +204,10 @@ final class LlamaCppSmokeTest extends TestCase
      * the target llama_cpp provider with the given model, and whose
      * session metadata has been pre-written.
      */
-    private function createSessionAwareResolver(string $modelRef, string $modelName): SessionAwareModelResolver
+    private function createSessionAwareResolver(AppConfig $appConfig): SessionAwareModelResolver
     {
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new HomeSettingsWriter($pathResolver);
-        $appConfig = $this->makeAppConfig($modelRef, $modelName);
         $selectionService = new ModelSelectionService($appConfig, $homeWriter, $this->sessionMetaStore);
 
         return new SessionAwareModelResolver($selectionService);
@@ -203,11 +215,14 @@ final class LlamaCppSmokeTest extends TestCase
 
     /**
      * Build an AppConfig with only the llama_cpp provider configured.
-     *
-     * @return array<string, mixed>
      */
-    private function makeAppConfig(string $modelRef, string $modelName): AppConfig
-    {
+    private function makeAppConfig(
+        string $modelRef,
+        string $modelName,
+        string $baseUrl,
+        string $apiKey,
+        string $completionsPath,
+    ): AppConfig {
         $aiData = [
             'default_model' => $modelRef,
             'default_reasoning' => 'off',
@@ -215,8 +230,11 @@ final class LlamaCppSmokeTest extends TestCase
                 'llama_cpp' => [
                     'type' => 'generic',
                     'enabled' => true,
-                    'base_url' => getenv('LLAMA_CPP_BASE_URL'),
-                    'completions_path' => '/v1/chat/completions',
+                    'base_url' => $baseUrl,
+                    'api_key' => $apiKey,
+                    'completions_path' => $completionsPath,
+                    'supports_completions' => true,
+                    'supports_embeddings' => false,
                     'models' => [
                         $modelName => [
                             'id' => $modelName,
@@ -242,6 +260,64 @@ final class LlamaCppSmokeTest extends TestCase
             catalog: null !== $ai ? new HatfieldModelCatalog($ai) : null,
             cwd: getcwd() ?: '/',
         );
+    }
+
+    /**
+     * Resolve llama.cpp connection settings from env overrides first, then
+     * project Hatfield settings. The Castor task sets LLAMA_CPP_SMOKE_TEST=1,
+     * so `castor test:llm-real` runs against the committed project config by default.
+     *
+     * @return array{base_url: string, model: string, api_key: string, completions_path: string}
+     */
+    private function resolveLlamaCppSettings(): array
+    {
+        $settings = [];
+        $settingsPath = getcwd().'/.hatfield/settings.yaml';
+        if (is_readable($settingsPath)) {
+            $parsed = Yaml::parseFile($settingsPath);
+            $settings = \is_array($parsed) ? $parsed : [];
+        }
+
+        $provider = $settings['ai']['providers']['llama_cpp'] ?? [];
+        $provider = \is_array($provider) ? $provider : [];
+
+        $baseUrl = getenv('LLAMA_CPP_BASE_URL') ?: (string) ($provider['base_url'] ?? '');
+        if ('' === $baseUrl) {
+            self::markTestSkipped(
+                'No llama.cpp base URL configured. Set LLAMA_CPP_BASE_URL or configure '
+                .'ai.providers.llama_cpp.base_url in .hatfield/settings.yaml.'
+            );
+        }
+
+        $models = isset($provider['models']) && \is_array($provider['models']) ? $provider['models'] : [];
+        $defaultModel = (string) ($settings['ai']['default_model'] ?? '');
+        $modelFromDefault = str_starts_with($defaultModel, 'llama_cpp/') ? substr($defaultModel, 10) : '';
+        $firstConfiguredModel = array_key_first($models);
+
+        $model = getenv('LLAMA_CPP_MODEL')
+            ?: $modelFromDefault
+            ?: (\is_string($firstConfiguredModel) ? $firstConfiguredModel : 'flash');
+
+        $apiKey = getenv('LLAMA_CPP_API_KEY') ?: $this->resolveSecret((string) ($provider['api_key'] ?? 'dummy'));
+        $completionsPath = (string) ($provider['completions_path'] ?? '/chat/completions');
+
+        return [
+            'base_url' => $baseUrl,
+            'model' => $model,
+            'api_key' => '' !== $apiKey ? $apiKey : 'dummy',
+            'completions_path' => '' !== $completionsPath ? $completionsPath : '/chat/completions',
+        ];
+    }
+
+    private function resolveSecret(string $value): string
+    {
+        if (str_starts_with($value, 'env:')) {
+            $resolved = getenv(substr($value, 4));
+
+            return false !== $resolved ? $resolved : '';
+        }
+
+        return $value;
     }
 
     /**

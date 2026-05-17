@@ -363,18 +363,19 @@ function test_tui(): void
 /**
  * Run the opt-in real llama.cpp smoke test.
  *
- * Requires environment:
- *   LLAMA_CPP_SMOKE_TEST=1
- *   LLAMA_CPP_BASE_URL   (e.g. http://192.168.2.38:8052/v1)
- *   LLAMA_CPP_MODEL      (optional, default: flash)
- *   LLAMA_CPP_API_KEY    (optional, default: dummy)
+ * Uses project Hatfield settings by default:
+ *   ai.providers.llama_cpp.base_url
+ *   ai.providers.llama_cpp.models
  *
- * The test is skipped automatically when LLAMA_CPP_SMOKE_TEST is not set.
+ * Optional environment overrides:
+ *   LLAMA_CPP_BASE_URL   (e.g. http://192.168.2.38:8052/v1)
+ *   LLAMA_CPP_MODEL      (optional, default: first configured model or flash)
+ *   LLAMA_CPP_API_KEY    (optional, default: configured api_key or dummy)
  */
-#[AsTask(name: 'test:llm-real', description: 'Run opt-in real llama.cpp smoke test (requires LLAMA_CPP_SMOKE_TEST=1 and LLAMA_CPP_BASE_URL env vars)')]
+#[AsTask(name: 'test:llm-real', description: 'Run opt-in real llama.cpp smoke test against configured llama_cpp provider')]
 function test_llm_real(): void
 {
-    run('vendor/bin/phpunit --group llm-real --colors=always');
+    run('LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit --group llm-real --colors=always');
 }
 
 #[AsTask(name: 'test:tui-update', description: 'Run TUI e2e tests and update golden snapshots')]
