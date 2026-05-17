@@ -23,14 +23,21 @@ Scope:
 - Suggested validation: `castor test --filter ModelSelection`.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/ai-07-model-reasoning-selection-persistence
+Worktree: /home/ineersa/projects/agent-core-worktrees/ai-07-model-reasoning-selection-persistence
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-17T01:27:21.764Z
 Completed:
 
 ## Work log
 - Created: 2026-05-16T22:01:55.477Z
+
+## Task workflow update - 2026-05-17T01:27:21.764Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/ai-07-model-reasoning-selection-persistence.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/ai-07-model-reasoning-selection-persistence.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/ai-07-model-reasoning-selection-persistence.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/ai-07-model-reasoning-selection-persistence.
