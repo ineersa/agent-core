@@ -77,3 +77,7 @@ Completed:
 ## Task workflow update - 2026-05-16T23:58:42.476Z
 - Recorded fork run: 21k2xecv9pqo
 - Summary: Launched fork 21k2xecv9pqo to restrain/simplify HomeSettingsWriter further per review. Scope: replace ~300-line parser with tiny text/regex helper for only writeDefaultModel/writeDefaultReasoning; insert under ai or append ai block if missing; keep small yamlScalar helper; reduce tests to core behavior; run castor check; commit and push PR #10 branch.
+
+## Task workflow update - 2026-05-17T00:04:25.191Z
+- Validation: Fork validation: `vendor/bin/phpunit --filter HomeSettingsWriterTest` passed: 11 tests, 17 assertions.; Fork validation: `castor test` passed: 245 tests, 7790 assertions, 1 PHPUnit notice.; Fork validation: `castor deptrac` passed: 0 violations.; Fork validation: `castor phpstan` passed: 0 errors.; Fork validation: `castor cs-check` clean after cs-fix.; Fork validation: full `castor check` passed.; Parent verification: PR #10 head is 63476262fe276ab18cc4b67a05c7a9139ad4f53a.
+- Summary: PR #10 minimal writer rewrite completed by fork 21k2xecv9pqo and pushed. Added commit 63476262 shrinking HomeSettingsWriter from ~300 lines to 72 lines: two public methods (writeDefaultModel/writeDefaultReasoning), one regex-based writeAiKey helper with three branches (replace existing active/commented line, insert after ai:, append ai block), and one tiny yamlScalar helper. Tests reduced to 11 focused cases. This intentionally favors simple known-file mutation over generic YAML editing.
