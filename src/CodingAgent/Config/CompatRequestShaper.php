@@ -6,7 +6,8 @@ namespace Ineersa\CodingAgent\Config;
 
 use Ineersa\AgentCore\Contract\Hook\BeforeProviderRequestHookInterface;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
-use Ineersa\AgentCore\Domain\Tool\ProviderRequest;
+use Ineersa\AgentCore\Domain\Model\ProviderRequest;
+use Ineersa\AgentCore\Domain\Model\ProviderRequestOptionKeys;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 
@@ -35,14 +36,14 @@ final class CompatRequestShaper implements BeforeProviderRequestHookInterface
      * (off|minimal|low|medium|high|xhigh). Stripped before options reach
      * the provider.
      */
-    public const string REASONING_KEY = '_hatfield_reasoning';
+    public const string REASONING_KEY = ProviderRequestOptionKeys::REASONING;
 
     /**
      * Internal option key signaling that the provider does not support the
      * OpenAI developer role. Message converters should suppress developer
      * messages when this flag is present.
      */
-    public const string SUPPRESS_DEVELOPER_ROLE_KEY = '_hatfield_suppress_developer_role';
+    public const string SUPPRESS_DEVELOPER_ROLE_KEY = ProviderRequestOptionKeys::SUPPRESS_DEVELOPER_ROLE;
 
     public function __construct(
         private readonly HatfieldModelCatalog $catalog,

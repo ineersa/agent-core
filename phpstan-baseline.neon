@@ -409,6 +409,36 @@ parameters:
 			path: src/AgentCore/Domain/Message/StartRunPayload.php
 
 		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Model\\ModelInvocationInput\:\:\$contextRef is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Model/ModelInvocationInput.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Model\\ModelInvocationInput\:\:\$stepId is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Model/ModelInvocationInput.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Model\\ModelInvocationInput\:\:\$toolsRef is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Model/ModelInvocationInput.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Model\\ModelInvocationInput\:\:\$turnNo is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Model/ModelInvocationInput.php
+
+		-
+			message: '#^Property Ineersa\\AgentCore\\Domain\\Model\\ModelResolutionOptions\:\:\$values is never read$#'
+			identifier: shipmonk.deadProperty.neverRead
+			count: 1
+			path: src/AgentCore/Domain/Model/ModelResolutionOptions.php
+
+		-
 			message: '#^Property Ineersa\\AgentCore\\Domain\\Run\\RunAccessScope\:\:\$updatedAt is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
@@ -449,36 +479,6 @@ parameters:
 			identifier: missingType.iterableValue
 			count: 1
 			path: src/AgentCore/Domain/Run/RunState.php
-
-		-
-			message: '#^Property Ineersa\\AgentCore\\Domain\\Tool\\ModelInvocationInput\:\:\$contextRef is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/AgentCore/Domain/Tool/ModelInvocationInput.php
-
-		-
-			message: '#^Property Ineersa\\AgentCore\\Domain\\Tool\\ModelInvocationInput\:\:\$stepId is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/AgentCore/Domain/Tool/ModelInvocationInput.php
-
-		-
-			message: '#^Property Ineersa\\AgentCore\\Domain\\Tool\\ModelInvocationInput\:\:\$toolsRef is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/AgentCore/Domain/Tool/ModelInvocationInput.php
-
-		-
-			message: '#^Property Ineersa\\AgentCore\\Domain\\Tool\\ModelInvocationInput\:\:\$turnNo is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/AgentCore/Domain/Tool/ModelInvocationInput.php
-
-		-
-			message: '#^Property Ineersa\\AgentCore\\Domain\\Tool\\ModelResolutionOptions\:\:\$values is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/AgentCore/Domain/Tool/ModelResolutionOptions.php
 
 		-
 			message: '#^Property Ineersa\\AgentCore\\Domain\\Tool\\ToolCall\:\:\$orderIndex is never read$#'
@@ -662,18 +662,6 @@ parameters:
 
 		-
 			message: '#^Unused Ineersa\\CodingAgent\\Config\\ModelSelectionService\:\:getAvailableModels$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Config/ModelSelectionService.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Config\\ModelSelectionService\:\:resolveInitialModel$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Config/ModelSelectionService.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Config\\ModelSelectionService\:\:resolveInitialReasoning$#'
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/CodingAgent/Config/ModelSelectionService.php
@@ -1355,4 +1343,3 @@ parameters:
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/Tui/Widget/TuiRenderContext.php
-

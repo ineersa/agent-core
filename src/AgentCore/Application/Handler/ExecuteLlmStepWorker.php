@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Handler;
 
-use Ineersa\AgentCore\Contract\Tool\PlatformInterface;
+use Ineersa\AgentCore\Contract\Model\PlatformInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
-use Ineersa\AgentCore\Domain\Tool\ModelInvocationInput;
-use Ineersa\AgentCore\Domain\Tool\ModelInvocationRequest;
-use Ineersa\AgentCore\Domain\Tool\PlatformInvocationResult;
+use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
+use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
+use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
