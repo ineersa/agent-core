@@ -22,14 +22,14 @@ Scope:
 - Suggested validation: `castor test --filter SymfonyModelCatalog`.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/ai-04-symfony-model-catalog-projector
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-04-symfony-model-catalog-projector
 Fork run: y12whk8adi1z
 PR URL: https://github.com/ineersa/agent-core/pull/11
-PR Status: open
+PR Status: merged
 Started: 2026-05-17T00:47:42.154Z
-Completed:
+Completed: 2026-05-17T01:13:25.397Z
 
 ## Work log
 - Created: 2026-05-16T22:01:55.475Z
@@ -52,3 +52,20 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/11
 - Validation: Fork validation: `vendor/bin/phpunit --filter ProjectedSymfonyModelCatalogTest` passed: 14 tests, 55 assertions.; Fork validation: `castor deptrac` passed: 0 violations, 77 uncovered, 325 allowed.; Fork validation: `castor test` passed: 301 tests, 7993 assertions, 1 PHPUnit notice.; Fork validation: `vendor/bin/phpstan analyse -c phpstan.dist.neon --no-progress` passed: 0 errors.; Fork validation: `castor cs-fix && castor cs-check` clean.; Fork validation: full `castor check` passed.; Parent verification: worktree branch clean at commit 48cdaacd.
 - Summary: AI-04 implemented by fork y12whk8adi1z in commit 48cdaacd. Added ProjectedSymfonyModelCatalog (66 lines) that adapts array<string, AiModelDefinition> to Symfony AI AbstractModelCatalog entries using Symfony\AI\Platform\Bridge\Generic\CompletionsModel and capabilities derived from Hatfield metadata. Unknown models are rejected via inherited ModelNotFoundException behavior. Added focused ProjectedSymfonyModelCatalogTest coverage. Added symfony/ai-generic-platform:^0.9 dependency needed for CompletionsModel, deptrac layers/rules for CodingAgent SymfonyAi infrastructure and Symfony AI Platform, and removed stale PHPStan baselines for AiModelDefinition::$reasoning and $toolCalling now that they are read.
+
+## Task workflow update - 2026-05-17T01:13:25.398Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/ai-04-symfony-model-catalog-projector into integration checkout.
+- Merge made by the 'ort' strategy.
+ composer.json                                      |   3 +-
+ composer.lock                                      |  87 +++++++-
+ depfile.yaml                                       |  15 ++
+ phpstan-baseline.neon                              |  12 --
+ .../SymfonyAi/ProjectedSymfonyModelCatalog.php     |  66 ++++++
+ .../SymfonyAi/ProjectedSymfonyModelCatalogTest.php | 226 +++++++++++++++++++++
+ 6 files changed, 395 insertions(+), 14 deletions(-)
+ create mode 100644 src/CodingAgent/Infrastructure/SymfonyAi/ProjectedSymfonyModelCatalog.php
+ create mode 100644 tests/CodingAgent/Infrastructure/SymfonyAi/ProjectedSymfonyModelCatalogTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/ai-04-symfony-model-catalog-projector.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Summary: PR #11 merged on GitHub at 2026-05-17T01:06:21Z with merge commit 6086b6d77a0f470d9b94f5da4d7d6d87af3d6bcf. AI-04 complete: ProjectedSymfonyModelCatalog projecting Hatfield AiModelDefinition metadata to Symfony Generic CompletionsModel catalog entries with capability derivation; 14 focused tests; deptrac layers for Symfony AI infrastructure; symfony/ai-generic-platform:^0.9 dep added.

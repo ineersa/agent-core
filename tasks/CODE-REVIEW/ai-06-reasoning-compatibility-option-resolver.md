@@ -25,12 +25,12 @@ Scope:
 - Suggested validation: `castor test --filter Reasoning`.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/ai-06-reasoning-compatibility-option-resolver
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-06-reasoning-compatibility-option-resolver
 Fork run: tmelwbm0esxv
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/12
+PR Status: open
 Started: 2026-05-17T00:47:51.323Z
 Completed:
 
@@ -47,3 +47,10 @@ Completed:
 ## Task workflow update - 2026-05-17T00:49:01.042Z
 - Recorded fork run: tmelwbm0esxv
 - Summary: Launched fork tmelwbm0esxv to implement AI-06 in worktree /home/ineersa/projects/agent-core-worktrees/ai-06-reasoning-compatibility-option-resolver. Scope: add reasoning/compatibility option resolver using HatfieldModelCatalog and AiModelReference; map off/non-reasoning/missing/null to []; z.ai thinking_format emits enable_thinking true; supports_reasoning_effort false never emits reasoning_effort; add focused tests; run castor check; commit and push.
+
+## Task workflow update - 2026-05-17T01:13:47.002Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/ai-06-reasoning-compatibility-option-resolver to origin.
+- branch 'task/ai-06-reasoning-compatibility-option-resolver' set up to track 'origin/task/ai-06-reasoning-compatibility-option-resolver'.
+- Created PR: https://github.com/ineersa/agent-core/pull/12
+- Summary: AI-06 implemented by fork tmelwbm0esxv in commit 34ebc87c. Added ReasoningOptionsResolver (92 lines) converting (AiModelReference, user-facing level) → provider invocation options. Handles all termination branches: off, unknown level, non-reasoning model, empty/null map value, missing model, disabled provider. Supports z.ai enable_thinking emission via thinking_format: zai, OpenAI-style reasoning_effort for standard providers, supports_reasoning_effort: false suppression, model-level thinking_format override of provider-level, case-insensitive level input. 16 focused tests covering all acceptance criteria. Cleaned up 6 stale PHPStan baseline entries for properties now read by the resolver.
