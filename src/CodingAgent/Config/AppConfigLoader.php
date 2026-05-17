@@ -61,6 +61,14 @@ final class AppConfigLoader
 
         // Layer 2: Home settings (~/.hatfield/settings.yaml)
         $homeSettingsPath = $this->pathResolver->getHomeDir().'/.hatfield/settings.yaml';
+
+        // Bootstrap the home settings file by copying the built-in defaults
+        // if it does not exist yet (first-launch behaviour). Do not overwrite
+        // an existing home file.
+        if (!is_readable($homeSettingsPath) && is_readable($defaultsPath)) {
+            $this->bootstrapHomeSettings($defaultsPath, $homeSettingsPath);
+        }
+
         $homeSettings = $this->loadYamlFile($homeSettingsPath);
         if ([] !== $homeSettings) {
             $merged = $this->overlayConfig($merged, $homeSettings);
@@ -183,5 +191,25 @@ final class AppConfigLoader
         }
 
         return array_keys($arr) !== range(0, \count($arr) - 1);
+    }
+
+    /**
+     * Create the home settings file by copying the built-in defaults on first launch.
+     *
+     * Users edit the copied file to set personal API keys, default model,
+     * reasoning level, and other overrides. The file is never auto-overwritten.
+     *
+     * The {@see config/hatfield.defaults.yaml} file is designed with comments
+     * that double as documentation, so the copied home file is self-documenting.
+     */
+    private function bootstrapHomeSettings(string $defaultsPath, string $homeSettingsPath): void
+    {
+        $dir = \dirname($homeSettingsPath);
+
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+
+        copy($defaultsPath, $homeSettingsPath);
     }
 }
