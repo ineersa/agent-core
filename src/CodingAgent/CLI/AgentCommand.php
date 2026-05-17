@@ -80,12 +80,11 @@ final class AgentCommand
     private function runTui(string $transport, string $prompt, string $resume, string $model = '', string $reasoning = ''): int
     {
         $client = $this->resolveClient($transport);
-        $projectCwd = getcwd() ?: '';
 
         $sessionId = '';
         if ('' !== $resume) {
             $sessionId = $resume;
-            if (!$this->sessionStore->exists($projectCwd, $sessionId)) {
+            if (!$this->sessionStore->exists($sessionId)) {
                 throw new \RuntimeException(\sprintf('Session not found: "%s". Use --prompt to start a new session.', $sessionId));
             }
         }
@@ -94,12 +93,10 @@ final class AgentCommand
             client: $client,
             request: '' !== $prompt ? new StartRunRequest(
                 prompt: $prompt,
-                cwd: $projectCwd,
                 model: '' !== $model ? $model : null,
                 reasoning: '' !== $reasoning ? $reasoning : null,
             ) : null,
             sessionId: $sessionId,
-            projectCwd: $projectCwd,
         );
     }
 
