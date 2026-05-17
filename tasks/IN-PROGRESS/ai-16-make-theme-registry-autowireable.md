@@ -174,14 +174,25 @@ public function __construct(
 - castor check green
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
-Fork run:
+Status: IN-PROGRESS
+Branch: task/ai-16-make-theme-registry-autowireable
+Worktree: /home/ineersa/projects/agent-core-worktrees/ai-16-make-theme-registry-autowireable
+Fork run: 0ckd60jp2uwo
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-17T20:48:08.230Z
 Completed:
 
 ## Work log
 - Created: 2026-05-17T04:19:51.135Z
+
+## Task workflow update - 2026-05-17T20:48:08.230Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/ai-16-make-theme-registry-autowireable.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/ai-16-make-theme-registry-autowireable.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/ai-16-make-theme-registry-autowireable.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/ai-16-make-theme-registry-autowireable.
+
+## Task workflow update - 2026-05-17T20:48:34.113Z
+- Recorded fork run: 0ckd60jp2uwo
+- Summary: Started AI-16 implementation in background fork 0ckd60jp2uwo. Scope: ThemeRegistry absorbs ThemeLoader and becomes autowireable from AppConfig/AppResourceLocator, ThemeFactory simplified, inject LockFactory into HatfieldSessionStore, inject EventPayloadNormalizer into run event stores, inject ToolExecutionResultStore into ToolExecutor, inject EventFactory/ToolCallExtractor into RunMessageStateTools, update tests/DI, validate with Castor. Fork instructed to work only inside /home/ineersa/projects/agent-core-worktrees/ai-16-make-theme-registry-autowireable and verify main untouched.
