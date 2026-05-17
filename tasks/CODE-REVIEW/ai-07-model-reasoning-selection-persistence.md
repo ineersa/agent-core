@@ -26,7 +26,7 @@ Scope:
 Status: CODE-REVIEW
 Branch: task/ai-07-model-reasoning-selection-persistence
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-07-model-reasoning-selection-persistence
-Fork run: wffz81bijh8q
+Fork run: lerrdnurexld
 PR URL: https://github.com/ineersa/agent-core/pull/13
 PR Status: open
 Started: 2026-05-17T01:27:21.764Z
@@ -56,3 +56,7 @@ Completed:
 ## Task workflow update - 2026-05-17T02:34:04.586Z
 - Recorded fork run: wffz81bijh8q
 - Summary: Launched fork wffz81bijh8q to refactor AI-07 per PR #13 review: move HatfieldModelCatalog onto AppConfig (created once during resolution, cached), extract SessionMetadataStore (read/write session metadata, setSessionsBasePath), wire setSessionsBasePath in InProcessAgentSessionClient, strip ModelSelectionService of all private helpers (createCatalog, read/write session metadata, path resolution), simplify to ~150 lines.
+
+## Task workflow update - 2026-05-17T02:57:26.671Z
+- Recorded fork run: lerrdnurexld
+- Summary: Launched fork lerr dnurexld to refactor HomeSettingsWriter — remove filePath parameters from writeDefaultModel/writeDefaultReasoning, have the writer own the home settings path via SettingsPathResolver injected in constructor. ModelSelectionService drops SettingsPathResolver dependency entirely.
