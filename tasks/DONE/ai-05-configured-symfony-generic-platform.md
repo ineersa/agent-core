@@ -24,14 +24,14 @@ Scope:
 - Suggested validation: `castor test --filter Platform`; `castor deptrac`.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/ai-05-configured-symfony-generic-platform
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-05-configured-symfony-generic-platform
 Fork run: p929smwf7g9q
 PR URL: https://github.com/ineersa/agent-core/pull/14
-PR Status: open
+PR Status: merged
 Started: 2026-05-17T03:14:13.694Z
-Completed:
+Completed: 2026-05-17T21:38:29.072Z
 
 ## Work log
 - Created: 2026-05-16T22:01:55.475Z
@@ -61,3 +61,19 @@ Completed:
 ## Task workflow update - 2026-05-17T21:32:20.984Z
 - Validation: php bin/console --no-interaction: passed; vendor/bin/phpunit tests/AgentCore/Infrastructure/SymfonyAi/PlatformIntegrationTest.php: passed (2 tests, 15 assertions); castor test: passed (328 tests, 8046 assertions, 1 pre-existing notice); castor deptrac: passed (0 violations); vendor/bin/phpstan analyse -c phpstan.dist.neon: passed (0 errors; baseline 229); castor cs-check: passed; castor cs-fix: clean; main checkout untouched by fork
 - Summary: AI-05 PR #14 fixup completed by fork p929smwf7g9q in commit e844e95b, pushed to branch. Merged origin/main (AI-15/AI-16) with only phpstan-baseline conflict, reworked SymfonyAiProviderFactory to inject AppConfig directly, removed AppConfigResolver/projectCwd usage, removed $projectCwd argument from ConfiguredSymfonyAiPlatformFactory and services.yaml PlatformInterface factory, preserved AI-16 service wiring, regenerated phpstan-baseline.neon.
+
+## Task workflow update - 2026-05-17T21:38:29.072Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/ai-05-configured-symfony-generic-platform into integration checkout.
+- Merge made by the 'ort' strategy.
+ config/services.yaml                               |  16 ++++
+ phpstan-baseline.neon                              |  48 ++--------
+ .../ConfiguredSymfonyAiPlatformFactory.php         |  49 ++++++++++
+ .../SymfonyAi/SymfonyAiProviderFactory.php         | 104 +++++++++++++++++++++
+ 4 files changed, 175 insertions(+), 42 deletions(-)
+ create mode 100644 src/CodingAgent/Infrastructure/SymfonyAi/ConfiguredSymfonyAiPlatformFactory.php
+ create mode 100644 src/CodingAgent/Infrastructure/SymfonyAi/SymfonyAiProviderFactory.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/ai-05-configured-symfony-generic-platform.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR #14 merged; Final fixup validation: php bin/console boot passed; PlatformIntegrationTest passed (2 tests, 15 assertions); castor test passed (328 tests, 8046 assertions, 1 pre-existing notice); castor deptrac passed; phpstan passed; cs-check passed
+- Summary: PR #14 merged. AI-05 complete: configured Symfony generic providers/platform wired from Hatfield AppConfig, DeepSeek via generic provider, AppConfigResolver/projectCwd assumptions removed during fixup, AI-16 service wiring preserved.
