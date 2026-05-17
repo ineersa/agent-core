@@ -26,7 +26,7 @@ Scope:
 Status: CODE-REVIEW
 Branch: task/ai-10-agentcore-per-turn-model-routing
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-10-agentcore-per-turn-model-routing
-Fork run: yvvavqya5kov
+Fork run: ywzesdh62wta
 PR URL: https://github.com/ineersa/agent-core/pull/18
 PR Status: open
 Started: 2026-05-17T21:42:59.913Z
@@ -57,3 +57,7 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/18
 - Validation: php bin/console --no-interaction: passed; SessionAwareModelResolverTest: passed (6 tests, 15 assertions); SymfonyAiProviderRegistryTest: passed (4 tests, 6 assertions); castor test: passed (349 tests, 8096 assertions, 1 pre-existing notice); castor deptrac: passed (0 violations, 329 allowed); vendor/bin/phpstan: passed (0 errors; baseline 225); castor cs-fix + castor cs-check: clean
 - Summary: AI-10 ready for review. Implemented per-turn model/reasoning routing through AgentCore in commit da767fe7: SessionAwareModelResolver resolves from ModelSelectionService/session metadata; ResolvedModel carries providerId/reasoning; ModelResolverRoutingSubscriber sets _hatfield_reasoning and explicit provider via ProviderRegistryInterface/SymfonyAiProviderRegistry; services.yaml wires resolver and registry aliases.
+
+## Task workflow update - 2026-05-17T22:01:21.373Z
+- Recorded fork run: ywzesdh62wta
+- Summary: Launched PR #18 review-fix fork ywzesdh62wta. Review comments to address: Tool namespace is overloaded by model/provider-routing classes (ResolvedModel and ProviderRegistryInterface comments), and ModelResolverRoutingSubscriber duplicates the `_hatfield_reasoning` constant already present in CompatRequestShaper. Planned fix: move model/platform/provider-request DTOs from AgentCore\Domain\Tool to AgentCore\Domain\Model, move model/platform contracts from AgentCore\Contract\Tool to AgentCore\Contract\Model while leaving actual Tool types in Tool namespaces, add shared AgentCore provider option-key constants and update ModelResolverRoutingSubscriber + CompatRequestShaper to use them without creating AgentCore→CodingAgent dependency.
