@@ -153,13 +153,13 @@ loaded models (e.g. llama.cpp).
 | `embeddings_path` | string | no | Embeddings endpoint path (if supported). |
 | `supports_completions` | bool | no | Enable completions client. Default: `true`. |
 | `supports_embeddings` | bool | no | Enable embeddings client. Default: `false`. |
-| `compat` | map | no | Provider-level transport quirks (see below). |
+| `compatibility` | map | no | Provider-level transport quirks (see below). |
 | `models` | map | yes | Model definitions keyed by model name. |
 
-#### Compat keys
+#### Compatibility keys
 
-Provider `compat` documents transport quirks for providers that are
-OpenAI chat-completions-style but not fully OpenAI-compatible.
+Provider `compatibility` documents transport quirks for providers that are
+OpenAI chat-completions-style but may need request-shaping adjustments.
 
 | Key | Type | Description |
 |-----|------|-------------|
@@ -167,7 +167,7 @@ OpenAI chat-completions-style but not fully OpenAI-compatible.
 | `supports_reasoning_effort` | bool | Whether the provider accepts `reasoning_effort`. When `false`, do not send this parameter. |
 | `thinking_format` | string | How reasoning is signalled. `zai` means `enable_thinking: boolean` instead of `reasoning_effort`. |
 
-Model-level `compat`:
+Model-level `compatibility`:
 
 | Key | Type | Description |
 |-----|------|-------------|
@@ -189,7 +189,7 @@ Each model entry under `providers.<id>.models` supports:
 | `tool_calling` | bool | yes | Whether the model supports tool/function calling. |
 | `reasoning` | bool | yes | Whether the model supports thinking/reasoning. |
 | `thinking_level_map` | map | no | Maps user-facing levels to provider values (e.g. `{ minimal: high, xhigh: max }`). |
-| `compat` | map | no | Model-level compat quirks. |
+| `compatibility` | map | no | Model-level compatibility quirks. |
 | `cost` | map | no | Cost breakdown: `input`, `output`, `cache_read`, `cache_write` (per 1M tokens). |
 
 ### Reasoning / thinking levels
@@ -208,7 +208,7 @@ provider-specific value.
   `null`, reasoning options are omitted.
 - For z.ai (binary reasoning), map any non-off level through
   `thinking_level_map` to `enabled` and send `enable_thinking: true`.
-- For providers with `compat.supports_reasoning_effort: false`, never
+- For providers with `compatibility.supports_reasoning_effort: false`, never
   send the `reasoning_effort` parameter.
 
 ### Configured providers
@@ -344,7 +344,7 @@ ai:
             completions_path: /chat/completions
             supports_completions: true
             supports_embeddings: false
-            compat:
+            compatibility:
                 supports_developer_role: false
                 supports_reasoning_effort: false
                 thinking_format: zai
@@ -362,7 +362,7 @@ ai:
                         medium: enabled
                         high: enabled
                         xhigh: enabled
-                    compat:
+                    compatibility:
                         zai_tool_stream: true
                     cost:
                         input: 0
@@ -382,7 +382,7 @@ ai:
                         medium: enabled
                         high: enabled
                         xhigh: enabled
-                    compat:
+                    compatibility:
                         zai_tool_stream: true
                     cost:
                         input: 0

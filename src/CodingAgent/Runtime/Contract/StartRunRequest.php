@@ -24,6 +24,8 @@ final readonly class StartRunRequest
         public string $runId = '',
         public string $cwd = '',
         public array $options = [],
+        public ?string $model = null,
+        public ?string $reasoning = null,
     ) {
     }
 }

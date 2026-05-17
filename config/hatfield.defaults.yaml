@@ -36,7 +36,7 @@ sessions:
 # technically serve arbitrary loaded models (e.g. llama.cpp).
 #
 # Provider transport quirks that differ from standard OpenAI behaviour
-# are recorded in an optional compat block.
+# are recorded in an optional compatibility block.
 #
 # ai:
 #     default_model: deepseek/deepseek-v4-pro
@@ -101,7 +101,7 @@ sessions:
 #             completions_path: /chat/completions
 #             supports_completions: true
 #             supports_embeddings: false
-#             compat:
+#             compatibility:
 #                 supports_developer_role: false
 #                 supports_reasoning_effort: false
 #                 thinking_format: zai
@@ -114,7 +114,7 @@ sessions:
 #                     tool_calling: true
 #                     reasoning: true
 #                     thinking_level_map: { minimal: enabled, low: enabled, medium: enabled, high: enabled, xhigh: enabled }
-#                     compat: { zai_tool_stream: true }
+#                     compatibility: { zai_tool_stream: true }
 #                     cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
 #                 glm-5v-turbo:
 #                     name: GLM 5V Turbo
@@ -124,5 +124,5 @@ sessions:
 #                     tool_calling: true
 #                     reasoning: true
 #                     thinking_level_map: { minimal: enabled, low: enabled, medium: enabled, high: enabled, xhigh: enabled }
-#                     compat: { zai_tool_stream: true }
+#                     compatibility: { zai_tool_stream: true }
 #                     cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
