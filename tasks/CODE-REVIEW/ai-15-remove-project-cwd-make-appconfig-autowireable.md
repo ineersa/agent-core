@@ -88,12 +88,12 @@ When `$projectCwd` is removed, the fallback becomes `$this->appConfig->cwd` inst
 - castor check green
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/ai-15-remove-project-cwd-make-appconfig-autowireable
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-15-remove-project-cwd-make-appconfig-autowireable
 Fork run: m8yelzisoxjj
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/16
+PR Status: open
 Started: 2026-05-17T03:52:50.643Z
 Completed:
 
@@ -117,3 +117,11 @@ Completed:
 ## Task workflow update - 2026-05-17T04:38:52.496Z
 - Recorded fork run: m8yelzisoxjj
 - Summary: Relaunched AI-15 rescue fork m8yelzisoxjj. Instructions require absolute paths under /home/ineersa/projects/agent-core-worktrees/ai-15-remove-project-cwd-make-appconfig-autowireable for every read/edit/write and `cd <worktree> && ...` for every bash command. Scope: finish self-hydrating AppConfig DI service, delete AppConfigResolver refs, remove projectCwd params from src, update tests, validate, commit/push only in worktree, verify main remains clean.
+
+## Task workflow update - 2026-05-17T04:59:12.469Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/ai-15-remove-project-cwd-make-appconfig-autowireable to origin.
+- branch 'task/ai-15-remove-project-cwd-make-appconfig-autowireable' set up to track 'origin/task/ai-15-remove-project-cwd-make-appconfig-autowireable'.
+- Created PR: https://github.com/ineersa/agent-core/pull/16
+- Validation: php bin/console --no-interaction: passed; castor test: passed (329 tests, 8048 assertions, 1 pre-existing notice); castor deptrac: passed (0 violations); castor phpstan: passed (0 errors); castor cs-check: passed; main checkout untouched by rescue fork
+- Summary: AI-15 completed in worktree commit 2d39ad71 on branch task/ai-15-remove-project-cwd-make-appconfig-autowireable and pushed. AppConfig is now autowireable/self-hydrating via AppConfigLoader + AppResourceLocator, AppConfigResolver deleted, $projectCwd removed from 30+ method signatures/call sites, TuiSessionState cwd removed, ThemeFactory injects AppConfig directly, and config comments/services updated. Warning: AI-05 and AI-09 CODE-REVIEW branches still reference $projectCwd/AppConfigResolver patterns and will need conflict resolution after AI-15 lands.
