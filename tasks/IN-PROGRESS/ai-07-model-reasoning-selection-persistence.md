@@ -26,7 +26,7 @@ Scope:
 Status: IN-PROGRESS
 Branch: task/ai-07-model-reasoning-selection-persistence
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-07-model-reasoning-selection-persistence
-Fork run:
+Fork run: k3iy1ja8fe75
 PR URL:
 PR Status:
 Started: 2026-05-17T01:27:21.764Z
@@ -41,3 +41,7 @@ Completed:
 - Created worktree /home/ineersa/projects/agent-core-worktrees/ai-07-model-reasoning-selection-persistence.
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/ai-07-model-reasoning-selection-persistence.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/ai-07-model-reasoning-selection-persistence.
+
+## Task workflow update - 2026-05-17T01:32:34.831Z
+- Recorded fork run: k3iy1ja8fe75
+- Summary: Launched fork k3iy1ja8fe75 to implement AI-07 in worktree /home/ineersa/projects/agent-core-worktrees/ai-07-model-reasoning-selection-persistence. Scope: add ModelSelectionService with 4-tier priority (explicit → session metadata → ai.default_model → first available), reasoning mirror with fallback to ai.default_reasoning/medium, persistence via HomeSettingsWriter and session metadata, catalog validation via HatfieldModelCatalog::isAvailable(), focused tests.
