@@ -28,7 +28,7 @@ Scope:
 Status: CODE-REVIEW
 Branch: task/ai-06-reasoning-compatibility-option-resolver
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-06-reasoning-compatibility-option-resolver
-Fork run: tmelwbm0esxv
+Fork run: bqx25cppiqnc
 PR URL: https://github.com/ineersa/agent-core/pull/12
 PR Status: open
 Started: 2026-05-17T00:47:51.323Z
@@ -54,3 +54,7 @@ Completed:
 - branch 'task/ai-06-reasoning-compatibility-option-resolver' set up to track 'origin/task/ai-06-reasoning-compatibility-option-resolver'.
 - Created PR: https://github.com/ineersa/agent-core/pull/12
 - Summary: AI-06 implemented by fork tmelwbm0esxv in commit 34ebc87c. Added ReasoningOptionsResolver (92 lines) converting (AiModelReference, user-facing level) → provider invocation options. Handles all termination branches: off, unknown level, non-reasoning model, empty/null map value, missing model, disabled provider. Supports z.ai enable_thinking emission via thinking_format: zai, OpenAI-style reasoning_effort for standard providers, supports_reasoning_effort: false suppression, model-level thinking_format override of provider-level, case-insensitive level input. 16 focused tests covering all acceptance criteria. Cleaned up 6 stale PHPStan baseline entries for properties now read by the resolver.
+
+## Task workflow update - 2026-05-17T01:21:52.242Z
+- Recorded fork run: bqx25cppiqnc
+- Summary: Launched fork bqx25cppiqnc to resolve PR #12 phpstan-baseline.neon merge conflict against main (which now includes AI-04's merged baseline removals). Scope: merge origin/main, resolve baseline by keeping net result of both removals plus AI-06 new entry, handle stale task files, run castor check, push, verify mergeable.
