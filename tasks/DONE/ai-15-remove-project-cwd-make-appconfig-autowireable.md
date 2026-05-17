@@ -88,14 +88,14 @@ When `$projectCwd` is removed, the fallback becomes `$this->appConfig->cwd` inst
 - castor check green
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/ai-15-remove-project-cwd-make-appconfig-autowireable
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-15-remove-project-cwd-make-appconfig-autowireable
 Fork run: gh6p7vi5eree
 PR URL: https://github.com/ineersa/agent-core/pull/16
-PR Status: open
+PR Status: merged
 Started: 2026-05-17T03:52:50.643Z
-Completed:
+Completed: 2026-05-17T20:46:41.433Z
 
 ## Work log
 - Created: 2026-05-17T03:51:54.231Z
@@ -141,3 +141,36 @@ Completed:
 ## Task workflow update - 2026-05-17T20:44:18.461Z
 - Validation: composer dump-autoload: passed; php bin/console --no-interaction: passed; targeted phpunit: passed (65 tests); castor test: passed (329 tests, 8048 assertions, 1 pre-existing notice); castor deptrac: passed (0 violations); castor phpstan: passed (0 errors, baseline regenerated); castor cs-fix + castor cs-check: passed; grep AppConfig::fromArray in src/tests: none; grep Closure::bind in src: none; grep newInstanceWithoutConstructor in src: none; main checkout verified untouched by fork
 - Summary: Second round of PR #16 review comments addressed by fork gh6p7vi5eree in commit 5d9774d1, pushed to branch. Changes: restored AppConfig class docs, removed AppConfig::fromArray() and all Reflection/Closure constructor-bypass code from production, changed AppConfig to value-object constructor plus production DI factory AppConfig::fromContainer() wired in services.yaml, redesigned tests to use production constructor/factory or test-local helpers, restored AppConfigLoader getcwd() path-resolution comment, and added AGENTS.md development rule banning production test-only APIs/helpers and constructor/property bypass hacks.
+
+## Task workflow update - 2026-05-17T20:46:41.433Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/ai-15-remove-project-cwd-make-appconfig-autowireable into integration checkout.
+- Merge made by the 'ort' strategy.
+ AGENTS.md                                          |  13 +
+ config/packages/tui.yaml                           |   4 +-
+ config/services.yaml                               |  12 +-
+ phpstan-baseline.neon                              | 387 +++++++++---------
+ src/CodingAgent/CLI/AgentCommand.php               |   5 +-
+ src/CodingAgent/Config/AppConfig.php               |  44 +-
+ src/CodingAgent/Config/AppConfigLoader.php         |  46 ++-
+ src/CodingAgent/Config/AppConfigResolver.php       |  59 ---
+ src/CodingAgent/Config/ModelSelectionService.php   |  54 +--
+ src/CodingAgent/Session/HatfieldSessionStore.php   |  99 ++---
+ src/Tui/Application/InteractiveMode.php            |  22 +-
+ src/Tui/Application/SessionInitializer.php         |  15 +-
+ src/Tui/Application/ThemeFactory.php               |  13 +-
+ src/Tui/Listener/SubmitListener.php                |   2 -
+ src/Tui/Runtime/RuntimeEventPoller.php             |   2 -
+ src/Tui/Runtime/TuiSessionState.php                |   3 -
+ tests/CodingAgent/Config/Ai/AiConfigTest.php       |  42 +-
+ tests/CodingAgent/Config/AppConfigLoaderTest.php   |  96 +++--
+ tests/CodingAgent/Config/AppConfigResolverTest.php | 160 --------
+ .../Config/ModelSelectionServiceTest.php           | 453 ++++++++-------------
+ .../Session/HatfieldSessionStoreTest.php           | 105 +++--
+ 21 files changed, 666 insertions(+), 970 deletions(-)
+ delete mode 100644 src/CodingAgent/Config/AppConfigResolver.php
+ delete mode 100644 tests/CodingAgent/Config/AppConfigResolverTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/ai-15-remove-project-cwd-make-appconfig-autowireable.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR #16 merged; Final PR branch validation from fork: composer dump-autoload passed; php bin/console boot passed; castor test passed (329 tests, 8048 assertions, 1 pre-existing notice); castor deptrac passed; castor phpstan passed; castor cs-check passed
+- Summary: PR #16 merged. AI-15 complete: removed $projectCwd plumbing, deleted AppConfigResolver, made AppConfig autowireable through production DI factory/value constructor, restored comments/docs, and added AGENTS.md rule against production test-only helpers/constructor bypass hacks.
