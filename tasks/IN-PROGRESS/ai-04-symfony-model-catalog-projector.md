@@ -22,14 +22,21 @@ Scope:
 - Suggested validation: `castor test --filter SymfonyModelCatalog`.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/ai-04-symfony-model-catalog-projector
+Worktree: /home/ineersa/projects/agent-core-worktrees/ai-04-symfony-model-catalog-projector
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-17T00:47:42.154Z
 Completed:
 
 ## Work log
 - Created: 2026-05-16T22:01:55.475Z
+
+## Task workflow update - 2026-05-17T00:47:42.154Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/ai-04-symfony-model-catalog-projector.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/ai-04-symfony-model-catalog-projector.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/ai-04-symfony-model-catalog-projector.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/ai-04-symfony-model-catalog-projector.
