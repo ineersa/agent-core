@@ -37,7 +37,7 @@ use Symfony\Component\Yaml\Yaml;
  * Path resolution:
  *  - %kernel.project_dir% → app install directory (via SettingsPathResolver::$appRoot)
  *  - ~ → home directory
- *  - Relative paths resolve against the active project directory
+ *  - Relative paths resolve against the active project directory (getcwd())
  */
 final class AppConfigLoader
 {

@@ -673,67 +673,13 @@ parameters:
 			path: src/CodingAgent/Config/Ai/HatfieldModelCatalog.php
 
 		-
-			message: '#^Method Ineersa\\CodingAgent\\Config\\AppConfig\:\:fromArray\(\) has parameter \$data with no value type specified in iterable type array\.$#'
-			identifier: missingType.iterableValue
-			count: 1
-			path: src/CodingAgent/Config/AppConfig.php
-
-		-
 			message: '#^Property Ineersa\\CodingAgent\\Config\\AppConfig\:\:\$raw is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
 			path: src/CodingAgent/Config/AppConfig.php
 
 		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\AppConfig\:\:\$raw type has no value type specified in iterable type array\.$#'
-			identifier: missingType.iterableValue
-			count: 1
-			path: src/CodingAgent/Config/AppConfig.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\AppConfig\:\:\$sessions type has no value type specified in iterable type array\.$#'
-			identifier: missingType.iterableValue
-			count: 1
-			path: src/CodingAgent/Config/AppConfig.php
-
-		-
-			message: '#^Readonly property Ineersa\\CodingAgent\\Config\\AppConfig\:\:\$ai is assigned outside of the constructor\.$#'
-			identifier: property.readOnlyAssignNotInConstructor
-			count: 1
-			path: src/CodingAgent/Config/AppConfig.php
-
-		-
-			message: '#^Readonly property Ineersa\\CodingAgent\\Config\\AppConfig\:\:\$catalog is assigned outside of the constructor\.$#'
-			identifier: property.readOnlyAssignNotInConstructor
-			count: 1
-			path: src/CodingAgent/Config/AppConfig.php
-
-		-
-			message: '#^Readonly property Ineersa\\CodingAgent\\Config\\AppConfig\:\:\$cwd is assigned outside of the constructor\.$#'
-			identifier: property.readOnlyAssignNotInConstructor
-			count: 1
-			path: src/CodingAgent/Config/AppConfig.php
-
-		-
-			message: '#^Readonly property Ineersa\\CodingAgent\\Config\\AppConfig\:\:\$raw is assigned outside of the constructor\.$#'
-			identifier: property.readOnlyAssignNotInConstructor
-			count: 1
-			path: src/CodingAgent/Config/AppConfig.php
-
-		-
-			message: '#^Readonly property Ineersa\\CodingAgent\\Config\\AppConfig\:\:\$sessions is assigned outside of the constructor\.$#'
-			identifier: property.readOnlyAssignNotInConstructor
-			count: 1
-			path: src/CodingAgent/Config/AppConfig.php
-
-		-
-			message: '#^Readonly property Ineersa\\CodingAgent\\Config\\AppConfig\:\:\$tui is assigned outside of the constructor\.$#'
-			identifier: property.readOnlyAssignNotInConstructor
-			count: 1
-			path: src/CodingAgent/Config/AppConfig.php
-
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Config\\AppConfig\:\:fromArray$#'
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\AppConfig\:\:fromContainer$#'
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/CodingAgent/Config/AppConfig.php

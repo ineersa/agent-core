@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Config;
 
+use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
+use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
@@ -12,6 +14,7 @@ use Ineersa\CodingAgent\Config\HomeSettingsWriter;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Config\TuiConfig;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
 
@@ -89,6 +92,7 @@ class ModelSelectionServiceTest extends TestCase
 
     /**
      * Create an AppConfig from raw config data with the given AI section.
+     * Uses the public value-object constructor — no test-only production code.
      */
     private function makeAppConfig(array $aiData): AppConfig
     {
@@ -99,7 +103,16 @@ class ModelSelectionServiceTest extends TestCase
             $raw['ai'] = $aiData;
         }
 
-        return AppConfig::fromArray($raw);
+        $ai = AiConfig::optionalFromArray($raw);
+
+        return new AppConfig(
+            tui: TuiConfig::fromArray((array) ($raw['tui'] ?? [])),
+            sessions: (array) ($raw['sessions'] ?? []),
+            ai: $ai,
+            raw: $raw,
+            catalog: null !== $ai ? new HatfieldModelCatalog($ai) : null,
+            cwd: getcwd() ?: '/',
+        );
     }
 
     /**

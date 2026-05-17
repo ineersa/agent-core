@@ -43,6 +43,14 @@ services:
 
   Ineersa\CodingAgent\Config\AppConfigLoader: ~
 
+  # AppConfig is a value object, not an autowireable service.
+  # The container uses the fromContainer() factory to construct it.
+  Ineersa\CodingAgent\Config\AppConfig:
+    factory: ['Ineersa\CodingAgent\Config\AppConfig', 'fromContainer']
+    arguments:
+      - '@Ineersa\CodingAgent\Config\AppConfigLoader'
+      - '@Ineersa\CodingAgent\Config\AppResourceLocator'
+
   Ineersa\CodingAgent\Session\HatfieldSessionStore: ~
 
   Ineersa\Tui\Application\InteractiveMode:

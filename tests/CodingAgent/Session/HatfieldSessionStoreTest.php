@@ -74,7 +74,7 @@ YAML);
             $loader = new AppConfigLoader($pathResolver);
             $resources = new AppResourceLocator($projectDir);
 
-            return new AppConfig($loader, $resources);
+            return AppConfig::fromContainer($loader, $resources);
         } finally {
             if (false !== $prevCwd) {
                 chdir($prevCwd);

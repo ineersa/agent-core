@@ -8,57 +8,55 @@ use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 
 /**
- * Resolved Hatfield configuration for the active project.
+ * Resolved Hatfield application configuration.
  *
- * Production DI constructor self-hydrates via AppConfigLoader, using
- * getcwd() as the project root. All public properties are readonly.
+ * Contains all settings loaded from defaults, home, and project YAML.
+ * All properties are populated by the production DI factory
+ * {@see fromContainer} which calls {@see AppConfigLoader}.
+ *
+ * Sections (more will be added as the app grows):
+ *  - tui       Theme, theme paths, terminal settings
+ *  - sessions  Session storage location
+ *  - ai        AI provider and model configuration
+ *
+ * The value constructor accepts all properties directly for testing
+ * and internal construction. Production code uses {@see fromContainer}.
  */
 final class AppConfig
 {
-    public readonly string $cwd;
-    public readonly TuiConfig $tui;
-    public readonly array $sessions;
-    public readonly ?AiConfig $ai;
-    public readonly array $raw;
-    public readonly ?HatfieldModelCatalog $catalog;
-
-    /**
-     * Production constructor — loads and hydrates from Hatfield config layers.
-     */
     public function __construct(
-        AppConfigLoader $loader,
-        AppResourceLocator $resources,
+        public TuiConfig $tui,
+        /** @var array<string, mixed> */
+        public array $sessions = [],
+        public ?AiConfig $ai = null,
+        /** @var array<string, mixed> Raw merged data for forward compatibility */
+        public array $raw = [],
+        public ?HatfieldModelCatalog $catalog = null,
+        public string $cwd = '',
     ) {
-        $this->cwd = self::resolveCurrentWorkingDirectory();
-        $data = $loader->load($resources->getDefaultsPath());
-        $this->tui = TuiConfig::fromArray((array) ($data['tui'] ?? []));
-        $this->sessions = (array) ($data['sessions'] ?? []);
-        $this->ai = AiConfig::optionalFromArray($data);
-        $this->catalog = null !== $this->ai ? new HatfieldModelCatalog($this->ai) : null;
-        $this->raw = $data;
     }
 
     /**
-     * @internal Test helper — hydrate from a pre-built config array.
+     * Production DI factory — loads and hydrates from Hatfield config layers.
      *
-     * Uses Reflection to bypass the readonly constraint during test
-     * construction.  Not part of the production API.
+     * Used by the Symfony container via services.yaml factory definition.
+     *
+     * @throws \RuntimeException when the current working directory is unavailable
      */
-    public static function fromArray(array $data): self
+    public static function fromContainer(AppConfigLoader $loader, AppResourceLocator $resources): self
     {
-        $instance = (new \ReflectionClass(self::class))->newInstanceWithoutConstructor();
+        $cwd = self::resolveCurrentWorkingDirectory();
+        $data = $loader->load($resources->getDefaultsPath());
+        $ai = AiConfig::optionalFromArray($data);
 
-        \Closure::bind(function () use ($data): void {
-            $this->cwd = self::resolveCurrentWorkingDirectory();
-            $this->tui = TuiConfig::fromArray((array) ($data['tui'] ?? []));
-            $this->sessions = (array) ($data['sessions'] ?? []);
-            $ai = AiConfig::optionalFromArray($data);
-            $this->ai = $ai;
-            $this->catalog = null !== $ai ? new HatfieldModelCatalog($ai) : null;
-            $this->raw = $data;
-        }, null, self::class)->call($instance);
-
-        return $instance;
+        return new self(
+            tui: TuiConfig::fromArray((array) ($data['tui'] ?? [])),
+            sessions: (array) ($data['sessions'] ?? []),
+            ai: $ai,
+            raw: $data,
+            catalog: null !== $ai ? new HatfieldModelCatalog($ai) : null,
+            cwd: $cwd,
+        );
     }
 
     /**
