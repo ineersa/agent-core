@@ -4,10 +4,21 @@ Hatfield is the application name for the local coding agent configuration system
 It follows the same pattern as `~/.gitconfig` or `.editorconfig`: global
 settings in the home directory, overridden by project-local settings.
 
+## First launch
+
+On first launch the global home settings file (`~/.hatfield/settings.yaml`)
+is created by copying `config/hatfield.defaults.yaml`. The defaults file is
+designed with comments that double as documentation, so the copied home file
+is self-documenting.
+
+Edit the home copy to set personal API keys, default model, reasoning level,
+and other overrides. The file is **never auto-overwritten**; it remains yours
+to maintain across application upgrades.
+
 ## Directory layout
 
 ```text
-~/.hatfield/settings.yaml       # Global user settings
+~/.hatfield/settings.yaml       # Global user settings (copied from defaults on first launch)
 <project>/.hatfield/settings.yaml  # Project-local overrides
 .hatfield/sessions/    # Session/run storage (session_id === run_id)
 <project>/.hatfield/themes/      # Custom project themes

@@ -1446,3 +1446,16 @@ parameters:
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
 			path: src/CodingAgent/Config/AppConfig.php
+		# Temporary AI-03 HomeSettingsWriter baselines. Remove when AI-07 production
+		# calls writeDefaultModel / writeDefaultReasoning.
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\HomeSettingsWriter\:\:writeDefaultModel$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Config/HomeSettingsWriter.php
+
+		-
+			message: '#^Unused Ineersa\\CodingAgent\\Config\\HomeSettingsWriter\:\:writeDefaultReasoning$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/CodingAgent/Config/HomeSettingsWriter.php
