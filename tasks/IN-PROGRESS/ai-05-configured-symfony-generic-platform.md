@@ -24,14 +24,21 @@ Scope:
 - Suggested validation: `castor test --filter Platform`; `castor deptrac`.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/ai-05-configured-symfony-generic-platform
+Worktree: /home/ineersa/projects/agent-core-worktrees/ai-05-configured-symfony-generic-platform
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-17T03:14:13.694Z
 Completed:
 
 ## Work log
 - Created: 2026-05-16T22:01:55.475Z
+
+## Task workflow update - 2026-05-17T03:14:13.694Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/ai-05-configured-symfony-generic-platform.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/ai-05-configured-symfony-generic-platform.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/ai-05-configured-symfony-generic-platform.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/ai-05-configured-symfony-generic-platform.
