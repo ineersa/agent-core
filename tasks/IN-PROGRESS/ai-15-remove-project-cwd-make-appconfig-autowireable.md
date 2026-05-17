@@ -91,7 +91,7 @@ When `$projectCwd` is removed, the fallback becomes `$this->appConfig->cwd` inst
 Status: IN-PROGRESS
 Branch: task/ai-15-remove-project-cwd-make-appconfig-autowireable
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-15-remove-project-cwd-make-appconfig-autowireable
-Fork run: 6abi1xrg60r8
+Fork run: m8yelzisoxjj
 PR URL:
 PR Status:
 Started: 2026-05-17T03:52:50.643Z
@@ -110,3 +110,10 @@ Completed:
 ## Task workflow update - 2026-05-17T03:54:21.950Z
 - Recorded fork run: 6abi1xrg60r8
 - Summary: Launched fork 6abi1xrg60r8 to implement AI-15: delete AppConfigResolver, make AppConfig self-hydrating DI service (calls AppConfigLoader in constructor via getcwd()), remove $projectCwd from ~30 method signatures across ModelSelectionService, HatfieldSessionStore, InteractiveMode, SessionInitializer, ThemeFactory, AgentCommand.
+
+## Task workflow update - 2026-05-17T04:38:23.636Z
+- Summary: Fork 6abi1xrg60r8 wrote partial AI-15 changes partly to the wrong checkout and did not complete. Main checkout was reset clean. Worktree /home/ineersa/projects/agent-core-worktrees/ai-15-remove-project-cwd-make-appconfig-autowireable contains partial changes: AppConfigLoader no longer takes projectCwd, AppConfigResolver deleted there, ModelSelectionService/HatfieldSessionStore partially updated. Remaining refs include AppConfigResolver in services.yaml and ThemeFactory, projectCwd in AgentCommand/InteractiveMode/SessionInitializer, and AppConfig is not yet constructor-self-hydrating/autowireable (fromLoader/fromArray remain). Relaunching fork with absolute-path-only instructions.
+
+## Task workflow update - 2026-05-17T04:38:52.496Z
+- Recorded fork run: m8yelzisoxjj
+- Summary: Relaunched AI-15 rescue fork m8yelzisoxjj. Instructions require absolute paths under /home/ineersa/projects/agent-core-worktrees/ai-15-remove-project-cwd-make-appconfig-autowireable for every read/edit/write and `cd <worktree> && ...` for every bash command. Scope: finish self-hydrating AppConfig DI service, delete AppConfigResolver refs, remove projectCwd params from src, update tests, validate, commit/push only in worktree, verify main remains clean.
