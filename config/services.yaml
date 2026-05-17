@@ -21,9 +21,15 @@ services:
   Ineersa\Tui\:
     resource: '../src/Tui/'
 
+  # ─── Symfony infrastructure (not covered by namespace autowiring) ───
+
+  Symfony\Component\Lock\Store\FlockStore: ~
+  Symfony\Component\Lock\PersistingStoreInterface:
+    alias: Symfony\Component\Lock\Store\FlockStore
+  Symfony\Component\Lock\LockFactory: ~
   # ─── File-backed agent-core stores ───
   # These need explicit wiring because $projectDir is a string that
-  # cannot be autowired.
+  # cannot be autowired. LockFactory is autowired via the service above.
 
   Ineersa\AgentCore\Infrastructure\Storage\SessionRunStore:
     arguments:
@@ -47,11 +53,15 @@ services:
 
   Ineersa\CodingAgent\Config\AppConfigLoader: ~
 
-  Ineersa\CodingAgent\Config\AppConfigResolver: ~
-
-  Ineersa\CodingAgent\Session\HatfieldSessionStore:
+  # AppConfig is a value object, not an autowireable service.
+  # The container uses the fromContainer() factory to construct it.
+  Ineersa\CodingAgent\Config\AppConfig:
+    factory: ['Ineersa\CodingAgent\Config\AppConfig', 'fromContainer']
     arguments:
-      $projectDir: '%kernel.project_dir%'
+      - '@Ineersa\CodingAgent\Config\AppConfigLoader'
+      - '@Ineersa\CodingAgent\Config\AppResourceLocator'
+
+  Ineersa\CodingAgent\Session\HatfieldSessionStore: ~
 
   Ineersa\Tui\Application\InteractiveMode:
     arguments:

@@ -37,9 +37,7 @@ use Symfony\Component\Yaml\Yaml;
  * Path resolution:
  *  - %kernel.project_dir% → app install directory (via SettingsPathResolver::$appRoot)
  *  - ~ → home directory
- *  - Relative paths in defaults resolve against projectCwd
- *  - Relative paths in home settings resolve against homeDir
- *  - Relative paths in project settings resolve against projectCwd
+ *  - Relative paths resolve against the active project directory (getcwd())
  */
 final class AppConfigLoader
 {
@@ -52,10 +50,11 @@ final class AppConfigLoader
      * Load and merge all settings layers into a single resolved config.
      *
      * @param string $defaultsPath Path to built-in defaults YAML
-     * @param string $projectCwd   Active project working directory
      */
-    public function load(string $defaultsPath, string $projectCwd): AppConfig
+    public function load(string $defaultsPath): array
     {
+        $cwd = self::resolveCurrentWorkingDirectory();
+
         // Layer 1: Built-in defaults (shipped with the app)
         $merged = $this->loadYamlFile($defaultsPath);
 
@@ -75,16 +74,13 @@ final class AppConfigLoader
         }
 
         // Layer 3: Project settings (<cwd>/.hatfield/settings.yaml)
-        $projectSettingsPath = rtrim($projectCwd, '/').'/.hatfield/settings.yaml';
+        $projectSettingsPath = rtrim($cwd, '/').'/.hatfield/settings.yaml';
         $projectSettings = $this->loadYamlFile($projectSettingsPath);
         if ([] !== $projectSettings) {
             $merged = $this->overlayConfig($merged, $projectSettings);
         }
 
-        // Resolve paths in the merged config
-        $merged = $this->resolveConfigPaths($merged, $projectCwd);
-
-        return AppConfig::fromArray($merged);
+        return $this->resolveConfigPaths($merged);
     }
 
     /**
@@ -128,22 +124,24 @@ final class AppConfigLoader
     /**
      * Resolve path placeholders in the merged config.
      *
-     * Only resolves the known tui.theme_paths key for now.
+     * Currently resolves {@see tui::$themePaths} and {@see sessions.path}.
      * Extend as more path-containing config keys are added.
      *
      * @param array<string, mixed> $data
      *
      * @return array<string, mixed>
      */
-    private function resolveConfigPaths(array $data, string $projectCwd): array
+    private function resolveConfigPaths(array $data): array
     {
+        $cwd = self::resolveCurrentWorkingDirectory();
+
         if (isset($data['tui']['theme_paths']) && \is_array($data['tui']['theme_paths'])) {
             $resolved = [];
             foreach ($data['tui']['theme_paths'] as $path) {
                 if (!\is_string($path)) {
                     continue;
                 }
-                $resolved[] = $this->pathResolver->resolve($path, $projectCwd);
+                $resolved[] = $this->pathResolver->resolve($path, $cwd);
             }
             $data['tui']['theme_paths'] = $resolved;
         }
@@ -151,7 +149,7 @@ final class AppConfigLoader
         if (isset($data['sessions']['path']) && \is_string($data['sessions']['path'])) {
             $data['sessions']['path'] = $this->pathResolver->resolve(
                 $data['sessions']['path'],
-                $projectCwd,
+                $cwd,
             );
         }
 
@@ -194,7 +192,8 @@ final class AppConfigLoader
     }
 
     /**
-     * Create the home settings file by copying the built-in defaults on first launch.
+     * Create the home settings file by copying the built-in defaults
+     * on first launch.
      *
      * Users edit the copied file to set personal API keys, default model,
      * reasoning level, and other overrides. The file is never auto-overwritten.
@@ -211,5 +210,22 @@ final class AppConfigLoader
         }
 
         copy($defaultsPath, $homeSettingsPath);
+    }
+
+    /**
+     * Throws early when the process has no working directory rather than
+     * silently falling back to "/" and producing broken paths downstream.
+     *
+     * @throws \RuntimeException
+     */
+    private static function resolveCurrentWorkingDirectory(): string
+    {
+        $cwd = getcwd();
+
+        if (false === $cwd) {
+            throw new \RuntimeException('No current working directory available.');
+        }
+
+        return $cwd;
     }
 }

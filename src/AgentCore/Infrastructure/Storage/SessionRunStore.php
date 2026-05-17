@@ -8,7 +8,6 @@ use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
@@ -23,14 +22,13 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
  */
 final class SessionRunStore implements RunStoreInterface
 {
-    private readonly LockFactory $lockFactory;
     private string $sessionsBasePath;
 
     public function __construct(
         string $projectDir,
         private readonly NormalizerInterface&DenormalizerInterface $serializer,
+        private readonly LockFactory $lockFactory,
     ) {
-        $this->lockFactory = new LockFactory(new FlockStore());
         $this->sessionsBasePath = $projectDir.'/.hatfield/sessions';
     }
 

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Config;
 
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
-use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 
 /**
  * Central model/reasoning selection with four-tier priority and persistence.
@@ -29,7 +28,7 @@ final class ModelSelectionService
     public const LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
 
     public function __construct(
-        private readonly AppConfigResolver $configResolver,
+        private readonly AppConfig $appConfig,
         private readonly HomeSettingsWriter $homeWriter,
         private readonly SessionMetadataStore $sessionMetaStore,
     ) {
@@ -44,17 +43,14 @@ final class ModelSelectionService
      *
      * @param string|null $explicitModel Explicit request (e.g. "deepseek/deepseek-v4-pro")
      * @param string      $sessionId     Session ID for metadata lookup (empty for new sessions)
-     * @param string      $projectCwd    Project working directory
      *
      * @return AiModelReference|null Null only if no models are configured at all
      */
     public function resolveInitialModel(
         ?string $explicitModel = null,
         string $sessionId = '',
-        string $projectCwd = '',
     ): ?AiModelReference {
-        $catalog = $this->catalog($projectCwd);
-
+        $catalog = $this->appConfig->catalog;
         if (null === $catalog) {
             return null;
         }
@@ -90,13 +86,13 @@ final class ModelSelectionService
     }
 
     /**
-     * Get all available model references for the current project.
+     * Get all available model references.
      *
      * @return list<AiModelReference>
      */
-    public function getAvailableModels(string $projectCwd = ''): array
+    public function getAvailableModels(): array
     {
-        $catalog = $this->catalog($projectCwd);
+        $catalog = $this->appConfig->catalog;
 
         return null !== $catalog ? $catalog->allModels() : [];
     }
@@ -110,14 +106,12 @@ final class ModelSelectionService
      *
      * @param string|null $explicitReasoning Explicit request (e.g. "high")
      * @param string      $sessionId         Session ID for metadata lookup
-     * @param string      $projectCwd        Project working directory
      *
      * @return string A reasoning level from {@see LEVELS}
      */
     public function resolveInitialReasoning(
         ?string $explicitReasoning = null,
         string $sessionId = '',
-        string $projectCwd = '',
     ): string {
         // 1. Explicit request
         if (null !== $explicitReasoning) {
@@ -134,8 +128,7 @@ final class ModelSelectionService
         }
 
         // 3. Hatfield ai.default_reasoning
-        $config = $this->configResolver->resolve($projectCwd);
-        $defaultReasoning = $config->ai?->defaultReasoning;
+        $defaultReasoning = $this->appConfig->ai?->defaultReasoning;
         if (null !== $defaultReasoning && '' !== $defaultReasoning) {
             return $defaultReasoning;
         }
@@ -157,17 +150,12 @@ final class ModelSelectionService
      *
      * @throws \RuntimeException If the model is not available
      */
-    public function changeModel(
-        AiModelReference $model,
-        string $sessionId,
-        string $projectCwd = '',
-    ): void {
-        $catalog = $this->catalog($projectCwd);
-
+    public function changeModel(AiModelReference $model, string $sessionId): void
+    {
+        $catalog = $this->appConfig->catalog;
         if (null === $catalog) {
             throw new \RuntimeException('No AI configuration available.');
         }
-
         if (!$catalog->isAvailable($model)) {
             throw new \RuntimeException(\sprintf('Model "%s" is not available.', $model->toString()));
         }
@@ -192,17 +180,11 @@ final class ModelSelectionService
      *
      * @throws \InvalidArgumentException If the level is not a valid reasoning level
      */
-    public function changeReasoning(
-        string $level,
-        string $sessionId,
-        string $projectCwd = '',
-    ): void {
+    public function changeReasoning(string $level, string $sessionId): void
+    {
         if (!\in_array($level, self::LEVELS, true)) {
             throw new \InvalidArgumentException(\sprintf('Invalid reasoning level "%s". Valid levels: %s.', $level, implode(', ', self::LEVELS)));
         }
-
-        // Ensure home settings exist (triggers bootstrap from defaults on first launch)
-        $this->configResolver->resolve($projectCwd);
 
         // Persist default to home settings
         $this->homeWriter->writeDefaultReasoning($level);
@@ -211,19 +193,5 @@ final class ModelSelectionService
         $this->sessionMetaStore->writeSessionMetadata($sessionId, [
             'reasoning' => $level,
         ]);
-    }
-
-    // ──────────────────────────────────────────────
-    //  Private
-    // ──────────────────────────────────────────────
-
-    /**
-     * Resolve the catalog from the cached project config.
-     *
-     * @return HatfieldModelCatalog|null null when no AI section is configured
-     */
-    private function catalog(string $projectCwd): ?HatfieldModelCatalog
-    {
-        return $this->configResolver->resolve($projectCwd)->catalog;
     }
 }

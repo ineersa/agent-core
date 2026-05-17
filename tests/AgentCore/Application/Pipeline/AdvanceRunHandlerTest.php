@@ -30,7 +30,7 @@ final class AdvanceRunHandlerTest extends TestCase
 
         $handler = new AdvanceRunHandler(
             commandMailboxPolicy: $commandMailboxPolicy,
-            stateTools: new RunMessageStateTools(),
+            stateTools: new RunMessageStateTools(new \Ineersa\AgentCore\Domain\Event\EventFactory(), new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor()),
             metrics: $metrics,
         );
 

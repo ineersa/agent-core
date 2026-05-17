@@ -53,7 +53,7 @@ final class ToolCallResultHandlerTest extends TestCase
 
         $handler = new ToolCallResultHandler(
             toolBatchCollector: $collector,
-            stateTools: new RunMessageStateTools(),
+            stateTools: new RunMessageStateTools(new \Ineersa\AgentCore\Domain\Event\EventFactory(), new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor()),
         );
 
         $state = new RunState(

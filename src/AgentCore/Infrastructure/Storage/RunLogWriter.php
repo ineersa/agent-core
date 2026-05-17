@@ -10,13 +10,10 @@ use League\Flysystem\FilesystemOperator;
 
 final readonly class RunLogWriter
 {
-    private EventPayloadNormalizer $eventPayloadNormalizer;
-
     public function __construct(
         private FilesystemOperator $filesystem,
-        ?EventPayloadNormalizer $eventPayloadNormalizer = null,
+        private EventPayloadNormalizer $eventPayloadNormalizer,
     ) {
-        $this->eventPayloadNormalizer = $eventPayloadNormalizer ?? new EventPayloadNormalizer();
     }
 
     public function append(RunEvent $event): void
