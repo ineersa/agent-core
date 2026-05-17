@@ -12,6 +12,9 @@ services:
     Ineersa\Tui\Listener\TuiListenerRegistrar:
       tags: ['app.tui_listener']
 
+    Ineersa\AgentCore\Contract\Hook\BeforeProviderRequestHookInterface:
+      tags: ['agent_core.before_provider_request_hook']
+
   Ineersa\CodingAgent\:
     resource: '../src/CodingAgent/'
 
@@ -62,6 +65,10 @@ services:
       - '@Ineersa\CodingAgent\Config\AppResourceLocator'
 
   Ineersa\CodingAgent\Session\HatfieldSessionStore: ~
+
+  Ineersa\AgentCore\Infrastructure\SymfonyAi\BeforeProviderRequestSubscriber:
+    arguments:
+      $hooks: !tagged_iterator agent_core.before_provider_request_hook
 
   Ineersa\Tui\Application\InteractiveMode:
     arguments:
