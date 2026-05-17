@@ -5,6 +5,9 @@ Implement background process state management and the `bg_status` companion tool
 
 Plan source: `.pi/plans/toolbox-design-plan.md`.
 
+Dependencies:
+- Depends on TOOLS-00 (`CancellableProcessRunner` process termination semantics/helpers).
+
 Scope:
 - Create `src/CodingAgent/Tool/BackgroundProcessManager.php`.
 - Create/complete `src/CodingAgent/Tool/BgStatusTool.php`.
@@ -14,7 +17,7 @@ Scope:
 - Implement `bg_status` tool schema: `__invoke(string $action, ?int $pid = null)` where action is `list`, `log`, or `stop`.
 - `list`: show PID, status, log path, and command.
 - `log`: return tail of log file, capped to a reasonable size (around 5k chars) and include truncation marker.
-- `stop`: mark stoppedByUser and SIGTERM the process.
+- `stop`: mark stoppedByUser and terminate the process using the shared TERM -> grace -> KILL semantics/helpers from TOOLS-00 where practical.
 - Add focused tests. Use short-lived `sleep`/`printf` processes where practical; isolate temp directories.
 
 Out of scope:
@@ -24,6 +27,7 @@ Out of scope:
 ## Acceptance criteria
 - `bg_status` tool is discoverable through Symfony AI toolbox metadata.
 - Manager can list, read log, and stop registered background processes.
+- Stop/shutdown cleanup does not leave child processes running where process-group termination is supported.
 - Log files are stored under `.hatfield/tmp/bg/` and parent directories are created as needed.
 - Stale log cleanup removes files older than 24 hours.
 - Shutdown cleanup terminates tracked running processes.
