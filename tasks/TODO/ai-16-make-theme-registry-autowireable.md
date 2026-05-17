@@ -103,6 +103,23 @@ final class ThemeFactory
 - `ThemeFactory` auto-discovered (same)
 - Remove any explicit `ThemeLoader` wiring if it exists
 
+### 7. Inject `LockFactory` into `HatfieldSessionStore`
+
+Currently `HatfieldSessionStore` manually constructs `new LockFactory(new FlockStore())` in its constructor. Both are autowireable Symfony components — inject `LockFactory` via constructor.
+
+```php
+// Before
+$this->lockFactory = new LockFactory(new FlockStore());
+
+// After
+public function __construct(
+    ...,
+    private readonly LockFactory $lockFactory,
+) {}
+```
+
+Remove the inline `new LockFactory(new FlockStore())`.
+
 ## Depends on
 
 - AI-15 (AppConfig must be autowireable first)
@@ -118,6 +135,7 @@ final class ThemeFactory
 - ThemeLoader class deleted, logic moved into ThemeRegistry
 - ThemeRegistry is autowireable — loads palettes from AppConfig + built-in path
 - ThemeFactory simplified — injects ThemeRegistry, no buildTheme(), no resources dep
+- HatfieldSessionStore injects LockFactory instead of manual construction
 - castor check green
 
 ## Workflow metadata
