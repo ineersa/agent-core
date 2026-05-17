@@ -21,7 +21,7 @@ final class ToolExecutorTest extends TestCase
 {
     public function testInterruptModeProducesInterruptPayload(): void
     {
-        $executor = new ToolExecutor('interrupt', 30, 2);
+        $executor = new ToolExecutor('interrupt', 30, 2, new ToolExecutionResultStore());
 
         $result = $executor->execute(new ToolCall(
             toolCallId: 'tool-call-1',
@@ -45,7 +45,7 @@ final class ToolExecutorTest extends TestCase
 
     public function testToolExecutionIsUnavailableWithoutToolbox(): void
     {
-        $executor = new ToolExecutor('parallel', 30, 2);
+        $executor = new ToolExecutor('parallel', 30, 2, new ToolExecutionResultStore());
 
         $result = $executor->execute(new ToolCall(
             toolCallId: 'call-1',

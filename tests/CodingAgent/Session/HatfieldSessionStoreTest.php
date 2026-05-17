@@ -11,6 +11,8 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\TranscriptEntry;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 final class HatfieldSessionStoreTest extends TestCase
 {
@@ -49,7 +51,7 @@ YAML);
         chdir($this->tempDir);
 
         $appConfig = $this->createAppConfig($this->tempDir);
-        $this->store = new HatfieldSessionStore($appConfig);
+        $this->store = new HatfieldSessionStore($appConfig, new LockFactory(new FlockStore()));
     }
 
     protected function tearDown(): void
@@ -247,7 +249,7 @@ YAML);
 
         try {
             $appConfig2 = $this->createAppConfig($tempDir2);
-            $store2 = new HatfieldSessionStore($appConfig2);
+            $store2 = new HatfieldSessionStore($appConfig2, new LockFactory(new FlockStore()));
 
             $id1 = $this->store->createSession('project one');
             $id2 = $store2->createSession('project two');
@@ -320,7 +322,7 @@ YAML);
 
         try {
             $appConfig2 = $this->createAppConfig($tempDir2);
-            $store2 = new HatfieldSessionStore($appConfig2);
+            $store2 = new HatfieldSessionStore($appConfig2, new LockFactory(new FlockStore()));
 
             $basePath1 = $this->store->resolveSessionsBasePath();
             $basePath2 = $store2->resolveSessionsBasePath();

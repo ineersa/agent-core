@@ -15,9 +15,9 @@ use Symfony\AI\Platform\Message\AssistantMessage;
 final readonly class RunMessageStateTools
 {
     public function __construct(
-        private EventFactory $eventFactory = new EventFactory(),
+        private EventFactory $eventFactory,
+        private ToolCallExtractor $toolCallExtractor,
         private AgentMessageNormalizer $messageNormalizer = new AgentMessageNormalizer(),
-        private ToolCallExtractor $toolCallExtractor = new ToolCallExtractor(),
     ) {
     }
 
