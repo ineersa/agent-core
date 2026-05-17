@@ -88,14 +88,21 @@ When `$projectCwd` is removed, the fallback becomes `$this->appConfig->cwd` inst
 - castor check green
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/ai-15-remove-project-cwd-make-appconfig-autowireable
+Worktree: /home/ineersa/projects/agent-core-worktrees/ai-15-remove-project-cwd-make-appconfig-autowireable
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-17T03:52:50.643Z
 Completed:
 
 ## Work log
 - Created: 2026-05-17T03:51:54.231Z
+
+## Task workflow update - 2026-05-17T03:52:50.644Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/ai-15-remove-project-cwd-make-appconfig-autowireable.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/ai-15-remove-project-cwd-make-appconfig-autowireable.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/ai-15-remove-project-cwd-make-appconfig-autowireable.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/ai-15-remove-project-cwd-make-appconfig-autowireable.
