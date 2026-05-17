@@ -21,7 +21,6 @@ use Ineersa\Tui\Transcript\TranscriptEntry;
 final class TuiSessionState
 {
     public string $sessionId;
-    public string $cwd;
     public bool $resuming;
 
     public ?RunHandle $handle = null;
@@ -35,11 +34,9 @@ final class TuiSessionState
 
     public function __construct(
         string $sessionId,
-        string $cwd,
         bool $resuming = false,
     ) {
         $this->sessionId = $sessionId;
-        $this->cwd = $cwd;
         $this->resuming = $resuming;
     }
 }

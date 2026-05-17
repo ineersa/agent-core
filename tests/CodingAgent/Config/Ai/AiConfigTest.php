@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\TuiConfig;
 use PHPUnit\Framework\TestCase;
 
 class AiConfigTest extends TestCase
@@ -24,9 +25,28 @@ class AiConfigTest extends TestCase
         ];
     }
 
+    /**
+     * Construct an AppConfig from a pre-built config array using the
+     * public value-object constructor — no Reflection or test-only
+     * production code.
+     */
+    private function createAppConfig(array $data): AppConfig
+    {
+        $ai = AiConfig::optionalFromArray($data);
+
+        return new AppConfig(
+            tui: TuiConfig::fromArray((array) ($data['tui'] ?? [])),
+            sessions: (array) ($data['sessions'] ?? []),
+            ai: $ai,
+            raw: $data,
+            catalog: null !== $ai ? new HatfieldModelCatalog($ai) : null,
+            cwd: getcwd() ?: '/',
+        );
+    }
+
     public function testAiSectionAbsentYieldsNull(): void
     {
-        $config = AppConfig::fromArray($this->minimalConfig());
+        $config = $this->createAppConfig($this->minimalConfig());
         self::assertNull($config->ai);
     }
 
@@ -35,7 +55,7 @@ class AiConfigTest extends TestCase
         $data = $this->minimalConfig();
         $data['ai'] = [];
 
-        $config = AppConfig::fromArray($data);
+        $config = $this->createAppConfig($data);
         self::assertNotNull($config->ai);
         self::assertNull($config->ai->defaultModel);
         self::assertNull($config->ai->defaultReasoning);
@@ -50,7 +70,7 @@ class AiConfigTest extends TestCase
             'default_reasoning' => 'medium',
         ];
 
-        $config = AppConfig::fromArray($data);
+        $config = $this->createAppConfig($data);
         self::assertSame('deepseek/deepseek-v4-pro', $config->ai->defaultModel);
         self::assertSame('medium', $config->ai->defaultReasoning);
     }
@@ -98,7 +118,7 @@ class AiConfigTest extends TestCase
             ],
         ];
 
-        $config = AppConfig::fromArray($data);
+        $config = $this->createAppConfig($data);
         $ai = $config->ai;
         self::assertNotNull($ai);
         self::assertCount(1, $ai->providers);
@@ -177,7 +197,7 @@ class AiConfigTest extends TestCase
             ],
         ];
 
-        $config = AppConfig::fromArray($data);
+        $config = $this->createAppConfig($data);
         $ai = $config->ai;
         self::assertNotNull($ai);
 
@@ -227,7 +247,7 @@ class AiConfigTest extends TestCase
             ],
         ];
 
-        $config = AppConfig::fromArray($data);
+        $config = $this->createAppConfig($data);
         $provider = $config->ai->providers['llama_cpp'] ?? null;
         self::assertNotNull($provider);
         self::assertSame('http://192.168.2.38:8052/v1', $provider->baseUrl);
@@ -262,7 +282,7 @@ class AiConfigTest extends TestCase
             ],
         ];
 
-        $config = AppConfig::fromArray($data);
+        $config = $this->createAppConfig($data);
         $provider = $config->ai->providers['deepseek'] ?? null;
         self::assertNotNull($provider);
         self::assertFalse($provider->enabled);
@@ -283,7 +303,7 @@ class AiConfigTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Provider key must be a non-empty string');
 
-        AppConfig::fromArray($data);
+        $this->createAppConfig($data);
     }
 
     public function testModelKeyMustBeNonEmptyString(): void
@@ -304,12 +324,12 @@ class AiConfigTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('model key must be a non-empty string');
 
-        AppConfig::fromArray($data);
+        $this->createAppConfig($data);
     }
 
     public function testBackwardsCompatibleConfigStillLoads(): void
     {
-        $config = AppConfig::fromArray(['tui' => ['theme' => 'cyberpunk']]);
+        $config = $this->createAppConfig(['tui' => ['theme' => 'cyberpunk']]);
         self::assertSame('cyberpunk', $config->tui->theme);
         self::assertNull($config->ai);
         self::assertSame([], $config->sessions);
@@ -355,7 +375,7 @@ class AiConfigTest extends TestCase
             'custom_future_key' => ['nested' => true],
         ];
 
-        $config = AppConfig::fromArray($data);
+        $config = $this->createAppConfig($data);
         self::assertNotNull($config->ai);
         self::assertArrayHasKey('custom_future_key', $config->raw);
         self::assertTrue($config->raw['custom_future_key']['nested']);

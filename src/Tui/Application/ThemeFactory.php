@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Application;
 
-use Ineersa\CodingAgent\Config\AppConfigResolver;
+use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemeLoader;
@@ -22,26 +22,23 @@ use Ineersa\Tui\Theme\TuiTheme;
 final class ThemeFactory
 {
     public function __construct(
-        private readonly AppConfigResolver $configResolver,
+        private readonly AppConfig $appConfig,
         private readonly AppResourceLocator $resources,
     ) {
     }
 
     /**
-     * Resolve and build the theme for a given project directory.
+     * Resolve and build the theme.
      *
-     * @param string        $cwd  Project working directory
      * @param TuiTheme|null $hint Pre-resolved theme (skips config lookup)
      */
-    public function create(string $cwd, ?TuiTheme $hint = null): TuiTheme
+    public function create(?TuiTheme $hint = null): TuiTheme
     {
         if (null !== $hint) {
             return $hint;
         }
 
-        $appConfig = $this->configResolver->resolve($cwd);
-
-        return $this->buildTheme($appConfig->tui->theme, $appConfig->tui->themePaths);
+        return $this->buildTheme($this->appConfig->tui->theme, $this->appConfig->tui->themePaths);
     }
 
     /**
