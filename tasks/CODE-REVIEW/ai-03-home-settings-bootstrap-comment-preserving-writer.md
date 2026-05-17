@@ -85,3 +85,7 @@ Completed:
 ## Task workflow update - 2026-05-17T00:08:42.672Z
 - Recorded fork run: datzj9x6vz4w
 - Summary: Launched fork datzj9x6vz4w to resolve PR #10 merge conflicts, especially phpstan-baseline.neon. Scope: merge current origin/main into AI-03 branch, keep main AI-02/AI-08 baseline entries and AI-03 writeDefaultModel/writeDefaultReasoning baselines, avoid stale task-file duplicates, run castor check, push and verify PR mergeability.
+
+## Task workflow update - 2026-05-17T00:12:14.845Z
+- Validation: Fork validation: `castor deptrac` passed: 0 violations, 69 uncovered, 323 allowed.; Fork validation: `castor test` passed: 287 tests, 7938 assertions, 1 PHPUnit notice.; Fork validation: `castor phpstan` passed: 0 errors.; Fork validation: `castor cs-check` clean.; Fork validation: full `castor check` passed.; Parent verification: PR #10 head is a24b95687ac1e8f72a27e11b038bd5fb09f46b16 and mergeable=MERGEABLE.
+- Summary: PR #10 merge conflict resolved by fork datzj9x6vz4w and pushed. Added merge commit a24b9568 merging origin/main and resolving the phpstan-baseline.neon conflict by keeping both temporary AI-02 catalog DTO/API baselines and AI-03 HomeSettingsWriter writeDefaultModel/writeDefaultReasoning baselines, with clarifying comments. No source/config/test behavior changes in conflict resolution. PR #10 head verified at a24b95687ac1e8f72a27e11b038bd5fb09f46b16 and GitHub reports MERGEABLE.
