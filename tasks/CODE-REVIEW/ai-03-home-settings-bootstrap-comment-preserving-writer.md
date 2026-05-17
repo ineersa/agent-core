@@ -25,7 +25,7 @@ Scope:
 Status: CODE-REVIEW
 Branch: task/ai-03-home-settings-bootstrap-comment-preserving-writer
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-03-home-settings-bootstrap-comment-preserving-writer
-Fork run: 21k2xecv9pqo
+Fork run: datzj9x6vz4w
 PR URL: https://github.com/ineersa/agent-core/pull/10
 PR Status: open
 Started: 2026-05-16T22:30:47.734Z
@@ -81,3 +81,7 @@ Completed:
 ## Task workflow update - 2026-05-17T00:04:25.191Z
 - Validation: Fork validation: `vendor/bin/phpunit --filter HomeSettingsWriterTest` passed: 11 tests, 17 assertions.; Fork validation: `castor test` passed: 245 tests, 7790 assertions, 1 PHPUnit notice.; Fork validation: `castor deptrac` passed: 0 violations.; Fork validation: `castor phpstan` passed: 0 errors.; Fork validation: `castor cs-check` clean after cs-fix.; Fork validation: full `castor check` passed.; Parent verification: PR #10 head is 63476262fe276ab18cc4b67a05c7a9139ad4f53a.
 - Summary: PR #10 minimal writer rewrite completed by fork 21k2xecv9pqo and pushed. Added commit 63476262 shrinking HomeSettingsWriter from ~300 lines to 72 lines: two public methods (writeDefaultModel/writeDefaultReasoning), one regex-based writeAiKey helper with three branches (replace existing active/commented line, insert after ai:, append ai block), and one tiny yamlScalar helper. Tests reduced to 11 focused cases. This intentionally favors simple known-file mutation over generic YAML editing.
+
+## Task workflow update - 2026-05-17T00:08:42.672Z
+- Recorded fork run: datzj9x6vz4w
+- Summary: Launched fork datzj9x6vz4w to resolve PR #10 merge conflicts, especially phpstan-baseline.neon. Scope: merge current origin/main into AI-03 branch, keep main AI-02/AI-08 baseline entries and AI-03 writeDefaultModel/writeDefaultReasoning baselines, avoid stale task-file duplicates, run castor check, push and verify PR mergeability.
