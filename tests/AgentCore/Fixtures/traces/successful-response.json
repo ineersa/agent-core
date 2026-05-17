@@ -1,0 +1,22 @@
+{
+    "model": "deepseek/deepseek-v4-pro",
+    "reasoning": "high",
+    "provider_id": "deepseek",
+    "input": {
+        "messages": [
+            {"role": "user", "content": "Explain the concept of recursion in programming."}
+        ]
+    },
+    "deltas": [
+        {"type": "text", "content": "## Recursion in Programming\n\nRecursion "},
+        {"type": "text", "content": "is a technique where a function calls itself to solve smaller instances of the same problem."},
+        {"type": "text", "content": "\n\n### Key Components\n\n1. **Base case** – a condition that stops the recursion\n2. **Recursive case** – the function calls itself with modified arguments"}
+    ],
+    "usage": {
+        "input_tokens": 42,
+        "output_tokens": 87,
+        "total_tokens": 129
+    },
+    "stop_reason": "stop",
+    "expected_text": "## Recursion in Programming\n\nRecursion is a technique where a function calls itself to solve smaller instances of the same problem.\n\n### Key Components\n\n1. **Base case** – a condition that stops the recursion\n2. **Recursive case** – the function calls itself with modified arguments"
+}
