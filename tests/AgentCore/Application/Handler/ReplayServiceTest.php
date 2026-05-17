@@ -34,7 +34,7 @@ final class ReplayServiceTest extends TestCase
         $filesystem = new Filesystem(new LocalFilesystemAdapter($this->basePath));
         $eventStore = new RunEventStore();
         $hotPromptStore = new HotPromptStateStore();
-        $replayService = new ReplayService($eventStore, new RunLogReader($filesystem), $hotPromptStore);
+        $replayService = new ReplayService($eventStore, new RunLogReader($filesystem, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer()), $hotPromptStore);
 
         $runId = 'run-replay-canonical';
         $eventStore->append(new RunEvent(
@@ -93,7 +93,7 @@ final class ReplayServiceTest extends TestCase
     public function testRebuildFallsBackToJsonlWhenCanonicalEventsAreUnavailable(): void
     {
         $filesystem = new Filesystem(new LocalFilesystemAdapter($this->basePath));
-        $writer = new RunLogWriter($filesystem);
+        $writer = new RunLogWriter($filesystem, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer());
 
         $runId = 'run-replay-jsonl';
         $writer->append(new RunEvent(
@@ -115,7 +115,7 @@ final class ReplayServiceTest extends TestCase
 
         $eventStore = new RunEventStore();
         $hotPromptStore = new HotPromptStateStore();
-        $replayService = new ReplayService($eventStore, new RunLogReader($filesystem), $hotPromptStore);
+        $replayService = new ReplayService($eventStore, new RunLogReader($filesystem, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer()), $hotPromptStore);
 
         $rebuiltState = $replayService->rebuildHotPromptState($runId);
 

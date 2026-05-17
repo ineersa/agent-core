@@ -45,7 +45,7 @@ final class CompatRequestShaper implements BeforeProviderRequestHookInterface
     public const string SUPPRESS_DEVELOPER_ROLE_KEY = '_hatfield_suppress_developer_role';
 
     public function __construct(
-        private readonly ConfigProvider $configProvider,
+        private readonly HatfieldModelCatalog $catalog,
     ) {
     }
 
@@ -55,19 +55,13 @@ final class CompatRequestShaper implements BeforeProviderRequestHookInterface
         array $options,
         ?CancellationTokenInterface $cancelToken = null,
     ): ?ProviderRequest {
-        $catalog = $this->configProvider->resolve()->catalog;
-
-        if (null === $catalog) {
-            return null;
-        }
-
-        $ref = $this->findModelRef($catalog, $model);
+        $ref = $this->findModelRef($model);
 
         if (null === $ref) {
             return null;
         }
 
-        $modelDef = $catalog->getModel($ref);
+        $modelDef = $this->catalog->getModel($ref);
 
         if (null === $modelDef) {
             return null;
@@ -80,7 +74,7 @@ final class CompatRequestShaper implements BeforeProviderRequestHookInterface
 
         // ── Reasoning options ──
         if (null !== $reasoningLevel) {
-            $resolver = new ReasoningOptionsResolver($catalog);
+            $resolver = new ReasoningOptionsResolver($this->catalog);
             $reasoningOptions = $resolver->resolve($ref, $reasoningLevel);
             if ([] !== $reasoningOptions) {
                 $newOptions = array_merge($newOptions, $reasoningOptions);
@@ -89,7 +83,7 @@ final class CompatRequestShaper implements BeforeProviderRequestHookInterface
 
         // ── Developer-role suppression flag ──
         $compat = $modelDef->compatibility
-            ?? $catalog->getProvider($ref->providerId)?->compatibility;
+            ?? $this->catalog->getProvider($ref->providerId)?->compatibility;
 
         if (null !== $compat && !$compat->supportsDeveloperRole) {
             $newOptions[self::SUPPRESS_DEVELOPER_ROLE_KEY] = true;
@@ -107,9 +101,9 @@ final class CompatRequestShaper implements BeforeProviderRequestHookInterface
      * Walk all configured models to find the AiModelReference whose
      * modelName matches the raw name being sent to the platform.
      */
-    private function findModelRef(HatfieldModelCatalog $catalog, string $modelName): ?AiModelReference
+    private function findModelRef(string $modelName): ?AiModelReference
     {
-        foreach ($catalog->allModels() as $ref) {
+        foreach ($this->catalog->allModels() as $ref) {
             if ($ref->modelName === $modelName) {
                 return $ref;
             }

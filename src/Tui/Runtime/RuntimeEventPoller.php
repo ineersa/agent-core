@@ -76,7 +76,6 @@ final class RuntimeEventPoller
 
                 // Persist the runtime event
                 $this->sessionStore->appendRuntimeEvent(
-                    $state->cwd,
                     $state->sessionId,
                     $runtimeEvent->toArray(),
                 );
@@ -96,7 +95,6 @@ final class RuntimeEventPoller
                     $newEntries[] = $entry;
                     $state->transcript[] = $entry;
                     $this->sessionStore->appendTranscriptEntry(
-                        $state->cwd,
                         $state->sessionId,
                         new PersistedTranscriptEntry(
                             role: $entry->role,

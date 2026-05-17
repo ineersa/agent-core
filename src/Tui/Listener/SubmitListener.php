@@ -49,7 +49,6 @@ final class SubmitListener implements TuiListenerRegistrar
 
             // Persist plain text (no theme/ANSI)
             $sessionStore->appendTranscriptEntry(
-                $state->cwd,
                 $state->sessionId,
                 new PersistedTranscriptEntry(
                     role: 'user',
@@ -74,7 +73,6 @@ final class SubmitListener implements TuiListenerRegistrar
                     style: 'accent',
                 );
                 $sessionStore->updateMetadata(
-                    $state->cwd,
                     $state->sessionId,
                     [
                         'run_id' => $state->sessionId,

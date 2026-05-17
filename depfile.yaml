@@ -243,6 +243,7 @@ parameters:
       - SymfonyTui
 
     TuiTheme:
+      - AppConfig
       - SymfonyTui
       - SymfonyConsole
       - SymfonyYaml

@@ -9,22 +9,12 @@ use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
-use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\CompatRequestShaper;
-use Ineersa\CodingAgent\Config\ConfigProvider;
-use Ineersa\CodingAgent\Config\TuiConfig;
 use PHPUnit\Framework\TestCase;
 
 final class CompatRequestShaperTest extends TestCase
 {
-    /**
-     * Build an AppConfig with the given AI providers and return an object
-     * that satisfies the shape CompatRequestShaper needs (resolve()→AppConfig).
-     *
-     * AppConfigResolver is final and cannot be mocked, so we use an
-     * anonymous class.
-     */
-    private function resolverWithProviders(array $providers): object
+    private function makeCatalogWithProviders(array $providers): HatfieldModelCatalog
     {
         $aiConfig = new AiConfig(
             defaultModel: 'zai/glm-5.1',
@@ -32,15 +22,7 @@ final class CompatRequestShaperTest extends TestCase
             providers: $providers,
         );
 
-        $appConfig = new AppConfig(
-            tui: new TuiConfig(theme: 'cyberpunk'),
-            catalog: new HatfieldModelCatalog($aiConfig),
-        );
-
-        return new /** @internal */ class($appConfig) implements ConfigProvider {
-            public function __construct(private readonly AppConfig $config) {}
-            public function resolve(string $_ = ''): AppConfig { return $this->config; }
-        };
+        return new HatfieldModelCatalog($aiConfig);
     }
 
     private function makeZaiProvider(bool $supportsDeveloperRole = false): AiProviderConfig
@@ -101,8 +83,8 @@ final class CompatRequestShaperTest extends TestCase
 
     public function testZaiEnablesThinkingWhenReasoningIsNonOff(): void
     {
-        $resolver = $this->resolverWithProviders(['zai' => $this->makeZaiProvider()]);
-        $shaper = new CompatRequestShaper($resolver);
+        $catalog = $this->makeCatalogWithProviders(['zai' => $this->makeZaiProvider()]);
+        $shaper = new CompatRequestShaper($catalog);
 
         $result = $shaper->beforeProviderRequest(
             'glm-5.1',
@@ -118,8 +100,8 @@ final class CompatRequestShaperTest extends TestCase
 
     public function testZaiDoesNotEnableThinkingWhenReasoningIsOff(): void
     {
-        $resolver = $this->resolverWithProviders(['zai' => $this->makeZaiProvider()]);
-        $shaper = new CompatRequestShaper($resolver);
+        $catalog = $this->makeCatalogWithProviders(['zai' => $this->makeZaiProvider()]);
+        $shaper = new CompatRequestShaper($catalog);
 
         $result = $shaper->beforeProviderRequest(
             'glm-5.1',
@@ -144,8 +126,8 @@ final class CompatRequestShaperTest extends TestCase
 
     public function testZaiNeverIncludesReasoningEffort(): void
     {
-        $resolver = $this->resolverWithProviders(['zai' => $this->makeZaiProvider()]);
-        $shaper = new CompatRequestShaper($resolver);
+        $catalog = $this->makeCatalogWithProviders(['zai' => $this->makeZaiProvider()]);
+        $shaper = new CompatRequestShaper($catalog);
 
         $result = $shaper->beforeProviderRequest(
             'glm-5.1',
@@ -165,8 +147,8 @@ final class CompatRequestShaperTest extends TestCase
 
     public function testOpenAIIncludesReasoningEffort(): void
     {
-        $resolver = $this->resolverWithProviders(['openai' => $this->makeOpenAIProvider()]);
-        $shaper = new CompatRequestShaper($resolver);
+        $catalog = $this->makeCatalogWithProviders(['openai' => $this->makeOpenAIProvider()]);
+        $shaper = new CompatRequestShaper($catalog);
 
         $result = $shaper->beforeProviderRequest(
             'gpt-5.1',
@@ -186,8 +168,8 @@ final class CompatRequestShaperTest extends TestCase
 
     public function testSetsSuppressDeveloperRoleFlagWhenProviderDisablesIt(): void
     {
-        $resolver = $this->resolverWithProviders(['zai' => $this->makeZaiProvider(false)]);
-        $shaper = new CompatRequestShaper($resolver);
+        $catalog = $this->makeCatalogWithProviders(['zai' => $this->makeZaiProvider(false)]);
+        $shaper = new CompatRequestShaper($catalog);
 
         $result = $shaper->beforeProviderRequest('glm-5.1', [], []);
 
@@ -199,8 +181,8 @@ final class CompatRequestShaperTest extends TestCase
 
     public function testDoesNotSetSuppressDeveloperRoleFlagWhenProviderSupportsIt(): void
     {
-        $resolver = $this->resolverWithProviders(['openai' => $this->makeOpenAIProvider()]);
-        $shaper = new CompatRequestShaper($resolver);
+        $catalog = $this->makeCatalogWithProviders(['openai' => $this->makeOpenAIProvider()]);
+        $shaper = new CompatRequestShaper($catalog);
 
         $result = $shaper->beforeProviderRequest('gpt-5.1', [], []);
 
@@ -218,8 +200,8 @@ final class CompatRequestShaperTest extends TestCase
 
     public function testReturnsNullWhenModelNotFoundInCatalog(): void
     {
-        $resolver = $this->resolverWithProviders(['zai' => $this->makeZaiProvider()]);
-        $shaper = new CompatRequestShaper($resolver);
+        $catalog = $this->makeCatalogWithProviders(['zai' => $this->makeZaiProvider()]);
+        $shaper = new CompatRequestShaper($catalog);
 
         $result = $shaper->beforeProviderRequest('nonexistent-model', [], []);
 
@@ -228,17 +210,9 @@ final class CompatRequestShaperTest extends TestCase
 
     public function testReturnsNullWhenNoAiConfig(): void
     {
-        $appConfig = new AppConfig(
-            tui: new TuiConfig(theme: 'cyberpunk'),
-            catalog: null,
-        );
-
-        $resolver = new /** @internal */ class($appConfig) implements ConfigProvider {
-            public function __construct(private readonly AppConfig $config) {}
-            public function resolve(string $_ = ''): AppConfig { return $this->config; }
-        };
-
-        $shaper = new CompatRequestShaper($resolver);
+        // No providers = no match possible
+        $catalog = $this->makeCatalogWithProviders([]);
+        $shaper = new CompatRequestShaper($catalog);
 
         $result = $shaper->beforeProviderRequest('glm-5.1', [], []);
 
@@ -247,8 +221,8 @@ final class CompatRequestShaperTest extends TestCase
 
     public function testStripsInternalReasoningKeyFromOptions(): void
     {
-        $resolver = $this->resolverWithProviders(['zai' => $this->makeZaiProvider()]);
-        $shaper = new CompatRequestShaper($resolver);
+        $catalog = $this->makeCatalogWithProviders(['zai' => $this->makeZaiProvider()]);
+        $shaper = new CompatRequestShaper($catalog);
 
         $result = $shaper->beforeProviderRequest(
             'glm-5.1',
@@ -264,8 +238,8 @@ final class CompatRequestShaperTest extends TestCase
     public function testReturnsNullWhenNoOptionsChanged(): void
     {
         // OpenAI model with no reasoning key and no compat quirks → nothing changes
-        $resolver = $this->resolverWithProviders(['openai' => $this->makeOpenAIProvider()]);
-        $shaper = new CompatRequestShaper($resolver);
+        $catalog = $this->makeCatalogWithProviders(['openai' => $this->makeOpenAIProvider()]);
+        $shaper = new CompatRequestShaper($catalog);
 
         $result = $shaper->beforeProviderRequest('gpt-5.1', [], []);
 
@@ -296,8 +270,8 @@ final class CompatRequestShaperTest extends TestCase
             ),
         );
 
-        $resolver = $this->resolverWithProviders(['zai' => $provider]);
-        $shaper = new CompatRequestShaper($resolver);
+        $catalog = $this->makeCatalogWithProviders(['zai' => $provider]);
+        $shaper = new CompatRequestShaper($catalog);
 
         $result = $shaper->beforeProviderRequest(
             'glm-5.1',

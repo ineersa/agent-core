@@ -69,8 +69,8 @@ final class AggregateResumeTest extends TestCase
         $lockFactory1 = new LockFactory(new FlockStore());
         $normalizer1 = new EventPayloadNormalizer();
 
-        $runStore1 = new SessionRunStore($this->projectDir, $serializer1);
-        $eventStore1 = new SessionRunEventStore($this->projectDir, $normalizer1);
+        $runStore1 = new SessionRunStore($this->projectDir, $serializer1, $lockFactory1);
+        $eventStore1 = new SessionRunEventStore($this->projectDir, $normalizer1, $lockFactory1);
 
         // Create run state
         $initialState = new RunState(runId: $runId, status: RunStatus::Queued, version: 1);
@@ -92,8 +92,8 @@ final class AggregateResumeTest extends TestCase
         $lockFactory2 = new LockFactory(new FlockStore());
         $normalizer2 = new EventPayloadNormalizer();
 
-        $runStore2 = new SessionRunStore($this->projectDir, $serializer2);
-        $eventStore2 = new SessionRunEventStore($this->projectDir, $normalizer2);
+        $runStore2 = new SessionRunStore($this->projectDir, $serializer2, $lockFactory2);
+        $eventStore2 = new SessionRunEventStore($this->projectDir, $normalizer2, $lockFactory2);
 
         // Phase 4: Verify state survives
         $loadedState = $runStore2->get($runId);

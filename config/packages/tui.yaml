@@ -4,14 +4,14 @@
 # (~/.hatfield/settings.yaml and <project>/.hatfield/settings.yaml).
 #
 # The coding_agent.tui.* parameters below are internal defaults only and
-# will be overridden by the AppConfigResolver at runtime.
+# will be overridden by Hatfield AppConfig at runtime.
 #
 # To change the active theme, edit your Hatfield settings file, not this file.
 #
 # See docs/settings.md and docs/tui-architecture.md for details.
 
 parameters:
-    # Internal fallback (overridden by Hatfield AppConfigResolver)
+    # Internal fallback (overridden by Hatfield AppConfig)
     coding_agent.tui.theme: cyberpunk
     coding_agent.tui.theme_paths:
         - '%kernel.project_dir%/config/themes'

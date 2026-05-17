@@ -37,7 +37,7 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             commandRouter: $commandRouter,
             commandMailboxPolicy: $commandMailboxPolicy,
-            stateTools: new RunMessageStateTools(),
+            stateTools: new RunMessageStateTools(new \Ineersa\AgentCore\Domain\Event\EventFactory(), new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor()),
             maxPendingCommands: 10,
             commandBus: $commandBus,
         );

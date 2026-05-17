@@ -53,6 +53,19 @@ Using Castor ensures consistent flags and ordering. Raw commands
 debugging individual failures but should not be used for normal
 validation.
 
+## Development rules
+
+- **Never add production APIs or code paths that exist solely to support tests.**
+  Tests must use production constructors, factories, or create test-local
+  fixtures/builders. Do not add test-only static factory methods, test-only
+  visibility modifiers, or hooks to production code.
+- **Never use \ReflectionClass::newInstanceWithoutConstructor(),**
+  **\Closure::bind(),** or similar constructor/property bypass techniques
+  in production code to create test fixtures. These belong in test helpers
+  (if anywhere); production code must be testable through its public API.
+- If tests require a helper to construct a complex object, place that helper
+  in the test class or a test-local utility — not in production code.
+
 ## Symfony setup
 
 - The application targets Symfony 8.1 HTTP-less architecture.
