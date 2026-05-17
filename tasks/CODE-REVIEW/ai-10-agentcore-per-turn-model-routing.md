@@ -23,12 +23,12 @@ Scope:
 - Suggested validation: `castor test --filter ExecuteLlmStepWorker`; `castor test --filter ModelResolver`; `castor deptrac`.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/ai-10-agentcore-per-turn-model-routing
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-10-agentcore-per-turn-model-routing
 Fork run: yvvavqya5kov
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/18
+PR Status: open
 Started: 2026-05-17T21:42:59.913Z
 Completed:
 
@@ -45,3 +45,15 @@ Completed:
 ## Task workflow update - 2026-05-17T21:43:36.747Z
 - Recorded fork run: yvvavqya5kov
 - Summary: Started AI-10 implementation in background fork yvvavqya5kov. Scope: route per-turn model/reasoning through AgentCore after AI-05/07/08/09/15/16, extend ResolvedModel with provider ID, resolve selected model/reasoning from ModelSelectionService/run/session metadata, pass resolved model/options/_hatfield_reasoning to platform invocation, update ModelResolverRoutingSubscriber to set explicit provider via provider registry/factory, populate/use RunMetadata.model, preserve current AppConfig/DI changes and avoid AppConfigResolver/projectCwd regressions.
+
+## Task workflow update - 2026-05-17T21:51:13.387Z
+- Validation: php bin/console --no-interaction: passed; SessionAwareModelResolverTest: passed (6 tests, 15 assertions); SymfonyAiProviderRegistryTest: passed (4 tests, 6 assertions); castor test: passed (349 tests, 8096 assertions, 1 pre-existing notice); castor deptrac: passed (0 violations, 329 allowed); vendor/bin/phpstan: passed (0 errors; baseline 225); castor cs-fix + castor cs-check: clean; main checkout unchanged except pre-existing untracked .pi/plans/runtime-transcript-vertical-slice-plan.md
+- Summary: AI-10 implemented by fork yvvavqya5kov in commit da767fe7 on branch task/ai-10-agentcore-per-turn-model-routing. Added per-turn model/reasoning routing: ResolvedModel now carries providerId and reasoning, SessionAwareModelResolver uses ModelSelectionService/session metadata, ModelResolverRoutingSubscriber injects ProviderRegistryInterface and sets _hatfield_reasoning plus explicit provider on ModelRoutingEvent, SymfonyAiProviderRegistry lazily maps provider IDs to Symfony providers, services.yaml wires resolver/registry aliases.
+
+## Task workflow update - 2026-05-17T21:51:25.018Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/ai-10-agentcore-per-turn-model-routing to origin.
+- branch 'task/ai-10-agentcore-per-turn-model-routing' set up to track 'origin/task/ai-10-agentcore-per-turn-model-routing'.
+- Created PR: https://github.com/ineersa/agent-core/pull/18
+- Validation: php bin/console --no-interaction: passed; SessionAwareModelResolverTest: passed (6 tests, 15 assertions); SymfonyAiProviderRegistryTest: passed (4 tests, 6 assertions); castor test: passed (349 tests, 8096 assertions, 1 pre-existing notice); castor deptrac: passed (0 violations, 329 allowed); vendor/bin/phpstan: passed (0 errors; baseline 225); castor cs-fix + castor cs-check: clean
+- Summary: AI-10 ready for review. Implemented per-turn model/reasoning routing through AgentCore in commit da767fe7: SessionAwareModelResolver resolves from ModelSelectionService/session metadata; ResolvedModel carries providerId/reasoning; ModelResolverRoutingSubscriber sets _hatfield_reasoning and explicit provider via ProviderRegistryInterface/SymfonyAiProviderRegistry; services.yaml wires resolver and registry aliases.
