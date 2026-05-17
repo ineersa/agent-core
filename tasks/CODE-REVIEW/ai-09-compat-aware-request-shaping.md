@@ -25,7 +25,7 @@ Scope:
 Status: CODE-REVIEW
 Branch: task/ai-09-compat-aware-request-shaping
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-09-compat-aware-request-shaping
-Fork run: uyayt31896pf
+Fork run: kaycq4aw1r7n
 PR URL: https://github.com/ineersa/agent-core/pull/15
 PR Status: open
 Started: 2026-05-17T03:14:30.931Z
@@ -51,3 +51,7 @@ Completed:
 - branch 'task/ai-09-compat-aware-request-shaping' set up to track 'origin/task/ai-09-compat-aware-request-shaping'.
 - Created PR: https://github.com/ineersa/agent-core/pull/15
 - Summary: AI-09 implemented by fork uyayt31896pf in commit a188b673. Added CompatRequestShaper (112 lines) with BeforeProviderRequestHookInterface, ConfigProvider interface + adapter, auto-registered via _instanceof tag. 11 tests. AI-10 unblocked — can set _hatfield_reasoning in InvocationEvent options.
+
+## Task workflow update - 2026-05-17T21:29:27.615Z
+- Recorded fork run: kaycq4aw1r7n
+- Summary: Launched fixup fork kaycq4aw1r7n for AI-09 PR #15 after AI-15/AI-16 landed. Scope: merge origin/main, resolve conflicts, remove AppConfigResolverConfigProvider/AppConfigResolver abstraction if no longer needed, inject/use AppConfig directly in CompatRequestShaper, preserve BeforeProviderRequestSubscriber tagged_iterator wiring and AI-16 services.yaml changes, validate and push branch.

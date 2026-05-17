@@ -27,7 +27,7 @@ Scope:
 Status: CODE-REVIEW
 Branch: task/ai-05-configured-symfony-generic-platform
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-05-configured-symfony-generic-platform
-Fork run: 5zbba9h6tm9z
+Fork run: p929smwf7g9q
 PR URL: https://github.com/ineersa/agent-core/pull/14
 PR Status: open
 Started: 2026-05-17T03:14:13.694Z
@@ -53,3 +53,7 @@ Completed:
 - branch 'task/ai-05-configured-symfony-generic-platform' set up to track 'origin/task/ai-05-configured-symfony-generic-platform'.
 - Created PR: https://github.com/ineersa/agent-core/pull/14
 - Summary: AI-05 implemented by fork 5zbba9h6tm9z in commit 76a190b0. Added SymfonyAiProviderFactory (108 lines), ConfiguredSymfonyAiPlatformFactory (55 lines), DI wiring for PlatformInterface + defaultModel. DeepSeek via generic bridge, no deep-seek-platform dependency. 7 stale PHPStan baselines removed. AI-09 and AI-10 unblocked.
+
+## Task workflow update - 2026-05-17T21:29:24.339Z
+- Recorded fork run: p929smwf7g9q
+- Summary: Launched fixup fork p929smwf7g9q for AI-05 PR #14 after AI-15/AI-16 landed. Scope: merge origin/main, resolve conflicts, remove AppConfigResolver/projectCwd/%kernel.project_dir% assumptions, rework provider/platform factories to inject/use AppConfig directly (AppConfig->ai/catalog/cwd), preserve AI-16 services.yaml changes, validate and push branch.
