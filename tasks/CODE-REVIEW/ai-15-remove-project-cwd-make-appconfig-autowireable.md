@@ -91,7 +91,7 @@ When `$projectCwd` is removed, the fallback becomes `$this->appConfig->cwd` inst
 Status: CODE-REVIEW
 Branch: task/ai-15-remove-project-cwd-make-appconfig-autowireable
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-15-remove-project-cwd-make-appconfig-autowireable
-Fork run: m8yelzisoxjj
+Fork run: dfkadj622em0
 PR URL: https://github.com/ineersa/agent-core/pull/16
 PR Status: open
 Started: 2026-05-17T03:52:50.643Z
@@ -125,3 +125,7 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/16
 - Validation: php bin/console --no-interaction: passed; castor test: passed (329 tests, 8048 assertions, 1 pre-existing notice); castor deptrac: passed (0 violations); castor phpstan: passed (0 errors); castor cs-check: passed; main checkout untouched by rescue fork
 - Summary: AI-15 completed in worktree commit 2d39ad71 on branch task/ai-15-remove-project-cwd-make-appconfig-autowireable and pushed. AppConfig is now autowireable/self-hydrating via AppConfigLoader + AppResourceLocator, AppConfigResolver deleted, $projectCwd removed from 30+ method signatures/call sites, TuiSessionState cwd removed, ThemeFactory injects AppConfig directly, and config comments/services updated. Warning: AI-05 and AI-09 CODE-REVIEW branches still reference $projectCwd/AppConfigResolver patterns and will need conflict resolution after AI-15 lands.
+
+## Task workflow update - 2026-05-17T19:57:42.084Z
+- Recorded fork run: dfkadj622em0
+- Summary: Launched fork dfkadj622em0 to address PR #16 review comments: throw if getcwd() fails instead of masking with '/', restore stripped comments/docs in AppConfigLoader, ModelSelectionService, and HatfieldSessionStore, keep AppConfig public readonly style as non-blocking preference unless trivial. Fork instructed to operate only inside AI-15 worktree with absolute paths and verify main checkout untouched.
