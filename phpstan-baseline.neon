@@ -1236,13 +1236,7 @@ parameters:
 			count: 1
 			path: src/Tui/Widget/TuiRenderContext.php
 
-		# Temporary AI-02 catalog DTO/API baselines. Remove as AI-04/AI-07/AI-10 consume these APIs.
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCompatibility\:\:\$supportsDeveloperRole is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiCompatibility.php
-
+		# Temporary AI-02 catalog DTO/API baselines. Remove as AI-04/AI-07/AI-09/AI-10 consume these APIs.
 		-
 			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiCompatibility\:\:\$zaiToolStream is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
@@ -1406,12 +1400,4 @@ parameters:
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/CodingAgent/Config/ModelSelectionService.php
-
-		# Temporary AI-06 ReasoningOptionsResolver baseline. Remove when AI-07/AI-10
-		# production code calls ReasoningOptionsResolver::resolve.
-		-
-			message: '#^Unused Ineersa\\CodingAgent\\Config\\ReasoningOptionsResolver\:\:resolve$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/CodingAgent/Config/ReasoningOptionsResolver.php
 
