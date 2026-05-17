@@ -57,3 +57,7 @@ Completed:
 ## Task workflow update - 2026-05-17T21:29:24.339Z
 - Recorded fork run: p929smwf7g9q
 - Summary: Launched fixup fork p929smwf7g9q for AI-05 PR #14 after AI-15/AI-16 landed. Scope: merge origin/main, resolve conflicts, remove AppConfigResolver/projectCwd/%kernel.project_dir% assumptions, rework provider/platform factories to inject/use AppConfig directly (AppConfig->ai/catalog/cwd), preserve AI-16 services.yaml changes, validate and push branch.
+
+## Task workflow update - 2026-05-17T21:32:20.984Z
+- Validation: php bin/console --no-interaction: passed; vendor/bin/phpunit tests/AgentCore/Infrastructure/SymfonyAi/PlatformIntegrationTest.php: passed (2 tests, 15 assertions); castor test: passed (328 tests, 8046 assertions, 1 pre-existing notice); castor deptrac: passed (0 violations); vendor/bin/phpstan analyse -c phpstan.dist.neon: passed (0 errors; baseline 229); castor cs-check: passed; castor cs-fix: clean; main checkout untouched by fork
+- Summary: AI-05 PR #14 fixup completed by fork p929smwf7g9q in commit e844e95b, pushed to branch. Merged origin/main (AI-15/AI-16) with only phpstan-baseline conflict, reworked SymfonyAiProviderFactory to inject AppConfig directly, removed AppConfigResolver/projectCwd usage, removed $projectCwd argument from ConfiguredSymfonyAiPlatformFactory and services.yaml PlatformInterface factory, preserved AI-16 service wiring, regenerated phpstan-baseline.neon.
