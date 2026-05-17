@@ -23,14 +23,14 @@ Scope:
 - Suggested validation: `castor test --filter ModelSelection`.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/ai-07-model-reasoning-selection-persistence
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-07-model-reasoning-selection-persistence
 Fork run: lerrdnurexld
 PR URL: https://github.com/ineersa/agent-core/pull/13
-PR Status: open
+PR Status: merged
 Started: 2026-05-17T01:27:21.764Z
-Completed:
+Completed: 2026-05-17T03:08:22.096Z
 
 ## Work log
 - Created: 2026-05-16T22:01:55.477Z
@@ -60,3 +60,24 @@ Completed:
 ## Task workflow update - 2026-05-17T02:57:26.671Z
 - Recorded fork run: lerrdnurexld
 - Summary: Launched fork lerr dnurexld to refactor HomeSettingsWriter — remove filePath parameters from writeDefaultModel/writeDefaultReasoning, have the writer own the home settings path via SettingsPathResolver injected in constructor. ModelSelectionService drops SettingsPathResolver dependency entirely.
+
+## Task workflow update - 2026-05-17T03:08:22.096Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/ai-07-model-reasoning-selection-persistence into integration checkout.
+- Merge made by the 'ort' strategy.
+ depfile.yaml                                       |   1 +
+ phpstan-baseline.neon                              |  37 +-
+ src/CodingAgent/Config/AppConfig.php               |   8 +-
+ src/CodingAgent/Config/HomeSettingsWriter.php      |  18 +-
+ src/CodingAgent/Config/ModelSelectionService.php   | 229 +++++++++
+ src/CodingAgent/Config/SessionMetadataStore.php    |  84 ++++
+ .../InProcess/InProcessAgentSessionClient.php      |   4 +
+ .../CodingAgent/Config/HomeSettingsWriterTest.php  |  31 +-
+ .../Config/ModelSelectionServiceTest.php           | 555 +++++++++++++++++++++
+ 9 files changed, 924 insertions(+), 43 deletions(-)
+ create mode 100644 src/CodingAgent/Config/ModelSelectionService.php
+ create mode 100644 src/CodingAgent/Config/SessionMetadataStore.php
+ create mode 100644 tests/CodingAgent/Config/ModelSelectionServiceTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/ai-07-model-reasoning-selection-persistence.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Summary: PR #13 merged at 2026-05-17T03:07:19Z (a7c4f47). AI-07 complete: ModelSelectionService with 4-tier model priority + 3-tier reasoning priority, HomeSettingsWriter owns its file path, SessionMetadataStore extracted, HatfieldModelCatalog on AppConfig, 18 tests, full castor check green. AI-09, AI-10, AI-14 unblocked.
