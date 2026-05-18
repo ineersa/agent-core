@@ -24,7 +24,7 @@ Scope:
 - Suggested validation: `castor test --filter Tui`; `castor test:tui`.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/ai-14-tui-model-controls-favorites
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-14-tui-model-controls-favorites
 Fork run: jbjp9zymk5ep
@@ -99,3 +99,7 @@ Validation: 509 tests pass, 8453 assertions, 0 deptrac violations, 0 phpstan err
 - Skipped PR creation (pushOnly: true).
 - Validation: vendor/bin/phpunit tests/Tui/Listener/ModelCommandHandlerTest.php — 18 tests, OK; vendor/bin/phpunit tests/CodingAgent/Config/ModelSelectionServiceTest.php — 42 tests, OK; vendor/bin/phpunit tests/Tui/Listener/FooterStateSegmentProviderTest.php tests/Tui/Picker/ModelPickerControllerTest.php — 8 tests, OK; ~/.local/bin/castor test — 519 tests, 8501 assertions, OK (1 pre-existing notice); ~/.local/bin/castor deptrac — 0 violations; ~/.local/bin/castor phpstan — 0 errors; ~/.local/bin/castor cs-check — clean
 - Summary: AI-14 ready for re-review after smoke-test fixes at commit 7b719773. Added interactive /model picker using Symfony TUI SelectListWidget, Ctrl+F favorite toggle while navigating, Enter select/Escape cancel, dedicated reasoning theme colors for footer symbol and model name, and fixed persistence by removing project-level default_model/default_reasoning override so home settings can persist choices across restart. Note: picker is mounted dynamically as a Symfony TUI widget rather than a full modal overlay; RTVS tasks still own real runtime transcript projection.
+
+## Task workflow update - 2026-05-18T22:59:33.111Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: User smoke-tested updated PR and found remaining issues: footer still shows textual reasoning/model status, reasoning hotkey cycles levels for models without thinking support (e.g. llama.cpp), and favorite selection UX should be separate `/model fav` picker using Space to toggle favorites and Enter to submit. Moving back to IN-PROGRESS for fixes.
