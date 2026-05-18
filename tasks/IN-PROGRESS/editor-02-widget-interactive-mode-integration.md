@@ -62,3 +62,7 @@ Completed:
 - Recorded fork run: 8vr7qov6xcz9
 - Validation: castor test — 419/419 pass, 8246 assertions, 1 pre-existing notice; castor test --filter="PromptEditor" — 23/23 pass, 41 assertions; castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — fails due pre-existing src/Tui/Command/* style violations from EDITOR-03, none in changed files
 - Summary: EDITOR-02 fork completed. Implemented PromptEditor DI wiring into InteractiveMode/ChatScreen, delegated editor access/clear/extract through PromptEditor, configured viewport defaults, and updated SubmitListener to use ChatScreen::extract(). Commit 10cc198f. Fork noted castor test/deptrac/phpstan passed; cs-check has pre-existing violations in src/Tui/Command/* unrelated to changed files.
+
+## Task workflow update - 2026-05-18T17:23:37.108Z
+- Validation: ~/.local/bin/castor test:tui in EDITOR-02 worktree — fails 2/2 due startup footer snapshot expecting old 'hatfield · session...' while actual footer shows model/status/cwd; reproduced the same failure on main, so not introduced by EDITOR-02
+- Summary: Parent ran TUI e2e after fork completion. The snapshot failure is reproducible on main and appears pre-existing/unrelated to EDITOR-02.
