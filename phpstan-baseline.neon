@@ -943,6 +943,12 @@ parameters:
 			path: src/Tui/Layout/ChatLayout.php
 
 		-
+			message: '#^Casting to string something that''s already string\.$#'
+			identifier: cast.useless
+			count: 2
+			path: src/Tui/Listener/FooterStateListener.php
+
+		-
 			message: '#^Property Ineersa\\Tui\\Runtime\\TuiRuntimeContext\:\:\$sessionStore is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
@@ -956,12 +962,6 @@ parameters:
 
 		-
 			message: '#^Unused Ineersa\\Tui\\Screen\\ChatScreen\:\:extensionContext$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Tui/Screen/ChatScreen.php
-
-		-
-			message: '#^Unused Ineersa\\Tui\\Screen\\ChatScreen\:\:refresh$#'
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/Tui/Screen/ChatScreen.php

@@ -181,6 +181,7 @@ parameters:
       - TuiRuntime
       - TuiScreen
       - TuiTranscript
+      - TuiFooter
       - TuiTheme
       - SymfonyTui
 
