@@ -32,6 +32,20 @@ final class TuiSessionState
     public int $lastSeq = 0;
     public float $lastPoll = 0.0;
 
+    // ── Footer/runtime projection state ──
+    // Updated by FooterStateListener on each poll.
+    public string $footerModel = '';
+    public string $footerReasoning = '';
+    public int $inputTokens = 0;
+    public int $outputTokens = 0;
+    /** Running cost estimate in dollars (accumulated from usage). */
+    public float $totalCost = 0.0;
+    /** Context window size of the current model, or 0 when unknown. */
+    public int $contextWindow = 0;
+    public float $sessionStartTime = 0.0;
+    public string $cwd = '';
+    public string $branch = '';
+
     public function __construct(
         string $sessionId,
         bool $resuming = false,

@@ -23,6 +23,7 @@ final readonly class TuiRuntimeContext
         public TuiSessionState $state,
         public ChatScreen $screen,
         public HatfieldSessionStore $sessionStore,
+        public TuiTickDispatcher $ticks = new TuiTickDispatcher(),
     ) {
     }
 }

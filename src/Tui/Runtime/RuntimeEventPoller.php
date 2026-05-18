@@ -80,6 +80,9 @@ final class RuntimeEventPoller
                     $runtimeEvent->toArray(),
                 );
 
+                // Extract usage/footer data from runtime events
+                self::extractFooterUsage($state, $runtimeEvent);
+
                 // Remove "Processing..." placeholder on first real event
                 if (!$processingRemoved) {
                     $lastIdx = \count($state->transcript) - 1;
@@ -158,5 +161,32 @@ final class RuntimeEventPoller
                 style: 'muted',
             ),
         };
+    }
+
+    /**
+     * Extract token usage and cost from runtime events and accumulate into footer state.
+     *
+     * Called for every runtime event during polling. Only llm_step_completed events
+     * carry usage/cost metadata.
+     */
+    private static function extractFooterUsage(TuiSessionState $state, RuntimeEvent $event): void
+    {
+        if ('llm_step_completed' !== $event->type) {
+            return;
+        }
+
+        $usage = $event->payload['usage'] ?? [];
+        if (!\is_array($usage)) {
+            return;
+        }
+
+        $state->inputTokens += (int) ($usage['input_tokens'] ?? $usage['prompt_tokens'] ?? 0);
+        $state->outputTokens += (int) ($usage['output_tokens'] ?? $usage['completion_tokens'] ?? 0);
+
+        // Accumulate cost if the provider returns it in the usage payload
+        $cost = $usage['cost'] ?? $usage['total_cost'] ?? null;
+        if (\is_float($cost) || \is_int($cost)) {
+            $state->totalCost += (float) $cost;
+        }
     }
 }
