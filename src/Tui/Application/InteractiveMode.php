@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\TranscriptEntry as PersistedTranscriptEntry;
+use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\TuiListenerRegistrar;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -46,6 +47,7 @@ final readonly class InteractiveMode
         private ThemeFactory $themeFactory,
         private SessionInitializer $sessionInit,
         private iterable $listenerRegistrars,
+        private PromptEditor $promptEditor,
     ) {
     }
 
@@ -77,7 +79,7 @@ final readonly class InteractiveMode
 
         // ── Build screen and mount widget tree ──
         $tui = new Tui();
-        $screen = new ChatScreen($theme, $state->sessionId);
+        $screen = new ChatScreen($theme, $state->sessionId, $this->promptEditor);
         $screen->mount($tui);
 
         // Set initial transcript
