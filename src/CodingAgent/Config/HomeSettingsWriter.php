@@ -28,9 +28,55 @@ final class HomeSettingsWriter
         $this->writeAiKey($this->homeSettingsPath(), 'default_reasoning', $reasoning);
     }
 
+    /**
+     * Persist the full favorite models list to home settings.
+     *
+     * @param list<string> $models List of "provider/modelname" strings
+     */
+    public function writeFavoriteModels(array $models): void
+    {
+        $this->writeAiListKey($this->homeSettingsPath(), 'favorite_models', $models);
+    }
+
     private function homeSettingsPath(): string
     {
         return $this->pathResolver->getHomeDir().'/.hatfield/settings.yaml';
+    }
+
+    /**
+     * Write a list value under the ai section, preserving comments.
+     *
+     * @param list<string> $values List of strings
+     */
+    private function writeAiListKey(string $filePath, string $key, array $values): void
+    {
+        $content = @file_get_contents($filePath);
+
+        if (false === $content) {
+            throw new \RuntimeException(\sprintf('Cannot read home settings file: %s', $filePath));
+        }
+
+        // Format as YAML flow sequence: [a, b, c]
+        if ([] === $values) {
+            $line = \sprintf('    %s: []', $key);
+        } else {
+            $quoted = array_map(fn (string $v): string => $this->yamlScalar($v), $values);
+            $line = \sprintf('    %s: [%s]', $key, implode(', ', $quoted));
+        }
+
+        $pattern = '/^[ \t]*#?[ \t]*'.preg_quote($key, '/').'\s*:.*$/m';
+
+        if (preg_match($pattern, $content)) {
+            $content = preg_replace($pattern, $line, $content, 1);
+        } elseif (preg_match('/^ai:\s*$/m', $content)) {
+            $content = preg_replace('/^ai:\s*$/m', "ai:\n".$line, $content, 1);
+        } else {
+            $content = rtrim($content)."\n\nai:\n".$line."\n";
+        }
+
+        if (false === @file_put_contents($filePath, $content)) {
+            throw new \RuntimeException(\sprintf('Cannot write home settings file: %s', $filePath));
+        }
     }
 
     /**

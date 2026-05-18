@@ -194,4 +194,198 @@ final class ModelSelectionService
             'reasoning' => $level,
         ]);
     }
+
+    // ──────────────────────────────────────────────
+    //  Favorites
+    // ──────────────────────────────────────────────
+
+    /**
+     * Get the persisted favorite model refs (provider/modelname strings).
+     *
+     * Only returns favorites that are actually available in the catalog.
+     *
+     * @return list<string>
+     */
+    public function getFavoriteModels(): array
+    {
+        $catalog = $this->appConfig->catalog;
+        if (null === $catalog) {
+            return [];
+        }
+
+        $ai = $this->appConfig->ai;
+        if (null === $ai || [] === $ai->favoriteModels) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            $ai->favoriteModels,
+            static fn (string $ref): bool => $catalog->isAvailable($ref),
+        ));
+    }
+
+    /**
+     * Get all available models, with favorites first.
+     *
+     * @return list<AiModelReference>
+     */
+    public function getOrderedModels(): array
+    {
+        $catalog = $this->appConfig->catalog;
+        if (null === $catalog) {
+            return [];
+        }
+
+        $all = $catalog->allModels();
+        $favorites = $this->getFavoriteModels();
+
+        if ([] === $favorites) {
+            return $all;
+        }
+
+        $favSet = array_flip($favorites);
+
+        // Partition into favorites and non-favorites
+        $favModels = [];
+        $rest = [];
+
+        foreach ($all as $ref) {
+            if (isset($favSet[$ref->toString()])) {
+                $favModels[] = $ref;
+            } else {
+                $rest[] = $ref;
+            }
+        }
+
+        // Favorites in the order they appear in ai.favorite_models
+        usort($favModels, static function (AiModelReference $a, AiModelReference $b) use ($favorites): int {
+            $posA = array_search($a->toString(), $favorites, true);
+            $posB = array_search($b->toString(), $favorites, true);
+
+            return (false === $posA ? \PHP_INT_MAX : $posA) <=> (false === $posB ? \PHP_INT_MAX : $posB);
+        });
+
+        return array_merge($favModels, $rest);
+    }
+
+    /**
+     * Is the given model ref a favorite?
+     */
+    public function isFavorite(AiModelReference|string $model): bool
+    {
+        $modelStr = \is_string($model) ? $model : $model->toString();
+
+        return \in_array($modelStr, $this->getFavoriteModels(), true);
+    }
+
+    /**
+     * Toggle a model as favorite (add if absent, remove if present).
+     *
+     * Only persists to home settings — does not change the current model.
+     *
+     * @throws \RuntimeException If the model is not available
+     */
+    public function toggleFavorite(AiModelReference $model): void
+    {
+        $catalog = $this->appConfig->catalog;
+        if (null === $catalog) {
+            throw new \RuntimeException('No AI configuration available.');
+        }
+        if (!$catalog->isAvailable($model)) {
+            throw new \RuntimeException(\sprintf('Model "%s" is not available.', $model->toString()));
+        }
+
+        $current = $this->appConfig->ai->favoriteModels ?? [];
+        $modelStr = $model->toString();
+        $pos = array_search($modelStr, $current, true);
+
+        if (false !== $pos) {
+            // Remove
+            unset($current[$pos]);
+            $current = array_values($current);
+        } else {
+            // Add to end
+            $current[] = $modelStr;
+        }
+
+        $this->homeWriter->writeFavoriteModels($current);
+    }
+
+    // ──────────────────────────────────────────────
+    //  Cycling helpers
+    // ──────────────────────────────────────────────
+
+    /**
+     * Get the currently active model for the session.
+     *
+     * Resolves through session metadata → home default → first available.
+     */
+    public function getCurrentModel(string $sessionId): ?AiModelReference
+    {
+        return $this->resolveInitialModel(null, $sessionId);
+    }
+
+    /**
+     * Cycle to the next favorite model and persist it.
+     *
+     * Returns the newly selected model reference, or null if no favorites exist.
+     */
+    public function cycleFavoriteModel(string $sessionId): ?AiModelReference
+    {
+        $favorites = $this->getFavoriteModels();
+        if ([] === $favorites) {
+            return null;
+        }
+
+        $current = $this->getCurrentModel($sessionId);
+        $currentStr = null !== $current ? $current->toString() : null;
+
+        // Find current position in favorites
+        $pos = null !== $currentStr ? array_search($currentStr, $favorites, true) : false;
+
+        // If current is not in favorites, start from beginning
+        if (false === $pos) {
+            $nextStr = $favorites[0];
+        } else {
+            // Cycle to next, wrapping around
+            $nextIdx = ($pos + 1) % \count($favorites);
+            $nextStr = $favorites[$nextIdx];
+        }
+
+        $nextRef = AiModelReference::tryParse($nextStr);
+        if (null === $nextRef) {
+            return null;
+        }
+
+        $this->changeModel($nextRef, $sessionId);
+
+        return $nextRef;
+    }
+
+    /**
+     * Cycle to the next reasoning level.
+     *
+     * Returns the new level string.
+     */
+    public function cycleReasoning(string $currentLevel): string
+    {
+        $pos = array_search($currentLevel, self::LEVELS, true);
+
+        if (false === $pos) {
+            // Unknown level — start from beginning
+            return self::LEVELS[0];
+        }
+
+        $nextIdx = ($pos + 1) % \count(self::LEVELS);
+
+        return self::LEVELS[$nextIdx];
+    }
+
+    /**
+     * Get the currently active reasoning level for the session.
+     */
+    public function getCurrentReasoning(string $sessionId): string
+    {
+        return $this->resolveInitialReasoning(null, $sessionId);
+    }
 }

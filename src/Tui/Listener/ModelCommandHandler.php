@@ -1,0 +1,230 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ineersa\Tui\Listener;
+
+use Ineersa\CodingAgent\Config\Ai\AiModelReference;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\ModelSelectionService;
+use Ineersa\Tui\Command\CommandResult;
+use Ineersa\Tui\Command\SlashCommand;
+use Ineersa\Tui\Command\SlashCommandHandler;
+use Ineersa\Tui\Command\TranscriptMessage;
+use Ineersa\Tui\Runtime\TuiSessionState;
+
+/**
+ * Handles /model slash commands: listing, selection, and favorites.
+ *
+ * Lives in TuiListener (not TuiCommand) because it needs
+ * ModelSelectionService from CodingAgent/Config, which TuiCommand
+ * cannot import per deptrac rules.
+ *
+ * Updates TuiSessionState fields for immediate footer refresh after
+ * model/reasoning changes.
+ */
+final class ModelCommandHandler implements SlashCommandHandler
+{
+    public function __construct(
+        private readonly ModelSelectionService $modelService,
+        private readonly AppConfig $appConfig,
+        private readonly TuiSessionState $state,
+    ) {
+    }
+
+    public function handle(SlashCommand $command): CommandResult
+    {
+        $args = trim($command->args);
+
+        // /model (no args) → list models
+        if ('' === $args) {
+            return $this->buildModelListMessage();
+        }
+
+        // Parse subcommand or provider/model reference
+        $parts = explode(' ', $args, 2);
+        $first = $parts[0];
+        $rest = $parts[1] ?? '';
+
+        return match ($first) {
+            'select', 'sel' => $this->selectModel($rest),
+            'fav' => $this->toggleFavoriteCommand($rest),
+            default => $this->selectModel($args), // try as direct provider/modelname
+        };
+    }
+
+    // ── Subcommand: /model select <provider/model> ──
+
+    private function selectModel(string $modelSpec): CommandResult
+    {
+        if ('' === $modelSpec) {
+            return new TranscriptMessage(
+                "Usage: /model select <provider/modelname>\n\nType /model to see available models.",
+                'system',
+                'muted',
+            );
+        }
+
+        $ref = AiModelReference::tryParse($modelSpec);
+        if (null === $ref) {
+            return new TranscriptMessage(
+                \sprintf(
+                    'Invalid model reference: "%s". Use the format provider/modelname, e.g. deepseek/deepseek-v4-pro.',
+                    $modelSpec,
+                ),
+                'system',
+                'muted',
+            );
+        }
+
+        try {
+            $this->modelService->changeModel($ref, $this->state->sessionId);
+        } catch (\RuntimeException $e) {
+            return new TranscriptMessage($e->getMessage(), 'system', 'muted');
+        }
+
+        // Update footer state for immediate refresh
+        $this->state->footerModel = FooterStateInitializer::shortModelName(
+            $ref->providerId.'/'.$ref->modelName,
+        );
+        $this->state->footerReasoning = $this->modelService->getCurrentReasoning($this->state->sessionId);
+        $this->state->contextWindow = self::lookupContextWindow($this->appConfig, $ref);
+
+        return new TranscriptMessage(
+            \sprintf('Model changed to %s.', $ref->toString()),
+            'system',
+        );
+    }
+
+    // ── Subcommand: /model fav <provider/model> ──
+
+    private function toggleFavoriteCommand(string $modelSpec): CommandResult
+    {
+        if ('' === $modelSpec) {
+            // List current favorites
+            $favs = $this->modelService->getFavoriteModels();
+            if ([] === $favs) {
+                return new TranscriptMessage(
+                    'No favorite models configured. Use /model fav <provider/modelname> to add a favorite.',
+                    'system',
+                    'muted',
+                );
+            }
+
+            $lines = ['Favorite models:', ''];
+            foreach ($favs as $i => $fav) {
+                $lines[] = \sprintf('  %d. %s', $i + 1, $fav);
+            }
+            $lines[] = '';
+            $lines[] = 'Type /model fav <provider/modelname> to add or remove a favorite.';
+
+            return new TranscriptMessage(implode("\n", $lines), 'system');
+        }
+
+        $ref = AiModelReference::tryParse($modelSpec);
+        if (null === $ref) {
+            return new TranscriptMessage(
+                \sprintf(
+                    'Invalid model reference: "%s". Use the format provider/modelname.',
+                    $modelSpec,
+                ),
+                'system',
+                'muted',
+            );
+        }
+
+        try {
+            $wasFavorite = $this->modelService->isFavorite($ref);
+            $this->modelService->toggleFavorite($ref);
+
+            if ($wasFavorite) {
+                return new TranscriptMessage(
+                    \sprintf('Removed %s from favorites.', $ref->toString()),
+                    'system',
+                );
+            }
+
+            return new TranscriptMessage(
+                \sprintf('Added %s to favorites.', $ref->toString()),
+                'system',
+            );
+        } catch (\RuntimeException $e) {
+            return new TranscriptMessage($e->getMessage(), 'system', 'muted');
+        }
+    }
+
+    // ── Model list formatting ──
+
+    private function buildModelListMessage(): TranscriptMessage
+    {
+        try {
+            $ordered = $this->modelService->getOrderedModels();
+        } catch (\Throwable) {
+            $ordered = [];
+        }
+
+        if ([] === $ordered) {
+            return new TranscriptMessage(
+                'No AI models configured. Check your AI settings in .hatfield/settings.yaml.',
+                'system',
+                'muted',
+            );
+        }
+
+        $favorites = $this->modelService->getFavoriteModels();
+        $favSet = array_flip($favorites);
+        $currentModel = $this->modelService->getCurrentModel($this->state->sessionId);
+        $currentStr = null !== $currentModel ? $currentModel->toString() : null;
+
+        $lines = ['Available models:', ''];
+
+        $favCount = 0;
+
+        foreach ($ordered as $i => $ref) {
+            $refStr = $ref->toString();
+            $isFav = isset($favSet[$refStr]);
+            $isCurrent = $refStr === $currentStr;
+
+            $n = \sprintf('%2d.', $i + 1);
+            $star = $isFav ? '★' : ' ';
+            $current = $isCurrent ? ' (current)' : '';
+
+            if ($isFav) {
+                ++$favCount;
+            }
+
+            $lines[] = \sprintf(
+                '  %s %s %s%s',
+                $isCurrent ? '❯' : ' ',
+                $n,
+                $star,
+                $refStr.$current,
+            );
+        }
+
+        $lines[] = '';
+        $lines[] = 'Type /model select <provider/modelname> to select a model.';
+        $lines[] = 'Type /model fav <provider/modelname> to toggle favorite.';
+        $lines[] = 'Press Ctrl+P to cycle favorite models.';
+        $lines[] = 'Press Shift+Tab to cycle reasoning levels.';
+
+        return new TranscriptMessage(implode("\n", $lines), 'system');
+    }
+
+    // ── Helpers ──
+
+    /**
+     * Resolve context window for a model from the catalog.
+     */
+    private static function lookupContextWindow(AppConfig $appConfig, AiModelReference $ref): int
+    {
+        $catalog = $appConfig->catalog;
+        if (null === $catalog) {
+            return 0;
+        }
+
+        $definition = $catalog->getModel($ref);
+
+        return null !== $definition ? ($definition->contextWindow ?? 0) : 0;
+    }
+}

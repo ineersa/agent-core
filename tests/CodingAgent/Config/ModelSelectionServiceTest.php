@@ -439,4 +439,198 @@ class ModelSelectionServiceTest extends TestCase
         self::assertSame('abc123', $meta['session_id']);
         self::assertSame('deepseek/deepseek-v4-pro', $meta['model']);
     }
+
+    // ──────────────────────────────────────────────
+    //  Favorites
+    // ──────────────────────────────────────────────
+
+    public function testGetFavoriteModelsReturnsConfiguredFavorites(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro', 'llama_cpp/flash'];
+        $service = $this->buildService($aiData);
+
+        $favs = $service->getFavoriteModels();
+
+        self::assertCount(2, $favs);
+        self::assertSame('deepseek/deepseek-v4-pro', $favs[0]);
+        self::assertSame('llama_cpp/flash', $favs[1]);
+    }
+
+    public function testGetFavoriteModelsFiltersUnavailable(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro', 'nonexistent/ghost'];
+        $service = $this->buildService($aiData);
+
+        $favs = $service->getFavoriteModels();
+
+        self::assertCount(1, $favs);
+        self::assertSame('deepseek/deepseek-v4-pro', $favs[0]);
+    }
+
+    public function testGetOrderedModelsPutsFavoritesFirst(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['llama_cpp/flash'];
+        $service = $this->buildService($aiData);
+
+        $ordered = $service->getOrderedModels();
+
+        self::assertCount(3, $ordered);
+        // First should be the favorite
+        self::assertSame('llama_cpp', $ordered[0]->providerId);
+        self::assertSame('flash', $ordered[0]->modelName);
+    }
+
+    public function testIsFavoriteReturnsTrueForFavoritedModel(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro'];
+        $service = $this->buildService($aiData);
+
+        self::assertTrue($service->isFavorite('deepseek/deepseek-v4-pro'));
+        self::assertFalse($service->isFavorite('llama_cpp/flash'));
+    }
+
+    public function testToggleFavoriteAddsModel(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro'];
+        $service = $this->buildService($aiData);
+
+        $service->toggleFavorite(new AiModelReference('llama_cpp', 'flash'));
+
+        // Verify persisted to home settings
+        $homeContent = file_get_contents($this->homeSettingsPath());
+        self::assertStringContainsString('deepseek/deepseek-v4-pro', $homeContent);
+        self::assertStringContainsString('llama_cpp/flash', $homeContent);
+    }
+
+    public function testToggleFavoriteRemovesModel(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro', 'llama_cpp/flash'];
+        $service = $this->buildService($aiData);
+
+        $service->toggleFavorite(new AiModelReference('deepseek', 'deepseek-v4-pro'));
+
+        $homeContent = file_get_contents($this->homeSettingsPath());
+        self::assertStringNotContainsString('deepseek/deepseek-v4-pro', $homeContent);
+        self::assertStringContainsString('llama_cpp/flash', $homeContent);
+    }
+
+    public function testToggleFavoriteThrowsOnUnavailableModel(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('not available');
+
+        $service->toggleFavorite(new AiModelReference('mystery', 'ghost'));
+    }
+
+    // ──────────────────────────────────────────────
+    //  Cycling
+    // ──────────────────────────────────────────────
+
+    public function testCycleFavoriteModelReturnsNextFavorite(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro', 'llama_cpp/flash'];
+        $service = $this->buildService($aiData);
+
+        $next = $service->cycleFavoriteModel('abc123');
+
+        self::assertNotNull($next);
+        // Current defaults to default_model (deepseek/deepseek-v4-pro), which is first in favorites
+        // So next should be the second favorite
+        self::assertSame('llama_cpp', $next->providerId);
+        self::assertSame('flash', $next->modelName);
+    }
+
+    public function testCycleFavoriteModelWrapsAround(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro', 'llama_cpp/flash'];
+        $service = $this->buildService($aiData);
+
+        // First set current to the last favorite
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+
+        $next = $service->cycleFavoriteModel('abc123');
+
+        self::assertNotNull($next);
+        // Should wrap to first
+        self::assertSame('deepseek', $next->providerId);
+        self::assertSame('deepseek-v4-pro', $next->modelName);
+    }
+
+    public function testCycleFavoriteModelReturnsNullWhenNoFavorites(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+
+        $next = $service->cycleFavoriteModel('abc123');
+
+        self::assertNull($next);
+    }
+
+    public function testCycleReasoningReturnsNextLevel(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+
+        self::assertSame('high', $service->cycleReasoning('medium'));
+        self::assertSame('xhigh', $service->cycleReasoning('high'));
+        self::assertSame('off', $service->cycleReasoning('xhigh'));
+        self::assertSame('minimal', $service->cycleReasoning('off'));
+    }
+
+    public function testCycleReasoningWrapsToBeginning(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+
+        self::assertSame('off', $service->cycleReasoning('xhigh'));
+    }
+
+    public function testCycleReasoningStartsFromBeginningForUnknownLevel(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+
+        self::assertSame('off', $service->cycleReasoning('unknown'));
+    }
+
+    public function testGetCurrentModelResolvesFromSessionMetadata(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+        $this->writeSessionMetadata('abc123', ['model' => 'llama_cpp/flash']);
+
+        $current = $service->getCurrentModel('abc123');
+
+        self::assertNotNull($current);
+        self::assertSame('llama_cpp', $current->providerId);
+        self::assertSame('flash', $current->modelName);
+    }
+
+    public function testGetCurrentReasoningResolvesFromSessionMetadata(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+        $this->writeSessionMetadata('abc123', ['reasoning' => 'xhigh']);
+
+        $current = $service->getCurrentReasoning('abc123');
+
+        self::assertSame('xhigh', $current);
+    }
+
+    public function testAiConfigParsesFavoriteModels(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro', 'llama_cpp/flash'];
+        $service = $this->buildService($aiData);
+
+        $favs = $service->getFavoriteModels();
+
+        self::assertCount(2, $favs);
+        self::assertSame('deepseek/deepseek-v4-pro', $favs[0]);
+        self::assertSame('llama_cpp/flash', $favs[1]);
+    }
 }
