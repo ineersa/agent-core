@@ -100,11 +100,11 @@ final class ModelCommandHandler implements SlashCommandHandler
             return new TranscriptMessage($e->getMessage(), 'system', 'muted');
         }
 
-        // Update footer state for immediate refresh
+        // Update footer state for immediate refresh — reset to off when model doesn't support thinking
         $this->state->footerModel = FooterStateInitializer::shortModelName(
             $ref->providerId.'/'.$ref->modelName,
         );
-        $this->state->footerReasoning = $this->modelService->getCurrentReasoning($this->state->sessionId);
+        $this->state->footerReasoning = $this->modelService->getDisplayReasoning($this->state->sessionId);
         $this->state->contextWindow = self::lookupContextWindow($this->appConfig, $ref);
 
         return new TranscriptMessage(

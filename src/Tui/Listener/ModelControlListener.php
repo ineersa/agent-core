@@ -59,8 +59,8 @@ final class ModelControlListener implements TuiListenerRegistrar
                 new CommandMetadata(
                     name: 'model',
                     aliases: ['m'],
-                    description: 'Open model picker, select, or manage favorites',
-                    usage: '/model [select <provider/modelname> | fav [<provider/modelname>]]',
+                    description: 'Interactive model picker. /model opens picker (Enter to select, Esc to cancel, Ctrl+F to toggle favorite). /model fav opens favorites picker (Space to toggle * marker, Enter to save).',
+                    usage: '/model | /model select <provider/modelname> | /model fav | /model fav <provider/modelname>',
                 ),
                 $modelHandler,
             );
@@ -82,8 +82,9 @@ final class ModelControlListener implements TuiListenerRegistrar
             }
 
             // Update footer state for immediate refresh (no persistent status entry)
+            // Use display reasoning so non-thinking models reset footer color to off
             $state->footerModel = FooterStateInitializer::shortModelName($nextRef->toString());
-            $state->footerReasoning = $modelService->getCurrentReasoning($state->sessionId);
+            $state->footerReasoning = $modelService->getDisplayReasoning($state->sessionId);
             $state->contextWindow = self::lookupContextWindow($appConfig, $nextRef);
         }, priority: 95);
 

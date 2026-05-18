@@ -15,7 +15,9 @@ use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Input\Key;
 use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Tui;
+use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\SelectListWidget;
+use Symfony\Component\Tui\Widget\TextWidget;
 
 /**
  * Manages the interactive model picker overlay lifecycle.
@@ -31,6 +33,7 @@ use Symfony\Component\Tui\Widget\SelectListWidget;
 final class ModelPickerController
 {
     private ?SelectListWidget $listWidget = null;
+    private ?ContainerWidget $container = null;
     private bool $isOpen = false;
 
     private ?Tui $tui = null;
@@ -71,6 +74,12 @@ final class ModelPickerController
         $screen = $this->screen;
         $state = $this->state;
 
+        // ── Header — instructional line above the list ──
+        $header = new TextWidget(
+            text: 'Select a model — arrows move, Enter selects, Esc cancels',
+            truncate: true,
+        );
+
         // ── Keybindings: remove ctrl+f from cursor_right so we can intercept it ──
         $kb = new Keybindings([
             'select_up' => [Key::UP],
@@ -90,6 +99,9 @@ final class ModelPickerController
             maxVisible: 10,
             keybindings: $kb,
         );
+
+        // ── Container wrapping header + list ──
+        $this->container = new ContainerWidget();
 
         // ── Ctrl+F favorite toggle ──
         $modelService = $this->modelService;
@@ -176,7 +188,9 @@ final class ModelPickerController
         });
 
         // ── Mount and focus ──
-        $tui->add($this->listWidget);
+        $this->container->add($header);
+        $this->container->add($this->listWidget);
+        $tui->add($this->container);
         $tui->setFocus($this->listWidget);
         $tui->requestRender(true);
         $this->isOpen = true;
@@ -193,10 +207,10 @@ final class ModelPickerController
     /**
      * Static variant so the onInput closure can rebuild without $this capture.
      *
-     * @return list<array{value: string, label: string}>
-     */
-    /**
-     * @return list<array{value: string, label: string}>
+     * The current model item carries a description so it stands out visually
+     * (rendered by SelectListWidget via DefaultStyleSheet::description in gray).
+     *
+     * @return list<array{value: string, label: string, description?: string}>
      */
     public static function buildItemsStatic(ModelSelectionService $modelService, TuiSessionState $state): array
     {
@@ -219,10 +233,16 @@ final class ModelPickerController
                 $refStr,
             );
 
-            $items[] = [
+            $item = [
                 'value' => $refStr,
                 'label' => $label,
             ];
+
+            if ($isCurrent) {
+                $item['description'] = 'current';
+            }
+
+            $items[] = $item;
         }
 
         return $items;
@@ -264,25 +284,31 @@ final class ModelPickerController
             return;
         }
 
-        // Update footer state
+        // Update footer state — reset reasoning to off when model doesn't support thinking
         $state->footerModel = FooterStateInitializer::shortModelName(
             $ref->providerId.'/'.$ref->modelName,
         );
-        $state->footerReasoning = $modelService->getCurrentReasoning($state->sessionId);
+        $state->footerReasoning = $modelService->getDisplayReasoning($state->sessionId);
         $state->contextWindow = self::lookupContextWindow($appConfig, $ref);
 
         $screen->refresh();
     }
 
     /**
-     * Remove the picker widget and mark the controller as closed.
+     * Remove the picker widgets and mark the controller as closed.
+     *
+     * Removing the container from the TUI automatically detaches all
+     * children (header + list) via the WidgetTree lifecycle.
      *
      * Called from within a static closure on SelectEvent/CancelEvent —
      * all dependencies are passed explicitly.
      */
     public function applyCloseEffect(Tui $tui, SelectListWidget $listWidget): void
     {
-        $tui->remove($listWidget);
+        if (null !== $this->container) {
+            $tui->remove($this->container);
+            $this->container = null;
+        }
         if ($listWidget === $this->listWidget) {
             $this->listWidget = null;
         }

@@ -13,7 +13,9 @@ use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Input\Key;
 use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Tui;
+use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\SelectListWidget;
+use Symfony\Component\Tui\Widget\TextWidget;
 
 /**
  * Interactive favorites picker accessed via /model fav.
@@ -26,6 +28,7 @@ use Symfony\Component\Tui\Widget\SelectListWidget;
 final class FavoritePickerController
 {
     private ?SelectListWidget $listWidget = null;
+    private ?ContainerWidget $container = null;
     private bool $isOpen = false;
 
     private ?Tui $tui = null;
@@ -54,6 +57,12 @@ final class FavoritePickerController
         $screen = $this->screen;
         $state = $this->state;
 
+        // ── Header — instructional line above the list ──
+        $header = new TextWidget(
+            text: 'Favorite models — arrows move, Space toggles *, Enter saves, Esc cancels',
+            truncate: true,
+        );
+
         // Keybindings: arrows, space, enter, escape — no ctrl+f
         $kb = new Keybindings([
             'select_up' => [Key::UP],
@@ -71,6 +80,9 @@ final class FavoritePickerController
             maxVisible: 10,
             keybindings: $kb,
         );
+
+        // ── Container wrapping header + list ──
+        $this->container = new ContainerWidget();
 
         // ── Space toggles favorite ──
         $modelService = $this->modelService;
@@ -143,7 +155,9 @@ final class FavoritePickerController
         });
 
         // Mount and focus
-        $tui->add($this->listWidget);
+        $this->container->add($header);
+        $this->container->add($this->listWidget);
+        $tui->add($this->container);
         $tui->setFocus($this->listWidget);
         $tui->requestRender(true);
         $this->isOpen = true;
@@ -156,7 +170,10 @@ final class FavoritePickerController
 
     public function applyCloseEffect(Tui $tui, SelectListWidget $listWidget): void
     {
-        $tui->remove($listWidget);
+        if (null !== $this->container) {
+            $tui->remove($this->container);
+            $this->container = null;
+        }
         if ($listWidget === $this->listWidget) {
             $this->listWidget = null;
         }

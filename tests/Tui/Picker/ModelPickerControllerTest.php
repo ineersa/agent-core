@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\Tui\Picker\FavoritePickerController;
 use Ineersa\Tui\Picker\ModelPickerController;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use PHPUnit\Framework\Attributes\Test;
@@ -73,15 +74,72 @@ class ModelPickerControllerTest extends TestCase
 
         $items = ModelPickerController::buildItemsStatic($service, $state);
 
-        // Current model (default) should have ❯ marker
+        // Current model (default) should have ❯ marker and a description
         $currentFound = false;
         foreach ($items as $item) {
             if (str_contains($item['label'], '❯')) {
                 $currentFound = true;
+                // Current model item should have a description to stand out visually
+                self::assertArrayHasKey('description', $item);
+                self::assertSame('current', $item['description']);
                 break;
             }
         }
         self::assertTrue($currentFound, 'Current model should be marked with ❯');
+    }
+
+    #[Test]
+    public function testNonCurrentModelsHaveNoDescription(): void
+    {
+        $service = $this->buildService();
+        $state = new TuiSessionState('test');
+
+        $items = ModelPickerController::buildItemsStatic($service, $state);
+
+        // All non-current items should not have a description
+        foreach ($items as $item) {
+            if (!str_contains($item['label'], '❯')) {
+                self::assertArrayNotHasKey('description', $item);
+            }
+        }
+    }
+
+    // ── Favorite picker item builder ──
+
+    #[Test]
+    public function testBuildFavoritesItemsMarksFavoritesWithAsterisk(): void
+    {
+        $service = $this->buildService(['favorite_models' => ['llama_cpp/flash']]);
+
+        $items = FavoritePickerController::buildFavoritesItems($service);
+
+        self::assertGreaterThanOrEqual(2, count($items));
+
+        $favFound = false;
+        foreach ($items as $item) {
+            if ('llama_cpp/flash' === $item['value']) {
+                $favFound = true;
+                self::assertStringContainsString('*', $item['label']);
+            }
+        }
+        self::assertTrue($favFound, 'Favorited model should be in items');
+    }
+
+    #[Test]
+    public function testBuildFavoritesItemsNonFavoriteHasNoMarker(): void
+    {
+        $service = $this->buildService();
+
+        $items = FavoritePickerController::buildFavoritesItems($service);
+
+        self::assertGreaterThanOrEqual(2, count($items));
+
+        foreach ($items as $item) {
+            $label = $item['label'];
+            // Label starts with space or * marker. Non-favorites should start with space, not *
+            $firstChar = mb_substr(trim($label), 0, 1);
+            self::assertNotSame('*', $firstChar, 'Non-favorite items should not have * marker');
+        }
     }
 
     #[Test]

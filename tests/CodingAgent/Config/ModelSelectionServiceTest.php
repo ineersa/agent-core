@@ -876,4 +876,67 @@ class ModelSelectionServiceTest extends TestCase
 
         self::assertNull($result);
     }
+
+    // ──────────────────────────────────────────────
+    //  Display reasoning (footer color reset)
+    // ──────────────────────────────────────────────
+
+    public function testGetDisplayReasoningReturnsCurrentForThinkingModel(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+        // deepseek/deepseek-v4-pro supports reasoning, current defaults to medium
+        self::assertSame('medium', $service->getDisplayReasoning('abc123'));
+
+        $service->changeReasoning('xhigh', 'abc123');
+        self::assertSame('xhigh', $service->getDisplayReasoning('abc123'));
+    }
+
+    public function testGetDisplayReasoningReturnsOffForNonThinkingModel(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+        // Switch to a model that doesn't support reasoning, but set reasoning high first
+        $service->changeReasoning('high', 'abc123');
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+
+        // Display reasoning should be 'off' even though session metadata still has 'high'
+        self::assertSame('off', $service->getDisplayReasoning('abc123'));
+
+        // Persisted reasoning still high (cycleReasoning would re-enable it on a thinking model)
+        self::assertSame('high', $service->getCurrentReasoning('abc123'));
+    }
+
+    public function testGetDisplayReasoningReturnsOffWhenProviderThinkingLevelsDisabled(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['providers']['llama_cpp']['supports_thinking_levels'] = false;
+        $service = $this->buildService($aiData);
+        $service->changeReasoning('xhigh', 'abc123');
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+
+        self::assertSame('off', $service->getDisplayReasoning('abc123'));
+    }
+
+    public function testGetDisplayReasoningReturnsOffWhenNoCatalog(): void
+    {
+        $service = $this->buildService([]);
+
+        self::assertSame('off', $service->getDisplayReasoning('abc123'));
+    }
+
+    public function testGetDisplayReasoningReturnsOffForUnknownModel(): void
+    {
+        // Switch to a non-thinking model, then set reasoning high
+        $service = $this->buildService($this->standardAiData());
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+        $service->changeReasoning('high', 'abc123');
+
+        // Switching back from llama (non-thinking) to deepseek (thinking) should
+        // restore the persisted 'high' display reasoning
+        $service->changeModel(new AiModelReference('deepseek', 'deepseek-v4-pro'), 'abc123');
+        self::assertSame('high', $service->getDisplayReasoning('abc123'));
+
+        // Switching back to non-thinking model resets to off
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+        self::assertSame('off', $service->getDisplayReasoning('abc123'));
+    }
 }

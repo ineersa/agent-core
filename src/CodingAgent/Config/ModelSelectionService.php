@@ -442,6 +442,23 @@ final class ModelSelectionService
         return $this->resolveInitialReasoning(null, $sessionId);
     }
 
+    /**
+     * Get the effective reasoning level for display (footer color, UI indicator).
+     *
+     * Returns 'off' when the current model does not support thinking levels;
+     * otherwise returns the persisted current reasoning.  This prevents stale
+     * high/xhigh coloring from lingering after switching to a non-thinking model
+     * (e.g. llama.cpp).
+     */
+    public function getDisplayReasoning(string $sessionId): string
+    {
+        if (!$this->supportsThinkingLevelsForSession($sessionId)) {
+            return 'off';
+        }
+
+        return $this->getCurrentReasoning($sessionId);
+    }
+
     // ──────────────────────────────────────────────
     //  Favorites
     // ──────────────────────────────────────────────
