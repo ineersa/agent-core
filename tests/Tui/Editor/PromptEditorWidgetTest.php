@@ -17,9 +17,9 @@ final class PromptEditorWidgetTest extends TestCase
         $widget = new PromptEditorWidget();
         $lines = $widget->render(new TuiRenderContext());
 
-        self::assertCount(1, $lines);
-        self::assertStringContainsString('❯', $lines[0]);
-        self::assertStringContainsString('Type a message', $lines[0]);
+        $this->assertCount(1, $lines);
+        $this->assertStringContainsString('❯', $lines[0]);
+        $this->assertStringContainsString('Type a message', $lines[0]);
     }
 
     public function testCustomPlaceholder(): void
@@ -27,7 +27,7 @@ final class PromptEditorWidgetTest extends TestCase
         $widget = new PromptEditorWidget(placeholder: 'Ask something...');
         $lines = $widget->render(new TuiRenderContext());
 
-        self::assertStringContainsString('Ask something', $lines[0]);
+        $this->assertStringContainsString('Ask something', $lines[0]);
     }
 
     public function testWithPromptText(): void
@@ -37,7 +37,7 @@ final class PromptEditorWidgetTest extends TestCase
 
         $lines = $widget->render(new TuiRenderContext());
 
-        self::assertCount(2, $lines);
-        self::assertStringContainsString('/help', $lines[0]);
+        $this->assertCount(2, $lines);
+        $this->assertStringContainsString('/help', $lines[0]);
     }
 }

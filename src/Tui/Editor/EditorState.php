@@ -5,81 +5,66 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Editor;
 
 /**
- * Immutable value object holding the editor's text state.
+ * Lightweight immutable snapshot of editor text state.
  *
- * Lines are logical lines split by \n. The constructor enforces invariants:
- *   - lines is never empty (minimum [''])
- *   - cursorLine / cursorColumn are always in bounds
- *   - scrollOffset is non-negative
+ * Useful for test fixtures, session persistence (EDITOR-07), and
+ * transferring text state without coupling to Symfony TUI internals.
+ *
+ * Lines are logical lines split by \n. The constructor enforces
+ * only that lines is non-empty.
+ *
+ * This is a pure DTO — cursor position tracking and text mutation
+ * are delegated to Symfony TUI's {@see EditorWidget} / {@see EditorDocument}.
  */
 final readonly class EditorState
 {
     /**
-     * @param list<string> $lines        Logical lines, split by \n. Always at least [''].
-     * @param int          $cursorLine   0-indexed line number
-     * @param int          $cursorColumn 0-indexed character column within the line
-     * @param int          $scrollOffset viewport scroll offset (for future use)
+     * @param list<string> $lines        logical lines, always at least ['']
+     * @param int          $cursorLine   0-indexed. Not validated — caller responsibility.
+     * @param int          $cursorColumn 0-indexed character column. Not validated — caller responsibility.
      */
     public function __construct(
         public array $lines,
-        public int $cursorLine,
-        public int $cursorColumn,
-        public int $scrollOffset,
+        public int $cursorLine = 0,
+        public int $cursorColumn = 0,
     ) {
         if ([] === $this->lines) {
             throw new \InvalidArgumentException('Lines must not be empty.');
         }
-
-        if ($this->cursorLine < 0 || $this->cursorLine >= \count($this->lines)) {
-            throw new \OutOfBoundsException(\sprintf('Cursor line %d out of bounds [0, %d).', $this->cursorLine, \count($this->lines)));
-        }
-
-        $lineLength = mb_strlen($this->lines[$this->cursorLine], 'UTF-8');
-
-        if ($this->cursorColumn < 0 || $this->cursorColumn > $lineLength) {
-            throw new \OutOfBoundsException(\sprintf('Cursor column %d out of bounds [0, %d] for line %d.', $this->cursorColumn, $lineLength, $this->cursorLine));
-        }
-
-        if ($this->scrollOffset < 0) {
-            throw new \InvalidArgumentException('Scroll offset must not be negative.');
-        }
     }
 
     /**
-     * Create initial state from a text string.
-     *
-     * An empty string produces lines = [''] with cursor at (0, 0).
+     * Create state from a text string.
      */
     public static function fromText(string $text): self
     {
         $lines = '' === $text ? [''] : explode("\n", $text);
 
-        return new self($lines, 0, 0, 0);
+        return new self($lines, 0, 0);
     }
 
     /**
-     * Return a copy with replaced lines and updated cursor position.
-     *
-     * @param list<string> $lines
+     * Create empty state.
      */
-    public function withLines(array $lines, int $cursorLine, int $cursorColumn): self
+    public static function empty(): self
     {
-        return new self($lines, $cursorLine, $cursorColumn, $this->scrollOffset);
+        return new self([''], 0, 0);
     }
 
     /**
-     * Return a copy with updated cursor position.
+     * Return the full text by joining logical lines with \n.
      */
-    public function withCursor(int $cursorLine, int $cursorColumn): self
+    public function getText(): string
     {
-        return new self($this->lines, $cursorLine, $cursorColumn, $this->scrollOffset);
+        return implode("\n", $this->lines);
     }
 
     /**
-     * Return a copy with updated scroll offset.
+     * True when the editor contains only a single empty line.
      */
-    public function withScrollOffset(int $scrollOffset): self
+    public function isEmpty(): bool
     {
-        return new self($this->lines, $this->cursorLine, $this->cursorColumn, $scrollOffset);
+        return 1 === \count($this->lines)
+            && '' === $this->lines[0];
     }
 }
