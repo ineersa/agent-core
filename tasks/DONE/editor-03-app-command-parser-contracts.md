@@ -29,14 +29,14 @@ Parallelizable with: EDITOR-01.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/editor-03-app-command-parser-contracts
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-03-app-command-parser-contracts
 Fork run: 247idonc6pda
 PR URL: https://github.com/ineersa/agent-core/pull/22
-PR Status: open
+PR Status: merged
 Started: 2026-05-18T01:41:16.433Z
-Completed:
+Completed: 2026-05-18T01:58:32.560Z
 
 ## Work log
 - Created: 2026-05-18T00:15:20.183Z
@@ -63,3 +63,38 @@ Completed:
 - Pushed task/editor-03-app-command-parser-contracts to origin.
 - branch 'task/editor-03-app-command-parser-contracts' set up to track 'origin/task/editor-03-app-command-parser-contracts'.
 - Created PR: https://github.com/ineersa/agent-core/pull/22
+
+## Task workflow update - 2026-05-18T01:58:32.560Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/editor-03-app-command-parser-contracts into integration checkout.
+- Merge made by the 'ort' strategy.
+ depfile.yaml                            |   7 +
+ src/Tui/Command/ClearTranscript.php     |  10 ++
+ src/Tui/Command/CommandParseResult.php  |  18 +++
+ src/Tui/Command/CommandParser.php       |  82 ++++++++++++
+ src/Tui/Command/CommandResult.php       |  13 ++
+ src/Tui/Command/DispatchRuntime.php     |  21 +++
+ src/Tui/Command/ExitApplication.php     |  10 ++
+ src/Tui/Command/NoOp.php                |  10 ++
+ src/Tui/Command/NormalPrompt.php        |  20 +++
+ src/Tui/Command/ShellCommand.php        |  27 ++++
+ src/Tui/Command/SlashCommand.php        |  27 ++++
+ src/Tui/Command/StatusUpdate.php        |  20 +++
+ src/Tui/Command/TranscriptMessage.php   |  22 ++++
+ tests/Tui/Command/CommandParserTest.php | 224 ++++++++++++++++++++++++++++++++
+ 14 files changed, 511 insertions(+)
+ create mode 100644 src/Tui/Command/ClearTranscript.php
+ create mode 100644 src/Tui/Command/CommandParseResult.php
+ create mode 100644 src/Tui/Command/CommandParser.php
+ create mode 100644 src/Tui/Command/CommandResult.php
+ create mode 100644 src/Tui/Command/DispatchRuntime.php
+ create mode 100644 src/Tui/Command/ExitApplication.php
+ create mode 100644 src/Tui/Command/NoOp.php
+ create mode 100644 src/Tui/Command/NormalPrompt.php
+ create mode 100644 src/Tui/Command/ShellCommand.php
+ create mode 100644 src/Tui/Command/SlashCommand.php
+ create mode 100644 src/Tui/Command/StatusUpdate.php
+ create mode 100644 src/Tui/Command/TranscriptMessage.php
+ create mode 100644 tests/Tui/Command/CommandParserTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/editor-03-app-command-parser-contracts.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
