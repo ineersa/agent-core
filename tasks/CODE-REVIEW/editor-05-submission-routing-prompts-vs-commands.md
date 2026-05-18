@@ -30,12 +30,12 @@ Parallelizable with: none after dependencies; serialize InteractiveMode/input ro
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/editor-05-submission-routing-prompts-vs-commands
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-05-submission-routing-prompts-vs-commands
 Fork run: hc0ewcxbrjlg
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/26
+PR Status: open
 Started: 2026-05-18T17:52:40.003Z
 Completed:
 
@@ -57,3 +57,11 @@ Completed:
 - Recorded fork run: hc0ewcxbrjlg
 - Validation: vendor/bin/phpunit tests/Tui/Command/SubmissionRouterTest.php — 18 tests, 29 assertions, OK; vendor/bin/phpunit tests/Tui/Command/ — 72 tests, 162 assertions, OK; ~/.local/bin/castor test — 469 tests, 8348 assertions, OK (1 pre-existing notice); ~/.local/bin/castor deptrac — 0 violations; ~/.local/bin/castor phpstan — 0 errors; ~/.local/bin/castor cs-check — clean
 - Summary: EDITOR-05 fork completed. Implemented SubmissionRouter integrating CommandParser + SlashCommandRegistry, wired SubmitListener to route slash commands locally, apply TranscriptMessage/ClearTranscript/ExitApplication/StatusUpdate/NoOp effects, and preserve normal prompt runtime path. ShellCommand returns local not-supported TranscriptMessage for now. Commit 7e38c8a7. Fork reports validation clean.
+
+## Task workflow update - 2026-05-18T20:33:29.717Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/editor-05-submission-routing-prompts-vs-commands to origin.
+- branch 'task/editor-05-submission-routing-prompts-vs-commands' set up to track 'origin/task/editor-05-submission-routing-prompts-vs-commands'.
+- Created PR: https://github.com/ineersa/agent-core/pull/26
+- Validation: vendor/bin/phpunit tests/Tui/Command/SubmissionRouterTest.php — 18 tests, 29 assertions, OK; vendor/bin/phpunit tests/Tui/Command/ — 72 tests, 162 assertions, OK; ~/.local/bin/castor test — 469 tests, 8348 assertions, OK (1 pre-existing notice); ~/.local/bin/castor deptrac — 0 violations; ~/.local/bin/castor phpstan — 0 errors; ~/.local/bin/castor cs-check — clean
+- Summary: EDITOR-05 completed in fork hc0ewcxbrjlg. Added SubmissionRouter for CommandParser + SlashCommandRegistry, wired SubmitListener to route slash commands locally while preserving normal prompt runtime path, and applied built-in command effects for TranscriptMessage, ClearTranscript, ExitApplication, StatusUpdate, and NoOp. Shell prefixes return local not-supported message pending EDITOR-11.
