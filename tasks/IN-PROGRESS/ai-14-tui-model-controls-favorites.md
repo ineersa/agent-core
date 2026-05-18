@@ -27,7 +27,7 @@ Scope:
 Status: IN-PROGRESS
 Branch: task/ai-14-tui-model-controls-favorites
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-14-tui-model-controls-favorites
-Fork run: 4vwkef8byjpz
+Fork run: jbjp9zymk5ep
 PR URL: https://github.com/ineersa/agent-core/pull/27
 PR Status: open
 Started: 2026-05-18T21:35:36.236Z
@@ -82,3 +82,7 @@ Validation: 509 tests pass, 8453 assertions, 0 deptrac violations, 0 phpstan err
 ## Task workflow update - 2026-05-18T22:23:48.425Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: Moved back from code review based on user smoke-test feedback: remove reasoning text from footer; Shift+Tab reasoning changes should update a symbol before the model and model-name color using theme colors per reasoning level; model selection did not persist across restart; /model must present an actual selectable list using Symfony TUI list/widget capabilities; list must support Ctrl+F favorite toggle while cycling/navigating.
+
+## Task workflow update - 2026-05-18T22:25:13.664Z
+- Recorded fork run: jbjp9zymk5ep
+- Summary: Launched follow-up fork for user smoke-test issues: remove reasoning text from footer; use dedicated reasoning theme colors for footer symbol and model name; diagnose/fix model persistence after restart; implement actual /model selectable list using Symfony TUI SelectListWidget; support Ctrl+F favorite toggle while navigating list.
