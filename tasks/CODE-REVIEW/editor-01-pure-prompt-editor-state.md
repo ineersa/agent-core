@@ -32,7 +32,7 @@ Parallelizable with: EDITOR-03.
 Status: CODE-REVIEW
 Branch: task/editor-01-pure-prompt-editor-state
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-01-pure-prompt-editor-state
-Fork run: 3wo0vifc6apo
+Fork run: ldq25jwzc6an
 PR URL: https://github.com/ineersa/agent-core/pull/23
 PR Status: open
 Started: 2026-05-18T01:40:46.601Z
@@ -86,3 +86,15 @@ Completed:
 - Pushed task/editor-01-pure-prompt-editor-state to origin.
 - branch 'task/editor-01-pure-prompt-editor-state' set up to track 'origin/task/editor-01-pure-prompt-editor-state'.
 - PR already exists: https://github.com/ineersa/agent-core/pull/23
+
+## Task workflow update - 2026-05-18T03:04:22.287Z
+- Recorded fork run: ldq25jwzc6an
+- Validation: phpunit --filter=Editor: 48 tests, 74 assertions — all pass; deptrac: 0 violations; php-cs-fixer: clean; phpstan: 0 errors
+- Summary: Round 2 code review fixes applied:
+- PromptEditor now owns EditorWidget creation (parameterless constructor, autowireable)
+- Removed dead cursorLine/cursorColumn from EditorState (@todo EDITOR-07)
+- Made $lines private with getLines() getter (true immutability)
+- Added \r\n/\r normalization to fromText() matching EditorDocument
+- Clear docblocks distinguishing PromptEditor vs PromptEditorWidget
+- Updated docs/tui-architecture.md with editor module class table
+- 48 tests passing, deptrac clean, CS clean, PHPStan clean
