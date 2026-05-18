@@ -7,4 +7,6 @@ namespace Ineersa\Tui\Command;
 /**
  * Clear all entries from the conversation transcript.
  */
-final readonly class ClearTranscript implements CommandResult {}
+final readonly class ClearTranscript implements CommandResult
+{
+}

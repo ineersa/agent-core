@@ -7,4 +7,6 @@ namespace Ineersa\Tui\Command;
 /**
  * Request the application to exit.
  */
-final readonly class ExitApplication implements CommandResult {}
+final readonly class ExitApplication implements CommandResult
+{
+}

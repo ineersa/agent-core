@@ -28,7 +28,7 @@ final readonly class CommandParser
     {
         $text = trim($submittedText);
 
-        if ($text === '') {
+        if ('' === $text) {
             return new NormalPrompt($text);
         }
 
@@ -56,7 +56,7 @@ final readonly class CommandParser
             $rest = substr($text, 1);
 
             // "/" alone or "/ " or "/@something" (not a word char) → NormalPrompt
-            if ($rest === '' || !$this->isWordChar($rest[0])) {
+            if ('' === $rest || !$this->isWordChar($rest[0])) {
                 return new NormalPrompt($text);
             }
 
@@ -77,6 +77,6 @@ final readonly class CommandParser
      */
     private function isWordChar(string $char): bool
     {
-        return ctype_alnum($char) || $char === '_';
+        return ctype_alnum($char) || '_' === $char;
     }
 }

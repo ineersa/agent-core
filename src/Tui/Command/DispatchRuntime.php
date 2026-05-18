@@ -17,5 +17,6 @@ final readonly class DispatchRuntime implements CommandResult
      */
     public function __construct(
         public string $payload,
-    ) {}
+    ) {
+    }
 }

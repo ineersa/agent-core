@@ -7,4 +7,6 @@ namespace Ineersa\Tui\Command;
 /**
  * Nothing to do — the command produced no side effects.
  */
-final readonly class NoOp implements CommandResult {}
+final readonly class NoOp implements CommandResult
+{
+}
