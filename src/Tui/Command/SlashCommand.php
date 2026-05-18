@@ -18,7 +18,8 @@ final readonly class SlashCommand implements CommandParseResult
         public string $name,
         public string $args,
         public string $originalText,
-    ) {}
+    ) {
+    }
 
     public function originalText(): string
     {
