@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Screen;
 
+use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Extension\SlotBasedTuiExtensionContext;
 use Ineersa\Tui\Extension\TuiExtensionContext;
 use Ineersa\Tui\Footer\FooterBarWidget;
@@ -32,11 +33,12 @@ use Symfony\Component\Tui\Widget\EditorWidget;
  * ChatScreen owns:
  *  - TuiSlotRegistry and SlotBasedTuiExtensionContext (extension slot model)
  *  - Default renderable TuiWidget instances (HeaderWidget, TranscriptWidget, etc.)
- *  - One real Symfony EditorWidget (interactive prompt input)
+ *  - A PromptEditor facade (DI service) wrapping a real Symfony EditorWidget
  *  - LiveTextWidget adapters that re-render at the live terminal width on every
  *    tick — so separators, header, and footer respond to terminal resize.
  *
- * ChatScreen provides a clean listener-friendly API so listeners never
+ * ChatScreen receives a PromptEditor (DI service wrapping EditorWidget)
+ * and provides a clean listener-friendly API so listeners never
  * touch concrete Symfony widget refs directly.
  *
  * ## Resize responsiveness
@@ -64,7 +66,6 @@ final class ChatScreen
     private readonly LiveTextWidget $statusPanelWidget;
     private readonly LiveTextWidget $aboveEditorWidget;
     private readonly LiveTextWidget $editorSepWidget;
-    private readonly EditorWidget $editor;
     private readonly LiveTextWidget $belowEditorWidget;
     private readonly LiveTextWidget $footerSepWidget;
     private readonly LiveTextWidget $footerWidget;
@@ -88,6 +89,7 @@ final class ChatScreen
     public function __construct(
         private readonly TuiTheme $theme,
         private readonly string $sessionId,
+        private readonly PromptEditor $promptEditor,
     ) {
         $this->registry = new TuiSlotRegistry();
 
@@ -207,10 +209,8 @@ final class ChatScreen
             },
         );
 
-        // ── Interactive editor (the one real Symfony TUI interactive widget) ──
-        $this->editor = new EditorWidget();
-        $this->editor->setMinVisibleLines(1);
-        $this->editor->setMaxVisibleLines(10);
+        // ── Interactive editor (via PromptEditor facade over Symfony EditorWidget) ──
+        $this->promptEditor->setMinVisibleLines(1)->setMaxVisibleLines(10);
 
         // ── Extension widgets: below editor ──
         $this->belowEditorWidget = new LiveTextWidget(
@@ -273,7 +273,7 @@ final class ChatScreen
         $tui->add($this->statusPanelWidget);
         $tui->add($this->aboveEditorWidget);
         $tui->add($this->editorSepWidget);
-        $tui->add($this->editor);
+        $tui->add($this->promptEditor->getWidget());
         $tui->add($this->belowEditorWidget);
         $tui->add($this->footerSepWidget);
         $tui->add($this->footerWidget);
@@ -283,17 +283,33 @@ final class ChatScreen
 
     public function editorWidget(): EditorWidget
     {
-        return $this->editor;
+        return $this->promptEditor->getWidget();
+    }
+
+    public function promptEditor(): PromptEditor
+    {
+        return $this->promptEditor;
     }
 
     public function clearEditor(): void
     {
-        $this->editor->setText('');
+        $this->promptEditor->clear();
     }
 
     public function editorText(): string
     {
-        return $this->editor->getText();
+        return $this->promptEditor->getText();
+    }
+
+    /**
+     * Extract the current editor text and clear the editor.
+     *
+     * Convenience method that delegates to {@see PromptEditor::extract()}.
+     * Use this in SubmitListener instead of getValue() + clearEditor().
+     */
+    public function extract(): string
+    {
+        return $this->promptEditor->extract();
     }
 
     /** @param list<TranscriptEntry> $entries */
