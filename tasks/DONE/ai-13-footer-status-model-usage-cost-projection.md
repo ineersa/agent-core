@@ -21,14 +21,14 @@ Scope:
 - Suggested validation: `castor test --filter Footer`; `castor deptrac`.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/ai-13-footer-status-model-usage-cost-projection
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-13-footer-status-model-usage-cost-projection
 Fork run: 04ersf3xrhfp
 PR URL: https://github.com/ineersa/agent-core/pull/21
-PR Status: open
+PR Status: merged
 Started: 2026-05-17T23:55:24.914Z
-Completed:
+Completed: 2026-05-18T01:32:25.317Z
 
 ## Work log
 - Created: 2026-05-16T22:02:34.213Z
@@ -98,3 +98,35 @@ Completed:
 ## Task workflow update - 2026-05-18T01:26:00.994Z
 - Validation: php -l src/Tui/Screen/ChatScreen.php: pass; timeout 5s php bin/console agent: TUI renders; footer elapsed increments from 0s to 4s before timeout; vendor/bin/phpunit tests/Tui/Footer/: 7 tests, 16 assertions, OK; castor phpstan: 0 errors, baseline regenerated to 225 entries; castor cs-check: clean; castor run:agent: Created tmux window 'hatfield-agent'; tmux shows 2:2:hatfield-agent:php:0; castor test: 353 tests, 8122 assertions, 1 pre-existing PHPUnit notice
 - Summary: Hotfix after user reported `castor run:agent` did not start: root cause was ChatScreen constructor creating SlotBasedTuiExtensionContext with $this->footerDataProvider before the readonly property was initialized. Moved extensionContext construction after FooterDataProvider initialization, regenerated PHPStan baseline to remove the now-unmatched uninitialized readonly baseline, committed/pushed fix a940ef77 to task/ai-13-footer-status-model-usage-cost-projection. Verified `castor run:agent` creates a live tmux window with php process.
+
+## Task workflow update - 2026-05-18T01:32:25.317Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/ai-13-footer-status-model-usage-cost-projection into integration checkout.
+- Merge made by the 'ort' strategy.
+ depfile.yaml                                       |   3 +
+ phpstan-baseline.neon                              |  36 ++---
+ src/Tui/Application/InteractiveMode.php            |   7 +
+ src/Tui/Extension/SlotBasedTuiExtensionContext.php |   8 +
+ src/Tui/Extension/TuiExtensionContext.php          |  12 ++
+ src/Tui/Footer/FooterBarWidget.php                 |  64 +++++---
+ src/Tui/Footer/FooterDataProvider.php              |  59 +++++---
+ src/Tui/Footer/FooterSegment.php                   |  18 ++-
+ src/Tui/Listener/FooterStateInitializer.php        | 148 ++++++++++++++++++
+ src/Tui/Listener/FooterStateListener.php           |  41 +++++
+ src/Tui/Listener/FooterStateSegmentProvider.php    | 168 +++++++++++++++++++++
+ src/Tui/Listener/TickPollListener.php              |   3 +-
+ src/Tui/Runtime/RuntimeEventPoller.php             |  30 ++++
+ src/Tui/Runtime/TuiRuntimeContext.php              |   1 +
+ src/Tui/Runtime/TuiSessionState.php                |  14 ++
+ src/Tui/Runtime/TuiTickDispatcher.php              |  54 +++++++
+ src/Tui/Screen/ChatScreen.php                      |  27 +++-
+ tests/Tui/Footer/FooterBarWidgetTest.php           |   6 +-
+ 18 files changed, 629 insertions(+), 70 deletions(-)
+ create mode 100644 src/Tui/Listener/FooterStateInitializer.php
+ create mode 100644 src/Tui/Listener/FooterStateListener.php
+ create mode 100644 src/Tui/Listener/FooterStateSegmentProvider.php
+ create mode 100644 src/Tui/Runtime/TuiTickDispatcher.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/ai-13-footer-status-model-usage-cost-projection.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: Final hotfix validation: php -l src/Tui/Screen/ChatScreen.php pass; timeout 5s php bin/console agent: TUI renders and footer elapsed increments 0s→4s; castor run:agent creates live tmux window with php process; vendor/bin/phpunit tests/Tui/Footer/: 7 tests, 16 assertions; castor test: 353 tests, 8122 assertions, 1 pre-existing PHPUnit notice; castor phpstan: 0 errors; castor cs-check: clean
+- Summary: PR #21 merged by user. AI-13 completed footer/status projection with model/reasoning/usage/session/cwd/branch display; follow-up fixes added Pi-like footer formatting, ANSI-aware truncation via Symfony TUI AnsiUtils, composable TuiTickDispatcher so elapsed time updates, FooterStateListener split into initializer/provider/registrar, and extension-facing keyed footer provider API while preserving full footer replacement.

@@ -8,28 +8,38 @@ This document describes the terminal UI architecture for the `ineersa/agent-core
 AgentCommand::runTui()
     │
     ├─ ClientResolver::resolve()      → AgentSessionClient
-    ├─ ThemeFactory::create()          → TuiTheme
     │
     ▼
-InteractiveMode::run(client, theme, sessionId, cwd)
+InteractiveMode::run(client, request, theme, sessionId)
     │
-    ├─ 1. $state = SessionInitializer::initialize(sessionId, cwd, prompt)
+    ├─ 1. ThemeFactory::create()      → TuiTheme
+    │
+    ├─ 2. SessionInitializer::initialize(sessionId, request)
     │        └─ new or resume → TuiSessionState
     │
-    ├─ 2. $screen = new ChatScreen()
-    │        └─ $screen->mount($tui, $theme)
-    │             └─ Creates 13 Symfony widgets in layout order
+    ├─ 3. $screen = new ChatScreen(theme, sessionId)
+    │        └─ $screen->mount($tui)
+    │             └─ Creates live Symfony widgets in layout order
     │
-    ├─ 3. $context = new TuiRuntimeContext(tui, client, state, screen, sessionStore)
+    ├─ 4. $ticks = new TuiTickDispatcher()
     │
-    ├─ 4. foreach($listenerRegistrars as $registrar)
+    ├─ 5. $context = new TuiRuntimeContext(tui, client, state, screen, sessionStore, ticks)
+    │
+    ├─ 6. foreach($listenerRegistrars as $registrar)
     │        └─ $registrar->register($context)
-    │             └─ $context->tui->addListener(fn(Event $e) => ...)
+    │             ├─ $context->tui->addListener(fn(Event $e) => ...)
+    │             └─ $context->ticks->add(fn(TickEvent $e) => ...)
     │
-    └─ 5. $tui->run()                    ← blocks via Revolt suspension
+    ├─ 7. $tui->onTick(fn(TickEvent $e) => $ticks->dispatch($e))
+    │        └─ single Symfony TUI tick callback; dispatcher multiplexes handlers
+    │
+    └─ 8. $tui->run()                    ← blocks via Revolt suspension
               │
-              ├─ TickEvent → TickPollListener → RuntimeEventPoller::poll()
-              │    └─ maps RuntimeEvent → TranscriptEntry → ChatScreen
+              ├─ TickEvent → TuiTickDispatcher
+              │    ├─ TickPollListener → RuntimeEventPoller::poll()
+              │    │    └─ maps RuntimeEvent → TranscriptEntry → ChatScreen
+              │    └─ FooterStateListener → ChatScreen::refresh()
+              │         └─ keeps elapsed time / throughput footer live
               │
               ├─ SubmitEvent → SubmitListener
               │    └─ start run / send follow-up → AgentSessionClient
@@ -53,8 +63,14 @@ The TUI runs an interactive event loop powered by **Symfony TUI**
 Entry point: `Ineersa\Tui\Application\InteractiveMode::run()` is a thin
 orchestrator that creates the theme, session state, and `ChatScreen`,
 builds `TuiRuntimeContext`, iterates over DI-tagged `TuiListenerRegistrar`
-services, and calls `$tui->run()` which blocks until a listener calls
-`$tui->stop()`.
+services, installs one Symfony TUI `onTick()` callback backed by
+`TuiTickDispatcher`, and calls `$tui->run()` which blocks until a listener
+calls `$tui->stop()`.
+
+`Symfony\Component\Tui\Tui::onTick()` is a single-slot setter, not an
+additive listener API. TUI code must register tick work through
+`TuiTickDispatcher` (`$context->ticks->add(...)`) so runtime polling,
+footer refresh, and future tick handlers do not overwrite one another.
 
 ### Keybindings
 
@@ -114,7 +130,9 @@ Each event has a dedicated listener class in `src/Tui/Listener/`: each implement
 | `SubmitEvent` | `SubmitListener` | `src/Tui/Listener/SubmitListener.php` | Append user message, start run or send follow-up, show processing indicator |
 | `CancelEvent` | `CancelListener` | `src/Tui/Listener/CancelListener.php` | Clear editor text |
 | `QuitEvent` | `QuitListener` | `src/Tui/Listener/QuitListener.php` | Call `$tui->stop()` |
+| `TickEvent` | `TuiTickDispatcher` | `src/Tui/Runtime/TuiTickDispatcher.php` | Multiplex the single Symfony TUI `onTick()` callback to registered handlers |
 | `TickEvent` | `TickPollListener` | `src/Tui/Listener/TickPollListener.php` | Delegate to `RuntimeEventPoller`, refresh transcript via `ChatScreen` |
+| `TickEvent` | `FooterStateListener` | `src/Tui/Listener/FooterStateListener.php` | Refresh the screen so elapsed time / throughput footer segments stay live |
 
 ### Ctrl+C double-press mechanism
 
@@ -185,6 +203,7 @@ Extensions interact with the TUI through explicit slots, not direct widget mutat
 | `setStatus(key, ?string)` | Set/remove status panel entry |
 | `setWorkingMessage(?string)` | Override working indicator text |
 | `setWorkingVisible(bool)` | Show/hide working row |
+| `setFooterProvider(key, ?FooterSegmentProvider)` | Add/remove a keyed provider for the default footer bar |
 | `onTerminalInput(callable)` | Raw terminal input interceptor |
 
 **Key files:**
@@ -206,7 +225,40 @@ interface FooterSegmentProvider
 }
 ```
 
-Segments are sorted by priority and rendered in the footer bar.
+Segments are sorted by priority and rendered in the footer bar. Each segment
+can carry an optional `ThemeColor`; `FooterBarWidget` applies semantic colors
+per segment and uses Symfony TUI `AnsiUtils` for ANSI-aware width calculation
+and truncation.
+
+The default footer is intentionally small and extensible:
+
+```text
+◆ deepseek-v4-pro  |  0/0 $0.00 0% 0/1000.0k  |  ⏱ 0s  |  ⌂ agent-core  |  ⎇ main
+```
+
+Core footer state is supplied by `FooterStateListener`:
+
+- `FooterStateInitializer` seeds model, reasoning, context window, cwd, git
+  branch, and session start time from session metadata, request state, and
+  `AppConfig`.
+- `FooterStateSegmentProvider` renders the Pi-like footer segments. Reasoning
+  is not shown as text; it colors the `◆` indicator.
+- `RuntimeEventPoller` accumulates token usage and provider-returned cost from
+  `llm_step_completed` runtime events into `TuiSessionState`.
+- `TuiTickDispatcher` drives regular `ChatScreen::refresh()` calls so elapsed
+  time and throughput update while the TUI is idle.
+
+Extensions have two footer integration modes:
+
+| API | Use case |
+|-----|----------|
+| `setFooter(?TuiWidget)` | Replace the entire footer bar widget |
+| `setFooterProvider(string $key, ?FooterSegmentProvider $provider)` | Add/remove keyed segments in the default footer bar |
+| `setStatus(string $key, ?string $text)` | Add/remove keyed status text shown by the status panel and footer data provider |
+
+`FooterDataProvider` stores providers by key, so third-party packages can
+remove or replace their own provider without mutating the built-in provider
+list directly.
 
 ## Theme system
 
@@ -222,8 +274,7 @@ The TUI uses a semantic theme system. Widgets reference semantic tokens (e.g., `
 | `ThemeColor` | `src/Tui/Theme/ThemeColor.php` | Semantic color enum (50+ tokens) |
 | `ThemePalette` | `src/Tui/Theme/ThemePalette.php` | Immutable palette: ThemeColor → color spec |
 | `DefaultTheme` | `src/Tui/Theme/DefaultTheme.php` | Symfony TUI `Style`-backed implementation |
-| `ThemeRegistry` | `src/Tui/Theme/ThemeRegistry.php` | Lookup by name, default fallback |
-| `ThemeLoader` | `src/Tui/Theme/ThemeLoader.php` | Load palettes from YAML files |
+| `ThemeRegistry` | `src/Tui/Theme/ThemeRegistry.php` | Autowireable registry; loads configured and built-in YAML palettes, lookup by name |
 
 ### Theme file format
 
@@ -294,7 +345,7 @@ The logo is styled with the `ThemeColor::Header` semantic color.
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         AgentCommand                                 │
-│  runTui() → InteractiveMode::run(client, theme, sessionId, cwd)    │
+│  runTui() → InteractiveMode::run(client, request, theme, sessionId)│
 └─────────────────────────┬───────────────────────────────────────────┘
                           │
                           ▼
@@ -303,10 +354,12 @@ The logo is styled with the `ThemeColor::Header` semantic color.
 │                                                                      │
 │  1. ThemeFactory::create()           → TuiTheme                     │
 │  2. SessionInitializer::initialize() → TuiSessionState              │
-│  3. ChatScreen::mount(tui, theme)    → live widget tree             │
-│  4. TuiRuntimeContext(tui, client, state, screen, sessionStore)     │
-│  5. foreach(listenerRegistrars) $r->register($context)               │
-│  6. tui->run()                                                      │
+│  3. ChatScreen::mount(tui)           → live widget tree             │
+│  4. TuiTickDispatcher              → composable tick handlers       │
+│  5. TuiRuntimeContext(tui, client, state, screen, store, ticks)      │
+│  6. foreach(listenerRegistrars) $r->register($context)               │
+│  7. tui->onTick(fn($event) => ticks->dispatch($event))               │
+│  8. tui->run()                                                      │
 └─────────────────────────┬───────────────────────────────────────────┘
                           │
           ┌───────────────┼───────────────┐
@@ -332,7 +385,7 @@ mutating individual widget refs.
 ### Widget tree owned by ChatScreen
 
 ```
-ChatScreen (14 widgets)
+ChatScreen (13 widgets)
   ├── topMarginWidget    (LiveTextWidget)  4 blank lines (configurable)
   ├── headerWidget       (LiveTextWidget)  ← HeaderWidget.render()
   ├── headerSeparator    (LiveTextWidget)  ─── at live terminal width
@@ -361,7 +414,7 @@ producer receives the current `RenderContext` and sizes output accordingly.
 
 | Method | Purpose |
 |--------|---------|
-| `mount(Tui): void` | Create and attach all 14 widgets to TUI |
+| `mount(Tui): void` | Create and attach all 13 widgets to TUI |
 | `setTranscriptEntries(TranscriptEntry[]): void` | Replace transcript content |
 | `appendTranscript(TranscriptEntry): void` | Add one entry to transcript |
 | `clearEditor(): void` | Reset editor to empty |
@@ -376,10 +429,10 @@ producer receives the current `RenderContext` and sizes output accordingly.
 ### State updates via invalidate()
 
 Listeners mutate renderable / registry state and call `invalidate()` on the
-relevant `LiveTextWidget` to force re-render on the next tick.  Structural
-widgets (separators, header, footer, top margin) never need manual invalidation
-because their producers always read the correct dimensions from the live
-`RenderContext`.
+relevant `LiveTextWidget` to force re-render on the next tick. Structural
+widgets also read current dimensions from the live `RenderContext`. The footer
+is invalidated on tick via `ChatScreen::refresh()` so live values (elapsed time
+and throughput) update even when no runtime events arrive.
 
 ```
 setTranscriptEntries()  → transcriptRenderable + transcriptWidget.invalidate()
@@ -403,15 +456,14 @@ _instanceof:                          __construct(
     tags: [app.tui_listener]              !tagged_iterator
                                         )  app.tui_listener
 
-5 services autowired:                      │
+6 services autowired:                      │
   SubmitListener                           ▼
   CancelListener                  foreach($listenerRegistrars as $r)
   QuitListener                       $r->register($context)
   CtrlCInputInterceptor                   │
   TickPollListener                        ▼
-                                  $context->tui->addListener(
-                                      fn(SubmitEvent $e) => ...
-                                  )
+  FooterStateListener            event listeners: $context->tui->addListener(...)
+                                 tick handlers:  $context->ticks->add(...)
 ```
 
 Each registrar receives a `TuiRuntimeContext` value object carrying:
@@ -423,6 +475,7 @@ Each registrar receives a `TuiRuntimeContext` value object carrying:
 | `$state` | `TuiSessionState` | Mutable per-run state (session ID, handle, transcript, poll state) |
 | `$screen` | `ChatScreen` | Widget tree for visual updates |
 | `$sessionStore` | `HatfieldSessionStore` | Session persistence |
+| `$ticks` | `TuiTickDispatcher` | Per-run tick handler multiplexer |
 
 ## Runtime namespaces
 
@@ -433,7 +486,8 @@ Classes that carry per-run state were moved to `src/Tui/Runtime/` to keep
 |-------|------|----------------|
 | `TuiSessionState` | `src/Tui/Runtime/TuiSessionState.php` | Mutable state bag (session ID, handle, transcript, poll state) |
 | `TuiRuntimeContext` | `src/Tui/Runtime/TuiRuntimeContext.php` | Per-run context value object passed to listener registrars |
-| `RuntimeEventPoller` | `src/Tui/Runtime/RuntimeEventPoller.php` | Throttled polling, sequence deduplication, event → plain TranscriptEntry mapping |
+| `RuntimeEventPoller` | `src/Tui/Runtime/RuntimeEventPoller.php` | Throttled polling, sequence deduplication, event → plain TranscriptEntry mapping, footer usage accumulation |
+| `TuiTickDispatcher` | `src/Tui/Runtime/TuiTickDispatcher.php` | Multiplexes Symfony TUI's single `onTick()` callback to multiple handlers |
 
 ### TuiSessionState
 
@@ -443,7 +497,6 @@ Mutable class holding per-run state, passed through `TuiRuntimeContext`:
 final class TuiSessionState
 {
     public string $sessionId;
-    public string $cwd;
     public bool $resuming;
     public ?RunHandle $handle;
     public ?StartRunRequest $request;
@@ -451,6 +504,17 @@ final class TuiSessionState
     public array $transcript = [];
     public int $lastSeq = 0;
     public float $lastPoll = 0.0;
+
+    // Footer/runtime projection state
+    public string $footerModel = '';
+    public string $footerReasoning = '';
+    public int $inputTokens = 0;
+    public int $outputTokens = 0;
+    public float $totalCost = 0.0;
+    public int $contextWindow = 0;
+    public float $sessionStartTime = 0.0;
+    public string $cwd = '';
+    public string $branch = '';
 }
 ```
 
@@ -460,7 +524,9 @@ final class TuiSessionState
 TickEvent fires (every ~16ms)
     │
     ▼
-TickPollListener closure
+TuiTickDispatcher::dispatch(event)
+    │
+    ├─ TickPollListener handler
     │
     ├─ throttle: skip if < POLL_INTERVAL (50ms) since lastPoll
     │
@@ -479,6 +545,9 @@ ChatScreen::appendTranscript(entry)
     │
     ├─ Updates TranscriptWidget with new entries
     └─ TranscriptWidget sets TextWidget text (with role prefixes + theme)
+    │
+    └─ FooterStateListener handler
+         └─ ChatScreen::refresh() so live footer values re-render
 ```
 
 ### Event → transcript entry mapping
@@ -504,11 +573,12 @@ The TUI layers are enforced by Deptrac (`depfile.yaml`):
 | Layer | May depend on |
 |-------|--------------|
 | `TuiApplication` | Runtime Contract, AppSession, AppConfig, TuiRuntime, TuiScreen, TuiListener, TUI internals, Symfony TUI/Console |
-| `TuiListener` | Runtime Contract, AppSession, TuiRuntime, TuiScreen, TuiTranscript, Symfony TUI |
-| `TuiRuntime` | TuiScreen, Runtime Contract, AppSession, Symfony TUI |
+| `TuiListener` | Runtime Contract, AppSession, AppConfig, TuiRuntime, TuiScreen, TuiTranscript, TuiFooter, TuiTheme, Symfony TUI |
+| `TuiRuntime` | TuiScreen, Runtime Contract, AppSession, TuiTranscript, TuiTheme, Symfony TUI |
 | `TuiScreen` | TuiLayout, TuiExtension, TuiHeader, TuiTranscript, TuiStatus, TuiEditor, TuiFooter, TuiWidget, TuiTheme, Symfony TUI |
-| `TuiTheme` | Symfony TUI, Symfony Console |
-| `TuiWidget` | TuiTheme |
+| `TuiExtension` | TuiLayout, TuiWidget, TuiFooter, TuiTheme |
+| `TuiTheme` | AppConfig, Symfony TUI, Symfony Console, Symfony YAML |
+| `TuiWidget` | TuiTheme, Symfony TUI |
 | `TuiLayout` | TuiWidget, TuiTheme, individual widget layers |
 | Individual widgets | TuiWidget, TuiTheme |
 
