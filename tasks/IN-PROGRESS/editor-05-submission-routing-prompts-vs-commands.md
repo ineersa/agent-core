@@ -30,14 +30,21 @@ Parallelizable with: none after dependencies; serialize InteractiveMode/input ro
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/editor-05-submission-routing-prompts-vs-commands
+Worktree: /home/ineersa/projects/agent-core-worktrees/editor-05-submission-routing-prompts-vs-commands
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-18T17:52:40.003Z
 Completed:
 
 ## Work log
 - Created: 2026-05-18T00:15:36.255Z
+
+## Task workflow update - 2026-05-18T17:52:40.003Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/editor-05-submission-routing-prompts-vs-commands.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/editor-05-submission-routing-prompts-vs-commands.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/editor-05-submission-routing-prompts-vs-commands.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/editor-05-submission-routing-prompts-vs-commands.
