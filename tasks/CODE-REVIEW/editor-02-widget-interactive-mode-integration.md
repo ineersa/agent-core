@@ -34,12 +34,12 @@ Parallelizable with: EDITOR-04.
 - `castor test` and `castor deptrac` pass.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/editor-02-widget-interactive-mode-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-02-widget-interactive-mode-integration
 Fork run: 8vr7qov6xcz9
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/24
+PR Status: open
 Started: 2026-05-18T17:10:13.499Z
 Completed:
 
@@ -66,3 +66,11 @@ Completed:
 ## Task workflow update - 2026-05-18T17:23:37.108Z
 - Validation: ~/.local/bin/castor test:tui in EDITOR-02 worktree — fails 2/2 due startup footer snapshot expecting old 'hatfield · session...' while actual footer shows model/status/cwd; reproduced the same failure on main, so not introduced by EDITOR-02
 - Summary: Parent ran TUI e2e after fork completion. The snapshot failure is reproducible on main and appears pre-existing/unrelated to EDITOR-02.
+
+## Task workflow update - 2026-05-18T17:23:53.445Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/editor-02-widget-interactive-mode-integration to origin.
+- branch 'task/editor-02-widget-interactive-mode-integration' set up to track 'origin/task/editor-02-widget-interactive-mode-integration'.
+- Created PR: https://github.com/ineersa/agent-core/pull/24
+- Validation: castor test — 419/419 pass, 8246 assertions, 1 pre-existing notice; castor test --filter="PromptEditor" — 23/23 pass, 41 assertions; castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — fails due pre-existing src/Tui/Command/* style violations unrelated to changed files; ~/.local/bin/castor test:tui — fails 2/2 due pre-existing startup footer snapshot mismatch reproduced on main
+- Summary: EDITOR-02 completed in fork 8vr7qov6xcz9. PromptEditor is now injected into InteractiveMode and passed into ChatScreen, ChatScreen delegates editorWidget/editorText/clear/extract through PromptEditor, viewport defaults are configured via PromptEditor, and SubmitListener uses ChatScreen::extract(). No new editor behavior or command routing added.
