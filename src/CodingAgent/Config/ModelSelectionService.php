@@ -27,6 +27,18 @@ final class ModelSelectionService
     /** Valid reasoning levels. */
     public const LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
 
+    /**
+     * In-process cache of the raw favorite_models list (provider/modelname strings).
+     *
+     * When null (uninitialized), getFavoriteRawList() reads from AppConfig.
+     * After toggleFavorite() mutates the list, this cache is authoritative for
+     * the remainder of the process lifetime so that callers see the toggle
+     * immediately instead of waiting for an AppConfig rebuild.
+     *
+     * @var list<string>|null
+     */
+    private ?array $favRaw = null;
+
     public function __construct(
         private readonly AppConfig $appConfig,
         private readonly HomeSettingsWriter $homeWriter,
@@ -195,14 +207,13 @@ final class ModelSelectionService
         ]);
     }
 
-    // ──────────────────────────────────────────────
-    //  Favorites
-    // ──────────────────────────────────────────────
-
     /**
      * Get the persisted favorite model refs (provider/modelname strings).
      *
      * Only returns favorites that are actually available in the catalog.
+     *
+     * Consults the in-process cache when available so that toggleFavorite()
+     * is immediately visible to callers in the same process.
      *
      * @return list<string>
      */
@@ -213,13 +224,13 @@ final class ModelSelectionService
             return [];
         }
 
-        $ai = $this->appConfig->ai;
-        if (null === $ai || [] === $ai->favoriteModels) {
+        $raw = $this->getFavoriteRawList();
+        if ([] === $raw) {
             return [];
         }
 
         return array_values(array_filter(
-            $ai->favoriteModels,
+            $raw,
             static fn (string $ref): bool => $catalog->isAvailable($ref),
         ));
     }
@@ -281,7 +292,10 @@ final class ModelSelectionService
     /**
      * Toggle a model as favorite (add if absent, remove if present).
      *
-     * Only persists to home settings — does not change the current model.
+     * Persists to home settings AND updates the in-process cache so that
+     * getFavoriteModels(), isFavorite(), getOrderedModels(), and
+     * cycleFavoriteModel() reflect the change immediately in the same
+     * process without requiring an AppConfig rebuild.
      *
      * @throws \RuntimeException If the model is not available
      */
@@ -295,7 +309,7 @@ final class ModelSelectionService
             throw new \RuntimeException(\sprintf('Model "%s" is not available.', $model->toString()));
         }
 
-        $current = $this->appConfig->ai->favoriteModels ?? [];
+        $current = $this->getFavoriteRawList();
         $modelStr = $model->toString();
         $pos = array_search($modelStr, $current, true);
 
@@ -307,6 +321,10 @@ final class ModelSelectionService
             // Add to end
             $current[] = $modelStr;
         }
+
+        // Update in-process cache before persisting to disk so that
+        // subsequent reads in this process see the change immediately.
+        $this->favRaw = $current;
 
         $this->homeWriter->writeFavoriteModels($current);
     }
@@ -387,5 +405,28 @@ final class ModelSelectionService
     public function getCurrentReasoning(string $sessionId): string
     {
         return $this->resolveInitialReasoning(null, $sessionId);
+    }
+
+    // ──────────────────────────────────────────────
+    //  Favorites
+    // ──────────────────────────────────────────────
+
+    /**
+     * Get the raw favorite model refs (provider/modelname strings).
+     *
+     * Prefers the in-process cache when it has been populated by a prior
+     * toggleFavorite() call; otherwise reads from immutable AppConfig.
+     *
+     * @return list<string>
+     */
+    private function getFavoriteRawList(): array
+    {
+        if (null !== $this->favRaw) {
+            return $this->favRaw;
+        }
+
+        $ai = $this->appConfig->ai;
+
+        return (null !== $ai) ? $ai->favoriteModels : [];
     }
 }

@@ -531,6 +531,113 @@ class ModelSelectionServiceTest extends TestCase
     }
 
     // ──────────────────────────────────────────────
+    //  Immediate favorite visibility (regression: cache consistency)
+    // ──────────────────────────────────────────────
+
+    public function testToggleFavoriteAddIsImmediatelyVisibleInGetFavoriteModels(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro'];
+        $service = $this->buildService($aiData);
+
+        // Before: only one favorite
+        self::assertCount(1, $service->getFavoriteModels());
+
+        // Toggle add
+        $service->toggleFavorite(new AiModelReference('llama_cpp', 'flash'));
+
+        // After: both favorites visible without rebuilding AppConfig
+        $favs = $service->getFavoriteModels();
+        self::assertCount(2, $favs);
+        self::assertContains('llama_cpp/flash', $favs);
+        self::assertContains('deepseek/deepseek-v4-pro', $favs);
+    }
+
+    public function testToggleFavoriteAddIsImmediatelyVisibleInIsFavorite(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+
+        // Before: not a favorite
+        self::assertFalse($service->isFavorite('llama_cpp/flash'));
+
+        // Toggle add
+        $service->toggleFavorite(new AiModelReference('llama_cpp', 'flash'));
+
+        // After: isFavorite returns true immediately
+        self::assertTrue($service->isFavorite('llama_cpp/flash'));
+    }
+
+    public function testToggleFavoriteAddIsImmediatelyVisibleInGetOrderedModels(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+
+        // Toggle add a model that was previously not a favorite
+        $service->toggleFavorite(new AiModelReference('llama_cpp', 'flash'));
+
+        $ordered = $service->getOrderedModels();
+
+        self::assertCount(3, $ordered);
+        // The newly favorited model should be first
+        self::assertSame('llama_cpp', $ordered[0]->providerId);
+        self::assertSame('flash', $ordered[0]->modelName);
+    }
+
+    public function testToggleFavoriteAddIsImmediatelyVisibleInCycleFavoriteModel(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro'];
+        $service = $this->buildService($aiData);
+
+        // Add a second favorite
+        $service->toggleFavorite(new AiModelReference('llama_cpp', 'flash'));
+
+        // Current model is default: deepseek/deepseek-v4-pro (first favorite)
+        // Cycling should go to the newly added second favorite
+        $next = $service->cycleFavoriteModel('abc123');
+
+        self::assertNotNull($next);
+        self::assertSame('llama_cpp', $next->providerId);
+        self::assertSame('flash', $next->modelName);
+    }
+
+    public function testToggleFavoriteRemoveIsImmediatelyVisible(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro', 'llama_cpp/flash'];
+        $service = $this->buildService($aiData);
+
+        // Before: two favorites
+        self::assertCount(2, $service->getFavoriteModels());
+        self::assertTrue($service->isFavorite('llama_cpp/flash'));
+
+        // Toggle remove
+        $service->toggleFavorite(new AiModelReference('llama_cpp', 'flash'));
+
+        // After: only one favorite, removed one gone immediately
+        $favs = $service->getFavoriteModels();
+        self::assertCount(1, $favs);
+        self::assertNotContains('llama_cpp/flash', $favs);
+        self::assertFalse($service->isFavorite('llama_cpp/flash'));
+    }
+
+    public function testToggleFavoriteRemoveAffectsOrderedModelsImmediately(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['llama_cpp/flash', 'deepseek/deepseek-v4-pro'];
+        $service = $this->buildService($aiData);
+
+        // Remove the first favorite
+        $service->toggleFavorite(new AiModelReference('llama_cpp', 'flash'));
+
+        $ordered = $service->getOrderedModels();
+
+        // The remaining favorite should now be first
+        self::assertCount(3, $ordered);
+        self::assertSame('deepseek', $ordered[0]->providerId);
+        self::assertSame('deepseek-v4-pro', $ordered[0]->modelName);
+    }
+
+    // ──────────────────────────────────────────────
     //  Cycling
     // ──────────────────────────────────────────────
 

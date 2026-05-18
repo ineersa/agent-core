@@ -53,6 +53,10 @@ ai:
     default_model: deepseek/deepseek-v4-pro
     default_reasoning: medium
 
+    # Favorite models (provider/modelname format) — shown first in /model list
+    # and cycled with Ctrl+P. Toggled via /model fav <provider/modelname>.
+    # favorite_models: []
+
     providers:
         deepseek:
             type: generic

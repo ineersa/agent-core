@@ -40,16 +40,20 @@ final class ModelControlListener implements TuiListenerRegistrar
         $modelService = $this->modelService;
         $appConfig = $this->appConfig;
 
-        // ── Register /model slash command ──
-        $this->commandRegistry->register(
-            new CommandMetadata(
-                name: 'model',
-                aliases: ['m'],
-                description: 'List, select, or manage favorite AI models',
-                usage: '/model [select <provider/modelname> | fav [<provider/modelname>]]',
-            ),
-            new ModelCommandHandler($modelService, $appConfig, $state),
-        );
+        // ── Register /model slash command (idempotent) ──
+        if ($this->commandRegistry->has('model')) {
+            $this->commandRegistry->setHandler('model', new ModelCommandHandler($modelService, $appConfig, $state));
+        } else {
+            $this->commandRegistry->register(
+                new CommandMetadata(
+                    name: 'model',
+                    aliases: ['m'],
+                    description: 'List, select, or manage favorite AI models',
+                    usage: '/model [select <provider/modelname> | fav [<provider/modelname>]]',
+                ),
+                new ModelCommandHandler($modelService, $appConfig, $state),
+            );
+        }
 
         // ── Register Ctrl+P — cycle favorite models ──
         $tui->addListener(static function (InputEvent $event) use (

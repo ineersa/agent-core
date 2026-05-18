@@ -386,4 +386,59 @@ class ModelCommandHandlerTest extends TestCase
         self::assertInstanceOf(TranscriptMessage::class, $result);
         self::assertStringContainsString('Model changed to zai/glm-5.1', $result->text);
     }
+
+    // ──────────────────────────────────────────────
+    //  Immediate favorite visibility after toggle
+    // ──────────────────────────────────────────────
+
+    #[Test]
+    public function testFavListReflectsToggleImmediately(): void
+    {
+        $handler = $this->makeHandler();
+
+        // Toggle a favorite
+        $handler->handle($this->slash('model', 'fav zai/glm-5.1'));
+
+        // Immediately list favorites — should include the newly added model
+        $result = $handler->handle($this->slash('model', 'fav'));
+
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringContainsString('Favorite models:', $result->text);
+        self::assertStringContainsString('zai/glm-5.1', $result->text);
+    }
+
+    #[Test]
+    public function testModelListReflectsFavToggleImmediately(): void
+    {
+        $handler = $this->makeHandler();
+
+        // Toggle a favorite
+        $handler->handle($this->slash('model', 'fav zai/glm-5.1'));
+
+        // Immediately list models — the new favorite should be marked with ★
+        $result = $handler->handle($this->slash('model'));
+
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        // The zai/glm-5.1 line should appear with a star somewhere nearby
+        // (the exact ANSI/format differs, but ★ must appear)
+        self::assertStringContainsString('★', $result->text);
+    }
+
+    #[Test]
+    public function testFavAddThenRemoveReflectedImmediately(): void
+    {
+        $handler = $this->makeHandler();
+
+        // Add a favorite
+        $handler->handle($this->slash('model', 'fav zai/glm-5.1'));
+
+        // Remove it
+        $result = $handler->handle($this->slash('model', 'fav zai/glm-5.1'));
+        self::assertStringContainsString('Removed zai/glm-5.1 from favorites', $result->text);
+
+        // List now — should be empty
+        $listResult = $handler->handle($this->slash('model', 'fav'));
+        self::assertStringContainsString('No favorite models', $listResult->text);
+        self::assertSame('muted', $listResult->style);
+    }
 }
