@@ -55,3 +55,13 @@ Completed:
 ## Task workflow update - 2026-05-18T22:07:38.797Z
 - Recorded fork run: 4vwkef8byjpz
 - Summary: Launched AI-14 follow-up fork to fix review blockers before code review: stale in-process favorites after /model fav toggles, idempotent /model registration across repeated TUI runs, and required docs/settings + .hatfield/settings.yaml updates for ai.favorite_models.
+
+## Task workflow update - 2026-05-18T22:15:06.106Z
+- Validation: vendor/bin/phpunit tests/CodingAgent/Config/ModelSelectionServiceTest.php — 40 tests, 92 assertions, OK; vendor/bin/phpunit tests/Tui/Listener/ModelCommandHandlerTest.php — 18 tests, 49 assertions, OK; ~/.local/bin/castor test — 509 tests, 8453 assertions, OK (1 pre-existing notice); ~/.local/bin/castor deptrac — 0 violations; ~/.local/bin/castor phpstan — 0 errors; ~/.local/bin/castor cs-check — clean
+- Summary: Follow-up fork applied review fixes on commit 3d5bca5d:
+1) Fixed stale favorite state: added in-process $favRaw cache so toggleFavorite() is immediately visible to getFavoriteModels/isFavorite/getOrderedModels/cycleFavoriteModel without AppConfig rebuild.
+2) Added 7 tests in ModelSelectionServiceTest (add/remove immediate visibility) + 3 tests in ModelCommandHandlerTest (fav list, star, add-remove immediacy).
+3) Made ModelControlListener::register() idempotent with has()/setHandler() pattern.
+4) Documented ai.favorite_models in .hatfield/settings.yaml and docs/settings.md.
+Validation: 509 tests pass, 8453 assertions, 0 deptrac violations, 0 phpstan errors, cs-check clean.
+- Applied review follow-up fixes: favorite in-process cache, immediate visibility tests, idempotent listener registration, settings docs. Commit 3d5bca5d.
