@@ -46,3 +46,8 @@ Completed:
 ## Task workflow update - 2026-05-18T21:36:08.221Z
 - Recorded fork run: 44s6f5qp08oq
 - Summary: Launched background fork to implement AI-14 in worktree /home/ineersa/projects/agent-core-worktrees/ai-14-tui-model-controls-favorites.
+
+## Task workflow update - 2026-05-18T22:06:17.425Z
+- Recorded fork run: 44s6f5qp08oq
+- Validation: vendor/bin/phpunit tests/Tui/Listener/ModelCommandHandlerTest.php — 15 tests, 41 assertions, OK; vendor/bin/phpunit tests/CodingAgent/Config/ModelSelectionServiceTest.php — OK with new tests; ~/.local/bin/castor test — 500 tests, 8425 assertions, OK (1 pre-existing notice); ~/.local/bin/castor deptrac — 0 violations; ~/.local/bin/castor phpstan — 0 errors; ~/.local/bin/castor cs-check — clean
+- Summary: AI-14 fork completed at commit 03735c79. Implemented /model command via slash registry, Ctrl+P favorite cycling, Shift+Tab reasoning cycling, favorite_models parsing/persistence, footer state updates, and tests. Fork notes deviations/open risks: no interactive overlay/Ctrl+F/Enter picker; uses /model fav/select commands instead; favorites persisted to disk but in-memory AiConfig may be stale until restart; no runtime events emitted beyond direct TuiSessionState footer update.
