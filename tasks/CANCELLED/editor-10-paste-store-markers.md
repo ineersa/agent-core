@@ -1,5 +1,7 @@
 # EDITOR-10 Paste store and paste marker handling
 
+**CANCELLED 2026-05-18** — 95% covered by Symfony TUI: BracketedPasteTrait detects ESC[200~/ESC[201~, EditorDocument::handlePaste() creates markers for >10-line pastes, EditorDocument::getText() auto-expands markers on submit. Only session-attachment storage might be needed later, which can be a tiny follow-up if ever required.
+
 ## Goal
 Plan: .pi/plans/editor_rollout_plan.md
 

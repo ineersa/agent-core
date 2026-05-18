@@ -1,4 +1,4 @@
-# EDITOR-02 PromptEditorWidget adapter and InteractiveMode integration
+# EDITOR-02 Wire PromptEditor facade into ChatScreen/Listeners via DI
 
 ## Goal
 Plan: .pi/plans/editor_rollout_plan.md
@@ -6,26 +6,32 @@ Plan: .pi/plans/editor_rollout_plan.md
 MVP: yes.
 
 Scope:
-- Add PromptEditorWidget as the Symfony TUI rendering adapter for PromptEditor.
-- Replace direct Symfony EditorWidget usage in InteractiveMode/layout wiring.
-- Preserve current key behavior: Enter submit, Ctrl+J newline, Ctrl+C clear/cancel input, Ctrl+D exit.
-- Render placeholder and cursor reasonably, matching current startup output as closely as practical.
+- Register `PromptEditor` as a Symfony DI service in `config/services.yaml`.
+- Inject `PromptEditor` into `ChatScreen` instead of creating `EditorWidget` inline.
+- Wire `ChatScreen::editorWidget()` to return `$this->promptEditor->getWidget()`.
+- Wire `ChatScreen::clearEditor()` and `ChatScreen::editorText()` through `PromptEditor`.
+- Update `SubmitListener` to use `PromptEditor::extract()` instead of `$event->getValue()` + `$screen->clearEditor()`.
+- Update `CancelListener` / `CtrlCInputInterceptor` to use `PromptEditor` instead of `$screen->editorText()` / `$screen->clearEditor()`.
+- Configure viewport defaults: `setMinVisibleLines(1)`, `setMaxVisibleLines(10)` during wiring.
+- Preserve all current key behavior: Enter submit, Ctrl+J newline, Ctrl+C clear, Ctrl+D exit.
+
+Rationale: `PromptEditor` (EDITOR-01) already wraps `EditorWidget` as a thin facade. This task wires it into the application's DI and listener infrastructure. No new editor functionality is built — just integration.
 
 Exclusions:
 - No command execution/routing; EDITOR-05 owns submission routing.
-- No viewport/growth/scrolling; EDITOR-06 owns that.
 - No prompt history, completion, paste, or configurable keybindings.
+- No viewport logic (Symfony TUI handles this via EditorViewport/EditorRenderer).
 
 Dependencies: EDITOR-01.
-Parallelizable with: EDITOR-04 after EDITOR-03 is available.
+Parallelizable with: EDITOR-04.
 
 ## Acceptance criteria
-- InteractiveMode uses the owned PromptEditor/PromptEditorWidget instead of relying directly on Symfony EditorWidget for prompt state.
+- `PromptEditor` is registered in `services.yaml` and autowired into `ChatScreen`/`InteractiveMode`.
+- `ChatScreen` no longer creates `EditorWidget` directly — receives `PromptEditor` via DI.
+- All editor interactions go through `PromptEditor` facade, not raw `EditorWidget`.
 - Existing visible key behavior is preserved.
-- Startup rendering changes are either avoided or covered by updated TUI snapshot fixtures.
-- Focused unit tests cover widget/editor interaction where possible.
-- If visible rendering changes, castor test:tui or documented snapshot update flow is used.
-- castor deptrac passes.
+- Startup rendering unchanged or covered by updated snapshots.
+- `castor test` and `castor deptrac` pass.
 
 ## Workflow metadata
 Status: TODO
@@ -39,3 +45,4 @@ Completed:
 
 ## Work log
 - Created: 2026-05-18T00:15:13.842Z
+- Updated: 2026-05-18 — Scope simplified: "build widget adapter" → "wire facade into DI". Viewport config folded in from eliminated EDITOR-06.

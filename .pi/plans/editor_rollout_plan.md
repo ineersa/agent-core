@@ -26,19 +26,20 @@ This plan intentionally separates **editor mechanics** from **application comman
 
 ## Target module layout
 
+Revised after Symfony TUI audit (2026-05-18). Items struck through are provided by Symfony TUI and will NOT be built.
+
 ```text
 src/Tui/Editor/
-  EditorState.php              # logical lines, cursor line/column, scroll offset
-  EditorViewport.php           # visible height/width calculation and scroll state
-  EditorAction.php             # enum/action ids for key dispatch
-  EditorKeymap.php             # default key/action mapping, future configurable overrides
-  EditorInputRouter.php        # raw input -> EditorAction / printable / paste
-  PromptEditor.php             # stateful editor model + operations
-  PromptEditorWidget.php       # Symfony TUI widget adapter/rendering
+  EditorState.php              ✅ BUILT — lightweight snapshot DTO for session persistence
+  PromptEditor.php             ✅ BUILT — thin facade over Symfony EditorWidget (DI service)
+  PromptEditorWidget.php       ✅ BUILT — static TuiWidget renderable for ChatLayout
+~~EditorViewport.php~~           ❌ NOT NEEDED — Symfony EditorViewport handles scroll/growth/indicators
+~~EditorAction.php~~             ❌ NOT NEEDED — EditorWidget dispatches 36 actions internally
+~~EditorKeymap.php~~             ❌ NOT NEEDED — reuse Symfony\Component\Tui\Input\Keybindings
+~~EditorInputRouter.php~~        ❌ NOT NEEDED — EditorWidget::handleInput() is the router
   PromptHistory.php            # in-memory/session-backed prompt history navigation
-  Paste/
-    PasteStore.php             # stores paste payloads and returns paste ids
-    PasteMarker.php            # `[paste #1 +123 lines]` metadata
+~~Paste/PasteStore.php~~         ❌ NOT NEEDED — EditorDocument::handlePaste() + getText() handles all paste
+~~Paste/PasteMarker.php~~        ❌ NOT NEEDED — EditorDocument creates [paste #N +M lines <hex>]
   Completion/
     CompletionProvider.php
     CompletionSuggestion.php
@@ -51,13 +52,11 @@ Tests:
 
 ```text
 tests/Tui/Editor/
-  EditorStateTest.php
-  PromptEditorTextEditingTest.php
-  PromptEditorCursorTest.php
-  PromptEditorViewportTest.php
-  PromptEditorHistoryTest.php
-  PromptEditorPasteTest.php
-  PromptEditorCompletionTest.php
+  EditorStateTest.php          ✅ BUILT
+  PromptEditorTest.php         ✅ BUILT
+  PromptEditorWidgetTest.php   ✅ BUILT
+  PromptEditorHistoryTest.php  # TODO: EDITOR-07
+  PromptEditorCompletionTest.php # TODO: EDITOR-08
 
 tests/Tui/E2E/
   TuiEditorInteractionTest.php   # tmux opt-in group
@@ -65,46 +64,41 @@ tests/Tui/E2E/
 
 ## Core editor state
 
-Use pi-style logical lines:
+**IMPLEMENTED (EDITOR-01).** `EditorState` is a lightweight immutable snapshot DTO:
 
 ```php
-final class EditorState
+final readonly class EditorState
 {
-    /** @var list<string> */
-    public array $lines = [''];
-    public int $cursorLine = 0;
-    public int $cursorColumn = 0;
-    public int $scrollOffset = 0;
+    private array $lines;  // exposed via getLines()
+    // cursorLine/cursorColumn removed — EditorDocument is @internal so cursor can't be captured
+    // @todo EDITOR-07: restore cursor fields when session persistence captures live cursor
 }
 ```
 
-Rules:
-
-- Text is stored as logical lines split by `\n`.
-- Cursor coordinates are logical `(line, column)`.
-- Rendering maps logical lines to visual wrapped lines.
-- Cursor movement works on logical coordinates initially; visual-line/sticky-column behavior can be added after basic correctness.
-- Public API exposes `getText()`, `setText()`, `insertText()`, `clear()`, `isEmpty()`.
+`PromptEditor` is a thin facade over Symfony TUI's `EditorWidget`:
+- Constructor creates `EditorWidget` internally (autowireable DI service)
+- `extract()` returns text + clears (renamed from `submit()` to avoid SubmitEvent confusion)
+- `getState()` returns `EditorState` snapshot
+- All text mutation, cursor movement, undo/redo, kill ring, word navigation handled by `EditorWidget`/`EditorDocument`
+- **Do NOT reimplement any text buffer or cursor operations.**
 
 ## Viewport and growth
 
-Editor starts as one visible line and grows upward/downward within the layout until max height.
+**COVERED BY SYMFONY TUI — NO CUSTOM CODE NEEDED.**
 
-Initial policy:
+Symfony TUI provides:
+- `EditorWidget::setMinVisibleLines(1)` / `setMaxVisibleLines(10)` for growth bounds
+- `EditorViewport::computeViewport()` for scroll offset and cursor visibility
+- `EditorViewport::pageScroll()` for PageUp/PageDown
+- `EditorRenderer::render()` for `─── ↑ 3 more ───` / `─── ↓ 2 more ───` scroll indicators
+- `EditorWidget::render()` uses `(int) floor($terminalRows * 0.3)` formula
 
+Configuration during DI wiring:
 ```php
-$maxVisibleLines = min(20, max(3, (int) floor($terminalRows * 0.30)));
+$promptEditor->setMinVisibleLines(1)->setMaxVisibleLines(10);
 ```
 
-Behavior:
-
-- If content takes fewer lines than max, render only needed height.
-- Once content exceeds max, keep cursor visible by adjusting `scrollOffset`.
-- Render scroll hints when hidden content exists:
-  - top: `↑ 3 more`
-  - bottom: `↓ 2 more`
-- PageUp/PageDown scroll the editor while editor is focused.
-- Later, when focus is outside the editor, PageUp/PageDown scroll transcript/history.
+~EDITOR-06 CANCELLED~ — task eliminated, viewport config folded into EDITOR-02.
 
 ## Keybinding defaults
 
@@ -154,61 +148,18 @@ MVP can implement only:
 
 ## Paste handling
 
-### Bracketed paste
+**COVERED BY SYMFONY TUI — NO CUSTOM CODE NEEDED.**
 
-Enable and parse bracketed paste through Symfony TUI/terminal events if exposed. If Symfony TUI does not expose paste events clearly, add raw input detection in `EditorInputRouter`:
+Symfony TUI provides:
+- `BracketedPasteTrait` — ESC[200~/ESC[201~ detection and chunk buffering
+- `EditorDocument::handlePaste()` — small paste inserts at cursor; large paste (>10 lines) creates `[paste #N +M lines <hex>]` marker
+- `EditorDocument::getText()` — auto-expands paste markers via `strtr()` on submit
 
-```text
-ESC [ 200 ~   paste start
-ESC [ 201 ~   paste end
-```
-
-### Small paste
-
-Small paste inserts directly at cursor, preserving newlines.
-
-### Large paste
-
-Large paste should not flood the editor. Thresholds:
-
-- more than 10 lines, or
-- more than 1000 characters
-
-Insert marker:
-
-```text
-[paste #1 +123 lines]
-[paste #2 1543 chars]
-```
-
-Store payload in memory first, later in session attachments:
-
-```text
-.hatfield/sessions/<session-id>/attachments/paste-0001.txt
-```
-
-Submitted prompt should expand paste markers into full payload for runtime context, while UI continues showing compact marker.
+~EDITOR-10 CANCELLED~ — task eliminated. Only session-attachment storage of paste payloads might be needed later (tiny follow-up if ever required).
 
 ### Image paste
 
-Later phase.
-
-Target behavior:
-
-- Ctrl+V attempts image paste first.
-- If image exists, store under:
-
-```text
-.hatfield/sessions/<session-id>/attachments/image-0001.png
-```
-
-- Insert marker:
-
-```text
-[Image 1 (.hatfield/sessions/<id>/attachments/image-0001.png)]
-```
-
-If no image, treat as normal paste.
+Later phase — not covered by Symfony TUI. Would need custom handling if implemented.
 
 ## Completion
 
@@ -265,105 +216,65 @@ This keeps editor reusable and prevents command semantics from leaking into text
 
 ## Phase plan
 
-### Phase 1 — Pure editor model
+### Phase 1 — Pure editor model ✅ DONE
+
+Delivered:
+- `EditorState` — lightweight immutable snapshot DTO
+- `PromptEditor` — thin facade over Symfony TUI `EditorWidget`
+- `PromptEditorWidget` — static TuiWidget renderable
+- 52 unit tests, deptrac/CS/PHPStan clean
+
+### Phase 2 — DI wiring and integration (EDITOR-02)
 
 Deliver:
+- Register `PromptEditor` in `services.yaml`
+- Inject into `ChatScreen` instead of inline `new EditorWidget()`
+- Wire `SubmitListener`, `CancelListener`, `CtrlCInputInterceptor` through `PromptEditor`
+- Configure viewport defaults: min 1 line, max 10 lines
 
-- `EditorState`
-- `PromptEditor`
-- text insertion/deletion
-- cursor left/right/home/end
-- newline insertion via method
-- submit text extraction
-- clear/isEmpty
-- unit tests
+~~### Phase 3 — Viewport/growth/scrolling~~ ❌ ELIMINATED
 
-No Symfony widget integration yet except maybe a simple render method.
+Covered 100% by Symfony TUI: EditorViewport, EditorRenderer, EditorWidget.
+Viewport config (setMinVisibleLines/setMaxVisibleLines) folded into EDITOR-02.
 
-Validation:
-
-```bash
-castor test
-castor check
-```
-
-### Phase 2 — Symfony TUI widget adapter
+### Phase 3 (was 4) — Prompt history (EDITOR-07)
 
 Deliver:
-
-- `PromptEditorWidget` integrating `PromptEditor` with Symfony TUI.
-- Replace direct `EditorWidget` usage in `InteractiveMode`.
-- Preserve current keybindings: Enter submit, Ctrl+J newline, Ctrl+C clear, Ctrl+D exit.
-- Render placeholder and cursor reasonably.
-
-Validation:
-
-```bash
-castor test
-castor test:tui
-castor check
-```
-
-### Phase 3 — Viewport/growth/scrolling
-
-Deliver:
-
-- max visible lines based on terminal rows.
-- editor grows from 1 line up to max.
-- internal scroll offset keeps cursor visible.
-- PageUp/PageDown scroll editor.
-- scroll indicators.
-
-Add unit tests for wrapping/scrolling and tmux e2e for long multiline prompt.
-
-### Phase 4 — Prompt history
-
-Deliver:
-
 - session-backed prompt history loading.
-- empty editor Up/Down history navigation.
+- empty editor Up/Down history navigation (intercept before EditorWidget).
 - prompt history persisted alongside session transcript.
-- e2e: submit prompt, exit, resume, Up restores prompt or transcript is visible.
+- e2e: submit prompt, exit, resume, Up restores prompt.
 
-Depends on session persistence landing first.
-
-### Phase 5 — Completion foundation
+### Phase 4 (was 5) — Completion foundation (EDITOR-08)
 
 Deliver:
-
 - `CompletionProvider` interface.
 - completion state/menu rendering.
 - slash command provider.
 - file mention provider for `@` using `fd` fallback.
 - Tab accept/trigger.
 
-### Phase 6 — Paste markers
+~~### Phase 6 — Paste markers~~ ❌ ELIMINATED
+
+Covered 95% by Symfony TUI: BracketedPasteTrait, EditorDocument::handlePaste(),
+EditorDocument::getText() marker expansion.
+
+### Phase 5 (was 7) — App command handling (EDITOR-04 + EDITOR-05 + EDITOR-11)
 
 Deliver:
+- `/help`, `/clear`, `/exit` (EDITOR-04).
+- Submission routing: prompts → runtime, slash commands → registry (EDITOR-05).
+- `!` / `!!` bash execution routing (EDITOR-11).
 
-- bracketed paste detection.
-- small paste insert.
-- large paste marker + payload store.
-- marker-aware cursor movement/delete.
-- submitted text expands markers.
-
-### Phase 7 — App command handling
+### Phase 6 (was 8) — Configurable keybindings (EDITOR-12)
 
 Deliver:
+- YAML → `Symfony\Component\Tui\Input\Keybindings` loader from Hatfield settings.
+- Conflict detection.
+- Footer key hints from active keymap.
+- Documentation updates.
 
-- `/help`, `/clear`, `/exit`.
-- `!` / `!!` bash execution routing.
-- render bash output as transcript/tool blocks.
-- file mention resolution into runtime context.
-
-### Phase 8 — Configurable keybindings
-
-Deliver:
-
-- `EditorKeymap` loaded from Hatfield settings.
-- conflict detection.
-- keybinding documentation.
-- footer key hints generated from active keymap instead of hardcoded text.
+Do NOT build EditorKeymap — reuse Symfony TUI Keybindings class.
 
 ## Implementation order and task graph
 
@@ -398,58 +309,54 @@ MVP explicitly excludes:
 
 | Task | Title | Depends on | Can run in parallel with | MVP? | Notes |
 |------|-------|------------|--------------------------|------|-------|
-| EDITOR-01 | Pure prompt editor state and operations | none | EDITOR-03 | yes | Text model, cursor movement, insert/delete/newline, submit/clear. |
-| EDITOR-02 | PromptEditorWidget adapter and InteractiveMode integration | EDITOR-01 | EDITOR-04 | yes | Replaces direct Symfony `EditorWidget`; preserves current key behavior. |
-| EDITOR-03 | App command parser and command result contracts | none | EDITOR-01, EDITOR-02 | yes | Pure after-submit parser for `/`, `!`, `!!`; only slash execution in MVP. |
+| EDITOR-01 | Editor state snapshot and PromptEditor facade | none | EDITOR-03 | yes | ✅ DONE. Thin facade over Symfony EditorWidget. |
+| EDITOR-02 | Wire PromptEditor facade into ChatScreen/Listeners via DI | EDITOR-01 | EDITOR-04 | yes | DI registration, listener wiring, viewport config. |
+| EDITOR-03 | App command parser and command result contracts | none | EDITOR-01 | yes | ✅ DONE. Pure after-submit parser for `/`, `!`, `!!`. |
 | EDITOR-04 | MVP slash command registry and built-in commands | EDITOR-03 | EDITOR-02 | yes | `/help`, `/clear`, `/exit`; extension seam for AI/model commands. |
 | EDITOR-05 | Submission routing for prompts vs commands | EDITOR-02, EDITOR-04 | none after deps | yes | Normal prompts go to runtime; slash commands execute locally. |
-| EDITOR-06 | Editor viewport, growth, and internal scrolling | EDITOR-01, EDITOR-02 | EDITOR-03, EDITOR-04 | no | Max visible lines, scroll offset, PageUp/PageDown, indicators. |
-| EDITOR-07 | Prompt history navigation and session persistence | EDITOR-05 | EDITOR-06, EDITOR-08 | no | Empty editor Up/Down, session-aware history. |
-| EDITOR-08 | Completion foundation and slash command completion | EDITOR-03, EDITOR-04 | EDITOR-06, EDITOR-07 | no | Provider API, completion state/menu, Tab accept/trigger for slash commands. |
-| EDITOR-09 | File mention completion and resolution | EDITOR-08 | EDITOR-10 | no | `@` provider, `fd` fallback, quoted path insertion. |
-| EDITOR-10 | Paste store and paste marker handling | EDITOR-01, EDITOR-02 | EDITOR-09 | no | Bracketed paste, small/large paste, marker expansion on submit. |
-| EDITOR-11 | Shell command prefixes `!` and `!!` | EDITOR-03, EDITOR-05, TOOLS-09, RTVS-04, RTVS-07 | EDITOR-08, EDITOR-09, EDITOR-10 | no | Route submitted shell prefixes through bash/tool transcript flow. |
-| EDITOR-12 | Configurable keybindings, docs, and full editor smoke | EDITOR-05, EDITOR-06, EDITOR-07, EDITOR-08, EDITOR-10 | none after deps | no | Hatfield settings, conflict detection, docs, tmux e2e coverage. |
+| ~~EDITOR-06~~ | ~~Editor viewport, growth, and internal scrolling~~ | — | — | — | ❌ CANCELLED. 100% covered by Symfony TUI EditorViewport/EditorRenderer. |
+| EDITOR-07 | Prompt history navigation and session persistence | EDITOR-05 | EDITOR-08 | no | Empty editor Up/Down, session-aware history. |
+| EDITOR-08 | Completion foundation and slash command completion | EDITOR-03, EDITOR-04 | EDITOR-07 | no | Provider API, completion state/menu, Tab accept/trigger for slash commands. |
+| EDITOR-09 | File mention completion and resolution | EDITOR-08 | none | no | `@` provider, `fd` fallback, quoted path insertion. |
+| ~~EDITOR-10~~ | ~~Paste store and paste marker handling~~ | — | — | — | ❌ CANCELLED. 95% covered by Symfony TUI BracketedPasteTrait + EditorDocument. |
+| EDITOR-11 | Shell command prefixes `!` and `!!` | EDITOR-03, EDITOR-05, TOOLS-09, RTVS-04, RTVS-07 | EDITOR-08, EDITOR-09 | no | Route submitted shell prefixes through bash/tool transcript flow. |
+| EDITOR-12 | Hatfield keybinding loader, conflict detection, and editor smoke | EDITOR-02, EDITOR-05, EDITOR-07 | none after deps | no | YAML → Keybindings loader, conflict detection, footer hints, docs. |
 
 ### Dependency waves
 
-1. **MVP foundation**
-   - EDITOR-01 and EDITOR-03 can start immediately in parallel.
-   - EDITOR-02 follows EDITOR-01.
-   - EDITOR-04 follows EDITOR-03 and can run in parallel with EDITOR-02.
+1. **MVP foundation** ✅ DONE
+   - EDITOR-01 and EDITOR-03 completed.
 
-2. **MVP integration**
-   - EDITOR-05 waits for EDITOR-02 and EDITOR-04.
-   - After EDITOR-05, the app has owned editor state plus local slash commands.
+2. **MVP wiring**
+   - EDITOR-02 and EDITOR-04 can run in parallel.
+   - EDITOR-05 waits for both.
 
-3. **Editor ergonomics**
-   - EDITOR-06 can start after EDITOR-01/02 and does not need command routing.
-   - EDITOR-07 waits for EDITOR-05 so it can record submitted prompts consistently.
+3. **History and completion**
+   - EDITOR-07 waits for EDITOR-05 (records submitted prompts).
+   - EDITOR-08 waits for EDITOR-03/04 (command provider for completion).
+   - EDITOR-07 and EDITOR-08 can run in parallel.
 
-4. **Completion and mentions**
-   - EDITOR-08 waits for command parser/registry tasks (EDITOR-03/04).
+4. **File mentions**
    - EDITOR-09 waits for EDITOR-08.
 
-5. **Paste and shell prefixes**
-   - EDITOR-10 waits for editor state/widget integration.
-   - EDITOR-11 waits for command routing and the tool/runtime transcript backbone: TOOLS-09, RTVS-04, and RTVS-07.
+5. **Shell prefixes**
+   - EDITOR-11 waits for EDITOR-05 + TOOLS-09 + RTVS-04 + RTVS-07.
 
 6. **Configuration and final docs**
-   - EDITOR-12 waits until the behavior it documents/configures exists.
+   - EDITOR-12 waits for EDITOR-02, EDITOR-05, EDITOR-07.
+
+~~EDITOR-06 (viewport) and EDITOR-10 (paste) eliminated — covered by Symfony TUI.~~
 
 ### Parallelization guidance
 
 Safe parallel tracks:
 
-- EDITOR-01 and EDITOR-03.
-- EDITOR-02 and EDITOR-04 after their foundations are done.
-- EDITOR-06 and EDITOR-08 after MVP foundations.
-- EDITOR-09 and EDITOR-10 once completion/editor integration exists.
+- EDITOR-02 and EDITOR-04 (Wave 2).
+- EDITOR-07 and EDITOR-08 (Wave 3).
 
 Avoid parallel edits to:
 
-- `InteractiveMode` submission routing: serialize EDITOR-02 and EDITOR-05 changes.
-- editor key dispatch/input routing: serialize EDITOR-02, EDITOR-05, EDITOR-06, and EDITOR-10 when they touch the same methods.
+- `InteractiveMode` / `SubmitListener`: serialize EDITOR-02 and EDITOR-05 changes.
 - session persistence/history files: serialize EDITOR-07 with any session storage changes.
 
 ### AI-task command seam

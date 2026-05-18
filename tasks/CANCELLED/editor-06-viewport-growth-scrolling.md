@@ -1,5 +1,7 @@
 # EDITOR-06 Editor viewport, growth, and internal scrolling
 
+**CANCELLED 2026-05-18** — 100% covered by Symfony TUI: EditorViewport handles scroll/cursor visibility, EditorRenderer renders "↑ N more" / "↓ 2 more" indicators, EditorWidget handles PageUp/PageDown and growth via setMinVisibleLines/setMaxVisibleLines. Viewport config folded into EDITOR-02.
+
 ## Goal
 Plan: .pi/plans/editor_rollout_plan.md
 

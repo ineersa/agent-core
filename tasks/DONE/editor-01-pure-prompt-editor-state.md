@@ -29,14 +29,14 @@ Parallelizable with: EDITOR-03.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/editor-01-pure-prompt-editor-state
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-01-pure-prompt-editor-state
 Fork run: ldq25jwzc6an
 PR URL: https://github.com/ineersa/agent-core/pull/23
-PR Status: open
+PR Status: merged
 Started: 2026-05-18T01:40:46.601Z
-Completed:
+Completed: 2026-05-18T03:26:45.620Z
 
 ## Work log
 - Created: 2026-05-18T00:15:06.351Z
@@ -98,3 +98,23 @@ Completed:
 - Clear docblocks distinguishing PromptEditor vs PromptEditorWidget
 - Updated docs/tui-architecture.md with editor module class table
 - 48 tests passing, deptrac clean, CS clean, PHPStan clean
+
+## Task workflow update - 2026-05-18T03:26:45.620Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/editor-01-pure-prompt-editor-state into integration checkout.
+- Merge made by the 'ort' strategy.
+ depfile.yaml                                |   1 +
+ docs/tui-architecture.md                    |  14 ++
+ src/Tui/Editor/EditorState.php              | 101 ++++++++++++
+ src/Tui/Editor/PromptEditor.php             | 120 +++++++++++++++
+ src/Tui/Editor/PromptEditorWidget.php       |   9 +-
+ tests/Tui/Editor/EditorStateTest.php        | 230 ++++++++++++++++++++++++++++
+ tests/Tui/Editor/PromptEditorTest.php       | 224 +++++++++++++++++++++++++++
+ tests/Tui/Editor/PromptEditorWidgetTest.php |  22 +--
+ 8 files changed, 708 insertions(+), 13 deletions(-)
+ create mode 100644 src/Tui/Editor/EditorState.php
+ create mode 100644 src/Tui/Editor/PromptEditor.php
+ create mode 100644 tests/Tui/Editor/EditorStateTest.php
+ create mode 100644 tests/Tui/Editor/PromptEditorTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/editor-01-pure-prompt-editor-state.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
