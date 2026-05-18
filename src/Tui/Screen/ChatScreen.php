@@ -411,7 +411,11 @@ final class ChatScreen
     }
 
     /**
-     * Create the default footer segment provider showing agent name, session, and key hints.
+     * Create the default footer segment provider.
+     *
+     * Only shows the current session ID so users can distinguish sessions.
+     * All other footer content (model, usage, elapsed, cwd, branch) is
+     * contributed by {@see FooterStateListener} via addFooterProvider().
      */
     private function createDefaultFooterProvider(): FooterSegmentProvider
     {
@@ -427,9 +431,10 @@ final class ChatScreen
             public function getSegments(): array
             {
                 return [
-                    new FooterSegment(text: '◆ hatfield', priority: 100),
-                    new FooterSegment(text: 'session '.$this->sessionId, priority: 110),
-                    new FooterSegment(text: 'Ctrl+D quit  Ctrl+C cancel', priority: 120),
+                    new FooterSegment(
+                        text: 'session '.$this->sessionId,
+                        priority: 110,
+                    ),
                 ];
             }
         };

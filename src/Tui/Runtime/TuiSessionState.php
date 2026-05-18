@@ -38,6 +38,10 @@ final class TuiSessionState
     public string $footerReasoning = '';
     public int $inputTokens = 0;
     public int $outputTokens = 0;
+    /** Running cost estimate in dollars (accumulated from usage). */
+    public float $totalCost = 0.0;
+    /** Context window size of the current model, or 0 when unknown. */
+    public int $contextWindow = 0;
     public float $sessionStartTime = 0.0;
     public string $cwd = '';
     public string $branch = '';

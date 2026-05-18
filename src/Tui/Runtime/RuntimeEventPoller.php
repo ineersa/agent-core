@@ -164,7 +164,10 @@ final class RuntimeEventPoller
     }
 
     /**
-     * Extract token usage from runtime events and accumulate into footer state.
+     * Extract token usage and cost from runtime events and accumulate into footer state.
+     *
+     * Called for every runtime event during polling. Only llm_step_completed events
+     * carry usage/cost metadata.
      */
     private static function extractFooterUsage(TuiSessionState $state, RuntimeEvent $event): void
     {
@@ -179,5 +182,11 @@ final class RuntimeEventPoller
 
         $state->inputTokens += (int) ($usage['input_tokens'] ?? $usage['prompt_tokens'] ?? 0);
         $state->outputTokens += (int) ($usage['output_tokens'] ?? $usage['completion_tokens'] ?? 0);
+
+        // Accumulate cost if the provider returns it in the usage payload
+        $cost = $usage['cost'] ?? $usage['total_cost'] ?? null;
+        if (\is_float($cost) || \is_int($cost)) {
+            $state->totalCost += (float) $cost;
+        }
     }
 }

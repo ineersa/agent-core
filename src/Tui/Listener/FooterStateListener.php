@@ -9,6 +9,7 @@ use Ineersa\Tui\Footer\FooterSegment;
 use Ineersa\Tui\Footer\FooterSegmentProvider;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Theme\ThemeColor;
 use Symfony\Component\Tui\Event\TickEvent;
 
 /**
@@ -115,6 +116,14 @@ final readonly class FooterStateListener implements TuiListenerRegistrar
 
     /**
      * Create a FooterSegmentProvider that reads from TuiSessionState at render time.
+     *
+     * Segment priorities are carefully spaced so the FooterBarWidget groups
+     * related items together and inserts "  |  " separators between groups:
+     *
+     *   ◆ model | reasoning | 0/0 $0.00 0% 0/0 | ⚡ 0.0 t/s | ⏱ 0s | ⌂ cwd | ⎇ branch
+     *
+     * Within each group (token stats), priorities differ by < 5 so they render
+     * space-separated. Between groups, priorities differ by >= 5 for pipe separators.
      */
     private static function createStateProvider(TuiSessionState $state): FooterSegmentProvider
     {
@@ -127,36 +136,65 @@ final readonly class FooterStateListener implements TuiListenerRegistrar
             /** @return list<FooterSegment> */
             public function getSegments(): array
             {
-                $segments = [];
                 $s = $this->state;
+                $segments = [];
 
-                // Model segment (priority 0)
-                if ('' !== $s->footerModel) {
-                    $segments[] = new FooterSegment(
-                        text: \sprintf('◆ %s', $s->footerModel),
-                        priority: 0,
-                    );
-                }
+                // ── Model (priority 0) ──
+                $modelName = '' !== $s->footerModel ? $s->footerModel : 'no-model';
+                // Thinking-level indicator colour based on reasoning level
+                $thinkColor = self::thinkingColor($s->footerReasoning);
+                $segments[] = new FooterSegment(
+                    text: \sprintf('◆ %s', $modelName),
+                    priority: 0,
+                    color: $thinkColor,
+                );
 
-                // Reasoning segment (priority 5)
+                // ── Reasoning level (priority 5) ──
                 if ('' !== $s->footerReasoning) {
                     $segments[] = new FooterSegment(
-                        text: \sprintf('│ %s', $s->footerReasoning),
+                        text: $s->footerReasoning,
                         priority: 5,
+                        color: ThemeColor::Muted,
                     );
                 }
 
-                // Token usage segment (priority 10)
-                if ($s->inputTokens > 0 || $s->outputTokens > 0) {
-                    $in = self::abbreviateNumber($s->inputTokens);
-                    $out = self::abbreviateNumber($s->outputTokens);
-                    $segments[] = new FooterSegment(
-                        text: \sprintf('%si %so', $in, $out),
-                        priority: 10,
-                    );
+                // ── Token stats block (priorities 10-14) ──
+                // Small priority gaps (< 5) keep these space-separated
+                $in = self::abbreviateNumber($s->inputTokens);
+                $out = self::abbreviateNumber($s->outputTokens);
+                $segments[] = new FooterSegment(
+                    text: \sprintf('%s/%s', $in, $out),
+                    priority: 10,
+                    color: ThemeColor::Accent,
+                );
+
+                // Cost estimate
+                $costStr = $s->totalCost > 0 ? \sprintf('$%.2f', $s->totalCost) : '$--';
+                $segments[] = new FooterSegment(
+                    text: $costStr,
+                    priority: 11,
+                    color: ThemeColor::Warning,
+                );
+
+                // Context window usage percentage
+                if ($s->contextWindow > 0 && $s->inputTokens > 0) {
+                    $pct = min(100, ($s->inputTokens / $s->contextWindow) * 100);
+                    $conn = \sprintf('%.0f%%', $pct);
+                    $pctColor = $pct > 75 ? ThemeColor::Error : ($pct > 50 ? ThemeColor::Warning : ThemeColor::Success);
+                    $segments[] = new FooterSegment(text: $conn, priority: 12, color: $pctColor);
+                } else {
+                    $segments[] = new FooterSegment(text: '--%', priority: 12, color: ThemeColor::Muted);
                 }
 
-                // Throughput segment (priority 15)
+                // Context window detail: current / total
+                $ctxDetail = $s->contextWindow > 0
+                    ? \sprintf('%s/%s', self::abbreviateNumber($s->inputTokens), self::abbreviateNumber($s->contextWindow))
+                    : '';
+                if ('' !== $ctxDetail) {
+                    $segments[] = new FooterSegment(text: $ctxDetail, priority: 13, color: ThemeColor::Muted);
+                }
+
+                // ── Throughput (priority 15) ──
                 if ($s->outputTokens > 0) {
                     $elapsed = microtime(true) - $s->sessionStartTime;
                     if ($elapsed > 0) {
@@ -164,47 +202,73 @@ final readonly class FooterStateListener implements TuiListenerRegistrar
                         $segments[] = new FooterSegment(
                             text: \sprintf('⚡ %.1f t/s', $tps),
                             priority: 15,
+                            color: ThemeColor::Success,
                         );
                     }
                 }
 
-                // Elapsed time segment (priority 20)
+                // ── Elapsed time (priority 20) ──
                 $elapsed = microtime(true) - $s->sessionStartTime;
                 if ($elapsed >= 1) {
                     $hours = (int) ($elapsed / 3600);
                     $minutes = (int) (($elapsed % 3600) / 60);
-                    $seconds = ($elapsed % 60);
+                    $seconds = $elapsed % 60;
 
                     if ($hours > 0) {
-                        $segments[] = new FooterSegment(
-                            text: \sprintf('⏱ %dh%dm', $hours, $minutes),
-                            priority: 20,
-                        );
+                        $timeStr = \sprintf('%dh%dm', $hours, $minutes);
                     } elseif ($minutes > 0) {
-                        $segments[] = new FooterSegment(
-                            text: \sprintf('⏱ %dm%ds', $minutes, $seconds),
-                            priority: 20,
-                        );
+                        $timeStr = \sprintf('%dm%ds', $minutes, $seconds);
+                    } else {
+                        $timeStr = \sprintf('%ds', $seconds);
                     }
+                    $segments[] = new FooterSegment(
+                        text: \sprintf('⏱ %s', $timeStr),
+                        priority: 20,
+                        color: ThemeColor::Dim,
+                    );
+                } else {
+                    $segments[] = new FooterSegment(
+                        text: '⏱ 0s',
+                        priority: 20,
+                        color: ThemeColor::Dim,
+                    );
                 }
 
-                // CWD segment (priority 25)
+                // ── CWD (priority 25) ──
                 if ('' !== $s->cwd) {
                     $segments[] = new FooterSegment(
                         text: \sprintf('⌂ %s', $s->cwd),
                         priority: 25,
+                        color: ThemeColor::Muted,
                     );
                 }
 
-                // Branch segment (priority 30)
+                // ── Branch (priority 30) ──
                 if ('' !== $s->branch) {
                     $segments[] = new FooterSegment(
                         text: \sprintf('⎇ %s', $s->branch),
                         priority: 30,
+                        color: ThemeColor::Accent,
                     );
                 }
 
                 return $segments;
+            }
+
+            /**
+             * Map reasoning level to a thinking-indicator colour.
+             *
+             * Matches the pi reference convention: off/missing → muted,
+             * low → dim, medium → accent, high → warning.
+             */
+            private static function thinkingColor(string $reasoning): ThemeColor
+            {
+                return match ($reasoning) {
+                    'high', 'xhigh' => ThemeColor::Warning,
+                    'medium' => ThemeColor::Accent,
+                    'low', 'minimal' => ThemeColor::Dim,
+                    default => ThemeColor::Muted,
+                };
             }
 
             private static function abbreviateNumber(int $n): string
