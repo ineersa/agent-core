@@ -34,15 +34,22 @@ Parallelizable with: EDITOR-04.
 - `castor test` and `castor deptrac` pass.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/editor-02-widget-interactive-mode-integration
+Worktree: /home/ineersa/projects/agent-core-worktrees/editor-02-widget-interactive-mode-integration
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-18T17:10:13.499Z
 Completed:
 
 ## Work log
 - Created: 2026-05-18T00:15:13.842Z
 - Updated: 2026-05-18 — Scope simplified: "build widget adapter" → "wire facade into DI". Viewport config folded in from eliminated EDITOR-06.
+
+## Task workflow update - 2026-05-18T17:10:13.499Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/editor-02-widget-interactive-mode-integration.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/editor-02-widget-interactive-mode-integration.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/editor-02-widget-interactive-mode-integration.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/editor-02-widget-interactive-mode-integration.
