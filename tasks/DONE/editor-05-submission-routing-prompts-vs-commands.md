@@ -30,14 +30,14 @@ Parallelizable with: none after dependencies; serialize InteractiveMode/input ro
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/editor-05-submission-routing-prompts-vs-commands
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-05-submission-routing-prompts-vs-commands
 Fork run: hc0ewcxbrjlg
 PR URL: https://github.com/ineersa/agent-core/pull/26
-PR Status: open
+PR Status: merged
 Started: 2026-05-18T17:52:40.003Z
-Completed:
+Completed: 2026-05-18T21:34:13.253Z
 
 ## Work log
 - Created: 2026-05-18T00:15:36.255Z
@@ -65,3 +65,19 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/26
 - Validation: vendor/bin/phpunit tests/Tui/Command/SubmissionRouterTest.php — 18 tests, 29 assertions, OK; vendor/bin/phpunit tests/Tui/Command/ — 72 tests, 162 assertions, OK; ~/.local/bin/castor test — 469 tests, 8348 assertions, OK (1 pre-existing notice); ~/.local/bin/castor deptrac — 0 violations; ~/.local/bin/castor phpstan — 0 errors; ~/.local/bin/castor cs-check — clean
 - Summary: EDITOR-05 completed in fork hc0ewcxbrjlg. Added SubmissionRouter for CommandParser + SlashCommandRegistry, wired SubmitListener to route slash commands locally while preserving normal prompt runtime path, and applied built-in command effects for TranscriptMessage, ClearTranscript, ExitApplication, StatusUpdate, and NoOp. Shell prefixes return local not-supported message pending EDITOR-11.
+
+## Task workflow update - 2026-05-18T21:34:13.253Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/editor-05-submission-routing-prompts-vs-commands into integration checkout.
+- Merge made by the 'ort' strategy.
+ depfile.yaml                               |   1 +
+ src/Tui/Command/SubmissionRouter.php       |  55 ++++++++
+ src/Tui/Listener/SubmitListener.php        |  89 ++++++++++++-
+ tests/Tui/Command/SubmissionRouterTest.php | 197 +++++++++++++++++++++++++++++
+ 4 files changed, 341 insertions(+), 1 deletion(-)
+ create mode 100644 src/Tui/Command/SubmissionRouter.php
+ create mode 100644 tests/Tui/Command/SubmissionRouterTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/editor-05-submission-routing-prompts-vs-commands.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR #26 merged: https://github.com/ineersa/agent-core/pull/26
+- Summary: PR #26 merged by user. EDITOR-05 complete: normal prompts route to runtime, slash commands route locally through SlashCommandRegistry, /help /clear /exit effects apply in submit path, shell prefixes show local not-supported message pending EDITOR-11.
