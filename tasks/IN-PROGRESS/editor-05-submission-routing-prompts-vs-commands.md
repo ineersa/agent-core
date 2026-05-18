@@ -52,3 +52,8 @@ Completed:
 ## Task workflow update - 2026-05-18T17:52:59.013Z
 - Recorded fork run: hc0ewcxbrjlg
 - Summary: Launched background fork to implement EDITOR-05 in worktree /home/ineersa/projects/agent-core-worktrees/editor-05-submission-routing-prompts-vs-commands.
+
+## Task workflow update - 2026-05-18T20:33:12.440Z
+- Recorded fork run: hc0ewcxbrjlg
+- Validation: vendor/bin/phpunit tests/Tui/Command/SubmissionRouterTest.php — 18 tests, 29 assertions, OK; vendor/bin/phpunit tests/Tui/Command/ — 72 tests, 162 assertions, OK; ~/.local/bin/castor test — 469 tests, 8348 assertions, OK (1 pre-existing notice); ~/.local/bin/castor deptrac — 0 violations; ~/.local/bin/castor phpstan — 0 errors; ~/.local/bin/castor cs-check — clean
+- Summary: EDITOR-05 fork completed. Implemented SubmissionRouter integrating CommandParser + SlashCommandRegistry, wired SubmitListener to route slash commands locally, apply TranscriptMessage/ClearTranscript/ExitApplication/StatusUpdate/NoOp effects, and preserve normal prompt runtime path. ShellCommand returns local not-supported TranscriptMessage for now. Commit 7e38c8a7. Fork reports validation clean.
