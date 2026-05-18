@@ -961,12 +961,6 @@ parameters:
 			path: src/Tui/Runtime/TuiRuntimeContext.php
 
 		-
-			message: '#^Access to an uninitialized readonly property Ineersa\\Tui\\Screen\\ChatScreen\:\:\$footerDataProvider\.$#'
-			identifier: property.uninitializedReadonly
-			count: 1
-			path: src/Tui/Screen/ChatScreen.php
-
-		-
 			message: '#^Unused Ineersa\\Tui\\Screen\\ChatScreen\:\:appendTranscript$#'
 			identifier: shipmonk.deadMethod
 			count: 1

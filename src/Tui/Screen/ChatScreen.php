@@ -90,7 +90,6 @@ final class ChatScreen
         private readonly string $sessionId,
     ) {
         $this->registry = new TuiSlotRegistry();
-        $this->extensionContext = new SlotBasedTuiExtensionContext($this->registry, $this->footerDataProvider);
 
         // ── Instantiate default renderables ──
         $this->headerRenderable = new HeaderWidget();
@@ -99,6 +98,7 @@ final class ChatScreen
         $this->workingRenderable = new WorkingStatusWidget();
         $this->statusPanelRenderable = new StatusPanelWidget();
         $this->footerDataProvider = new FooterDataProvider();
+        $this->extensionContext = new SlotBasedTuiExtensionContext($this->registry, $this->footerDataProvider);
         $this->footerDataProvider->addProvider($this->createDefaultFooterProvider());
         $this->footerRenderable = new FooterBarWidget($this->footerDataProvider);
 
