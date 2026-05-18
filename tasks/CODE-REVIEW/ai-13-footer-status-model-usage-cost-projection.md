@@ -24,7 +24,7 @@ Scope:
 Status: CODE-REVIEW
 Branch: task/ai-13-footer-status-model-usage-cost-projection
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-13-footer-status-model-usage-cost-projection
-Fork run: 4ys30ypxby11
+Fork run: mk0q65oukv56
 PR URL: https://github.com/ineersa/agent-core/pull/21
 PR Status: open
 Started: 2026-05-17T23:55:24.914Z
@@ -51,3 +51,7 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/21
 - Validation: php bin/console --no-interaction: OK; castor test: passed (353 tests, 8122 assertions, 1 pre-existing PHPUnit notice); castor deptrac: passed (0 violations, 347 allowed); castor phpstan: passed (0 errors; baseline regenerated to 226 entries); castor cs-check: clean
 - Summary: AI-13 implemented in commit 40cb8abe on branch task/ai-13-footer-status-model-usage-cost-projection. Added footer/status projection using existing TUI extension points: new FooterStateListener registers a FooterSegmentProvider, TuiSessionState stores model/reasoning/token/session/cwd/branch footer fields, RuntimeEventPoller accumulates token usage from llm_step_completed events, ChatScreen exposes addFooterProvider(), and deptrac rules allow TuiListener -> TuiFooter. Footer now displays model, reasoning, token usage, tokens/sec, elapsed session time, cwd, and git branch. Cost and context-window percentage intentionally left for follow-up because reliable rate-card/context lookup is not currently in the footer data path.
+
+## Task workflow update - 2026-05-18T00:24:35.801Z
+- Recorded fork run: mk0q65oukv56
+- Summary: Launched follow-up fork to address user smoke-test feedback on PR #21 footer output: compare current and expected ANSI snapshots, use my-pi custom-footer.ts as reference, restore theme colors, fix ordering, add stubs for unavailable data, and remove default ChatScreen footer clutter except session segment. Scope remains AI-13 footer/status projection only; no AI-14 controls or RTVS work.
