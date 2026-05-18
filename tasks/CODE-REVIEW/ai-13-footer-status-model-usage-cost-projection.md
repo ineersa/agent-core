@@ -24,7 +24,7 @@ Scope:
 Status: CODE-REVIEW
 Branch: task/ai-13-footer-status-model-usage-cost-projection
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-13-footer-status-model-usage-cost-projection
-Fork run: gucsjk5ug5x5
+Fork run: 04ersf3xrhfp
 PR URL: https://github.com/ineersa/agent-core/pull/21
 PR Status: open
 Started: 2026-05-17T23:55:24.914Z
@@ -86,3 +86,7 @@ Completed:
 ## Task workflow update - 2026-05-18T01:00:11.870Z
 - Validation: Reviewer inspected FooterStateListener, FooterBarWidget, RuntimeEventPoller, ChatScreen, TuiExtensionContext/TuiSlotRegistry, vendor/symfony/tui/Tui.php, AnsiUtils.php, TextWrapper.php, and depfile.yaml.
 - Summary: Reviewer subagent completed AI-13 footer review. Verdict: REQUEST CHANGES. Critical finding: FooterStateListener and TickPollListener both call Symfony Tui::onTick(), which is a single-slot setter, so TickPollListener replaces FooterStateListener's refresh callback and session elapsed time freezes. Reviewer also found FooterBarWidget reimplements Symfony\Component\Tui\Ansi\AnsiUtils visibleWidth/truncateToWidth, FooterStateListener is a 385-line monolith that should be minimally split into initializer + named segment provider + tick coordination, and third-party footer replacement works via TuiExtensionContext::setFooter(), but tick registration is not composable and FooterDataProvider has no removeProvider().
+
+## Task workflow update - 2026-05-18T01:05:10.180Z
+- Recorded fork run: 04ersf3xrhfp
+- Summary: Launched implementation fork to address reviewer report: add per-run tick dispatcher so FooterStateListener and TickPollListener no longer fight over Symfony Tui::onTick(), replace custom ANSI width/truncation with Symfony TUI AnsiUtils, split FooterStateListener into minimal initializer + named segment provider + small registrar, and verify/improve third-party footer extensibility including setFooter replacement and optional keyed footer provider API if small.
