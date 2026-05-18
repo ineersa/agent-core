@@ -24,14 +24,21 @@ Scope:
 - Suggested validation: `castor test --filter Tui`; `castor test:tui`.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/ai-14-tui-model-controls-favorites
+Worktree: /home/ineersa/projects/agent-core-worktrees/ai-14-tui-model-controls-favorites
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-18T21:35:36.236Z
 Completed:
 
 ## Work log
 - Created: 2026-05-16T22:02:34.212Z
+
+## Task workflow update - 2026-05-18T21:35:36.236Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/ai-14-tui-model-controls-favorites.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/ai-14-tui-model-controls-favorites.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/ai-14-tui-model-controls-favorites.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/ai-14-tui-model-controls-favorites.
