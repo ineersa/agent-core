@@ -24,7 +24,7 @@ Scope:
 - Suggested validation: `castor test --filter Tui`; `castor test:tui`.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/ai-14-tui-model-controls-favorites
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-14-tui-model-controls-favorites
 Fork run: 4vwkef8byjpz
@@ -78,3 +78,7 @@ Validation: 509 tests pass, 8453 assertions, 0 deptrac violations, 0 phpstan err
 - Created PR: https://github.com/ineersa/agent-core/pull/27
 - Validation: vendor/bin/phpunit tests/Tui/Listener/ModelCommandHandlerTest.php — 18 tests, 49 assertions, OK; vendor/bin/phpunit tests/CodingAgent/Config/ModelSelectionServiceTest.php — 40 tests, 92 assertions, OK; ~/.local/bin/castor test — 509 tests, 8453 assertions, OK (1 pre-existing notice); ~/.local/bin/castor deptrac — 0 violations; ~/.local/bin/castor phpstan — 0 errors; ~/.local/bin/castor cs-check — clean
 - Summary: AI-14 completed across forks 44s6f5qp08oq and 4vwkef8byjpz. Implemented /model slash command controls, /model select and /model fav subcommands, Ctrl+P favorite cycling, Shift+Tab reasoning cycling, ai.favorite_models parsing/persistence/docs, immediate footer state updates, in-process favorite cache consistency, and idempotent /model registration. Known deferred product gap: full interactive scrollable overlay with Ctrl+F/Enter picker is not implemented; textual /model controls provide MVP functionality.
+
+## Task workflow update - 2026-05-18T22:23:48.425Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: Moved back from code review based on user smoke-test feedback: remove reasoning text from footer; Shift+Tab reasoning changes should update a symbol before the model and model-name color using theme colors per reasoning level; model selection did not persist across restart; /model must present an actual selectable list using Symfony TUI list/widget capabilities; list must support Ctrl+F favorite toggle while cycling/navigating.
