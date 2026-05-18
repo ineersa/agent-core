@@ -9,10 +9,12 @@ use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\TuiWidget;
 
 /**
- * Default prompt editor widget.
+ * Static prompt display widget (TuiWidget).
  *
- * For v1, renders a static prompt area with placeholder text.
- * Future versions will wire an actual Symfony TUI InputWidget.
+ * Renders the non-interactive prompt placeholder line ("❯ Type a message...").
+ * Used by ChatLayout as a TuiWidget renderable. This is NOT the interactive
+ * editor — see {@see PromptEditor} for the interactive text input facade that
+ * wraps Symfony TUI's EditorWidget for use in ChatScreen.
  */
 final class PromptEditorWidget implements TuiWidget
 {
@@ -40,7 +42,6 @@ final class PromptEditorWidget implements TuiWidget
 
         $styledLine = $context->theme->color(ThemeColor::Prompt, $line);
 
-        // If the prompt has content, show a second line for cursor
         if ('' !== $this->promptText) {
             return [$styledLine, ''];
         }
