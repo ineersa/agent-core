@@ -35,7 +35,7 @@ final class SubmitListener implements TuiListenerRegistrar
         $context->tui->addListener(static function (SubmitEvent $event) use (
             $client, $sessionStore, $state, $screen,
         ) {
-            $text = $event->getValue();
+            $text = $screen->extract();
             if ('' === $text) {
                 return;
             }
@@ -56,9 +56,6 @@ final class SubmitListener implements TuiListenerRegistrar
                     meta: ['session_id' => $state->sessionId],
                 ),
             );
-
-            // Clear editor
-            $screen->clearEditor();
 
             // Start a run if this is the first message
             if (null === $state->handle && null === $state->request) {
