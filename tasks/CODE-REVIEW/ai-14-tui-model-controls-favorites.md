@@ -24,12 +24,12 @@ Scope:
 - Suggested validation: `castor test --filter Tui`; `castor test:tui`.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/ai-14-tui-model-controls-favorites
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-14-tui-model-controls-favorites
 Fork run: 4vwkef8byjpz
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/27
+PR Status: open
 Started: 2026-05-18T21:35:36.236Z
 Completed:
 
@@ -70,3 +70,11 @@ Validation: 509 tests pass, 8453 assertions, 0 deptrac violations, 0 phpstan err
 - Recorded fork run: 4vwkef8byjpz
 - Validation: vendor/bin/phpunit tests/CodingAgent/Config/ModelSelectionServiceTest.php — 40 tests, 92 assertions, OK; vendor/bin/phpunit tests/Tui/Listener/ModelCommandHandlerTest.php — 18 tests, 49 assertions, OK; ~/.local/bin/castor test — 509 tests, 8453 assertions, OK (1 pre-existing notice); ~/.local/bin/castor deptrac — 0 violations; ~/.local/bin/castor phpstan — 0 errors; ~/.local/bin/castor cs-check — clean
 - Summary: AI-14 follow-up completed at commit 3d5bca5d. Fixed stale in-process favorite state with ModelSelectionService cache, added tests for immediate favorite visibility after add/remove, made /model slash-command registration idempotent, and documented ai.favorite_models in docs/settings.md and .hatfield/settings.yaml. Known deferred gap: full interactive overlay/Ctrl+F picker not implemented; /model select/fav textual controls provide MVP functionality.
+
+## Task workflow update - 2026-05-18T22:17:34.277Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/ai-14-tui-model-controls-favorites to origin.
+- branch 'task/ai-14-tui-model-controls-favorites' set up to track 'origin/task/ai-14-tui-model-controls-favorites'.
+- Created PR: https://github.com/ineersa/agent-core/pull/27
+- Validation: vendor/bin/phpunit tests/Tui/Listener/ModelCommandHandlerTest.php — 18 tests, 49 assertions, OK; vendor/bin/phpunit tests/CodingAgent/Config/ModelSelectionServiceTest.php — 40 tests, 92 assertions, OK; ~/.local/bin/castor test — 509 tests, 8453 assertions, OK (1 pre-existing notice); ~/.local/bin/castor deptrac — 0 violations; ~/.local/bin/castor phpstan — 0 errors; ~/.local/bin/castor cs-check — clean
+- Summary: AI-14 completed across forks 44s6f5qp08oq and 4vwkef8byjpz. Implemented /model slash command controls, /model select and /model fav subcommands, Ctrl+P favorite cycling, Shift+Tab reasoning cycling, ai.favorite_models parsing/persistence/docs, immediate footer state updates, in-process favorite cache consistency, and idempotent /model registration. Known deferred product gap: full interactive scrollable overlay with Ctrl+F/Enter picker is not implemented; textual /model controls provide MVP functionality.
