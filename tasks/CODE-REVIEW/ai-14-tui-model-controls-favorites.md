@@ -24,7 +24,7 @@ Scope:
 - Suggested validation: `castor test --filter Tui`; `castor test:tui`.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/ai-14-tui-model-controls-favorites
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-14-tui-model-controls-favorites
 Fork run: jbjp9zymk5ep
@@ -103,3 +103,17 @@ Validation: 509 tests pass, 8453 assertions, 0 deptrac violations, 0 phpstan err
 ## Task workflow update - 2026-05-18T22:59:33.111Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: User smoke-tested updated PR and found remaining issues: footer still shows textual reasoning/model status, reasoning hotkey cycles levels for models without thinking support (e.g. llama.cpp), and favorite selection UX should be separate `/model fav` picker using Space to toggle favorites and Enter to submit. Moving back to IN-PROGRESS for fixes.
+
+## Task workflow update - 2026-05-18T23:17:49.628Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/ai-14-tui-model-controls-favorites to origin.
+- branch 'task/ai-14-tui-model-controls-favorites' set up to track 'origin/task/ai-14-tui-model-controls-favorites'.
+- Skipped PR creation (pushOnly: true).
+- Validation: vendor/bin/phpunit tests/CodingAgent/Config/ModelSelectionServiceTest.php --filter ThinkingLevels — 6 tests, OK; vendor/bin/phpunit tests/Tui/Listener/ModelCommandHandlerTest.php — 18 tests, 52 assertions, OK; ~/.local/bin/castor test — 528 tests, 8517 assertions, 2 pre-existing e2e failures only; ~/.local/bin/castor deptrac — 0 violations; ~/.local/bin/castor phpstan — 0 errors; vendor/bin/php-cs-fixer fix --dry-run --diff — clean
+- Summary: AI-14 smoke-test fixes applied at commit 9d56de59 on task/ai-14-tui-model-controls-favorites:
+1. Removed persistent "Reasoning:" / "Model:" status entries from footer/status panel; footer uses ThemeColor::Thinking* colors only
+2. Added supports_thinking_levels provider config flag (default true), parsed in AiProviderConfig, with HatfieldModelCatalog::supportsThinkingLevels() method
+3. ModelSelectionService::cycleReasoningForCurrentModel() guards against unsupported models (llama_cpp with reasoning:false or supports_thinking_levels:false); Shift+Tab listener uses this, no-ops silently
+4. /model fav (no args) opens interactive FavoritePickerController (SelectListWidget) with * markers, Space to toggle favorites, Enter to close; textual fallback retained
+5. .hatfield/settings.yaml sets llama_cpp supports_thinking_levels: false; config defaults and docs/settings.md updated
+6. 6 new tests for thinking-levels guard; 528 non-e2e tests pass; 0 deptrac; 0 phpstan; CS clean. Pre-existing TUI e2e failures unchanged.
