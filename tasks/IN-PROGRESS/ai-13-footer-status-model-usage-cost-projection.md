@@ -24,7 +24,7 @@ Scope:
 Status: IN-PROGRESS
 Branch: task/ai-13-footer-status-model-usage-cost-projection
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-13-footer-status-model-usage-cost-projection
-Fork run: pchye2hjzfmj
+Fork run: gucsjk5ug5x5
 PR URL: https://github.com/ineersa/agent-core/pull/21
 PR Status: open
 Started: 2026-05-17T23:55:24.914Z
@@ -66,3 +66,7 @@ Completed:
 ## Task workflow update - 2026-05-18T00:36:08.860Z
 - Recorded fork run: pchye2hjzfmj
 - Summary: Launched second AI-13 footer fix fork after comparing snapshots. Current visible footer from 203020 is only `◆ no-model  |  0/0 $-- --%`; expected 202021 is Pi-style full line `◆ gpt-5.5 | 0/0 $0.00 0% 0/272.0k | ⏱ 0s | ⌂ agent-core-worktrees/... | ⎇ task/...` plus IDE status line. Fork given exact implementation plan: fix ANSI truncation via AnsiUtils, split diamond/model coloring, remove standalone reasoning label, use Pi token/cost/context layout, last-two path components, status entries as second line, theme colors only, and no model/thinking changes.
+
+## Task workflow update - 2026-05-18T00:39:06.201Z
+- Recorded fork run: gucsjk5ug5x5
+- Summary: Launched second follow-up fork after user reported snapshot 203020 is worse than expected 202021. Fork received an exact implementation plan: fix ANSI-unsafe truncation in FooterBarWidget, seed startup model/context from AppConfig, match Pi custom-footer composition (diamond+model, token block, optional t/s, elapsed, cwd, branch), remove separate reasoning text, use Pi-compatible colors/stubs/number formatting, short cwd last two path segments, and actually implement/commit/push changes.
