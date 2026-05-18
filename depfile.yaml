@@ -178,9 +178,11 @@ parameters:
     TuiListener:
       - AppRuntimeContract
       - AppSession
+      - AppConfig
       - TuiRuntime
       - TuiScreen
       - TuiTranscript
+      - TuiFooter
       - TuiTheme
       - SymfonyTui
 
@@ -216,6 +218,7 @@ parameters:
     TuiExtension:
       - TuiLayout
       - TuiWidget
+      - TuiFooter
       - TuiTheme
 
     TuiHeader:

@@ -8,30 +8,54 @@ namespace Ineersa\Tui\Footer;
  * Aggregates footer segment providers and exposes footer data.
  *
  * The FooterBarWidget calls getSegments() at render time to collect
- * all registered segment data. Extensions register their providers
- * via addProvider().
- *
- * A ReadonlyFooterDataProvider projection can be exposed to extensions
- * that should not mutate the provider set.
+ * all registered segment data. Providers can be added by internal
+ * listener code (auto-keyed) or by extensions via the TuiExtensionContext
+ * setFooterProvider() API (explicitly keyed, nullable for removal).
  */
 final class FooterDataProvider
 {
-    /** @var list<FooterSegmentProvider> */
+    /** @var array<string, FooterSegmentProvider> */
     private array $providers = [];
 
-    /**
-     * @var array<string, string> Extension-set status key-value pairs
-     */
+    /** @var array<string, string> Extension-set status key-value pairs */
     private array $statusEntries = [];
 
-    public function addProvider(FooterSegmentProvider $provider): void
+    /**
+     * Add a provider with an auto-generated key.
+     *
+     * Internal callers (listeners) should use this. The key allows
+     * extension code to later remove the provider if needed, though
+     * callers typically do not track or expose the returned key.
+     */
+    public function addProvider(FooterSegmentProvider $provider, ?string $key = null): string
     {
-        $this->providers[] = $provider;
+        $key ??= '='.bin2hex(random_bytes(8));
+        $this->providers[$key] = $provider;
+
+        return $key;
     }
 
     /**
-     * @return list<FooterSegment>
+     * Set or replace a keyed provider. Pass null to remove.
      */
+    public function setProvider(string $key, ?FooterSegmentProvider $provider): void
+    {
+        if (null === $provider) {
+            unset($this->providers[$key]);
+        } else {
+            $this->providers[$key] = $provider;
+        }
+    }
+
+    /**
+     * Remove a keyed provider (convenience alias).
+     */
+    public function removeProvider(string $key): void
+    {
+        unset($this->providers[$key]);
+    }
+
+    /** @return list<FooterSegment> */
     public function getSegments(): array
     {
         $segments = [];
@@ -56,27 +80,18 @@ final class FooterDataProvider
         }
     }
 
-    /**
-     * Replace all footer status entries.
-     *
-     * @param array<string, string> $entries
-     */
+    /** @param array<string, string> $entries */
     public function setStatusEntries(array $entries): void
     {
         $this->statusEntries = $entries;
     }
 
-    /**
-     * @return array<string, string>
-     */
+    /** @return array<string, string> */
     public function getStatusEntries(): array
     {
         return $this->statusEntries;
     }
 
-    /**
-     * Create a read-only projection for use by extensions.
-     */
     public function readonly(): ReadonlyFooterDataProvider
     {
         return new ReadonlyFooterDataProvider($this);

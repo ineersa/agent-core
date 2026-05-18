@@ -565,12 +565,6 @@ parameters:
 			path: src/CodingAgent/Config/Ai/AiCost.php
 
 		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$contextWindow is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
-
-		-
 			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$cost is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
@@ -841,6 +835,12 @@ parameters:
 			path: src/Tui/Extension/SlotBasedTuiExtensionContext.php
 
 		-
+			message: '#^Unused Ineersa\\Tui\\Extension\\SlotBasedTuiExtensionContext\:\:setFooterProvider$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Extension/SlotBasedTuiExtensionContext.php
+
+		-
 			message: '#^Unused Ineersa\\Tui\\Extension\\SlotBasedTuiExtensionContext\:\:setHeader$#'
 			identifier: shipmonk.deadMethod
 			count: 1
@@ -889,6 +889,12 @@ parameters:
 			path: src/Tui/Extension/TuiExtensionContext.php
 
 		-
+			message: '#^Unused Ineersa\\Tui\\Extension\\TuiExtensionContext\:\:setFooterProvider$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Extension/TuiExtensionContext.php
+
+		-
 			message: '#^Unused Ineersa\\Tui\\Extension\\TuiExtensionContext\:\:setHeader$#'
 			identifier: shipmonk.deadMethod
 			count: 1
@@ -925,6 +931,12 @@ parameters:
 			path: src/Tui/Footer/FooterDataProvider.php
 
 		-
+			message: '#^Unused Ineersa\\Tui\\Footer\\FooterDataProvider\:\:removeProvider$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Footer/FooterDataProvider.php
+
+		-
 			message: '#^Unused Ineersa\\Tui\\Footer\\ReadonlyFooterDataProvider\:\:getSegments$#'
 			identifier: shipmonk.deadMethod
 			count: 1
@@ -956,12 +968,6 @@ parameters:
 
 		-
 			message: '#^Unused Ineersa\\Tui\\Screen\\ChatScreen\:\:extensionContext$#'
-			identifier: shipmonk.deadMethod
-			count: 1
-			path: src/Tui/Screen/ChatScreen.php
-
-		-
-			message: '#^Unused Ineersa\\Tui\\Screen\\ChatScreen\:\:refresh$#'
 			identifier: shipmonk.deadMethod
 			count: 1
 			path: src/Tui/Screen/ChatScreen.php
@@ -1058,12 +1064,6 @@ parameters:
 
 		-
 			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:DiffRemoved$#'
-			identifier: shipmonk.deadEnumCase
-			count: 1
-			path: src/Tui/Theme/ThemeColor.php
-
-		-
-			message: '#^Unused Ineersa\\Tui\\Theme\\ThemeColor\:\:Dim$#'
 			identifier: shipmonk.deadEnumCase
 			count: 1
 			path: src/Tui/Theme/ThemeColor.php

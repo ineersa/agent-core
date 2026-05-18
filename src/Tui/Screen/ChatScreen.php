@@ -90,7 +90,6 @@ final class ChatScreen
         private readonly string $sessionId,
     ) {
         $this->registry = new TuiSlotRegistry();
-        $this->extensionContext = new SlotBasedTuiExtensionContext($this->registry);
 
         // ── Instantiate default renderables ──
         $this->headerRenderable = new HeaderWidget();
@@ -99,6 +98,7 @@ final class ChatScreen
         $this->workingRenderable = new WorkingStatusWidget();
         $this->statusPanelRenderable = new StatusPanelWidget();
         $this->footerDataProvider = new FooterDataProvider();
+        $this->extensionContext = new SlotBasedTuiExtensionContext($this->registry, $this->footerDataProvider);
         $this->footerDataProvider->addProvider($this->createDefaultFooterProvider());
         $this->footerRenderable = new FooterBarWidget($this->footerDataProvider);
 
@@ -359,6 +359,18 @@ final class ChatScreen
      * extension calls and already invalidate targeted widgets.  This method
      * is a safety net for external state changes.
      */
+    /**
+     * Register an additional footer segment provider.
+     *
+     * Providers are invoked on every footer render. Use this to add
+     * live data segments such as model, token usage, or elapsed time.
+     */
+    public function addFooterProvider(FooterSegmentProvider $provider): void
+    {
+        $this->footerDataProvider->addProvider($provider);
+        $this->footerWidget->invalidate();
+    }
+
     public function refresh(): void
     {
         $this->transcriptWidget->invalidate();
@@ -399,7 +411,11 @@ final class ChatScreen
     }
 
     /**
-     * Create the default footer segment provider showing agent name, session, and key hints.
+     * Create the default footer segment provider.
+     *
+     * Only shows the current session ID so users can distinguish sessions.
+     * All other footer content (model, usage, elapsed, cwd, branch) is
+     * contributed by {@see FooterStateListener} via addFooterProvider().
      */
     private function createDefaultFooterProvider(): FooterSegmentProvider
     {
@@ -415,9 +431,10 @@ final class ChatScreen
             public function getSegments(): array
             {
                 return [
-                    new FooterSegment(text: '◆ hatfield', priority: 0),
-                    new FooterSegment(text: 'session '.$this->sessionId, priority: 10),
-                    new FooterSegment(text: 'Ctrl+D quit  Ctrl+C cancel', priority: 20),
+                    new FooterSegment(
+                        text: 'session '.$this->sessionId,
+                        priority: 110,
+                    ),
                 ];
             }
         };

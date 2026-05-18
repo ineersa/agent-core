@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Extension;
 
+use Ineersa\Tui\Footer\FooterDataProvider;
+use Ineersa\Tui\Footer\FooterSegmentProvider;
 use Ineersa\Tui\Layout\TuiSlotRegistry;
 use Ineersa\Tui\Widget\TuiWidget;
 use Ineersa\Tui\Widget\WidgetPlacement;
@@ -17,6 +19,7 @@ final class SlotBasedTuiExtensionContext implements TuiExtensionContext
 {
     public function __construct(
         private readonly TuiSlotRegistry $registry,
+        private readonly ?FooterDataProvider $footerDataProvider = null,
     ) {
     }
 
@@ -57,6 +60,11 @@ final class SlotBasedTuiExtensionContext implements TuiExtensionContext
     public function setWorkingVisible(bool $visible): void
     {
         $this->registry->setWorkingVisible($visible);
+    }
+
+    public function setFooterProvider(string $key, ?FooterSegmentProvider $provider): void
+    {
+        $this->footerDataProvider?->setProvider($key, $provider);
     }
 
     public function onTerminalInput(callable $handler): void

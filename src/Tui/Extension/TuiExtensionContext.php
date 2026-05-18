@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Extension;
 
+use Ineersa\Tui\Footer\FooterSegmentProvider;
 use Ineersa\Tui\Widget\TuiWidget;
 use Ineersa\Tui\Widget\WidgetPlacement;
 
@@ -68,6 +69,17 @@ interface TuiExtensionContext
      * Show or hide the working indicator row.
      */
     public function setWorkingVisible(bool $visible): void;
+
+    /**
+     * Register or remove a footer segment provider under a key.
+     *
+     * Providers added through this API coexist with the default footer
+     * segments. To replace the entire footer widget, use setFooter().
+     *
+     * @param string                     $key      Unique key for this provider
+     * @param FooterSegmentProvider|null $provider Provider to add, or null to remove
+     */
+    public function setFooterProvider(string $key, ?FooterSegmentProvider $provider): void;
 
     /**
      * Register a raw terminal input handler.

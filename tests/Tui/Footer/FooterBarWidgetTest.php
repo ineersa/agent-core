@@ -71,7 +71,8 @@ final class FooterBarWidgetTest extends TestCase
         $lines = $widget->render($context);
 
         self::assertCount(1, $lines);
-        self::assertStringContainsString('first · second', $lines[0]);
+        // priority gap 10 => "  |  " separator
+        self::assertStringContainsString('first  |  second', $lines[0]);
     }
 
     public function testMultipleProviders(): void
@@ -97,7 +98,8 @@ final class FooterBarWidgetTest extends TestCase
 
         $lines = $widget->render($context);
 
-        self::assertStringContainsString('A · B', $lines[0]);
+        // priority gap 1 => space separator
+        self::assertStringContainsString('A B', $lines[0]);
     }
 
     public function testStatusEntriesAppearInFooter(): void
