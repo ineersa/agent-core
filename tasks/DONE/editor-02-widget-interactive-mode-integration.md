@@ -34,14 +34,14 @@ Parallelizable with: EDITOR-04.
 - `castor test` and `castor deptrac` pass.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/editor-02-widget-interactive-mode-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-02-widget-interactive-mode-integration
 Fork run: 8vr7qov6xcz9
 PR URL: https://github.com/ineersa/agent-core/pull/24
-PR Status: open
+PR Status: merged
 Started: 2026-05-18T17:10:13.499Z
-Completed:
+Completed: 2026-05-18T17:28:17.388Z
 
 ## Work log
 - Created: 2026-05-18T00:15:13.842Z
@@ -74,3 +74,16 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/24
 - Validation: castor test — 419/419 pass, 8246 assertions, 1 pre-existing notice; castor test --filter="PromptEditor" — 23/23 pass, 41 assertions; castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — fails due pre-existing src/Tui/Command/* style violations unrelated to changed files; ~/.local/bin/castor test:tui — fails 2/2 due pre-existing startup footer snapshot mismatch reproduced on main
 - Summary: EDITOR-02 completed in fork 8vr7qov6xcz9. PromptEditor is now injected into InteractiveMode and passed into ChatScreen, ChatScreen delegates editorWidget/editorText/clear/extract through PromptEditor, viewport defaults are configured via PromptEditor, and SubmitListener uses ChatScreen::extract(). No new editor behavior or command routing added.
+
+## Task workflow update - 2026-05-18T17:28:17.388Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/editor-02-widget-interactive-mode-integration into integration checkout.
+- Merge made by the 'ort' strategy.
+ src/Tui/Application/InteractiveMode.php |  4 +++-
+ src/Tui/Listener/SubmitListener.php     |  5 +----
+ src/Tui/Screen/ChatScreen.php           | 38 +++++++++++++++++++++++----------
+ 3 files changed, 31 insertions(+), 16 deletions(-)
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/editor-02-widget-interactive-mode-integration.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR #24 merged: https://github.com/ineersa/agent-core/pull/24
+- Summary: PR #24 merged by user. EDITOR-02 complete: PromptEditor facade wired through DI into InteractiveMode/ChatScreen and SubmitListener uses ChatScreen::extract().
