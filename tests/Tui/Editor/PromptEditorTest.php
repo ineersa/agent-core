@@ -41,24 +41,6 @@ final class PromptEditorTest extends TestCase
     // ─── Configuration ───────────────────────────────────────────
 
     #[Test]
-    public function setMinVisibleLinesDoesNotThrow(): void
-    {
-        // EditorWidget doesn't expose a getter for minVisibleLines,
-        // but we can verify the call doesn't explode.
-        $this->editor->setMinVisibleLines(3);
-
-        $this->assertTrue(true); // no exception thrown
-    }
-
-    #[Test]
-    public function setMaxVisibleLinesDoesNotThrow(): void
-    {
-        $this->editor->setMaxVisibleLines(10);
-
-        $this->assertTrue(true); // no exception thrown
-    }
-
-    #[Test]
     public function configurationIsFluent(): void
     {
         $result = $this->editor->setMinVisibleLines(1)->setMaxVisibleLines(20);

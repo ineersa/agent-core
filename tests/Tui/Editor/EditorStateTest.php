@@ -30,15 +30,19 @@ final class EditorStateTest extends TestCase
     }
 
     #[Test]
-    public function getLinesReturnsCopy(): void
+    public function getLinesReturnsExternalCopy(): void
     {
         $state = new EditorState(['a', 'b']);
         $lines = $state->getLines();
 
-        // getLines() returns the array; readonly class prevents
-        // reassignment but not element mutation. This test documents
-        // that callers receive the internal array.
-        $this->assertSame(['a', 'b'], $lines);
+        // PHP 8.5 readonly class properties are deeply immutable: direct
+        // element mutation ($state->lines[0] = ..) throws Error.  The
+        // getter returns by value, and arrays are COW-separated on write,
+        // so callers receive an independent snapshot.
+        $lines[0] = 'mutated';
+
+        $this->assertSame(['a', 'b'], $state->getLines());
+        $this->assertSame(['mutated', 'b'], $lines);
     }
 
     #[Test]
@@ -165,5 +169,62 @@ final class EditorStateTest extends TestCase
 
         $this->assertSame(['', ''], $state->getLines());
         $this->assertFalse($state->isEmpty());
+    }
+
+    // ─── Control byte stripping (matching EditorDocument::setText) ──
+
+    #[Test]
+    public function fromTextStripsControlBytes(): void
+    {
+        // BEL (\x07) and other C0 controls are stripped
+        $state = EditorState::fromText("hello\x07world");
+
+        $this->assertSame(['helloworld'], $state->getLines());
+    }
+
+    #[Test]
+    public function fromTextStripsDelCharacter(): void
+    {
+        $state = EditorState::fromText("hi\x7fthere");
+
+        $this->assertSame(['hithere'], $state->getLines());
+    }
+
+    #[Test]
+    public function fromTextPreservesTabAndNewline(): void
+    {
+        // TAB (\x09) and LF (\x0a) are preserved
+        $state = EditorState::fromText("col1\tcol2\nline2");
+
+        $this->assertSame(["col1\tcol2", 'line2'], $state->getLines());
+    }
+
+    #[Test]
+    public function fromTextStripsC1ControlBytes(): void
+    {
+        // C1 controls encoded as UTF-8 \xc2[\x80-\x9f]
+        $state = EditorState::fromText("hello\xc2\x80world");
+
+        $this->assertSame(['helloworld'], $state->getLines());
+    }
+
+    #[Test]
+    public function fromTextSanitizesInvalidUtf8(): void
+    {
+        // Invalid UTF-8 byte sequences are stripped via iconv
+        $state = EditorState::fromText("valid\xFE\xFFtext");
+
+        $this->assertStringContainsString('valid', $state->getText());
+        $this->assertStringContainsString('text', $state->getText());
+    }
+
+    #[Test]
+    public function fromTextEmptyAfterAllStripping(): void
+    {
+        // If all content is control bytes, result is an empty state
+        $state = EditorState::fromText("\x00\x01");
+
+        $this->assertTrue($state->isEmpty());
+        $this->assertSame([''], $state->getLines());
     }
 }

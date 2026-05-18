@@ -36,12 +36,29 @@ final readonly class EditorState
     /**
      * Create state from a text string.
      *
-     * Normalizes line endings (\r\n, \r → \n) then splits on \n,
-     * matching EditorDocument::setText() behavior.
+     * Applies the same normalization pipeline as
+     * EditorDocument::setText():
+     *  1. Sanitize invalid UTF-8 byte sequences
+     *  2. Normalize line endings (\r\n, \r → \n)
+     *  3. Strip control bytes (keeping TAB and LF)
+     *  4. Split on \n
      */
     public static function fromText(string $text): self
     {
+        // Sanitize invalid UTF-8 (match StringUtils::sanitizeUtf8)
+        if ('' !== $text && false === preg_match('//u', $text)) {
+            $sanitized = @iconv('UTF-8', 'UTF-8//IGNORE', $text);
+            $text = false === $sanitized ? '' : $sanitized;
+        }
+
+        // Normalize line endings
         $text = str_replace(["\r\n", "\r"], "\n", $text);
+
+        // Strip control bytes (match StringUtils::stripControlBytes):
+        //   C0 controls except TAB (\x09) and LF (\x0a), plus DEL (\x7f)
+        //   C1 controls encoded as UTF-8 \xc2[\x80-\x9f]
+        $text = preg_replace("/[\x00-\x08\x0b-\x1f\x7f]|\xc2[\x80-\x9f]/", '', $text) ?? '';
+
         $lines = '' === $text ? [''] : explode("\n", $text);
 
         return new self($lines);
