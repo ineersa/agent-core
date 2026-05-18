@@ -30,17 +30,22 @@ all available tasks.
 ```bash
 castor install      # composer install
 castor check        # Full QA (deptrac + phpunit + phpstan + cs-fixer)
-castor test         # PHPUnit tests
+castor test         # PHPUnit tests (excludes tui-e2e and llm-real groups)
+castor test --filter=TestName   # PHPUnit with --filter
+castor test:tui     # TUI e2e snapshot tests (requires tmux)
+castor test:tui-update  # TUI e2e + update golden snapshots
+castor test:llm-real # Real llama.cpp smoke test
 castor deptrac      # Deptrac boundary enforcement
 castor phpstan      # PHPStan static analysis
+castor phpstan src/AgentCore/Domain/  # PHPStan on specific path
+castor phpstan:baseline  # Regenerate PHPStan baseline
 castor cs-fix       # PHP CS Fixer (fix in place)
+castor cs-fix src/AgentCore/   # CS Fixer on specific path
 castor cs-check     # PHP CS Fixer (dry-run check only)
 castor cache:clear  # Remove generated QA caches (deptrac, php-cs-fixer, phpstan)
 castor idea:run-configs  # Generate PhpStorm run configurations for Castor tasks
 castor run:agent       # Launch the agent TUI in a tmux session
 castor run:agent-test   # Deterministic tmux session for snapshot testing
-castor test:tui         # Run TUI e2e snapshot tests (requires tmux, NOT in check)
-castor test:tui-update  # Run TUI e2e tests and update golden snapshots
 castor worktree:remove <slug-or-path> --force [--delete-branch]  # Remove task worktree
 ```
 
