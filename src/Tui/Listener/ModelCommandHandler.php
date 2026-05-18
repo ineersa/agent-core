@@ -12,6 +12,7 @@ use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\TranscriptMessage;
+use Ineersa\Tui\Picker\FavoritePickerController;
 use Ineersa\Tui\Picker\ModelPickerController;
 use Ineersa\Tui\Runtime\TuiSessionState;
 
@@ -36,6 +37,7 @@ final class ModelCommandHandler implements SlashCommandHandler
         private readonly AppConfig $appConfig,
         private readonly TuiSessionState $state,
         private readonly ModelPickerController $pickerController,
+        private readonly FavoritePickerController $favPickerController,
     ) {
     }
 
@@ -116,24 +118,15 @@ final class ModelCommandHandler implements SlashCommandHandler
     private function toggleFavoriteCommand(string $modelSpec): CommandResult
     {
         if ('' === $modelSpec) {
-            // List current favorites
-            $favs = $this->modelService->getFavoriteModels();
-            if ([] === $favs) {
-                return new TranscriptMessage(
-                    'No favorite models configured. Use /model fav <provider/modelname> to add a favorite.',
-                    'system',
-                    'muted',
-                );
+            // Open interactive favorites picker
+            $this->favPickerController->open();
+
+            if ($this->favPickerController->isOpen()) {
+                return new NoOp();
             }
 
-            $lines = ['Favorite models:', ''];
-            foreach ($favs as $i => $fav) {
-                $lines[] = \sprintf('  %d. %s', $i + 1, $fav);
-            }
-            $lines[] = '';
-            $lines[] = 'Type /model fav <provider/modelname> to add or remove a favorite.';
-
-            return new TranscriptMessage(implode("\n", $lines), 'system');
+            // Fallback: textual list when TUI refs not available (tests, etc.)
+            return $this->buildFavoritesListMessage();
         }
 
         $ref = AiModelReference::tryParse($modelSpec);
@@ -227,6 +220,37 @@ final class ModelCommandHandler implements SlashCommandHandler
     }
 
     // ── Helpers ──
+
+    /**
+     * Build a textual favorites list (fallback when picker can't open).
+     */
+    private function buildFavoritesListMessage(): TranscriptMessage
+    {
+        $all = $this->modelService->getAvailableModels();
+        $favorites = $this->modelService->getFavoriteModels();
+        $favSet = array_flip($favorites);
+
+        if ([] === $all) {
+            return new TranscriptMessage(
+                'No AI models configured. Check your AI settings in .hatfield/settings.yaml.',
+                'system',
+                'muted',
+            );
+        }
+
+        $lines = ['Favorite models (* = favorite):', ''];
+        foreach ($all as $i => $ref) {
+            $refStr = $ref->toString();
+            $isFav = isset($favSet[$refStr]);
+            $marker = $isFav ? '*' : ' ';
+            $lines[] = \sprintf('  %2d. %s %s', $i + 1, $marker, $refStr);
+        }
+        $lines[] = '';
+        $lines[] = 'Type /model fav <provider/modelname> to toggle a favorite.';
+        $lines[] = 'Type /model fav (no args) to open the interactive picker.';
+
+        return new TranscriptMessage(implode("\n", $lines), 'system');
+    }
 
     /**
      * Resolve context window for a model from the catalog.

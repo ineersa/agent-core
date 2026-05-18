@@ -170,6 +170,7 @@ loaded models (e.g. llama.cpp).
 | `embeddings_path` | string | no | Embeddings endpoint path (if supported). |
 | `supports_completions` | bool | no | Enable completions client. Default: `true`. |
 | `supports_embeddings` | bool | no | Enable embeddings client. Default: `false`. |
+| `supports_thinking_levels` | bool | no | Whether reasoning-level cycling (Shift+Tab) is meaningful for this provider. When `false`, reasoning levels are not cycled for models from this provider. Default: `true`. |
 | `compatibility` | map | no | Provider-level transport quirks (see below). |
 | `models` | map | yes | Model definitions keyed by model name. |
 

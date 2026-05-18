@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommandRegistry;
+use Ineersa\Tui\Picker\FavoritePickerController;
 use Ineersa\Tui\Picker\ModelPickerController;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Symfony\Component\Tui\Event\InputEvent;
@@ -32,6 +33,7 @@ final class ModelControlListener implements TuiListenerRegistrar
         private readonly SlashCommandRegistry $commandRegistry,
         private readonly AppConfig $appConfig,
         private readonly ModelPickerController $pickerController,
+        private readonly FavoritePickerController $favPickerController,
     ) {
     }
 
@@ -44,11 +46,12 @@ final class ModelControlListener implements TuiListenerRegistrar
         $appConfig = $this->appConfig;
         $pickerController = $this->pickerController;
 
-        // Wire the picker controller with references only available at register() time
+        // Wire the picker controllers with references only available at register() time
         $this->pickerController->setRuntimeRefs($tui, $screen, $state);
+        $this->favPickerController->setRuntimeRefs($tui, $screen, $state);
 
         // ── Register /model slash command (idempotent) ──
-        $modelHandler = new ModelCommandHandler($modelService, $appConfig, $state, $this->pickerController);
+        $modelHandler = new ModelCommandHandler($modelService, $appConfig, $state, $this->pickerController, $this->favPickerController);
         if ($this->commandRegistry->has('model')) {
             $this->commandRegistry->setHandler('model', $modelHandler);
         } else {
@@ -65,7 +68,7 @@ final class ModelControlListener implements TuiListenerRegistrar
 
         // ── Register Ctrl+P — cycle favorite models ──
         $tui->addListener(static function (InputEvent $event) use (
-            $modelService, $state, $screen, $appConfig,
+            $modelService, $state, $appConfig,
         ): void {
             // Ctrl+P is \x10
             if ("\x10" !== $event->getData()) {
@@ -75,24 +78,18 @@ final class ModelControlListener implements TuiListenerRegistrar
 
             $nextRef = $modelService->cycleFavoriteModel($state->sessionId);
             if (null === $nextRef) {
-                $screen->setStatus('model', 'No favorites configured.');
-                $screen->refresh();
-
                 return;
             }
 
-            // Update footer state for immediate refresh
+            // Update footer state for immediate refresh (no persistent status entry)
             $state->footerModel = FooterStateInitializer::shortModelName($nextRef->toString());
             $state->footerReasoning = $modelService->getCurrentReasoning($state->sessionId);
             $state->contextWindow = self::lookupContextWindow($appConfig, $nextRef);
-
-            $screen->setStatus('model', 'Model: '.$nextRef->toString());
-            $screen->refresh();
         }, priority: 95);
 
         // ── Register Shift+Tab — cycle reasoning levels ──
         $tui->addListener(static function (InputEvent $event) use (
-            $modelService, $state, $screen,
+            $modelService, $state,
         ): void {
             // Shift+Tab sends \x1b[Z
             if ("\x1b[Z" !== $event->getData()) {
@@ -100,17 +97,14 @@ final class ModelControlListener implements TuiListenerRegistrar
             }
             $event->stopPropagation();
 
-            $current = $modelService->getCurrentReasoning($state->sessionId);
-            $nextLevel = $modelService->cycleReasoning($current);
+            // Only cycle when the current model supports thinking levels
+            $nextLevel = $modelService->cycleReasoningForCurrentModel($state->sessionId);
+            if (null === $nextLevel) {
+                return;
+            }
 
-            // Persist
-            $modelService->changeReasoning($nextLevel, $state->sessionId);
-
-            // Update footer state
+            // Update footer state for immediate refresh (no persistent status entry)
             $state->footerReasoning = $nextLevel;
-
-            $screen->setStatus('reasoning', 'Reasoning: '.$nextLevel);
-            $screen->refresh();
         }, priority: 95);
     }
 

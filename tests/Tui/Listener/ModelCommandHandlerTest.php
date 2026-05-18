@@ -19,6 +19,7 @@ use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Listener\ModelCommandHandler;
+use Ineersa\Tui\Picker\FavoritePickerController;
 use Ineersa\Tui\Picker\ModelPickerController;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use PHPUnit\Framework\Attributes\Test;
@@ -175,8 +176,9 @@ class ModelCommandHandlerTest extends TestCase
         $appConfig = $this->makeAppConfig([] !== $aiData ? $aiData : $this->standardAiData());
 
         $pickerController = new ModelPickerController($this->modelService, $appConfig);
+        $favPickerController = new FavoritePickerController($this->modelService);
 
-        return new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController);
+        return new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, $favPickerController);
     }
 
     private function slash(string $name, string $args = ''): SlashCommand
@@ -227,7 +229,8 @@ class ModelCommandHandlerTest extends TestCase
         $homeWriter = new HomeSettingsWriter($pathResolver);
         $this->modelService = new ModelSelectionService($appConfig, $homeWriter, $this->sessionMetaStore);
         $pickerController = new ModelPickerController($this->modelService, $appConfig);
-        $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController);
+        $favPickerController = new FavoritePickerController($this->modelService);
+        $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, $favPickerController);
 
         $result = $handler->handle($this->slash('model'));
 
@@ -309,12 +312,13 @@ class ModelCommandHandlerTest extends TestCase
         $homeWriter = new HomeSettingsWriter($pathResolver);
         $this->modelService = new ModelSelectionService($appConfig, $homeWriter, $this->sessionMetaStore);
         $pickerController = new ModelPickerController($this->modelService, $appConfig);
-        $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController);
+        $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, new FavoritePickerController($this->modelService));
 
+        // Fallback textual list shows all models with * markers
         $result = $handler->handle($this->slash('model', 'fav'));
 
         self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertStringContainsString('Favorite models:', $result->text);
+        self::assertStringContainsString('Favorite models (* = favorite):', $result->text);
         self::assertStringContainsString('deepseek/deepseek-v4-pro', $result->text);
         self::assertStringContainsString('zai/glm-5.1', $result->text);
     }
@@ -326,8 +330,10 @@ class ModelCommandHandlerTest extends TestCase
         $result = $handler->handle($this->slash('model', 'fav'));
 
         self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertStringContainsString('No favorite models', $result->text);
-        self::assertSame('muted', $result->style);
+        // New fav list shows all models, none marked with *
+        self::assertStringContainsString('Favorite models (* = favorite):', $result->text);
+        self::assertStringContainsString('deepseek/deepseek-v4-pro', $result->text);
+        self::assertStringContainsString('zai/glm-5.1', $result->text);
     }
 
     #[Test]
@@ -350,7 +356,7 @@ class ModelCommandHandlerTest extends TestCase
         $homeWriter = new HomeSettingsWriter($pathResolver);
         $this->modelService = new ModelSelectionService($appConfig, $homeWriter, $this->sessionMetaStore);
         $pickerController = new ModelPickerController($this->modelService, $appConfig);
-        $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController);
+        $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, new FavoritePickerController($this->modelService));
 
         $result = $handler->handle($this->slash('model', 'fav deepseek/deepseek-v4-pro'));
 
@@ -405,12 +411,14 @@ class ModelCommandHandlerTest extends TestCase
         // Toggle a favorite
         $handler->handle($this->slash('model', 'fav zai/glm-5.1'));
 
-        // Immediately list favorites — should include the newly added model
+        // Immediately list favorites (falls back to text since no TUI) —
+        // should show the newly favorited model with * marker
         $result = $handler->handle($this->slash('model', 'fav'));
 
         self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertStringContainsString('Favorite models:', $result->text);
+        self::assertStringContainsString('Favorite models (* = favorite):', $result->text);
         self::assertStringContainsString('zai/glm-5.1', $result->text);
+        self::assertStringContainsString('*', $result->text);
     }
 
     #[Test]
@@ -442,9 +450,11 @@ class ModelCommandHandlerTest extends TestCase
         $result = $handler->handle($this->slash('model', 'fav zai/glm-5.1'));
         self::assertStringContainsString('Removed zai/glm-5.1 from favorites', $result->text);
 
-        // List now — should be empty
+        // List now — both models shown, none marked with *
         $listResult = $handler->handle($this->slash('model', 'fav'));
-        self::assertStringContainsString('No favorite models', $listResult->text);
-        self::assertSame('muted', $listResult->style);
+        self::assertStringContainsString('Favorite models (* = favorite):', $listResult->text);
+        // deepseek/deepseek-v4-pro should appear without * marker
+        self::assertStringContainsString('deepseek/deepseek-v4-pro', $listResult->text);
+        self::assertStringContainsString('zai/glm-5.1', $listResult->text);
     }
 }

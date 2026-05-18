@@ -100,6 +100,10 @@ ai:
             embeddings_path: /embeddings
             supports_completions: true
             supports_embeddings: false
+            # llama.cpp has no native reasoning/thinking level API.
+            # supports_thinking_levels: false disables Shift+Tab cycling
+            # for models from this provider.
+            supports_thinking_levels: false
             models:
                 flash:
                     name: flash

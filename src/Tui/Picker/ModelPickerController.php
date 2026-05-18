@@ -12,7 +12,6 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
-use Symfony\Component\Tui\Event\SelectionChangeEvent;
 use Symfony\Component\Tui\Input\Key;
 use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Tui;
@@ -136,12 +135,8 @@ final class ModelPickerController
             return true; // consumed
         });
 
-        // ── Selection change → show model name in status ──
-        $this->listWidget->onSelectionChange(static function (SelectionChangeEvent $event) use ($screen): void {
-            $item = $event->getItem();
-            $screen->setStatus('model', 'Model: '.$item['value']);
-            $screen->refresh();
-        });
+        // ── Selection change handled by the widget itself ──
+        // (no-op listener preserved for potential future use)
 
         // ── Enter → select model, persist, close ──
         $onSelectService = $this->modelService;
@@ -265,9 +260,7 @@ final class ModelPickerController
         try {
             $modelService->changeModel($ref, $state->sessionId);
         } catch (\RuntimeException) {
-            $screen->setStatus('model', 'Failed to select model: '.$ref->toString());
-            $screen->refresh();
-
+            // Silently fail — the picker controls the UX
             return;
         }
 
@@ -278,7 +271,6 @@ final class ModelPickerController
         $state->footerReasoning = $modelService->getCurrentReasoning($state->sessionId);
         $state->contextWindow = self::lookupContextWindow($appConfig, $ref);
 
-        $screen->setStatus('model', 'Selected: '.$ref->toString());
         $screen->refresh();
     }
 

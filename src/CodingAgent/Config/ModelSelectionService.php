@@ -400,6 +400,41 @@ final class ModelSelectionService
     }
 
     /**
+     * Cycle reasoning for the current model, but only if the model supports
+     * thinking levels. Does NOT persist or change state when unsupported.
+     *
+     * Returns the new level on success, or null when thinking is not supported
+     * for the current model.
+     */
+    public function cycleReasoningForCurrentModel(string $sessionId): ?string
+    {
+        if (!$this->supportsThinkingLevelsForSession($sessionId)) {
+            return null;
+        }
+
+        $current = $this->getCurrentReasoning($sessionId);
+        $nextLevel = $this->cycleReasoning($current);
+        $this->changeReasoning($nextLevel, $sessionId);
+
+        return $nextLevel;
+    }
+
+    /**
+     * Does the current session's model support reasoning-level cycling?
+     */
+    public function supportsThinkingLevelsForSession(string $sessionId): bool
+    {
+        $catalog = $this->appConfig->catalog;
+        if (null === $catalog) {
+            return false;
+        }
+
+        $model = $this->getCurrentModel($sessionId);
+
+        return null !== $model && $catalog->supportsThinkingLevels($model);
+    }
+
+    /**
      * Get the currently active reasoning level for the session.
      */
     public function getCurrentReasoning(string $sessionId): string

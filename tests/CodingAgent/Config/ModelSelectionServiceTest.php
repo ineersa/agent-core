@@ -806,4 +806,74 @@ class ModelSelectionServiceTest extends TestCase
         self::assertSame('llama_cpp', $resolved->providerId);
         self::assertSame('flash', $resolved->modelName);
     }
+
+    // ──────────────────────────────────────────────
+    //  Thinking levels support (AI-14)
+    // ──────────────────────────────────────────────
+
+    public function testSupportsThinkingLevelsForSessionReturnsTrueForReasoningModel(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+
+        // deepseek/deepseek-v4-pro has reasoning=true and provider supportsThinkingLevels=true (default)
+        self::assertTrue($service->supportsThinkingLevelsForSession('abc123'));
+    }
+
+    public function testSupportsThinkingLevelsForSessionReturnsFalseForNonReasoningModel(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+        // Switch to llama_cpp/flash which has reasoning=false
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+
+        self::assertFalse($service->supportsThinkingLevelsForSession('abc123'));
+    }
+
+    public function testSupportsThinkingLevelsForSessionReturnsFalseWhenProviderDisabled(): void
+    {
+        $aiData = $this->standardAiData();
+        // llama_cpp with supports_thinking_levels explicitly false
+        $aiData['providers']['llama_cpp']['supports_thinking_levels'] = false;
+        $service = $this->buildService($aiData);
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+
+        self::assertFalse($service->supportsThinkingLevelsForSession('abc123'));
+    }
+
+    public function testCycleReasoningForCurrentModelSuccess(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+
+        // deepseek/deepseek-v4-pro supports reasoning, current is 'medium'
+        $result = $service->cycleReasoningForCurrentModel('abc123');
+
+        self::assertNotNull($result);
+        self::assertSame('high', $result);
+
+        // Verify persistence
+        $meta = $this->readSessionMetadata('abc123');
+        self::assertSame('high', $meta['reasoning']);
+    }
+
+    public function testCycleReasoningForCurrentModelReturnsNullWhenUnsupported(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+        // Switch to a model that doesn't support reasoning
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+
+        $result = $service->cycleReasoningForCurrentModel('abc123');
+
+        self::assertNull($result);
+    }
+
+    public function testCycleReasoningForCurrentModelReturnsNullWhenProviderThinkingLevelsDisabled(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['providers']['llama_cpp']['supports_thinking_levels'] = false;
+        $service = $this->buildService($aiData);
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+
+        $result = $service->cycleReasoningForCurrentModel('abc123');
+
+        self::assertNull($result);
+    }
 }
