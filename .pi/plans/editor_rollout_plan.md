@@ -365,6 +365,113 @@ Deliver:
 - keybinding documentation.
 - footer key hints generated from active keymap instead of hardcoded text.
 
+## Implementation order and task graph
+
+Tasks are intentionally small enough for smaller models. Use the `EDITOR-*` prefix for task files.
+
+### Minimal MVP scope with commands
+
+The MVP should be useful for upcoming AI/TUI tasks without waiting for the full editor roadmap.
+
+MVP includes:
+
+- owned prompt text state and cursor mechanics;
+- a `PromptEditorWidget` replacing direct Symfony `EditorWidget` usage;
+- current visible behavior preserved: `Enter` submits, `Ctrl+J` newline, `Ctrl+C` clears/cancels input, `Ctrl+D` exits;
+- after-submit command parsing for `/` commands;
+- a small slash command registry/executor;
+- MVP commands: `/help`, `/clear`, `/exit`;
+- command extension seam so later AI/model tasks can add commands such as `/model` without rewriting submission routing;
+- deterministic unit tests and at least one opt-in tmux smoke/e2e scenario if rendering changes.
+
+MVP explicitly excludes:
+
+- file mention completion;
+- slash command completion UI;
+- prompt history persistence;
+- paste markers;
+- shell prefixes `!` / `!!`;
+- configurable keybindings;
+- full command palette/modal UI.
+
+### Task list
+
+| Task | Title | Depends on | Can run in parallel with | MVP? | Notes |
+|------|-------|------------|--------------------------|------|-------|
+| EDITOR-01 | Pure prompt editor state and operations | none | EDITOR-03 | yes | Text model, cursor movement, insert/delete/newline, submit/clear. |
+| EDITOR-02 | PromptEditorWidget adapter and InteractiveMode integration | EDITOR-01 | EDITOR-04 | yes | Replaces direct Symfony `EditorWidget`; preserves current key behavior. |
+| EDITOR-03 | App command parser and command result contracts | none | EDITOR-01, EDITOR-02 | yes | Pure after-submit parser for `/`, `!`, `!!`; only slash execution in MVP. |
+| EDITOR-04 | MVP slash command registry and built-in commands | EDITOR-03 | EDITOR-02 | yes | `/help`, `/clear`, `/exit`; extension seam for AI/model commands. |
+| EDITOR-05 | Submission routing for prompts vs commands | EDITOR-02, EDITOR-04 | none after deps | yes | Normal prompts go to runtime; slash commands execute locally. |
+| EDITOR-06 | Editor viewport, growth, and internal scrolling | EDITOR-01, EDITOR-02 | EDITOR-03, EDITOR-04 | no | Max visible lines, scroll offset, PageUp/PageDown, indicators. |
+| EDITOR-07 | Prompt history navigation and session persistence | EDITOR-05 | EDITOR-06, EDITOR-08 | no | Empty editor Up/Down, session-aware history. |
+| EDITOR-08 | Completion foundation and slash command completion | EDITOR-03, EDITOR-04 | EDITOR-06, EDITOR-07 | no | Provider API, completion state/menu, Tab accept/trigger for slash commands. |
+| EDITOR-09 | File mention completion and resolution | EDITOR-08 | EDITOR-10 | no | `@` provider, `fd` fallback, quoted path insertion. |
+| EDITOR-10 | Paste store and paste marker handling | EDITOR-01, EDITOR-02 | EDITOR-09 | no | Bracketed paste, small/large paste, marker expansion on submit. |
+| EDITOR-11 | Shell command prefixes `!` and `!!` | EDITOR-03, EDITOR-05, TOOLS-09, RTVS-04, RTVS-07 | EDITOR-08, EDITOR-09, EDITOR-10 | no | Route submitted shell prefixes through bash/tool transcript flow. |
+| EDITOR-12 | Configurable keybindings, docs, and full editor smoke | EDITOR-05, EDITOR-06, EDITOR-07, EDITOR-08, EDITOR-10 | none after deps | no | Hatfield settings, conflict detection, docs, tmux e2e coverage. |
+
+### Dependency waves
+
+1. **MVP foundation**
+   - EDITOR-01 and EDITOR-03 can start immediately in parallel.
+   - EDITOR-02 follows EDITOR-01.
+   - EDITOR-04 follows EDITOR-03 and can run in parallel with EDITOR-02.
+
+2. **MVP integration**
+   - EDITOR-05 waits for EDITOR-02 and EDITOR-04.
+   - After EDITOR-05, the app has owned editor state plus local slash commands.
+
+3. **Editor ergonomics**
+   - EDITOR-06 can start after EDITOR-01/02 and does not need command routing.
+   - EDITOR-07 waits for EDITOR-05 so it can record submitted prompts consistently.
+
+4. **Completion and mentions**
+   - EDITOR-08 waits for command parser/registry tasks (EDITOR-03/04).
+   - EDITOR-09 waits for EDITOR-08.
+
+5. **Paste and shell prefixes**
+   - EDITOR-10 waits for editor state/widget integration.
+   - EDITOR-11 waits for command routing and the tool/runtime transcript backbone: TOOLS-09, RTVS-04, and RTVS-07.
+
+6. **Configuration and final docs**
+   - EDITOR-12 waits until the behavior it documents/configures exists.
+
+### Parallelization guidance
+
+Safe parallel tracks:
+
+- EDITOR-01 and EDITOR-03.
+- EDITOR-02 and EDITOR-04 after their foundations are done.
+- EDITOR-06 and EDITOR-08 after MVP foundations.
+- EDITOR-09 and EDITOR-10 once completion/editor integration exists.
+
+Avoid parallel edits to:
+
+- `InteractiveMode` submission routing: serialize EDITOR-02 and EDITOR-05 changes.
+- editor key dispatch/input routing: serialize EDITOR-02, EDITOR-05, EDITOR-06, and EDITOR-10 when they touch the same methods.
+- session persistence/history files: serialize EDITOR-07 with any session storage changes.
+
+### AI-task command seam
+
+AI/model tasks should not have to modify low-level editor mechanics. They should register commands through the command registry introduced by EDITOR-04 and routed by EDITOR-05.
+
+Initial command extension shape should support:
+
+- command name and aliases;
+- one-line description for `/help` and future completion;
+- argument string passed after the command name;
+- result type such as no-op, transcript message, status update, clear transcript, exit app, or dispatch runtime command;
+- dependency-safe implementation: `src/Tui/` may depend only on runtime contracts/protocols, not AgentCore internals.
+
+Potential follow-up AI/model commands, outside the editor MVP unless a task explicitly adds them:
+
+- `/model` or `/models` for model selection;
+- `/thinking` for thinking level;
+- `/provider` if multiple providers are exposed;
+- `/cost` or `/usage` once runtime usage metadata exists;
+- `/resume` and `/sessions` once session browsing is ready.
+
 ## Testing strategy
 
 ### Unit tests first
