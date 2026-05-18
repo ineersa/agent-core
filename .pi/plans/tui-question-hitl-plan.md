@@ -1,4 +1,4 @@
-t's # TUI questions and ask_human HITL tool plan
+# TUI questions and ask_human HITL tool plan
 
 Date: 2026-05-17
 
@@ -44,6 +44,80 @@ Existing interrupt payload shape:
 ]
 ```
 
+## Codex scouting notes
+
+A scout inspected `/home/ineersa/claw/codex` for questions, approvals, and HITL flows. Useful references:
+
+- `codex-rs/protocol/src/request_user_input.rs`
+  - core `RequestUserInputQuestion`, `RequestUserInputArgs`, `RequestUserInputResponse`, and `RequestUserInputEvent` types.
+- `codex-rs/tools/src/request_user_input_tool.rs`
+  - model-visible `request_user_input` tool spec and argument normalization.
+- `codex-rs/core/src/tools/handlers/request_user_input.rs`
+  - tool handler that parses model arguments, asks session for input, and returns serialized response to the model.
+- `codex-rs/core/src/session/mod.rs`
+  - `request_user_input()` creates a oneshot channel, stores the sender in active turn state, emits `EventMsg::RequestUserInput`, then awaits the answer.
+  - `notify_user_input_response()` looks up the pending sender and delivers the response.
+- `codex-rs/tui/src/bottom_pane/request_user_input/mod.rs`
+  - large question overlay implementation.
+- `codex-rs/tui/src/bottom_pane/approval_overlay.rs`
+  - separate approval overlay with queued approval requests.
+- `codex-rs/tui/src/bottom_pane/mod.rs`
+  - `push_user_input_request()` and `push_approval_request()` disable composer input while action is required.
+- `codex-rs/core/src/codex_delegate.rs`
+  - child/session HITL forwarding and guardian auto-review path.
+- `codex-rs/core/src/mcp_tool_call.rs`
+  - MCP tool approval can fallback to `request_user_input` compatibility questions.
+
+Codex question shape:
+
+```rust
+RequestUserInputQuestion {
+    id: String,
+    header: String,
+    question: String,
+    is_other: bool,
+    is_secret: bool,
+    options: Option<Vec<RequestUserInputQuestionOption>>,
+}
+
+RequestUserInputQuestionOption {
+    label: String,
+    description: String,
+}
+
+RequestUserInputResponse {
+    answers: HashMap<String, RequestUserInputAnswer>,
+}
+```
+
+Codex core flow:
+
+```text
+model calls request_user_input
+  -> tool handler validates/normalizes args
+  -> Session::request_user_input() stores oneshot sender and emits RequestUserInput event
+  -> TUI shows RequestUserInputOverlay and disables composer
+  -> user submits answers
+  -> app/server resolves request
+  -> Session::notify_user_input_response() completes oneshot
+  -> tool handler returns serialized answer to model
+```
+
+Codex TUI UX details worth copying:
+
+- Disable normal composer input while a HITL question is active.
+- Show an action-required surface/status while waiting for user input.
+- Queue incoming questions/approvals rather than dropping them.
+- Use structured choice options with `label` and `description`, not only bare strings.
+- Keep approvals separate from generic questions, but allow both to share presentation primitives.
+- Do not copy Codex's very large overlay module shape; split DTOs, coordinator, renderer, input routing, and HITL adapter.
+
+Important design difference for this project:
+
+- Codex blocks the tool handler on a oneshot until the user answers.
+- AgentCore already has a persistent state-machine flow: tool returns interrupt payload -> run enters `WaitingHuman` -> runtime projects HITL -> TUI sends `answer_human` -> run continues.
+- Prefer AgentCore's existing `WaitingHuman` / `HumanResponse` flow. Do **not** make `ask_human` block inside the tool implementation.
+
 ## Goals
 
 - Add a reusable TUI question/approval widget system.
@@ -82,9 +156,17 @@ enum QuestionKind: string
     case Approval = 'approval';
 }
 
+final readonly class QuestionOption
+{
+    public function __construct(
+        public string $label,
+        public string $description = '',
+    ) {}
+}
+
 final readonly class QuestionRequest
 {
-    /** @param array<string, mixed> $schema @param list<array<string, mixed>|string> $choices */
+    /** @param array<string, mixed> $schema @param list<QuestionOption> $choices */
     public function __construct(
         public string $requestId,
         public QuestionSource $source,
@@ -93,6 +175,9 @@ final readonly class QuestionRequest
         public array $schema = ['type' => 'string'],
         public array $choices = [],
         public mixed $default = null,
+        public ?string $header = null,
+        public bool $allowOther = true,
+        public bool $secret = false,
         public ?string $runId = null,
         public ?string $questionId = null,
         public ?string $toolCallId = null,
@@ -119,7 +204,7 @@ enum QuestionStatus: string
 }
 ```
 
-The TUI needs one active question at a time for v1. A later queue can support multiple local prompts, but AgentCore HITL should usually be single-active because a run is paused waiting for one answer.
+The TUI should display one active question at a time, but the coordinator should own a small queue. Codex queues incoming questions/approvals while an overlay is active; we should copy that behavior rather than dropping later requests. AgentCore HITL should usually be single-active because a run is paused waiting for one answer, but local TUI prompts and future side-thread questions can still benefit from queueing.
 
 ## Local TUI question flow
 
@@ -204,21 +289,38 @@ final readonly class AskHumanTool
         ?array $choices = null,
         mixed $default = null,
         ?string $question_id = null,
+        ?string $header = null,
+        bool $allow_other = true,
+        bool $secret = false,
     ): array {
         return [
             'kind' => 'interrupt',
             'question_id' => $question_id ?? /* stable generated id */,
+            'header' => $header,
             'prompt' => $prompt,
             'schema' => $schema ?? ['type' => 'string'],
             'ui_kind' => $kind,
-            'choices' => $choices ?? [],
+            'choices' => $this->normalizeChoices($choices ?? []),
             'default' => $default,
+            'allow_other' => $allow_other,
+            'secret' => $secret,
         ];
     }
 }
 ```
 
-Important: the tool should not block waiting for input. It returns an interrupt payload immediately. AgentCore owns pausing/resuming the run.
+Choice values should normalize to Codex-style option objects:
+
+```php
+[
+    ['label' => 'simple', 'description' => 'Fast, minimal change'],
+    ['label' => 'robust', 'description' => 'More complete implementation'],
+]
+```
+
+Bare string choices can be accepted as shorthand and normalized to `['label' => $choice, 'description' => '']`.
+
+Important: the tool should not block waiting for input. It returns an interrupt payload immediately. AgentCore owns pausing/resuming the run. This intentionally differs from Codex's oneshot-blocking `request_user_input` handler.
 
 ### Tool result compatibility
 
@@ -271,7 +373,10 @@ ask_human(
     prompt: 'Which strategy should I use?',
     kind: 'choice',
     schema: ['type' => 'string', 'enum' => ['simple', 'robust']],
-    choices: ['simple', 'robust']
+    choices: [
+        ['label' => 'simple', 'description' => 'Fast, minimal change'],
+        ['label' => 'robust', 'description' => 'More complete implementation'],
+    ]
 )
 ```
 
@@ -301,10 +406,15 @@ Payload:
     'request_id' => '...',
     'question_id' => '...',
     'kind' => 'text|confirm|choice|approval',
+    'header' => '...',
     'prompt' => '...',
     'schema' => ['type' => 'string'],
-    'choices' => [],
+    'choices' => [
+        ['label' => '...', 'description' => '...'],
+    ],
     'default' => null,
+    'allow_other' => true,
+    'secret' => false,
     'tool_call_id' => '...',
     'tool_name' => 'ask_human',
 ]
@@ -343,11 +453,13 @@ A stateful per-run coordinator owned by the TUI runtime context/screen.
 Responsibilities:
 
 - hold the active `QuestionRequest`;
+- maintain a small FIFO queue for later questions/approvals;
 - register local questions with callbacks;
 - receive HITL questions from runtime events;
 - route answers based on `QuestionSource`;
-- clear active question on answer/cancel;
-- expose current question to widgets.
+- clear active question on answer/cancel and advance to the next queued request;
+- expose current question to widgets;
+- expose an `actionRequired` flag for footer/status/title surfaces.
 
 ### QuestionWidget / ApprovalWidget
 
@@ -371,25 +483,29 @@ For `choice`:
 
 ```text
 ? Choose an option
-  1. simple
-  2. robust
+  1. simple — Fast, minimal change
+  2. robust — More complete implementation
 ```
 
 Use theme tokens for question/approval/status colors. Do not implement full JSON Schema forms in v1.
+
+Codex lesson: keep the overlay/widget small. Do not put queue management, answer normalization, rendering, key handling, and runtime command dispatch all in one large class.
 
 ### Input routing
 
 When a HITL question is active:
 
+- normal composer input should be disabled or explicitly rerouted, with status text like Codex's "Answer the questions to continue.";
 - editor submit should answer the question instead of sending a new user message;
-- `Esc` may cancel local TUI questions;
-- for HITL, cancellation should probably send run cancellation or leave unanswered, not silently discard the request;
-- `y/n` shortcuts can answer `confirm|approval` questions.
+- `Esc` must not silently dismiss HITL; it should either ask to cancel the run or leave the request pending;
+- `y/n` shortcuts can answer `confirm|approval` questions;
+- footer/status/title surfaces should indicate action required.
 
 For local TUI questions:
 
 - editor submit or keybinding resolves the local callback;
-- no runtime command is sent.
+- no runtime command is sent;
+- `Esc` can cancel/dismiss when the local caller provides a cancellation callback.
 
 ## Session replay
 
@@ -402,71 +518,198 @@ On resume:
 
 `transcript.jsonl` should persist HITL question/approval blocks as projection data, not rendered strings. Local TUI questions do not appear there.
 
-## Implementation phases
+## Implementation order and task graph
 
-### Q-01 Local TUI question backbone
+The work is split into small tasks for smaller models. Keep each task narrow and avoid large all-in-one TUI classes; Codex's question overlay is a cautionary example.
+
+### Task list
+
+| Task | Title | Depends on | Can run in parallel with | Notes |
+|------|-------|------------|--------------------------|-------|
+| QH-01 | Question request DTOs and coordinator queue | none | QH-04 | TUI-only in-memory model; no runtime events or transcript writes. |
+| QH-02 | Basic QuestionWidget and ApprovalWidget rendering | QH-01 | QH-04, QH-05 | Static rendering and sample blocks only; no input routing. |
+| QH-03 | Local TUI question input routing and action-required status | QH-01, QH-02 | QH-04, QH-05 | Local callbacks only; local questions never write transcript/runtime projection. |
+| QH-04 | `ask_human` tool and interrupt payload normalization | none | QH-01, QH-02, QH-03 | CodingAgent tool; returns interrupt payload immediately; does not block. |
+| QH-05 | AgentCore interrupt compatibility for `ask_human` | QH-04 | QH-02, QH-03 | ToolExecutor fallback/config and ToolCallExtractor metadata support if needed. |
+| QH-06 | HITL runtime projection payload support | QH-05, RTVS-01, RTVS-02, RTVS-04, RTVS-05 | QH-03 if not done | Map `waiting_human`/answers to `human_input.*` and transcript question/approval blocks. |
+| QH-07 | Bind HITL runtime requests to TUI question coordinator | QH-03, QH-06, RTVS-07 | none after dependencies | Shows widget, disables/reroutes composer, sends `answer_human`. |
+| QH-08 | Resume pending HITL question from session replay | QH-07, RTVS-08 | QH-09 docs prep | Restore pending HITL widget when resumed run is still `WaitingHuman`. |
+| QH-09 | Prompt/docs, deterministic tests, and manual smoke | QH-07, QH-08 | none after dependencies | Teach `ask_human`; verify local questions are not transcript blocks. |
+
+### Dependency waves
+
+1. **TUI local foundation**
+   - QH-01 starts first.
+   - QH-02 follows QH-01.
+   - QH-03 follows QH-01/02 and proves local TUI questions without touching AgentCore.
+
+2. **Tool foundation**
+   - QH-04 can start immediately in parallel with QH-01.
+   - QH-05 follows QH-04 and verifies `ask_human` produces interrupt details that the current pipeline detects.
+
+3. **Projection integration**
+   - QH-06 waits for the relevant runtime transcript backbone tasks: RTVS-01, RTVS-02, RTVS-04, and RTVS-05.
+   - QH-06 should not implement local TUI widgets; it only normalizes HITL runtime/projection payloads.
+
+4. **TUI HITL binding**
+   - QH-07 waits for local TUI input routing (QH-03), HITL projection (QH-06), and RuntimeEventPoller projection integration (RTVS-07).
+   - Keep this serialized because it touches active runtime polling/input routing.
+
+5. **Replay and final validation**
+   - QH-08 waits for QH-07 and RTVS-08.
+   - QH-09 waits for QH-07/QH-08 and owns docs, prompt guidance, deterministic tests, and smoke notes.
+
+### Parallelization guidance
+
+- Safe parallel tracks:
+  - QH-01 and QH-04 can start immediately.
+  - QH-02/QH-03 can progress while QH-04/QH-05 progress.
+  - QH-06 can be prepared once RTVS contract tasks are ready, but final integration must use actual RTVS event/block names.
+- Avoid parallel edits to RuntimeEventPoller, input routing, and session replay code. Keep QH-07 and QH-08 serialized.
+- Keep local TUI questions and AgentCore HITL routing separate in code and tests:
+  - local question answer -> local callback/action only;
+  - HITL answer -> `AgentSessionClient::send(UserCommand(type: 'answer_human', ...))`.
+- Only HITL question/approval blocks appear in `transcript.jsonl`; local TUI questions never do.
+
+### Task details
+
+#### QH-01 Question request DTOs and coordinator queue
 
 Scope:
 
-- Add `QuestionRequest`, `QuestionSource`, `QuestionKind`, `QuestionStatus`.
-- Add `QuestionCoordinator` for one active local/HITL question.
-- Add basic `QuestionWidget` and `ApprovalWidget` rendering.
-- Add TUI input routing for local questions.
-- Add tests for local callback routing and rendering.
+- Add `QuestionRequest`, `QuestionOption`, `QuestionSource`, `QuestionKind`, and `QuestionStatus` under `src/Tui/Question/`.
+- Add `QuestionCoordinator` with one active request and a small FIFO queue.
+- Support local callbacks and HITL request metadata, but do not send runtime commands yet.
+- Expose `actionRequired` / current request read methods for widgets/status.
 
 Acceptance:
 
-- Local question can be shown, answered, and cleared.
-- Local question does not append runtime events or transcript entries.
-- TUI boundaries remain clean.
+- Local request can be enqueued, activated, answered, and cleared.
+- Multiple requests are displayed one at a time in FIFO order.
+- DTOs do not depend on AgentCore internals.
+- Tests cover queueing and source-aware routing decisions without rendering.
 
-### Q-02 ask_human tool and interrupt compatibility
+#### QH-02 Basic QuestionWidget and ApprovalWidget rendering
+
+Scope:
+
+- Add simple TUI widgets for text, confirm, choice, and approval questions.
+- Render `QuestionOption` as `label — description` when description exists.
+- Use theme tokens; no rich forms or JSON Schema renderer.
+- Add focused rendering tests or snapshots for representative requests.
+
+Acceptance:
+
+- Static question/approval requests render clearly.
+- Choice options include descriptions.
+- Widgets do not own queueing, answer submission, or runtime command dispatch.
+
+#### QH-03 Local TUI question input routing and action-required status
+
+Scope:
+
+- Route editor submit/keybindings to the active local `QuestionRequest` callback.
+- Support `y/n` shortcuts for confirm/approval local prompts.
+- Allow `Esc` to cancel local questions when a cancellation callback exists.
+- Expose action-required status/footer/title state while any question is active.
+- Ensure local questions never append runtime events or transcript blocks.
+
+Acceptance:
+
+- Local TUI question can be answered through input routing.
+- Normal prompt submission is blocked/rerouted while a local question is active.
+- Local cancellation works when configured.
+- Tests prove no runtime command/transcript write happens for local questions.
+
+#### QH-04 `ask_human` tool and interrupt payload normalization
 
 Scope:
 
 - Add `src/CodingAgent/Tool/AskHumanTool.php` with `#[AsTool('ask_human', ...)]`.
-- Return interrupt payload, do not block.
-- Update docs/prompt guidance to teach `ask_human`.
-- Add/keep `ToolExecutor` defensive fallback for `ask_human` if needed.
-- Add tests that executing the tool produces interrupt details detected by `ToolCallExtractor`.
+- Return `kind=interrupt` payload immediately; do not block waiting for input.
+- Support prompt, header, kind, schema, choices, default, allow_other, secret, and optional question_id.
+- Normalize bare string choices to label/description objects.
+- Generate stable fallback `question_id` when absent.
 
 Acceptance:
 
-- `ask_human` is discoverable in Symfony AI toolbox metadata.
-- Tool result contains `kind=interrupt`, `question_id`, `prompt`, and `schema`.
-- AgentCore transitions to `WaitingHuman` when the tool result is committed.
+- `ask_human` is discoverable through Symfony AI toolbox metadata.
+- Tool result contains `kind=interrupt`, `question_id`, `prompt`, `schema`, normalized choices, and UI metadata.
+- Unit tests cover text, confirm, choice, approval, and fallback id behavior.
 
-### Q-03 HITL runtime projection and transcript blocks
+#### QH-05 AgentCore interrupt compatibility for `ask_human`
 
 Scope:
 
-- Map AgentCore `waiting_human` to `human_input.requested`.
-- Add transcript block kind(s) for HITL question/approval.
-- Project accepted/rejected human responses into block status updates.
-- Persist HITL blocks in `transcript.jsonl`.
-- Rebuild HITL blocks on resume.
+- Ensure `ToolExecutor` treats `ask_human` as interrupt-compatible, alongside any existing `ask_user` fallback.
+- Ensure `ToolCallExtractor::interruptPayloadFromToolResult()` preserves header, ui_kind/kind, choices, default, allow_other, and secret where available.
+- Add tests that committing an `ask_human` tool result causes the existing `WaitingHuman` path.
 
 Acceptance:
 
-- HITL question appears in transcript projection.
-- Local TUI questions do not appear in transcript projection.
-- Replay from runtime events reconstructs the same HITL block.
+- `ask_human` tool result is detected as an interrupt.
+- AgentCore transitions to `WaitingHuman` through existing handlers.
+- No new blocking/oneshot tool execution path is introduced.
 
-### Q-04 Bind HITL to TUI question widget
+#### QH-06 HITL runtime projection payload support
 
 Scope:
 
-- Runtime event poller/coordinator detects active HITL request.
-- Show QuestionWidget/ApprovalWidget for `human_input.requested`.
+- Map AgentCore `waiting_human` to `human_input.requested` with question payload fields.
+- Map accepted/rejected human responses to `human_input.answered|rejected` and approval equivalents where useful.
+- Ensure TranscriptProjector creates question/approval transcript blocks only for HITL, not local TUI prompts.
+
+Acceptance:
+
+- HITL question appears in runtime projection and transcript projection.
+- Local TUI question code path cannot create transcript blocks.
+- Projector/replay tests cover requested and answered HITL question.
+
+#### QH-07 Bind HITL runtime requests to TUI question coordinator
+
+Scope:
+
+- Runtime event poller/coordinator detects `human_input.requested`.
+- Create `QuestionRequest(source=agent_core, transcript=true)` and show QuestionWidget/ApprovalWidget.
+- Disable or reroute composer input while HITL is pending.
 - Submit answer through `AgentSessionClient::send(... answer_human ...)`.
-- Clear/update widget on `human_input.answered`, run cancellation, or rejection.
+- Clear/update widget on answer, cancellation, or rejection.
 
 Acceptance:
 
 - A model/tool call to `ask_human` pauses the run and shows a TUI question.
-- User answer resumes the run.
-- Resume while waiting shows the pending HITL question again.
+- Composer cannot accidentally send a new user prompt while HITL is pending.
+- Answering HITL sends `answer_human` and resumes the run.
 - TUI does not import AgentCore internals.
+
+#### QH-08 Resume pending HITL question from session replay
+
+Scope:
+
+- On resume, rebuild transcript blocks and active HITL question state from runtime events/session state.
+- If latest run is still waiting for human input, show the pending question widget again.
+- Do not restore local TUI questions.
+
+Acceptance:
+
+- Resume while waiting shows the pending HITL question again.
+- Answer after resume still sends `answer_human` and continues the run.
+- Local questions are not restored.
+
+#### QH-09 Prompt/docs, deterministic tests, and manual smoke
+
+Scope:
+
+- Update tool prompt/docs to teach `ask_human` usage and schema subset.
+- Add deterministic tests for local question flow and HITL flow.
+- Add manual smoke steps using `castor run:agent` with a model/tool call to `ask_human`.
+- Record known limitations, especially no full JSON Schema renderer in v1.
+
+Acceptance:
+
+- Docs/prompt guidance explain when to use `ask_human`.
+- Tests cover local question non-persistence and HITL transcript persistence.
+- Manual smoke verifies ask_human -> TUI question -> answer_human -> run continues.
 
 ## Validation
 
@@ -496,10 +739,14 @@ Manual smoke:
    - Recommended v1: accept arbitrary schema but only render `string`, `boolean`, and simple enum choices. Fall back to text input for unknown schema.
 
 3. What should HITL cancellation do?
-   - Recommended v1: `Esc` does not silently dismiss HITL. It either asks for confirmation to cancel the run or leaves the question pending.
+   - Codex has mixed semantics: generic question overlay Esc interrupts/cancels the turn, while approval overlay Esc maps to a structured cancel/reject decision.
+   - Recommended v1: `Esc` does not silently dismiss HITL. For approval/confirm questions it can submit an explicit negative answer if the schema supports it; otherwise it should ask for confirmation to cancel the run or leave the request pending.
 
 4. Should `question_id` be model-supplied or generated?
    - Recommended: allow model/tool-supplied `question_id`, but generate a stable fallback from tool call id when absent.
 
 5. Should local TUI questions use the same widget placement as HITL?
    - Recommended: yes, same widget system, different source/routing/persistence.
+
+6. Should the tool be named `ask_human` or `request_user_input`?
+   - Codex uses `request_user_input`, but this project should use `ask_human` as the model-visible name because it matches the existing `answer_human` command and is easier to explain in prompts. Mention Codex's shape only as inspiration, not as naming precedent.
