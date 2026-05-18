@@ -29,14 +29,14 @@ Parallelizable with: EDITOR-02.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/editor-04-mvp-slash-commands
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-04-mvp-slash-commands
 Fork run: o4ms61xx0xia
 PR URL: https://github.com/ineersa/agent-core/pull/25
-PR Status: open
+PR Status: merged
 Started: 2026-05-18T17:10:23.254Z
-Completed:
+Completed: 2026-05-18T17:52:24.887Z
 
 ## Work log
 - Created: 2026-05-18T00:15:27.554Z
@@ -64,3 +64,42 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/25
 - Validation: vendor/bin/phpunit tests/Tui/Command/ — 54 tests, 133 assertions, OK; ~/.local/bin/castor test — 451 tests, 8319 assertions, OK (1 unrelated PHPUnit notice); ~/.local/bin/castor deptrac — 0 violations; ~/.local/bin/castor phpstan — 0 errors; ~/.local/bin/castor cs-check — clean
 - Summary: EDITOR-04 completed in fork o4ms61xx0xia. Added SlashCommandRegistry, CommandMetadata, SlashCommandHandler, built-in /help /clear /exit commands, friendly unknown-command TranscriptMessage handling, aliases/metadata APIs, and extension seam via register()/setHandler(). No InteractiveMode routing added; EDITOR-05 owns consumption.
+
+## Task workflow update - 2026-05-18T17:52:24.887Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/editor-04-mvp-slash-commands into integration checkout.
+- Merge made by the 'ort' strategy.
+ src/Tui/Command/ClearScreenCommand.php         |  16 +
+ src/Tui/Command/ClearTranscript.php            |   4 +-
+ src/Tui/Command/CommandMetadata.php            |  29 ++
+ src/Tui/Command/CommandParser.php              |   6 +-
+ src/Tui/Command/CommandResult.php              |   4 +-
+ src/Tui/Command/DispatchRuntime.php            |   3 +-
+ src/Tui/Command/ExitApplication.php            |   4 +-
+ src/Tui/Command/ExitTuiCommand.php             |  16 +
+ src/Tui/Command/NoOp.php                       |   4 +-
+ src/Tui/Command/NormalPrompt.php               |   3 +-
+ src/Tui/Command/ShellCommand.php               |   3 +-
+ src/Tui/Command/SlashCommand.php               |   3 +-
+ src/Tui/Command/SlashCommandHandler.php        |  23 ++
+ src/Tui/Command/SlashCommandRegistry.php       | 321 ++++++++++++++++++
+ src/Tui/Command/StatusUpdate.php               |   3 +-
+ src/Tui/Command/TranscriptMessage.php          |   3 +-
+ tests/Tui/Command/EchoHandler.php              |  24 ++
+ tests/Tui/Command/FixedMessageTestHandler.php  |  25 ++
+ tests/Tui/Command/NoOpTestHandler.php          |  21 ++
+ tests/Tui/Command/SlashCommandRegistryTest.php | 434 +++++++++++++++++++++++++
+ 20 files changed, 936 insertions(+), 13 deletions(-)
+ create mode 100644 src/Tui/Command/ClearScreenCommand.php
+ create mode 100644 src/Tui/Command/CommandMetadata.php
+ create mode 100644 src/Tui/Command/ExitTuiCommand.php
+ create mode 100644 src/Tui/Command/SlashCommandHandler.php
+ create mode 100644 src/Tui/Command/SlashCommandRegistry.php
+ create mode 100644 tests/Tui/Command/EchoHandler.php
+ create mode 100644 tests/Tui/Command/FixedMessageTestHandler.php
+ create mode 100644 tests/Tui/Command/NoOpTestHandler.php
+ create mode 100644 tests/Tui/Command/SlashCommandRegistryTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/editor-04-mvp-slash-commands.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR #25 merged: https://github.com/ineersa/agent-core/pull/25
+- Summary: PR #25 merged by user. EDITOR-04 complete: slash command registry/executor, metadata, built-in /help /clear /exit, aliases, extension seam, and friendly unknown-command behavior.
