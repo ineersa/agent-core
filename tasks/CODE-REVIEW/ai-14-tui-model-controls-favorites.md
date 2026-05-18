@@ -27,7 +27,7 @@ Scope:
 Status: CODE-REVIEW
 Branch: task/ai-14-tui-model-controls-favorites
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-14-tui-model-controls-favorites
-Fork run: jbjp9zymk5ep
+Fork run: z6aazkk57r4q
 PR URL: https://github.com/ineersa/agent-core/pull/27
 PR Status: open
 Started: 2026-05-18T21:35:36.236Z
@@ -117,3 +117,8 @@ Validation: 509 tests pass, 8453 assertions, 0 deptrac violations, 0 phpstan err
 4. /model fav (no args) opens interactive FavoritePickerController (SelectListWidget) with * markers, Space to toggle favorites, Enter to close; textual fallback retained
 5. .hatfield/settings.yaml sets llama_cpp supports_thinking_levels: false; config defaults and docs/settings.md updated
 6. 6 new tests for thinking-levels guard; 528 non-e2e tests pass; 0 deptrac; 0 phpstan; CS clean. Pre-existing TUI e2e failures unchanged.
+
+## Task workflow update - 2026-05-18T23:21:10.217Z
+- Recorded fork run: z6aazkk57r4q
+- Validation: vendor/bin/phpunit tests/CodingAgent/Config/ModelSelectionServiceTest.php --filter ThinkingLevels — 6 tests, OK; vendor/bin/phpunit tests/Tui/Listener/ModelCommandHandlerTest.php — 18 tests, 52 assertions, OK; ~/.local/bin/castor test — 528 tests, 8517 assertions, OK for non-e2e suite; pre-existing TUI e2e snapshot failures noted by fork; ~/.local/bin/castor deptrac — 0 violations; ~/.local/bin/castor phpstan — 0 errors; vendor/bin/php-cs-fixer fix --dry-run --diff — clean
+- Summary: AI-14 smoke-test follow-up complete at commit 9d56de59. Fixed footer/status clutter by removing persistent Reasoning:/Model: status entries; footer now uses ThemeColor::Thinking* color only on symbol/model. Added provider-level supports_thinking_levels (llama_cpp false) plus model.reasoning guard so Shift+Tab is no-op for unsupported current models. Added /model fav interactive favorites picker using Symfony TUI SelectListWidget with * markers, Space toggle, Enter close/submit, and retained /model fav <ref> textual fallback. Updated docs/settings.md, .hatfield/settings.yaml, and config defaults.
