@@ -11,10 +11,12 @@ use Ineersa\CodingAgent\Session\TranscriptEntry as PersistedTranscriptEntry;
 use Ineersa\Tui\Listener\TuiListenerRegistrar;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Runtime\TuiTickDispatcher;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\TuiTheme;
 use Ineersa\Tui\Transcript\TranscriptEntry;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Tui\Event\TickEvent;
 use Symfony\Component\Tui\Tui;
 
 /**
@@ -85,17 +87,22 @@ final readonly class InteractiveMode
         $this->startOrResumeRun($client, $state, $screen);
 
         // ── Register listeners (DI-driven, stateless registrars) ──
+        $ticks = new TuiTickDispatcher();
         $context = new TuiRuntimeContext(
             tui: $tui,
             client: $client,
             state: $state,
             screen: $screen,
             sessionStore: $this->sessionStore,
+            ticks: $ticks,
         );
 
         foreach ($this->listenerRegistrars as $registrar) {
             $registrar->register($context);
         }
+
+        // Install single Symfony tick callback that multiplexes to all registered handlers
+        $tui->onTick(static fn (TickEvent $event): ?bool => $ticks->dispatch($event));
 
         // Also register input handlers from the slot registry
         $this->registerSlotInputHandlers($tui, $screen);

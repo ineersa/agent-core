@@ -835,6 +835,12 @@ parameters:
 			path: src/Tui/Extension/SlotBasedTuiExtensionContext.php
 
 		-
+			message: '#^Unused Ineersa\\Tui\\Extension\\SlotBasedTuiExtensionContext\:\:setFooterProvider$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Extension/SlotBasedTuiExtensionContext.php
+
+		-
 			message: '#^Unused Ineersa\\Tui\\Extension\\SlotBasedTuiExtensionContext\:\:setHeader$#'
 			identifier: shipmonk.deadMethod
 			count: 1
@@ -883,6 +889,12 @@ parameters:
 			path: src/Tui/Extension/TuiExtensionContext.php
 
 		-
+			message: '#^Unused Ineersa\\Tui\\Extension\\TuiExtensionContext\:\:setFooterProvider$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Extension/TuiExtensionContext.php
+
+		-
 			message: '#^Unused Ineersa\\Tui\\Extension\\TuiExtensionContext\:\:setHeader$#'
 			identifier: shipmonk.deadMethod
 			count: 1
@@ -919,6 +931,12 @@ parameters:
 			path: src/Tui/Footer/FooterDataProvider.php
 
 		-
+			message: '#^Unused Ineersa\\Tui\\Footer\\FooterDataProvider\:\:removeProvider$#'
+			identifier: shipmonk.deadMethod
+			count: 1
+			path: src/Tui/Footer/FooterDataProvider.php
+
+		-
 			message: '#^Unused Ineersa\\Tui\\Footer\\ReadonlyFooterDataProvider\:\:getSegments$#'
 			identifier: shipmonk.deadMethod
 			count: 1
@@ -937,16 +955,16 @@ parameters:
 			path: src/Tui/Layout/ChatLayout.php
 
 		-
-			message: '#^Casting to string something that''s already string\.$#'
-			identifier: cast.useless
-			count: 2
-			path: src/Tui/Listener/FooterStateListener.php
-
-		-
 			message: '#^Property Ineersa\\Tui\\Runtime\\TuiRuntimeContext\:\:\$sessionStore is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1
 			path: src/Tui/Runtime/TuiRuntimeContext.php
+
+		-
+			message: '#^Access to an uninitialized readonly property Ineersa\\Tui\\Screen\\ChatScreen\:\:\$footerDataProvider\.$#'
+			identifier: property.uninitializedReadonly
+			count: 1
+			path: src/Tui/Screen/ChatScreen.php
 
 		-
 			message: '#^Unused Ineersa\\Tui\\Screen\\ChatScreen\:\:appendTranscript$#'

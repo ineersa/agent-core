@@ -6,7 +6,6 @@ namespace Ineersa\Tui\Listener;
 
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
-use Symfony\Component\Tui\Event\TickEvent;
 
 /**
  * Tick listener that polls for new runtime events.
@@ -31,7 +30,7 @@ final class TickPollListener implements TuiListenerRegistrar
         $client = $context->client;
         $screen = $context->screen;
 
-        $context->tui->onTick(static function (TickEvent $event) use ($poller, $state, $client, $screen): ?bool {
+        $context->ticks->add(static function () use ($poller, $state, $client, $screen): ?bool {
             $newEntries = $poller->poll($state, $client);
 
             if (null !== $newEntries) {
