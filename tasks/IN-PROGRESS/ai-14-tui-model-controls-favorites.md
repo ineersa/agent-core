@@ -86,3 +86,8 @@ Validation: 509 tests pass, 8453 assertions, 0 deptrac violations, 0 phpstan err
 ## Task workflow update - 2026-05-18T22:25:13.664Z
 - Recorded fork run: jbjp9zymk5ep
 - Summary: Launched follow-up fork for user smoke-test issues: remove reasoning text from footer; use dedicated reasoning theme colors for footer symbol and model name; diagnose/fix model persistence after restart; implement actual /model selectable list using Symfony TUI SelectListWidget; support Ctrl+F favorite toggle while navigating list.
+
+## Task workflow update - 2026-05-18T22:53:57.103Z
+- Recorded fork run: jbjp9zymk5ep
+- Validation: vendor/bin/phpunit tests/Tui/Listener/ModelCommandHandlerTest.php — 18 tests, OK; vendor/bin/phpunit tests/CodingAgent/Config/ModelSelectionServiceTest.php — 42 tests, OK; vendor/bin/phpunit tests/Tui/Listener/FooterStateSegmentProviderTest.php tests/Tui/Picker/ModelPickerControllerTest.php — 8 tests, OK; ~/.local/bin/castor test — 519 tests, 8501 assertions, OK (1 pre-existing notice); ~/.local/bin/castor deptrac — 0 violations; ~/.local/bin/castor phpstan — 0 errors; ~/.local/bin/castor cs-check — clean
+- Summary: AI-14 smoke-test follow-up completed at commit 7b719773. Fixed footer reasoning presentation with dedicated ThemeColor::Thinking* colors applied to both symbol and model name, removed project-level default_model/default_reasoning override so home model selection persists across restart, added interactive /model picker backed by Symfony TUI SelectListWidget, and added Ctrl+F favorite toggle while navigating the picker. Known open decisions: whether to make Ctrl+P/Shift+Tab listener registration idempotent too, and whether explicit focus restore to editor is needed after closing picker.
