@@ -65,3 +65,8 @@ Completed:
 4) Documented ai.favorite_models in .hatfield/settings.yaml and docs/settings.md.
 Validation: 509 tests pass, 8453 assertions, 0 deptrac violations, 0 phpstan errors, cs-check clean.
 - Applied review follow-up fixes: favorite in-process cache, immediate visibility tests, idempotent listener registration, settings docs. Commit 3d5bca5d.
+
+## Task workflow update - 2026-05-18T22:17:13.404Z
+- Recorded fork run: 4vwkef8byjpz
+- Validation: vendor/bin/phpunit tests/CodingAgent/Config/ModelSelectionServiceTest.php — 40 tests, 92 assertions, OK; vendor/bin/phpunit tests/Tui/Listener/ModelCommandHandlerTest.php — 18 tests, 49 assertions, OK; ~/.local/bin/castor test — 509 tests, 8453 assertions, OK (1 pre-existing notice); ~/.local/bin/castor deptrac — 0 violations; ~/.local/bin/castor phpstan — 0 errors; ~/.local/bin/castor cs-check — clean
+- Summary: AI-14 follow-up completed at commit 3d5bca5d. Fixed stale in-process favorite state with ModelSelectionService cache, added tests for immediate favorite visibility after add/remove, made /model slash-command registration idempotent, and documented ai.favorite_models in docs/settings.md and .hatfield/settings.yaml. Known deferred gap: full interactive overlay/Ctrl+F picker not implemented; /model select/fav textual controls provide MVP functionality.
