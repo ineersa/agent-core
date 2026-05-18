@@ -243,6 +243,7 @@ parameters:
     TuiEditor:
       - TuiWidget
       - TuiTheme
+      - SymfonyTui
 
     TuiFooter:
       - TuiWidget
