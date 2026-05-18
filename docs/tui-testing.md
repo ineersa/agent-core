@@ -29,6 +29,16 @@ The command run in the tmux pane/window is simply:
 php bin/console agent
 ```
 
+On startup the footer should render live status information, for example:
+
+```text
+◆ deepseek-v4-pro  |  0/0 $0.00 0% 0/1000.0k  |  ⏱ 0s  |  ⌂ agent-core  |  ⎇ main
+```
+
+The elapsed-time segment is expected to update while the TUI is idle. If the
+window opens and immediately exits, run `php bin/console agent` directly from
+the project root to see the fatal error before tmux closes the pane.
+
 ### TUI keybindings
 
 | Key | Action |
@@ -94,6 +104,12 @@ These live in `.hatfield/tmp/` which is gitignored via
 `.hatfield/.gitignore`. Snapshots are transient by design — use the
 save-snapshot keybinding below to persist named snapshots.
 
+Footer rendering is colorized per segment. Plain-text snapshots are best for
+layout and content checks; ANSI snapshots (`capture-pane -p -e`) are useful
+when checking theme colors, truncation, or separator styling. The footer uses
+Symfony TUI ANSI utilities for width-aware truncation, so visible text should
+truncate with `...` without cutting escape sequences.
+
 ## Manual snapshot commands
 
 These work from any terminal, inside or outside tmux:
@@ -146,7 +162,8 @@ castor test:tui-update
 
 These are NOT included in `castor check` by default — they require
 tmux and are environment-sensitive. Run them explicitly when testing
-TUI rendering.
+TUI rendering. Any intentional footer/header/layout change should be followed
+by `castor test:tui-update` and a review of the golden snapshot diff.
 
 ### How it works
 
@@ -189,6 +206,10 @@ This sets `HATFIELD_UPDATE_SNAPSHOTS=1` after running the test, which
 overwrites the golden fixture with the current output. Review the diff
 (`git diff tests/Tui/Snapshots/`) before committing.
 
+For footer changes, verify the golden snapshot no longer expects removed legacy
+segments such as `◆ hatfield` or `Ctrl+D`, and that it includes the current
+model/token/elapsed/cwd/branch status line where applicable.
+
 ### Adding new e2e tests
 
 1. Place the test class in `tests/Tui/E2E/`.
@@ -229,6 +250,16 @@ castor run:agent
 tmux kill-session -t hatfield-agent-test
 castor run:agent-test
 ```
+
+**`castor run:agent` opens a window but the agent does not stay running**
+Run the console command directly to surface the PHP error:
+
+```bash
+php bin/console agent
+```
+
+After fixing the error, re-run `castor run:agent` and confirm tmux shows a live
+`php` process in the `hatfield-agent` window/pane.
 
 **Keys show up as escape sequences / Ctrl keys do not work**
 This usually means tmux was attached through a non-TTY wrapper or you are
