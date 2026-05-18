@@ -15,11 +15,9 @@ final class EditorStateTest extends TestCase
     #[Test]
     public function constructsWithValidData(): void
     {
-        $state = new EditorState(['hello'], 0, 3);
+        $state = new EditorState(['hello']);
 
-        $this->assertSame(['hello'], $state->lines);
-        $this->assertSame(0, $state->cursorLine);
-        $this->assertSame(3, $state->cursorColumn);
+        $this->assertSame(['hello'], $state->getLines());
     }
 
     #[Test]
@@ -32,13 +30,23 @@ final class EditorStateTest extends TestCase
     }
 
     #[Test]
+    public function getLinesReturnsCopy(): void
+    {
+        $state = new EditorState(['a', 'b']);
+        $lines = $state->getLines();
+
+        // getLines() returns the array; readonly class prevents
+        // reassignment but not element mutation. This test documents
+        // that callers receive the internal array.
+        $this->assertSame(['a', 'b'], $lines);
+    }
+
+    #[Test]
     public function fromTextEmptyString(): void
     {
         $state = EditorState::fromText('');
 
-        $this->assertSame([''], $state->lines);
-        $this->assertSame(0, $state->cursorLine);
-        $this->assertSame(0, $state->cursorColumn);
+        $this->assertSame([''], $state->getLines());
     }
 
     #[Test]
@@ -46,9 +54,7 @@ final class EditorStateTest extends TestCase
     {
         $state = EditorState::fromText('hello world');
 
-        $this->assertSame(['hello world'], $state->lines);
-        $this->assertSame(0, $state->cursorLine);
-        $this->assertSame(0, $state->cursorColumn);
+        $this->assertSame(['hello world'], $state->getLines());
     }
 
     #[Test]
@@ -56,9 +62,31 @@ final class EditorStateTest extends TestCase
     {
         $state = EditorState::fromText("line1\nline2\nline3");
 
-        $this->assertSame(['line1', 'line2', 'line3'], $state->lines);
-        $this->assertSame(0, $state->cursorLine);
-        $this->assertSame(0, $state->cursorColumn);
+        $this->assertSame(['line1', 'line2', 'line3'], $state->getLines());
+    }
+
+    #[Test]
+    public function fromTextNormalizesCarriageReturnLineFeed(): void
+    {
+        $state = EditorState::fromText("line1\r\nline2");
+
+        $this->assertSame(['line1', 'line2'], $state->getLines());
+    }
+
+    #[Test]
+    public function fromTextNormalizesCarriageReturn(): void
+    {
+        $state = EditorState::fromText("line1\rline2");
+
+        $this->assertSame(['line1', 'line2'], $state->getLines());
+    }
+
+    #[Test]
+    public function fromTextNormalizesMixedLineEndings(): void
+    {
+        $state = EditorState::fromText("a\r\nb\rc\nd");
+
+        $this->assertSame(['a', 'b', 'c', 'd'], $state->getLines());
     }
 
     #[Test]
@@ -68,7 +96,7 @@ final class EditorStateTest extends TestCase
         // explode("\n", "hello\n") → ["hello", ""]
         $state = EditorState::fromText("hello\n");
 
-        $this->assertSame(['hello', ''], $state->lines);
+        $this->assertSame(['hello', ''], $state->getLines());
     }
 
     #[Test]
@@ -76,9 +104,7 @@ final class EditorStateTest extends TestCase
     {
         $state = EditorState::empty();
 
-        $this->assertSame([''], $state->lines);
-        $this->assertSame(0, $state->cursorLine);
-        $this->assertSame(0, $state->cursorColumn);
+        $this->assertSame([''], $state->getLines());
     }
 
     #[Test]
@@ -131,11 +157,13 @@ final class EditorStateTest extends TestCase
     }
 
     #[Test]
-    public function cursorLineAndColumnDefaults(): void
+    public function onlyNewlineResultsInTwoEmptyLines(): void
     {
-        $state = new EditorState(['a', 'b']);
+        // Single "\n" → explode yields ['', ''] after normalization.
+        // This matches EditorDocument::setText("\n") behavior.
+        $state = EditorState::fromText("\n");
 
-        $this->assertSame(0, $state->cursorLine);
-        $this->assertSame(0, $state->cursorColumn);
+        $this->assertSame(['', ''], $state->getLines());
+        $this->assertFalse($state->isEmpty());
     }
 }

@@ -442,6 +442,20 @@ setStatus()             → registry + statusPanelRenderable + footerDataProvide
 refresh()               → invalidates all mutable widgets (safety net)
 ```
 
+### Editor module classes
+
+The editor subsystem has two distinct class families:
+
+| Class | File | Role |
+|-------|------|------|
+| `PromptEditor` | `src/Tui/Editor/PromptEditor.php` | DI service facade wrapping Symfony TUI's `EditorWidget`. Owns text lifecycle: `extract()`, `clear()`, `getState()`. Interactive text input. |
+| `EditorState` | `src/Tui/Editor/EditorState.php` | Immutable snapshot DTO for session persistence and test fixtures. Stores logical lines only; no cursor tracking. |
+| `PromptEditorWidget` | `src/Tui/Editor/PromptEditorWidget.php` | Static `TuiWidget` renderable for placeholder display in `ChatLayout`. **Not** the interactive editor — see `PromptEditor` for that. |
+
+`PromptEditor` owns an internal `EditorWidget` (Symfony TUI). `ChatScreen`
+currently creates its own `EditorWidget` directly — EDITOR-02 will shift to
+wiring `PromptEditor` via DI and pulling the widget from `getWidget()`.
+
 ## Listener registration flow
 
 Listeners are stateless services implementing `TuiListenerRegistrar` and tagged

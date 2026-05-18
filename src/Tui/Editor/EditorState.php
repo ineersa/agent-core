@@ -11,22 +11,22 @@ namespace Ineersa\Tui\Editor;
  * transferring text state without coupling to Symfony TUI internals.
  *
  * Lines are logical lines split by \n. The constructor enforces
- * only that lines is non-empty.
+ * only that lines is non-empty. The $lines array is privately held
+ * and accessed via {@see getLines()} to guarantee immutability.
  *
- * This is a pure DTO — cursor position tracking and text mutation
- * are delegated to Symfony TUI's {@see EditorWidget} / {@see EditorDocument}.
+ * This is a pure DTO — text mutation and cursor tracking are
+ * delegated to Symfony TUI's {@see EditorWidget} / {@see EditorDocument}.
+ *
+ * @todo EDITOR-07: Add cursor position fields when session persistence
+ *       needs to capture and restore live cursor from EditorDocument.
  */
 final readonly class EditorState
 {
     /**
-     * @param list<string> $lines        logical lines, always at least ['']
-     * @param int          $cursorLine   0-indexed. Not validated — caller responsibility.
-     * @param int          $cursorColumn 0-indexed character column. Not validated — caller responsibility.
+     * @param list<string> $lines logical lines, always at least ['']
      */
     public function __construct(
-        public array $lines,
-        public int $cursorLine = 0,
-        public int $cursorColumn = 0,
+        private array $lines,
     ) {
         if ([] === $this->lines) {
             throw new \InvalidArgumentException('Lines must not be empty.');
@@ -35,12 +35,16 @@ final readonly class EditorState
 
     /**
      * Create state from a text string.
+     *
+     * Normalizes line endings (\r\n, \r → \n) then splits on \n,
+     * matching EditorDocument::setText() behavior.
      */
     public static function fromText(string $text): self
     {
+        $text = str_replace(["\r\n", "\r"], "\n", $text);
         $lines = '' === $text ? [''] : explode("\n", $text);
 
-        return new self($lines, 0, 0);
+        return new self($lines);
     }
 
     /**
@@ -48,7 +52,17 @@ final readonly class EditorState
      */
     public static function empty(): self
     {
-        return new self([''], 0, 0);
+        return new self(['']);
+    }
+
+    /**
+     * Return the logical lines.
+     *
+     * @return list<string>
+     */
+    public function getLines(): array
+    {
+        return $this->lines;
     }
 
     /**

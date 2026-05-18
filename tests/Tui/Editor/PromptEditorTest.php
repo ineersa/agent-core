@@ -9,18 +9,15 @@ use Ineersa\Tui\Editor\PromptEditor;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Tui\Widget\EditorWidget;
 
 #[CoversClass(PromptEditor::class)]
 final class PromptEditorTest extends TestCase
 {
-    private EditorWidget $widget;
     private PromptEditor $editor;
 
     protected function setUp(): void
     {
-        $this->widget = new EditorWidget();
-        $this->editor = new PromptEditor($this->widget);
+        $this->editor = new PromptEditor();
     }
 
     // ─── Construction ────────────────────────────────────────────
@@ -30,6 +27,43 @@ final class PromptEditorTest extends TestCase
     {
         $this->assertTrue($this->editor->isEmpty());
         $this->assertSame('', $this->editor->getText());
+    }
+
+    #[Test]
+    public function getWidgetReturnsEditorWidget(): void
+    {
+        $widget = $this->editor->getWidget();
+
+        $this->assertInstanceOf(\Symfony\Component\Tui\Widget\EditorWidget::class, $widget);
+        $this->assertSame('', $widget->getText());
+    }
+
+    // ─── Configuration ───────────────────────────────────────────
+
+    #[Test]
+    public function setMinVisibleLinesDoesNotThrow(): void
+    {
+        // EditorWidget doesn't expose a getter for minVisibleLines,
+        // but we can verify the call doesn't explode.
+        $this->editor->setMinVisibleLines(3);
+
+        $this->assertTrue(true); // no exception thrown
+    }
+
+    #[Test]
+    public function setMaxVisibleLinesDoesNotThrow(): void
+    {
+        $this->editor->setMaxVisibleLines(10);
+
+        $this->assertTrue(true); // no exception thrown
+    }
+
+    #[Test]
+    public function configurationIsFluent(): void
+    {
+        $result = $this->editor->setMinVisibleLines(1)->setMaxVisibleLines(20);
+
+        $this->assertSame($this->editor, $result);
     }
 
     // ─── setText / getText ──────────────────────────────────────
@@ -65,10 +99,10 @@ final class PromptEditorTest extends TestCase
     public function setTextOverwritesWidget(): void
     {
         $this->editor->setText('first');
-        $this->assertSame('first', $this->widget->getText());
+        $this->assertSame('first', $this->editor->getWidget()->getText());
 
         $this->editor->setText('second');
-        $this->assertSame('second', $this->widget->getText());
+        $this->assertSame('second', $this->editor->getWidget()->getText());
     }
 
     // ─── clear ──────────────────────────────────────────────────
@@ -157,7 +191,7 @@ final class PromptEditorTest extends TestCase
         $state = $this->editor->getState();
 
         $this->assertTrue($state->isEmpty());
-        $this->assertSame([''], $state->lines);
+        $this->assertSame([''], $state->getLines());
     }
 
     #[Test]
@@ -166,7 +200,7 @@ final class PromptEditorTest extends TestCase
         $this->editor->setText("a\nb\nc");
         $state = $this->editor->getState();
 
-        $this->assertSame(['a', 'b', 'c'], $state->lines);
+        $this->assertSame(['a', 'b', 'c'], $state->getLines());
         $this->assertSame("a\nb\nc", $state->getText());
     }
 
@@ -188,9 +222,12 @@ final class PromptEditorTest extends TestCase
     // ─── getWidget ───────────────────────────────────────────────
 
     #[Test]
-    public function getWidgetReturnsSameInstance(): void
+    public function getWidgetReturnsConsistentInstance(): void
     {
-        $this->assertSame($this->widget, $this->editor->getWidget());
+        $w1 = $this->editor->getWidget();
+        $w2 = $this->editor->getWidget();
+
+        $this->assertSame($w1, $w2);
     }
 
     #[Test]
@@ -200,6 +237,6 @@ final class PromptEditorTest extends TestCase
 
         // Same text visible through both PromptEditor and raw widget
         $this->assertSame('via prompt editor', $this->editor->getText());
-        $this->assertSame('via prompt editor', $this->widget->getText());
+        $this->assertSame('via prompt editor', $this->editor->getWidget()->getText());
     }
 }

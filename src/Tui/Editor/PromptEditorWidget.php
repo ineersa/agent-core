@@ -9,12 +9,12 @@ use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\TuiWidget;
 
 /**
- * Renderable prompt editor widget for the TUI widget layout system.
+ * Static prompt display widget (TuiWidget).
  *
- * Used by {@see ChatLayout} as the default editor renderable in the
- * TuiWidget-based rendering path.  The interactive terminal editor is
- * handled by {@see \Symfony\Component\Tui\Widget\EditorWidget} via
- * {@see ChatScreen}.
+ * Renders the non-interactive prompt placeholder line ("❯ Type a message...").
+ * Used by ChatLayout as a TuiWidget renderable. This is NOT the interactive
+ * editor — see {@see PromptEditor} for the interactive text input facade that
+ * wraps Symfony TUI's EditorWidget for use in ChatScreen.
  */
 final class PromptEditorWidget implements TuiWidget
 {

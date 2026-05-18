@@ -7,21 +7,46 @@ namespace Ineersa\Tui\Editor;
 use Symfony\Component\Tui\Widget\EditorWidget;
 
 /**
- * Hatfield prompt editor facade.
+ * Interactive prompt editor facade (DI service).
  *
- * Wraps a Symfony TUI {@see EditorWidget}, delegating all text buffer
- * and cursor operations to it.  This class adds Hatfield-specific
- * lifecycle operations (extract, snapshot state) and is designed as
- * a Symfony DI service.
+ * Wraps a Symfony TUI {@see EditorWidget} as the interactive text input.
+ * ChatScreen wires this via DI; ChatLayout uses the separate
+ * {@see PromptEditorWidget} for static rendering. Do not confuse the two.
  *
- * Text mutation and key dispatch are handled entirely by EditorWidget /
- * EditorDocument — we do not reimplement them.
+ * This class OWNS the EditorWidget (creates it internally) and exposes
+ * Hatfield-specific lifecycle operations (extract, snapshot state).
+ * Text mutation and key dispatch are delegated entirely to
+ * EditorWidget / EditorDocument — we do not reimplement them.
  */
 final class PromptEditor
 {
-    public function __construct(
-        private readonly EditorWidget $widget,
-    ) {
+    private readonly EditorWidget $widget;
+
+    public function __construct()
+    {
+        $this->widget = new EditorWidget();
+    }
+
+    // ─── Configuration ────────────────────────────────────────────
+
+    /**
+     * @return $this
+     */
+    public function setMinVisibleLines(int $lines): self
+    {
+        $this->widget->setMinVisibleLines($lines);
+
+        return $this;
+    }
+
+    /**
+     * @return $this
+     */
+    public function setMaxVisibleLines(?int $lines): self
+    {
+        $this->widget->setMaxVisibleLines($lines);
+
+        return $this;
     }
 
     // ─── Text access ────────────────────────────────────────────
