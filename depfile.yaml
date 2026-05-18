@@ -45,6 +45,11 @@ parameters:
         - type: directory
           value: src/Tui/Status/.*
 
+    - name: TuiCommand
+      collectors:
+        - type: directory
+          value: src/Tui/Command/.*
+
     - name: TuiEditor
       collectors:
         - type: directory
@@ -232,6 +237,8 @@ parameters:
     TuiStatus:
       - TuiWidget
       - TuiTheme
+
+    TuiCommand: ~
 
     TuiEditor:
       - TuiWidget

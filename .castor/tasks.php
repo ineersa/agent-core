@@ -56,42 +56,68 @@ function deptrac(): void
 }
 
 /**
- * Run PHPUnit tests (excludes tmux e2e).
+ * Run PHPUnit tests (excludes tmux e2e and real LLM smoke tests).
  *
  * TUI e2e tests require tmux and are environment-sensitive.
  * Run them explicitly with "castor test:tui".
+ * LLM smoke tests hit real providers; use "castor test:llm-real".
  */
 #[AsTask(description: 'Run PHPUnit tests (excludes tmux e2e and real LLM smoke tests)')]
-function test(): void
+function test(string $filter = ''): void
 {
-    run('vendor/bin/phpunit --exclude-group tui-e2e --exclude-group llm-real --colors=always');
+    $cmd = 'vendor/bin/phpunit --exclude-group tui-e2e --exclude-group llm-real --colors=always';
+    if ('' !== $filter) {
+        $cmd .= ' --filter='.escapeshellarg($filter);
+    }
+    run($cmd);
 }
 
 /**
  * Run CS fixer (fix in place).
  */
 #[AsTask(description: 'Run PHP CS Fixer (fix in place)')]
-function cs_fix(): void
+function cs_fix(string $path = ''): void
 {
-    run('vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php');
+    $cmd = 'vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php';
+    if ('' !== $path) {
+        $cmd .= ' '.escapeshellarg($path);
+    }
+    run($cmd);
 }
 
 /**
  * Run CS fixer dry-run (check only).
  */
 #[AsTask(description: 'Run PHP CS Fixer (dry-run, check only)')]
-function cs_check(): void
+function cs_check(string $path = ''): void
 {
-    run('vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php --dry-run --diff');
+    $cmd = 'vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php --dry-run --diff';
+    if ('' !== $path) {
+        $cmd .= ' '.escapeshellarg($path);
+    }
+    run($cmd);
 }
 
 /**
  * Run PHPStan static analysis.
  */
 #[AsTask(description: 'Run PHPStan static analysis')]
-function phpstan(): void
+function phpstan(string $path = ''): void
 {
-    run('vendor/bin/phpstan analyse -c phpstan.dist.neon --no-progress');
+    $cmd = 'vendor/bin/phpstan analyse -c phpstan.dist.neon --no-progress';
+    if ('' !== $path) {
+        $cmd .= ' '.escapeshellarg($path);
+    }
+    run($cmd);
+}
+
+/**
+ * Regenerate the PHPStan baseline file.
+ */
+#[AsTask(name: 'phpstan:baseline', description: 'Regenerate PHPStan baseline file')]
+function phpstan_baseline(): void
+{
+    run('vendor/bin/phpstan analyse -c phpstan.dist.neon --generate-baseline phpstan-baseline.neon --no-progress');
 }
 
 /**
@@ -152,15 +178,17 @@ function idea_run_configs(): void
         'quality' => 'Alias for check.',
         'install' => 'Install Composer dependencies.',
         'deptrac' => 'Run Deptrac architecture boundary validation.',
-        'test' => 'Run PHPUnit tests excluding tmux e2e.',
+        'test' => 'Run PHPUnit tests excluding tmux e2e and LLM smoke.',
+        'test:tui' => 'Run TUI e2e snapshot tests.',
+        'test:tui-update' => 'Run TUI e2e tests and update golden snapshots.',
+        'test:llm-real' => 'Run real llama.cpp smoke test.',
         'phpstan' => 'Run PHPStan static analysis.',
+        'phpstan:baseline' => 'Regenerate PHPStan baseline file.',
         'cs-fix' => 'Run PHP CS Fixer and modify files in place.',
         'cs-check' => 'Run PHP CS Fixer dry-run check.',
         'cache:clear' => 'Remove generated QA caches.',
         'run:agent' => 'Launch the agent TUI in tmux.',
         'run:agent-test' => 'Launch deterministic tmux session for snapshot testing.',
-        'test:tui' => 'Run TUI e2e snapshot tests.',
-        'test:tui-update' => 'Run TUI e2e tests and update golden snapshots.',
         'idea:run-configs' => 'Regenerate PhpStorm run configurations for Castor tasks.',
     ];
 
