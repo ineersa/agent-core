@@ -565,12 +565,6 @@ parameters:
 			path: src/CodingAgent/Config/Ai/AiCost.php
 
 		-
-			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$contextWindow is never read$#'
-			identifier: shipmonk.deadProperty.neverRead
-			count: 1
-			path: src/CodingAgent/Config/Ai/AiModelDefinition.php
-
-		-
 			message: '#^Property Ineersa\\CodingAgent\\Config\\Ai\\AiModelDefinition\:\:\$cost is never read$#'
 			identifier: shipmonk.deadProperty.neverRead
 			count: 1

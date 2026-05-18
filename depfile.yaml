@@ -178,6 +178,7 @@ parameters:
     TuiListener:
       - AppRuntimeContract
       - AppSession
+      - AppConfig
       - TuiRuntime
       - TuiScreen
       - TuiTranscript
