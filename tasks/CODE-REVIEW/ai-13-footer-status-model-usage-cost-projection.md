@@ -21,7 +21,7 @@ Scope:
 - Suggested validation: `castor test --filter Footer`; `castor deptrac`.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/ai-13-footer-status-model-usage-cost-projection
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-13-footer-status-model-usage-cost-projection
 Fork run: gucsjk5ug5x5
@@ -74,3 +74,11 @@ Completed:
 ## Task workflow update - 2026-05-18T00:43:03.463Z
 - Validation: php -l changed PHP files: clean; php bin/console --no-interaction: boots; vendor/bin/phpunit tests/Tui/Footer/: passed (7 tests, 16 assertions); castor test: passed (353 tests, 8122 assertions, 1 pre-existing notice); castor deptrac: passed (0 violations, 368 allowed); castor phpstan: passed (0 errors; baseline regenerated to 224); castor cs-check: clean
 - Summary: Second footer smoke fix completed by fork gucsjk5ug5x5 in commit 50b6504d, pushed to branch task/ai-13-footer-status-model-usage-cost-projection. Fixed root causes from snapshot comparison: ANSI-aware footer truncation, AppConfig default model/context fallback (no startup `no-model`), Pi-style composition without separate reasoning text, `$0.00` and `0%` stubs, Pi `k` number formatting, short cwd last-two-path-parts, and deptrac AppConfig allowance for TuiListener. Expected stripped footer now: `◆ deepseek-v4-pro | 0/0 $0.00 0% 0/200.0k | ⏱ 0s | ⌂ agent-core-worktrees/... | ⎇ task/...`.
+
+## Task workflow update - 2026-05-18T00:43:11.742Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/ai-13-footer-status-model-usage-cost-projection to origin.
+- branch 'task/ai-13-footer-status-model-usage-cost-projection' set up to track 'origin/task/ai-13-footer-status-model-usage-cost-projection'.
+- Skipped PR creation (pushOnly: true).
+- Validation: php -l changed PHP files: clean; php bin/console --no-interaction: boots; vendor/bin/phpunit tests/Tui/Footer/: passed (7 tests, 16 assertions); castor test: passed (353 tests, 8122 assertions, 1 pre-existing notice); castor deptrac: passed (0 violations, 368 allowed); castor phpstan: passed (0 errors; baseline 224); castor cs-check: clean
+- Summary: AI-13 is ready for review again. Latest commit 50b6504d fixes the footer to match the Pi/custom-footer direction: ANSI-aware truncation, model/context seeded from AppConfig defaults, no separate reasoning segment, Pi-style segment order/colors/stubs, short cwd, branch truncation, and default footer reduced to session only. PR #21 updated on existing branch.
