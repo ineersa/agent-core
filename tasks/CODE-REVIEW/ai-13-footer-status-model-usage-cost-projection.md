@@ -55,3 +55,7 @@ Completed:
 ## Task workflow update - 2026-05-18T00:24:35.801Z
 - Recorded fork run: mk0q65oukv56
 - Summary: Launched follow-up fork to address user smoke-test feedback on PR #21 footer output: compare current and expected ANSI snapshots, use my-pi custom-footer.ts as reference, restore theme colors, fix ordering, add stubs for unavailable data, and remove default ChatScreen footer clutter except session segment. Scope remains AI-13 footer/status projection only; no AI-14 controls or RTVS work.
+
+## Task workflow update - 2026-05-18T00:28:54.060Z
+- Validation: php -l changed PHP files: clean; php bin/console --no-interaction: boots; vendor/bin/phpunit tests/Tui/Footer/: passed (7 tests, 16 assertions); castor test: passed (353 tests, 8122 assertions, 1 pre-existing notice); castor deptrac: passed (0 violations, 369 allowed); castor phpstan: passed (0 errors; baseline 225); castor cs-check: clean
+- Summary: Follow-up PR #21 footer smoke fixes completed by fork mk0q65oukv56 in commit 6e2b6632, pushed to branch task/ai-13-footer-status-model-usage-cost-projection. Fixed user-reported footer issues: added theme-based per-segment FooterSegment colors, changed FooterBarWidget separators/order to match expected footer, added stubs for missing model/token/cost/context/elapsed data, removed default ChatScreen footer clutter except session segment, and kept TUI boundary clean. Cost and context remain stubs (`$--`, `--%`) until rate-card/context-window data is available in the footer state path.
