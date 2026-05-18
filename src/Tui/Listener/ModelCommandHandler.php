@@ -8,17 +8,23 @@ use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\Tui\Command\CommandResult;
+use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\TranscriptMessage;
+use Ineersa\Tui\Picker\ModelPickerController;
 use Ineersa\Tui\Runtime\TuiSessionState;
 
 /**
- * Handles /model slash commands: listing, selection, and favorites.
+ * Handles /model slash commands: interactive picker, selection, and favorites.
  *
  * Lives in TuiListener (not TuiCommand) because it needs
  * ModelSelectionService from CodingAgent/Config, which TuiCommand
  * cannot import per deptrac rules.
+ *
+ * /model with no args opens an interactive selectable list via
+ * {@see ModelPickerController}.  Textual subcommands (/model select,
+ * /model fav) remain available as keyboard-free fallbacks.
  *
  * Updates TuiSessionState fields for immediate footer refresh after
  * model/reasoning changes.
@@ -29,6 +35,7 @@ final class ModelCommandHandler implements SlashCommandHandler
         private readonly ModelSelectionService $modelService,
         private readonly AppConfig $appConfig,
         private readonly TuiSessionState $state,
+        private readonly ModelPickerController $pickerController,
     ) {
     }
 
@@ -36,9 +43,17 @@ final class ModelCommandHandler implements SlashCommandHandler
     {
         $args = trim($command->args);
 
-        // /model (no args) → list models
+        // /model (no args) → open interactive picker
         if ('' === $args) {
-            return $this->buildModelListMessage();
+            $this->pickerController->open();
+
+            // If the picker couldn't open (e.g. no TUI refs in tests),
+            // fall back to the textual list.
+            if (!$this->pickerController->isOpen()) {
+                return $this->buildModelListMessage();
+            }
+
+            return new NoOp();
         }
 
         // Parse subcommand or provider/model reference

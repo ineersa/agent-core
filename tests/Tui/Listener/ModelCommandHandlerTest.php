@@ -19,6 +19,7 @@ use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Listener\ModelCommandHandler;
+use Ineersa\Tui\Picker\ModelPickerController;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -173,7 +174,9 @@ class ModelCommandHandlerTest extends TestCase
     {
         $appConfig = $this->makeAppConfig([] !== $aiData ? $aiData : $this->standardAiData());
 
-        return new ModelCommandHandler($this->modelService, $appConfig, $this->state);
+        $pickerController = new ModelPickerController($this->modelService, $appConfig);
+
+        return new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController);
     }
 
     private function slash(string $name, string $args = ''): SlashCommand
@@ -223,7 +226,8 @@ class ModelCommandHandlerTest extends TestCase
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new HomeSettingsWriter($pathResolver);
         $this->modelService = new ModelSelectionService($appConfig, $homeWriter, $this->sessionMetaStore);
-        $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state);
+        $pickerController = new ModelPickerController($this->modelService, $appConfig);
+        $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController);
 
         $result = $handler->handle($this->slash('model'));
 
@@ -304,7 +308,8 @@ class ModelCommandHandlerTest extends TestCase
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new HomeSettingsWriter($pathResolver);
         $this->modelService = new ModelSelectionService($appConfig, $homeWriter, $this->sessionMetaStore);
-        $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state);
+        $pickerController = new ModelPickerController($this->modelService, $appConfig);
+        $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController);
 
         $result = $handler->handle($this->slash('model', 'fav'));
 
@@ -344,7 +349,8 @@ class ModelCommandHandlerTest extends TestCase
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new HomeSettingsWriter($pathResolver);
         $this->modelService = new ModelSelectionService($appConfig, $homeWriter, $this->sessionMetaStore);
-        $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state);
+        $pickerController = new ModelPickerController($this->modelService, $appConfig);
+        $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController);
 
         $result = $handler->handle($this->slash('model', 'fav deepseek/deepseek-v4-pro'));
 

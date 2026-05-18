@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommandRegistry;
+use Ineersa\Tui\Picker\ModelPickerController;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Symfony\Component\Tui\Event\InputEvent;
 
@@ -17,6 +18,7 @@ use Symfony\Component\Tui\Event\InputEvent;
  *
  * On registration:
  *  - /model command registered in the slash command registry
+ *    (opens interactive SelectListWidget; textual subcommands remain)
  *  - Ctrl+P listener cycles favorite models
  *  - Shift+Tab listener cycles reasoning levels
  *
@@ -29,6 +31,7 @@ final class ModelControlListener implements TuiListenerRegistrar
         private readonly ModelSelectionService $modelService,
         private readonly SlashCommandRegistry $commandRegistry,
         private readonly AppConfig $appConfig,
+        private readonly ModelPickerController $pickerController,
     ) {
     }
 
@@ -39,19 +42,24 @@ final class ModelControlListener implements TuiListenerRegistrar
         $screen = $context->screen;
         $modelService = $this->modelService;
         $appConfig = $this->appConfig;
+        $pickerController = $this->pickerController;
+
+        // Wire the picker controller with references only available at register() time
+        $this->pickerController->setRuntimeRefs($tui, $screen, $state);
 
         // ── Register /model slash command (idempotent) ──
+        $modelHandler = new ModelCommandHandler($modelService, $appConfig, $state, $this->pickerController);
         if ($this->commandRegistry->has('model')) {
-            $this->commandRegistry->setHandler('model', new ModelCommandHandler($modelService, $appConfig, $state));
+            $this->commandRegistry->setHandler('model', $modelHandler);
         } else {
             $this->commandRegistry->register(
                 new CommandMetadata(
                     name: 'model',
                     aliases: ['m'],
-                    description: 'List, select, or manage favorite AI models',
+                    description: 'Open model picker, select, or manage favorites',
                     usage: '/model [select <provider/modelname> | fav [<provider/modelname>]]',
                 ),
-                new ModelCommandHandler($modelService, $appConfig, $state),
+                $modelHandler,
             );
         }
 

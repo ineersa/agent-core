@@ -740,4 +740,70 @@ class ModelSelectionServiceTest extends TestCase
         self::assertSame('deepseek/deepseek-v4-pro', $favs[0]);
         self::assertSame('llama_cpp/flash', $favs[1]);
     }
+
+    // ──────────────────────────────────────────────
+    //  Persistence across restart (EDITOR / AI-14)
+    // ──────────────────────────────────────────────
+
+    /**
+     * After changing the model via changeModel(), the home settings file
+     * should be updated.  Re-creating the service from the persisted home
+     * file must resolve the new model — even when a project settings file
+     * exists (but does NOT override default_model).
+     *
+     * This simulates the restart scenario: user changes model, exits the
+     * TUI, and starts a new session.
+     */
+    public function testModelChangePersistsToHomeSettingsForRestart(): void
+    {
+        // Arrange: service with standard AI config
+        $aiData = $this->standardAiData();
+        $service = $this->buildService($aiData);
+
+        // Act: change model to a different one
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'restart-session');
+
+        // Assert: home settings file was updated
+        $homeContent = file_get_contents($this->homeDir.'/.hatfield/settings.yaml');
+        self::assertNotFalse($homeContent);
+        self::assertStringContainsString('default_model: llama_cpp/flash', (string) $homeContent);
+
+        // Simulate restart: create a fresh service from the persisted home data.
+        // Use the same AppConfig creation path as buildService() but with
+        // aiData that does NOT specify default_model (simulating project file
+        // without it, which is the fixed state after this changeset).
+        $aiDataWithoutDefault = $this->standardAiData();
+        unset($aiDataWithoutDefault['default_model'], $aiDataWithoutDefault['default_reasoning']);
+        $newService = $this->buildService($aiDataWithoutDefault);
+
+        // The resolved model should be the one persisted to home settings
+        $resolved = $newService->getCurrentModel('restart-session');
+        self::assertNotNull($resolved);
+        self::assertSame('llama_cpp', $resolved->providerId);
+        self::assertSame('flash', $resolved->modelName);
+    }
+
+    /**
+     * When project settings do NOT specify default_model, the home
+     * settings value should win without being overridden.
+     */
+    public function testHomeDefaultModelWinsWhenProjectDoesNotOverride(): void
+    {
+        // Build with default_model only in the aiData (not via home file yet)
+        $aiData = $this->standardAiData();
+        unset($aiData['default_model']);
+        $service = $this->buildService($aiData);
+
+        // Persist to home via changeModel
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+
+        // Re-create service with aiData that has NO default_model
+        // (simulating project without default_model override)
+        $newService = $this->buildService($aiData);
+
+        $resolved = $newService->getCurrentModel('abc123');
+        self::assertNotNull($resolved);
+        self::assertSame('llama_cpp', $resolved->providerId);
+        self::assertSame('flash', $resolved->modelName);
+    }
 }
