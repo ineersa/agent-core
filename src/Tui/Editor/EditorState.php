@@ -16,9 +16,9 @@ final readonly class EditorState
 {
     /**
      * @param list<string> $lines        Logical lines, split by \n. Always at least [''].
-     * @param int          $cursorLine   0-indexed line number.
-     * @param int          $cursorColumn 0-indexed character column within the line.
-     * @param int          $scrollOffset Viewport scroll offset (for future use).
+     * @param int          $cursorLine   0-indexed line number
+     * @param int          $cursorColumn 0-indexed character column within the line
+     * @param int          $scrollOffset viewport scroll offset (for future use)
      */
     public function __construct(
         public array $lines,
@@ -31,22 +31,13 @@ final readonly class EditorState
         }
 
         if ($this->cursorLine < 0 || $this->cursorLine >= \count($this->lines)) {
-            throw new \OutOfBoundsException(\sprintf(
-                'Cursor line %d out of bounds [0, %d).',
-                $this->cursorLine,
-                \count($this->lines),
-            ));
+            throw new \OutOfBoundsException(\sprintf('Cursor line %d out of bounds [0, %d).', $this->cursorLine, \count($this->lines)));
         }
 
-        $lineLength = \mb_strlen($this->lines[$this->cursorLine], 'UTF-8');
+        $lineLength = mb_strlen($this->lines[$this->cursorLine], 'UTF-8');
 
         if ($this->cursorColumn < 0 || $this->cursorColumn > $lineLength) {
-            throw new \OutOfBoundsException(\sprintf(
-                'Cursor column %d out of bounds [0, %d] for line %d.',
-                $this->cursorColumn,
-                $lineLength,
-                $this->cursorLine,
-            ));
+            throw new \OutOfBoundsException(\sprintf('Cursor column %d out of bounds [0, %d] for line %d.', $this->cursorColumn, $lineLength, $this->cursorLine));
         }
 
         if ($this->scrollOffset < 0) {
@@ -61,7 +52,7 @@ final readonly class EditorState
      */
     public static function fromText(string $text): self
     {
-        $lines = '' === $text ? [''] : \explode("\n", $text);
+        $lines = '' === $text ? [''] : explode("\n", $text);
 
         return new self($lines, 0, 0, 0);
     }

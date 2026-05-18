@@ -17,10 +17,10 @@ final class EditorStateTest extends TestCase
     {
         $state = new EditorState(['hello'], 0, 3, 0);
 
-        self::assertSame(['hello'], $state->lines);
-        self::assertSame(0, $state->cursorLine);
-        self::assertSame(3, $state->cursorColumn);
-        self::assertSame(0, $state->scrollOffset);
+        $this->assertSame(['hello'], $state->lines);
+        $this->assertSame(0, $state->cursorLine);
+        $this->assertSame(3, $state->cursorColumn);
+        $this->assertSame(0, $state->scrollOffset);
     }
 
     #[Test]
@@ -28,7 +28,7 @@ final class EditorStateTest extends TestCase
     {
         $state = new EditorState(['ab'], 0, 2, 0);
 
-        self::assertSame(2, $state->cursorColumn);
+        $this->assertSame(2, $state->cursorColumn);
     }
 
     #[Test]
@@ -36,7 +36,7 @@ final class EditorStateTest extends TestCase
     {
         $state = new EditorState(['ab'], 0, 0, 0);
 
-        self::assertSame(0, $state->cursorColumn);
+        $this->assertSame(0, $state->cursorColumn);
     }
 
     #[Test]
@@ -98,10 +98,10 @@ final class EditorStateTest extends TestCase
     {
         $state = EditorState::fromText('');
 
-        self::assertSame([''], $state->lines);
-        self::assertSame(0, $state->cursorLine);
-        self::assertSame(0, $state->cursorColumn);
-        self::assertSame(0, $state->scrollOffset);
+        $this->assertSame([''], $state->lines);
+        $this->assertSame(0, $state->cursorLine);
+        $this->assertSame(0, $state->cursorColumn);
+        $this->assertSame(0, $state->scrollOffset);
     }
 
     #[Test]
@@ -109,9 +109,9 @@ final class EditorStateTest extends TestCase
     {
         $state = EditorState::fromText('hello world');
 
-        self::assertSame(['hello world'], $state->lines);
-        self::assertSame(0, $state->cursorLine);
-        self::assertSame(0, $state->cursorColumn);
+        $this->assertSame(['hello world'], $state->lines);
+        $this->assertSame(0, $state->cursorLine);
+        $this->assertSame(0, $state->cursorColumn);
     }
 
     #[Test]
@@ -119,9 +119,9 @@ final class EditorStateTest extends TestCase
     {
         $state = EditorState::fromText("line1\nline2\nline3");
 
-        self::assertSame(['line1', 'line2', 'line3'], $state->lines);
-        self::assertSame(0, $state->cursorLine);
-        self::assertSame(0, $state->cursorColumn);
+        $this->assertSame(['line1', 'line2', 'line3'], $state->lines);
+        $this->assertSame(0, $state->cursorLine);
+        $this->assertSame(0, $state->cursorColumn);
     }
 
     #[Test]
@@ -131,14 +131,14 @@ final class EditorStateTest extends TestCase
         $modified = $original->withLines(['modified'], 0, 5);
 
         // Original unchanged.
-        self::assertSame(['original'], $original->lines);
-        self::assertSame(0, $original->cursorColumn);
+        $this->assertSame(['original'], $original->lines);
+        $this->assertSame(0, $original->cursorColumn);
 
         // New instance carries changes.
-        self::assertSame(['modified'], $modified->lines);
-        self::assertSame(0, $modified->cursorLine);
-        self::assertSame(5, $modified->cursorColumn);
-        self::assertSame(0, $modified->scrollOffset);
+        $this->assertSame(['modified'], $modified->lines);
+        $this->assertSame(0, $modified->cursorLine);
+        $this->assertSame(5, $modified->cursorColumn);
+        $this->assertSame(0, $modified->scrollOffset);
     }
 
     #[Test]
@@ -147,10 +147,10 @@ final class EditorStateTest extends TestCase
         $original = new EditorState(['hello'], 0, 0, 0);
         $modified = $original->withCursor(0, 5);
 
-        self::assertNotSame($original, $modified);
-        self::assertSame(['hello'], $modified->lines);
-        self::assertSame(0, $modified->cursorLine);
-        self::assertSame(5, $modified->cursorColumn);
+        $this->assertNotSame($original, $modified);
+        $this->assertSame(['hello'], $modified->lines);
+        $this->assertSame(0, $modified->cursorLine);
+        $this->assertSame(5, $modified->cursorColumn);
     }
 
     #[Test]
@@ -159,11 +159,11 @@ final class EditorStateTest extends TestCase
         $original = new EditorState(['hello'], 0, 0, 0);
         $modified = $original->withScrollOffset(10);
 
-        self::assertNotSame($original, $modified);
-        self::assertSame(['hello'], $modified->lines);
-        self::assertSame(0, $modified->cursorLine);
-        self::assertSame(0, $modified->cursorColumn);
-        self::assertSame(10, $modified->scrollOffset);
+        $this->assertNotSame($original, $modified);
+        $this->assertSame(['hello'], $modified->lines);
+        $this->assertSame(0, $modified->cursorLine);
+        $this->assertSame(0, $modified->cursorColumn);
+        $this->assertSame(10, $modified->scrollOffset);
     }
 
     #[Test]
@@ -172,7 +172,7 @@ final class EditorStateTest extends TestCase
         // "héllo" is 5 chars but 'é' is 2 bytes — mb_strlen matters.
         $state = new EditorState(['héllo'], 0, 5, 0);
 
-        self::assertSame(5, $state->cursorColumn);
+        $this->assertSame(5, $state->cursorColumn);
     }
 
     #[Test]

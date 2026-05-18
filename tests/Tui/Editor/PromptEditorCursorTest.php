@@ -21,8 +21,8 @@ final class PromptEditorCursorTest extends TestCase
         $editor->moveCursorToLineEnd(); // col 5
         $editor->moveCursorLeft();
 
-        self::assertSame(0, $editor->getCursorLine());
-        self::assertSame(4, $editor->getCursorColumn());
+        $this->assertSame(0, $editor->getCursorLine());
+        $this->assertSame(4, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -34,8 +34,8 @@ final class PromptEditorCursorTest extends TestCase
         // col 0, line 1
         $editor->moveCursorLeft();
 
-        self::assertSame(0, $editor->getCursorLine());
-        self::assertSame(2, $editor->getCursorColumn()); // end of "ab"
+        $this->assertSame(0, $editor->getCursorLine());
+        $this->assertSame(2, $editor->getCursorColumn()); // end of "ab"
     }
 
     #[Test]
@@ -44,7 +44,7 @@ final class PromptEditorCursorTest extends TestCase
         $editor = new PromptEditor('hello');
         $editor->moveCursorLeft();
 
-        self::assertSame(0, $editor->getCursorColumn());
+        $this->assertSame(0, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -55,7 +55,7 @@ final class PromptEditorCursorTest extends TestCase
         $editor->moveCursorLeft();      // 4
         $editor->moveCursorLeft();      // 3
 
-        self::assertSame(3, $editor->getCursorColumn());
+        $this->assertSame(3, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -65,7 +65,7 @@ final class PromptEditorCursorTest extends TestCase
         $editor->moveCursorToLineEnd(); // col 4
         $editor->moveCursorLeft();      // col 3
 
-        self::assertSame(3, $editor->getCursorColumn());
+        $this->assertSame(3, $editor->getCursorColumn());
     }
 
     // ─── moveCursorRight ─────────────────────────────────────────
@@ -76,8 +76,8 @@ final class PromptEditorCursorTest extends TestCase
         $editor = new PromptEditor('hello');
         $editor->moveCursorRight();
 
-        self::assertSame(0, $editor->getCursorLine());
-        self::assertSame(1, $editor->getCursorColumn());
+        $this->assertSame(0, $editor->getCursorLine());
+        $this->assertSame(1, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -87,8 +87,8 @@ final class PromptEditorCursorTest extends TestCase
         $editor->moveCursorToLineEnd(); // col 2, line 0
         $editor->moveCursorRight();
 
-        self::assertSame(1, $editor->getCursorLine());
-        self::assertSame(0, $editor->getCursorColumn());
+        $this->assertSame(1, $editor->getCursorLine());
+        $this->assertSame(0, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -98,7 +98,7 @@ final class PromptEditorCursorTest extends TestCase
         $editor->moveCursorToLineEnd(); // col 5
         $editor->moveCursorRight();
 
-        self::assertSame(5, $editor->getCursorColumn());
+        $this->assertSame(5, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -109,7 +109,7 @@ final class PromptEditorCursorTest extends TestCase
         $editor->moveCursorRight();
         $editor->moveCursorRight();
 
-        self::assertSame(3, $editor->getCursorColumn());
+        $this->assertSame(3, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -119,7 +119,7 @@ final class PromptEditorCursorTest extends TestCase
         $editor->moveCursorRight(); // after 'c'
         $editor->moveCursorRight(); // after 'a'
 
-        self::assertSame(2, $editor->getCursorColumn());
+        $this->assertSame(2, $editor->getCursorColumn());
     }
 
     // ─── moveCursorUp ────────────────────────────────────────────
@@ -131,8 +131,8 @@ final class PromptEditorCursorTest extends TestCase
         $editor->moveCursorDown(); // line 1, col 0
         $editor->moveCursorUp();
 
-        self::assertSame(0, $editor->getCursorLine());
-        self::assertSame(0, $editor->getCursorColumn());
+        $this->assertSame(0, $editor->getCursorLine());
+        $this->assertSame(0, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -141,7 +141,7 @@ final class PromptEditorCursorTest extends TestCase
         $editor = new PromptEditor('hello');
         $editor->moveCursorUp();
 
-        self::assertSame(0, $editor->getCursorLine());
+        $this->assertSame(0, $editor->getCursorLine());
     }
 
     #[Test]
@@ -153,13 +153,13 @@ final class PromptEditorCursorTest extends TestCase
         for ($i = 0; $i < 4; ++$i) {
             $editor->moveCursorRight();
         }
-        self::assertSame(0, $editor->getCursorLine());
-        self::assertSame(4, $editor->getCursorColumn());
+        $this->assertSame(0, $editor->getCursorLine());
+        $this->assertSame(4, $editor->getCursorColumn());
 
         // Move down to shorter line — column clamped to 2
         $editor->moveCursorDown();
-        self::assertSame(1, $editor->getCursorLine());
-        self::assertSame(2, $editor->getCursorColumn());
+        $this->assertSame(1, $editor->getCursorLine());
+        $this->assertSame(2, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -174,8 +174,8 @@ final class PromptEditorCursorTest extends TestCase
         $editor->moveCursorDown();      // (1, 2) — clamped
         $editor->moveCursorUp();        // back to line 0
 
-        self::assertSame(0, $editor->getCursorLine());
-        self::assertSame(2, $editor->getCursorColumn());
+        $this->assertSame(0, $editor->getCursorLine());
+        $this->assertSame(2, $editor->getCursorColumn());
     }
 
     // ─── moveCursorDown ──────────────────────────────────────────
@@ -186,8 +186,8 @@ final class PromptEditorCursorTest extends TestCase
         $editor = new PromptEditor("line1\nline2");
         $editor->moveCursorDown();
 
-        self::assertSame(1, $editor->getCursorLine());
-        self::assertSame(0, $editor->getCursorColumn());
+        $this->assertSame(1, $editor->getCursorLine());
+        $this->assertSame(0, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -197,7 +197,7 @@ final class PromptEditorCursorTest extends TestCase
         $editor->moveCursorDown(); // line 1
         $editor->moveCursorDown(); // still line 1
 
-        self::assertSame(1, $editor->getCursorLine());
+        $this->assertSame(1, $editor->getCursorLine());
     }
 
     #[Test]
@@ -207,8 +207,8 @@ final class PromptEditorCursorTest extends TestCase
         $editor->moveCursorToLineEnd(); // col 2, line 0
         $editor->moveCursorDown();
 
-        self::assertSame(1, $editor->getCursorLine());
-        self::assertSame(2, $editor->getCursorColumn());
+        $this->assertSame(1, $editor->getCursorLine());
+        $this->assertSame(2, $editor->getCursorColumn());
     }
 
     // ─── moveCursorToLineStart / moveCursorToLineEnd ──────────────
@@ -220,7 +220,7 @@ final class PromptEditorCursorTest extends TestCase
         $editor->moveCursorToLineEnd();
         $editor->moveCursorToLineStart();
 
-        self::assertSame(0, $editor->getCursorColumn());
+        $this->assertSame(0, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -229,7 +229,7 @@ final class PromptEditorCursorTest extends TestCase
         $editor = new PromptEditor('hello');
         $editor->moveCursorToLineEnd();
 
-        self::assertSame(5, $editor->getCursorColumn());
+        $this->assertSame(5, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -237,10 +237,10 @@ final class PromptEditorCursorTest extends TestCase
     {
         $editor = new PromptEditor();
 
-        self::assertSame(0, $editor->getCursorColumn());
+        $this->assertSame(0, $editor->getCursorColumn());
         $editor->moveCursorToLineEnd();
 
-        self::assertSame(0, $editor->getCursorColumn());
+        $this->assertSame(0, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -249,7 +249,7 @@ final class PromptEditorCursorTest extends TestCase
         $editor = new PromptEditor();
         $editor->moveCursorToLineStart();
 
-        self::assertSame(0, $editor->getCursorColumn());
+        $this->assertSame(0, $editor->getCursorColumn());
     }
 
     // ─── Cursor movement with multi-line ─────────────────────────
@@ -264,48 +264,48 @@ final class PromptEditorCursorTest extends TestCase
         $editor->moveCursorRight();
         $editor->moveCursorRight();
         $editor->moveCursorRight();
-        self::assertSame(0, $editor->getCursorLine());
-        self::assertSame(3, $editor->getCursorColumn());
+        $this->assertSame(0, $editor->getCursorLine());
+        $this->assertSame(3, $editor->getCursorColumn());
 
         // Move right again → wraps to (1, 0)
         $editor->moveCursorRight();
-        self::assertSame(1, $editor->getCursorLine());
-        self::assertSame(0, $editor->getCursorColumn());
+        $this->assertSame(1, $editor->getCursorLine());
+        $this->assertSame(0, $editor->getCursorColumn());
 
         // Move down → (2, 0)
         $editor->moveCursorDown();
-        self::assertSame(2, $editor->getCursorLine());
-        self::assertSame(0, $editor->getCursorColumn());
+        $this->assertSame(2, $editor->getCursorLine());
+        $this->assertSame(0, $editor->getCursorColumn());
 
         // Move to line end → (2, 3)
         $editor->moveCursorToLineEnd();
-        self::assertSame(2, $editor->getCursorLine());
-        self::assertSame(3, $editor->getCursorColumn());
+        $this->assertSame(2, $editor->getCursorLine());
+        $this->assertSame(3, $editor->getCursorColumn());
 
         // Move left → (2, 2)
         $editor->moveCursorLeft();
-        self::assertSame(2, $editor->getCursorLine());
-        self::assertSame(2, $editor->getCursorColumn());
+        $this->assertSame(2, $editor->getCursorLine());
+        $this->assertSame(2, $editor->getCursorColumn());
 
         // Move up → (1, 2) — clamp since "def" is len 3, col 2 is fine
         $editor->moveCursorUp();
-        self::assertSame(1, $editor->getCursorLine());
-        self::assertSame(2, $editor->getCursorColumn());
+        $this->assertSame(1, $editor->getCursorLine());
+        $this->assertSame(2, $editor->getCursorColumn());
 
         // Move left → (1, 1)
         $editor->moveCursorLeft();
-        self::assertSame(1, $editor->getCursorLine());
-        self::assertSame(1, $editor->getCursorColumn());
+        $this->assertSame(1, $editor->getCursorLine());
+        $this->assertSame(1, $editor->getCursorColumn());
 
         // Move left → (1, 0)
         $editor->moveCursorLeft();
-        self::assertSame(1, $editor->getCursorLine());
-        self::assertSame(0, $editor->getCursorColumn());
+        $this->assertSame(1, $editor->getCursorLine());
+        $this->assertSame(0, $editor->getCursorColumn());
 
         // Move left at start → wraps to (0, 3) — end of "abc"
         $editor->moveCursorLeft();
-        self::assertSame(0, $editor->getCursorLine());
-        self::assertSame(3, $editor->getCursorColumn());
+        $this->assertSame(0, $editor->getCursorLine());
+        $this->assertSame(3, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -315,17 +315,17 @@ final class PromptEditorCursorTest extends TestCase
         // Move to line 2 (the "b" line)
         $editor->moveCursorDown(); // line 1
         $editor->moveCursorDown(); // line 2
-        self::assertSame(2, $editor->getCursorLine());
+        $this->assertSame(2, $editor->getCursorLine());
 
         // Move left at start of "b" → wraps to end of empty line 1 → col 0
         $editor->moveCursorLeft();
-        self::assertSame(1, $editor->getCursorLine());
-        self::assertSame(0, $editor->getCursorColumn());
+        $this->assertSame(1, $editor->getCursorLine());
+        $this->assertSame(0, $editor->getCursorColumn());
 
         // Move left at start of empty line → wraps to end of "a" → col 1
         $editor->moveCursorLeft();
-        self::assertSame(0, $editor->getCursorLine());
-        self::assertSame(1, $editor->getCursorColumn());
+        $this->assertSame(0, $editor->getCursorLine());
+        $this->assertSame(1, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -336,13 +336,13 @@ final class PromptEditorCursorTest extends TestCase
         $editor->moveCursorToLineEnd(); // col 1, line 0
         // Move right → wraps to start of empty line 1
         $editor->moveCursorRight();
-        self::assertSame(1, $editor->getCursorLine());
-        self::assertSame(0, $editor->getCursorColumn());
+        $this->assertSame(1, $editor->getCursorLine());
+        $this->assertSame(0, $editor->getCursorColumn());
 
         // Move right → wraps to start of "b"
         $editor->moveCursorRight();
-        self::assertSame(2, $editor->getCursorLine());
-        self::assertSame(0, $editor->getCursorColumn());
+        $this->assertSame(2, $editor->getCursorLine());
+        $this->assertSame(0, $editor->getCursorColumn());
     }
 
     // ─── Insert + cursor interaction ─────────────────────────────
@@ -354,14 +354,14 @@ final class PromptEditorCursorTest extends TestCase
         $editor->moveCursorToLineEnd(); // col 5
         $editor->insertText(' world');
         // Cursor is at col 11
-        self::assertSame(11, $editor->getCursorColumn());
+        $this->assertSame(11, $editor->getCursorColumn());
 
         $editor->moveCursorLeft();
         $editor->moveCursorLeft();
-        self::assertSame(9, $editor->getCursorColumn());
+        $this->assertSame(9, $editor->getCursorColumn());
 
         $editor->insertText('!');
-        self::assertSame('hello wor!ld', $editor->getText());
-        self::assertSame(10, $editor->getCursorColumn());
+        $this->assertSame('hello wor!ld', $editor->getText());
+        $this->assertSame(10, $editor->getCursorColumn());
     }
 }

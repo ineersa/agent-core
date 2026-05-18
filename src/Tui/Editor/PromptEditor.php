@@ -26,7 +26,7 @@ final class PromptEditor
      */
     public function getText(): string
     {
-        return \implode("\n", $this->state->lines);
+        return implode("\n", $this->state->lines);
     }
 
     /**
@@ -53,22 +53,22 @@ final class PromptEditor
             return;
         }
 
-        $parts = \explode("\n", $text);
+        $parts = explode("\n", $text);
         $lines = $this->state->lines;
         $currentLine = $lines[$this->state->cursorLine];
         $col = $this->state->cursorColumn;
 
-        $left = \mb_substr($currentLine, 0, $col, 'UTF-8');
-        $right = \mb_substr($currentLine, $col, null, 'UTF-8');
+        $left = mb_substr($currentLine, 0, $col, 'UTF-8');
+        $right = mb_substr($currentLine, $col, null, 'UTF-8');
 
         if (1 === \count($parts)) {
             // Single-line insert: just splice into the current line.
-            $lines[$this->state->cursorLine] = $left . $parts[0] . $right;
+            $lines[$this->state->cursorLine] = $left.$parts[0].$right;
 
             $this->state = $this->state->withLines(
                 $lines,
                 $this->state->cursorLine,
-                $col + \mb_strlen($parts[0], 'UTF-8'),
+                $col + mb_strlen($parts[0], 'UTF-8'),
             );
 
             return;
@@ -89,7 +89,7 @@ final class PromptEditor
         }
 
         // Current line becomes left + first inserted part.
-        $newLines[] = $left . $first;
+        $newLines[] = $left.$first;
 
         // Middle parts are new, independent lines.
         foreach ($middle as $mid) {
@@ -97,7 +97,7 @@ final class PromptEditor
         }
 
         // Continuation line: last part + right side of original line.
-        $newLines[] = $last . $right;
+        $newLines[] = $last.$right;
 
         // Copy remaining original lines after the cursor line.
         for ($i = $this->state->cursorLine + 1, $max = \count($lines); $i < $max; ++$i) {
@@ -105,7 +105,7 @@ final class PromptEditor
         }
 
         $newCursorLine = $this->state->cursorLine + \count($parts) - 1;
-        $newCursorColumn = \mb_strlen($last, 'UTF-8');
+        $newCursorColumn = mb_strlen($last, 'UTF-8');
 
         $this->state = $this->state->withLines($newLines, $newCursorLine, $newCursorColumn);
     }
@@ -124,9 +124,9 @@ final class PromptEditor
 
         if ($col > 0) {
             // Delete one character before the cursor on the same line.
-            $before = \mb_substr($line, 0, $col - 1, 'UTF-8');
-            $after = \mb_substr($line, $col, null, 'UTF-8');
-            $lines[$this->state->cursorLine] = $before . $after;
+            $before = mb_substr($line, 0, $col - 1, 'UTF-8');
+            $after = mb_substr($line, $col, null, 'UTF-8');
+            $lines[$this->state->cursorLine] = $before.$after;
 
             $this->state = $this->state->withLines($lines, $this->state->cursorLine, $col - 1);
 
@@ -136,10 +136,10 @@ final class PromptEditor
         if ($this->state->cursorLine > 0) {
             // Merge current line into the end of the previous line.
             $prevLine = $lines[$this->state->cursorLine - 1];
-            $prevLen = \mb_strlen($prevLine, 'UTF-8');
+            $prevLen = mb_strlen($prevLine, 'UTF-8');
 
-            $merged = $prevLine . $line;
-            \array_splice($lines, $this->state->cursorLine, 1);
+            $merged = $prevLine.$line;
+            array_splice($lines, $this->state->cursorLine, 1);
             $lines[$this->state->cursorLine - 1] = $merged;
 
             $this->state = $this->state->withLines($lines, $this->state->cursorLine - 1, $prevLen);
@@ -157,13 +157,13 @@ final class PromptEditor
         $lines = $this->state->lines;
         $line = $lines[$this->state->cursorLine];
         $col = $this->state->cursorColumn;
-        $lineLen = \mb_strlen($line, 'UTF-8');
+        $lineLen = mb_strlen($line, 'UTF-8');
 
         if ($col < $lineLen) {
             // Delete the character at the cursor position.
-            $before = \mb_substr($line, 0, $col, 'UTF-8');
-            $after = \mb_substr($line, $col + 1, null, 'UTF-8');
-            $lines[$this->state->cursorLine] = $before . $after;
+            $before = mb_substr($line, 0, $col, 'UTF-8');
+            $after = mb_substr($line, $col + 1, null, 'UTF-8');
+            $lines[$this->state->cursorLine] = $before.$after;
 
             $this->state = $this->state->withLines($lines, $this->state->cursorLine, $col);
 
@@ -173,9 +173,9 @@ final class PromptEditor
         if ($this->state->cursorLine < \count($lines) - 1) {
             // Merge the next line into the current line.
             $nextLine = $lines[$this->state->cursorLine + 1];
-            $merged = $line . $nextLine;
+            $merged = $line.$nextLine;
 
-            \array_splice($lines, $this->state->cursorLine + 1, 1);
+            array_splice($lines, $this->state->cursorLine + 1, 1);
             $lines[$this->state->cursorLine] = $merged;
 
             $this->state = $this->state->withLines($lines, $this->state->cursorLine, $col);
@@ -194,11 +194,11 @@ final class PromptEditor
         $line = $lines[$this->state->cursorLine];
         $col = $this->state->cursorColumn;
 
-        $left = \mb_substr($line, 0, $col, 'UTF-8');
-        $right = \mb_substr($line, $col, null, 'UTF-8');
+        $left = mb_substr($line, 0, $col, 'UTF-8');
+        $right = mb_substr($line, $col, null, 'UTF-8');
 
         $lines[$this->state->cursorLine] = $left;
-        \array_splice($lines, $this->state->cursorLine + 1, 0, [$right]);
+        array_splice($lines, $this->state->cursorLine + 1, 0, [$right]);
 
         $this->state = $this->state->withLines($lines, $this->state->cursorLine + 1, 0);
     }
@@ -221,7 +221,7 @@ final class PromptEditor
         }
 
         if ($this->state->cursorLine > 0) {
-            $prevLineLen = \mb_strlen($this->state->lines[$this->state->cursorLine - 1], 'UTF-8');
+            $prevLineLen = mb_strlen($this->state->lines[$this->state->cursorLine - 1], 'UTF-8');
             $this->state = $this->state->withCursor($this->state->cursorLine - 1, $prevLineLen);
         }
     }
@@ -233,7 +233,7 @@ final class PromptEditor
      */
     public function moveCursorRight(): void
     {
-        $lineLen = \mb_strlen($this->state->lines[$this->state->cursorLine], 'UTF-8');
+        $lineLen = mb_strlen($this->state->lines[$this->state->cursorLine], 'UTF-8');
 
         if ($this->state->cursorColumn < $lineLen) {
             $this->state = $this->state->withCursor($this->state->cursorLine, $this->state->cursorColumn + 1);
@@ -253,8 +253,8 @@ final class PromptEditor
     {
         if ($this->state->cursorLine > 0) {
             $newLine = $this->state->cursorLine - 1;
-            $lineLen = \mb_strlen($this->state->lines[$newLine], 'UTF-8');
-            $newCol = \min($this->state->cursorColumn, $lineLen);
+            $lineLen = mb_strlen($this->state->lines[$newLine], 'UTF-8');
+            $newCol = min($this->state->cursorColumn, $lineLen);
             $this->state = $this->state->withCursor($newLine, $newCol);
         }
     }
@@ -266,8 +266,8 @@ final class PromptEditor
     {
         if ($this->state->cursorLine < \count($this->state->lines) - 1) {
             $newLine = $this->state->cursorLine + 1;
-            $lineLen = \mb_strlen($this->state->lines[$newLine], 'UTF-8');
-            $newCol = \min($this->state->cursorColumn, $lineLen);
+            $lineLen = mb_strlen($this->state->lines[$newLine], 'UTF-8');
+            $newCol = min($this->state->cursorColumn, $lineLen);
             $this->state = $this->state->withCursor($newLine, $newCol);
         }
     }
@@ -285,7 +285,7 @@ final class PromptEditor
      */
     public function moveCursorToLineEnd(): void
     {
-        $lineLen = \mb_strlen($this->state->lines[$this->state->cursorLine], 'UTF-8');
+        $lineLen = mb_strlen($this->state->lines[$this->state->cursorLine], 'UTF-8');
         $this->state = $this->state->withCursor($this->state->cursorLine, $lineLen);
     }
 
@@ -339,11 +339,7 @@ final class PromptEditor
     public function getLine(int $line): string
     {
         if ($line < 0 || $line >= \count($this->state->lines)) {
-            throw new \OutOfBoundsException(\sprintf(
-                'Line %d out of bounds [0, %d).',
-                $line,
-                \count($this->state->lines),
-            ));
+            throw new \OutOfBoundsException(\sprintf('Line %d out of bounds [0, %d).', $line, \count($this->state->lines)));
         }
 
         return $this->state->lines[$line];

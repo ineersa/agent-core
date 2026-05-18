@@ -19,10 +19,10 @@ final class PromptEditorTextEditingTest extends TestCase
     {
         $editor = new PromptEditor();
 
-        self::assertTrue($editor->isEmpty());
-        self::assertSame('', $editor->getText());
-        self::assertSame(0, $editor->getCursorLine());
-        self::assertSame(0, $editor->getCursorColumn());
+        $this->assertTrue($editor->isEmpty());
+        $this->assertSame('', $editor->getText());
+        $this->assertSame(0, $editor->getCursorLine());
+        $this->assertSame(0, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -30,10 +30,10 @@ final class PromptEditorTextEditingTest extends TestCase
     {
         $editor = new PromptEditor('hello');
 
-        self::assertFalse($editor->isEmpty());
-        self::assertSame('hello', $editor->getText());
-        self::assertSame(0, $editor->getCursorLine());
-        self::assertSame(0, $editor->getCursorColumn());
+        $this->assertFalse($editor->isEmpty());
+        $this->assertSame('hello', $editor->getText());
+        $this->assertSame(0, $editor->getCursorLine());
+        $this->assertSame(0, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -41,8 +41,8 @@ final class PromptEditorTextEditingTest extends TestCase
     {
         $editor = new PromptEditor("line1\nline2\nline3");
 
-        self::assertSame("line1\nline2\nline3", $editor->getText());
-        self::assertSame(3, $editor->getLineCount());
+        $this->assertSame("line1\nline2\nline3", $editor->getText());
+        $this->assertSame(3, $editor->getLineCount());
     }
 
     #[Test]
@@ -50,9 +50,9 @@ final class PromptEditorTextEditingTest extends TestCase
     {
         $editor = new PromptEditor("a\nb\nc");
 
-        self::assertSame('a', $editor->getLine(0));
-        self::assertSame('b', $editor->getLine(1));
-        self::assertSame('c', $editor->getLine(2));
+        $this->assertSame('a', $editor->getLine(0));
+        $this->assertSame('b', $editor->getLine(1));
+        $this->assertSame('c', $editor->getLine(2));
     }
 
     // ─── setText ─────────────────────────────────────────────────
@@ -63,9 +63,9 @@ final class PromptEditorTextEditingTest extends TestCase
         $editor = new PromptEditor('old');
         $editor->setText('new text');
 
-        self::assertSame('new text', $editor->getText());
-        self::assertSame(0, $editor->getCursorLine());
-        self::assertSame(0, $editor->getCursorColumn());
+        $this->assertSame('new text', $editor->getText());
+        $this->assertSame(0, $editor->getCursorLine());
+        $this->assertSame(0, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -74,8 +74,8 @@ final class PromptEditorTextEditingTest extends TestCase
         $editor = new PromptEditor('content');
         $editor->setText('');
 
-        self::assertTrue($editor->isEmpty());
-        self::assertSame('', $editor->getText());
+        $this->assertTrue($editor->isEmpty());
+        $this->assertSame('', $editor->getText());
     }
 
     // ─── insertText ──────────────────────────────────────────────
@@ -86,9 +86,9 @@ final class PromptEditorTextEditingTest extends TestCase
         $editor = new PromptEditor();
         $editor->insertText('hello');
 
-        self::assertSame('hello', $editor->getText());
-        self::assertSame(0, $editor->getCursorLine());
-        self::assertSame(5, $editor->getCursorColumn());
+        $this->assertSame('hello', $editor->getText());
+        $this->assertSame(0, $editor->getCursorLine());
+        $this->assertSame(5, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -103,7 +103,7 @@ final class PromptEditorTextEditingTest extends TestCase
         // Cursor is now after "hello " (col 6)
         $editor->insertText('beautiful ');
 
-        self::assertSame('hello beautiful world', $editor->getText());
+        $this->assertSame('hello beautiful world', $editor->getText());
     }
 
     #[Test]
@@ -113,9 +113,9 @@ final class PromptEditorTextEditingTest extends TestCase
         $editor->moveCursorRight(); // col 1, after 'a'
         $editor->insertText("x\ny\nz");
 
-        self::assertSame("ax\ny\nzbc", $editor->getText());
-        self::assertSame(2, $editor->getCursorLine());
-        self::assertSame(1, $editor->getCursorColumn()); // after 'z'
+        $this->assertSame("ax\ny\nzbc", $editor->getText());
+        $this->assertSame(2, $editor->getCursorLine());
+        $this->assertSame(1, $editor->getCursorColumn()); // after 'z'
     }
 
     #[Test]
@@ -124,8 +124,8 @@ final class PromptEditorTextEditingTest extends TestCase
         $editor = new PromptEditor('hello');
         $editor->insertText('');
 
-        self::assertSame('hello', $editor->getText());
-        self::assertSame(0, $editor->getCursorColumn());
+        $this->assertSame('hello', $editor->getText());
+        $this->assertSame(0, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -135,8 +135,8 @@ final class PromptEditorTextEditingTest extends TestCase
         $editor->moveCursorToLineEnd();
         $editor->insertText(' world');
 
-        self::assertSame('hello world', $editor->getText());
-        self::assertSame(11, $editor->getCursorColumn());
+        $this->assertSame('hello world', $editor->getText());
+        $this->assertSame(11, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -147,10 +147,10 @@ final class PromptEditorTextEditingTest extends TestCase
         $editor->insertText("\n\n");
 
         // "a\n\nb" — three lines with empty middle
-        self::assertSame("a\n\nb", $editor->getText());
-        self::assertSame(3, $editor->getLineCount());
-        self::assertSame(2, $editor->getCursorLine());
-        self::assertSame(0, $editor->getCursorColumn());
+        $this->assertSame("a\n\nb", $editor->getText());
+        $this->assertSame(3, $editor->getLineCount());
+        $this->assertSame(2, $editor->getCursorLine());
+        $this->assertSame(0, $editor->getCursorColumn());
     }
 
     // ─── deleteBackward ──────────────────────────────────────────
@@ -162,8 +162,8 @@ final class PromptEditorTextEditingTest extends TestCase
         $editor->moveCursorToLineEnd();
         $editor->deleteBackward();
 
-        self::assertSame('hell', $editor->getText());
-        self::assertSame(4, $editor->getCursorColumn());
+        $this->assertSame('hell', $editor->getText());
+        $this->assertSame(4, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -183,9 +183,9 @@ final class PromptEditorTextEditingTest extends TestCase
         // Now line=1, col=0
         $editor->deleteBackward();
 
-        self::assertSame('line1line2', $editor->getText());
-        self::assertSame(0, $editor->getCursorLine());
-        self::assertSame(5, $editor->getCursorColumn()); // at end of 'line1'
+        $this->assertSame('line1line2', $editor->getText());
+        $this->assertSame(0, $editor->getCursorLine());
+        $this->assertSame(5, $editor->getCursorColumn()); // at end of 'line1'
     }
 
     #[Test]
@@ -194,9 +194,9 @@ final class PromptEditorTextEditingTest extends TestCase
         $editor = new PromptEditor('hello');
         $editor->deleteBackward();
 
-        self::assertSame('hello', $editor->getText());
-        self::assertSame(0, $editor->getCursorLine());
-        self::assertSame(0, $editor->getCursorColumn());
+        $this->assertSame('hello', $editor->getText());
+        $this->assertSame(0, $editor->getCursorLine());
+        $this->assertSame(0, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -206,8 +206,8 @@ final class PromptEditorTextEditingTest extends TestCase
         $editor->moveCursorToLineEnd();
         $editor->deleteBackward();
 
-        self::assertSame('caf', $editor->getText());
-        self::assertSame(3, $editor->getCursorColumn());
+        $this->assertSame('caf', $editor->getText());
+        $this->assertSame(3, $editor->getCursorColumn());
     }
 
     // ─── deleteForward ───────────────────────────────────────────
@@ -218,8 +218,8 @@ final class PromptEditorTextEditingTest extends TestCase
         $editor = new PromptEditor('hello');
         $editor->deleteForward();
 
-        self::assertSame('ello', $editor->getText());
-        self::assertSame(0, $editor->getCursorColumn());
+        $this->assertSame('ello', $editor->getText());
+        $this->assertSame(0, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -229,10 +229,10 @@ final class PromptEditorTextEditingTest extends TestCase
         $editor->moveCursorToLineEnd(); // col 5, line 0
         $editor->deleteForward();
 
-        self::assertSame('line1line2', $editor->getText());
-        self::assertSame(1, $editor->getLineCount());
-        self::assertSame(0, $editor->getCursorLine());
-        self::assertSame(5, $editor->getCursorColumn());
+        $this->assertSame('line1line2', $editor->getText());
+        $this->assertSame(1, $editor->getLineCount());
+        $this->assertSame(0, $editor->getCursorLine());
+        $this->assertSame(5, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -244,9 +244,9 @@ final class PromptEditorTextEditingTest extends TestCase
         $editor->moveCursorToLineEnd();
         $editor->deleteForward();
 
-        self::assertSame("line1\nline2", $editor->getText());
-        self::assertSame(1, $editor->getCursorLine());
-        self::assertSame(5, $editor->getCursorColumn());
+        $this->assertSame("line1\nline2", $editor->getText());
+        $this->assertSame(1, $editor->getCursorLine());
+        $this->assertSame(5, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -255,8 +255,8 @@ final class PromptEditorTextEditingTest extends TestCase
         $editor = new PromptEditor('café');
         $editor->deleteForward(); // delete 'c'
 
-        self::assertSame('afé', $editor->getText());
-        self::assertSame(0, $editor->getCursorColumn());
+        $this->assertSame('afé', $editor->getText());
+        $this->assertSame(0, $editor->getCursorColumn());
     }
 
     // ─── insertNewline ───────────────────────────────────────────
@@ -269,10 +269,10 @@ final class PromptEditorTextEditingTest extends TestCase
         $editor->moveCursorRight(); // col 2
         $editor->insertNewline();
 
-        self::assertSame("he\nllo", $editor->getText());
-        self::assertSame(2, $editor->getLineCount());
-        self::assertSame(1, $editor->getCursorLine());
-        self::assertSame(0, $editor->getCursorColumn());
+        $this->assertSame("he\nllo", $editor->getText());
+        $this->assertSame(2, $editor->getLineCount());
+        $this->assertSame(1, $editor->getCursorLine());
+        $this->assertSame(0, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -281,9 +281,9 @@ final class PromptEditorTextEditingTest extends TestCase
         $editor = new PromptEditor('hello');
         $editor->insertNewline();
 
-        self::assertSame("\nhello", $editor->getText());
-        self::assertSame(1, $editor->getCursorLine());
-        self::assertSame(0, $editor->getCursorColumn());
+        $this->assertSame("\nhello", $editor->getText());
+        $this->assertSame(1, $editor->getCursorLine());
+        $this->assertSame(0, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -293,9 +293,9 @@ final class PromptEditorTextEditingTest extends TestCase
         $editor->moveCursorToLineEnd();
         $editor->insertNewline();
 
-        self::assertSame("hello\n", $editor->getText());
-        self::assertSame(1, $editor->getCursorLine());
-        self::assertSame(0, $editor->getCursorColumn());
+        $this->assertSame("hello\n", $editor->getText());
+        $this->assertSame(1, $editor->getCursorLine());
+        $this->assertSame(0, $editor->getCursorColumn());
     }
 
     // ─── clear / isEmpty / submit ─────────────────────────────────
@@ -306,10 +306,10 @@ final class PromptEditorTextEditingTest extends TestCase
         $editor = new PromptEditor("multi\nline");
         $editor->clear();
 
-        self::assertTrue($editor->isEmpty());
-        self::assertSame('', $editor->getText());
-        self::assertSame(0, $editor->getCursorLine());
-        self::assertSame(0, $editor->getCursorColumn());
+        $this->assertTrue($editor->isEmpty());
+        $this->assertSame('', $editor->getText());
+        $this->assertSame(0, $editor->getCursorLine());
+        $this->assertSame(0, $editor->getCursorColumn());
     }
 
     #[Test]
@@ -317,7 +317,7 @@ final class PromptEditorTextEditingTest extends TestCase
     {
         $editor = new PromptEditor();
 
-        self::assertTrue($editor->isEmpty());
+        $this->assertTrue($editor->isEmpty());
     }
 
     #[Test]
@@ -325,7 +325,7 @@ final class PromptEditorTextEditingTest extends TestCase
     {
         $editor = new PromptEditor('x');
 
-        self::assertFalse($editor->isEmpty());
+        $this->assertFalse($editor->isEmpty());
     }
 
     #[Test]
@@ -334,7 +334,7 @@ final class PromptEditorTextEditingTest extends TestCase
         // Two empty lines means getText() returns "\n" — not empty.
         $editor = new PromptEditor("\n");
 
-        self::assertFalse($editor->isEmpty());
+        $this->assertFalse($editor->isEmpty());
     }
 
     #[Test]
@@ -343,9 +343,9 @@ final class PromptEditorTextEditingTest extends TestCase
         $editor = new PromptEditor('submit me');
         $text = $editor->submit();
 
-        self::assertSame('submit me', $text);
-        self::assertTrue($editor->isEmpty());
-        self::assertSame('', $editor->getText());
+        $this->assertSame('submit me', $text);
+        $this->assertTrue($editor->isEmpty());
+        $this->assertSame('', $editor->getText());
     }
 
     #[Test]
@@ -354,8 +354,8 @@ final class PromptEditorTextEditingTest extends TestCase
         $editor = new PromptEditor();
         $text = $editor->submit();
 
-        self::assertSame('', $text);
-        self::assertTrue($editor->isEmpty());
+        $this->assertSame('', $text);
+        $this->assertTrue($editor->isEmpty());
     }
 
     // ─── Read-only accessors ─────────────────────────────────────
@@ -365,7 +365,7 @@ final class PromptEditorTextEditingTest extends TestCase
     {
         $editor = new PromptEditor("a\nb\nc");
 
-        self::assertSame(3, $editor->getLineCount());
+        $this->assertSame(3, $editor->getLineCount());
     }
 
     #[Test]
@@ -373,7 +373,7 @@ final class PromptEditorTextEditingTest extends TestCase
     {
         $editor = new PromptEditor();
 
-        self::assertSame(1, $editor->getLineCount());
+        $this->assertSame(1, $editor->getLineCount());
     }
 
     #[Test]
