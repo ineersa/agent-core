@@ -11,7 +11,8 @@ final readonly class NormalPrompt implements CommandParseResult
 {
     public function __construct(
         public string $text,
-    ) {}
+    ) {
+    }
 
     public function originalText(): string
     {

@@ -10,4 +10,6 @@ namespace Ineersa\Tui\Command;
  * Each variant represents a different side effect or response to a command.
  * Implementations are immutable value objects.
  */
-interface CommandResult {}
+interface CommandResult
+{
+}

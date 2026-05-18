@@ -16,5 +16,6 @@ final readonly class StatusUpdate implements CommandResult
     public function __construct(
         public string $key,
         public string $value,
-    ) {}
+    ) {
+    }
 }

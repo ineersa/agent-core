@@ -18,7 +18,8 @@ final readonly class ShellCommand implements CommandParseResult
         public string $command,
         public bool $hidden,
         public string $originalText,
-    ) {}
+    ) {
+    }
 
     public function originalText(): string
     {

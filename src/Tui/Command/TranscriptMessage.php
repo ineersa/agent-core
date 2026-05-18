@@ -18,5 +18,6 @@ final readonly class TranscriptMessage implements CommandResult
         public string $text,
         public string $role = 'system',
         public string $style = '',
-    ) {}
+    ) {
+    }
 }
