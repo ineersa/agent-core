@@ -27,7 +27,7 @@ Scope:
 Status: IN-PROGRESS
 Branch: task/ai-14-tui-model-controls-favorites
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-14-tui-model-controls-favorites
-Fork run: 44s6f5qp08oq
+Fork run: 4vwkef8byjpz
 PR URL:
 PR Status:
 Started: 2026-05-18T21:35:36.236Z
@@ -51,3 +51,7 @@ Completed:
 - Recorded fork run: 44s6f5qp08oq
 - Validation: vendor/bin/phpunit tests/Tui/Listener/ModelCommandHandlerTest.php — 15 tests, 41 assertions, OK; vendor/bin/phpunit tests/CodingAgent/Config/ModelSelectionServiceTest.php — OK with new tests; ~/.local/bin/castor test — 500 tests, 8425 assertions, OK (1 pre-existing notice); ~/.local/bin/castor deptrac — 0 violations; ~/.local/bin/castor phpstan — 0 errors; ~/.local/bin/castor cs-check — clean
 - Summary: AI-14 fork completed at commit 03735c79. Implemented /model command via slash registry, Ctrl+P favorite cycling, Shift+Tab reasoning cycling, favorite_models parsing/persistence, footer state updates, and tests. Fork notes deviations/open risks: no interactive overlay/Ctrl+F/Enter picker; uses /model fav/select commands instead; favorites persisted to disk but in-memory AiConfig may be stale until restart; no runtime events emitted beyond direct TuiSessionState footer update.
+
+## Task workflow update - 2026-05-18T22:07:38.797Z
+- Recorded fork run: 4vwkef8byjpz
+- Summary: Launched AI-14 follow-up fork to fix review blockers before code review: stale in-process favorites after /model fav toggles, idempotent /model registration across repeated TUI runs, and required docs/settings + .hatfield/settings.yaml updates for ai.favorite_models.
