@@ -25,14 +25,14 @@ Parallelizable with: RTVS-01, RTVS-05, RTVS-06 after agreeing rough DTO shape.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/rtvs-02-transcript-projection-dtos
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-02-transcript-projection-dtos
 Fork run: 55glhc2do5aq
 PR URL: https://github.com/ineersa/agent-core/pull/29
-PR Status: open
+PR Status: merged
 Started: 2026-05-19T01:13:42.351Z
-Completed:
+Completed: 2026-05-19T01:57:37.805Z
 
 ## Work log
 - Created: 2026-05-17T22:16:25.801Z
@@ -68,3 +68,12 @@ Completed:
 4. **Tests updated**: 30 tests now validate Symfony Serializer round-trip instead of manual array serialization.
 
 Force-pushed updated branch at 07c0e551.
+
+## Task workflow update - 2026-05-19T01:57:37.805Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/rtvs-02-transcript-projection-dtos into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/rtvs-02-transcript-projection-dtos.
+- Pulled integration checkout: Already up to date..
+- Validation: PR #29 state: MERGED
+- Summary: PR #29 merged on GitHub: https://github.com/ineersa/agent-core/pull/29 (merge commit dc793a62).
