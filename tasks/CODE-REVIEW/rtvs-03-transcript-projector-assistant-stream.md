@@ -31,7 +31,7 @@ Branch: task/rtvs-03-transcript-projector-assistant-stream
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-03-transcript-projector-assistant-stream
 Fork run: m9zuvvqdpw58
 PR URL: https://github.com/ineersa/agent-core/pull/30
-PR Status: open
+PR Status: closed
 Started: 2026-05-19T14:11:57.488Z
 Completed:
 
@@ -59,3 +59,7 @@ Completed:
 - Pushed task/rtvs-03-transcript-projector-assistant-stream to origin.
 - branch 'task/rtvs-03-transcript-projector-assistant-stream' set up to track 'origin/task/rtvs-03-transcript-projector-assistant-stream'.
 - Created PR: https://github.com/ineersa/agent-core/pull/30
+
+## Task workflow update - 2026-05-19T20:45:31.811Z
+- Updated PR Status: closed
+- Summary: PR #30 closed as superseded. RTVS-03 assistant/user projector work is being folded into RTVS-04 / PR #31 so `TranscriptProjector` lands as one cohesive implementation instead of two conflicting branches.
