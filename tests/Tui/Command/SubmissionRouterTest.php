@@ -7,7 +7,7 @@ namespace Ineersa\Tui\Tests\Command;
 use Ineersa\Tui\Command\ClearTranscript;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\ExitApplication;
-use Ineersa\Tui\Command\NormalPrompt;
+use Ineersa\Tui\Command\NormalPromptCommand;
 use Ineersa\Tui\Command\ShellCommand;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandRegistry;

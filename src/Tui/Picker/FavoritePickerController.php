@@ -8,7 +8,7 @@ use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
-use Ineersa\Tui\Theme\ThemeColor;
+use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
@@ -209,7 +209,7 @@ final class FavoritePickerController
             // Favourite marker coloured with Warning token so
             // favourited rows stand out from plain ones.
             $marker = $isFav
-                ? $theme->color(ThemeColor::Warning, '*')
+                ? $theme->color(ThemeColorEnum::Warning, '*')
                 : ' ';
 
             $label = \sprintf(

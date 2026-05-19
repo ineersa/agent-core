@@ -7,7 +7,7 @@ namespace Ineersa\Tui\Command;
 /**
  * The submitted text is a regular prompt — not a command.
  */
-final readonly class NormalPrompt implements CommandParseResult
+final readonly class NormalPromptCommand implements CommandParseResult
 {
     public function __construct(
         public string $text,

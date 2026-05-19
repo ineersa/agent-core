@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Footer;
 
-use Ineersa\Tui\Theme\ThemeColor;
+use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\TuiWidget;
 use Symfony\Component\Tui\Ansi\AnsiUtils;
@@ -13,7 +13,7 @@ use Symfony\Component\Tui\Ansi\AnsiUtils;
  * Default footer bar widget.
  *
  * Renders a compact single line of segments from the FooterDataProvider.
- * Each segment may carry an optional ThemeColor — when present, it is
+ * Each segment may carry an optional ThemeColorEnum — when present, it is
  * wrapped in the theme's ANSI formatting before joining.
  *
  * Segment grouping: consecutive segments whose priorities differ by < 5
@@ -39,7 +39,7 @@ final class FooterBarWidget implements TuiWidget
         $statusEntries = $this->dataProvider->getStatusEntries();
 
         if ([] === $segments && [] === $statusEntries) {
-            return [$context->theme->color(ThemeColor::Footer, '  ◆ agent-core  |  type /help for commands')];
+            return [$context->theme->color(ThemeColorEnum::Footer, '  ◆ agent-core  |  type /help for commands')];
         }
 
         // Build left-side parts with per-segment coloring and smart separators.
@@ -56,7 +56,7 @@ final class FooterBarWidget implements TuiWidget
             if (null !== $prevPriority) {
                 $gap = $segment->priority - $prevPriority;
                 if ($gap >= self::GROUP_SEPARATOR_GAP) {
-                    $renderedParts[] = $context->theme->color(ThemeColor::Dim, '  |  ');
+                    $renderedParts[] = $context->theme->color(ThemeColorEnum::Dim, '  |  ');
                 } else {
                     $renderedParts[] = ' ';
                 }

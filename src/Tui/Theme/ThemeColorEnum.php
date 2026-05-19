@@ -20,7 +20,7 @@ namespace Ineersa\Tui\Theme;
  *   error: "#ff6b6b"
  * ```
  */
-enum ThemeColor: string
+enum ThemeColorEnum: string
 {
     /* ──────── Base text ──────── */
     case Text = 'text';

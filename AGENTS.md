@@ -214,10 +214,10 @@ Extensions use `TuiExtensionContext` to interact with the TUI. All overrides are
 
 ### Theme system
 
-Semantic color tokens (`ThemeColor` enum) mapped to ANSI colors via YAML theme files.
+Semantic color tokens (`ThemeColorEnum` enum) mapped to ANSI colors via YAML theme files.
 
 - **Interface:** `TuiTheme` (`src/Tui/Theme/TuiTheme.php`) — `accent()`, `muted()`, `error()`, `color()`
-- **Tokens:** `ThemeColor` enum (`src/Tui/Theme/ThemeColor.php`) — 50+ semantic colors
+- **Tokens:** `ThemeColorEnum` enum (`src/Tui/Theme/ThemeColorEnum.php`) — 50+ semantic colors
 - **Palette:** `ThemePalette` (`src/Tui/Theme/ThemePalette.php`) — immutable map with var/alias resolution
 - **Implementation:** `DefaultTheme` (`src/Tui/Theme/DefaultTheme.php`) — Symfony TUI `Style`-backed
 - **Registry:** `ThemeRegistry` (`src/Tui/Theme/ThemeRegistry.php`) — built-in themes, default `cyberpunk`

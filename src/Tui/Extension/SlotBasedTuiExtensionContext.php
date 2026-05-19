@@ -8,7 +8,7 @@ use Ineersa\Tui\Footer\FooterDataProvider;
 use Ineersa\Tui\Footer\FooterSegmentProvider;
 use Ineersa\Tui\Layout\TuiSlotRegistry;
 use Ineersa\Tui\Widget\TuiWidget;
-use Ineersa\Tui\Widget\WidgetPlacement;
+use Ineersa\Tui\Widget\WidgetPlacementEnum;
 
 /**
  * Concrete implementation of TuiExtensionContext that delegates to a TuiSlotRegistry.
@@ -38,7 +38,7 @@ final class SlotBasedTuiExtensionContext implements TuiExtensionContext
         $this->registry->setEditorComponent($widget);
     }
 
-    public function setWidget(string $key, ?TuiWidget $content, WidgetPlacement $placement = WidgetPlacement::AboveEditor): void
+    public function setWidget(string $key, ?TuiWidget $content, WidgetPlacementEnum $placement = WidgetPlacementEnum::AboveEditor): void
     {
         if (null === $content) {
             $this->registry->removeWidget($key);

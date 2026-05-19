@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Command;
 
 use Ineersa\Tui\Command\CommandParser;
-use Ineersa\Tui\Command\NormalPrompt;
+use Ineersa\Tui\Command\NormalPromptCommand;
 use Ineersa\Tui\Command\ShellCommand;
 use Ineersa\Tui\Command\SlashCommand;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -27,7 +27,7 @@ final class CommandParserTest extends TestCase
     {
         $result = $this->parser->parse('');
 
-        self::assertInstanceOf(NormalPrompt::class, $result);
+        self::assertInstanceOf(NormalPromptCommand::class, $result);
         self::assertSame('', $result->text);
     }
 
@@ -35,7 +35,7 @@ final class CommandParserTest extends TestCase
     {
         $result = $this->parser->parse('   ');
 
-        self::assertInstanceOf(NormalPrompt::class, $result);
+        self::assertInstanceOf(NormalPromptCommand::class, $result);
         self::assertSame('', $result->text);
     }
 
@@ -43,7 +43,7 @@ final class CommandParserTest extends TestCase
     {
         $result = $this->parser->parse('hello world');
 
-        self::assertInstanceOf(NormalPrompt::class, $result);
+        self::assertInstanceOf(NormalPromptCommand::class, $result);
         self::assertSame('hello world', $result->text);
     }
 
@@ -51,7 +51,7 @@ final class CommandParserTest extends TestCase
     {
         $result = $this->parser->parse('  hello world  ');
 
-        self::assertInstanceOf(NormalPrompt::class, $result);
+        self::assertInstanceOf(NormalPromptCommand::class, $result);
         self::assertSame('hello world', $result->text);
     }
 
@@ -90,7 +90,7 @@ final class CommandParserTest extends TestCase
     {
         $result = $this->parser->parse('/');
 
-        self::assertInstanceOf(NormalPrompt::class, $result);
+        self::assertInstanceOf(NormalPromptCommand::class, $result);
         self::assertSame('/', $result->text);
     }
 
@@ -98,7 +98,7 @@ final class CommandParserTest extends TestCase
     {
         $result = $this->parser->parse('/ ');
 
-        self::assertInstanceOf(NormalPrompt::class, $result);
+        self::assertInstanceOf(NormalPromptCommand::class, $result);
         // After trim: "/ " → "/", which is a lone slash → NormalPrompt
         self::assertSame('/', $result->text);
     }
@@ -107,7 +107,7 @@ final class CommandParserTest extends TestCase
     {
         $result = $this->parser->parse('//escaped');
 
-        self::assertInstanceOf(NormalPrompt::class, $result);
+        self::assertInstanceOf(NormalPromptCommand::class, $result);
         self::assertSame('//escaped', $result->text);
     }
 
@@ -203,21 +203,21 @@ final class CommandParserTest extends TestCase
     {
         $result = $this->parser->parse("hello\n/world");
 
-        self::assertInstanceOf(NormalPrompt::class, $result);
+        self::assertInstanceOf(NormalPromptCommand::class, $result);
     }
 
     public function testMultilineWithExclamationInMiddleIsNormalPrompt(): void
     {
         $result = $this->parser->parse("hello\n!world");
 
-        self::assertInstanceOf(NormalPrompt::class, $result);
+        self::assertInstanceOf(NormalPromptCommand::class, $result);
     }
 
     public function testOriginalTextPreservesTrimmedInput(): void
     {
         $result = $this->parser->parse('  some text  ');
 
-        self::assertInstanceOf(NormalPrompt::class, $result);
+        self::assertInstanceOf(NormalPromptCommand::class, $result);
         self::assertSame('some text', $result->text);
         self::assertSame('some text', $result->originalText());
     }

@@ -420,7 +420,7 @@ ai:
        accent: accent
        muted: "#718096"
        header: accent
-       # ... other tokens from ThemeColor enum
+       # ... other tokens from ThemeColorEnum enum
    ```
 
 2. Select it in project settings:

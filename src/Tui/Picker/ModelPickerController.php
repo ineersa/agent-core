@@ -10,7 +10,7 @@ use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\Tui\Listener\FooterStateInitializer;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
-use Ineersa\Tui\Theme\ThemeColor;
+use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
@@ -237,10 +237,10 @@ final class ModelPickerController
             // visibly styled rather than all-white.  Selected-row bold
             // from SelectListWidget\'s stylesheet layers on top.
             $pointer = $isCurrent
-                ? $theme->color(ThemeColor::Accent, '❯')
+                ? $theme->color(ThemeColorEnum::Accent, '❯')
                 : ' ';
             $star = $isFav
-                ? $theme->color(ThemeColor::Warning, '★')
+                ? $theme->color(ThemeColorEnum::Warning, '★')
                 : ' ';
 
             $label = \sprintf(

@@ -13,12 +13,12 @@ use Symfony\Component\Tui\Style\Style;
  * Falls back to unstyled text when a color token has no palette entry.
  *
  * Palette data flows through {@see ThemePalette} (loaded from YAML),
- * which maps {@see ThemeColor} enum values to CSS-ish color specs.
+ * which maps {@see ThemeColorEnum} enum values to CSS-ish color specs.
  * This class translates those specs to ANSI via {@see Style::apply()}.
  */
 final class DefaultTheme implements TuiTheme
 {
-    /** @var array<string, Style> Cache of built Style objects keyed by ThemeColor->value */
+    /** @var array<string, Style> Cache of built Style objects keyed by ThemeColorEnum->value */
     private array $styleCache = [];
 
     public function __construct(
@@ -31,7 +31,7 @@ final class DefaultTheme implements TuiTheme
         return $this->palette->name;
     }
 
-    public function color(ThemeColor $color, string $text): string
+    public function color(ThemeColorEnum $color, string $text): string
     {
         return $this->buildStyleFor($color)->apply($text);
     }
@@ -40,32 +40,32 @@ final class DefaultTheme implements TuiTheme
 
     public function accent(string $text): string
     {
-        return $this->color(ThemeColor::Accent, $text);
+        return $this->color(ThemeColorEnum::Accent, $text);
     }
 
     public function text(string $text): string
     {
-        return $this->color(ThemeColor::Text, $text);
+        return $this->color(ThemeColorEnum::Text, $text);
     }
 
     public function muted(string $text): string
     {
-        return $this->color(ThemeColor::Muted, $text);
+        return $this->color(ThemeColorEnum::Muted, $text);
     }
 
     public function success(string $text): string
     {
-        return $this->color(ThemeColor::Success, $text);
+        return $this->color(ThemeColorEnum::Success, $text);
     }
 
     public function warning(string $text): string
     {
-        return $this->color(ThemeColor::Warning, $text);
+        return $this->color(ThemeColorEnum::Warning, $text);
     }
 
     public function error(string $text): string
     {
-        return $this->color(ThemeColor::Error, $text);
+        return $this->color(ThemeColorEnum::Error, $text);
     }
 
     /**
@@ -79,9 +79,9 @@ final class DefaultTheme implements TuiTheme
     /* ───────── Internal ───────── */
 
     /**
-     * Build (or retrieve from cache) a Style for a given ThemeColor.
+     * Build (or retrieve from cache) a Style for a given ThemeColorEnum.
      */
-    private function buildStyleFor(ThemeColor $color): Style
+    private function buildStyleFor(ThemeColorEnum $color): Style
     {
         $key = $color->value;
 

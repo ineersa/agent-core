@@ -226,7 +226,7 @@ interface FooterSegmentProvider
 ```
 
 Segments are sorted by priority and rendered in the footer bar. Each segment
-can carry an optional `ThemeColor`; `FooterBarWidget` applies semantic colors
+can carry an optional `ThemeColorEnum`; `FooterBarWidget` applies semantic colors
 per segment and uses Symfony TUI `AnsiUtils` for ANSI-aware width calculation
 and truncation.
 
@@ -264,15 +264,15 @@ list directly.
 
 ### Overview
 
-The TUI uses a semantic theme system. Widgets reference semantic tokens (e.g., `ThemeColor::Accent`, `ThemeColor::Muted`) rather than concrete hex values. Themes map tokens to ANSI colors.
+The TUI uses a semantic theme system. Widgets reference semantic tokens (e.g., `ThemeColorEnum::Accent`, `ThemeColorEnum::Muted`) rather than concrete hex values. Themes map tokens to ANSI colors.
 
 ### Key classes
 
 | Class | File | Role |
 |-------|------|------|
 | `TuiTheme` | `src/Tui/Theme/TuiTheme.php` | Theme interface: `accent()`, `muted()`, `error()`, `color()` |
-| `ThemeColor` | `src/Tui/Theme/ThemeColor.php` | Semantic color enum (50+ tokens) |
-| `ThemePalette` | `src/Tui/Theme/ThemePalette.php` | Immutable palette: ThemeColor → color spec |
+| `ThemeColorEnum` | `src/Tui/Theme/ThemeColorEnum.php` | Semantic color enum (50+ tokens) |
+| `ThemePalette` | `src/Tui/Theme/ThemePalette.php` | Immutable palette: ThemeColorEnum → color spec |
 | `DefaultTheme` | `src/Tui/Theme/DefaultTheme.php` | Symfony TUI `Style`-backed implementation |
 | `ThemeRegistry` | `src/Tui/Theme/ThemeRegistry.php` | Autowireable registry; loads configured and built-in YAML palettes, lookup by name |
 
@@ -324,7 +324,7 @@ tui:
     theme: my-custom-theme
 ```
 
-Theme color tokens should use the semantic names defined in `ThemeColor` (lowercased, e.g., `accent`, `muted`, `error`, `header`, `footer`, `separator`).
+Theme color tokens should use the semantic names defined in `ThemeColorEnum` (lowercased, e.g., `accent`, `muted`, `error`, `header`, `footer`, `separator`).
 
 ### Naming convention
 
@@ -338,7 +338,7 @@ box-drawing characters.
 
 File: `src/Tui/Header/HeaderWidget.php`
 
-The logo is styled with the `ThemeColor::Header` semantic color.
+The logo is styled with the `ThemeColorEnum::Header` semantic color.
 
 ## Architecture overview
 

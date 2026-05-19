@@ -13,7 +13,7 @@ namespace Ineersa\CodingAgent\Runtime\Protocol;
  *
  * Refer to AGENTS.md in this directory for payload shape documentation.
  */
-enum RuntimeEventType: string
+enum RuntimeEventTypeEnum: string
 {
     // ── Run/turn lifecycle ──────────────────────────────────────────────
 

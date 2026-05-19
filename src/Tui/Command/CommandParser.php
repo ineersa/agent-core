@@ -29,12 +29,12 @@ final readonly class CommandParser
         $text = trim($submittedText);
 
         if ('' === $text) {
-            return new NormalPrompt($text);
+            return new NormalPromptCommand($text);
         }
 
         // Escaped slash: "//..." — not a command
         if (str_starts_with($text, '//')) {
-            return new NormalPrompt($text);
+            return new NormalPromptCommand($text);
         }
 
         // Shell hidden: "!!..."
@@ -57,7 +57,7 @@ final readonly class CommandParser
 
             // "/" alone or "/ " or "/@something" (not a word char) → NormalPrompt
             if ('' === $rest || !$this->isWordChar($rest[0])) {
-                return new NormalPrompt($text);
+                return new NormalPromptCommand($text);
             }
 
             // Extract name (first word) and args (rest)
@@ -69,7 +69,7 @@ final readonly class CommandParser
             return new SlashCommand($name, $args, $text);
         }
 
-        return new NormalPrompt($text);
+        return new NormalPromptCommand($text);
     }
 
     /**

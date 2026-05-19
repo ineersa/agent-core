@@ -7,7 +7,7 @@ namespace Ineersa\Tui\Tests\Theme;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\Tui\Theme\ThemeColor;
+use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Theme\ThemeRegistry;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -45,9 +45,9 @@ final class ThemeRegistryTest extends TestCase
 
         $palette = $registry->getOrThrow('cyberpunk');
         self::assertSame('cyberpunk', $palette->name);
-        self::assertSame('#00ffff', $palette->get(ThemeColor::Accent));
-        self::assertSame('#ff3366', $palette->get(ThemeColor::Error));
-        self::assertSame('#718096', $palette->get(ThemeColor::Muted));
+        self::assertSame('#00ffff', $palette->get(ThemeColorEnum::Accent));
+        self::assertSame('#ff3366', $palette->get(ThemeColorEnum::Error));
+        self::assertSame('#718096', $palette->get(ThemeColorEnum::Muted));
     }
 
     public function testLoadDirectoryFindsThemes(): void
@@ -65,7 +65,7 @@ final class ThemeRegistryTest extends TestCase
         $theme = $registry->getOrThrow('cyberpunk');
 
         self::assertSame('cyberpunk', $theme->name);
-        self::assertSame('#00ffff', $theme->get(ThemeColor::Accent));
+        self::assertSame('#00ffff', $theme->get(ThemeColorEnum::Accent));
     }
 
     public function testGetOrThrowThrowsWhenMissing(): void
@@ -84,7 +84,7 @@ final class ThemeRegistryTest extends TestCase
         $theme = $registry->getOrThrow('nord');
 
         self::assertSame('nord', $theme->name);
-        self::assertSame('#88c0d0', $theme->get(ThemeColor::Accent));
+        self::assertSame('#88c0d0', $theme->get(ThemeColorEnum::Accent));
     }
 
     public function testHas(): void
@@ -111,7 +111,7 @@ final class ThemeRegistryTest extends TestCase
         $registry->register(new ThemePalette('custom', ['accent' => '#abc']));
 
         self::assertTrue($registry->has('custom'));
-        self::assertSame('#abc', $registry->get('custom')?->get(ThemeColor::Accent));
+        self::assertSame('#abc', $registry->get('custom')?->get(ThemeColorEnum::Accent));
     }
 
     public function testGetReturnsNullForMissing(): void

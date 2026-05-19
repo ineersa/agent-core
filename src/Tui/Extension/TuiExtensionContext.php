@@ -6,7 +6,7 @@ namespace Ineersa\Tui\Extension;
 
 use Ineersa\Tui\Footer\FooterSegmentProvider;
 use Ineersa\Tui\Widget\TuiWidget;
-use Ineersa\Tui\Widget\WidgetPlacement;
+use Ineersa\Tui\Widget\WidgetPlacementEnum;
 
 /**
  * Extension UI context — the sole contract between extension code and the TUI.
@@ -46,9 +46,9 @@ interface TuiExtensionContext
      *
      * @param string          $key       Unique identifier for this widget
      * @param TuiWidget|null  $content   Widget to add, or null to remove
-     * @param WidgetPlacement $placement Where the widget should appear
+     * @param WidgetPlacementEnum $placement Where the widget should appear
      */
-    public function setWidget(string $key, ?TuiWidget $content, WidgetPlacement $placement = WidgetPlacement::AboveEditor): void;
+    public function setWidget(string $key, ?TuiWidget $content, WidgetPlacementEnum $placement = WidgetPlacementEnum::AboveEditor): void;
 
     /**
      * Set or remove a status text entry.

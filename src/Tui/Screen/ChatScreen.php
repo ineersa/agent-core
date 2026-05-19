@@ -15,14 +15,14 @@ use Ineersa\Tui\Header\HeaderWidget;
 use Ineersa\Tui\Layout\TuiSlotRegistry;
 use Ineersa\Tui\Status\StatusPanelWidget;
 use Ineersa\Tui\Status\WorkingStatusWidget;
-use Ineersa\Tui\Theme\ThemeColor;
+use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Ineersa\Tui\Transcript\PendingMessagesWidget;
 use Ineersa\Tui\Transcript\TranscriptEntry;
 use Ineersa\Tui\Transcript\TranscriptWidget;
 use Ineersa\Tui\Widget\LiveTextWidget;
 use Ineersa\Tui\Widget\TuiRenderContext;
-use Ineersa\Tui\Widget\WidgetPlacement;
+use Ineersa\Tui\Widget\WidgetPlacementEnum;
 use Symfony\Component\Tui\Render\RenderContext;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\EditorWidget;
@@ -135,7 +135,7 @@ final class ChatScreen
         $this->headerSepWidget = new LiveTextWidget(
             function (RenderContext $symfonyCtx): string {
                 return $this->theme->color(
-                    ThemeColor::Separator,
+                    ThemeColorEnum::Separator,
                     str_repeat('─', $symfonyCtx->getColumns()),
                 );
             },
@@ -191,7 +191,7 @@ final class ChatScreen
             function (RenderContext $symfonyCtx): string {
                 $tuiCtx = $this->tuiContext($symfonyCtx);
                 $lines = [];
-                foreach ($this->registry->getWidgetsByPlacement(WidgetPlacement::AboveEditor) as $widget) {
+                foreach ($this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor) as $widget) {
                     $lines = array_merge($lines, $widget->render($tuiCtx));
                 }
 
@@ -203,7 +203,7 @@ final class ChatScreen
         $this->editorSepWidget = new LiveTextWidget(
             function (RenderContext $symfonyCtx): string {
                 return $this->theme->color(
-                    ThemeColor::Separator,
+                    ThemeColorEnum::Separator,
                     str_repeat('─', $symfonyCtx->getColumns()),
                 );
             },
@@ -217,7 +217,7 @@ final class ChatScreen
             function (RenderContext $symfonyCtx): string {
                 $tuiCtx = $this->tuiContext($symfonyCtx);
                 $lines = [];
-                foreach ($this->registry->getWidgetsByPlacement(WidgetPlacement::BelowEditor) as $widget) {
+                foreach ($this->registry->getWidgetsByPlacement(WidgetPlacementEnum::BelowEditor) as $widget) {
                     $lines = array_merge($lines, $widget->render($tuiCtx));
                 }
 
@@ -229,7 +229,7 @@ final class ChatScreen
         $this->footerSepWidget = new LiveTextWidget(
             function (RenderContext $symfonyCtx): string {
                 return $this->theme->color(
-                    ThemeColor::Separator,
+                    ThemeColorEnum::Separator,
                     str_repeat('─', $symfonyCtx->getColumns()),
                 );
             },

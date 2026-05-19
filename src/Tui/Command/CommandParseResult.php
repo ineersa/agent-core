@@ -7,7 +7,7 @@ namespace Ineersa\Tui\Command;
 /**
  * Discriminated result of parsing submitted editor text.
  *
- * Each variant (NormalPrompt, SlashCommand, ShellCommand) represents
+ * Each variant (NormalPromptCommand, SlashCommand, ShellCommand) represents
  * a different kind of input the user submitted.
  * Use instanceof checks or match() to switch on the result type.
  */

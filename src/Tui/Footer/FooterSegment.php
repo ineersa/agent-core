@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Footer;
 
-use Ineersa\Tui\Theme\ThemeColor;
+use Ineersa\Tui\Theme\ThemeColorEnum;
 
 /**
  * A single segment of data rendered in the footer bar.
@@ -23,12 +23,12 @@ final readonly class FooterSegment
      * @param int         $priority Lower = rendered first (leftmost).
      *                              Gaps >= 5 between consecutive segments
      *                              produce a "  |  " separator.
-     * @param ?ThemeColor $color    Optional semantic color token
+     * @param ?ThemeColorEnum $color    Optional semantic color token
      */
     public function __construct(
-        public string $text = '',
-        public int $priority = 0,
-        public ?ThemeColor $color = null,
+        public string          $text = '',
+        public int             $priority = 0,
+        public ?ThemeColorEnum $color = null,
     ) {
     }
 }

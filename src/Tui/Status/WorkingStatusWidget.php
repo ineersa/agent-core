@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Status;
 
-use Ineersa\Tui\Theme\ThemeColor;
+use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\TuiWidget;
 
@@ -54,6 +54,6 @@ final class WorkingStatusWidget implements TuiWidget
 
         $line = \sprintf('  %s', $indicator);
 
-        return [$context->theme->color(ThemeColor::Working, $line)];
+        return [$context->theme->color(ThemeColorEnum::Working, $line)];
     }
 }

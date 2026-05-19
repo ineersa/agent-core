@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Theme;
 
 /**
- * Immutable palette value object mapping ThemeColor tokens to CSS-ish color specs.
+ * Immutable palette value object mapping ThemeColorEnum tokens to CSS-ish color specs.
  *
  * Palette data is typically loaded from YAML theme files and supports
  * simple alias/variable resolution during construction.
@@ -14,7 +14,7 @@ namespace Ineersa\Tui\Theme;
  *  - Hex strings like '#ff5500' or '#f50'
  *  - ANSI named colors like 'cyan', 'bright_green'
  *  - Empty string '' meaning "no color / default terminal foreground"
- *  - References to other ThemeColor keys for alias support (resolved at load time)
+ *  - References to other ThemeColorEnum keys for alias support (resolved at load time)
  *
  * Users can change the palette later by loading a different theme YAML or
  * constructing a new palette programmatically.
@@ -22,7 +22,7 @@ namespace Ineersa\Tui\Theme;
 final readonly class ThemePalette
 {
     /**
-     * @param array<string, string> $colors ThemeColor->value => color spec
+     * @param array<string, string> $colors ThemeColorEnum->value => color spec
      * @param string                $name   Human-readable theme name
      */
     public function __construct(
@@ -34,7 +34,7 @@ final readonly class ThemePalette
     /**
      * Get the color spec for a token, or empty string if absent.
      */
-    public function get(ThemeColor $color): string
+    public function get(ThemeColorEnum $color): string
     {
         return $this->colors[$color->value] ?? '';
     }
@@ -42,7 +42,7 @@ final readonly class ThemePalette
     /**
      * Check whether a token has a non-empty color spec.
      */
-    public function has(ThemeColor $color): bool
+    public function has(ThemeColorEnum $color): bool
     {
         return '' !== $this->get($color);
     }

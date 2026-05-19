@@ -7,7 +7,7 @@ namespace Ineersa\Tui\Widget;
 /**
  * Placement for extension widgets relative to the prompt editor.
  */
-enum WidgetPlacement: string
+enum WidgetPlacementEnum: string
 {
     /** Render above the editor, below the status panel. */
     case AboveEditor = 'above_editor';

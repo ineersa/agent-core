@@ -2,9 +2,9 @@
 
 This file documents the stable runtime event contract used by the TUI
 rendering layer and JSONL transport. Every `RuntimeEvent.type` field
-MUST use a value from `RuntimeEventType`.
+MUST use a value from `RuntimeEventTypeEnum`.
 
-For the canonical enum definition, see `RuntimeEventType.php`.
+For the canonical enum definition, see `RuntimeEventTypeEnum.php`.
 
 ## Event families
 

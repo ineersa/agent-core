@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Layout;
 
 use Ineersa\Tui\Widget\TuiWidget;
-use Ineersa\Tui\Widget\WidgetPlacement;
+use Ineersa\Tui\Widget\WidgetPlacementEnum;
 
 /**
  * Central registry for all replaceable TUI slots.
@@ -22,7 +22,7 @@ use Ineersa\Tui\Widget\WidgetPlacement;
  */
 final class TuiSlotRegistry
 {
-    /** @var array<string, array{widget: TuiWidget, placement: WidgetPlacement}> */
+    /** @var array<string, array{widget: TuiWidget, placement: WidgetPlacementEnum}> */
     private array $extensionWidgets = [];
 
     /** @var array<string, string> */
@@ -75,7 +75,7 @@ final class TuiSlotRegistry
 
     /* ───────── Extension widgets ───────── */
 
-    public function setWidget(string $key, TuiWidget $widget, WidgetPlacement $placement = WidgetPlacement::AboveEditor): void
+    public function setWidget(string $key, TuiWidget $widget, WidgetPlacementEnum $placement = WidgetPlacementEnum::AboveEditor): void
     {
         $this->extensionWidgets[$key] = ['widget' => $widget, 'placement' => $placement];
     }
@@ -88,7 +88,7 @@ final class TuiSlotRegistry
     /**
      * @return list<TuiWidget>
      */
-    public function getWidgetsByPlacement(WidgetPlacement $placement): array
+    public function getWidgetsByPlacement(WidgetPlacementEnum $placement): array
     {
         $result = [];
         foreach ($this->extensionWidgets as $entry) {

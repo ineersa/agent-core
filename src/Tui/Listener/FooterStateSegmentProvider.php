@@ -7,7 +7,7 @@ namespace Ineersa\Tui\Listener;
 use Ineersa\Tui\Footer\FooterSegment;
 use Ineersa\Tui\Footer\FooterSegmentProvider;
 use Ineersa\Tui\Runtime\TuiSessionState;
-use Ineersa\Tui\Theme\ThemeColor;
+use Ineersa\Tui\Theme\ThemeColorEnum;
 
 /**
  * Footer segment provider that reads live TuiSessionState and produces
@@ -59,23 +59,23 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
         $segments[] = new FooterSegment(
             text: \sprintf('%s/%s', $in, $out),
             priority: 10,
-            color: ThemeColor::Accent,
+            color: ThemeColorEnum::Accent,
         );
 
         $segments[] = new FooterSegment(
             text: \sprintf('$%.2f', $s->totalCost),
             priority: 11,
-            color: ThemeColor::Warning,
+            color: ThemeColorEnum::Warning,
         );
 
         if ($s->contextWindow > 0) {
             $used = $s->inputTokens;
             $pct = $used > 0 ? min(100, ($used / $s->contextWindow) * 100) : 0.0;
-            $pctColor = $pct > 75 ? ThemeColor::Error : ($pct > 50 ? ThemeColor::Warning : ThemeColor::Success);
+            $pctColor = $pct > 75 ? ThemeColorEnum::Error : ($pct > 50 ? ThemeColorEnum::Warning : ThemeColorEnum::Success);
             $ctxDetail = \sprintf('%.0f%% %s/%s', $pct, self::fmt($used), self::fmt($s->contextWindow));
         } else {
             $ctxDetail = '0%';
-            $pctColor = ThemeColor::Success;
+            $pctColor = ThemeColorEnum::Success;
         }
         $segments[] = new FooterSegment(
             text: $ctxDetail,
@@ -91,7 +91,7 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
                 $segments[] = new FooterSegment(
                     text: \sprintf('⚡ %.1f t/s', $tps),
                     priority: 15,
-                    color: ThemeColor::Success,
+                    color: ThemeColorEnum::Success,
                 );
             }
         }
@@ -101,7 +101,7 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
         $segments[] = new FooterSegment(
             text: \sprintf('⏱ %s', self::formatElapsed($elapsed)),
             priority: 20,
-            color: ThemeColor::Dim,
+            color: ThemeColorEnum::Dim,
         );
 
         // ── Group 5: CWD (priority 25) ──
@@ -109,7 +109,7 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
             $segments[] = new FooterSegment(
                 text: \sprintf('⌂ %s', $s->cwd),
                 priority: 25,
-                color: ThemeColor::Muted,
+                color: ThemeColorEnum::Muted,
             );
         }
 
@@ -118,7 +118,7 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
             $segments[] = new FooterSegment(
                 text: \sprintf('⎇ %s', $s->branch),
                 priority: 30,
-                color: ThemeColor::Accent,
+                color: ThemeColorEnum::Accent,
             );
         }
 
@@ -128,22 +128,22 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
     // ── Formatting helpers ──
 
     /**
-     * Map a reasoning level to the dedicated ThemeColor thinking token.
+     * Map a reasoning level to the dedicated ThemeColorEnum thinking token.
      *
-     * Uses the semantic ThemeColor::Thinking* tokens (not generic
+     * Uses the semantic ThemeColorEnum::Thinking* tokens (not generic
      * Accent/Warning/Dim) for consistent reasoning-level colouring
      * across the diamond, model name, and any future thinking indicators.
      */
-    private static function thinkingColor(string $reasoning): ThemeColor
+    private static function thinkingColor(string $reasoning): ThemeColorEnum
     {
         return match ($reasoning) {
-            'xhigh' => ThemeColor::ThinkingXhigh,
-            'high' => ThemeColor::ThinkingHigh,
-            'medium' => ThemeColor::ThinkingMedium,
-            'low' => ThemeColor::ThinkingLow,
-            'minimal' => ThemeColor::ThinkingMinimal,
-            'off' => ThemeColor::ThinkingOff,
-            default => ThemeColor::ThinkingText,
+            'xhigh' => ThemeColorEnum::ThinkingXhigh,
+            'high' => ThemeColorEnum::ThinkingHigh,
+            'medium' => ThemeColorEnum::ThinkingMedium,
+            'low' => ThemeColorEnum::ThinkingLow,
+            'minimal' => ThemeColorEnum::ThinkingMinimal,
+            'off' => ThemeColorEnum::ThinkingOff,
+            default => ThemeColorEnum::ThinkingText,
         };
     }
 

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension;
 
-final class ExtensionAPI
+final class ExtensionRuntime
 {
-    // The API object given to extensions
+    // Bridges API ↔ agent-core + TUI
 }

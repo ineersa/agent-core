@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime;
 
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventType;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
-#[CoversClass(RuntimeEventType::class)]
+#[CoversClass(RuntimeEventTypeEnum::class)]
 final class RuntimeEventTypeTest extends TestCase
 {
     /**
@@ -17,7 +17,7 @@ final class RuntimeEventTypeTest extends TestCase
      */
     public function test_every_case_has_non_empty_value(): void
     {
-        $cases = RuntimeEventType::cases();
+        $cases = RuntimeEventTypeEnum::cases();
 
         self::assertNotEmpty($cases, 'Enum must have at least one case');
 
@@ -45,71 +45,71 @@ final class RuntimeEventTypeTest extends TestCase
     {
         $expected = [
             // Run/turn lifecycle
-            RuntimeEventType::RunStarted,
-            RuntimeEventType::TurnStarted,
-            RuntimeEventType::TurnCompleted,
-            RuntimeEventType::TurnFailed,
-            RuntimeEventType::TurnCancelled,
-            RuntimeEventType::RunCompleted,
-            RuntimeEventType::RunFailed,
-            RuntimeEventType::RunCancelled,
+            RuntimeEventTypeEnum::RunStarted,
+            RuntimeEventTypeEnum::TurnStarted,
+            RuntimeEventTypeEnum::TurnCompleted,
+            RuntimeEventTypeEnum::TurnFailed,
+            RuntimeEventTypeEnum::TurnCancelled,
+            RuntimeEventTypeEnum::RunCompleted,
+            RuntimeEventTypeEnum::RunFailed,
+            RuntimeEventTypeEnum::RunCancelled,
 
             // User input
-            RuntimeEventType::UserMessageSubmitted,
+            RuntimeEventTypeEnum::UserMessageSubmitted,
 
             // Assistant message stream
-            RuntimeEventType::AssistantMessageStarted,
-            RuntimeEventType::AssistantTextStarted,
-            RuntimeEventType::AssistantTextDelta,
-            RuntimeEventType::AssistantTextCompleted,
-            RuntimeEventType::AssistantThinkingStarted,
-            RuntimeEventType::AssistantThinkingDelta,
-            RuntimeEventType::AssistantThinkingCompleted,
-            RuntimeEventType::AssistantMessageCompleted,
-            RuntimeEventType::AssistantMessageFailed,
+            RuntimeEventTypeEnum::AssistantMessageStarted,
+            RuntimeEventTypeEnum::AssistantTextStarted,
+            RuntimeEventTypeEnum::AssistantTextDelta,
+            RuntimeEventTypeEnum::AssistantTextCompleted,
+            RuntimeEventTypeEnum::AssistantThinkingStarted,
+            RuntimeEventTypeEnum::AssistantThinkingDelta,
+            RuntimeEventTypeEnum::AssistantThinkingCompleted,
+            RuntimeEventTypeEnum::AssistantMessageCompleted,
+            RuntimeEventTypeEnum::AssistantMessageFailed,
 
             // Tool call lifecycle
-            RuntimeEventType::ToolCallStarted,
-            RuntimeEventType::ToolCallArgumentsDelta,
-            RuntimeEventType::ToolCallArgumentsCompleted,
-            RuntimeEventType::ToolExecutionStarted,
-            RuntimeEventType::ToolExecutionOutputDelta,
-            RuntimeEventType::ToolExecutionCompleted,
-            RuntimeEventType::ToolExecutionFailed,
-            RuntimeEventType::ToolExecutionCancelled,
+            RuntimeEventTypeEnum::ToolCallStarted,
+            RuntimeEventTypeEnum::ToolCallArgumentsDelta,
+            RuntimeEventTypeEnum::ToolCallArgumentsCompleted,
+            RuntimeEventTypeEnum::ToolExecutionStarted,
+            RuntimeEventTypeEnum::ToolExecutionOutputDelta,
+            RuntimeEventTypeEnum::ToolExecutionCompleted,
+            RuntimeEventTypeEnum::ToolExecutionFailed,
+            RuntimeEventTypeEnum::ToolExecutionCancelled,
 
             // Progress / status
-            RuntimeEventType::ProgressUpdated,
-            RuntimeEventType::StatusUpdated,
+            RuntimeEventTypeEnum::ProgressUpdated,
+            RuntimeEventTypeEnum::StatusUpdated,
 
             // HITL
-            RuntimeEventType::HumanInputRequested,
-            RuntimeEventType::HumanInputAnswered,
-            RuntimeEventType::HumanInputRejected,
-            RuntimeEventType::ApprovalRequested,
-            RuntimeEventType::ApprovalApproved,
-            RuntimeEventType::ApprovalRejected,
+            RuntimeEventTypeEnum::HumanInputRequested,
+            RuntimeEventTypeEnum::HumanInputAnswered,
+            RuntimeEventTypeEnum::HumanInputRejected,
+            RuntimeEventTypeEnum::ApprovalRequested,
+            RuntimeEventTypeEnum::ApprovalApproved,
+            RuntimeEventTypeEnum::ApprovalRejected,
 
             // Cancellation
-            RuntimeEventType::CancellationRequested,
-            RuntimeEventType::OperationCancelled,
+            RuntimeEventTypeEnum::CancellationRequested,
+            RuntimeEventTypeEnum::OperationCancelled,
 
             // Model / usage / cost
-            RuntimeEventType::ModelChanged,
-            RuntimeEventType::ReasoningChanged,
-            RuntimeEventType::UsageUpdated,
-            RuntimeEventType::ContextUpdated,
-            RuntimeEventType::CostUpdated,
+            RuntimeEventTypeEnum::ModelChanged,
+            RuntimeEventTypeEnum::ReasoningChanged,
+            RuntimeEventTypeEnum::UsageUpdated,
+            RuntimeEventTypeEnum::ContextUpdated,
+            RuntimeEventTypeEnum::CostUpdated,
         ];
 
-        $cases = RuntimeEventType::cases();
+        $cases = RuntimeEventTypeEnum::cases();
 
         foreach ($expected as $expectedCase) {
             self::assertContains(
                 $expectedCase,
                 $cases,
                 \sprintf(
-                    'Expected case %s (value: "%s") is missing from RuntimeEventType',
+                    'Expected case %s (value: "%s") is missing from RuntimeEventTypeEnum',
                     $expectedCase->name,
                     $expectedCase->value,
                 ),
@@ -119,7 +119,7 @@ final class RuntimeEventTypeTest extends TestCase
         self::assertSameSize(
             $expected,
             $cases,
-            'RuntimeEventType enum has unexpected extra cases — update this test',
+            'RuntimeEventTypeEnum enum has unexpected extra cases — update this test',
         );
     }
 
@@ -129,7 +129,7 @@ final class RuntimeEventTypeTest extends TestCase
      */
     public function test_value_strings_match_naming_convention(): void
     {
-        foreach (RuntimeEventType::cases() as $case) {
+        foreach (RuntimeEventTypeEnum::cases() as $case) {
             self::assertMatchesRegularExpression(
                 '/^[a-z0-9_]+(\.[a-z0-9_]+)+$/',
                 $case->value,
@@ -149,7 +149,7 @@ final class RuntimeEventTypeTest extends TestCase
     {
         $seen = [];
 
-        foreach (RuntimeEventType::cases() as $case) {
+        foreach (RuntimeEventTypeEnum::cases() as $case) {
             self::assertArrayNotHasKey(
                 $case->value,
                 $seen,
@@ -168,43 +168,43 @@ final class RuntimeEventTypeTest extends TestCase
      * Verify family() returns the expected category for every case.
      */
     #[DataProvider('familyProvider')]
-    public function test_family(RuntimeEventType $case, string $expectedFamily): void
+    public function test_family(RuntimeEventTypeEnum $case, string $expectedFamily): void
     {
         self::assertSame($expectedFamily, $case->family());
     }
 
     /**
-     * @return iterable<string, array{RuntimeEventType, string}>
+     * @return iterable<string, array{RuntimeEventTypeEnum, string}>
      */
     public static function familyProvider(): iterable
     {
         $lifecycle = [
-            RuntimeEventType::RunStarted,
-            RuntimeEventType::TurnStarted,
-            RuntimeEventType::TurnCompleted,
-            RuntimeEventType::TurnFailed,
-            RuntimeEventType::TurnCancelled,
-            RuntimeEventType::RunCompleted,
-            RuntimeEventType::RunFailed,
-            RuntimeEventType::RunCancelled,
+            RuntimeEventTypeEnum::RunStarted,
+            RuntimeEventTypeEnum::TurnStarted,
+            RuntimeEventTypeEnum::TurnCompleted,
+            RuntimeEventTypeEnum::TurnFailed,
+            RuntimeEventTypeEnum::TurnCancelled,
+            RuntimeEventTypeEnum::RunCompleted,
+            RuntimeEventTypeEnum::RunFailed,
+            RuntimeEventTypeEnum::RunCancelled,
         ];
 
         foreach ($lifecycle as $case) {
             yield $case->name => [$case, 'lifecycle'];
         }
 
-        yield RuntimeEventType::UserMessageSubmitted->name => [RuntimeEventType::UserMessageSubmitted, 'user_input'];
+        yield RuntimeEventTypeEnum::UserMessageSubmitted->name => [RuntimeEventTypeEnum::UserMessageSubmitted, 'user_input'];
 
         $assistant = [
-            RuntimeEventType::AssistantMessageStarted,
-            RuntimeEventType::AssistantTextStarted,
-            RuntimeEventType::AssistantTextDelta,
-            RuntimeEventType::AssistantTextCompleted,
-            RuntimeEventType::AssistantThinkingStarted,
-            RuntimeEventType::AssistantThinkingDelta,
-            RuntimeEventType::AssistantThinkingCompleted,
-            RuntimeEventType::AssistantMessageCompleted,
-            RuntimeEventType::AssistantMessageFailed,
+            RuntimeEventTypeEnum::AssistantMessageStarted,
+            RuntimeEventTypeEnum::AssistantTextStarted,
+            RuntimeEventTypeEnum::AssistantTextDelta,
+            RuntimeEventTypeEnum::AssistantTextCompleted,
+            RuntimeEventTypeEnum::AssistantThinkingStarted,
+            RuntimeEventTypeEnum::AssistantThinkingDelta,
+            RuntimeEventTypeEnum::AssistantThinkingCompleted,
+            RuntimeEventTypeEnum::AssistantMessageCompleted,
+            RuntimeEventTypeEnum::AssistantMessageFailed,
         ];
 
         foreach ($assistant as $case) {
@@ -212,14 +212,14 @@ final class RuntimeEventTypeTest extends TestCase
         }
 
         $tool = [
-            RuntimeEventType::ToolCallStarted,
-            RuntimeEventType::ToolCallArgumentsDelta,
-            RuntimeEventType::ToolCallArgumentsCompleted,
-            RuntimeEventType::ToolExecutionStarted,
-            RuntimeEventType::ToolExecutionOutputDelta,
-            RuntimeEventType::ToolExecutionCompleted,
-            RuntimeEventType::ToolExecutionFailed,
-            RuntimeEventType::ToolExecutionCancelled,
+            RuntimeEventTypeEnum::ToolCallStarted,
+            RuntimeEventTypeEnum::ToolCallArgumentsDelta,
+            RuntimeEventTypeEnum::ToolCallArgumentsCompleted,
+            RuntimeEventTypeEnum::ToolExecutionStarted,
+            RuntimeEventTypeEnum::ToolExecutionOutputDelta,
+            RuntimeEventTypeEnum::ToolExecutionCompleted,
+            RuntimeEventTypeEnum::ToolExecutionFailed,
+            RuntimeEventTypeEnum::ToolExecutionCancelled,
         ];
 
         foreach ($tool as $case) {
@@ -227,8 +227,8 @@ final class RuntimeEventTypeTest extends TestCase
         }
 
         $progress = [
-            RuntimeEventType::ProgressUpdated,
-            RuntimeEventType::StatusUpdated,
+            RuntimeEventTypeEnum::ProgressUpdated,
+            RuntimeEventTypeEnum::StatusUpdated,
         ];
 
         foreach ($progress as $case) {
@@ -236,12 +236,12 @@ final class RuntimeEventTypeTest extends TestCase
         }
 
         $hitl = [
-            RuntimeEventType::HumanInputRequested,
-            RuntimeEventType::HumanInputAnswered,
-            RuntimeEventType::HumanInputRejected,
-            RuntimeEventType::ApprovalRequested,
-            RuntimeEventType::ApprovalApproved,
-            RuntimeEventType::ApprovalRejected,
+            RuntimeEventTypeEnum::HumanInputRequested,
+            RuntimeEventTypeEnum::HumanInputAnswered,
+            RuntimeEventTypeEnum::HumanInputRejected,
+            RuntimeEventTypeEnum::ApprovalRequested,
+            RuntimeEventTypeEnum::ApprovalApproved,
+            RuntimeEventTypeEnum::ApprovalRejected,
         ];
 
         foreach ($hitl as $case) {
@@ -249,8 +249,8 @@ final class RuntimeEventTypeTest extends TestCase
         }
 
         $cancellation = [
-            RuntimeEventType::CancellationRequested,
-            RuntimeEventType::OperationCancelled,
+            RuntimeEventTypeEnum::CancellationRequested,
+            RuntimeEventTypeEnum::OperationCancelled,
         ];
 
         foreach ($cancellation as $case) {
@@ -258,11 +258,11 @@ final class RuntimeEventTypeTest extends TestCase
         }
 
         $metadata = [
-            RuntimeEventType::ModelChanged,
-            RuntimeEventType::ReasoningChanged,
-            RuntimeEventType::UsageUpdated,
-            RuntimeEventType::ContextUpdated,
-            RuntimeEventType::CostUpdated,
+            RuntimeEventTypeEnum::ModelChanged,
+            RuntimeEventTypeEnum::ReasoningChanged,
+            RuntimeEventTypeEnum::UsageUpdated,
+            RuntimeEventTypeEnum::ContextUpdated,
+            RuntimeEventTypeEnum::CostUpdated,
         ];
 
         foreach ($metadata as $case) {
@@ -275,40 +275,40 @@ final class RuntimeEventTypeTest extends TestCase
      */
     public function test_helper_predicates(): void
     {
-        self::assertTrue(RuntimeEventType::RunStarted->isLifecycle());
-        self::assertFalse(RuntimeEventType::RunStarted->isAssistantStream());
-        self::assertFalse(RuntimeEventType::RunStarted->isTool());
-        self::assertFalse(RuntimeEventType::RunStarted->isHitl());
-        self::assertFalse(RuntimeEventType::RunStarted->isCancellation());
+        self::assertTrue(RuntimeEventTypeEnum::RunStarted->isLifecycle());
+        self::assertFalse(RuntimeEventTypeEnum::RunStarted->isAssistantStream());
+        self::assertFalse(RuntimeEventTypeEnum::RunStarted->isTool());
+        self::assertFalse(RuntimeEventTypeEnum::RunStarted->isHitl());
+        self::assertFalse(RuntimeEventTypeEnum::RunStarted->isCancellation());
 
-        self::assertTrue(RuntimeEventType::AssistantTextDelta->isAssistantStream());
-        self::assertFalse(RuntimeEventType::AssistantTextDelta->isLifecycle());
+        self::assertTrue(RuntimeEventTypeEnum::AssistantTextDelta->isAssistantStream());
+        self::assertFalse(RuntimeEventTypeEnum::AssistantTextDelta->isLifecycle());
 
-        self::assertTrue(RuntimeEventType::ToolCallStarted->isTool());
-        self::assertTrue(RuntimeEventType::ToolExecutionCompleted->isTool());
+        self::assertTrue(RuntimeEventTypeEnum::ToolCallStarted->isTool());
+        self::assertTrue(RuntimeEventTypeEnum::ToolExecutionCompleted->isTool());
 
-        self::assertTrue(RuntimeEventType::HumanInputRequested->isHitl());
-        self::assertTrue(RuntimeEventType::CancellationRequested->isCancellation());
+        self::assertTrue(RuntimeEventTypeEnum::HumanInputRequested->isHitl());
+        self::assertTrue(RuntimeEventTypeEnum::CancellationRequested->isCancellation());
     }
 
     /**
-     * RuntimeEventType::from() must round-trip from the string value.
+     * RuntimeEventTypeEnum::from() must round-trip from the string value.
      */
     public function test_from_string_value_roundtrip(): void
     {
-        foreach (RuntimeEventType::cases() as $case) {
-            $restored = RuntimeEventType::from($case->value);
+        foreach (RuntimeEventTypeEnum::cases() as $case) {
+            $restored = RuntimeEventTypeEnum::from($case->value);
             self::assertSame($case, $restored);
         }
     }
 
     /**
-     * RuntimeEventType::tryFrom() must return null for unknown values.
+     * RuntimeEventTypeEnum::tryFrom() must return null for unknown values.
      */
     public function test_tryFrom_unknown_value_returns_null(): void
     {
-        self::assertNull(RuntimeEventType::tryFrom('nonexistent.event'));
-        self::assertNull(RuntimeEventType::tryFrom(''));
+        self::assertNull(RuntimeEventTypeEnum::tryFrom('nonexistent.event'));
+        self::assertNull(RuntimeEventTypeEnum::tryFrom(''));
     }
 
     /**
@@ -319,6 +319,6 @@ final class RuntimeEventTypeTest extends TestCase
     {
         // 8 lifecycle + 1 user_input + 9 assistant + 8 tool + 2 progress
         // + 6 HITL + 2 cancellation + 5 metadata = 41
-        self::assertCount(41, RuntimeEventType::cases());
+        self::assertCount(41, RuntimeEventTypeEnum::cases());
     }
 }

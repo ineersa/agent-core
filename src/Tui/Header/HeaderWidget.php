@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Header;
 
-use Ineersa\Tui\Theme\ThemeColor;
+use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\TuiWidget;
 
@@ -34,7 +34,7 @@ ASCII;
         $result = [];
 
         foreach ($lines as $line) {
-            $result[] = $context->theme->color(ThemeColor::Header, '  '.rtrim($line));
+            $result[] = $context->theme->color(ThemeColorEnum::Header, '  '.rtrim($line));
         }
 
         return $result;

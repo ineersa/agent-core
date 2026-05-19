@@ -17,7 +17,7 @@ use Ineersa\Tui\Transcript\PendingMessagesWidget;
 use Ineersa\Tui\Transcript\TranscriptWidget;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\TuiWidget;
-use Ineersa\Tui\Widget\WidgetPlacement;
+use Ineersa\Tui\Widget\WidgetPlacementEnum;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -37,8 +37,8 @@ final class TuiSlotRegistryTest extends TestCase
         self::assertNull($this->registry->getFooter());
         self::assertNull($this->registry->getEditorComponent());
         self::assertSame([], $this->registry->getStatusEntries());
-        self::assertSame([], $this->registry->getWidgetsByPlacement(WidgetPlacement::AboveEditor));
-        self::assertSame([], $this->registry->getWidgetsByPlacement(WidgetPlacement::BelowEditor));
+        self::assertSame([], $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor));
+        self::assertSame([], $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::BelowEditor));
         self::assertTrue($this->registry->isWorkingVisible());
         self::assertSame('', $this->registry->getWorkingMessage());
     }
@@ -79,11 +79,11 @@ final class TuiSlotRegistryTest extends TestCase
         $widgetAbove = $this->createDummyWidget();
         $widgetBelow = $this->createDummyWidget();
 
-        $this->registry->setWidget('a1', $widgetAbove, WidgetPlacement::AboveEditor);
-        $this->registry->setWidget('b1', $widgetBelow, WidgetPlacement::BelowEditor);
+        $this->registry->setWidget('a1', $widgetAbove, WidgetPlacementEnum::AboveEditor);
+        $this->registry->setWidget('b1', $widgetBelow, WidgetPlacementEnum::BelowEditor);
 
-        $above = $this->registry->getWidgetsByPlacement(WidgetPlacement::AboveEditor);
-        $below = $this->registry->getWidgetsByPlacement(WidgetPlacement::BelowEditor);
+        $above = $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor);
+        $below = $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::BelowEditor);
 
         self::assertCount(1, $above);
         self::assertCount(1, $below);
@@ -94,13 +94,13 @@ final class TuiSlotRegistryTest extends TestCase
     public function testRemoveWidget(): void
     {
         $widget = $this->createDummyWidget();
-        $this->registry->setWidget('test', $widget, WidgetPlacement::AboveEditor);
+        $this->registry->setWidget('test', $widget, WidgetPlacementEnum::AboveEditor);
 
-        self::assertCount(1, $this->registry->getWidgetsByPlacement(WidgetPlacement::AboveEditor));
+        self::assertCount(1, $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor));
 
         $this->registry->removeWidget('test');
 
-        self::assertCount(0, $this->registry->getWidgetsByPlacement(WidgetPlacement::AboveEditor));
+        self::assertCount(0, $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor));
     }
 
     public function testMultipleWidgetsInSamePlacementOrder(): void
@@ -108,10 +108,10 @@ final class TuiSlotRegistryTest extends TestCase
         $w1 = $this->createDummyWidget();
         $w2 = $this->createDummyWidget();
 
-        $this->registry->setWidget('first', $w1, WidgetPlacement::AboveEditor);
-        $this->registry->setWidget('second', $w2, WidgetPlacement::AboveEditor);
+        $this->registry->setWidget('first', $w1, WidgetPlacementEnum::AboveEditor);
+        $this->registry->setWidget('second', $w2, WidgetPlacementEnum::AboveEditor);
 
-        $widgets = $this->registry->getWidgetsByPlacement(WidgetPlacement::AboveEditor);
+        $widgets = $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor);
 
         self::assertCount(2, $widgets);
         self::assertSame($w1, $widgets[0]);

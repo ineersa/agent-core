@@ -17,7 +17,7 @@ use Ineersa\Tui\Footer\FooterDataProvider;
 use Ineersa\Tui\Footer\FooterBarWidget;
 use Ineersa\Tui\Listener\FooterStateSegmentProvider;
 use Ineersa\Tui\Runtime\TuiSessionState;
-use Ineersa\Tui\Theme\ThemeColor;
+use Ineersa\Tui\Theme\ThemeColorEnum;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -45,45 +45,45 @@ class FooterStateSegmentProviderTest extends TestCase
         // off → ThinkingOff
         $state->footerReasoning = 'off';
         $segments = $provider->getSegments();
-        self::assertSame(ThemeColor::ThinkingOff, $segments[0]->color);
+        self::assertSame(ThemeColorEnum::ThinkingOff, $segments[0]->color);
         self::assertSame('◆', $segments[0]->text);
-        self::assertSame(ThemeColor::ThinkingOff, $segments[1]->color);
+        self::assertSame(ThemeColorEnum::ThinkingOff, $segments[1]->color);
 
         // minimal → ThinkingMinimal
         $state->footerReasoning = 'minimal';
         $segments = $provider->getSegments();
-        self::assertSame(ThemeColor::ThinkingMinimal, $segments[0]->color);
-        self::assertSame(ThemeColor::ThinkingMinimal, $segments[1]->color);
+        self::assertSame(ThemeColorEnum::ThinkingMinimal, $segments[0]->color);
+        self::assertSame(ThemeColorEnum::ThinkingMinimal, $segments[1]->color);
 
         // low → ThinkingLow
         $state->footerReasoning = 'low';
         $segments = $provider->getSegments();
-        self::assertSame(ThemeColor::ThinkingLow, $segments[0]->color);
-        self::assertSame(ThemeColor::ThinkingLow, $segments[1]->color);
+        self::assertSame(ThemeColorEnum::ThinkingLow, $segments[0]->color);
+        self::assertSame(ThemeColorEnum::ThinkingLow, $segments[1]->color);
 
         // medium → ThinkingMedium
         $state->footerReasoning = 'medium';
         $segments = $provider->getSegments();
-        self::assertSame(ThemeColor::ThinkingMedium, $segments[0]->color);
-        self::assertSame(ThemeColor::ThinkingMedium, $segments[1]->color);
+        self::assertSame(ThemeColorEnum::ThinkingMedium, $segments[0]->color);
+        self::assertSame(ThemeColorEnum::ThinkingMedium, $segments[1]->color);
 
         // high → ThinkingHigh
         $state->footerReasoning = 'high';
         $segments = $provider->getSegments();
-        self::assertSame(ThemeColor::ThinkingHigh, $segments[0]->color);
-        self::assertSame(ThemeColor::ThinkingHigh, $segments[1]->color);
+        self::assertSame(ThemeColorEnum::ThinkingHigh, $segments[0]->color);
+        self::assertSame(ThemeColorEnum::ThinkingHigh, $segments[1]->color);
 
         // xhigh → ThinkingXhigh
         $state->footerReasoning = 'xhigh';
         $segments = $provider->getSegments();
-        self::assertSame(ThemeColor::ThinkingXhigh, $segments[0]->color);
-        self::assertSame(ThemeColor::ThinkingXhigh, $segments[1]->color, 'Model name should use same thinking colour as diamond');
+        self::assertSame(ThemeColorEnum::ThinkingXhigh, $segments[0]->color);
+        self::assertSame(ThemeColorEnum::ThinkingXhigh, $segments[1]->color, 'Model name should use same thinking colour as diamond');
 
         // Unknown / empty → ThinkingText
         $state->footerReasoning = '';
         $segments = $provider->getSegments();
-        self::assertSame(ThemeColor::ThinkingText, $segments[0]->color);
-        self::assertSame(ThemeColor::ThinkingText, $segments[1]->color);
+        self::assertSame(ThemeColorEnum::ThinkingText, $segments[0]->color);
+        self::assertSame(ThemeColorEnum::ThinkingText, $segments[1]->color);
     }
 
     #[Test]
@@ -99,8 +99,8 @@ class FooterStateSegmentProviderTest extends TestCase
         // Model name segment (priority 1) uses thinking color, NOT Accent
         $modelSegment = $segments[1];
         self::assertSame('glm-5.1', $modelSegment->text);
-        self::assertSame(ThemeColor::ThinkingHigh, $modelSegment->color);
-        self::assertNotSame(ThemeColor::Accent, $modelSegment->color);
+        self::assertSame(ThemeColorEnum::ThinkingHigh, $modelSegment->color);
+        self::assertNotSame(ThemeColorEnum::Accent, $modelSegment->color);
     }
 
     #[Test]

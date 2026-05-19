@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
-use Ineersa\Tui\Theme\ThemeColor;
+use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Widget\TuiRenderContext;
 
 /**
@@ -41,10 +41,10 @@ final readonly class TranscriptEntry
         };
 
         $roleColor = match ($this->role) {
-            'user' => ThemeColor::UserMessage,
-            'assistant' => ThemeColor::AssistantMessage,
-            'tool' => ThemeColor::Tool,
-            default => ThemeColor::SystemMessage,
+            'user' => ThemeColorEnum::UserMessage,
+            'assistant' => ThemeColorEnum::AssistantMessage,
+            'tool' => ThemeColorEnum::Tool,
+            default => ThemeColorEnum::SystemMessage,
         };
 
         $line = \sprintf('%s %s', $prefix, $this->text);

@@ -17,7 +17,7 @@ use Ineersa\Tui\Transcript\PendingMessagesWidget;
 use Ineersa\Tui\Transcript\TranscriptWidget;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\TuiWidget;
-use Ineersa\Tui\Widget\WidgetPlacement;
+use Ineersa\Tui\Widget\WidgetPlacementEnum;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -166,7 +166,7 @@ final class ChatLayoutTest extends TestCase
             }
         };
 
-        $this->registry->setWidget('test_above', $aboveWidget, WidgetPlacement::AboveEditor);
+        $this->registry->setWidget('test_above', $aboveWidget, WidgetPlacementEnum::AboveEditor);
         $lines = $this->layout->render($this->context);
 
         $aboveIdx = null;
@@ -194,7 +194,7 @@ final class ChatLayoutTest extends TestCase
             }
         };
 
-        $this->registry->setWidget('test_below', $belowWidget, WidgetPlacement::BelowEditor);
+        $this->registry->setWidget('test_below', $belowWidget, WidgetPlacementEnum::BelowEditor);
         $lines = $this->layout->render($this->context);
 
         $belowIdx = null;

@@ -8,7 +8,7 @@ use Ineersa\Tui\Extension\SlotBasedTuiExtensionContext;
 use Ineersa\Tui\Layout\TuiSlotRegistry;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\TuiWidget;
-use Ineersa\Tui\Widget\WidgetPlacement;
+use Ineersa\Tui\Widget\WidgetPlacementEnum;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -51,15 +51,15 @@ final class SlotBasedTuiExtensionContextTest extends TestCase
     public function testSetWidget(): void
     {
         $widget = $this->createDummyWidget();
-        $this->context->setWidget('test', $widget, WidgetPlacement::AboveEditor);
+        $this->context->setWidget('test', $widget, WidgetPlacementEnum::AboveEditor);
 
-        $widgets = $this->registry->getWidgetsByPlacement(WidgetPlacement::AboveEditor);
+        $widgets = $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor);
         self::assertCount(1, $widgets);
         self::assertSame($widget, $widgets[0]);
 
         // Remove by setting null
         $this->context->setWidget('test', null);
-        self::assertCount(0, $this->registry->getWidgetsByPlacement(WidgetPlacement::AboveEditor));
+        self::assertCount(0, $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor));
     }
 
     public function testSetStatus(): void

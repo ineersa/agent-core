@@ -8,7 +8,7 @@ namespace Ineersa\Tui\Theme;
  * Terminal UI theme contract.
  *
  * Applies semantic styling tokens to text using ANSI escape codes.
- * Each implementation maps {@see ThemeColor} values to terminal formatting.
+ * Each implementation maps {@see ThemeColorEnum} values to terminal formatting.
  *
  * @see DefaultTheme for the Symfony TUI Style-backed implementation
  * @see ThemePalette for the pure-data palette value object
@@ -28,7 +28,7 @@ interface TuiTheme
      *
      * @return string ANSI-styled text
      */
-    public function color(ThemeColor $color, string $text): string;
+    public function color(ThemeColorEnum $color, string $text): string;
 
     /* ───────── Convenience aliases ───────── */
 

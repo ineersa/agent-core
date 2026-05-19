@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Theme;
 
 use Ineersa\Tui\Theme\DefaultTheme;
-use Ineersa\Tui\Theme\ThemeColor;
+use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
@@ -76,7 +76,7 @@ final class DefaultThemeTest extends TestCase
     {
         $theme = $this->createTheme();
 
-        $result = $theme->color(ThemeColor::Accent, 'accented');
+        $result = $theme->color(ThemeColorEnum::Accent, 'accented');
 
         self::assertStringContainsString('accented', $result);
         self::assertNotSame('accented', $result);

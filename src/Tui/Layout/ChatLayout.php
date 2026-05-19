@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Layout;
 
-use Ineersa\Tui\Theme\ThemeColor;
+use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\TuiWidget;
-use Ineersa\Tui\Widget\WidgetPlacement;
+use Ineersa\Tui\Widget\WidgetPlacementEnum;
 
 /**
  * Assembles the TUI layout from registered widgets.
@@ -64,7 +64,7 @@ final class ChatLayout
         // 2. Separator after header
         if ([] !== $lines) {
             $sep = str_repeat('─', $context->terminalWidth);
-            $lines[] = $context->theme->color(ThemeColor::Separator, $sep);
+            $lines[] = $context->theme->color(ThemeColorEnum::Separator, $sep);
         }
 
         // 3. Transcript / history
@@ -90,26 +90,26 @@ final class ChatLayout
         }
 
         // 7. Above-editor extension widgets
-        foreach ($this->registry->getWidgetsByPlacement(WidgetPlacement::AboveEditor) as $widget) {
+        foreach ($this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor) as $widget) {
             $lines = array_merge($lines, $widget->render($context));
         }
 
         // 8. Editor separator
         $editorSep = str_repeat('─', $context->terminalWidth);
-        $lines[] = $context->theme->color(ThemeColor::Separator, $editorSep);
+        $lines[] = $context->theme->color(ThemeColorEnum::Separator, $editorSep);
 
         // 9. Editor (replacement or default)
         $editorWidget = $this->registry->getEditorComponent() ?? $this->editor;
         $lines = array_merge($lines, $editorWidget->render($context));
 
         // 10. Below-editor extension widgets
-        foreach ($this->registry->getWidgetsByPlacement(WidgetPlacement::BelowEditor) as $widget) {
+        foreach ($this->registry->getWidgetsByPlacement(WidgetPlacementEnum::BelowEditor) as $widget) {
             $lines = array_merge($lines, $widget->render($context));
         }
 
         // 11. Footer separator
         $footerSep = str_repeat('─', $context->terminalWidth);
-        $lines[] = $context->theme->color(ThemeColor::Separator, $footerSep);
+        $lines[] = $context->theme->color(ThemeColorEnum::Separator, $footerSep);
 
         // 12. Footer (replacement or default)
         $footerWidget = $this->registry->getFooter() ?? $this->footer;
