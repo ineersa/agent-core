@@ -24,7 +24,7 @@ Scope:
 - Suggested validation: `castor test --filter Tui`; `castor test:tui`.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/ai-14-tui-model-controls-favorites
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-14-tui-model-controls-favorites
 Fork run: z6aazkk57r4q
@@ -134,3 +134,7 @@ Validation: 509 tests pass, 8453 assertions, 0 deptrac violations, 0 phpstan err
 - Skipped PR creation (pushOnly: true).
 - Validation: vendor/bin/phpunit tests/CodingAgent/Config/ModelSelectionServiceTest.php --filter Display — 5 tests, OK; vendor/bin/phpunit tests/CodingAgent/Config/ModelSelectionServiceTest.php — 53 tests, OK; vendor/bin/phpunit tests/Tui/Picker/ModelPickerControllerTest.php — 7 tests, OK; vendor/bin/phpunit tests/Tui/Listener/ModelCommandHandlerTest.php — 18 tests, OK; ~/.local/bin/castor test — 533 tests, 8531 assertions, OK (1 pre-existing notice); ~/.local/bin/castor deptrac — 0 violations; ~/.local/bin/castor phpstan — 0 errors; ~/.local/bin/castor cs-check — clean
 - Summary: AI-14 UX polish complete at commit 47bd30bf. Fixed stale footer thinking color by adding display-safe reasoning that returns off for non-thinking models and using it for /model select, picker selection, and Ctrl+P favorite cycling. Improved /model help metadata for picker and favorites UX. Added instructional headers above model and favorites pickers using Symfony TUI ContainerWidget/TextWidget around SelectListWidget. Current model is marked with description metadata, favorites use * markers, and selected rows rely on SelectListWidget default bold styling. Picker close lifecycle now removes container wrappers cleanly.
+
+## Task workflow update - 2026-05-19T00:05:37.336Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: User smoke-tested commit 47bd30bf and requested additional UX/config fixes: z.ai models have no xhigh so remove xhigh from z.ai settings/maps; picker headers should be styled nicer (muted/theme color); list rows still appear white/blended, so use theme palette/colors to visibly mark favorites/current/selection; remove ugly 'current' description word; keep * favorite marker in list but do not use it inconsistently in header.
