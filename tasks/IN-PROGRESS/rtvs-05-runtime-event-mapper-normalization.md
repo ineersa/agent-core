@@ -25,14 +25,22 @@ Parallelizable with: RTVS-02, RTVS-03, RTVS-04.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/rtvs-05-runtime-event-mapper-normalization
+Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-05-runtime-event-mapper-normalization
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-19T21:59:11.393Z
 Completed:
 
 ## Work log
 - Created: 2026-05-17T22:16:52.560Z
+
+## Task workflow update - 2026-05-19T21:59:11.393Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/rtvs-05-runtime-event-mapper-normalization.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/rtvs-05-runtime-event-mapper-normalization.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/rtvs-05-runtime-event-mapper-normalization.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/rtvs-05-runtime-event-mapper-normalization.
+- Summary: Starting implementation. RTVS-05 remains needed after the Symfony projection pipeline because the merged projector subscribes to stable `RuntimeEventTypeEnum` names, while current `RuntimeEventMapper` still passes raw AgentCore RunEvent type strings through unchanged. Scope is to normalize AgentCore events into stable runtime event names/payloads for the vertical slice while keeping TUI independent from AgentCore internals.
