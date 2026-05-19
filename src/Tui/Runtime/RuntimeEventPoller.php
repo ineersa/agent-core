@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\TranscriptEntry as PersistedTranscriptEntry;
 use Ineersa\Tui\Transcript\TranscriptEntry;
@@ -127,34 +128,64 @@ final class RuntimeEventPoller
     public static function formatEventToEntry(RuntimeEvent $event): ?TranscriptEntry
     {
         $payload = $event->payload;
+        $t = RuntimeEventTypeEnum::tryFrom($event->type);
 
-        return match ($event->type) {
-            'run_started' => new TranscriptEntry(
-                text: \sprintf('Run started: %s', $payload['prompt'] ?? ''),
+        return match ($t) {
+            RuntimeEventTypeEnum::RunStarted => new TranscriptEntry(
+                text: \sprintf('Run started%s', isset($payload['step_id']) ? ' — '.$payload['step_id'] : ''),
                 role: 'system',
                 style: 'accent',
             ),
-            'message_update' => new TranscriptEntry(
-                text: mb_substr((string) ($payload['content'] ?? ($payload['text'] ?? '')), 0, 500),
+            RuntimeEventTypeEnum::RunCompleted,
+            RuntimeEventTypeEnum::RunCancelled,
+            RuntimeEventTypeEnum::RunFailed => new TranscriptEntry(
+                text: \sprintf('Run %s', str_replace('run.', '', $t->value)),
+                role: 'system',
+                style: 'muted',
+            ),
+            RuntimeEventTypeEnum::TurnStarted,
+            RuntimeEventTypeEnum::TurnCompleted,
+            RuntimeEventTypeEnum::TurnFailed,
+            RuntimeEventTypeEnum::TurnCancelled => null,
+            RuntimeEventTypeEnum::AssistantMessageCompleted => new TranscriptEntry(
+                text: mb_substr((string) ($payload['text'] ?? ''), 0, 500),
                 role: 'assistant',
                 style: 'message_update',
             ),
-            'message_end' => new TranscriptEntry(
-                text: '(end of message)',
-                role: 'assistant',
-                style: 'muted',
+            RuntimeEventTypeEnum::AssistantMessageFailed => new TranscriptEntry(
+                text: \sprintf('Error: %s', mb_substr((string) ($payload['text'] ?? 'Unknown error'), 0, 200)),
+                role: 'system',
+                style: 'error',
             ),
-            'tool_execution_start' => new TranscriptEntry(
-                text: \sprintf('%s %s', (string) ($payload['tool'] ?? 'tool'), (string) ($payload['input'] ?? '')),
+            RuntimeEventTypeEnum::ToolExecutionStarted => new TranscriptEntry(
+                text: \sprintf('%s', (string) ($payload['tool_name'] ?? 'tool')),
                 role: 'tool',
                 style: 'tool_start',
             ),
-            'tool_execution_end' => new TranscriptEntry(
-                text: \sprintf('%s %s', (string) ($payload['tool'] ?? 'tool'), (string) ($payload['summary'] ?? 'done')),
+            RuntimeEventTypeEnum::ToolExecutionCompleted,
+            RuntimeEventTypeEnum::ToolExecutionFailed => new TranscriptEntry(
+                text: \sprintf('%s %s',
+                    (string) ($payload['tool_name'] ?? (string) ($payload['tool_call_id'] ?? 'tool')),
+                    RuntimeEventTypeEnum::ToolExecutionFailed === $t ? '(failed)' : 'done',
+                ),
                 role: 'tool',
                 style: 'tool_end',
             ),
-            'turn_start', 'turn_end', 'agent_start', 'agent_end' => null,
+            RuntimeEventTypeEnum::HumanInputRequested => new TranscriptEntry(
+                text: \sprintf('? %s', (string) ($payload['prompt'] ?? 'Human input required.')),
+                role: 'system',
+                style: 'accent',
+            ),
+            RuntimeEventTypeEnum::CancellationRequested => new TranscriptEntry(
+                text: 'Cancelling…',
+                role: 'system',
+                style: 'muted',
+            ),
+            RuntimeEventTypeEnum::StatusUpdated => new TranscriptEntry(
+                text: \sprintf('· %s', $payload['debug.raw_type'] ?? $event->type),
+                role: 'system',
+                style: 'muted',
+            ),
             default => new TranscriptEntry(
                 text: \sprintf('· %s', $event->type),
                 role: 'system',
@@ -171,7 +202,7 @@ final class RuntimeEventPoller
      */
     private static function extractFooterUsage(TuiSessionState $state, RuntimeEvent $event): void
     {
-        if ('llm_step_completed' !== $event->type) {
+        if (RuntimeEventTypeEnum::AssistantMessageCompleted->value !== $event->type) {
             return;
         }
 

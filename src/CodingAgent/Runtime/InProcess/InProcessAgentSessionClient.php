@@ -95,7 +95,10 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         $runEvents = $this->eventStore->allFor($runId);
 
         foreach ($runEvents as $runEvent) {
-            yield $this->mapper->toRuntimeEvent($runEvent);
+            $runtimeEvent = $this->mapper->toRuntimeEvent($runEvent);
+            if (null !== $runtimeEvent) {
+                yield $runtimeEvent;
+            }
         }
     }
 
