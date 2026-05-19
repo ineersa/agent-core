@@ -69,10 +69,17 @@ final class RuntimeEventPoller
             foreach ($events as $runtimeEvent) {
                 /** @var RuntimeEvent $runtimeEvent */
                 $seq = $runtimeEvent->seq;
-                if ($seq <= $state->lastSeq) {
+
+                // Seq 0 marks transient streaming events that do not
+                // participate in persistent deduplication. Only stored
+                // canonical events (seq > 0) advance the dedup cursor.
+                if (0 !== $seq && $seq <= $state->lastSeq) {
                     continue;
                 }
-                $state->lastSeq = $seq;
+
+                if (0 !== $seq) {
+                    $state->lastSeq = $seq;
+                }
                 $hasNew = true;
 
                 // Persist the runtime event
