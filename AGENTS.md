@@ -24,39 +24,57 @@ phpstan.dist.neon  PHPStan config (baseline in phpstan-baseline.neon)
 
 ## Development
 
-Prefer Castor tasks over raw tool commands. Run `castor list` to discover
-all available tasks.
+### YOU MUST use Castor — never raw tool commands
+
+**All QA and test commands MUST be run through the Castor task runner.**
+Castor applies the correct flags, excludes, config-file paths, and
+argument ordering that this project requires. Raw vendor-bin commands
+bypass these guarantees.
+
+**FORBIDDEN — do NOT run these directly:**
+
+| Forbidden raw command | Correct Castor command |
+|---|---|
+| `vendor/bin/phpunit` | `castor test` |
+| `vendor/bin/phpunit --filter=X` | `castor test --filter=X` |
+| `vendor/bin/phpstan analyse` | `castor phpstan` |
+| `vendor/bin/phpstan analyse <path>` | `castor phpstan <path>` |
+| `vendor/bin/php-cs-fixer fix` | `castor cs-fix` |
+| `vendor/bin/php-cs-fixer fix <path>` | `castor cs-fix <path>` |
+| `vendor/bin/deptrac analyze` | `castor deptrac` |
+
+Running raw `vendor/bin/phpunit`, `vendor/bin/phpstan`, or
+`vendor/bin/php-cs-fixer` directly will produce **wrong results** —
+missing required flags (`--exclude-group`, `--config`, `--no-progress`,
+`--colors=always`). Always use the Castor wrapper.
+
+### Castor command reference
 
 ```bash
-castor install      # composer install
-castor check        # Full QA (deptrac + phpunit + phpstan + cs-fixer)
-castor test         # PHPUnit tests (excludes tui-e2e and llm-real groups)
-castor test --filter=TestName   # PHPUnit with --filter
-castor test:tui     # TUI e2e snapshot tests (requires tmux)
-castor test:tui-update  # TUI e2e + update golden snapshots
-castor test:llm-real # Real llama.cpp smoke test
-castor deptrac      # Deptrac boundary enforcement
-castor phpstan      # PHPStan static analysis
-castor phpstan src/AgentCore/Domain/  # PHPStan on specific path
+castor install           # composer install
+castor check             # Full QA: deptrac → phpunit → phpstan → cs-fixer
+castor test              # PHPUnit (excludes tui-e2e and llm-real groups)
+castor test --filter=X   # PHPUnit filtered to matching tests
+castor test:tui          # TUI e2e snapshot tests (requires tmux)
+castor test:tui-update   # TUI e2e + update golden snapshots
+castor test:llm-real     # Real llama.cpp smoke test
+castor deptrac           # Deptrac boundary enforcement
+castor phpstan           # PHPStan static analysis (full project)
+castor phpstan src/X/    # PHPStan on a specific path
 castor phpstan:baseline  # Regenerate PHPStan baseline
-castor cs-fix       # PHP CS Fixer (fix in place)
-castor cs-fix src/AgentCore/   # CS Fixer on specific path
-castor cs-check     # PHP CS Fixer (dry-run check only)
-castor cache:clear  # Remove generated QA caches (deptrac, php-cs-fixer, phpstan)
-castor idea:run-configs  # Generate PhpStorm run configurations for Castor tasks
-castor run:agent       # Launch the agent TUI in a tmux session
-castor run:agent-test   # Deterministic tmux session for snapshot testing
-castor worktree:remove <slug-or-path> --force [--delete-branch]  # Remove task worktree
+castor cs-fix            # PHP CS Fixer (fix in place, full project)
+castor cs-fix src/X/     # CS Fixer on a specific path
+castor cs-check          # PHP CS Fixer (dry-run check only)
+castor cache:clear       # Remove generated QA caches
+castor run:agent         # Launch agent TUI in a tmux session
+castor run:agent-test    # Deterministic tmux session for snapshot testing
+castor worktree:remove <slug> --force [--delete-branch]
+castor idea:run-configs  # Generate PhpStorm run configurations
 ```
 
 `castor check` does NOT run tmux e2e tests (`tui-e2e` group) because they
 require tmux and are environment-sensitive. Use `castor test:tui`
 explicitly when testing TUI rendering changes.
-
-Using Castor ensures consistent flags and ordering. Raw commands
-(`vendor/bin/phpunit`, `vendor/bin/deptrac`, etc.) are acceptable for
-debugging individual failures but should not be used for normal
-validation.
 
 ## Development rules
 
@@ -227,7 +245,7 @@ Architecture documentation within the source tree:
 | `src/AgentCore/Domain/Event/AGENTS.md` | Event lifecycle taxonomy, ordering constraints, projection sinks |
 | `src/AgentCore/Application/AGENTS.md` | Command→handler topology, message dispatch flow, event projectors, observability wiring |
 | `src/AgentCore/Infrastructure/Doctrine/AGENTS.md` | Doctrine persistence schema migration notes |
-| `.pi/plans/architecture_rollout_plan.md` | Architecture rollout plan and history |
+| `.pi/plans/` | Design and rollout plans for past and current features |
 | `docs/tui-architecture.md` | Full TUI architecture: layout, widgets, slots, theme system, built-in themes |
 | `docs/tui-testing.md` | TUI tmux testing: `run:agent`, `run:agent-test`, snapshots, keybindings, golden e2e tests |
 | `tests/Tui/Snapshots/` | Golden TUI snapshot fixtures for e2e comparison |

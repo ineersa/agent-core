@@ -25,12 +25,12 @@ Parallelizable with: RTVS-02.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/rtvs-01-runtime-event-contract
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-01-runtime-event-contract
 Fork run: 56d2y2rdh24l
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/28
+PR Status: open
 Started: 2026-05-19T01:13:20.351Z
 Completed:
 
@@ -47,3 +47,9 @@ Completed:
 ## Task workflow update - 2026-05-19T01:22:15.420Z
 - Recorded fork run: 56d2y2rdh24l
 - Summary: RTVS-01 complete. Created `RuntimeEventType` string-backed enum with 41 event cases covering all plan families, AGENTS.md payload docs, and 49 tests. All 266 CodingAgent tests pass, deptrac clean. Committed as 77dd926b on task/rtvs-01-runtime-event-contract. Ready for CODE-REVIEW.
+
+## Task workflow update - 2026-05-19T01:27:41.358Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/rtvs-01-runtime-event-contract to origin.
+- branch 'task/rtvs-01-runtime-event-contract' set up to track 'origin/task/rtvs-01-runtime-event-contract'.
+- Created PR: https://github.com/ineersa/agent-core/pull/28
