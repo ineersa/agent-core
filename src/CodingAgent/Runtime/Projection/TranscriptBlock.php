@@ -11,14 +11,14 @@ namespace Ineersa\CodingAgent\Runtime\Projection;
  * conversation. They are produced by the TranscriptProjector from raw
  * RuntimeEvents and consumed by TUI rendering widgets.
  *
- * Blocks are immutable value objects with full round-trip serialization
- * via toArray()/fromArray(), suitable for transcript.jsonl persistence.
+ * Blocks are immutable value objects. Serialization for transcript.jsonl
+ * persistence is handled via Symfony Serializer (ObjectNormalizer + BackedEnumNormalizer).
  */
 final readonly class TranscriptBlock
 {
     /**
      * @param string                $id        Stable block identifier (message_id, tool_call_id, block UUID, etc.)
-     * @param TranscriptBlockKind   $kind      The kind of block this represents
+     * @param TranscriptBlockKindEnum $kind      The kind of block this represents
      * @param string                $runId     The run this block belongs to
      * @param int                   $seq       Monotonic sequence number (for deterministic ordering)
      * @param string                $text      Visible text content of the block
@@ -28,7 +28,7 @@ final readonly class TranscriptBlock
      */
     public function __construct(
         public string $id,
-        public TranscriptBlockKind $kind,
+        public TranscriptBlockKindEnum $kind,
         public string $runId,
         public int $seq,
         public string $text = '',
@@ -85,43 +85,5 @@ final readonly class TranscriptBlock
     public function finalize(): self
     {
         return $this->with(streaming: false);
-    }
-
-    /**
-     * Serialize to an array suitable for JSONL persistence.
-     *
-     * @return array{id: string, kind: string, runId: string, seq: int, text: string, meta: array<string, mixed>, streaming: bool, collapsed: bool}
-     */
-    public function toArray(): array
-    {
-        return [
-            'id' => $this->id,
-            'kind' => $this->kind->value,
-            'runId' => $this->runId,
-            'seq' => $this->seq,
-            'text' => $this->text,
-            'meta' => $this->meta,
-            'streaming' => $this->streaming,
-            'collapsed' => $this->collapsed,
-        ];
-    }
-
-    /**
-     * Deserialize from an array (e.g., from JSONL).
-     *
-     * @param array<string, mixed> $data
-     */
-    public static function fromArray(array $data): self
-    {
-        return new self(
-            id: (string) ($data['id'] ?? ''),
-            kind: TranscriptBlockKind::from((string) ($data['kind'] ?? 'user_message')),
-            runId: (string) ($data['runId'] ?? ''),
-            seq: (int) ($data['seq'] ?? 0),
-            text: (string) ($data['text'] ?? ''),
-            meta: (array) ($data['meta'] ?? []),
-            streaming: (bool) ($data['streaming'] ?? false),
-            collapsed: (bool) ($data['collapsed'] ?? false),
-        );
     }
 }

@@ -5,28 +5,43 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\Projection;
 
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
-use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKind;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Serializer\Exception\MissingConstructorArgumentsException;
+use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
+use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
+use Symfony\Component\Serializer\Serializer;
+use Symfony\Component\Serializer\SerializerInterface;
 
 #[CoversClass(TranscriptBlock::class)]
-#[CoversClass(TranscriptBlockKind::class)]
+#[CoversClass(TranscriptBlockKindEnum::class)]
 final class TranscriptBlockTest extends TestCase
 {
+    private SerializerInterface $serializer;
+
+    protected function setUp(): void
+    {
+        $this->serializer = new Serializer(
+            [new BackedEnumNormalizer(), new ObjectNormalizer()],
+            [],
+        );
+    }
+
     // ── Construction ────────────────────────────────────────────────────────
 
     public function test_construct_with_minimal_fields(): void
     {
         $block = new TranscriptBlock(
             id: 'msg_1',
-            kind: TranscriptBlockKind::UserMessage,
+            kind: TranscriptBlockKindEnum::UserMessage,
             runId: 'run_abc',
             seq: 1,
         );
 
         self::assertSame('msg_1', $block->id);
-        self::assertSame(TranscriptBlockKind::UserMessage, $block->kind);
+        self::assertSame(TranscriptBlockKindEnum::UserMessage, $block->kind);
         self::assertSame('run_abc', $block->runId);
         self::assertSame(1, $block->seq);
         self::assertSame('', $block->text);
@@ -39,7 +54,7 @@ final class TranscriptBlockTest extends TestCase
     {
         $block = new TranscriptBlock(
             id: 'tool_1',
-            kind: TranscriptBlockKind::ToolCall,
+            kind: TranscriptBlockKindEnum::ToolCall,
             runId: 'run_xyz',
             seq: 5,
             text: 'bash: ls -la',
@@ -49,7 +64,7 @@ final class TranscriptBlockTest extends TestCase
         );
 
         self::assertSame('tool_1', $block->id);
-        self::assertSame(TranscriptBlockKind::ToolCall, $block->kind);
+        self::assertSame(TranscriptBlockKindEnum::ToolCall, $block->kind);
         self::assertSame('run_xyz', $block->runId);
         self::assertSame(5, $block->seq);
         self::assertSame('bash: ls -la', $block->text);
@@ -59,27 +74,27 @@ final class TranscriptBlockTest extends TestCase
     }
 
     /**
-     * @return array<string, array{0: TranscriptBlockKind}>
+     * @return array<string, array{0: TranscriptBlockKindEnum}>
      */
     public static function allBlockKinds(): array
     {
         return [
-            'user_message' => [TranscriptBlockKind::UserMessage],
-            'assistant_message' => [TranscriptBlockKind::AssistantMessage],
-            'assistant_thinking' => [TranscriptBlockKind::AssistantThinking],
-            'tool_call' => [TranscriptBlockKind::ToolCall],
-            'tool_result' => [TranscriptBlockKind::ToolResult],
-            'progress' => [TranscriptBlockKind::Progress],
-            'question' => [TranscriptBlockKind::Question],
-            'approval' => [TranscriptBlockKind::Approval],
-            'cancelled' => [TranscriptBlockKind::Cancelled],
-            'error' => [TranscriptBlockKind::Error],
-            'system' => [TranscriptBlockKind::System],
+            'user_message' => [TranscriptBlockKindEnum::UserMessage],
+            'assistant_message' => [TranscriptBlockKindEnum::AssistantMessage],
+            'assistant_thinking' => [TranscriptBlockKindEnum::AssistantThinking],
+            'tool_call' => [TranscriptBlockKindEnum::ToolCall],
+            'tool_result' => [TranscriptBlockKindEnum::ToolResult],
+            'progress' => [TranscriptBlockKindEnum::Progress],
+            'question' => [TranscriptBlockKindEnum::Question],
+            'approval' => [TranscriptBlockKindEnum::Approval],
+            'cancelled' => [TranscriptBlockKindEnum::Cancelled],
+            'error' => [TranscriptBlockKindEnum::Error],
+            'system' => [TranscriptBlockKindEnum::System],
         ];
     }
 
     #[DataProvider('allBlockKinds')]
-    public function test_construct_all_block_kinds(TranscriptBlockKind $kind): void
+    public function test_construct_all_block_kinds(TranscriptBlockKindEnum $kind): void
     {
         $block = new TranscriptBlock(
             id: 'b1',
@@ -93,7 +108,7 @@ final class TranscriptBlockTest extends TestCase
         self::assertSame('text for '.$kind->value, $block->text);
     }
 
-    // ── TranscriptBlockKind enum values ────────────────────────────────────
+    // ── TranscriptBlockKindEnum values ─────────────────────────────────────
 
     public function test_enum_values(): void
     {
@@ -112,8 +127,8 @@ final class TranscriptBlockTest extends TestCase
         ];
 
         $actual = array_map(
-            fn (TranscriptBlockKind $k): string => $k->value,
-            TranscriptBlockKind::cases(),
+            fn (TranscriptBlockKindEnum $k): string => $k->value,
+            TranscriptBlockKindEnum::cases(),
         );
 
         self::assertSame($expected, $actual);
@@ -122,23 +137,23 @@ final class TranscriptBlockTest extends TestCase
     public function test_enum_from_string(): void
     {
         self::assertSame(
-            TranscriptBlockKind::AssistantMessage,
-            TranscriptBlockKind::from('assistant_message'),
+            TranscriptBlockKindEnum::AssistantMessage,
+            TranscriptBlockKindEnum::from('assistant_message'),
         );
     }
 
     public function test_enum_tryFrom_invalid(): void
     {
-        self::assertNull(TranscriptBlockKind::tryFrom('invalid_kind'));
+        self::assertNull(TranscriptBlockKindEnum::tryFrom('invalid_kind'));
     }
 
-    // ── toArray / fromArray round-trip ─────────────────────────────────────
+    // ── Symfony Serializer round-trip ───────────────────────────────────────
 
-    public function test_toArray_includes_all_fields(): void
+    public function test_normalize_produces_correct_array(): void
     {
         $block = new TranscriptBlock(
             id: 'msg_2',
-            kind: TranscriptBlockKind::AssistantMessage,
+            kind: TranscriptBlockKindEnum::AssistantMessage,
             runId: 'run_a',
             seq: 3,
             text: 'Hello, world!',
@@ -147,21 +162,20 @@ final class TranscriptBlockTest extends TestCase
             collapsed: false,
         );
 
-        $arr = $block->toArray();
+        /** @var array<string, mixed> $arr */
+        $arr = $this->serializer->normalize($block);
 
-        self::assertSame([
-            'id' => 'msg_2',
-            'kind' => 'assistant_message',
-            'runId' => 'run_a',
-            'seq' => 3,
-            'text' => 'Hello, world!',
-            'meta' => ['model' => 'claude-3'],
-            'streaming' => false,
-            'collapsed' => false,
-        ], $arr);
+        self::assertSame('msg_2', $arr['id']);
+        self::assertSame('assistant_message', $arr['kind']);
+        self::assertSame('run_a', $arr['runId']);
+        self::assertSame(3, $arr['seq']);
+        self::assertSame('Hello, world!', $arr['text']);
+        self::assertSame(['model' => 'claude-3'], $arr['meta']);
+        self::assertFalse($arr['streaming']);
+        self::assertFalse($arr['collapsed']);
     }
 
-    public function test_fromArray_reconstructs_block(): void
+    public function test_denormalize_reconstructs_block(): void
     {
         $data = [
             'id' => 'msg_3',
@@ -174,10 +188,11 @@ final class TranscriptBlockTest extends TestCase
             'collapsed' => false,
         ];
 
-        $block = TranscriptBlock::fromArray($data);
+        $block = $this->serializer->denormalize($data, TranscriptBlock::class);
 
+        self::assertInstanceOf(TranscriptBlock::class, $block);
         self::assertSame('msg_3', $block->id);
-        self::assertSame(TranscriptBlockKind::AssistantThinking, $block->kind);
+        self::assertSame(TranscriptBlockKindEnum::AssistantThinking, $block->kind);
         self::assertSame('run_b', $block->runId);
         self::assertSame(7, $block->seq);
         self::assertSame('Let me think about this...', $block->text);
@@ -190,7 +205,7 @@ final class TranscriptBlockTest extends TestCase
     {
         $original = new TranscriptBlock(
             id: 'roundtrip_1',
-            kind: TranscriptBlockKind::ToolResult,
+            kind: TranscriptBlockKindEnum::ToolResult,
             runId: 'run_rt',
             seq: 42,
             text: "total 0\ndrwxr-xr-x",
@@ -204,8 +219,11 @@ final class TranscriptBlockTest extends TestCase
             collapsed: true,
         );
 
-        $reconstructed = TranscriptBlock::fromArray($original->toArray());
+        $normalized = $this->serializer->normalize($original);
+        self::assertIsArray($normalized);
+        $reconstructed = $this->serializer->denormalize($normalized, TranscriptBlock::class);
 
+        self::assertInstanceOf(TranscriptBlock::class, $reconstructed);
         self::assertSame($original->id, $reconstructed->id);
         self::assertSame($original->kind, $reconstructed->kind);
         self::assertSame($original->runId, $reconstructed->runId);
@@ -216,41 +234,32 @@ final class TranscriptBlockTest extends TestCase
         self::assertSame($original->collapsed, $reconstructed->collapsed);
     }
 
-    public function test_fromArray_with_missing_fields_uses_defaults(): void
+    public function test_denormalize_missing_required_fields_throws(): void
     {
-        $block = TranscriptBlock::fromArray([]);
+        $this->expectException(MissingConstructorArgumentsException::class);
 
-        self::assertSame('', $block->id);
-        // kind defaults to user_message via TranscriptBlockKind::from('user_message')
-        self::assertSame(TranscriptBlockKind::UserMessage, $block->kind);
-        self::assertSame('', $block->runId);
-        self::assertSame(0, $block->seq);
-        self::assertSame('', $block->text);
-        self::assertSame([], $block->meta);
-        self::assertFalse($block->streaming);
-        self::assertFalse($block->collapsed);
+        $this->serializer->denormalize([], TranscriptBlock::class);
     }
 
-    public function test_fromArray_with_nested_meta(): void
+    public function test_normalize_denormalize_all_enum_kinds(): void
     {
-        $data = [
-            'id' => 'b_nested',
-            'kind' => 'tool_call',
-            'runId' => 'run_n',
-            'seq' => 10,
-            'text' => '',
-            'meta' => [
-                'tool_name' => 'read',
-                'arguments' => ['path' => '/tmp/foo.txt'],
-            ],
-            'streaming' => false,
-            'collapsed' => false,
-        ];
+        foreach (TranscriptBlockKindEnum::cases() as $kind) {
+            $original = new TranscriptBlock(
+                id: 'b_'.$kind->value,
+                kind: $kind,
+                runId: 'run_serial',
+                seq: 1,
+                text: 'block of kind '.$kind->value,
+            );
 
-        $block = TranscriptBlock::fromArray($data);
+            $normalized = $this->serializer->normalize($original);
+            self::assertIsArray($normalized);
 
-        self::assertSame('read', $block->meta['tool_name']);
-        self::assertSame(['path' => '/tmp/foo.txt'], $block->meta['arguments']);
+            $restored = $this->serializer->denormalize($normalized, TranscriptBlock::class);
+            self::assertInstanceOf(TranscriptBlock::class, $restored);
+            self::assertSame($kind, $restored->kind);
+            self::assertSame($original->text, $restored->text);
+        }
     }
 
     // ── Streaming state transitions ────────────────────────────────────────
@@ -259,7 +268,7 @@ final class TranscriptBlockTest extends TestCase
     {
         $block = new TranscriptBlock(
             id: 's1',
-            kind: TranscriptBlockKind::AssistantMessage,
+            kind: TranscriptBlockKindEnum::AssistantMessage,
             runId: 'run_s',
             seq: 1,
         );
@@ -271,7 +280,7 @@ final class TranscriptBlockTest extends TestCase
     {
         $original = new TranscriptBlock(
             id: 's2',
-            kind: TranscriptBlockKind::AssistantMessage,
+            kind: TranscriptBlockKindEnum::AssistantMessage,
             runId: 'run_s',
             seq: 2,
             text: '',
@@ -299,7 +308,7 @@ final class TranscriptBlockTest extends TestCase
     {
         $streamingBlock = new TranscriptBlock(
             id: 's3',
-            kind: TranscriptBlockKind::AssistantThinking,
+            kind: TranscriptBlockKindEnum::AssistantThinking,
             runId: 'run_s',
             seq: 3,
             text: 'partial thinking...',
@@ -319,7 +328,7 @@ final class TranscriptBlockTest extends TestCase
     {
         $block = new TranscriptBlock(
             id: 's4',
-            kind: TranscriptBlockKind::AssistantMessage,
+            kind: TranscriptBlockKindEnum::AssistantMessage,
             runId: 'run_s',
             seq: 4,
             text: 'Hello',
@@ -339,7 +348,7 @@ final class TranscriptBlockTest extends TestCase
     {
         $block = new TranscriptBlock(
             id: 's5',
-            kind: TranscriptBlockKind::AssistantMessage,
+            kind: TranscriptBlockKindEnum::AssistantMessage,
             runId: 'run_s',
             seq: 5,
             text: 'unchanged',
@@ -356,7 +365,7 @@ final class TranscriptBlockTest extends TestCase
         // Simulate a full streaming lifecycle: start streaming -> deltas -> finalize
         $block = new TranscriptBlock(
             id: 'lifecycle_1',
-            kind: TranscriptBlockKind::AssistantMessage,
+            kind: TranscriptBlockKindEnum::AssistantMessage,
             runId: 'run_lc',
             seq: 10,
             text: '',
@@ -383,7 +392,7 @@ final class TranscriptBlockTest extends TestCase
     {
         $original = new TranscriptBlock(
             id: 'w1',
-            kind: TranscriptBlockKind::Error,
+            kind: TranscriptBlockKindEnum::Error,
             runId: 'run_w',
             seq: 100,
             text: 'Something went wrong',
@@ -395,7 +404,7 @@ final class TranscriptBlockTest extends TestCase
         $updated = $original->with(streaming: true);
 
         self::assertSame('w1', $updated->id);
-        self::assertSame(TranscriptBlockKind::Error, $updated->kind);
+        self::assertSame(TranscriptBlockKindEnum::Error, $updated->kind);
         self::assertSame('run_w', $updated->runId);
         self::assertSame(100, $updated->seq);
         self::assertSame('Something went wrong', $updated->text);
@@ -408,7 +417,7 @@ final class TranscriptBlockTest extends TestCase
     {
         $original = new TranscriptBlock(
             id: 'w2',
-            kind: TranscriptBlockKind::ToolCall,
+            kind: TranscriptBlockKindEnum::ToolCall,
             runId: 'run_w',
             seq: 200,
             text: '',
@@ -433,7 +442,7 @@ final class TranscriptBlockTest extends TestCase
     {
         $original = new TranscriptBlock(
             id: 'w3',
-            kind: TranscriptBlockKind::ToolCall,
+            kind: TranscriptBlockKindEnum::ToolCall,
             runId: 'run_w',
             seq: 300,
             meta: ['tool_name' => 'bash'],

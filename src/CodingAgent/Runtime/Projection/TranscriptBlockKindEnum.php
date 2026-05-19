@@ -11,7 +11,7 @@ namespace Ineersa\CodingAgent\Runtime\Projection;
  * and what metadata it carries. This enum is the stable contract between
  * runtime projection and TUI rendering.
  */
-enum TranscriptBlockKind: string
+enum TranscriptBlockKindEnum: string
 {
     /** A user-submitted message. */
     case UserMessage = 'user_message';
