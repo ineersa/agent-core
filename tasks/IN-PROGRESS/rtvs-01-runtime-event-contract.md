@@ -25,14 +25,21 @@ Parallelizable with: RTVS-02.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/rtvs-01-runtime-event-contract
+Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-01-runtime-event-contract
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-19T01:13:20.351Z
 Completed:
 
 ## Work log
 - Created: 2026-05-17T22:16:19.329Z
+
+## Task workflow update - 2026-05-19T01:13:20.351Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/rtvs-01-runtime-event-contract.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/rtvs-01-runtime-event-contract.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/rtvs-01-runtime-event-contract.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/rtvs-01-runtime-event-contract.
