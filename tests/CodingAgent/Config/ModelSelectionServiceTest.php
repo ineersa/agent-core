@@ -439,4 +439,594 @@ class ModelSelectionServiceTest extends TestCase
         self::assertSame('abc123', $meta['session_id']);
         self::assertSame('deepseek/deepseek-v4-pro', $meta['model']);
     }
+
+    // ──────────────────────────────────────────────
+    //  Favorites
+    // ──────────────────────────────────────────────
+
+    public function testGetFavoriteModelsReturnsConfiguredFavorites(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro', 'llama_cpp/flash'];
+        $service = $this->buildService($aiData);
+
+        $favs = $service->getFavoriteModels();
+
+        self::assertCount(2, $favs);
+        self::assertSame('deepseek/deepseek-v4-pro', $favs[0]);
+        self::assertSame('llama_cpp/flash', $favs[1]);
+    }
+
+    public function testGetFavoriteModelsFiltersUnavailable(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro', 'nonexistent/ghost'];
+        $service = $this->buildService($aiData);
+
+        $favs = $service->getFavoriteModels();
+
+        self::assertCount(1, $favs);
+        self::assertSame('deepseek/deepseek-v4-pro', $favs[0]);
+    }
+
+    public function testGetOrderedModelsPutsFavoritesFirst(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['llama_cpp/flash'];
+        $service = $this->buildService($aiData);
+
+        $ordered = $service->getOrderedModels();
+
+        self::assertCount(3, $ordered);
+        // First should be the favorite
+        self::assertSame('llama_cpp', $ordered[0]->providerId);
+        self::assertSame('flash', $ordered[0]->modelName);
+    }
+
+    public function testIsFavoriteReturnsTrueForFavoritedModel(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro'];
+        $service = $this->buildService($aiData);
+
+        self::assertTrue($service->isFavorite('deepseek/deepseek-v4-pro'));
+        self::assertFalse($service->isFavorite('llama_cpp/flash'));
+    }
+
+    public function testToggleFavoriteAddsModel(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro'];
+        $service = $this->buildService($aiData);
+
+        $service->toggleFavorite(new AiModelReference('llama_cpp', 'flash'));
+
+        // Verify persisted to home settings
+        $homeContent = file_get_contents($this->homeSettingsPath());
+        self::assertStringContainsString('deepseek/deepseek-v4-pro', $homeContent);
+        self::assertStringContainsString('llama_cpp/flash', $homeContent);
+    }
+
+    public function testToggleFavoriteRemovesModel(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro', 'llama_cpp/flash'];
+        $service = $this->buildService($aiData);
+
+        $service->toggleFavorite(new AiModelReference('deepseek', 'deepseek-v4-pro'));
+
+        $homeContent = file_get_contents($this->homeSettingsPath());
+        self::assertStringNotContainsString('deepseek/deepseek-v4-pro', $homeContent);
+        self::assertStringContainsString('llama_cpp/flash', $homeContent);
+    }
+
+    public function testToggleFavoriteThrowsOnUnavailableModel(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('not available');
+
+        $service->toggleFavorite(new AiModelReference('mystery', 'ghost'));
+    }
+
+    // ──────────────────────────────────────────────
+    //  Immediate favorite visibility (regression: cache consistency)
+    // ──────────────────────────────────────────────
+
+    public function testToggleFavoriteAddIsImmediatelyVisibleInGetFavoriteModels(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro'];
+        $service = $this->buildService($aiData);
+
+        // Before: only one favorite
+        self::assertCount(1, $service->getFavoriteModels());
+
+        // Toggle add
+        $service->toggleFavorite(new AiModelReference('llama_cpp', 'flash'));
+
+        // After: both favorites visible without rebuilding AppConfig
+        $favs = $service->getFavoriteModels();
+        self::assertCount(2, $favs);
+        self::assertContains('llama_cpp/flash', $favs);
+        self::assertContains('deepseek/deepseek-v4-pro', $favs);
+    }
+
+    public function testToggleFavoriteAddIsImmediatelyVisibleInIsFavorite(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+
+        // Before: not a favorite
+        self::assertFalse($service->isFavorite('llama_cpp/flash'));
+
+        // Toggle add
+        $service->toggleFavorite(new AiModelReference('llama_cpp', 'flash'));
+
+        // After: isFavorite returns true immediately
+        self::assertTrue($service->isFavorite('llama_cpp/flash'));
+    }
+
+    public function testToggleFavoriteAddIsImmediatelyVisibleInGetOrderedModels(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+
+        // Toggle add a model that was previously not a favorite
+        $service->toggleFavorite(new AiModelReference('llama_cpp', 'flash'));
+
+        $ordered = $service->getOrderedModels();
+
+        self::assertCount(3, $ordered);
+        // The newly favorited model should be first
+        self::assertSame('llama_cpp', $ordered[0]->providerId);
+        self::assertSame('flash', $ordered[0]->modelName);
+    }
+
+    public function testToggleFavoriteAddIsImmediatelyVisibleInCycleFavoriteModel(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro'];
+        $service = $this->buildService($aiData);
+
+        // Add a second favorite
+        $service->toggleFavorite(new AiModelReference('llama_cpp', 'flash'));
+
+        // Current model is default: deepseek/deepseek-v4-pro (first favorite)
+        // Cycling should go to the newly added second favorite
+        $next = $service->cycleFavoriteModel('abc123');
+
+        self::assertNotNull($next);
+        self::assertSame('llama_cpp', $next->providerId);
+        self::assertSame('flash', $next->modelName);
+    }
+
+    public function testToggleFavoriteRemoveIsImmediatelyVisible(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro', 'llama_cpp/flash'];
+        $service = $this->buildService($aiData);
+
+        // Before: two favorites
+        self::assertCount(2, $service->getFavoriteModels());
+        self::assertTrue($service->isFavorite('llama_cpp/flash'));
+
+        // Toggle remove
+        $service->toggleFavorite(new AiModelReference('llama_cpp', 'flash'));
+
+        // After: only one favorite, removed one gone immediately
+        $favs = $service->getFavoriteModels();
+        self::assertCount(1, $favs);
+        self::assertNotContains('llama_cpp/flash', $favs);
+        self::assertFalse($service->isFavorite('llama_cpp/flash'));
+    }
+
+    public function testToggleFavoriteRemoveAffectsOrderedModelsImmediately(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['llama_cpp/flash', 'deepseek/deepseek-v4-pro'];
+        $service = $this->buildService($aiData);
+
+        // Remove the first favorite
+        $service->toggleFavorite(new AiModelReference('llama_cpp', 'flash'));
+
+        $ordered = $service->getOrderedModels();
+
+        // The remaining favorite should now be first
+        self::assertCount(3, $ordered);
+        self::assertSame('deepseek', $ordered[0]->providerId);
+        self::assertSame('deepseek-v4-pro', $ordered[0]->modelName);
+    }
+
+    // ──────────────────────────────────────────────
+    //  Cycling
+    // ──────────────────────────────────────────────
+
+    public function testCycleFavoriteModelReturnsNextFavorite(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro', 'llama_cpp/flash'];
+        $service = $this->buildService($aiData);
+
+        $next = $service->cycleFavoriteModel('abc123');
+
+        self::assertNotNull($next);
+        // Current defaults to default_model (deepseek/deepseek-v4-pro), which is first in favorites
+        // So next should be the second favorite
+        self::assertSame('llama_cpp', $next->providerId);
+        self::assertSame('flash', $next->modelName);
+    }
+
+    public function testCycleFavoriteModelWrapsAround(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro', 'llama_cpp/flash'];
+        $service = $this->buildService($aiData);
+
+        // First set current to the last favorite
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+
+        $next = $service->cycleFavoriteModel('abc123');
+
+        self::assertNotNull($next);
+        // Should wrap to first
+        self::assertSame('deepseek', $next->providerId);
+        self::assertSame('deepseek-v4-pro', $next->modelName);
+    }
+
+    public function testCycleFavoriteModelReturnsNullWhenNoFavorites(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+
+        $next = $service->cycleFavoriteModel('abc123');
+
+        self::assertNull($next);
+    }
+
+    public function testCycleReasoningReturnsNextLevel(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+
+        self::assertSame('high', $service->cycleReasoning('medium'));
+        self::assertSame('xhigh', $service->cycleReasoning('high'));
+        self::assertSame('off', $service->cycleReasoning('xhigh'));
+        self::assertSame('minimal', $service->cycleReasoning('off'));
+    }
+
+    public function testCycleReasoningWrapsToBeginning(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+
+        self::assertSame('off', $service->cycleReasoning('xhigh'));
+    }
+
+    public function testCycleReasoningStartsFromBeginningForUnknownLevel(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+
+        self::assertSame('off', $service->cycleReasoning('unknown'));
+    }
+
+    public function testGetCurrentModelResolvesFromSessionMetadata(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+        $this->writeSessionMetadata('abc123', ['model' => 'llama_cpp/flash']);
+
+        $current = $service->getCurrentModel('abc123');
+
+        self::assertNotNull($current);
+        self::assertSame('llama_cpp', $current->providerId);
+        self::assertSame('flash', $current->modelName);
+    }
+
+    public function testGetCurrentReasoningResolvesFromSessionMetadata(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+        $this->writeSessionMetadata('abc123', ['reasoning' => 'xhigh']);
+
+        $current = $service->getCurrentReasoning('abc123');
+
+        self::assertSame('xhigh', $current);
+    }
+
+    public function testAiConfigParsesFavoriteModels(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro', 'llama_cpp/flash'];
+        $service = $this->buildService($aiData);
+
+        $favs = $service->getFavoriteModels();
+
+        self::assertCount(2, $favs);
+        self::assertSame('deepseek/deepseek-v4-pro', $favs[0]);
+        self::assertSame('llama_cpp/flash', $favs[1]);
+    }
+
+    // ──────────────────────────────────────────────
+    //  Persistence across restart (EDITOR / AI-14)
+    // ──────────────────────────────────────────────
+
+    /**
+     * After changing the model via changeModel(), the home settings file
+     * should be updated.  Re-creating the service from the persisted home
+     * file must resolve the new model — even when a project settings file
+     * exists (but does NOT override default_model).
+     *
+     * This simulates the restart scenario: user changes model, exits the
+     * TUI, and starts a new session.
+     */
+    public function testModelChangePersistsToHomeSettingsForRestart(): void
+    {
+        // Arrange: service with standard AI config
+        $aiData = $this->standardAiData();
+        $service = $this->buildService($aiData);
+
+        // Act: change model to a different one
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'restart-session');
+
+        // Assert: home settings file was updated
+        $homeContent = file_get_contents($this->homeDir.'/.hatfield/settings.yaml');
+        self::assertNotFalse($homeContent);
+        self::assertStringContainsString('default_model: llama_cpp/flash', (string) $homeContent);
+
+        // Simulate restart: create a fresh service from the persisted home data.
+        // Use the same AppConfig creation path as buildService() but with
+        // aiData that does NOT specify default_model (simulating project file
+        // without it, which is the fixed state after this changeset).
+        $aiDataWithoutDefault = $this->standardAiData();
+        unset($aiDataWithoutDefault['default_model'], $aiDataWithoutDefault['default_reasoning']);
+        $newService = $this->buildService($aiDataWithoutDefault);
+
+        // The resolved model should be the one persisted to home settings
+        $resolved = $newService->getCurrentModel('restart-session');
+        self::assertNotNull($resolved);
+        self::assertSame('llama_cpp', $resolved->providerId);
+        self::assertSame('flash', $resolved->modelName);
+    }
+
+    /**
+     * When project settings do NOT specify default_model, the home
+     * settings value should win without being overridden.
+     */
+    public function testHomeDefaultModelWinsWhenProjectDoesNotOverride(): void
+    {
+        // Build with default_model only in the aiData (not via home file yet)
+        $aiData = $this->standardAiData();
+        unset($aiData['default_model']);
+        $service = $this->buildService($aiData);
+
+        // Persist to home via changeModel
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+
+        // Re-create service with aiData that has NO default_model
+        // (simulating project without default_model override)
+        $newService = $this->buildService($aiData);
+
+        $resolved = $newService->getCurrentModel('abc123');
+        self::assertNotNull($resolved);
+        self::assertSame('llama_cpp', $resolved->providerId);
+        self::assertSame('flash', $resolved->modelName);
+    }
+
+    // ──────────────────────────────────────────────
+    //  Thinking levels support (AI-14)
+    // ──────────────────────────────────────────────
+
+    public function testSupportsThinkingLevelsForSessionReturnsTrueForReasoningModel(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+
+        // deepseek/deepseek-v4-pro has reasoning=true and provider supportsThinkingLevels=true (default)
+        self::assertTrue($service->supportsThinkingLevelsForSession('abc123'));
+    }
+
+    public function testSupportsThinkingLevelsForSessionReturnsFalseForNonReasoningModel(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+        // Switch to llama_cpp/flash which has reasoning=false
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+
+        self::assertFalse($service->supportsThinkingLevelsForSession('abc123'));
+    }
+
+    public function testSupportsThinkingLevelsForSessionReturnsFalseWhenProviderDisabled(): void
+    {
+        $aiData = $this->standardAiData();
+        // llama_cpp with supports_thinking_levels explicitly false
+        $aiData['providers']['llama_cpp']['supports_thinking_levels'] = false;
+        $service = $this->buildService($aiData);
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+
+        self::assertFalse($service->supportsThinkingLevelsForSession('abc123'));
+    }
+
+    public function testCycleReasoningForCurrentModelSuccess(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+
+        // deepseek/deepseek-v4-pro supports reasoning, current is 'medium'
+        $result = $service->cycleReasoningForCurrentModel('abc123');
+
+        self::assertNotNull($result);
+        self::assertSame('high', $result);
+
+        // Verify persistence
+        $meta = $this->readSessionMetadata('abc123');
+        self::assertSame('high', $meta['reasoning']);
+    }
+
+    public function testCycleReasoningForCurrentModelReturnsNullWhenUnsupported(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+        // Switch to a model that doesn't support reasoning
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+
+        $result = $service->cycleReasoningForCurrentModel('abc123');
+
+        self::assertNull($result);
+    }
+
+    public function testCycleReasoningForCurrentModelReturnsNullWhenProviderThinkingLevelsDisabled(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['providers']['llama_cpp']['supports_thinking_levels'] = false;
+        $service = $this->buildService($aiData);
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+
+        $result = $service->cycleReasoningForCurrentModel('abc123');
+
+        self::assertNull($result);
+    }
+
+    // ──────────────────────────────────────────────
+    //  Display reasoning (footer color reset)
+    // ──────────────────────────────────────────────
+
+    public function testGetDisplayReasoningReturnsCurrentForThinkingModel(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+        // deepseek/deepseek-v4-pro supports reasoning, current defaults to medium
+        self::assertSame('medium', $service->getDisplayReasoning('abc123'));
+
+        $service->changeReasoning('xhigh', 'abc123');
+        self::assertSame('xhigh', $service->getDisplayReasoning('abc123'));
+    }
+
+    public function testGetDisplayReasoningReturnsOffForNonThinkingModel(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+        // Switch to a model that doesn't support reasoning, but set reasoning high first
+        $service->changeReasoning('high', 'abc123');
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+
+        // Display reasoning should be 'off' even though session metadata still has 'high'
+        self::assertSame('off', $service->getDisplayReasoning('abc123'));
+
+        // Persisted reasoning still high (cycleReasoning would re-enable it on a thinking model)
+        self::assertSame('high', $service->getCurrentReasoning('abc123'));
+    }
+
+    public function testGetDisplayReasoningReturnsOffWhenProviderThinkingLevelsDisabled(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['providers']['llama_cpp']['supports_thinking_levels'] = false;
+        $service = $this->buildService($aiData);
+        $service->changeReasoning('xhigh', 'abc123');
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+
+        self::assertSame('off', $service->getDisplayReasoning('abc123'));
+    }
+
+    public function testGetDisplayReasoningReturnsOffWhenNoCatalog(): void
+    {
+        $service = $this->buildService([]);
+
+        self::assertSame('off', $service->getDisplayReasoning('abc123'));
+    }
+
+    public function testGetDisplayReasoningReturnsOffForUnknownModel(): void
+    {
+        // Switch to a non-thinking model, then set reasoning high
+        $service = $this->buildService($this->standardAiData());
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+        $service->changeReasoning('high', 'abc123');
+
+        // Switching back from llama (non-thinking) to deepseek (thinking) should
+        // restore the persisted 'high' display reasoning
+        $service->changeModel(new AiModelReference('deepseek', 'deepseek-v4-pro'), 'abc123');
+        self::assertSame('high', $service->getDisplayReasoning('abc123'));
+
+        // Switching back to non-thinking model resets to off
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+        self::assertSame('off', $service->getDisplayReasoning('abc123'));
+    }
+
+    // ──────────────────────────────────────────────
+    //  Supported reasoning levels (per-model cycling)
+    // ──────────────────────────────────────────────
+
+    public function testGetSupportedReasoningLevelsReturnsModelLevels(): void
+    {
+        // deepseek/deepseek-v4-pro has 5 thinking levels + off = 6
+        $service = $this->buildService($this->standardAiData());
+
+        $levels = $service->getSupportedReasoningLevels('abc123');
+
+        self::assertContains('off', $levels);
+        self::assertContains('minimal', $levels);
+        self::assertContains('low', $levels);
+        self::assertContains('medium', $levels);
+        self::assertContains('high', $levels);
+        self::assertContains('xhigh', $levels);
+        // off must be first
+        self::assertSame('off', $levels[0]);
+    }
+
+    public function testGetSupportedReasoningLevelsReturnsOnlyOffForNonReasoningModel(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+        // Switch to llama_cpp/flash (reasoning: false, empty thinkingLevelMap)
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+
+        $levels = $service->getSupportedReasoningLevels('abc123');
+
+        // Empty thinkingLevelMap → only 'off'
+        self::assertSame(['off'], $levels);
+    }
+
+    public function testGetSupportedReasoningLevelsReturnsGlobalLevelsWhenNoModel(): void
+    {
+        $service = $this->buildService([]);
+
+        $levels = $service->getSupportedReasoningLevels('abc123');
+
+        // No catalog → fall back to global LEVELS
+        self::assertSame(ModelSelectionService::LEVELS, $levels);
+    }
+
+    public function testCycleReasoningForCurrentModelDoesNotExposeXhighForZaiStyleModel(): void
+    {
+        // A z.ai-style model that omits xhigh from its thinking_level_map
+        $aiData = $this->standardAiData();
+        $aiData['providers']['zai'] = [
+            'type' => 'generic',
+            'enabled' => true,
+            'base_url' => 'https://api.z.ai/api/coding/paas/v4',
+            'api' => 'openai-completions',
+            'api_key' => 'test-key',
+            'completions_path' => '/chat/completions',
+            'supports_completions' => true,
+            'supports_embeddings' => false,
+            'models' => [
+                'glm-5.1' => [
+                    'name' => 'GLM 5.1',
+                    'context_window' => 200000,
+                    'max_tokens' => 131072,
+                    'input' => ['text'],
+                    'tool_calling' => true,
+                    'reasoning' => true,
+                    // Z.ai has no xhigh — only off, minimal, low, medium, high
+                    'thinking_level_map' => [
+                        'minimal' => 'enabled',
+                        'low' => 'enabled',
+                        'medium' => 'enabled',
+                        'high' => 'enabled',
+                    ],
+                    'cost' => ['input' => 0, 'output' => 0, 'cache_read' => 0, 'cache_write' => 0],
+                ],
+            ],
+        ];
+        $service = $this->buildService($aiData);
+
+        // Change model to z.ai glm-5.1 and set reasoning to 'high'
+        $service->changeModel(new AiModelReference('zai', 'glm-5.1'), 'abc123');
+        $service->changeReasoning('high', 'abc123');
+
+        // Cycling should wrap to 'off' (not 'xhigh')
+        $result = $service->cycleReasoningForCurrentModel('abc123');
+        self::assertSame('off', $result);
+
+        // The next cycle after off goes to minimal
+        $result = $service->cycleReasoningForCurrentModel('abc123');
+        self::assertSame('minimal', $result);
+    }
 }

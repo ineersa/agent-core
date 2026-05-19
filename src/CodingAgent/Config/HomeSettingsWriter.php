@@ -28,9 +28,63 @@ final class HomeSettingsWriter
         $this->writeAiKey($this->homeSettingsPath(), 'default_reasoning', $reasoning);
     }
 
+    /**
+     * Persist the full favorite models list to home settings.
+     *
+     * @param list<string> $models List of "provider/modelname" strings
+     */
+    public function writeFavoriteModels(array $models): void
+    {
+        $this->writeAiListKey($this->homeSettingsPath(), 'favorite_models', $models);
+    }
+
     private function homeSettingsPath(): string
     {
         return $this->pathResolver->getHomeDir().'/.hatfield/settings.yaml';
+    }
+
+    /**
+     * Write a list value under the ai section, preserving comments.
+     *
+     * Only replaces an *active* (non-commented) key.  Commented-out
+     * lines with the same key are left untouched — if the user
+     * commented out a key to disable it, the writer inserts a fresh
+     * active key instead of silently uncommenting the old one.
+     *
+     * @param list<string> $values List of strings
+     */
+    private function writeAiListKey(string $filePath, string $key, array $values): void
+    {
+        $content = @file_get_contents($filePath);
+
+        if (false === $content) {
+            throw new \RuntimeException(\sprintf('Cannot read home settings file: %s', $filePath));
+        }
+
+        // Format as YAML flow sequence: [a, b, c]
+        if ([] === $values) {
+            $line = \sprintf('    %s: []', $key);
+        } else {
+            $quoted = array_map(fn (string $v): string => $this->yamlScalar($v), $values);
+            $line = \sprintf('    %s: [%s]', $key, implode(', ', $quoted));
+        }
+
+        $activePattern = '/^    '.preg_quote($key, '/').'\s*:.*$/m';
+
+        if (preg_match($activePattern, $content)) {
+            // Replace the active key (only uncommented, with 4-space indent)
+            $content = preg_replace($activePattern, $line, $content, 1);
+        } elseif (preg_match('/^ai:\s*$/m', $content)) {
+            // ai section exists — insert new active key below it
+            $content = preg_replace('/^ai:\s*$/m', "ai:\n".$line, $content, 1);
+        } else {
+            // No ai section — append
+            $content = rtrim($content)."\n\nai:\n".$line."\n";
+        }
+
+        if (false === @file_put_contents($filePath, $content)) {
+            throw new \RuntimeException(\sprintf('Cannot write home settings file: %s', $filePath));
+        }
     }
 
     /**
@@ -45,10 +99,14 @@ final class HomeSettingsWriter
         }
 
         $line = \sprintf('    %s: %s', $key, $this->yamlScalar($value));
-        $pattern = '/^[ \t]*#?[ \t]*'.preg_quote($key, '/').'\s*:.*$/m';
 
-        if (preg_match($pattern, $content)) {
-            $content = preg_replace($pattern, $line, $content, 1);
+        // Only match active (non-commented) keys with 4-space indent.
+        // This prevents accidentally uncommenting a key the user
+        // intentionally disabled.
+        $activePattern = '/^    '.preg_quote($key, '/').'\s*:.*$/m';
+
+        if (preg_match($activePattern, $content)) {
+            $content = preg_replace($activePattern, $line, $content, 1);
         } elseif (preg_match('/^ai:\s*$/m', $content)) {
             $content = preg_replace('/^ai:\s*$/m', "ai:\n".$line, $content, 1);
         } else {

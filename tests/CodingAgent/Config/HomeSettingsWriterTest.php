@@ -57,15 +57,22 @@ class HomeSettingsWriterTest extends TestCase
         self::assertSame('medium', $p['ai']['default_reasoning'] ?? null);
     }
 
-    public function testUncommentsModel(): void
+    public function testDoesNotUncommentModelKey(): void
     {
+        // Old behaviour silently uncommented commented keys.
+        // Now: only active keys are replaced; commented keys are left
+        // untouched and a fresh active key is inserted below the ai: section.
         $this->write("ai:\n# default_model: old\n");
         $this->writer->writeDefaultModel('deepseek/deepseek-v4-pro');
 
-        self::assertStringContainsString(
-            'default_model: deepseek/deepseek-v4-pro',
-            $this->read(),
-        );
+        $result = $this->read();
+        // The commented line survives
+        self::assertStringContainsString('# default_model: old', $result);
+        // A new active key is inserted
+        self::assertStringContainsString('default_model: deepseek/deepseek-v4-pro', $result);
+        // The active key is not prefixed with #
+        self::assertStringNotContainsString('# default_model: deepseek', $result);
+
         $p = $this->parse();
         self::assertSame('deepseek/deepseek-v4-pro', $p['ai']['default_model'] ?? null);
     }
@@ -102,10 +109,18 @@ class HomeSettingsWriterTest extends TestCase
 
     // ── writeDefaultReasoning ──────────────────────────────────────────
 
-    public function testReplacesAndUncommentsReasoning(): void
+    public function testReplacesActiveReasoningOnly(): void
     {
+        // When a key exists only as a comment, the writer now inserts a
+        // fresh active key instead of uncommenting.
         $this->write("ai:\n    default_model: deepseek/deepseek-v4-pro\n#   default_reasoning: low\n");
         $this->writer->writeDefaultReasoning('xhigh');
+
+        $result = $this->read();
+        // Commented line survives
+        self::assertStringContainsString('#   default_reasoning: low', $result);
+        // A new active key is inserted
+        self::assertStringContainsString('    default_reasoning: xhigh', $result);
 
         $p = $this->parse();
         self::assertSame('xhigh', $p['ai']['default_reasoning'] ?? null);
@@ -118,6 +133,70 @@ class HomeSettingsWriterTest extends TestCase
 
         $p = $this->parse();
         self::assertSame('minimal', $p['ai']['default_reasoning'] ?? null);
+    }
+
+    // ── writeFavoriteModels ────────────────────────────────────────────
+
+    public function testWritesFavoriteModelsAsFlowSequence(): void
+    {
+        $this->write("ai:\n    default_model: old\n");
+        $this->writer->writeFavoriteModels(['zai/glm-5.1', 'llama_cpp/flash']);
+
+        $p = $this->parse();
+        self::assertSame(['zai/glm-5.1', 'llama_cpp/flash'], $p['ai']['favorite_models'] ?? null);
+        self::assertStringContainsString('favorite_models: [zai/glm-5.1, llama_cpp/flash]', $this->read());
+    }
+
+    public function testWritesEmptyFavoriteModels(): void
+    {
+        $this->write("ai:\n    default_model: old\n");
+        $this->writer->writeFavoriteModels([]);
+
+        $p = $this->parse();
+        self::assertSame([], $p['ai']['favorite_models'] ?? null);
+        self::assertStringContainsString('favorite_models: []', $this->read());
+    }
+
+    public function testReplacesActiveFavoriteModels(): void
+    {
+        $this->write("ai:\n    favorite_models: [old/model]\n");
+        $this->writer->writeFavoriteModels(['new/model']);
+
+        $p = $this->parse();
+        self::assertSame(['new/model'], $p['ai']['favorite_models'] ?? null);
+    }
+
+    public function testDoesNotUncommentFavoriteModels(): void
+    {
+        // Commented line should survive; a new active key is inserted.
+        $this->write("ai:\n#    favorite_models: [old/model]\n");
+        $this->writer->writeFavoriteModels(['new/model']);
+
+        $result = $this->read();
+        self::assertStringContainsString('#    favorite_models: [old/model]', $result);
+        self::assertStringContainsString('favorite_models: [new/model]', $result);
+
+        $p = $this->parse();
+        self::assertSame(['new/model'], $p['ai']['favorite_models'] ?? null);
+    }
+
+    public function testInsertsFavoriteModelsWhenAiSectionExists(): void
+    {
+        $this->write("ai:\n    default_model: zai/glm-5.1\n");
+        $this->writer->writeFavoriteModels(['deepseek/deepseek-v4-pro']);
+
+        $p = $this->parse();
+        self::assertSame(['deepseek/deepseek-v4-pro'], $p['ai']['favorite_models'] ?? null);
+    }
+
+    public function testAppendsAiSectionForFavoriteModels(): void
+    {
+        $this->write("tui:\n    theme: cyberpunk\n");
+        $this->writer->writeFavoriteModels(['zai/glm-5.1']);
+
+        $p = $this->parse();
+        self::assertSame(['zai/glm-5.1'], $p['ai']['favorite_models'] ?? null);
+        self::assertSame('cyberpunk', $p['tui']['theme'] ?? null);
     }
 
     // ── YAML quoting ───────────────────────────────────────────────────

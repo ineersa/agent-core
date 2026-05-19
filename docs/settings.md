@@ -129,6 +129,23 @@ The default reasoning/thinking level for new sessions.
 The user-facing level is translated to provider-specific options
 through the selected model's `thinking_level_map`.
 
+### `ai.favorite_models`
+
+A list of favorited models shown first in the `/model` list and cycled
+with `Ctrl+P`. Each entry is a `provider_id/model_name` string.
+
+**Default:** empty (`[]` — no favorites).
+
+**Example:**
+```yaml
+ai:
+    favorite_models: [deepseek/deepseek-v4-pro, zai/glm-5.1]
+```
+
+Favorites can be toggled via `/model fav <provider/modelname>` in the
+TUI. Changes are persisted to home settings immediately and are visible
+to other TUI controls in the same session without restarting.
+
 ### `ai.providers`
 
 A map of provider IDs to provider configuration. Each provider exposes
@@ -153,6 +170,7 @@ loaded models (e.g. llama.cpp).
 | `embeddings_path` | string | no | Embeddings endpoint path (if supported). |
 | `supports_completions` | bool | no | Enable completions client. Default: `true`. |
 | `supports_embeddings` | bool | no | Enable embeddings client. Default: `false`. |
+| `supports_thinking_levels` | bool | no | Whether reasoning-level cycling (Shift+Tab) is meaningful for this provider. When `false`, reasoning levels are not cycled for models from this provider. Default: `true`. |
 | `compatibility` | map | no | Provider-level transport quirks (see below). |
 | `models` | map | yes | Model definitions keyed by model name. |
 
@@ -361,7 +379,6 @@ ai:
                         low: enabled
                         medium: enabled
                         high: enabled
-                        xhigh: enabled
                     compatibility:
                         zai_tool_stream: true
                     cost:
@@ -381,7 +398,6 @@ ai:
                         low: enabled
                         medium: enabled
                         high: enabled
-                        xhigh: enabled
                     compatibility:
                         zai_tool_stream: true
                     cost:

@@ -281,6 +281,15 @@ final class ChatScreen
 
     /* ────────── Public API (listener-friendly) ────────── */
 
+    /**
+     * Expose the active theme for listeners/controllers that need theme-aware
+     * rendering (e.g. picker controllers colouring labels or headers).
+     */
+    public function theme(): TuiTheme
+    {
+        return $this->theme;
+    }
+
     public function editorWidget(): EditorWidget
     {
         return $this->promptEditor->getWidget();
