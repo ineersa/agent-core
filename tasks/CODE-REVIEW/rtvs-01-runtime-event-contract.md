@@ -53,3 +53,7 @@ Completed:
 - Pushed task/rtvs-01-runtime-event-contract to origin.
 - branch 'task/rtvs-01-runtime-event-contract' set up to track 'origin/task/rtvs-01-runtime-event-contract'.
 - Created PR: https://github.com/ineersa/agent-core/pull/28
+
+## Task workflow update - 2026-05-19T01:37:40.897Z
+- Validation: castor test --filter=RuntimeEventTypeTest: OK (49 tests, 303 assertions); castor deptrac: 0 violations
+- Summary: PR #28 small fix applied: rebased branch onto current origin/main and dropped unrelated AI-14 task-board change from the PR diff. Force-pushed updated branch at 82849499; PR now contains only RuntimeEventType enum, Protocol AGENTS.md, and RuntimeEventTypeTest.
