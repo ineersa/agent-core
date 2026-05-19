@@ -25,14 +25,14 @@ Parallelizable with: RTVS-02.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/rtvs-01-runtime-event-contract
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-01-runtime-event-contract
 Fork run: 56d2y2rdh24l
 PR URL: https://github.com/ineersa/agent-core/pull/28
-PR Status: open
+PR Status: merged
 Started: 2026-05-19T01:13:20.351Z
-Completed:
+Completed: 2026-05-19T01:57:29.756Z
 
 ## Work log
 - Created: 2026-05-17T22:16:19.329Z
@@ -57,3 +57,12 @@ Completed:
 ## Task workflow update - 2026-05-19T01:37:40.897Z
 - Validation: castor test --filter=RuntimeEventTypeTest: OK (49 tests, 303 assertions); castor deptrac: 0 violations
 - Summary: PR #28 small fix applied: rebased branch onto current origin/main and dropped unrelated AI-14 task-board change from the PR diff. Force-pushed updated branch at 82849499; PR now contains only RuntimeEventType enum, Protocol AGENTS.md, and RuntimeEventTypeTest.
+
+## Task workflow update - 2026-05-19T01:57:29.756Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/rtvs-01-runtime-event-contract into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/rtvs-01-runtime-event-contract.
+- Pulled integration checkout: Already up to date..
+- Validation: PR #28 state: MERGED
+- Summary: PR #28 merged on GitHub: https://github.com/ineersa/agent-core/pull/28 (merge commit 5144761c).
