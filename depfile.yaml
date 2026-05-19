@@ -100,6 +100,11 @@ parameters:
         - type: directory
           value: src/CodingAgent/Runtime/(InProcess|Process)/.*
 
+    - name: AppRuntimeProjection
+      collectors:
+        - type: directory
+          value: src/CodingAgent/Runtime/Projection/.*
+
     - name: AppConfig
       collectors:
         - type: directory
@@ -168,6 +173,7 @@ parameters:
   ruleset:
     TuiApplication:
       - AppRuntimeContract
+      - AppRuntimeProjection
       - AppSession
       - AppConfig
       - TuiLayout
@@ -187,6 +193,7 @@ parameters:
 
     TuiListener:
       - AppRuntimeContract
+      - AppRuntimeProjection
       - AppSession
       - AppConfig
       - TuiRuntime
@@ -200,6 +207,7 @@ parameters:
 
     TuiRuntime:
       - AppRuntimeContract
+      - AppRuntimeProjection
       - AppSession
       - TuiTranscript
       - TuiScreen
@@ -238,6 +246,7 @@ parameters:
       - TuiTheme
 
     TuiTranscript:
+      - AppRuntimeProjection
       - TuiWidget
       - TuiTheme
 
@@ -278,12 +287,14 @@ parameters:
 
     AppRuntimeInternals:
       - AppRuntimeContract
+      - AppRuntimeProjection
       - AgentCore
       - AppConfig
       - SymfonyConsole
       - SymfonyMessenger
 
     AppRuntimeContract:
+      - AppRuntimeProjection
       - AgentCore
       - SymfonyConsole
 
@@ -304,6 +315,7 @@ parameters:
 
     AppCli:
       - AppRuntimeContract
+      - AppRuntimeProjection
       - AppRuntimeInternals
       - AppSession
       - TuiApplication
@@ -317,6 +329,8 @@ parameters:
       - TuiWidget
       - TuiTheme
       - SymfonyConsole
+
+    AppRuntimeProjection: ~
 
     AgentCore:
       - SymfonyLock
