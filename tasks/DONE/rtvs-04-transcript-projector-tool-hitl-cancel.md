@@ -27,14 +27,14 @@ Parallelizable with: RTVS-03, RTVS-05.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/rtvs-04-transcript-projector-tool-hitl-cancel
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-04-transcript-projector-tool-hitl-cancel
 Fork run: 3z2ugrkhvk43
 PR URL: https://github.com/ineersa/agent-core/pull/31
-PR Status: open
+PR Status: merged
 Started: 2026-05-19T14:12:07.707Z
-Completed:
+Completed: 2026-05-19T21:55:10.698Z
 
 ## Work log
 - Created: 2026-05-17T22:16:45.183Z
@@ -78,3 +78,37 @@ Completed:
 - Recorded fork run: 3z2ugrkhvk43
 - Validation: castor test --filter=TranscriptProjectorTest: OK (61 tests, 227 assertions); castor test --filter=TranscriptBlockTest: OK (30 tests, 154 assertions); castor test: OK (683 tests, 9242 assertions; 1 pre-existing PHPUnit notice); castor deptrac: OK (0 violations); castor phpstan --path=src/CodingAgent/Runtime/Projection --path=src/CodingAgent/Runtime/ProjectionPipeline: OK (0 errors); castor phpstan --path=tests/CodingAgent/Runtime/Projection: only pre-existing PHPUnit staticMethod.dynamicCall assertion noise, no new production-code errors; castor cs-fix then castor cs-check: clean; gh pr view 31: open at head 785f9bd7
 - Summary: Symfony EventDispatcher refactor complete and pushed to PR #31 at commit `785f9bd7`. The monolithic `Runtime/Projection/TranscriptProjector` was replaced with dependency-free `TranscriptProjectionState` plus a new `Runtime/ProjectionPipeline` Symfony facade (`TranscriptProjector`) and five family subscribers: user, assistant stream, tool, HITL, cancellation. Public API remains `accept(array $event)`, `blocks()`, `reset()`. `AppRuntimeProjection: ~` remains intact; new deptrac layers added for `AppRuntimeProjectionPipeline` and `SymfonyEventDispatcher`. PR #31 now includes 14 files: runtime projection/pipeline changes, depfile, projection tests, and two TUI cs-fixer-only formatting files from the full formatter run.
+
+## Task workflow update - 2026-05-19T21:55:10.698Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/rtvs-04-transcript-projector-tool-hitl-cancel into integration checkout.
+- Merge made by the 'ort' strategy.
+ depfile.yaml                                       |   17 +
+ .../Runtime/Projection/TranscriptBlock.php         |   16 +-
+ .../Projection/TranscriptProjectionState.php       |  238 +++++
+ .../AssistantStreamProjectionSubscriber.php        |  174 ++++
+ .../CancellationProjectionSubscriber.php           |   84 ++
+ .../HitlProjectionSubscriber.php                   |  190 ++++
+ .../ToolProjectionSubscriber.php                   |  216 ++++
+ .../TranscriptProjectionEvent.php                  |   51 +
+ .../ProjectionPipeline/TranscriptProjector.php     |   58 ++
+ .../UserMessageProjectionSubscriber.php            |   37 +
+ src/Tui/Extension/TuiExtensionContext.php          |    4 +-
+ src/Tui/Footer/FooterSegment.php                   |   12 +-
+ .../{ => Projection}/TranscriptBlockTest.php       |  228 ++--
+ .../Runtime/Projection/TranscriptProjectorTest.php | 1086 ++++++++++++++++++++
+ 14 files changed, 2281 insertions(+), 130 deletions(-)
+ create mode 100644 src/CodingAgent/Runtime/Projection/TranscriptProjectionState.php
+ create mode 100644 src/CodingAgent/Runtime/ProjectionPipeline/AssistantStreamProjectionSubscriber.php
+ create mode 100644 src/CodingAgent/Runtime/ProjectionPipeline/CancellationProjectionSubscriber.php
+ create mode 100644 src/CodingAgent/Runtime/ProjectionPipeline/HitlProjectionSubscriber.php
+ create mode 100644 src/CodingAgent/Runtime/ProjectionPipeline/ToolProjectionSubscriber.php
+ create mode 100644 src/CodingAgent/Runtime/ProjectionPipeline/TranscriptProjectionEvent.php
+ create mode 100644 src/CodingAgent/Runtime/ProjectionPipeline/TranscriptProjector.php
+ create mode 100644 src/CodingAgent/Runtime/ProjectionPipeline/UserMessageProjectionSubscriber.php
+ rename tests/CodingAgent/Runtime/{ => Projection}/TranscriptBlockTest.php (59%)
+ create mode 100644 tests/CodingAgent/Runtime/Projection/TranscriptProjectorTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/rtvs-04-transcript-projector-tool-hitl-cancel.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR #31 state: MERGED; Merged commit: 0748fe970a878e888ea33a5d540d078fe6d1f505; Previously validated before merge: castor test --filter=TranscriptProjectorTest OK (61 tests, 227 assertions); castor test --filter=TranscriptBlockTest OK (30 tests, 154 assertions); castor test OK (683 tests, 9242 assertions); castor deptrac OK (0 violations); production scoped castor phpstan OK; castor cs-check clean
+- Summary: PR #31 merged at 0748fe970a878e888ea33a5d540d078fe6d1f505. RTVS-04 now includes the combined RTVS-03/04 runtime transcript projection implementation using Symfony EventDispatcher/EventSubscriberInterface: dependency-free `TranscriptProjectionState`, projection pipeline facade, and family subscribers for user, assistant stream, tool, HITL/approval, and cancellation events. RTVS-03 PR #30 remains closed as superseded because its scope landed through PR #31.

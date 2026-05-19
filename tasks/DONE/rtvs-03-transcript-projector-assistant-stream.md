@@ -26,14 +26,14 @@ Parallelizable with: RTVS-04, RTVS-05.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/rtvs-03-transcript-projector-assistant-stream
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-03-transcript-projector-assistant-stream
 Fork run: m9zuvvqdpw58
 PR URL: https://github.com/ineersa/agent-core/pull/30
-PR Status: closed
+PR Status: closed/superseded
 Started: 2026-05-19T14:11:57.488Z
-Completed:
+Completed: 2026-05-19T21:55:47.166Z
 
 ## Work log
 - Created: 2026-05-17T22:16:34.749Z
@@ -63,3 +63,13 @@ Completed:
 ## Task workflow update - 2026-05-19T20:45:31.811Z
 - Updated PR Status: closed
 - Summary: PR #30 closed as superseded. RTVS-03 assistant/user projector work is being folded into RTVS-04 / PR #31 so `TranscriptProjector` lands as one cohesive implementation instead of two conflicting branches.
+
+## Task workflow update - 2026-05-19T21:55:37.396Z
+- Updated PR Status: closed/superseded
+- Validation: PR #30 state: CLOSED, not merged; RTVS-04 / PR #31 state: MERGED; RTVS-03 acceptance scope is covered by the merged PR #31 projector tests: castor test --filter=TranscriptProjectorTest OK (61 tests, 227 assertions)
+- Summary: Closed as superseded and marked done without merging the obsolete RTVS-03 branch. Its accepted scope (user message and assistant text/thinking projection) landed through RTVS-04 / PR #31 in the unified Symfony EventDispatcher projection pipeline. PR #30 remains closed without merge to avoid merging the older conflicting projector implementation.
+
+## Task workflow update - 2026-05-19T21:55:47.166Z
+- Moved CODE-REVIEW → DONE as superseded without merging branch `task/rtvs-03-transcript-projector-assistant-stream`.
+- Reason: PR #30 was closed without merge; RTVS-03 scope landed through merged RTVS-04 / PR #31 unified projection pipeline.
+- Obsolete RTVS-03 branch/worktree should not be merged because it contains the older conflicting projector implementation.
