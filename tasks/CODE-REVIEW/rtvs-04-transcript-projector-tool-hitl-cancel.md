@@ -30,7 +30,7 @@ Parallelizable with: RTVS-03, RTVS-05.
 Status: CODE-REVIEW
 Branch: task/rtvs-04-transcript-projector-tool-hitl-cancel
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-04-transcript-projector-tool-hitl-cancel
-Fork run: l7miiivya34a
+Fork run: u46soqi61rap
 PR URL: https://github.com/ineersa/agent-core/pull/31
 PR Status: open
 Started: 2026-05-19T14:12:07.707Z
@@ -60,3 +60,7 @@ Completed:
 - Pushed task/rtvs-04-transcript-projector-tool-hitl-cancel to origin.
 - branch 'task/rtvs-04-transcript-projector-tool-hitl-cancel' set up to track 'origin/task/rtvs-04-transcript-projector-tool-hitl-cancel'.
 - Created PR: https://github.com/ineersa/agent-core/pull/31
+
+## Task workflow update - 2026-05-19T20:34:59.864Z
+- Recorded fork run: u46soqi61rap
+- Summary: Launched reviewer-fix/unification fork in RTVS-04 worktree to combine RTVS-03 assistant/user projector behavior into PR #31, adopt RTVS-04 internal structure with RTVS-03 array boundary, fix reviewer findings, validate with Castor, commit and push updated PR #31.
