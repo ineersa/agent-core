@@ -24,14 +24,14 @@ Scope:
 - Suggested validation: `castor test --filter Tui`; `castor test:tui`.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/ai-14-tui-model-controls-favorites
 Worktree: /home/ineersa/projects/agent-core-worktrees/ai-14-tui-model-controls-favorites
 Fork run: z6aazkk57r4q
 PR URL: https://github.com/ineersa/agent-core/pull/27
-PR Status: open
+PR Status: merged
 Started: 2026-05-18T21:35:36.236Z
-Completed:
+Completed: 2026-05-19T01:10:11.212Z
 
 ## Work log
 - Created: 2026-05-16T22:02:34.212Z
@@ -161,3 +161,41 @@ Validation: 509 tests pass, 8453 assertions, 0 deptrac violations, 0 phpstan err
 - Skipped PR creation (pushOnly: true).
 - Validation: vendor/bin/phpunit tests/Tui/Picker/ModelPickerControllerTest.php — 7 tests, OK; vendor/bin/phpunit tests/CodingAgent/Config/HomeSettingsWriterTest.php — 17 tests, OK; vendor/bin/phpunit tests/CodingAgent/Config/ModelSelectionServiceTest.php — 57 tests, OK; vendor/bin/phpunit tests/Tui/Listener/ModelCommandHandlerTest.php — 18 tests, OK; ~/.local/bin/castor test — 543 tests, 8558 assertions, 1 pre-existing notice; ~/.local/bin/castor deptrac — 0 violations; ~/.local/bin/castor phpstan — 0 errors; ~/.local/bin/castor cs-check — clean
 - Summary: AI-14 reviewer suggestions addressed at commit 3324fa1d. Deduplicated context-window lookup into FooterStateInitializer::resolveContextWindowForRef() and updated picker, Ctrl+P, and textual /model select paths. Fixed non-favorite marker test to assert raw label marker. Updated stale ModelPickerController comment and added @internal notes for public callback methods. Removed unused ModelControlListener variable. Hardened HomeSettingsWriter so writeAiKey/writeAiListKey only replace active keys and preserve commented-out user settings, with added favorite_models write tests.
+
+## Task workflow update - 2026-05-19T01:10:11.212Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/ai-14-tui-model-controls-favorites into integration checkout.
+- Merge made by the 'ort' strategy.
+ .hatfield/settings.yaml                            |  19 +-
+ config/hatfield.defaults.yaml                      |   6 +-
+ depfile.yaml                                       |  16 +
+ docs/settings.md                                   |  20 +-
+ src/CodingAgent/Config/Ai/AiConfig.php             |  12 +
+ src/CodingAgent/Config/Ai/AiProviderConfig.php     |  27 +-
+ src/CodingAgent/Config/Ai/HatfieldModelCatalog.php |  30 ++
+ src/CodingAgent/Config/HomeSettingsWriter.php      |  64 ++-
+ src/CodingAgent/Config/ModelSelectionService.php   | 340 ++++++++++++
+ src/Tui/Listener/FooterStateInitializer.php        |  26 +-
+ src/Tui/Listener/FooterStateSegmentProvider.php    |  25 +-
+ src/Tui/Listener/ModelCommandHandler.php           | 254 +++++++++
+ src/Tui/Listener/ModelControlListener.php          | 109 ++++
+ src/Tui/Picker/FavoritePickerController.php        | 239 +++++++++
+ src/Tui/Picker/ModelPickerController.php           | 344 ++++++++++++
+ src/Tui/Screen/ChatScreen.php                      |   9 +
+ .../CodingAgent/Config/HomeSettingsWriterTest.php  |  91 +++-
+ .../Config/ModelSelectionServiceTest.php           | 590 +++++++++++++++++++++
+ .../Listener/FooterStateSegmentProviderTest.php    | 145 +++++
+ tests/Tui/Listener/ModelCommandHandlerTest.php     | 460 ++++++++++++++++
+ tests/Tui/Picker/ModelPickerControllerTest.php     | 264 +++++++++
+ 21 files changed, 3048 insertions(+), 42 deletions(-)
+ create mode 100644 src/Tui/Listener/ModelCommandHandler.php
+ create mode 100644 src/Tui/Listener/ModelControlListener.php
+ create mode 100644 src/Tui/Picker/FavoritePickerController.php
+ create mode 100644 src/Tui/Picker/ModelPickerController.php
+ create mode 100644 tests/Tui/Listener/FooterStateSegmentProviderTest.php
+ create mode 100644 tests/Tui/Listener/ModelCommandHandlerTest.php
+ create mode 100644 tests/Tui/Picker/ModelPickerControllerTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/ai-14-tui-model-controls-favorites.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR #27 merged at 2026-05-19T01:09:50Z with merge commit 121454fea94c96cf5ea98dd83020af0cdff4b8a8; Final branch validation before merge: ~/.local/bin/castor test — 543 tests, 8558 assertions; deptrac 0 violations; phpstan 0 errors; cs-check clean
+- Summary: AI-14 PR #27 was merged by user. Final implementation includes /model picker, /model fav picker, favorite persistence/cycling, reasoning cycling with per-model supported levels, non-thinking footer color reset, themed picker markers/headers, provider supports_thinking_levels, z.ai xhigh removal, reviewer fixes, and HomeSettingsWriter hardening.
