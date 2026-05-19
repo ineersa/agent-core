@@ -25,14 +25,21 @@ Parallelizable with: RTVS-01, RTVS-05, RTVS-06 after agreeing rough DTO shape.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/rtvs-02-transcript-projection-dtos
+Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-02-transcript-projection-dtos
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-19T01:13:42.351Z
 Completed:
 
 ## Work log
 - Created: 2026-05-17T22:16:25.801Z
+
+## Task workflow update - 2026-05-19T01:13:42.351Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/rtvs-02-transcript-projection-dtos.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/rtvs-02-transcript-projection-dtos.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/rtvs-02-transcript-projection-dtos.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/rtvs-02-transcript-projection-dtos.
