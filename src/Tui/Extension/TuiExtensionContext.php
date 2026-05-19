@@ -44,8 +44,8 @@ interface TuiExtensionContext
     /**
      * Add or remove an extension widget.
      *
-     * @param string          $key       Unique identifier for this widget
-     * @param TuiWidget|null  $content   Widget to add, or null to remove
+     * @param string              $key       Unique identifier for this widget
+     * @param TuiWidget|null      $content   Widget to add, or null to remove
      * @param WidgetPlacementEnum $placement Where the widget should appear
      */
     public function setWidget(string $key, ?TuiWidget $content, WidgetPlacementEnum $placement = WidgetPlacementEnum::AboveEditor): void;

@@ -1,0 +1,216 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ineersa\CodingAgent\Runtime\ProjectionPipeline;
+
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Symfony\Component\EventDispatcher\EventSubscriberInterface;
+
+/**
+ * Projects tool-call and tool-execution events into ToolCall and
+ * ToolResult transcript blocks.
+ */
+final readonly class ToolProjectionSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [
+            RuntimeEventTypeEnum::ToolCallStarted->value => 'onToolCallStarted',
+            RuntimeEventTypeEnum::ToolCallArgumentsDelta->value => 'onToolCallArgumentsDelta',
+            RuntimeEventTypeEnum::ToolCallArgumentsCompleted->value => 'onToolCallArgumentsCompleted',
+            RuntimeEventTypeEnum::ToolExecutionStarted->value => 'onToolExecutionStarted',
+            RuntimeEventTypeEnum::ToolExecutionOutputDelta->value => 'onToolExecutionOutputDelta',
+            RuntimeEventTypeEnum::ToolExecutionCompleted->value => 'onToolExecutionCompleted',
+            RuntimeEventTypeEnum::ToolExecutionFailed->value => 'onToolExecutionFailed',
+            RuntimeEventTypeEnum::ToolExecutionCancelled->value => 'onToolExecutionCancelled',
+        ];
+    }
+
+    // ── Tool call ────────────────────────────────────────────────────────────
+
+    public function onToolCallStarted(TranscriptProjectionEvent $event): void
+    {
+        $p = $event->payload();
+        $state = $event->state;
+        $toolCallId = (string) ($p['tool_call_id'] ?? '');
+        $toolName = (string) ($p['tool_name'] ?? '');
+        $blockId = 'tool_call_'.$toolCallId;
+
+        $state->addBlock(new TranscriptBlock(
+            id: $blockId,
+            kind: TranscriptBlockKindEnum::ToolCall,
+            runId: $event->runId(),
+            seq: $state->nextSeq(),
+            text: $toolName,
+            meta: [
+                'tool_call_id' => $toolCallId,
+                'tool_name' => $toolName,
+            ],
+            streaming: true,
+        ));
+    }
+
+    public function onToolCallArgumentsDelta(TranscriptProjectionEvent $event): void
+    {
+        $p = $event->payload();
+        $state = $event->state;
+        $toolCallId = (string) ($p['tool_call_id'] ?? '');
+        $delta = (string) ($p['delta'] ?? '');
+        $blockId = 'tool_call_'.$toolCallId;
+        $block = $state->getBlock($blockId);
+
+        if (null === $block) {
+            return;
+        }
+
+        $state->updateBlock($blockId, $block->appendText($delta));
+    }
+
+    public function onToolCallArgumentsCompleted(TranscriptProjectionEvent $event): void
+    {
+        $p = $event->payload();
+        $state = $event->state;
+        $toolCallId = (string) ($p['tool_call_id'] ?? '');
+        $arguments = $p['arguments'] ?? [];
+        $blockId = 'tool_call_'.$toolCallId;
+        $block = $state->getBlock($blockId);
+
+        if (null === $block) {
+            // Tool call block was never started — create a completed snapshot.
+            $toolName = (string) ($p['tool_name'] ?? '');
+            $argumentsText = $state->argumentsToText($arguments);
+            $text = '' !== $toolName ? $toolName.$argumentsText : $argumentsText;
+
+            $state->addBlock(new TranscriptBlock(
+                id: $blockId,
+                kind: TranscriptBlockKindEnum::ToolCall,
+                runId: $event->runId(),
+                seq: $state->nextSeq(),
+                text: $text,
+                meta: [
+                    'tool_call_id' => $toolCallId,
+                    'tool_name' => $toolName,
+                    'arguments' => $arguments,
+                ],
+                streaming: false,
+            ));
+
+            return;
+        }
+
+        $argumentsText = $state->argumentsToText($arguments);
+        $meta = $block->meta;
+        $meta['arguments'] = $arguments;
+
+        $state->updateBlock($blockId, $block->with(
+            text: $block->text.$argumentsText,
+            streaming: false,
+            meta: $meta,
+        ));
+    }
+
+    // ── Tool execution ───────────────────────────────────────────────────────
+
+    public function onToolExecutionStarted(TranscriptProjectionEvent $event): void
+    {
+        $p = $event->payload();
+        $state = $event->state;
+        $toolCallId = (string) ($p['tool_call_id'] ?? '');
+        $toolName = (string) ($p['tool_name'] ?? '');
+        $blockId = 'tool_result_'.$toolCallId;
+
+        $state->addBlock(new TranscriptBlock(
+            id: $blockId,
+            kind: TranscriptBlockKindEnum::ToolResult,
+            runId: $event->runId(),
+            seq: $state->nextSeq(),
+            text: 'Running…',
+            meta: [
+                'tool_call_id' => $toolCallId,
+                'tool_name' => $toolName,
+            ],
+            streaming: true,
+        ));
+    }
+
+    public function onToolExecutionOutputDelta(TranscriptProjectionEvent $event): void
+    {
+        $p = $event->payload();
+        $state = $event->state;
+        $toolCallId = (string) ($p['tool_call_id'] ?? '');
+        $delta = (string) ($p['delta'] ?? '');
+        $blockId = 'tool_result_'.$toolCallId;
+        $block = $state->getBlock($blockId);
+
+        if (null === $block) {
+            return;
+        }
+
+        $state->updateBlock($blockId, $block->appendText($delta));
+    }
+
+    public function onToolExecutionCompleted(TranscriptProjectionEvent $event): void
+    {
+        $p = $event->payload();
+        $state = $event->state;
+        $toolCallId = (string) ($p['tool_call_id'] ?? '');
+        $result = (string) ($p['result'] ?? '');
+        $durationMs = isset($p['duration_ms']) ? (int) $p['duration_ms'] : null;
+        $blockId = 'tool_result_'.$toolCallId;
+
+        $meta = [
+            'tool_call_id' => $toolCallId,
+            'is_error' => false,
+        ];
+        if (null !== $durationMs) {
+            $meta['duration_ms'] = $durationMs;
+        }
+        if ('' !== $result) {
+            $meta['result'] = $result;
+        }
+
+        $state->upsertToolResultBlock($blockId, $event->runId(), $result, $meta, false);
+    }
+
+    public function onToolExecutionFailed(TranscriptProjectionEvent $event): void
+    {
+        $p = $event->payload();
+        $state = $event->state;
+        $toolCallId = (string) ($p['tool_call_id'] ?? '');
+        $result = (string) ($p['result'] ?? '');
+        $blockId = 'tool_result_'.$toolCallId;
+
+        $meta = [
+            'tool_call_id' => $toolCallId,
+            'is_error' => true,
+        ];
+        if ('' !== $result) {
+            $meta['result'] = $result;
+        }
+
+        $state->upsertToolResultBlock($blockId, $event->runId(), $result, $meta, false);
+    }
+
+    public function onToolExecutionCancelled(TranscriptProjectionEvent $event): void
+    {
+        $p = $event->payload();
+        $state = $event->state;
+        $toolCallId = (string) ($p['tool_call_id'] ?? '');
+        $blockId = 'tool_result_'.$toolCallId;
+        $timedOut = (bool) ($p['timed_out'] ?? false);
+
+        $meta = [
+            'tool_call_id' => $toolCallId,
+            'cancelled' => true,
+            'timed_out' => $timedOut,
+            'is_error' => true,
+        ];
+
+        $text = $timedOut ? 'Timed out' : 'Cancelled';
+
+        $state->upsertToolResultBlock($blockId, $event->runId(), $text, $meta, false);
+    }
+}
