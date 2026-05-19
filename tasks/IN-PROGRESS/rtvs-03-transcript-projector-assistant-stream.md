@@ -26,14 +26,21 @@ Parallelizable with: RTVS-04, RTVS-05.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/rtvs-03-transcript-projector-assistant-stream
+Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-03-transcript-projector-assistant-stream
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-19T14:11:57.488Z
 Completed:
 
 ## Work log
 - Created: 2026-05-17T22:16:34.749Z
+
+## Task workflow update - 2026-05-19T14:11:57.488Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/rtvs-03-transcript-projector-assistant-stream.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/rtvs-03-transcript-projector-assistant-stream.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/rtvs-03-transcript-projector-assistant-stream.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/rtvs-03-transcript-projector-assistant-stream.
