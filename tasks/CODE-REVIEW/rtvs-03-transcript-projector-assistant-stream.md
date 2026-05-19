@@ -26,12 +26,12 @@ Parallelizable with: RTVS-04, RTVS-05.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/rtvs-03-transcript-projector-assistant-stream
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-03-transcript-projector-assistant-stream
 Fork run: m9zuvvqdpw58
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/30
+PR Status: open
 Started: 2026-05-19T14:11:57.488Z
 Completed:
 
@@ -48,3 +48,14 @@ Completed:
 ## Task workflow update - 2026-05-19T14:13:02.228Z
 - Recorded fork run: m9zuvvqdpw58
 - Summary: Launched implementation fork for RTVS-03 in worktree `/home/ineersa/projects/agent-core-worktrees/rtvs-03-transcript-projector-assistant-stream`. Scope: TranscriptProjector assistant/user stream support; focused tests and deptrac; commit on task branch.
+
+## Task workflow update - 2026-05-19T14:31:30.224Z
+- Recorded fork run: m9zuvvqdpw58
+- Validation: castor test --filter=TranscriptProjectorTest: OK (26 tests, 96 assertions); castor deptrac: OK (0 violations); castor test: OK (648 tests, 9111 assertions; 1 pre-existing PHPUnit notice)
+- Summary: RTVS-03 implementation complete on branch `task/rtvs-03-transcript-projector-assistant-stream` at commit `d98fbc19`. Added `TranscriptProjector` for user message and assistant text/thinking stream projection using array runtime events to preserve `AppRuntimeProjection: ~` deptrac boundary. Added focused `TranscriptProjectorTest` coverage for user blocks, assistant text/thinking deltas, replay determinism, completion, failure, unknown/orphan events, reset, and metadata. Notes: RTVS-04 will likely conflict additively in `TranscriptProjector::accept()` and `TranscriptProjectorTest.php`; projector intentionally uses raw event type strings rather than importing protocol enum.
+
+## Task workflow update - 2026-05-19T14:31:46.882Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/rtvs-03-transcript-projector-assistant-stream to origin.
+- branch 'task/rtvs-03-transcript-projector-assistant-stream' set up to track 'origin/task/rtvs-03-transcript-projector-assistant-stream'.
+- Created PR: https://github.com/ineersa/agent-core/pull/30
