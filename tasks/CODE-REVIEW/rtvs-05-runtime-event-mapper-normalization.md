@@ -25,12 +25,12 @@ Parallelizable with: RTVS-02, RTVS-03, RTVS-04.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/rtvs-05-runtime-event-mapper-normalization
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-05-runtime-event-mapper-normalization
 Fork run: layq6f28tvog
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/32
+PR Status: open
 Started: 2026-05-19T21:59:11.393Z
 Completed:
 
@@ -48,3 +48,11 @@ Completed:
 ## Task workflow update - 2026-05-19T21:59:47.700Z
 - Recorded fork run: layq6f28tvog
 - Summary: Launched implementation fork in RTVS-05 worktree. Scope: normalize AgentCore RunEvent types/payloads in `RuntimeEventMapper` into stable `RuntimeEventTypeEnum` events for the merged Symfony transcript projection pipeline; add focused mapper tests; validate with Castor.
+
+## Task workflow update - 2026-05-19T22:21:59.897Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/rtvs-05-runtime-event-mapper-normalization to origin.
+- branch 'task/rtvs-05-runtime-event-mapper-normalization' set up to track 'origin/task/rtvs-05-runtime-event-mapper-normalization'.
+- Created PR: https://github.com/ineersa/agent-core/pull/32
+- Validation: castor test --filter=RuntimeEventMapperTest: OK (30 tests, 99 assertions); castor test --filter=TranscriptProjectorTest: OK (61 tests, 227 assertions); castor test --filter=TranscriptBlockTest: OK (30 tests, 154 assertions); castor test: OK (713 tests, 9341 assertions; 1 pre-existing PHPUnit notice); castor deptrac: OK (0 violations); castor phpstan --path=src/CodingAgent/Runtime: OK (0 errors); castor phpstan --path=tests/CodingAgent/Runtime: only pre-existing PHPUnit assertion static-analysis noise; castor cs-fix --path=src/CodingAgent/Runtime/Protocol --path=tests/CodingAgent/Runtime then castor cs-check: clean; git push origin task/rtvs-05-runtime-event-mapper-normalization: pushed
+- Summary: RTVS-05 implementation complete on branch `task/rtvs-05-runtime-event-mapper-normalization` at commit `69ca92db`. `RuntimeEventMapper` now normalizes AgentCore `RunEvent` names/payloads into stable `RuntimeEventTypeEnum` runtime events for the Symfony projection pipeline, returns `?RuntimeEvent` so internal bookkeeping events can be skipped, and sends unknown/non-rendered events to stable `status.updated` fallback with debug metadata. Updated `InProcessAgentSessionClient` to skip null mappings and updated `RuntimeEventPoller` to match normalized `RuntimeEventTypeEnum` values. Added focused `RuntimeEventMapperTest` coverage for lifecycle, assistant result/failure/cancel, tool execution, HITL waiting_human, command/cancellation, skipped internal events, fallback debug metadata, and `toRunEventData()`. Key limitation documented: AgentCore currently does not emit fine-grained streaming deltas or dedicated user-message events, so mapper cannot produce `assistant.text_delta` or `user.message_submitted` until AgentCore event emission grows.
