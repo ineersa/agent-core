@@ -17,14 +17,14 @@ namespace Ineersa\CodingAgent\Runtime\Projection;
 final readonly class TranscriptBlock
 {
     /**
-     * @param string                $id        Stable block identifier (message_id, tool_call_id, block UUID, etc.)
+     * @param string                  $id        Stable block identifier (message_id, tool_call_id, block UUID, etc.)
      * @param TranscriptBlockKindEnum $kind      The kind of block this represents
-     * @param string                $runId     The run this block belongs to
-     * @param int                   $seq       Monotonic sequence number (for deterministic ordering)
-     * @param string                $text      Visible text content of the block
-     * @param array<string, mixed>  $meta      Additional block metadata (tool name, model, stop reason, etc.)
-     * @param bool                  $streaming Whether this block is still receiving deltas
-     * @param bool                  $collapsed Whether this block should be collapsed in the UI by default
+     * @param string                  $runId     The run this block belongs to
+     * @param int                     $seq       Monotonic sequence number (for deterministic ordering)
+     * @param string                  $text      Visible text content of the block
+     * @param array<string, mixed>    $meta      Additional block metadata (tool name, model, stop reason, etc.)
+     * @param bool                    $streaming Whether this block is still receiving deltas
+     * @param bool                    $collapsed Whether this block should be collapsed in the UI by default
      */
     public function __construct(
         public string $id,
@@ -45,7 +45,7 @@ final readonly class TranscriptBlock
      *
      * This is the primary mutation API for the projector: it creates a new
      * block derived from the current one, which is safe for in-memory
-     * accumulation during streaming.
+     * accumulation during streaming
      */
     public function with(
         ?string $text = null,
