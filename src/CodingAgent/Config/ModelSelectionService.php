@@ -27,6 +27,18 @@ final class ModelSelectionService
     /** Valid reasoning levels. */
     public const LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
 
+    /**
+     * In-process cache of the raw favorite_models list (provider/modelname strings).
+     *
+     * When null (uninitialized), getFavoriteRawList() reads from AppConfig.
+     * After toggleFavorite() mutates the list, this cache is authoritative for
+     * the remainder of the process lifetime so that callers see the toggle
+     * immediately instead of waiting for an AppConfig rebuild.
+     *
+     * @var list<string>|null
+     */
+    private ?array $favRaw = null;
+
     public function __construct(
         private readonly AppConfig $appConfig,
         private readonly HomeSettingsWriter $homeWriter,
@@ -193,5 +205,333 @@ final class ModelSelectionService
         $this->sessionMetaStore->writeSessionMetadata($sessionId, [
             'reasoning' => $level,
         ]);
+    }
+
+    /**
+     * Get the persisted favorite model refs (provider/modelname strings).
+     *
+     * Only returns favorites that are actually available in the catalog.
+     *
+     * Consults the in-process cache when available so that toggleFavorite()
+     * is immediately visible to callers in the same process.
+     *
+     * @return list<string>
+     */
+    public function getFavoriteModels(): array
+    {
+        $catalog = $this->appConfig->catalog;
+        if (null === $catalog) {
+            return [];
+        }
+
+        $raw = $this->getFavoriteRawList();
+        if ([] === $raw) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            $raw,
+            static fn (string $ref): bool => $catalog->isAvailable($ref),
+        ));
+    }
+
+    /**
+     * Get all available models, with favorites first.
+     *
+     * @return list<AiModelReference>
+     */
+    public function getOrderedModels(): array
+    {
+        $catalog = $this->appConfig->catalog;
+        if (null === $catalog) {
+            return [];
+        }
+
+        $all = $catalog->allModels();
+        $favorites = $this->getFavoriteModels();
+
+        if ([] === $favorites) {
+            return $all;
+        }
+
+        $favSet = array_flip($favorites);
+
+        // Partition into favorites and non-favorites
+        $favModels = [];
+        $rest = [];
+
+        foreach ($all as $ref) {
+            if (isset($favSet[$ref->toString()])) {
+                $favModels[] = $ref;
+            } else {
+                $rest[] = $ref;
+            }
+        }
+
+        // Favorites in the order they appear in ai.favorite_models
+        usort($favModels, static function (AiModelReference $a, AiModelReference $b) use ($favorites): int {
+            $posA = array_search($a->toString(), $favorites, true);
+            $posB = array_search($b->toString(), $favorites, true);
+
+            return (false === $posA ? \PHP_INT_MAX : $posA) <=> (false === $posB ? \PHP_INT_MAX : $posB);
+        });
+
+        return array_merge($favModels, $rest);
+    }
+
+    /**
+     * Is the given model ref a favorite?
+     */
+    public function isFavorite(AiModelReference|string $model): bool
+    {
+        $modelStr = \is_string($model) ? $model : $model->toString();
+
+        return \in_array($modelStr, $this->getFavoriteModels(), true);
+    }
+
+    /**
+     * Toggle a model as favorite (add if absent, remove if present).
+     *
+     * Persists to home settings AND updates the in-process cache so that
+     * getFavoriteModels(), isFavorite(), getOrderedModels(), and
+     * cycleFavoriteModel() reflect the change immediately in the same
+     * process without requiring an AppConfig rebuild.
+     *
+     * @throws \RuntimeException If the model is not available
+     */
+    public function toggleFavorite(AiModelReference $model): void
+    {
+        $catalog = $this->appConfig->catalog;
+        if (null === $catalog) {
+            throw new \RuntimeException('No AI configuration available.');
+        }
+        if (!$catalog->isAvailable($model)) {
+            throw new \RuntimeException(\sprintf('Model "%s" is not available.', $model->toString()));
+        }
+
+        $current = $this->getFavoriteRawList();
+        $modelStr = $model->toString();
+        $pos = array_search($modelStr, $current, true);
+
+        if (false !== $pos) {
+            // Remove
+            unset($current[$pos]);
+            $current = array_values($current);
+        } else {
+            // Add to end
+            $current[] = $modelStr;
+        }
+
+        // Update in-process cache before persisting to disk so that
+        // subsequent reads in this process see the change immediately.
+        $this->favRaw = $current;
+
+        $this->homeWriter->writeFavoriteModels($current);
+    }
+
+    // ──────────────────────────────────────────────
+    //  Cycling helpers
+    // ──────────────────────────────────────────────
+
+    /**
+     * Get the currently active model for the session.
+     *
+     * Resolves through session metadata → home default → first available.
+     */
+    public function getCurrentModel(string $sessionId): ?AiModelReference
+    {
+        return $this->resolveInitialModel(null, $sessionId);
+    }
+
+    /**
+     * Cycle to the next favorite model and persist it.
+     *
+     * Returns the newly selected model reference, or null if no favorites exist.
+     */
+    public function cycleFavoriteModel(string $sessionId): ?AiModelReference
+    {
+        $favorites = $this->getFavoriteModels();
+        if ([] === $favorites) {
+            return null;
+        }
+
+        $current = $this->getCurrentModel($sessionId);
+        $currentStr = null !== $current ? $current->toString() : null;
+
+        // Find current position in favorites
+        $pos = null !== $currentStr ? array_search($currentStr, $favorites, true) : false;
+
+        // If current is not in favorites, start from beginning
+        if (false === $pos) {
+            $nextStr = $favorites[0];
+        } else {
+            // Cycle to next, wrapping around
+            $nextIdx = ($pos + 1) % \count($favorites);
+            $nextStr = $favorites[$nextIdx];
+        }
+
+        $nextRef = AiModelReference::tryParse($nextStr);
+        if (null === $nextRef) {
+            return null;
+        }
+
+        $this->changeModel($nextRef, $sessionId);
+
+        return $nextRef;
+    }
+
+    /**
+     * Cycle to the next reasoning level.
+     *
+     * Returns the new level string.
+     */
+    public function cycleReasoning(string $currentLevel): string
+    {
+        $pos = array_search($currentLevel, self::LEVELS, true);
+
+        if (false === $pos) {
+            // Unknown level — start from beginning
+            return self::LEVELS[0];
+        }
+
+        $nextIdx = ($pos + 1) % \count(self::LEVELS);
+
+        return self::LEVELS[$nextIdx];
+    }
+
+    /**
+     * Cycle reasoning for the current model, but only if the model supports
+     * thinking levels. Does NOT persist or change state when unsupported.
+     *
+     * Returns the new level on success, or null when thinking is not supported
+     * for the current model.
+     */
+    public function cycleReasoningForCurrentModel(string $sessionId): ?string
+    {
+        if (!$this->supportsThinkingLevelsForSession($sessionId)) {
+            return null;
+        }
+
+        $current = $this->getCurrentReasoning($sessionId);
+        $levels = $this->getSupportedReasoningLevels($sessionId);
+
+        $pos = array_search($current, $levels, true);
+        if (false === $pos) {
+            // Current level not in supported set (e.g. xhigh was removed from
+            // config, or model changed) — start from beginning.
+            $nextLevel = $levels[0];
+        } else {
+            $nextIdx = ($pos + 1) % \count($levels);
+            $nextLevel = $levels[$nextIdx];
+        }
+
+        $this->changeReasoning($nextLevel, $sessionId);
+
+        return $nextLevel;
+    }
+
+    /**
+     * Does the current session's model support reasoning-level cycling?
+     */
+    public function supportsThinkingLevelsForSession(string $sessionId): bool
+    {
+        $catalog = $this->appConfig->catalog;
+        if (null === $catalog) {
+            return false;
+        }
+
+        $model = $this->getCurrentModel($sessionId);
+
+        return null !== $model && $catalog->supportsThinkingLevels($model);
+    }
+
+    /**
+     * Get the currently active reasoning level for the session.
+     */
+    public function getCurrentReasoning(string $sessionId): string
+    {
+        return $this->resolveInitialReasoning(null, $sessionId);
+    }
+
+    /**
+     * Get the effective reasoning level for display (footer color, UI indicator).
+     *
+     * Returns 'off' when the current model does not support thinking levels;
+     * otherwise returns the persisted current reasoning.  This prevents stale
+     * high/xhigh coloring from lingering after switching to a non-thinking model
+     * (e.g. llama.cpp).
+     */
+    public function getDisplayReasoning(string $sessionId): string
+    {
+        if (!$this->supportsThinkingLevelsForSession($sessionId)) {
+            return 'off';
+        }
+
+        return $this->getCurrentReasoning($sessionId);
+    }
+
+    /**
+     * Get the reasoning levels supported by the current session's model.
+     *
+     * Returns the keys from the model's thinking_level_map plus 'off' as
+     * the first entry.  Falls back to the global {@see LEVELS} constant
+     * when no model is resolved (e.g. before a session is initialised).
+     *
+     * z.ai models that omit xhigh from their thinking_level_map cycle only
+     * through off→minimal→low→medium→high, never exposing unsupported
+     * levels to the user or persisting them.
+     *
+     * @return list<string>
+     */
+    public function getSupportedReasoningLevels(string $sessionId): array
+    {
+        $catalog = $this->appConfig->catalog;
+        if (null === $catalog) {
+            return self::LEVELS;
+        }
+
+        $model = $this->getCurrentModel($sessionId);
+        if (null === $model) {
+            return self::LEVELS;
+        }
+
+        $def = $catalog->getModel($model);
+        if (null === $def || [] === $def->thinkingLevelMap) {
+            // Reasoning-capable models that have an empty thinking_level_map
+            // (shouldn't happen in practice, but guard) — return off only.
+            return ['off'];
+        }
+
+        // Thinking-level map keys are the user-facing levels this model
+        // recognises.  Always include 'off' as the first entry.
+        $levels = array_keys($def->thinkingLevelMap);
+        if (!\in_array('off', $levels, true)) {
+            array_unshift($levels, 'off');
+        }
+
+        return $levels;
+    }
+
+    // ──────────────────────────────────────────────
+    //  Favorites
+    // ──────────────────────────────────────────────
+
+    /**
+     * Get the raw favorite model refs (provider/modelname strings).
+     *
+     * Prefers the in-process cache when it has been populated by a prior
+     * toggleFavorite() call; otherwise reads from immutable AppConfig.
+     *
+     * @return list<string>
+     */
+    private function getFavoriteRawList(): array
+    {
+        if (null !== $this->favRaw) {
+            return $this->favRaw;
+        }
+
+        $ai = $this->appConfig->ai;
+
+        return (null !== $ai) ? $ai->favoriteModels : [];
     }
 }

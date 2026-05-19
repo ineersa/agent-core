@@ -127,4 +127,34 @@ final readonly class HatfieldModelCatalog
 
         return $all[0] ?? null;
     }
+
+    /**
+     * Check whether reasoning-level cycling is meaningful for a model.
+     *
+     * Considers both the provider-level supports_thinking_levels flag and
+     * the per-model reasoning flag. A model whose provider does not support
+     * thinking levels yields false even when reasoning is true.
+     */
+    public function supportsThinkingLevels(AiModelReference|string $ref): bool
+    {
+        if (\is_string($ref)) {
+            $ref = AiModelReference::tryParse($ref);
+            if (null === $ref) {
+                return false;
+            }
+        }
+
+        $provider = $this->getProvider($ref->providerId);
+        if (null === $provider) {
+            return false;
+        }
+
+        if (!$provider->supportsThinkingLevels) {
+            return false;
+        }
+
+        $model = $provider->models[$ref->modelName] ?? null;
+
+        return null !== $model && $model->reasoning;
+    }
 }

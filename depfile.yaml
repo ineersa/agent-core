@@ -50,6 +50,11 @@ parameters:
         - type: directory
           value: src/Tui/Command/.*
 
+    - name: TuiPicker
+      collectors:
+        - type: directory
+          value: src/Tui/Picker/.*
+
     - name: TuiEditor
       collectors:
         - type: directory
@@ -188,6 +193,7 @@ parameters:
       - TuiScreen
       - TuiTranscript
       - TuiCommand
+      - TuiPicker
       - TuiFooter
       - TuiTheme
       - SymfonyTui
@@ -240,6 +246,16 @@ parameters:
       - TuiTheme
 
     TuiCommand: ~
+
+    TuiPicker:
+      - AppConfig
+      - TuiRuntime
+      - TuiScreen
+      - TuiListener
+      - TuiEditor
+      - TuiFooter
+      - TuiTheme
+      - SymfonyTui
 
     TuiEditor:
       - TuiWidget

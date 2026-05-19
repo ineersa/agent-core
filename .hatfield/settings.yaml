@@ -50,8 +50,15 @@ tui:
 # Use env:VAR in your home settings file.
 #
 ai:
-    default_model: deepseek/deepseek-v4-pro
-    default_reasoning: medium
+    # default_model and default_reasoning belong in ~/.hatfield/settings.yaml
+    # (home settings), not here. Uncomment these only if you want to force
+    # a specific model for everyone working in this project.
+    # default_model: deepseek/deepseek-v4-pro
+    # default_reasoning: medium
+
+    # Favorite models (provider/modelname format) — shown first in /model list
+    # and cycled with Ctrl+P. Toggled via /model fav <provider/modelname>.
+    # favorite_models: []
 
     providers:
         deepseek:
@@ -93,6 +100,10 @@ ai:
             embeddings_path: /embeddings
             supports_completions: true
             supports_embeddings: false
+            # llama.cpp has no native reasoning/thinking level API.
+            # supports_thinking_levels: false disables Shift+Tab cycling
+            # for models from this provider.
+            supports_thinking_levels: false
             models:
                 flash:
                     name: flash
@@ -129,7 +140,7 @@ ai:
                     input: [text]
                     tool_calling: true
                     reasoning: true
-                    thinking_level_map: { minimal: enabled, low: enabled, medium: enabled, high: enabled, xhigh: enabled }
+                    thinking_level_map: { minimal: enabled, low: enabled, medium: enabled, high: enabled }
                     compatibility: { zai_tool_stream: true }
                     cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
                 glm-5v-turbo:
@@ -139,6 +150,6 @@ ai:
                     input: [text, image]
                     tool_calling: true
                     reasoning: true
-                    thinking_level_map: { minimal: enabled, low: enabled, medium: enabled, high: enabled, xhigh: enabled }
+                    thinking_level_map: { minimal: enabled, low: enabled, medium: enabled, high: enabled }
                     compatibility: { zai_tool_stream: true }
                     cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }

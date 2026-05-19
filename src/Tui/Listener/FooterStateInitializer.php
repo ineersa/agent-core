@@ -129,20 +129,34 @@ final readonly class FooterStateInitializer
         return $parts[0] ?? '';
     }
 
-    private static function resolveContextWindow(AppConfig $appConfig, string $fullModel): int
+    /**
+     * Resolve context window for an already-parsed model reference.
+     *
+     * Public so that callers doing model selection / footer update
+     * (e.g. ModelControlListener, ModelCommandHandler,
+     * ModelPickerController) can share the same catalog lookup
+     * without duplicating the logic.
+     */
+    public static function resolveContextWindowForRef(AppConfig $appConfig, AiModelReference $ref): int
     {
         $catalog = $appConfig->catalog;
-        if (null === $catalog || '' === $fullModel) {
-            return 0;
-        }
-
-        $ref = AiModelReference::tryParse($fullModel);
-        if (null === $ref) {
+        if (null === $catalog) {
             return 0;
         }
 
         $definition = $catalog->getModel($ref);
 
         return null !== $definition ? ($definition->contextWindow ?? 0) : 0;
+    }
+
+    private static function resolveContextWindow(AppConfig $appConfig, string $fullModel): int
+    {
+        if ('' === $fullModel) {
+            return 0;
+        }
+
+        $ref = AiModelReference::tryParse($fullModel);
+
+        return null !== $ref ? self::resolveContextWindowForRef($appConfig, $ref) : 0;
     }
 }

@@ -14,7 +14,7 @@ use Ineersa\Tui\Theme\ThemeColor;
  * formatted segments matching the Pi reference footer composition.
  *
  * Segment order:
- *   ◆ model (priority 0-1)
+ *   ◆ model (priority 0-1) — both coloured by reasoning level
  *     token block: input/output(10)  $cost(11)  pct% used/ctx(12)
  *     ⚡ t/s (15, optional)
  *     ⏱ elapsed (20)
@@ -22,7 +22,7 @@ use Ineersa\Tui\Theme\ThemeColor;
  *     ⎇ branch (30)
  *
  * Reasoning level is NOT shown as a text segment — it only affects the
- * diamond colour (matching Pi's thinking-level colouring).
+ * diamond AND model-name colour (matching Pi's thinking-level colouring).
  */
 final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
 {
@@ -38,6 +38,7 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
         $segments = [];
 
         // ── Group 1: ◆ model (priorities 0-1) ──
+        // Both diamond and model name reflect the current reasoning level.
         $modelName = '' !== $s->footerModel ? $s->footerModel : 'no-model';
         $thinkColor = self::thinkingColor($s->footerReasoning);
 
@@ -49,7 +50,7 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
         $segments[] = new FooterSegment(
             text: $modelName,
             priority: 1,
-            color: ThemeColor::Accent,
+            color: $thinkColor,
         );
 
         // ── Group 2: Token stats block (priorities 10-12) ──
@@ -126,13 +127,23 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
 
     // ── Formatting helpers ──
 
+    /**
+     * Map a reasoning level to the dedicated ThemeColor thinking token.
+     *
+     * Uses the semantic ThemeColor::Thinking* tokens (not generic
+     * Accent/Warning/Dim) for consistent reasoning-level colouring
+     * across the diamond, model name, and any future thinking indicators.
+     */
     private static function thinkingColor(string $reasoning): ThemeColor
     {
         return match ($reasoning) {
-            'high', 'xhigh' => ThemeColor::Warning,
-            'medium' => ThemeColor::Accent,
-            'low', 'minimal' => ThemeColor::Dim,
-            default => ThemeColor::Muted,
+            'xhigh' => ThemeColor::ThinkingXhigh,
+            'high' => ThemeColor::ThinkingHigh,
+            'medium' => ThemeColor::ThinkingMedium,
+            'low' => ThemeColor::ThinkingLow,
+            'minimal' => ThemeColor::ThinkingMinimal,
+            'off' => ThemeColor::ThinkingOff,
+            default => ThemeColor::ThinkingText,
         };
     }
 

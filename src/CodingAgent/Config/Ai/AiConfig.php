@@ -15,11 +15,13 @@ final readonly class AiConfig
      * @param string|null                     $defaultModel     Default model in provider/model format
      * @param string|null                     $defaultReasoning Default reasoning level
      * @param array<string, AiProviderConfig> $providers        Enabled providers keyed by provider ID
+     * @param list<string>                    $favoriteModels   Favorited provider/model strings
      */
     public function __construct(
         public ?string $defaultModel = null,
         public ?string $defaultReasoning = null,
         public array $providers = [],
+        public array $favoriteModels = [],
     ) {
     }
 
@@ -59,10 +61,20 @@ final readonly class AiConfig
             }
         }
 
+        $favorites = [];
+        if (isset($aiData['favorite_models']) && \is_array($aiData['favorite_models'])) {
+            foreach ($aiData['favorite_models'] as $fav) {
+                if (\is_string($fav) && '' !== $fav) {
+                    $favorites[] = $fav;
+                }
+            }
+        }
+
         return new self(
             defaultModel: isset($aiData['default_model']) ? (string) $aiData['default_model'] : null,
             defaultReasoning: isset($aiData['default_reasoning']) ? (string) $aiData['default_reasoning'] : null,
             providers: $providers,
+            favoriteModels: $favorites,
         );
     }
 }

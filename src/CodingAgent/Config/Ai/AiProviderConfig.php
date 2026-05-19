@@ -13,18 +13,19 @@ namespace Ineersa\CodingAgent\Config\Ai;
 final readonly class AiProviderConfig
 {
     /**
-     * @param string                           $id                  Provider ID used in model references (e.g. deepseek, llama_cpp, zai)
-     * @param string                           $type                Provider type (generic for OpenAI-completions-style)
-     * @param bool                             $enabled             Whether this provider is active
-     * @param string                           $baseUrl             Base URL for the provider's API
-     * @param string                           $api                 API flavor (e.g. openai-completions)
-     * @param string|null                      $apiKey              API key (plain or env:VAR format; resolved by SecretResolver)
-     * @param string|null                      $completionsPath     Chat completions endpoint path (e.g. /chat/completions)
-     * @param string|null                      $embeddingsPath      Embeddings endpoint path (e.g. /embeddings)
-     * @param bool                             $supportsCompletions Whether chat completions are supported
-     * @param bool                             $supportsEmbeddings  Whether embeddings are supported
-     * @param AiCompatibility|null             $compatibility       Provider-level compatibility metadata
-     * @param array<string, AiModelDefinition> $models              Exposed models keyed by model name
+     * @param string                           $id                     Provider ID used in model references (e.g. deepseek, llama_cpp, zai)
+     * @param string                           $type                   Provider type (generic for OpenAI-completions-style)
+     * @param bool                             $enabled                Whether this provider is active
+     * @param string                           $baseUrl                Base URL for the provider's API
+     * @param string                           $api                    API flavor (e.g. openai-completions)
+     * @param string|null                      $apiKey                 API key (plain or env:VAR format; resolved by SecretResolver)
+     * @param string|null                      $completionsPath        Chat completions endpoint path (e.g. /chat/completions)
+     * @param string|null                      $embeddingsPath         Embeddings endpoint path (e.g. /embeddings)
+     * @param bool                             $supportsCompletions    Whether chat completions are supported
+     * @param bool                             $supportsEmbeddings     Whether embeddings are supported
+     * @param bool                             $supportsThinkingLevels Whether reasoning-level cycling is meaningful for this provider
+     * @param AiCompatibility|null             $compatibility          Provider-level compatibility metadata
+     * @param array<string, AiModelDefinition> $models                 Exposed models keyed by model name
      */
     public function __construct(
         public string $id,
@@ -37,6 +38,7 @@ final readonly class AiProviderConfig
         public ?string $embeddingsPath = null,
         public bool $supportsCompletions = true,
         public bool $supportsEmbeddings = false,
+        public bool $supportsThinkingLevels = true,
         public ?AiCompatibility $compatibility = null,
         public array $models = [],
     ) {
@@ -69,6 +71,7 @@ final readonly class AiProviderConfig
             embeddingsPath: isset($data['embeddings_path']) ? (string) $data['embeddings_path'] : null,
             supportsCompletions: (bool) ($data['supports_completions'] ?? true),
             supportsEmbeddings: (bool) ($data['supports_embeddings'] ?? false),
+            supportsThinkingLevels: (bool) ($data['supports_thinking_levels'] ?? true),
             compatibility: isset($data['compatibility']) && \is_array($data['compatibility']) ? AiCompatibility::fromArray($data['compatibility']) : null,
             models: $models,
         );
