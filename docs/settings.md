@@ -379,7 +379,6 @@ ai:
                         low: enabled
                         medium: enabled
                         high: enabled
-                        xhigh: enabled
                     compatibility:
                         zai_tool_stream: true
                     cost:
@@ -399,7 +398,6 @@ ai:
                         low: enabled
                         medium: enabled
                         high: enabled
-                        xhigh: enabled
                     compatibility:
                         zai_tool_stream: true
                     cost:

@@ -115,7 +115,7 @@ sessions:
 #                     input: [text]
 #                     tool_calling: true
 #                     reasoning: true
-#                     thinking_level_map: { minimal: enabled, low: enabled, medium: enabled, high: enabled, xhigh: enabled }
+#                     thinking_level_map: { minimal: enabled, low: enabled, medium: enabled, high: enabled }
 #                     compatibility: { zai_tool_stream: true }
 #                     cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
 #                 glm-5v-turbo:
@@ -125,6 +125,6 @@ sessions:
 #                     input: [text, image]
 #                     tool_calling: true
 #                     reasoning: true
-#                     thinking_level_map: { minimal: enabled, low: enabled, medium: enabled, high: enabled, xhigh: enabled }
+#                     thinking_level_map: { minimal: enabled, low: enabled, medium: enabled, high: enabled }
 #                     compatibility: { zai_tool_stream: true }
 #                     cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }

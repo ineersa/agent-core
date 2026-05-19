@@ -8,6 +8,8 @@ use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Theme\ThemeColor;
+use Ineersa\Tui\Theme\TuiTheme;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Input\Key;
@@ -57,9 +59,12 @@ final class FavoritePickerController
         $screen = $this->screen;
         $state = $this->state;
 
-        // ── Header — instructional line above the list ──
+        // ── Header — instructional line above the list (muted theme colour) ──
+        $headerText = $screen->theme()->muted(
+            'Favorite models — arrows move, Space toggles favorite, Enter saves, Esc cancels',
+        );
         $header = new TextWidget(
-            text: 'Favorite models — arrows move, Space toggles *, Enter saves, Esc cancels',
+            text: $headerText,
             truncate: true,
         );
 
@@ -118,7 +123,7 @@ final class FavoritePickerController
             }
 
             // Rebuild items with updated favorite markers
-            $newItems = FavoritePickerController::buildFavoritesItems($modelService);
+            $newItems = FavoritePickerController::buildFavoritesItems($modelService, $screen->theme());
             $listWidget->setItems($newItems);
 
             // Restore selection
@@ -185,7 +190,7 @@ final class FavoritePickerController
      *
      * @return list<array{value: string, label: string}>
      */
-    public static function buildFavoritesItems(ModelSelectionService $modelService): array
+    public static function buildFavoritesItems(ModelSelectionService $modelService, TuiTheme $theme): array
     {
         $all = $modelService->getAvailableModels();
         $favorites = $modelService->getFavoriteModels();
@@ -196,9 +201,15 @@ final class FavoritePickerController
             $refStr = $ref->toString();
             $isFav = isset($favSet[$refStr]);
 
+            // Favourite marker coloured with Warning token so
+            // favourited rows stand out from plain ones.
+            $marker = $isFav
+                ? $theme->color(ThemeColor::Warning, '*')
+                : ' ';
+
             $label = \sprintf(
                 '%s %s',
-                $isFav ? '*' : ' ',
+                $marker,
                 $refStr,
             );
 
@@ -218,6 +229,6 @@ final class FavoritePickerController
      */
     private function buildItems(): array
     {
-        return self::buildFavoritesItems($this->modelService);
+        return self::buildFavoritesItems($this->modelService, $this->screen->theme());
     }
 }

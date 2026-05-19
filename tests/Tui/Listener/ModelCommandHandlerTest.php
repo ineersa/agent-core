@@ -161,7 +161,7 @@ class ModelCommandHandlerTest extends TestCase
                             'reasoning' => true,
                             'thinking_level_map' => [
                                 'minimal' => 'enabled', 'low' => 'enabled',
-                                'medium' => 'enabled', 'high' => 'enabled', 'xhigh' => 'enabled',
+                                'medium' => 'enabled', 'high' => 'enabled',
                             ],
                             'cost' => ['input' => 0, 'output' => 0, 'cache_read' => 0, 'cache_write' => 0],
                         ],

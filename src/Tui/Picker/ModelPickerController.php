@@ -10,6 +10,8 @@ use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\Tui\Listener\FooterStateInitializer;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Theme\ThemeColor;
+use Ineersa\Tui\Theme\TuiTheme;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Input\Key;
@@ -74,9 +76,12 @@ final class ModelPickerController
         $screen = $this->screen;
         $state = $this->state;
 
-        // ── Header — instructional line above the list ──
+        // ── Header — instructional line above the list (muted theme colour) ──
+        $headerText = '' !== $state->footerModel
+            ? $screen->theme()->muted('Select a model — arrows move, Enter selects, Esc cancels')
+            : 'Select a model — arrows move, Enter selects, Esc cancels';
         $header = new TextWidget(
-            text: 'Select a model — arrows move, Enter selects, Esc cancels',
+            text: $headerText,
             truncate: true,
         );
 
@@ -132,7 +137,7 @@ final class ModelPickerController
             }
 
             // Rebuild items with updated favorite markers
-            $newItems = ModelPickerController::buildItemsStatic($modelService, $state);
+            $newItems = ModelPickerController::buildItemsStatic($modelService, $state, $screen->theme());
             $listWidget->setItems($newItems);
 
             // Restore selection to the same model if it's still visible
@@ -212,7 +217,7 @@ final class ModelPickerController
      *
      * @return list<array{value: string, label: string, description?: string}>
      */
-    public static function buildItemsStatic(ModelSelectionService $modelService, TuiSessionState $state): array
+    public static function buildItemsStatic(ModelSelectionService $modelService, TuiSessionState $state, TuiTheme $theme): array
     {
         $ordered = $modelService->getOrderedModels();
         $favorites = $modelService->getFavoriteModels();
@@ -226,23 +231,27 @@ final class ModelPickerController
             $isFav = isset($favSet[$refStr]);
             $isCurrent = $refStr === $currentStr;
 
+            // Colour markers with semantic theme tokens so rows are
+            // visibly styled rather than all-white.  Selected-row bold
+            // from SelectListWidget\'s stylesheet layers on top.
+            $pointer = $isCurrent
+                ? $theme->color(ThemeColor::Accent, '❯')
+                : ' ';
+            $star = $isFav
+                ? $theme->color(ThemeColor::Warning, '★')
+                : ' ';
+
             $label = \sprintf(
                 '%s %s  %s',
-                $isCurrent ? '❯' : ' ',
-                $isFav ? '★' : ' ',
+                $pointer,
+                $star,
                 $refStr,
             );
 
-            $item = [
+            $items[] = [
                 'value' => $refStr,
                 'label' => $label,
             ];
-
-            if ($isCurrent) {
-                $item['description'] = 'current';
-            }
-
-            $items[] = $item;
         }
 
         return $items;
@@ -324,7 +333,7 @@ final class ModelPickerController
      */
     private function buildItems(): array
     {
-        return self::buildItemsStatic($this->modelService, $this->state);
+        return self::buildItemsStatic($this->modelService, $this->state, $this->screen->theme());
     }
 
     private static function lookupContextWindow(AppConfig $appConfig, AiModelReference $ref): int

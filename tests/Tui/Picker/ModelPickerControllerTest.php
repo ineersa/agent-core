@@ -15,6 +15,9 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\Tui\Picker\FavoritePickerController;
 use Ineersa\Tui\Picker\ModelPickerController;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Theme\DefaultTheme;
+use Ineersa\Tui\Theme\ThemePalette;
+use Ineersa\Tui\Theme\TuiTheme;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -54,7 +57,7 @@ class ModelPickerControllerTest extends TestCase
         ]);
         $state = new TuiSessionState('test');
 
-        $items = ModelPickerController::buildItemsStatic($service, $state);
+        $items = ModelPickerController::buildItemsStatic($service, $state, $this->createTheme());
 
         // At least 2 models configured
         self::assertGreaterThanOrEqual(2, count($items));
@@ -72,16 +75,13 @@ class ModelPickerControllerTest extends TestCase
         $service = $this->buildService();
         $state = new TuiSessionState('test');
 
-        $items = ModelPickerController::buildItemsStatic($service, $state);
+        $items = ModelPickerController::buildItemsStatic($service, $state, $this->createTheme());
 
-        // Current model (default) should have ❯ marker and a description
+        // Current model (default) should have ❯ marker (visual only, no description)
         $currentFound = false;
         foreach ($items as $item) {
             if (str_contains($item['label'], '❯')) {
                 $currentFound = true;
-                // Current model item should have a description to stand out visually
-                self::assertArrayHasKey('description', $item);
-                self::assertSame('current', $item['description']);
                 break;
             }
         }
@@ -89,18 +89,17 @@ class ModelPickerControllerTest extends TestCase
     }
 
     #[Test]
-    public function testNonCurrentModelsHaveNoDescription(): void
+    public function testNoItemsHaveDescription(): void
     {
         $service = $this->buildService();
         $state = new TuiSessionState('test');
 
-        $items = ModelPickerController::buildItemsStatic($service, $state);
+        $items = ModelPickerController::buildItemsStatic($service, $state, $this->createTheme());
 
-        // All non-current items should not have a description
+        // No item should carry a description key — visual distinction is
+        // handled by coloured markers, not textual metadata.
         foreach ($items as $item) {
-            if (!str_contains($item['label'], '❯')) {
-                self::assertArrayNotHasKey('description', $item);
-            }
+            self::assertArrayNotHasKey('description', $item);
         }
     }
 
@@ -111,7 +110,7 @@ class ModelPickerControllerTest extends TestCase
     {
         $service = $this->buildService(['favorite_models' => ['llama_cpp/flash']]);
 
-        $items = FavoritePickerController::buildFavoritesItems($service);
+        $items = FavoritePickerController::buildFavoritesItems($service, $this->createTheme());
 
         self::assertGreaterThanOrEqual(2, count($items));
 
@@ -130,7 +129,7 @@ class ModelPickerControllerTest extends TestCase
     {
         $service = $this->buildService();
 
-        $items = FavoritePickerController::buildFavoritesItems($service);
+        $items = FavoritePickerController::buildFavoritesItems($service, $this->createTheme());
 
         self::assertGreaterThanOrEqual(2, count($items));
 
@@ -164,6 +163,14 @@ class ModelPickerControllerTest extends TestCase
     }
 
     // ── Helpers ──
+
+    /**
+     * Create a test TuiTheme with an empty palette (plain-text markers).
+     */
+    private function createTheme(): TuiTheme
+    {
+        return new DefaultTheme(new ThemePalette(name: 'test', colors: []));
+    }
 
     private function buildService(array $aiOverrides = []): ModelSelectionService
     {

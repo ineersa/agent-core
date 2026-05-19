@@ -413,7 +413,18 @@ final class ModelSelectionService
         }
 
         $current = $this->getCurrentReasoning($sessionId);
-        $nextLevel = $this->cycleReasoning($current);
+        $levels = $this->getSupportedReasoningLevels($sessionId);
+
+        $pos = array_search($current, $levels, true);
+        if (false === $pos) {
+            // Current level not in supported set (e.g. xhigh was removed from
+            // config, or model changed) — start from beginning.
+            $nextLevel = $levels[0];
+        } else {
+            $nextIdx = ($pos + 1) % \count($levels);
+            $nextLevel = $levels[$nextIdx];
+        }
+
         $this->changeReasoning($nextLevel, $sessionId);
 
         return $nextLevel;
@@ -457,6 +468,48 @@ final class ModelSelectionService
         }
 
         return $this->getCurrentReasoning($sessionId);
+    }
+
+    /**
+     * Get the reasoning levels supported by the current session's model.
+     *
+     * Returns the keys from the model's thinking_level_map plus 'off' as
+     * the first entry.  Falls back to the global {@see LEVELS} constant
+     * when no model is resolved (e.g. before a session is initialised).
+     *
+     * z.ai models that omit xhigh from their thinking_level_map cycle only
+     * through off→minimal→low→medium→high, never exposing unsupported
+     * levels to the user or persisting them.
+     *
+     * @return list<string>
+     */
+    public function getSupportedReasoningLevels(string $sessionId): array
+    {
+        $catalog = $this->appConfig->catalog;
+        if (null === $catalog) {
+            return self::LEVELS;
+        }
+
+        $model = $this->getCurrentModel($sessionId);
+        if (null === $model) {
+            return self::LEVELS;
+        }
+
+        $def = $catalog->getModel($model);
+        if (null === $def || [] === $def->thinkingLevelMap) {
+            // Reasoning-capable models that have an empty thinking_level_map
+            // (shouldn't happen in practice, but guard) — return off only.
+            return ['off'];
+        }
+
+        // Thinking-level map keys are the user-facing levels this model
+        // recognises.  Always include 'off' as the first entry.
+        $levels = array_keys($def->thinkingLevelMap);
+        if (!\in_array('off', $levels, true)) {
+            array_unshift($levels, 'off');
+        }
+
+        return $levels;
     }
 
     // ──────────────────────────────────────────────

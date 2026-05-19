@@ -939,4 +939,94 @@ class ModelSelectionServiceTest extends TestCase
         $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
         self::assertSame('off', $service->getDisplayReasoning('abc123'));
     }
+
+    // ──────────────────────────────────────────────
+    //  Supported reasoning levels (per-model cycling)
+    // ──────────────────────────────────────────────
+
+    public function testGetSupportedReasoningLevelsReturnsModelLevels(): void
+    {
+        // deepseek/deepseek-v4-pro has 5 thinking levels + off = 6
+        $service = $this->buildService($this->standardAiData());
+
+        $levels = $service->getSupportedReasoningLevels('abc123');
+
+        self::assertContains('off', $levels);
+        self::assertContains('minimal', $levels);
+        self::assertContains('low', $levels);
+        self::assertContains('medium', $levels);
+        self::assertContains('high', $levels);
+        self::assertContains('xhigh', $levels);
+        // off must be first
+        self::assertSame('off', $levels[0]);
+    }
+
+    public function testGetSupportedReasoningLevelsReturnsOnlyOffForNonReasoningModel(): void
+    {
+        $service = $this->buildService($this->standardAiData());
+        // Switch to llama_cpp/flash (reasoning: false, empty thinkingLevelMap)
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+
+        $levels = $service->getSupportedReasoningLevels('abc123');
+
+        // Empty thinkingLevelMap → only 'off'
+        self::assertSame(['off'], $levels);
+    }
+
+    public function testGetSupportedReasoningLevelsReturnsGlobalLevelsWhenNoModel(): void
+    {
+        $service = $this->buildService([]);
+
+        $levels = $service->getSupportedReasoningLevels('abc123');
+
+        // No catalog → fall back to global LEVELS
+        self::assertSame(ModelSelectionService::LEVELS, $levels);
+    }
+
+    public function testCycleReasoningForCurrentModelDoesNotExposeXhighForZaiStyleModel(): void
+    {
+        // A z.ai-style model that omits xhigh from its thinking_level_map
+        $aiData = $this->standardAiData();
+        $aiData['providers']['zai'] = [
+            'type' => 'generic',
+            'enabled' => true,
+            'base_url' => 'https://api.z.ai/api/coding/paas/v4',
+            'api' => 'openai-completions',
+            'api_key' => 'test-key',
+            'completions_path' => '/chat/completions',
+            'supports_completions' => true,
+            'supports_embeddings' => false,
+            'models' => [
+                'glm-5.1' => [
+                    'name' => 'GLM 5.1',
+                    'context_window' => 200000,
+                    'max_tokens' => 131072,
+                    'input' => ['text'],
+                    'tool_calling' => true,
+                    'reasoning' => true,
+                    // Z.ai has no xhigh — only off, minimal, low, medium, high
+                    'thinking_level_map' => [
+                        'minimal' => 'enabled',
+                        'low' => 'enabled',
+                        'medium' => 'enabled',
+                        'high' => 'enabled',
+                    ],
+                    'cost' => ['input' => 0, 'output' => 0, 'cache_read' => 0, 'cache_write' => 0],
+                ],
+            ],
+        ];
+        $service = $this->buildService($aiData);
+
+        // Change model to z.ai glm-5.1 and set reasoning to 'high'
+        $service->changeModel(new AiModelReference('zai', 'glm-5.1'), 'abc123');
+        $service->changeReasoning('high', 'abc123');
+
+        // Cycling should wrap to 'off' (not 'xhigh')
+        $result = $service->cycleReasoningForCurrentModel('abc123');
+        self::assertSame('off', $result);
+
+        // The next cycle after off goes to minimal
+        $result = $service->cycleReasoningForCurrentModel('abc123');
+        self::assertSame('minimal', $result);
+    }
 }

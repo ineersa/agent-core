@@ -59,7 +59,7 @@ final class ModelControlListener implements TuiListenerRegistrar
                 new CommandMetadata(
                     name: 'model',
                     aliases: ['m'],
-                    description: 'Interactive model picker. /model opens picker (Enter to select, Esc to cancel, Ctrl+F to toggle favorite). /model fav opens favorites picker (Space to toggle * marker, Enter to save).',
+                    description: 'Interactive model selection. /model opens the model picker (arrows move, Enter selects, Esc cancels, Ctrl+F toggles favorite). /model fav opens the favorites picker (Space toggles, Enter saves).',
                     usage: '/model | /model select <provider/modelname> | /model fav | /model fav <provider/modelname>',
                 ),
                 $modelHandler,
