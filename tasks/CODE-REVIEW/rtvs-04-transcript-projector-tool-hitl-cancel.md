@@ -30,7 +30,7 @@ Parallelizable with: RTVS-03, RTVS-05.
 Status: CODE-REVIEW
 Branch: task/rtvs-04-transcript-projector-tool-hitl-cancel
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-04-transcript-projector-tool-hitl-cancel
-Fork run: u46soqi61rap
+Fork run: 3z2ugrkhvk43
 PR URL: https://github.com/ineersa/agent-core/pull/31
 PR Status: open
 Started: 2026-05-19T14:12:07.707Z
@@ -69,3 +69,7 @@ Completed:
 - Recorded fork run: u46soqi61rap
 - Validation: castor test --filter=TranscriptProjectorTest: OK (61 tests, 227 assertions); castor deptrac: OK (0 violations); castor test: OK (683 tests, 9242 assertions; 1 pre-existing PHPUnit notice); castor phpstan --path=src/CodingAgent/Runtime/Projection --path=tests/CodingAgent/Runtime/Projection: OK (0 new errors; existing baseline entries only); castor cs-fix/cs-check on touched projection files: clean; gh pr view 31 --json files: only 4 expected files
 - Summary: Reviewer-fix/unification complete and pushed to PR #31 at commit `32e4a475`. RTVS-04 now includes RTVS-03 assistant/user projector behavior plus tool/HITL/approval/cancellation in one unified `TranscriptProjector`. Public API is `accept(array $event): void`, `blocks(): list<TranscriptBlock>`, `reset(): void`; `AppRuntimeProjection` remains dependency-free (`depfile.yaml` reverted to `AppRuntimeProjection: ~`). PR #31 diff now contains 4 files only: `TranscriptBlock.php`, unified `TranscriptProjector.php`, moved `TranscriptBlockTest.php`, unified `TranscriptProjectorTest.php`. PR #30 is already closed as superseded.
+
+## Task workflow update - 2026-05-19T21:36:12.941Z
+- Recorded fork run: 3z2ugrkhvk43
+- Summary: Launched refactor fork in RTVS-04 worktree to replace monolithic `TranscriptProjector` match/handler implementation with Symfony EventDispatcher/EventSubscriberInterface projection pipeline. Target design: dependency-free projection state holder, Symfony facade exposing `accept(array)/blocks()/reset()`, family subscribers for user/assistant/tool/HITL/cancellation, deptrac layer for EventDispatcher/pipeline, full PR #31 behavior preserved.
