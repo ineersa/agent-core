@@ -28,7 +28,7 @@ Parallelizable with: RTVS-01, RTVS-05, RTVS-06 after agreeing rough DTO shape.
 Status: IN-PROGRESS
 Branch: task/rtvs-02-transcript-projection-dtos
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-02-transcript-projection-dtos
-Fork run:
+Fork run: uzxtryp4k0zy
 PR URL:
 PR Status:
 Started: 2026-05-19T01:13:42.351Z
@@ -43,3 +43,7 @@ Completed:
 - Created worktree /home/ineersa/projects/agent-core-worktrees/rtvs-02-transcript-projection-dtos.
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/rtvs-02-transcript-projection-dtos.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/rtvs-02-transcript-projection-dtos.
+
+## Task workflow update - 2026-05-19T01:27:04.352Z
+- Recorded fork run: uzxtryp4k0zy
+- Summary: RTVS-02 complete. Created `TranscriptBlockKind` enum (11 cases) and `TranscriptBlock` readonly DTO with `toArray()`/`fromArray()` round-trip, `with()`/`appendText()`/`finalize()` mutation helpers. Updated depfile.yaml with new `AppRuntimeProjection` layer. 30 new tests pass, 339 total tests pass, deptrac clean. Committed as 3a95037a on task/rtvs-02-transcript-projection-dtos. Ready for CODE-REVIEW.
