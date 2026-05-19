@@ -28,7 +28,7 @@ Parallelizable with: RTVS-02, RTVS-03, RTVS-04.
 Status: CODE-REVIEW
 Branch: task/rtvs-05-runtime-event-mapper-normalization
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-05-runtime-event-mapper-normalization
-Fork run: layq6f28tvog
+Fork run: 1uirucdcjzc3
 PR URL: https://github.com/ineersa/agent-core/pull/32
 PR Status: open
 Started: 2026-05-19T21:59:11.393Z
@@ -59,3 +59,10 @@ Completed:
 
 ## Task workflow update - 2026-05-19T22:26:35.876Z
 - Scout investigation after RTVS-05: Symfony AI does emit `DeltaInterface` values in `LlmPlatformAdapter::consumeStream()` (`TextDelta`, `ThinkingDelta`, `ToolCallStart`, `ToolInputDelta`, etc.). They are accumulated into `PlatformInvocationResult::$deltas` and used to build the final `AssistantMessage`, but `ExecuteLlmStepWorker` does not forward `$response->deltas()` into `LlmStepResult`; `LlmStepResult` has no deltas property, so `LlmStepResultHandler` can only emit coarse `llm_step_completed/failed/aborted` events. Existing hooks/subscribers are before-provider or after-turn-commit and cannot observe individual streaming deltas. Real streaming transcript updates need a new source-side stream observer/sink/hook at the platform invocation boundary, with careful sequencing/persistence design.
+
+## Task workflow update - 2026-05-19T22:40:21.114Z
+- Scope clarification before follow-up implementation: Symfony AI stream deltas should be treated as transient transport/presentation events, not canonical session storage. Do not persist token deltas into AgentCore events.jsonl. For in-process interactive transport, use an in-memory RuntimeEvent sink/queue. For process/headless/subagent transport, reuse the existing JSONL stdin/stdout protocol to emit transient RuntimeEvent values over stdout. Final/coarse RunEvent commits remain the durable replay source. Implementation target: add an AgentCore-facing stream observer interface, invoke it from LlmPlatformAdapter::consumeStream(), implement CodingAgent-side mapping from Symfony AI DeltaInterface values to RuntimeEventTypeEnum values, and route through transport-specific sinks without violating AgentCore/CodingAgent/TUI boundaries.
+
+## Task workflow update - 2026-05-19T22:40:40.897Z
+- Recorded fork run: 1uirucdcjzc3
+- Launched fork run 1uirucdcjzc3 in RTVS-05 worktree to implement ephemeral Symfony AI stream delta transport: AgentCore stream observer interface, LlmPlatformAdapter observer callbacks, CodingAgent RuntimeEvent sink(s), in-process queueing, JSONL stdout sink for process/headless transport, delta→RuntimeEventTypeEnum mapping, DI wiring, focused tests, and Castor validation.
