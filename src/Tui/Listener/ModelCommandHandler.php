@@ -105,7 +105,7 @@ final class ModelCommandHandler implements SlashCommandHandler
             $ref->providerId.'/'.$ref->modelName,
         );
         $this->state->footerReasoning = $this->modelService->getDisplayReasoning($this->state->sessionId);
-        $this->state->contextWindow = self::lookupContextWindow($this->appConfig, $ref);
+        $this->state->contextWindow = FooterStateInitializer::resolveContextWindowForRef($this->appConfig, $ref);
 
         return new TranscriptMessage(
             \sprintf('Model changed to %s.', $ref->toString()),
@@ -250,20 +250,5 @@ final class ModelCommandHandler implements SlashCommandHandler
         $lines[] = 'Type /model fav (no args) to open the interactive picker.';
 
         return new TranscriptMessage(implode("\n", $lines), 'system');
-    }
-
-    /**
-     * Resolve context window for a model from the catalog.
-     */
-    private static function lookupContextWindow(AppConfig $appConfig, AiModelReference $ref): int
-    {
-        $catalog = $appConfig->catalog;
-        if (null === $catalog) {
-            return 0;
-        }
-
-        $definition = $catalog->getModel($ref);
-
-        return null !== $definition ? ($definition->contextWindow ?? 0) : 0;
     }
 }

@@ -135,9 +135,12 @@ class ModelPickerControllerTest extends TestCase
 
         foreach ($items as $item) {
             $label = $item['label'];
-            // Label starts with space or * marker. Non-favorites should start with space, not *
-            $firstChar = mb_substr(trim($label), 0, 1);
+            // Label starts with space or * marker followed by model name.
+            // Non-favorites should start with a space, not with *.
+            // Do NOT trim — leading space IS the marker for non-favorites.
+            $firstChar = mb_substr($label, 0, 1);
             self::assertNotSame('*', $firstChar, 'Non-favorite items should not have * marker');
+            self::assertSame(' ', $firstChar, 'Non-favorite items should have space as marker placeholder');
         }
     }
 

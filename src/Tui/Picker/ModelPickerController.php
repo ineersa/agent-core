@@ -212,10 +212,12 @@ final class ModelPickerController
     /**
      * Static variant so the onInput closure can rebuild without $this capture.
      *
-     * The current model item carries a description so it stands out visually
-     * (rendered by SelectListWidget via DefaultStyleSheet::description in gray).
+     * The current model item is distinguished by a coloured ❯ marker;
+     * favourite items by a coloured ★ marker.  No description field is
+     * set — visual distinction relies on theme-coloured markers layered
+     * on top of SelectListWidget's selected-row bold styling.
      *
-     * @return list<array{value: string, label: string, description?: string}>
+     * @return list<array{value: string, label: string}>
      */
     public static function buildItemsStatic(ModelSelectionService $modelService, TuiSessionState $state, TuiTheme $theme): array
     {
@@ -278,6 +280,8 @@ final class ModelPickerController
      *
      * Called from within a static closure on SelectEvent — all
      * dependencies are passed explicitly.
+     *
+     * @internal called from static closures within {@see open()}
      */
     public function applySelectEffect(
         AiModelReference $ref,
@@ -298,7 +302,7 @@ final class ModelPickerController
             $ref->providerId.'/'.$ref->modelName,
         );
         $state->footerReasoning = $modelService->getDisplayReasoning($state->sessionId);
-        $state->contextWindow = self::lookupContextWindow($appConfig, $ref);
+        $state->contextWindow = FooterStateInitializer::resolveContextWindowForRef($appConfig, $ref);
 
         $screen->refresh();
     }
@@ -311,6 +315,8 @@ final class ModelPickerController
      *
      * Called from within a static closure on SelectEvent/CancelEvent —
      * all dependencies are passed explicitly.
+     *
+     * @internal called from static closures within {@see open()}
      */
     public function applyCloseEffect(Tui $tui, SelectListWidget $listWidget): void
     {
@@ -334,17 +340,5 @@ final class ModelPickerController
     private function buildItems(): array
     {
         return self::buildItemsStatic($this->modelService, $this->state, $this->screen->theme());
-    }
-
-    private static function lookupContextWindow(AppConfig $appConfig, AiModelReference $ref): int
-    {
-        $catalog = $appConfig->catalog;
-        if (null === $catalog) {
-            return 0;
-        }
-
-        $definition = $catalog->getModel($ref);
-
-        return null !== $definition ? ($definition->contextWindow ?? 0) : 0;
     }
 }

@@ -173,6 +173,11 @@ final class FavoritePickerController
         return $this->isOpen;
     }
 
+    /**
+     * Remove the picker widgets and mark the controller as closed.
+     *
+     * @internal called from static closures within {@see open()}
+     */
     public function applyCloseEffect(Tui $tui, SelectListWidget $listWidget): void
     {
         if (null !== $this->container) {

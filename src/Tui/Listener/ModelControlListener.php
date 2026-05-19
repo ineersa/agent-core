@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
-use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\Tui\Command\CommandMetadata;
@@ -44,7 +43,6 @@ final class ModelControlListener implements TuiListenerRegistrar
         $screen = $context->screen;
         $modelService = $this->modelService;
         $appConfig = $this->appConfig;
-        $pickerController = $this->pickerController;
 
         // Wire the picker controllers with references only available at register() time
         $this->pickerController->setRuntimeRefs($tui, $screen, $state);
@@ -85,7 +83,7 @@ final class ModelControlListener implements TuiListenerRegistrar
             // Use display reasoning so non-thinking models reset footer color to off
             $state->footerModel = FooterStateInitializer::shortModelName($nextRef->toString());
             $state->footerReasoning = $modelService->getDisplayReasoning($state->sessionId);
-            $state->contextWindow = self::lookupContextWindow($appConfig, $nextRef);
+            $state->contextWindow = FooterStateInitializer::resolveContextWindowForRef($appConfig, $nextRef);
         }, priority: 95);
 
         // ── Register Shift+Tab — cycle reasoning levels ──
@@ -107,20 +105,5 @@ final class ModelControlListener implements TuiListenerRegistrar
             // Update footer state for immediate refresh (no persistent status entry)
             $state->footerReasoning = $nextLevel;
         }, priority: 95);
-    }
-
-    /**
-     * Resolve context window for a model from the catalog.
-     */
-    private static function lookupContextWindow(AppConfig $appConfig, AiModelReference $ref): int
-    {
-        $catalog = $appConfig->catalog;
-        if (null === $catalog) {
-            return 0;
-        }
-
-        $definition = $catalog->getModel($ref);
-
-        return null !== $definition ? ($definition->contextWindow ?? 0) : 0;
     }
 }

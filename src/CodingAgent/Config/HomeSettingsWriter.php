@@ -46,6 +46,11 @@ final class HomeSettingsWriter
     /**
      * Write a list value under the ai section, preserving comments.
      *
+     * Only replaces an *active* (non-commented) key.  Commented-out
+     * lines with the same key are left untouched — if the user
+     * commented out a key to disable it, the writer inserts a fresh
+     * active key instead of silently uncommenting the old one.
+     *
      * @param list<string> $values List of strings
      */
     private function writeAiListKey(string $filePath, string $key, array $values): void
@@ -64,13 +69,16 @@ final class HomeSettingsWriter
             $line = \sprintf('    %s: [%s]', $key, implode(', ', $quoted));
         }
 
-        $pattern = '/^[ \t]*#?[ \t]*'.preg_quote($key, '/').'\s*:.*$/m';
+        $activePattern = '/^    '.preg_quote($key, '/').'\s*:.*$/m';
 
-        if (preg_match($pattern, $content)) {
-            $content = preg_replace($pattern, $line, $content, 1);
+        if (preg_match($activePattern, $content)) {
+            // Replace the active key (only uncommented, with 4-space indent)
+            $content = preg_replace($activePattern, $line, $content, 1);
         } elseif (preg_match('/^ai:\s*$/m', $content)) {
+            // ai section exists — insert new active key below it
             $content = preg_replace('/^ai:\s*$/m', "ai:\n".$line, $content, 1);
         } else {
+            // No ai section — append
             $content = rtrim($content)."\n\nai:\n".$line."\n";
         }
 
@@ -91,10 +99,14 @@ final class HomeSettingsWriter
         }
 
         $line = \sprintf('    %s: %s', $key, $this->yamlScalar($value));
-        $pattern = '/^[ \t]*#?[ \t]*'.preg_quote($key, '/').'\s*:.*$/m';
 
-        if (preg_match($pattern, $content)) {
-            $content = preg_replace($pattern, $line, $content, 1);
+        // Only match active (non-commented) keys with 4-space indent.
+        // This prevents accidentally uncommenting a key the user
+        // intentionally disabled.
+        $activePattern = '/^    '.preg_quote($key, '/').'\s*:.*$/m';
+
+        if (preg_match($activePattern, $content)) {
+            $content = preg_replace($activePattern, $line, $content, 1);
         } elseif (preg_match('/^ai:\s*$/m', $content)) {
             $content = preg_replace('/^ai:\s*$/m', "ai:\n".$line, $content, 1);
         } else {
