@@ -27,12 +27,12 @@ Parallelizable with: RTVS-03, RTVS-05.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/rtvs-04-transcript-projector-tool-hitl-cancel
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-04-transcript-projector-tool-hitl-cancel
 Fork run: l7miiivya34a
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/31
+PR Status: open
 Started: 2026-05-19T14:12:07.707Z
 Completed:
 
@@ -49,3 +49,14 @@ Completed:
 ## Task workflow update - 2026-05-19T14:13:02.228Z
 - Recorded fork run: l7miiivya34a
 - Summary: Launched implementation fork for RTVS-04 in worktree `/home/ineersa/projects/agent-core-worktrees/rtvs-04-transcript-projector-tool-hitl-cancel`. Scope: TranscriptProjector tool/HITL/approval/cancellation support; focused tests and deptrac; commit on task branch.
+
+## Task workflow update - 2026-05-19T14:35:14.662Z
+- Recorded fork run: l7miiivya34a
+- Validation: castor test --filter=TranscriptProjectorTest: OK (33 tests, 125 assertions); castor deptrac: OK (0 violations); castor test: OK (655 tests, 9140 assertions; 1 pre-existing PHPUnit notice)
+- Summary: RTVS-04 implementation complete on branch `task/rtvs-04-transcript-projector-tool-hitl-cancel` at commit `c7934fd7`. Added `TranscriptProjector` support for tool call/execution, HITL question/answer/reject, approval request/approve/reject, and cancellation events. Updated `depfile.yaml` so `AppRuntimeProjection` may consume `AppRuntimeContract` (`RuntimeEvent`, `RuntimeEventTypeEnum`). Notes: RTVS-03 PR #30 also creates `TranscriptProjector`; expected merge conflict is mechanical/additive in projector class/tests and depfile. Fork initially validated with raw vendor commands, parent revalidated with required Castor commands before PR.
+
+## Task workflow update - 2026-05-19T14:35:25.388Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/rtvs-04-transcript-projector-tool-hitl-cancel to origin.
+- branch 'task/rtvs-04-transcript-projector-tool-hitl-cancel' set up to track 'origin/task/rtvs-04-transcript-projector-tool-hitl-cancel'.
+- Created PR: https://github.com/ineersa/agent-core/pull/31
