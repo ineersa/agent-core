@@ -28,7 +28,7 @@ Parallelizable with: RTVS-01, RTVS-05, RTVS-06 after agreeing rough DTO shape.
 Status: CODE-REVIEW
 Branch: task/rtvs-02-transcript-projection-dtos
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-02-transcript-projection-dtos
-Fork run: uzxtryp4k0zy
+Fork run: 55glhc2do5aq
 PR URL: https://github.com/ineersa/agent-core/pull/29
 PR Status: open
 Started: 2026-05-19T01:13:42.351Z
@@ -53,3 +53,18 @@ Completed:
 - Pushed task/rtvs-02-transcript-projection-dtos to origin.
 - branch 'task/rtvs-02-transcript-projection-dtos' set up to track 'origin/task/rtvs-02-transcript-projection-dtos'.
 - Created PR: https://github.com/ineersa/agent-core/pull/29
+
+## Task workflow update - 2026-05-19T01:38:36.719Z
+- Recorded fork run: 55glhc2do5aq
+- Summary: Launched reviewer-fix fork for PR #29. Scope: rename TranscriptBlockKind enum with Enum suffix, address custom toArray/fromArray by using Symfony Serializer where practical, rebase branch to remove unrelated task-board files, validate and push.
+
+## Task workflow update - 2026-05-19T01:50:33.590Z
+- Validation: castor test --filter=TranscriptBlockTest: OK (30 tests, 154 assertions); castor test: OK (573 tests, 8712 assertions); castor deptrac: 0 violations
+- Summary: PR #29 review fixes applied:
+
+1. **Enum suffix**: Renamed `TranscriptBlockKind` → `TranscriptBlockKindEnum` per reviewer convention.
+2. **Symfony Serializer**: Removed manual `toArray()`/`fromArray()` methods. Replaced with Symfony Serializer (ObjectNormalizer + BackedEnumNormalizer) for serialization. Kept `with()`/`appendText()`/`finalize()` as domain mutation helpers.
+3. **Branch cleanup**: Rebased onto `origin/main` (5144761c). PR diff now contains only 4 RTVS-02 files — no AI-14 or RTVS-01 contamination.
+4. **Tests updated**: 30 tests now validate Symfony Serializer round-trip instead of manual array serialization.
+
+Force-pushed updated branch at 07c0e551.

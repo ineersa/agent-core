@@ -31,9 +31,11 @@ Castor applies the correct flags, excludes, config-file paths, and
 argument ordering that this project requires. Raw vendor-bin commands
 bypass these guarantees.
 
-**FORBIDDEN — do NOT run these directly:**
+**Always use Castor first.** Raw vendor-bin commands are only
+acceptable to isolate a specific failure that Castor already reported.
+Never use raw commands as the primary way to run tools.
 
-| Forbidden raw command | Correct Castor command |
+| Raw command (debug only) | Correct Castor command (always use first) |
 |---|---|
 | `vendor/bin/phpunit` | `castor test` |
 | `vendor/bin/phpunit --filter=X` | `castor test --filter=X` |
@@ -43,10 +45,9 @@ bypass these guarantees.
 | `vendor/bin/php-cs-fixer fix <path>` | `castor cs-fix <path>` |
 | `vendor/bin/deptrac analyze` | `castor deptrac` |
 
-Running raw `vendor/bin/phpunit`, `vendor/bin/phpstan`, or
-`vendor/bin/php-cs-fixer` directly will produce **wrong results** —
-missing required flags (`--exclude-group`, `--config`, `--no-progress`,
-`--colors=always`). Always use the Castor wrapper.
+Running raw commands directly will produce **wrong results** — missing
+required flags (`--exclude-group`, `--config`, `--no-progress`,
+`--colors=always`). Castor applies them automatically.
 
 ### Castor command reference
 
@@ -78,6 +79,11 @@ explicitly when testing TUI rendering changes.
 
 ## Development rules
 
+- **Use explicit semantic suffixes in type names so the role is knowable from the name alone.**
+  Prefer names such as `EventTypeEnum`, `EventRecordingsTrait`, `UserEventService`,
+  `RuntimeEventMapper`, `SettingsProvider`, or `TranscriptProjector`; do not use
+  ambiguous bare names when a suffix can explain whether the artifact is an enum,
+  trait, service, mapper, provider, projector, repository, factory, or DTO.
 - **Never add production APIs or code paths that exist solely to support tests.**
   Tests must use production constructors, factories, or create test-local
   fixtures/builders. Do not add test-only static factory methods, test-only
