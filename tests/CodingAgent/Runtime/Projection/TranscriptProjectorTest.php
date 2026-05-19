@@ -6,11 +6,19 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Projection;
 
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
-use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjector;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\CancellationProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\HitlProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 
 #[CoversClass(TranscriptProjector::class)]
+#[CoversClass(TranscriptProjectionState::class)]
 #[CoversClass(TranscriptBlock::class)]
 #[CoversClass(TranscriptBlockKindEnum::class)]
 final class TranscriptProjectorTest extends TestCase
@@ -22,7 +30,16 @@ final class TranscriptProjectorTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->projector = new TranscriptProjector();
+        $dispatcher = new EventDispatcher();
+        $state = new TranscriptProjectionState();
+
+        $dispatcher->addSubscriber(new UserMessageProjectionSubscriber());
+        $dispatcher->addSubscriber(new AssistantStreamProjectionSubscriber());
+        $dispatcher->addSubscriber(new ToolProjectionSubscriber());
+        $dispatcher->addSubscriber(new HitlProjectionSubscriber());
+        $dispatcher->addSubscriber(new CancellationProjectionSubscriber());
+
+        $this->projector = new TranscriptProjector($dispatcher, $state);
         $this->seq = 0;
     }
 
