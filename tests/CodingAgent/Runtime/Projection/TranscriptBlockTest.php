@@ -31,7 +31,7 @@ final class TranscriptBlockTest extends TestCase
 
     // ── Construction ────────────────────────────────────────────────────────
 
-    public function test_construct_with_minimal_fields(): void
+    public function testConstructWithMinimalFields(): void
     {
         $block = new TranscriptBlock(
             id: 'msg_1',
@@ -40,17 +40,17 @@ final class TranscriptBlockTest extends TestCase
             seq: 1,
         );
 
-        self::assertSame('msg_1', $block->id);
-        self::assertSame(TranscriptBlockKindEnum::UserMessage, $block->kind);
-        self::assertSame('run_abc', $block->runId);
-        self::assertSame(1, $block->seq);
-        self::assertSame('', $block->text);
-        self::assertSame([], $block->meta);
-        self::assertFalse($block->streaming);
-        self::assertFalse($block->collapsed);
+        $this->assertSame('msg_1', $block->id);
+        $this->assertSame(TranscriptBlockKindEnum::UserMessage, $block->kind);
+        $this->assertSame('run_abc', $block->runId);
+        $this->assertSame(1, $block->seq);
+        $this->assertSame('', $block->text);
+        $this->assertSame([], $block->meta);
+        $this->assertFalse($block->streaming);
+        $this->assertFalse($block->collapsed);
     }
 
-    public function test_construct_with_all_fields(): void
+    public function testConstructWithAllFields(): void
     {
         $block = new TranscriptBlock(
             id: 'tool_1',
@@ -63,14 +63,14 @@ final class TranscriptBlockTest extends TestCase
             collapsed: false,
         );
 
-        self::assertSame('tool_1', $block->id);
-        self::assertSame(TranscriptBlockKindEnum::ToolCall, $block->kind);
-        self::assertSame('run_xyz', $block->runId);
-        self::assertSame(5, $block->seq);
-        self::assertSame('bash: ls -la', $block->text);
-        self::assertSame(['tool_name' => 'bash', 'tool_call_id' => 'call_42'], $block->meta);
-        self::assertTrue($block->streaming);
-        self::assertFalse($block->collapsed);
+        $this->assertSame('tool_1', $block->id);
+        $this->assertSame(TranscriptBlockKindEnum::ToolCall, $block->kind);
+        $this->assertSame('run_xyz', $block->runId);
+        $this->assertSame(5, $block->seq);
+        $this->assertSame('bash: ls -la', $block->text);
+        $this->assertSame(['tool_name' => 'bash', 'tool_call_id' => 'call_42'], $block->meta);
+        $this->assertTrue($block->streaming);
+        $this->assertFalse($block->collapsed);
     }
 
     /**
@@ -94,7 +94,7 @@ final class TranscriptBlockTest extends TestCase
     }
 
     #[DataProvider('allBlockKinds')]
-    public function test_construct_all_block_kinds(TranscriptBlockKindEnum $kind): void
+    public function testConstructAllBlockKinds(TranscriptBlockKindEnum $kind): void
     {
         $block = new TranscriptBlock(
             id: 'b1',
@@ -104,13 +104,13 @@ final class TranscriptBlockTest extends TestCase
             text: 'text for '.$kind->value,
         );
 
-        self::assertSame($kind, $block->kind);
-        self::assertSame('text for '.$kind->value, $block->text);
+        $this->assertSame($kind, $block->kind);
+        $this->assertSame('text for '.$kind->value, $block->text);
     }
 
     // ── TranscriptBlockKindEnum values ─────────────────────────────────────
 
-    public function test_enum_values(): void
+    public function testEnumValues(): void
     {
         $expected = [
             'user_message',
@@ -127,29 +127,29 @@ final class TranscriptBlockTest extends TestCase
         ];
 
         $actual = array_map(
-            fn (TranscriptBlockKindEnum $k): string => $k->value,
+            static fn (TranscriptBlockKindEnum $k): string => $k->value,
             TranscriptBlockKindEnum::cases(),
         );
 
-        self::assertSame($expected, $actual);
+        $this->assertSame($expected, $actual);
     }
 
-    public function test_enum_from_string(): void
+    public function testEnumFromString(): void
     {
-        self::assertSame(
+        $this->assertSame(
             TranscriptBlockKindEnum::AssistantMessage,
             TranscriptBlockKindEnum::from('assistant_message'),
         );
     }
 
-    public function test_enum_tryFrom_invalid(): void
+    public function testEnumTryFromInvalid(): void
     {
-        self::assertNull(TranscriptBlockKindEnum::tryFrom('invalid_kind'));
+        $this->assertNull(TranscriptBlockKindEnum::tryFrom('invalid_kind'));
     }
 
     // ── Symfony Serializer round-trip ───────────────────────────────────────
 
-    public function test_normalize_produces_correct_array(): void
+    public function testNormalizeProducesCorrectArray(): void
     {
         $block = new TranscriptBlock(
             id: 'msg_2',
@@ -165,17 +165,17 @@ final class TranscriptBlockTest extends TestCase
         /** @var array<string, mixed> $arr */
         $arr = $this->serializer->normalize($block);
 
-        self::assertSame('msg_2', $arr['id']);
-        self::assertSame('assistant_message', $arr['kind']);
-        self::assertSame('run_a', $arr['runId']);
-        self::assertSame(3, $arr['seq']);
-        self::assertSame('Hello, world!', $arr['text']);
-        self::assertSame(['model' => 'claude-3'], $arr['meta']);
-        self::assertFalse($arr['streaming']);
-        self::assertFalse($arr['collapsed']);
+        $this->assertSame('msg_2', $arr['id']);
+        $this->assertSame('assistant_message', $arr['kind']);
+        $this->assertSame('run_a', $arr['runId']);
+        $this->assertSame(3, $arr['seq']);
+        $this->assertSame('Hello, world!', $arr['text']);
+        $this->assertSame(['model' => 'claude-3'], $arr['meta']);
+        $this->assertFalse($arr['streaming']);
+        $this->assertFalse($arr['collapsed']);
     }
 
-    public function test_denormalize_reconstructs_block(): void
+    public function testDenormalizeReconstructsBlock(): void
     {
         $data = [
             'id' => 'msg_3',
@@ -190,18 +190,18 @@ final class TranscriptBlockTest extends TestCase
 
         $block = $this->serializer->denormalize($data, TranscriptBlock::class);
 
-        self::assertInstanceOf(TranscriptBlock::class, $block);
-        self::assertSame('msg_3', $block->id);
-        self::assertSame(TranscriptBlockKindEnum::AssistantThinking, $block->kind);
-        self::assertSame('run_b', $block->runId);
-        self::assertSame(7, $block->seq);
-        self::assertSame('Let me think about this...', $block->text);
-        self::assertSame(['reasoning' => 'high'], $block->meta);
-        self::assertTrue($block->streaming);
-        self::assertFalse($block->collapsed);
+        $this->assertInstanceOf(TranscriptBlock::class, $block);
+        $this->assertSame('msg_3', $block->id);
+        $this->assertSame(TranscriptBlockKindEnum::AssistantThinking, $block->kind);
+        $this->assertSame('run_b', $block->runId);
+        $this->assertSame(7, $block->seq);
+        $this->assertSame('Let me think about this...', $block->text);
+        $this->assertSame(['reasoning' => 'high'], $block->meta);
+        $this->assertTrue($block->streaming);
+        $this->assertFalse($block->collapsed);
     }
 
-    public function test_roundtrip_preserves_all_data(): void
+    public function testRoundtripPreservesAllData(): void
     {
         $original = new TranscriptBlock(
             id: 'roundtrip_1',
@@ -220,28 +220,28 @@ final class TranscriptBlockTest extends TestCase
         );
 
         $normalized = $this->serializer->normalize($original);
-        self::assertIsArray($normalized);
+        $this->assertIsArray($normalized);
         $reconstructed = $this->serializer->denormalize($normalized, TranscriptBlock::class);
 
-        self::assertInstanceOf(TranscriptBlock::class, $reconstructed);
-        self::assertSame($original->id, $reconstructed->id);
-        self::assertSame($original->kind, $reconstructed->kind);
-        self::assertSame($original->runId, $reconstructed->runId);
-        self::assertSame($original->seq, $reconstructed->seq);
-        self::assertSame($original->text, $reconstructed->text);
-        self::assertSame($original->meta, $reconstructed->meta);
-        self::assertSame($original->streaming, $reconstructed->streaming);
-        self::assertSame($original->collapsed, $reconstructed->collapsed);
+        $this->assertInstanceOf(TranscriptBlock::class, $reconstructed);
+        $this->assertSame($original->id, $reconstructed->id);
+        $this->assertSame($original->kind, $reconstructed->kind);
+        $this->assertSame($original->runId, $reconstructed->runId);
+        $this->assertSame($original->seq, $reconstructed->seq);
+        $this->assertSame($original->text, $reconstructed->text);
+        $this->assertSame($original->meta, $reconstructed->meta);
+        $this->assertSame($original->streaming, $reconstructed->streaming);
+        $this->assertSame($original->collapsed, $reconstructed->collapsed);
     }
 
-    public function test_denormalize_missing_required_fields_throws(): void
+    public function testDenormalizeMissingRequiredFieldsThrows(): void
     {
         $this->expectException(MissingConstructorArgumentsException::class);
 
         $this->serializer->denormalize([], TranscriptBlock::class);
     }
 
-    public function test_normalize_denormalize_all_enum_kinds(): void
+    public function testNormalizeDenormalizeAllEnumKinds(): void
     {
         foreach (TranscriptBlockKindEnum::cases() as $kind) {
             $original = new TranscriptBlock(
@@ -253,18 +253,18 @@ final class TranscriptBlockTest extends TestCase
             );
 
             $normalized = $this->serializer->normalize($original);
-            self::assertIsArray($normalized);
+            $this->assertIsArray($normalized);
 
             $restored = $this->serializer->denormalize($normalized, TranscriptBlock::class);
-            self::assertInstanceOf(TranscriptBlock::class, $restored);
-            self::assertSame($kind, $restored->kind);
-            self::assertSame($original->text, $restored->text);
+            $this->assertInstanceOf(TranscriptBlock::class, $restored);
+            $this->assertSame($kind, $restored->kind);
+            $this->assertSame($original->text, $restored->text);
         }
     }
 
     // ── Streaming state transitions ────────────────────────────────────────
 
-    public function test_streaming_defaults_to_false(): void
+    public function testStreamingDefaultsToFalse(): void
     {
         $block = new TranscriptBlock(
             id: 's1',
@@ -273,10 +273,10 @@ final class TranscriptBlockTest extends TestCase
             seq: 1,
         );
 
-        self::assertFalse($block->streaming);
+        $this->assertFalse($block->streaming);
     }
 
-    public function test_with_changes_text_immutably(): void
+    public function testWithChangesTextImmutably(): void
     {
         $original = new TranscriptBlock(
             id: 's2',
@@ -290,21 +290,21 @@ final class TranscriptBlockTest extends TestCase
         $updated = $original->with(text: 'Hello');
 
         // Original is unchanged
-        self::assertSame('', $original->text);
-        self::assertTrue($original->streaming);
+        $this->assertSame('', $original->text);
+        $this->assertTrue($original->streaming);
 
         // New block has updated text
-        self::assertSame('Hello', $updated->text);
-        self::assertSame('s2', $updated->id);
-        self::assertSame($original->kind, $updated->kind);
-        self::assertSame($original->runId, $updated->runId);
-        self::assertSame($original->seq, $updated->seq);
-        self::assertSame($original->meta, $updated->meta);
-        self::assertSame($original->streaming, $updated->streaming);
-        self::assertSame($original->collapsed, $updated->collapsed);
+        $this->assertSame('Hello', $updated->text);
+        $this->assertSame('s2', $updated->id);
+        $this->assertSame($original->kind, $updated->kind);
+        $this->assertSame($original->runId, $updated->runId);
+        $this->assertSame($original->seq, $updated->seq);
+        $this->assertSame($original->meta, $updated->meta);
+        $this->assertSame($original->streaming, $updated->streaming);
+        $this->assertSame($original->collapsed, $updated->collapsed);
     }
 
-    public function test_finalize_sets_streaming_false(): void
+    public function testFinalizeSetsStreamingFalse(): void
     {
         $streamingBlock = new TranscriptBlock(
             id: 's3',
@@ -317,14 +317,14 @@ final class TranscriptBlockTest extends TestCase
 
         $finalized = $streamingBlock->finalize();
 
-        self::assertTrue($streamingBlock->streaming, 'Original should still be streaming');
-        self::assertFalse($finalized->streaming, 'Finalized should not be streaming');
-        self::assertSame('partial thinking...', $finalized->text);
-        self::assertSame($streamingBlock->id, $finalized->id);
-        self::assertSame($streamingBlock->kind, $finalized->kind);
+        $this->assertTrue($streamingBlock->streaming, 'Original should still be streaming');
+        $this->assertFalse($finalized->streaming, 'Finalized should not be streaming');
+        $this->assertSame('partial thinking...', $finalized->text);
+        $this->assertSame($streamingBlock->id, $finalized->id);
+        $this->assertSame($streamingBlock->kind, $finalized->kind);
     }
 
-    public function test_appendText_accumulates_deltas(): void
+    public function testAppendTextAccumulatesDeltas(): void
     {
         $block = new TranscriptBlock(
             id: 's4',
@@ -336,15 +336,15 @@ final class TranscriptBlockTest extends TestCase
         );
 
         $block = $block->appendText(', ');
-        self::assertSame('Hello, ', $block->text);
-        self::assertTrue($block->streaming);
+        $this->assertSame('Hello, ', $block->text);
+        $this->assertTrue($block->streaming);
 
         $block = $block->appendText('world!');
-        self::assertSame('Hello, world!', $block->text);
-        self::assertTrue($block->streaming);
+        $this->assertSame('Hello, world!', $block->text);
+        $this->assertTrue($block->streaming);
     }
 
-    public function test_appendText_with_empty_string_is_noop(): void
+    public function testAppendTextWithEmptyStringIsNoop(): void
     {
         $block = new TranscriptBlock(
             id: 's5',
@@ -357,10 +357,10 @@ final class TranscriptBlockTest extends TestCase
 
         $result = $block->appendText('');
 
-        self::assertSame($block, $result);
+        $this->assertSame($block, $result);
     }
 
-    public function test_streaming_transition_to_complete(): void
+    public function testStreamingTransitionToComplete(): void
     {
         // Simulate a full streaming lifecycle: start streaming -> deltas -> finalize
         $block = new TranscriptBlock(
@@ -372,23 +372,23 @@ final class TranscriptBlockTest extends TestCase
             streaming: true,
         );
 
-        self::assertTrue($block->streaming);
-        self::assertSame('', $block->text);
+        $this->assertTrue($block->streaming);
+        $this->assertSame('', $block->text);
 
         $block = $block->appendText('He');
         $block = $block->appendText('llo');
-        self::assertSame('Hello', $block->text);
-        self::assertTrue($block->streaming);
+        $this->assertSame('Hello', $block->text);
+        $this->assertTrue($block->streaming);
 
         $block = $block->appendText(' world');
         $block = $block->finalize();
-        self::assertSame('Hello world', $block->text);
-        self::assertFalse($block->streaming);
+        $this->assertSame('Hello world', $block->text);
+        $this->assertFalse($block->streaming);
     }
 
     // ── with() edge cases ──────────────────────────────────────────────────
 
-    public function test_with_preserves_unmodified_fields(): void
+    public function testWithPreservesUnmodifiedFields(): void
     {
         $original = new TranscriptBlock(
             id: 'w1',
@@ -403,17 +403,17 @@ final class TranscriptBlockTest extends TestCase
 
         $updated = $original->with(streaming: true);
 
-        self::assertSame('w1', $updated->id);
-        self::assertSame(TranscriptBlockKindEnum::Error, $updated->kind);
-        self::assertSame('run_w', $updated->runId);
-        self::assertSame(100, $updated->seq);
-        self::assertSame('Something went wrong', $updated->text);
-        self::assertSame(['code' => 500], $updated->meta);
-        self::assertTrue($updated->streaming);
-        self::assertTrue($updated->collapsed);
+        $this->assertSame('w1', $updated->id);
+        $this->assertSame(TranscriptBlockKindEnum::Error, $updated->kind);
+        $this->assertSame('run_w', $updated->runId);
+        $this->assertSame(100, $updated->seq);
+        $this->assertSame('Something went wrong', $updated->text);
+        $this->assertSame(['code' => 500], $updated->meta);
+        $this->assertTrue($updated->streaming);
+        $this->assertTrue($updated->collapsed);
     }
 
-    public function test_with_multiple_changes_at_once(): void
+    public function testWithMultipleChangesAtOnce(): void
     {
         $original = new TranscriptBlock(
             id: 'w2',
@@ -432,13 +432,13 @@ final class TranscriptBlockTest extends TestCase
             meta: ['status' => 'done'],
         );
 
-        self::assertSame('Completed', $updated->text);
-        self::assertFalse($updated->streaming);
-        self::assertSame(['status' => 'done'], $updated->meta);
-        self::assertFalse($updated->collapsed);
+        $this->assertSame('Completed', $updated->text);
+        $this->assertFalse($updated->streaming);
+        $this->assertSame(['status' => 'done'], $updated->meta);
+        $this->assertFalse($updated->collapsed);
     }
 
-    public function test_with_meta_merges_properly(): void
+    public function testWithMetaMergesProperly(): void
     {
         $original = new TranscriptBlock(
             id: 'w3',
@@ -451,7 +451,7 @@ final class TranscriptBlockTest extends TestCase
         $updated = $original->with(meta: ['tool_name' => 'read', 'status' => 'done']);
 
         // with() replaces meta entirely, not merges (simpler, safer)
-        self::assertSame(['tool_name' => 'read', 'status' => 'done'], $updated->meta);
-        self::assertSame(['tool_name' => 'bash'], $original->meta);
+        $this->assertSame(['tool_name' => 'read', 'status' => 'done'], $updated->meta);
+        $this->assertSame(['tool_name' => 'bash'], $original->meta);
     }
 }

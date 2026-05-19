@@ -105,6 +105,11 @@ parameters:
         - type: directory
           value: src/CodingAgent/Runtime/Projection/.*
 
+    - name: AppRuntimeProjectionPipeline
+      collectors:
+        - type: directory
+          value: src/CodingAgent/Runtime/ProjectionPipeline/.*
+
     - name: AppConfig
       collectors:
         - type: directory
@@ -134,6 +139,11 @@ parameters:
       collectors:
         - type: classNameRegex
           value: '#^Symfony\\\\Component\\\\Tui\\\\#i'
+
+    - name: SymfonyEventDispatcher
+      collectors:
+        - type: classNameRegex
+          value: '#^Symfony\\\\(Component\\\\EventDispatcher\\\\|Contracts\\\\EventDispatcher\\)#i'
 
     - name: SymfonyConsole
       collectors:
@@ -316,6 +326,7 @@ parameters:
     AppCli:
       - AppRuntimeContract
       - AppRuntimeProjection
+      - AppRuntimeProjectionPipeline
       - AppRuntimeInternals
       - AppSession
       - TuiApplication
@@ -330,6 +341,11 @@ parameters:
       - TuiTheme
       - SymfonyConsole
 
+    AppRuntimeProjectionPipeline:
+      - AppRuntimeProjection
+      - AppRuntimeContract
+      - SymfonyEventDispatcher
+
     AppRuntimeProjection: ~
 
     AgentCore:
@@ -337,6 +353,7 @@ parameters:
       - SymfonySerializer
     SymfonyTui: ~
     SymfonyAiPlatform: ~
+    SymfonyEventDispatcher: ~
     SymfonyConsole: ~
     SymfonyMessenger: ~
     SymfonyLock: ~

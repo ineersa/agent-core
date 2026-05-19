@@ -19,15 +19,15 @@ use Ineersa\Tui\Theme\ThemeColorEnum;
 final readonly class FooterSegment
 {
     /**
-     * @param string      $text     The rendered text for this segment
-     * @param int         $priority Lower = rendered first (leftmost).
-     *                              Gaps >= 5 between consecutive segments
-     *                              produce a "  |  " separator.
+     * @param string          $text     The rendered text for this segment
+     * @param int             $priority Lower = rendered first (leftmost).
+     *                                  Gaps >= 5 between consecutive segments
+     *                                  produce a "  |  " separator.
      * @param ?ThemeColorEnum $color    Optional semantic color token
      */
     public function __construct(
-        public string          $text = '',
-        public int             $priority = 0,
+        public string $text = '',
+        public int $priority = 0,
         public ?ThemeColorEnum $color = null,
     ) {
     }
