@@ -28,7 +28,7 @@ Parallelizable with: RTVS-02, RTVS-03, RTVS-04.
 Status: IN-PROGRESS
 Branch: task/rtvs-05-runtime-event-mapper-normalization
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-05-runtime-event-mapper-normalization
-Fork run:
+Fork run: layq6f28tvog
 PR URL:
 PR Status:
 Started: 2026-05-19T21:59:11.393Z
@@ -44,3 +44,7 @@ Completed:
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/rtvs-05-runtime-event-mapper-normalization.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/rtvs-05-runtime-event-mapper-normalization.
 - Summary: Starting implementation. RTVS-05 remains needed after the Symfony projection pipeline because the merged projector subscribes to stable `RuntimeEventTypeEnum` names, while current `RuntimeEventMapper` still passes raw AgentCore RunEvent type strings through unchanged. Scope is to normalize AgentCore events into stable runtime event names/payloads for the vertical slice while keeping TUI independent from AgentCore internals.
+
+## Task workflow update - 2026-05-19T21:59:47.700Z
+- Recorded fork run: layq6f28tvog
+- Summary: Launched implementation fork in RTVS-05 worktree. Scope: normalize AgentCore RunEvent types/payloads in `RuntimeEventMapper` into stable `RuntimeEventTypeEnum` events for the merged Symfony transcript projection pipeline; add focused mapper tests; validate with Castor.
