@@ -4,22 +4,17 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Projection;
 
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
-
 /**
- * Consumes ordered RuntimeEvents and maintains a stable, ordered list of
- * TranscriptBlocks for the TUI rendering layer.
+ * Consumes ordered runtime events and maintains a stable, ordered list of
+ * transcript blocks for the TUI rendering layer.
  *
  * The projector is event-sourced: replaying the same event stream in the same
  * order produces the same block list. Blocks are accumulated in memory and
- * returned as an ordered list.
+ * returned in insertion order.
  *
- * Merge-compatible with RTVS-03 (assistant/user stream): each event family
- * is dispatched to a dedicated private method. RTVS-03 adds
- * applyAssistantEvents(); RTVS-04 adds applyToolEvents(), applyHitlEvents(),
- * and applyCancellationEvents(). The shared apply() body only calls these
- * family methods — the only merge conflict is the method-call list.
+ * Public API accepts array-shaped events ({@see RuntimeEvent} shape) so the
+ * projector stays within the AppRuntimeProjection deptrac boundary (zero
+ * production dependencies outside its own namespace).
  */
 final class TranscriptProjector
 {
@@ -29,35 +24,68 @@ final class TranscriptProjector
     /** @var list<string> ordered block IDs */
     private array $order = [];
 
-    /** @var int Monotonic sequence counter for new blocks */
+    /** Monotonic sequence counter for new blocks. Reset on replay. */
     private int $nextSeq = 0;
 
-    public function apply(RuntimeEvent $event): void
+    // ── Public API ──────────────────────────────────────────────────────────
+
+    /**
+     * Accept a single runtime event and update the projection.
+     *
+     * Unknown event types are silently ignored. The event array must match
+     * the shape of {@see \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent}.
+     *
+     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
+     */
+    public function accept(array $event): void
     {
-        // Advance the sequence counter past the event's seq so new blocks
-        // always follow the triggering event.
-        $this->nextSeq = max($this->nextSeq, $event->seq + 1);
+        $type = $event['type'];
 
-        $type = RuntimeEventTypeEnum::tryFrom($event->type);
-        if ($type === null) {
-            return;
-        }
+        match ($type) {
+            // ── User ────────────────────────────────────────────────────
+            'user.message_submitted' => $this->handleUserMessageSubmitted($event),
 
-        // ── Tool call / execution lifecycle (RTVS-04) ──
-        $this->applyToolEvents($type, $event);
+            // ── Assistant stream ────────────────────────────────────────
+            'assistant.message_started' => null, // Marker only
+            'assistant.text_started' => $this->handleTextStarted($event),
+            'assistant.text_delta' => $this->handleTextDelta($event),
+            'assistant.text_completed' => $this->handleTextCompleted($event),
+            'assistant.thinking_started' => $this->handleThinkingStarted($event),
+            'assistant.thinking_delta' => $this->handleThinkingDelta($event),
+            'assistant.thinking_completed' => $this->handleThinkingCompleted($event),
+            'assistant.message_completed' => $this->handleMessageCompleted($event),
+            'assistant.message_failed' => $this->handleMessageFailed($event),
 
-        // ── HITL & approval (RTVS-04) ──
-        $this->applyHitlEvents($type, $event);
+            // ── Tool call / execution lifecycle ─────────────────────────
+            'tool_call.started' => $this->handleToolCallStarted($event),
+            'tool_call.arguments_delta' => $this->handleToolCallArgumentsDelta($event),
+            'tool_call.arguments_completed' => $this->handleToolCallArgumentsCompleted($event),
+            'tool_execution.started' => $this->handleToolExecutionStarted($event),
+            'tool_execution.output_delta' => $this->handleToolExecutionOutputDelta($event),
+            'tool_execution.completed' => $this->handleToolExecutionCompleted($event),
+            'tool_execution.failed' => $this->handleToolExecutionFailed($event),
+            'tool_execution.cancelled' => $this->handleToolExecutionCancelled($event),
 
-        // ── Cancellation / interruption (RTVS-04) ──
-        $this->applyCancellationEvents($type, $event);
+            // ── HITL & approval ─────────────────────────────────────────
+            'human_input.requested' => $this->handleHumanInputRequested($event),
+            'human_input.answered' => $this->handleHumanInputAnswered($event),
+            'human_input.rejected' => $this->handleHumanInputRejected($event),
+            'approval.requested' => $this->handleApprovalRequested($event),
+            'approval.approved' => $this->handleApprovalApproved($event),
+            'approval.rejected' => $this->handleApprovalRejected($event),
 
-        // ── User / assistant stream (RTVS-03) ──
-        // RTVS-03 will handle user.message_submitted and assistant.* events here.
+            // ── Cancellation ────────────────────────────────────────────
+            'cancellation.requested' => null, // No block; follow-up events create them
+            'operation.cancelled' => $this->handleOperationCancelled($event),
+            'turn.cancelled' => $this->handleTurnCancelled($event),
+            'run.cancelled' => $this->handleRunCancelled($event),
+
+            default => null,
+        };
     }
 
     /**
-     * Return blocks in insertion order.
+     * Return the current ordered list of transcript blocks.
      *
      * @return list<TranscriptBlock>
      */
@@ -71,26 +99,201 @@ final class TranscriptProjector
         return $result;
     }
 
-    // ── Tool events (RTVS-04) ────────────────────────────────────────────
-
-    private function applyToolEvents(RuntimeEventTypeEnum $type, RuntimeEvent $event): void
+    /**
+     * Reset all internal state so a fresh replay produces the same output.
+     */
+    public function reset(): void
     {
-        match ($type) {
-            RuntimeEventTypeEnum::ToolCallStarted => $this->handleToolCallStarted($event),
-            RuntimeEventTypeEnum::ToolCallArgumentsDelta => $this->handleToolCallArgumentsDelta($event),
-            RuntimeEventTypeEnum::ToolCallArgumentsCompleted => $this->handleToolCallArgumentsCompleted($event),
-            RuntimeEventTypeEnum::ToolExecutionStarted => $this->handleToolExecutionStarted($event),
-            RuntimeEventTypeEnum::ToolExecutionOutputDelta => $this->handleToolExecutionOutputDelta($event),
-            RuntimeEventTypeEnum::ToolExecutionCompleted => $this->handleToolExecutionCompleted($event),
-            RuntimeEventTypeEnum::ToolExecutionFailed => $this->handleToolExecutionFailed($event),
-            RuntimeEventTypeEnum::ToolExecutionCancelled => $this->handleToolExecutionCancelled($event),
-            default => null,
-        };
+        $this->blocks = [];
+        $this->order = [];
+        $this->nextSeq = 0;
     }
 
-    private function handleToolCallStarted(RuntimeEvent $event): void
+    // ── User message ────────────────────────────────────────────────────────
+
+    /**
+     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
+     */
+    private function handleUserMessageSubmitted(array $event): void
     {
-        $p = $event->payload;
+        $p = $event['payload'];
+
+        $this->addBlock(new TranscriptBlock(
+            id: (string) ($p['message_id'] ?? ''),
+            kind: TranscriptBlockKindEnum::UserMessage,
+            runId: $event['runId'],
+            seq: $this->nextSeq(),
+            text: (string) ($p['text'] ?? ''),
+        ));
+    }
+
+    // ── Assistant text block ─────────────────────────────────────────────────
+
+    /**
+     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
+     */
+    private function handleTextStarted(array $event): void
+    {
+        $p = $event['payload'];
+        $blockId = (string) ($p['block_id'] ?? '');
+
+        $this->addBlock(new TranscriptBlock(
+            id: $blockId,
+            kind: TranscriptBlockKindEnum::AssistantMessage,
+            runId: $event['runId'],
+            seq: $this->nextSeq(),
+            text: (string) ($p['text'] ?? ''),
+            meta: $this->buildAssistantMeta($p),
+            streaming: true,
+        ));
+    }
+
+    /**
+     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
+     */
+    private function handleTextDelta(array $event): void
+    {
+        $p = $event['payload'];
+        $blockId = (string) ($p['block_id'] ?? '');
+        $delta = (string) ($p['delta'] ?? '');
+
+        $block = $this->getBlock($blockId);
+        if (null === $block) {
+            return;
+        }
+        if (!$block->streaming) {
+            return;
+        }
+
+        $this->updateBlock($blockId, $block->appendText($delta));
+    }
+
+    /**
+     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
+     */
+    private function handleTextCompleted(array $event): void
+    {
+        $p = $event['payload'];
+        $blockId = (string) ($p['block_id'] ?? '');
+
+        $block = $this->getBlock($blockId);
+        if (null === $block) {
+            return;
+        }
+
+        $this->updateBlock($blockId, $block
+            ->with(text: isset($p['text']) ? (string) $p['text'] : $block->text)
+            ->finalize(),
+        );
+    }
+
+    // ── Assistant thinking block ─────────────────────────────────────────────
+
+    /**
+     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
+     */
+    private function handleThinkingStarted(array $event): void
+    {
+        $p = $event['payload'];
+        $blockId = (string) ($p['block_id'] ?? '');
+
+        $this->addBlock(new TranscriptBlock(
+            id: $blockId,
+            kind: TranscriptBlockKindEnum::AssistantThinking,
+            runId: $event['runId'],
+            seq: $this->nextSeq(),
+            text: (string) ($p['text'] ?? ''),
+            meta: $this->buildAssistantMeta($p),
+            streaming: true,
+            collapsed: true,
+        ));
+    }
+
+    /**
+     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
+     */
+    private function handleThinkingDelta(array $event): void
+    {
+        $p = $event['payload'];
+        $blockId = (string) ($p['block_id'] ?? '');
+        $delta = (string) ($p['delta'] ?? '');
+
+        $block = $this->getBlock($blockId);
+        if (null === $block) {
+            return;
+        }
+        if (!$block->streaming) {
+            return;
+        }
+
+        $this->updateBlock($blockId, $block->appendText($delta));
+    }
+
+    /**
+     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
+     */
+    private function handleThinkingCompleted(array $event): void
+    {
+        $p = $event['payload'];
+        $blockId = (string) ($p['block_id'] ?? '');
+
+        $block = $this->getBlock($blockId);
+        if (null === $block) {
+            return;
+        }
+
+        $this->updateBlock($blockId, $block
+            ->with(text: isset($p['text']) ? (string) $p['text'] : $block->text)
+            ->finalize(),
+        );
+    }
+
+    // ── Message lifecycle ────────────────────────────────────────────────────
+
+    /**
+     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
+     */
+    private function handleMessageCompleted(array $event): void
+    {
+        $p = $event['payload'];
+        $messageId = (string) ($p['message_id'] ?? '');
+
+        $this->finalizeMessageBlocks($messageId);
+    }
+
+    /**
+     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
+     */
+    private function handleMessageFailed(array $event): void
+    {
+        $p = $event['payload'];
+        $messageId = (string) ($p['message_id'] ?? '');
+
+        // Finalize any streaming blocks belonging to this message
+        $this->finalizeMessageBlocks($messageId);
+
+        // Append an error block
+        $this->addBlock(new TranscriptBlock(
+            id: $this->pickErrorBlockId($p, $messageId),
+            kind: TranscriptBlockKindEnum::Error,
+            runId: $event['runId'],
+            seq: $this->nextSeq(),
+            text: (string) ($p['text'] ?? 'Assistant message failed'),
+            meta: [
+                'message_id' => $messageId,
+                'stop_reason' => (string) ($p['stop_reason'] ?? 'error'),
+            ],
+        ));
+    }
+
+    // ── Tool call lifecycle ──────────────────────────────────────────────────
+
+    /**
+     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
+     */
+    private function handleToolCallStarted(array $event): void
+    {
+        $p = $event['payload'];
         $toolCallId = (string) ($p['tool_call_id'] ?? '');
         $toolName = (string) ($p['tool_name'] ?? '');
         $blockId = 'tool_call_'.$toolCallId;
@@ -98,7 +301,7 @@ final class TranscriptProjector
         $this->addBlock(new TranscriptBlock(
             id: $blockId,
             kind: TranscriptBlockKindEnum::ToolCall,
-            runId: $event->runId,
+            runId: $event['runId'],
             seq: $this->nextSeq(),
             text: $toolName,
             meta: [
@@ -109,39 +312,45 @@ final class TranscriptProjector
         ));
     }
 
-    private function handleToolCallArgumentsDelta(RuntimeEvent $event): void
+    /**
+     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
+     */
+    private function handleToolCallArgumentsDelta(array $event): void
     {
-        $p = $event->payload;
+        $p = $event['payload'];
         $toolCallId = (string) ($p['tool_call_id'] ?? '');
         $delta = (string) ($p['delta'] ?? '');
         $blockId = 'tool_call_'.$toolCallId;
         $block = $this->getBlock($blockId);
 
-        if ($block === null) {
+        if (null === $block) {
             return;
         }
 
         $this->updateBlock($blockId, $block->appendText($delta));
     }
 
-    private function handleToolCallArgumentsCompleted(RuntimeEvent $event): void
+    /**
+     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
+     */
+    private function handleToolCallArgumentsCompleted(array $event): void
     {
-        $p = $event->payload;
+        $p = $event['payload'];
         $toolCallId = (string) ($p['tool_call_id'] ?? '');
         $arguments = $p['arguments'] ?? [];
         $blockId = 'tool_call_'.$toolCallId;
         $block = $this->getBlock($blockId);
 
-        if ($block === null) {
+        if (null === $block) {
             // Tool call block was never started — create a completed snapshot.
             $toolName = (string) ($p['tool_name'] ?? '');
             $argumentsText = $this->argumentsToText($arguments);
             $this->addBlock(new TranscriptBlock(
                 id: $blockId,
                 kind: TranscriptBlockKindEnum::ToolCall,
-                runId: $event->runId,
+                runId: $event['runId'],
                 seq: $this->nextSeq(),
-                text: $toolName.$argumentsText,
+                text: '' !== $toolName ? $toolName.$argumentsText : $argumentsText,
                 meta: [
                     'tool_call_id' => $toolCallId,
                     'tool_name' => $toolName,
@@ -157,17 +366,19 @@ final class TranscriptProjector
         $meta = $block->meta;
         $meta['arguments'] = $arguments;
 
-        $this->updateBlock($blockId, $block
-            ->with(
-                text: $meta['tool_name'].$argumentsText,
-                streaming: false,
-                meta: $meta,
-            ));
+        $this->updateBlock($blockId, $block->with(
+            text: $block->text.$argumentsText,
+            streaming: false,
+            meta: $meta,
+        ));
     }
 
-    private function handleToolExecutionStarted(RuntimeEvent $event): void
+    /**
+     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
+     */
+    private function handleToolExecutionStarted(array $event): void
     {
-        $p = $event->payload;
+        $p = $event['payload'];
         $toolCallId = (string) ($p['tool_call_id'] ?? '');
         $toolName = (string) ($p['tool_name'] ?? '');
         $blockId = 'tool_result_'.$toolCallId;
@@ -175,7 +386,7 @@ final class TranscriptProjector
         $this->addBlock(new TranscriptBlock(
             id: $blockId,
             kind: TranscriptBlockKindEnum::ToolResult,
-            runId: $event->runId,
+            runId: $event['runId'],
             seq: $this->nextSeq(),
             text: 'Running…',
             meta: [
@@ -186,24 +397,30 @@ final class TranscriptProjector
         ));
     }
 
-    private function handleToolExecutionOutputDelta(RuntimeEvent $event): void
+    /**
+     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
+     */
+    private function handleToolExecutionOutputDelta(array $event): void
     {
-        $p = $event->payload;
+        $p = $event['payload'];
         $toolCallId = (string) ($p['tool_call_id'] ?? '');
         $delta = (string) ($p['delta'] ?? '');
         $blockId = 'tool_result_'.$toolCallId;
         $block = $this->getBlock($blockId);
 
-        if ($block === null) {
+        if (null === $block) {
             return;
         }
 
         $this->updateBlock($blockId, $block->appendText($delta));
     }
 
-    private function handleToolExecutionCompleted(RuntimeEvent $event): void
+    /**
+     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
+     */
+    private function handleToolExecutionCompleted(array $event): void
     {
-        $p = $event->payload;
+        $p = $event['payload'];
         $toolCallId = (string) ($p['tool_call_id'] ?? '');
         $result = (string) ($p['result'] ?? '');
         $durationMs = isset($p['duration_ms']) ? (int) $p['duration_ms'] : null;
@@ -213,20 +430,22 @@ final class TranscriptProjector
             'tool_call_id' => $toolCallId,
             'is_error' => false,
         ];
-        if ($durationMs !== null) {
+        if (null !== $durationMs) {
             $meta['duration_ms'] = $durationMs;
         }
-
-        if ($result !== '') {
+        if ('' !== $result) {
             $meta['result'] = $result;
         }
 
-        $this->addOrUpdateToolResult($blockId, $event->runId, $result, $meta, false);
+        $this->upsertToolResultBlock($blockId, $event['runId'], $result, $meta, false);
     }
 
-    private function handleToolExecutionFailed(RuntimeEvent $event): void
+    /**
+     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
+     */
+    private function handleToolExecutionFailed(array $event): void
     {
-        $p = $event->payload;
+        $p = $event['payload'];
         $toolCallId = (string) ($p['tool_call_id'] ?? '');
         $result = (string) ($p['result'] ?? '');
         $blockId = 'tool_result_'.$toolCallId;
@@ -235,20 +454,22 @@ final class TranscriptProjector
             'tool_call_id' => $toolCallId,
             'is_error' => true,
         ];
-
-        if ($result !== '') {
+        if ('' !== $result) {
             $meta['result'] = $result;
         }
 
-        $this->addOrUpdateToolResult($blockId, $event->runId, $result, $meta, false);
+        $this->upsertToolResultBlock($blockId, $event['runId'], $result, $meta, false);
     }
 
-    private function handleToolExecutionCancelled(RuntimeEvent $event): void
+    /**
+     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
+     */
+    private function handleToolExecutionCancelled(array $event): void
     {
-        $p = $event->payload;
+        $p = $event['payload'];
         $toolCallId = (string) ($p['tool_call_id'] ?? '');
         $blockId = 'tool_result_'.$toolCallId;
-        $timedOut = !empty($p['timed_out']);
+        $timedOut = (bool) ($p['timed_out'] ?? false);
 
         $meta = [
             'tool_call_id' => $toolCallId,
@@ -259,57 +480,17 @@ final class TranscriptProjector
 
         $text = $timedOut ? 'Timed out' : 'Cancelled';
 
-        $this->addOrUpdateToolResult($blockId, $event->runId, $text, $meta, false);
+        $this->upsertToolResultBlock($blockId, $event['runId'], $text, $meta, false);
     }
+
+    // ── HITL events ──────────────────────────────────────────────────────────
 
     /**
-     * Add or update a tool-result block (completed, failed, or cancelled).
+     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
      */
-    private function addOrUpdateToolResult(
-        string $blockId,
-        string $runId,
-        string $text,
-        array $meta,
-        bool $streaming,
-    ): void {
-        $existing = $this->getBlock($blockId);
-        if ($existing !== null) {
-            $this->updateBlock($blockId, $existing->with(
-                text: $text !== '' ? $text : $existing->text,
-                streaming: $streaming,
-                meta: $meta,
-            ));
-        } else {
-            $this->addBlock(new TranscriptBlock(
-                id: $blockId,
-                kind: TranscriptBlockKindEnum::ToolResult,
-                runId: $runId,
-                seq: $this->nextSeq(),
-                text: $text,
-                meta: $meta,
-                streaming: $streaming,
-            ));
-        }
-    }
-
-    // ── HITL & approval events (RTVS-04) ──────────────────────────────────
-
-    private function applyHitlEvents(RuntimeEventTypeEnum $type, RuntimeEvent $event): void
+    private function handleHumanInputRequested(array $event): void
     {
-        match ($type) {
-            RuntimeEventTypeEnum::HumanInputRequested => $this->handleHumanInputRequested($event),
-            RuntimeEventTypeEnum::HumanInputAnswered => $this->handleHumanInputAnswered($event),
-            RuntimeEventTypeEnum::HumanInputRejected => $this->handleHumanInputRejected($event),
-            RuntimeEventTypeEnum::ApprovalRequested => $this->handleApprovalRequested($event),
-            RuntimeEventTypeEnum::ApprovalApproved => $this->handleApprovalApproved($event),
-            RuntimeEventTypeEnum::ApprovalRejected => $this->handleApprovalRejected($event),
-            default => null,
-        };
-    }
-
-    private function handleHumanInputRequested(RuntimeEvent $event): void
-    {
-        $p = $event->payload;
+        $p = $event['payload'];
         $questionId = (string) ($p['question_id'] ?? '');
         $prompt = (string) ($p['prompt'] ?? '');
         $kind = (string) ($p['kind'] ?? 'question');
@@ -335,7 +516,7 @@ final class TranscriptProjector
         $this->addBlock(new TranscriptBlock(
             id: $blockId,
             kind: TranscriptBlockKindEnum::Question,
-            runId: $event->runId,
+            runId: $event['runId'],
             seq: $this->nextSeq(),
             text: $prompt,
             meta: $meta,
@@ -343,15 +524,18 @@ final class TranscriptProjector
         ));
     }
 
-    private function handleHumanInputAnswered(RuntimeEvent $event): void
+    /**
+     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
+     */
+    private function handleHumanInputAnswered(array $event): void
     {
-        $p = $event->payload;
+        $p = $event['payload'];
         $questionId = (string) ($p['question_id'] ?? '');
         $answer = (string) ($p['answer'] ?? '');
         $blockId = 'hitl_'.$questionId;
         $block = $this->getBlock($blockId);
 
-        if ($block === null) {
+        if (null === $block) {
             return;
         }
 
@@ -360,19 +544,22 @@ final class TranscriptProjector
         $meta['answer'] = $answer;
 
         $this->updateBlock($blockId, $block->with(
-            text: $block->text.($answer !== '' ? " → {$answer}" : ' → (answered)'),
+            text: $block->text.('' !== $answer ? " → {$answer}" : ' → (answered)'),
             meta: $meta,
         ));
     }
 
-    private function handleHumanInputRejected(RuntimeEvent $event): void
+    /**
+     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
+     */
+    private function handleHumanInputRejected(array $event): void
     {
-        $p = $event->payload;
+        $p = $event['payload'];
         $questionId = (string) ($p['question_id'] ?? '');
         $blockId = 'hitl_'.$questionId;
         $block = $this->getBlock($blockId);
 
-        if ($block === null) {
+        if (null === $block) {
             return;
         }
 
@@ -385,9 +572,14 @@ final class TranscriptProjector
         ));
     }
 
-    private function handleApprovalRequested(RuntimeEvent $event): void
+    // ── Approval events ──────────────────────────────────────────────────────
+
+    /**
+     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
+     */
+    private function handleApprovalRequested(array $event): void
     {
-        $p = $event->payload;
+        $p = $event['payload'];
         $requestId = (string) ($p['request_id'] ?? '');
         $prompt = (string) ($p['prompt'] ?? '');
         $blockId = 'approval_'.$requestId;
@@ -407,7 +599,7 @@ final class TranscriptProjector
         $this->addBlock(new TranscriptBlock(
             id: $blockId,
             kind: TranscriptBlockKindEnum::Approval,
-            runId: $event->runId,
+            runId: $event['runId'],
             seq: $this->nextSeq(),
             text: "Approve: {$prompt}",
             meta: $meta,
@@ -415,14 +607,17 @@ final class TranscriptProjector
         ));
     }
 
-    private function handleApprovalApproved(RuntimeEvent $event): void
+    /**
+     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
+     */
+    private function handleApprovalApproved(array $event): void
     {
-        $p = $event->payload;
+        $p = $event['payload'];
         $requestId = (string) ($p['request_id'] ?? '');
         $blockId = 'approval_'.$requestId;
         $block = $this->getBlock($blockId);
 
-        if ($block === null) {
+        if (null === $block) {
             return;
         }
 
@@ -435,14 +630,17 @@ final class TranscriptProjector
         ));
     }
 
-    private function handleApprovalRejected(RuntimeEvent $event): void
+    /**
+     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
+     */
+    private function handleApprovalRejected(array $event): void
     {
-        $p = $event->payload;
+        $p = $event['payload'];
         $requestId = (string) ($p['request_id'] ?? '');
         $blockId = 'approval_'.$requestId;
         $block = $this->getBlock($blockId);
 
-        if ($block === null) {
+        if (null === $block) {
             return;
         }
 
@@ -455,47 +653,27 @@ final class TranscriptProjector
         ));
     }
 
-    // ── Cancellation events (RTVS-04) ────────────────────────────────────
-
-    private function applyCancellationEvents(RuntimeEventTypeEnum $type, RuntimeEvent $event): void
-    {
-        match ($type) {
-            RuntimeEventTypeEnum::CancellationRequested => $this->handleCancellationRequested($event),
-            RuntimeEventTypeEnum::OperationCancelled => $this->handleOperationCancelled($event),
-            RuntimeEventTypeEnum::TurnCancelled => $this->handleTurnCancelled($event),
-            RuntimeEventTypeEnum::RunCancelled => $this->handleRunCancelled($event),
-            default => null,
-        };
-    }
+    // ── Cancellation events ──────────────────────────────────────────────────
 
     /**
-     * Cancellation was requested but not yet acted upon.
-     * We do not create a block yet; the follow-up turn/run/operation
-     * cancelled event will produce the visible block.
+     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
      */
-    private function handleCancellationRequested(RuntimeEvent $event): void
+    private function handleOperationCancelled(array $event): void
     {
-        // No block is created for the request itself.
-        // The actual cancellation block appears when turn.cancelled /
-        // run.cancelled / operation.cancelled arrives.
-    }
-
-    private function handleOperationCancelled(RuntimeEvent $event): void
-    {
-        $p = $event->payload;
+        $p = $event['payload'];
         $operationId = (string) ($p['operation_id'] ?? '');
         $operationType = (string) ($p['operation_type'] ?? '');
         $reason = (string) ($p['reason'] ?? 'user_cancelled');
 
-        $desc = $operationType !== '' ? "{$operationType} " : '';
-        $text = "Cancelled: {$desc}operation".($operationId !== '' ? " {$operationId}" : '');
+        $desc = '' !== $operationType ? "{$operationType} " : '';
+        $text = "Cancelled: {$desc}operation".('' !== $operationId ? " {$operationId}" : '');
 
-        $blockId = 'cancel_op_'.($operationId !== '' ? $operationId : 'op_'.$this->nextSeq());
+        $blockId = 'cancel_op_'.('' !== $operationId ? $operationId : $this->nextSeq());
 
         $this->addBlock(new TranscriptBlock(
             id: $blockId,
             kind: TranscriptBlockKindEnum::Cancelled,
-            runId: $event->runId,
+            runId: $event['runId'],
             seq: $this->nextSeq(),
             text: $text,
             meta: [
@@ -507,68 +685,41 @@ final class TranscriptProjector
         ));
     }
 
-    private function handleTurnCancelled(RuntimeEvent $event): void
+    /**
+     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
+     */
+    private function handleTurnCancelled(array $event): void
     {
-        $p = $event->payload;
+        $p = $event['payload'];
         $reason = (string) ($p['reason'] ?? 'user_cancelled');
 
-        // Finalize all currently streaming blocks
-        $this->cancelActiveStreamingBlocks($event->runId);
+        $this->cancelActiveStreamingBlocks($event['runId']);
 
-        $this->addCancelledBlock($event, $reason, 'turn');
-    }
-
-    private function handleRunCancelled(RuntimeEvent $event): void
-    {
-        $p = $event->payload;
-        $reason = (string) ($p['reason'] ?? 'user_cancelled');
-
-        // Finalize all currently streaming blocks
-        $this->cancelActiveStreamingBlocks($event->runId);
-
-        $this->addCancelledBlock($event, $reason, 'run');
+        $this->addCancelledBlock($event['runId'], $reason, 'turn');
     }
 
     /**
-     * Mark all currently streaming blocks as finalized (non-streaming).
-     * This is called when a turn or run is cancelled so the TUI does not
-     * keep showing spinner/pending state on blocks that will never complete.
+     * @param array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int} $event
      */
-    private function cancelActiveStreamingBlocks(string $runId): void
+    private function handleRunCancelled(array $event): void
     {
-        foreach ($this->blocks as $id => $block) {
-            if ($block->streaming) {
-                $this->blocks[$id] = $block->with(
-                    streaming: false,
-                );
-            }
-        }
+        $p = $event['payload'];
+        $reason = (string) ($p['reason'] ?? 'user_cancelled');
+
+        $this->cancelActiveStreamingBlocks($event['runId']);
+
+        $this->addCancelledBlock($event['runId'], $reason, 'run');
     }
 
-    private function addCancelledBlock(RuntimeEvent $event, string $reason, string $scope): void
-    {
-        $blockId = "cancel_{$scope}_".$this->nextSeq();
-
-        $this->addBlock(new TranscriptBlock(
-            id: $blockId,
-            kind: TranscriptBlockKindEnum::Cancelled,
-            runId: $event->runId,
-            seq: $this->nextSeq(),
-            text: "{$scope} cancelled".($reason !== '' ? " ({$reason})" : ''),
-            meta: [
-                'reason' => $reason,
-                'scope' => $scope,
-            ],
-            streaming: false,
-        ));
-    }
-
-    // ── Internal helpers ─────────────────────────────────────────────────
+    // ── Internal helpers ─────────────────────────────────────────────────────
 
     private function addBlock(TranscriptBlock $block): void
     {
+        // Guard against duplicate IDs from replay
+        if (!\array_key_exists($block->id, $this->blocks)) {
+            $this->order[] = $block->id;
+        }
         $this->blocks[$block->id] = $block;
-        $this->order[] = $block->id;
     }
 
     private function getBlock(string $id): ?TranscriptBlock
@@ -590,24 +741,138 @@ final class TranscriptProjector
     }
 
     /**
+     * Build the common assistant metadata map from event payload.
+     *
+     * @param array<string, mixed> $p
+     *
+     * @return array<string, mixed>
+     */
+    private function buildAssistantMeta(array $p): array
+    {
+        $meta = [
+            'message_id' => (string) ($p['message_id'] ?? ''),
+            'content_index' => (int) ($p['content_index'] ?? 0),
+        ];
+
+        if (isset($p['model'])) {
+            $meta['model'] = (string) $p['model'];
+        }
+
+        if (isset($p['stop_reason'])) {
+            $meta['stop_reason'] = (string) $p['stop_reason'];
+        }
+
+        return $meta;
+    }
+
+    /**
+     * Choose an error block id: prefer the payload block_id, then message_id, then a generated fallback.
+     *
+     * @param array<string, mixed> $p
+     */
+    private function pickErrorBlockId(array $p, string $messageId): string
+    {
+        $blockId = (string) ($p['block_id'] ?? '');
+
+        return '' !== $blockId ? $blockId : ('' !== $messageId ? $messageId : 'error_'.$this->nextSeq());
+    }
+
+    /**
+     * Add or update a tool-result block (completed, failed, or cancelled).
+     *
+     * @param array<string, mixed> $meta
+     */
+    private function upsertToolResultBlock(
+        string $blockId,
+        string $runId,
+        string $text,
+        array $meta,
+        bool $streaming,
+    ): void {
+        $existing = $this->getBlock($blockId);
+        if (null !== $existing) {
+            $this->updateBlock($blockId, $existing->with(
+                text: '' !== $text ? $text : $existing->text,
+                streaming: $streaming,
+                meta: $meta,
+            ));
+        } else {
+            $this->addBlock(new TranscriptBlock(
+                id: $blockId,
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: $runId,
+                seq: $this->nextSeq(),
+                text: $text,
+                meta: $meta,
+                streaming: $streaming,
+            ));
+        }
+    }
+
+    /**
+     * Mark all streaming blocks for the given run as finalized (non-streaming).
+     */
+    private function cancelActiveStreamingBlocks(string $runId): void
+    {
+        foreach ($this->blocks as $id => $block) {
+            if ($block->streaming && $block->runId === $runId) {
+                $this->blocks[$id] = $block->with(
+                    streaming: false,
+                );
+            }
+        }
+    }
+
+    /**
+     * Add a cancellation block for turn/run cancelled events.
+     */
+    private function addCancelledBlock(string $runId, string $reason, string $scope): void
+    {
+        $seq = $this->nextSeq();
+
+        $this->addBlock(new TranscriptBlock(
+            id: "cancel_{$scope}_{$seq}",
+            kind: TranscriptBlockKindEnum::Cancelled,
+            runId: $runId,
+            seq: $seq,
+            text: "{$scope} cancelled".('' !== $reason ? " ({$reason})" : ''),
+            meta: [
+                'reason' => $reason,
+                'scope' => $scope,
+            ],
+            streaming: false,
+        ));
+    }
+
+    /**
+     * Finalize all streaming blocks belonging to a given message.
+     */
+    private function finalizeMessageBlocks(string $messageId): void
+    {
+        foreach ($this->blocks as $id => $block) {
+            if (($block->meta['message_id'] ?? '') === $messageId && $block->streaming) {
+                $this->blocks[$id] = $block->finalize();
+            }
+        }
+    }
+
+    /**
      * Convert tool arguments to a compact text representation.
      *
      * @param array<string, mixed>|list<mixed> $arguments
      */
     private function argumentsToText(array $arguments): string
     {
-        if ($arguments === []) {
+        if ([] === $arguments) {
             return '()';
         }
 
         $parts = [];
         foreach ($arguments as $key => $value) {
-            if (is_string($value)) {
+            if (\is_string($value)) {
                 $parts[] = "{$key}: \"{$value}\"";
-            } elseif (is_scalar($value) || $value === null) {
-                $parts[] = "{$key}: ".json_encode($value, JSON_THROW_ON_ERROR);
             } else {
-                $parts[] = "{$key}: ".json_encode($value, JSON_THROW_ON_ERROR);
+                $parts[] = "{$key}: ".json_encode($value, \JSON_THROW_ON_ERROR);
             }
         }
 

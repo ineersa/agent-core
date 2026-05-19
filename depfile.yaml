@@ -330,8 +330,7 @@ parameters:
       - TuiTheme
       - SymfonyConsole
 
-    AppRuntimeProjection:
-      - AppRuntimeContract
+    AppRuntimeProjection: ~
 
     AgentCore:
       - SymfonyLock
