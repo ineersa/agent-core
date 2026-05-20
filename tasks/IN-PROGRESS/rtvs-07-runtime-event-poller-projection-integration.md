@@ -28,7 +28,7 @@ Parallelizable with: none after dependencies; avoid concurrent edits with RTVS-0
 Status: IN-PROGRESS
 Branch: task/rtvs-07-runtime-event-poller-projection-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-07-runtime-event-poller-projection-integration
-Fork run: 5ntyvwxaig26
+Fork run: luxrhtkqpoae
 PR URL:
 PR Status:
 Started: 2026-05-20T03:20:17.851Z
@@ -55,3 +55,7 @@ Completed:
 
 ## Task workflow update - 2026-05-20T04:01:16.644Z
 - User requested no additional fork launches; prepare/preserve the RTVS-07 task context instead. Main/integration checkout was cleaned after failed fork contamination; RTVS-07 worktree remains with salvageable uncommitted partial changes only: modified src/Tui/Runtime/RuntimeEventPoller.php and new tests/Tui/Runtime/RuntimeEventPollerProjectionTest.php. Important caveat for the next implementer: the partial poller change injects concrete CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector directly into TuiRuntime, which likely violates deptrac because TuiRuntime currently allows AppRuntimeContract/AppRuntimeProjection/AppSession/TuiTranscript/TuiScreen/TuiTheme/SymfonyTui but not AppRuntimeProjectionPipeline. Preferred task direction: introduce/choose a boundary-safe contract or adapter (e.g. AppRuntimeContract interface implemented by ProjectionPipeline facade, or a TuiRuntime-local projection coordinator wired from Application) instead of adding an ad-hoc depfile exception. Also ensure ChatScreen/TuiSessionState/SubmitListener/TickPollListener are updated coherently to render TranscriptBlockWidget while preserving old TranscriptEntry paths for initial/resume/local command messages until RTVS-08 replaces replay. Do not relaunch a fork unless explicitly asked.
+
+## Task workflow update - 2026-05-20T20:11:55.189Z
+- Recorded fork run: luxrhtkqpoae
+- Launched fork luxrhtkqpoae in RTVS-07 worktree to finish projection integration. Scope: preserve existing salvage changes, introduce boundary-safe TranscriptProjector contract/adapter rather than depfile exception, wire RuntimeEventPoller through projection into TranscriptBlockWidget/ChatScreen/TuiSessionState, preserve runtime-events.jsonl persistence, lastSeq dedupe and seq=0 transient behavior, update tests, validate with Castor, commit/push task branch.
