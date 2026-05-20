@@ -25,12 +25,12 @@ Parallelizable with: RTVS-03, RTVS-04, RTVS-05.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/rtvs-06-basic-transcript-block-renderer
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-06-basic-transcript-block-renderer
 Fork run: 7597iu5vd8sz
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/33
+PR Status: open
 Started: 2026-05-20T02:59:44.377Z
 Completed:
 
@@ -51,3 +51,11 @@ Completed:
 ## Task workflow update - 2026-05-20T03:00:04.062Z
 - Recorded fork run: 7597iu5vd8sz
 - Launched fork 7597iu5vd8sz in worktree /home/ineersa/projects/agent-core-worktrees/rtvs-06-basic-transcript-block-renderer to implement the basic project-native TranscriptBlock renderer/widget, using TuiWidget/TuiRenderContext/TuiTheme and Symfony TUI TextWrapper/AnsiUtils, with tests and Castor validation.
+
+## Task workflow update - 2026-05-20T03:14:43.563Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/rtvs-06-basic-transcript-block-renderer to origin.
+- branch 'task/rtvs-06-basic-transcript-block-renderer' set up to track 'origin/task/rtvs-06-basic-transcript-block-renderer'.
+- Created PR: https://github.com/ineersa/agent-core/pull/33
+- Validation: castor test --filter=TranscriptBlockRendererTest — OK (30 tests, 60 assertions); castor deptrac — OK (0 violations); castor phpstan --path=src/Tui/Transcript — OK (no errors); castor cs-check — OK (files: [])
+- Summary: RTVS-06 complete. Fork created project-native TranscriptBlockRenderer and TranscriptBlockWidget under src/Tui/Transcript plus focused tests. Renderer maps all 11 TranscriptBlockKindEnum cases to readable prefixes and ThemeColorEnum tokens, uses Symfony TUI TextWrapper::wrapTextWithAnsi() for ANSI-safe wrapping, preserves existing TranscriptWidget/ChatLayout/Poller wiring for RTVS-07, and imports no AgentCore internals. Branch commit: 818e0444.
