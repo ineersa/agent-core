@@ -5,10 +5,16 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\CodingAgent\Runtime\Mapping\AssistantMessageMappingSubscriber;
+use Ineersa\CodingAgent\Runtime\Mapping\CancelAndFallbackMappingSubscriber;
+use Ineersa\CodingAgent\Runtime\Mapping\HitlMappingSubscriber;
+use Ineersa\CodingAgent\Runtime\Mapping\RunLifecycleMappingSubscriber;
+use Ineersa\CodingAgent\Runtime\Mapping\ToolExecutionMappingSubscriber;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 
 #[CoversClass(RuntimeEventMapper::class)]
 final class RuntimeEventMapperTest extends TestCase
@@ -18,7 +24,14 @@ final class RuntimeEventMapperTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->mapper = new RuntimeEventMapper();
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new RunLifecycleMappingSubscriber());
+        $dispatcher->addSubscriber(new AssistantMessageMappingSubscriber());
+        $dispatcher->addSubscriber(new ToolExecutionMappingSubscriber());
+        $dispatcher->addSubscriber(new HitlMappingSubscriber());
+        $dispatcher->addSubscriber(new CancelAndFallbackMappingSubscriber());
+
+        $this->mapper = new RuntimeEventMapper($dispatcher);
     }
 
     // ── Lifecycle normalization ──────────────────────────────────────────────
@@ -163,6 +176,55 @@ final class RuntimeEventMapperTest extends TestCase
         self::assertNotNull($result);
         self::assertSame('', $result->payload['text']);
         self::assertSame('tool_use', $result->payload['stop_reason']);
+    }
+
+    public function testNormalizesLlmStepCompletedUsesExplicitTextKey(): void
+    {
+        // When LlmStepResultHandler emits 'text' via AssistantMessage::asText(),
+        // the mapper should use that key preferentially over walking the
+        // normalized assistant_message content array.
+        $event = $this->runEvent('llm_step_completed', [
+            'step_id' => 'turn-1-llm-7',
+            'stop_reason' => 'stop',
+            'text' => 'Source-extracted via AssistantMessage::asText()',
+            'assistant_message' => [
+                'role' => 'assistant',
+                'content' => [
+                    ['type' => 'text', 'text' => 'Legacy-walked text that should be ignored'],
+                ],
+            ],
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        self::assertNotNull($result);
+        self::assertSame(
+            'Source-extracted via AssistantMessage::asText()',
+            $result->payload['text'],
+            'Should use explicit text key, not walk the normalized payload',
+        );
+    }
+
+    public function testNormalizesLlmStepCompletedTextKeyFallsBackToLegacy(): void
+    {
+        // When 'text' key is missing (older events), falls back to walking
+        // the assistant_message content array.
+        $event = $this->runEvent('llm_step_completed', [
+            'step_id' => 'turn-1-llm-8',
+            'stop_reason' => 'stop',
+            // No 'text' key — legacy path
+            'assistant_message' => [
+                'role' => 'assistant',
+                'content' => [
+                    ['type' => 'text', 'text' => 'Legacy text here'],
+                ],
+            ],
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        self::assertNotNull($result);
+        self::assertSame('Legacy text here', $result->payload['text']);
     }
 
     public function testNormalizesLlmStepCompletedMissingAssistantMessage(): void

@@ -81,10 +81,19 @@ services:
   Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface:
     alias: Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink
 
-  Ineersa\CodingAgent\Runtime\Stream\RuntimeEventStreamObserver: ~
+  # Stream observer delegates to Symfony EventDispatcher with per-delta subscribers.
+  Ineersa\CodingAgent\Runtime\Stream\LlmStreamDispatchObserver:
+    arguments:
+      $dispatcher: '@event_dispatcher'
 
   Ineersa\AgentCore\Contract\Hook\LlmStreamObserverInterface:
-    alias: Ineersa\CodingAgent\Runtime\Stream\RuntimeEventStreamObserver
+    alias: Ineersa\CodingAgent\Runtime\Stream\LlmStreamDispatchObserver
+
+  # The mapper now dispatches through the shared Symfony dispatcher
+  # so mapping subscribers (registered via autoconfigure) receive events.
+  Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper:
+    arguments:
+      $dispatcher: '@event_dispatcher'
 
   # ─── Symfony AI Platform wiring ───
   # PlatformInterface reads Hatfield config from autowired AppConfig,
