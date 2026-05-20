@@ -66,3 +66,12 @@ Completed:
 ## Task workflow update - 2026-05-19T22:40:40.897Z
 - Recorded fork run: 1uirucdcjzc3
 - Launched fork run 1uirucdcjzc3 in RTVS-05 worktree to implement ephemeral Symfony AI stream delta transport: AgentCore stream observer interface, LlmPlatformAdapter observer callbacks, CodingAgent RuntimeEvent sink(s), in-process queueing, JSONL stdout sink for process/headless transport, delta→RuntimeEventTypeEnum mapping, DI wiring, focused tests, and Castor validation.
+
+## Task workflow update - 2026-05-19T23:03:54.968Z
+- Recorded fork run: 1uirucdcjzc3
+- Validation: castor test: 736/736 tests passed, 9405 assertions (1 pre-existing PHPUnit notice reported by fork).; castor deptrac: 0 violations.; castor phpstan on touched source paths: 0 errors.; castor cs-fix/cs-check: clean.; castor check: full pipeline quality ok.
+- Summary: Fork run 1uirucdcjzc3 completed RTVS-05 stream follow-up: implemented transient Symfony AI stream delta transport without canonical delta persistence. Added AgentCore LlmStreamObserverInterface, observer callbacks in LlmPlatformAdapter, CodingAgent RuntimeEventSinkInterface, InMemoryRuntimeEventSink, JsonlRuntimeEventSink, RuntimeEventStreamObserver delta→RuntimeEventTypeEnum mapping, InProcessAgentSessionClient transient drain, RuntimeEventPoller seq=0 handling, deptrac layer updates, and focused tests. Commit 6aa462cb pushed to branch task/rtvs-05-runtime-event-mapper-normalization; PR #32 updated.
+
+## Task workflow update - 2026-05-20T00:02:14.072Z
+- Validation: php bin/console list --no-interaction after cache clear: container compiles; compiled AgentCommand now constructs InProcessAgentSessionClient with InMemoryRuntimeEventSink.; castor test --filter='RuntimeEventStreamObserverTest|InMemoryRuntimeEventSinkTest': 23 tests, 64 assertions OK.; castor deptrac: 0 violations.; castor cs-check: clean.
+- Summary: Parent follow-up after fork: found runtime DI wiring gap while sanity-checking compiled container — observer/sink services were removed as unused and InProcessAgentSessionClient was constructed without a transient sink. Patched PR #32 with explicit service aliases in config/services.yaml: RuntimeEventSinkInterface -> InMemoryRuntimeEventSink, LlmStreamObserverInterface -> RuntimeEventStreamObserver, plus concrete service definitions. Committed/pushed fix as 542fe738 on task/rtvs-05-runtime-event-mapper-normalization.
