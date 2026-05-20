@@ -28,7 +28,7 @@ Parallelizable with: none after dependencies; avoid concurrent edits with RTVS-0
 Status: CODE-REVIEW
 Branch: task/rtvs-07-runtime-event-poller-projection-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-07-runtime-event-poller-projection-integration
-Fork run: tz3dsuou7cwh
+Fork run: qipk0vcmrg3b
 PR URL: https://github.com/ineersa/agent-core/pull/34
 PR Status: open
 Started: 2026-05-20T03:20:17.851Z
@@ -105,3 +105,7 @@ Completed:
 ## Task workflow update - 2026-05-20T22:54:53.690Z
 - Validation: 0liiv2nze5tr: castor deptrac -> 0 violations.; 0liiv2nze5tr: castor test -> 761 tests, 9444 assertions pass.; 0liiv2nze5tr: targeted pipeline/orchestration tests -> 14/14 pass.; 0liiv2nze5tr: castor phpstan -> 0 errors.; 0liiv2nze5tr: castor cs-fix + cs-check -> clean.; 0liiv2nze5tr: castor check -> quality: ok.; 0liiv2nze5tr: rg for OutboxProjector/OutboxStore/OutboxSink/OutboxEntry in live src/tests/config/docs/session-storage -> 0 matches.
 - Summary: Main branch cleanup completed by fork 0liiv2nze5tr: removed remaining generic outbox infrastructure from live code after Flysystem/Mercure removal. Deleted OutboxProjector, OutboxProjectorInterface, OutboxStoreInterface, InMemoryOutboxStore, OutboxEntry, and OutboxSink. Simplified RunCommit by removing OutboxProjector constructor dependency and projection try/catch block; commit flow is now canonical EventStore persistence -> ReplayService rebuild -> effect dispatch -> after-turn hooks. Updated 5 pipeline test fixtures and live AGENTS docs. agent.publisher.bus and BusNames::Publisher intentionally remain as future bus concept. Commit 3acb45d3 pushed to main.
+
+## Task workflow update - 2026-05-20T23:01:28.133Z
+- Recorded fork run: qipk0vcmrg3b
+- Summary: Launched fork qipk0vcmrg3b in the RTVS-07 worktree to finish PR #34 after main cleanup. Scope: sync task branch with latest main (Flysystem/Mercure/outbox removals), preserve simplified architecture, wire ToolExecutor scalar constructor args and any legitimate DI blockers exposed by MessengerIntegrationCompilerPass, verify Messenger buses/handlers are live, run Castor validation, push updated PR branch. Constraints: no main commits, no FrameworkBundle/HTTP, no Flysystem/Mercure/outbox resurrection.
