@@ -28,7 +28,7 @@ Parallelizable with: none after dependencies; avoid concurrent edits with RTVS-0
 Status: CODE-REVIEW
 Branch: task/rtvs-07-runtime-event-poller-projection-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-07-runtime-event-poller-projection-integration
-Fork run: 9wzdfeva9wkq
+Fork run: tz3dsuou7cwh
 PR URL: https://github.com/ineersa/agent-core/pull/34
 PR Status: open
 Started: 2026-05-20T03:20:17.851Z
@@ -85,3 +85,7 @@ Completed:
 ## Task workflow update - 2026-05-20T21:03:36.271Z
 - Recorded fork run: 9wzdfeva9wkq
 - Launched fork 9wzdfeva9wkq in RTVS-07 worktree to implement minimal Symfony Messenger compiler-pass wiring without FrameworkBundle/HTTP. Scope: replace dead MessageBus([]) with synchronous HandleMessageMiddleware/HandlersLocator integration for agent.command.bus, agent.execution.bus, and agent.publisher.bus; register #[AsMessageHandler] autoconfiguration/tagging; add MessengerPass; add integration test proving dispatch reaches handlers/session events; validate with Castor and push branch if successful.
+
+## Task workflow update - 2026-05-20T21:47:53.358Z
+- Recorded fork run: tz3dsuou7cwh
+- Reverted partial changes from fork 9wzdfeva9wkq in RTVS-07 worktree, then launched focused fork tz3dsuou7cwh. Scope is intentionally narrow: implement only Symfony DI-native Messenger integration via registerAttributeForAutoconfiguration(AsMessageHandler), bus tags, per-bus HandleMessageMiddleware services/parameters, and MessengerPass registration. Fork explicitly instructed not to use reflection scans, not to clear container.excluded, and not to chase JsonlOutboxProjectorWorker/Flysystem/RunLogReader downstream wiring; if that blocker appears, stop and report for architecture decision.
