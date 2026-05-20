@@ -28,7 +28,7 @@ Parallelizable with: none after dependencies; avoid concurrent edits with RTVS-0
 Status: IN-PROGRESS
 Branch: task/rtvs-07-runtime-event-poller-projection-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-07-runtime-event-poller-projection-integration
-Fork run: hs07lnbvek7t
+Fork run: 5ntyvwxaig26
 PR URL:
 PR Status:
 Started: 2026-05-20T03:20:17.851Z
@@ -48,3 +48,7 @@ Completed:
 ## Task workflow update - 2026-05-20T03:20:35.895Z
 - Recorded fork run: hs07lnbvek7t
 - Launched fork hs07lnbvek7t in worktree /home/ineersa/projects/agent-core-worktrees/rtvs-07-runtime-event-poller-projection-integration to wire RuntimeEventPoller through TranscriptProjector and TranscriptBlock rendering, preserving runtime-events.jsonl persistence, seq de-duplication, transient seq=0 handling, and working status behavior.
+
+## Task workflow update - 2026-05-20T03:22:38.383Z
+- Recorded fork run: 5ntyvwxaig26
+- Previous RTVS-07 fork hs07lnbvek7t superseded at user request. Worktree was verified clean on branch task/rtvs-07-runtime-event-poller-projection-integration before relaunch. Relaunched implementation fork 5ntyvwxaig26 with narrower instructions: keep change clean, preserve runtime-events.jsonl persistence and seq de-dup/transient seq=0 behavior, feed RuntimeEvents through TranscriptProjector, update TUI using TranscriptBlock rendering, no new mappings/replay/rich widgets, Castor-only validation.
