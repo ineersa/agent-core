@@ -28,7 +28,7 @@ Parallelizable with: none after dependencies; avoid concurrent edits with RTVS-0
 Status: CODE-REVIEW
 Branch: task/rtvs-07-runtime-event-poller-projection-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-07-runtime-event-poller-projection-integration
-Fork run: 39x9hc0dv8ma
+Fork run: 9wzdfeva9wkq
 PR URL: https://github.com/ineersa/agent-core/pull/34
 PR Status: open
 Started: 2026-05-20T03:20:17.851Z
@@ -81,3 +81,7 @@ Completed:
 ## Task workflow update - 2026-05-20T20:34:12.901Z
 - Recorded fork run: 39x9hc0dv8ma
 - Launched fork 39x9hc0dv8ma to debug smoke-test failure where TUI shows no LLM responses after RTVS-07. Fork instructed to inspect ANSI snapshot .hatfield/tmp/tui/snapshots/snapshot-ansi-20260520-163153.ansi, session/runtime logs, run targeted tests plus castor test:llm-real and castor run:agent-test if available, identify exact failing path, implement fix/tests if safe, validate with Castor, commit and push branch.
+
+## Task workflow update - 2026-05-20T21:03:36.271Z
+- Recorded fork run: 9wzdfeva9wkq
+- Launched fork 9wzdfeva9wkq in RTVS-07 worktree to implement minimal Symfony Messenger compiler-pass wiring without FrameworkBundle/HTTP. Scope: replace dead MessageBus([]) with synchronous HandleMessageMiddleware/HandlersLocator integration for agent.command.bus, agent.execution.bus, and agent.publisher.bus; register #[AsMessageHandler] autoconfiguration/tagging; add MessengerPass; add integration test proving dispatch reaches handlers/session events; validate with Castor and push branch if successful.
