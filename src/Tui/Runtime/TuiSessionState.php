@@ -6,7 +6,7 @@ namespace Ineersa\Tui\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
-use Ineersa\Tui\Transcript\TranscriptEntry;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 
 /**
  * Mutable state bag for the interactive TUI session.
@@ -15,7 +15,7 @@ use Ineersa\Tui\Transcript\TranscriptEntry;
  * across anonymous closures. All listeners share a single $state instance,
  * making the control flow explicit and the listeners testable.
  *
- * Transcript entries are stored as plain model objects; rendering
+ * Transcript blocks are stored as plain projection DTOs; rendering
  * (theme colors, prefixes) is applied by ChatScreen at display time.
  */
 final class TuiSessionState
@@ -26,7 +26,7 @@ final class TuiSessionState
     public ?RunHandle $handle = null;
     public ?StartRunRequest $request = null;
 
-    /** @var list<TranscriptEntry> Transcript entries (plain, un-themed) */
+    /** @var list<TranscriptBlock> Transcript blocks (plain, un-themed) */
     public array $transcript = [];
 
     public int $lastSeq = 0;

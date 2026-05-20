@@ -6,18 +6,21 @@ namespace Ineersa\Tui\Listener;
 
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\TranscriptEntry as PersistedTranscriptEntry;
 use Ineersa\Tui\Command\ClearTranscript;
 use Ineersa\Tui\Command\CommandResult;
 use Ineersa\Tui\Command\ExitApplication;
-use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\StatusUpdate;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
-use Ineersa\Tui\Transcript\TranscriptEntry;
+use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use Symfony\Component\Tui\Event\SubmitEvent;
+use Symfony\Component\Tui\Tui;
 
 /**
  * Handles user message submission (Enter key in the editor).
@@ -35,6 +38,7 @@ final class SubmitListener implements TuiListenerRegistrar
     public function __construct(
         private readonly HatfieldSessionStore $sessionStore,
         private readonly SubmissionRouter $submissionRouter,
+        private readonly TranscriptBlockFactory $blockFactory,
     ) {
     }
 
@@ -42,13 +46,14 @@ final class SubmitListener implements TuiListenerRegistrar
     {
         $sessionStore = $this->sessionStore;
         $router = $this->submissionRouter;
+        $blockFactory = $this->blockFactory;
         $client = $context->client;
         $state = $context->state;
         $screen = $context->screen;
         $tui = $context->tui;
 
         $context->tui->addListener(static function (SubmitEvent $event) use (
-            $client, $sessionStore, $state, $screen, $tui, $router,
+            $client, $sessionStore, $state, $screen, $tui, $router, $blockFactory,
         ) {
             $text = $screen->extract();
             if ('' === $text) {
@@ -60,19 +65,18 @@ final class SubmitListener implements TuiListenerRegistrar
 
             if (null !== $commandResult) {
                 // ── Local command — apply typed effect ──
-                self::applyCommandResult($commandResult, $state, $screen, $sessionStore, $tui);
+                self::applyCommandResult($commandResult, $state, $screen, $sessionStore, $tui, $blockFactory);
 
                 return;
             }
 
             // ── Normal prompt — route to runtime (existing behavior) ──
 
-            // Append user message entry (plain text, no ANSI)
-            $userEntry = new TranscriptEntry(
+            $state->transcript[] = $blockFactory->user(
+                runId: $state->sessionId,
                 text: str_replace("\n", "\n    ", $text),
-                role: 'user',
+                seq: \count($state->transcript) + 1,
             );
-            $state->transcript[] = $userEntry;
 
             // Persist plain text (no theme/ANSI)
             $sessionStore->appendTranscriptEntry(
@@ -91,9 +95,10 @@ final class SubmitListener implements TuiListenerRegistrar
                     runId: $state->sessionId,
                 );
                 $state->handle = $client->start($state->request);
-                $state->transcript[] = new TranscriptEntry(
+                $state->transcript[] = $blockFactory->system(
+                    runId: $state->sessionId,
                     text: \sprintf('Run started: %s', $text),
-                    role: 'system',
+                    seq: \count($state->transcript) + 1,
                     style: 'accent',
                 );
                 $sessionStore->updateMetadata(
@@ -112,15 +117,16 @@ final class SubmitListener implements TuiListenerRegistrar
             }
 
             // Show processing indicator
-            $state->transcript[] = new TranscriptEntry(
+            $state->transcript[] = $blockFactory->system(
+                runId: $state->sessionId,
                 text: 'Processing...',
-                role: 'system',
+                seq: \count($state->transcript) + 1,
                 style: 'muted',
             );
             $screen->setWorkingMessage('Working...');
 
             // Update transcript display
-            $screen->setTranscriptEntries($state->transcript);
+            $screen->setTranscriptBlocks($state->transcript);
         });
     }
 
@@ -129,19 +135,16 @@ final class SubmitListener implements TuiListenerRegistrar
      */
     private static function applyCommandResult(
         CommandResult $result,
-        \Ineersa\Tui\Runtime\TuiSessionState $state,
-        \Ineersa\Tui\Screen\ChatScreen $screen,
+        TuiSessionState $state,
+        ChatScreen $screen,
         HatfieldSessionStore $sessionStore,
-        \Symfony\Component\Tui\Tui $tui,
+        Tui $tui,
+        TranscriptBlockFactory $blockFactory,
     ): void {
         if ($result instanceof TranscriptMessage) {
             // ── Append message to transcript ──
-            $entry = new TranscriptEntry(
-                text: $result->text,
-                role: $result->role,
-                style: $result->style,
-            );
-            $state->transcript[] = $entry;
+            $block = self::blockForTranscriptMessage($result, $state, $blockFactory);
+            $state->transcript[] = $block;
 
             // Persist
             $sessionStore->appendTranscriptEntry(
@@ -149,11 +152,11 @@ final class SubmitListener implements TuiListenerRegistrar
                 new PersistedTranscriptEntry(
                     role: $result->role,
                     text: $result->text,
-                    meta: ['session_id' => $state->sessionId],
+                    meta: ['session_id' => $state->sessionId, 'style' => $result->style],
                 ),
             );
 
-            $screen->setTranscriptEntries($state->transcript);
+            $screen->setTranscriptBlocks($state->transcript);
 
             return;
         }
@@ -161,7 +164,7 @@ final class SubmitListener implements TuiListenerRegistrar
         if ($result instanceof ClearTranscript) {
             // ── Clear all transcript entries ──
             $state->transcript = [];
-            $screen->setTranscriptEntries([]);
+            $screen->setTranscriptBlocks([]);
 
             return;
         }
@@ -182,5 +185,19 @@ final class SubmitListener implements TuiListenerRegistrar
 
         // NoOp, DispatchRuntime, and unknown future variants are silently ignored.
         // DispatchRuntime will be wired by future tasks that add runtime execution.
+    }
+
+    private static function blockForTranscriptMessage(
+        TranscriptMessage $result,
+        TuiSessionState $state,
+        TranscriptBlockFactory $blockFactory,
+    ): TranscriptBlock {
+        $seq = \count($state->transcript) + 1;
+
+        return match ($result->role) {
+            'user' => $blockFactory->user($state->sessionId, $result->text, $seq),
+            'error' => $blockFactory->error($state->sessionId, $result->text, $seq),
+            default => $blockFactory->system($state->sessionId, $result->text, $seq, $result->style),
+        };
     }
 }
