@@ -95,6 +95,9 @@ services:
     arguments:
       $dispatcher: '@event_dispatcher'
 
+  Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface:
+    alias: Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector
+
   # ─── Symfony AI Platform wiring ───
   # PlatformInterface reads Hatfield config from autowired AppConfig,
   # so no explicit arguments are needed here.

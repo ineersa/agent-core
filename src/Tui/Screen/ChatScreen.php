@@ -18,8 +18,7 @@ use Ineersa\Tui\Status\WorkingStatusWidget;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Ineersa\Tui\Transcript\PendingMessagesWidget;
-use Ineersa\Tui\Transcript\TranscriptEntry;
-use Ineersa\Tui\Transcript\TranscriptWidget;
+use Ineersa\Tui\Transcript\TranscriptBlockWidget;
 use Ineersa\Tui\Widget\LiveTextWidget;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\WidgetPlacementEnum;
@@ -32,7 +31,7 @@ use Symfony\Component\Tui\Widget\EditorWidget;
  *
  * ChatScreen owns:
  *  - TuiSlotRegistry and SlotBasedTuiExtensionContext (extension slot model)
- *  - Default renderable TuiWidget instances (HeaderWidget, TranscriptWidget, etc.)
+ *  - Default renderable TuiWidget instances (HeaderWidget, TranscriptBlockWidget, etc.)
  *  - A PromptEditor facade (DI service) wrapping a real Symfony EditorWidget
  *  - LiveTextWidget adapters that re-render at the live terminal width on every
  *    tick — so separators, header, and footer respond to terminal resize.
@@ -72,7 +71,7 @@ final class ChatScreen
 
     /* ── TUI renderables (theme-agnostic, read by producer closures) ── */
     private readonly HeaderWidget $headerRenderable;
-    private readonly TranscriptWidget $transcriptRenderable;
+    private readonly TranscriptBlockWidget $transcriptRenderable;
     private readonly PendingMessagesWidget $pendingRenderable;
     private readonly WorkingStatusWidget $workingRenderable;
     private readonly StatusPanelWidget $statusPanelRenderable;
@@ -95,7 +94,7 @@ final class ChatScreen
 
         // ── Instantiate default renderables ──
         $this->headerRenderable = new HeaderWidget();
-        $this->transcriptRenderable = new TranscriptWidget();
+        $this->transcriptRenderable = new TranscriptBlockWidget();
         $this->pendingRenderable = new PendingMessagesWidget();
         $this->workingRenderable = new WorkingStatusWidget();
         $this->statusPanelRenderable = new StatusPanelWidget();
@@ -321,37 +320,11 @@ final class ChatScreen
         return $this->promptEditor->extract();
     }
 
-    /** @param list<TranscriptEntry> $entries */
-    public function setTranscriptEntries(array $entries): void
+    /** @param array<int, object> $blocks */
+    public function setTranscriptBlocks(array $blocks): void
     {
-        $this->transcriptRenderable->setEntries($entries);
+        $this->transcriptRenderable->setBlocks($blocks);
         $this->transcriptWidget->invalidate();
-    }
-
-    public function appendTranscript(TranscriptEntry $entry): void
-    {
-        $this->transcriptRenderable->addEntry($entry);
-        $this->transcriptWidget->invalidate();
-    }
-
-    /**
-     * Remove the last transcript entry if it matches the predicate.
-     *
-     * @param callable(TranscriptEntry): bool $predicate
-     */
-    public function removeLastTranscriptEntryIf(callable $predicate): bool
-    {
-        $entries = $this->transcriptRenderable->getEntries();
-        $lastIdx = \count($entries) - 1;
-        if ($lastIdx >= 0 && $predicate($entries[$lastIdx])) {
-            array_pop($entries);
-            $this->transcriptRenderable->setEntries($entries);
-            $this->transcriptWidget->invalidate();
-
-            return true;
-        }
-
-        return false;
     }
 
     public function setWorkingMessage(?string $message): void

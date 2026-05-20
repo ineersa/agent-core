@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\ProjectionPipeline;
 
+use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
@@ -17,7 +18,7 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
  * preserves the same public API (`accept(array)`, `blocks()`, `reset()`)
  * as the previous monolithic projector so callers are unaffected.
  */
-final readonly class TranscriptProjector
+final readonly class TranscriptProjector implements TranscriptProjectorInterface
 {
     public function __construct(
         private EventDispatcherInterface $eventDispatcher,

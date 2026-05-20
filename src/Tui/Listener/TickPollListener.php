@@ -31,10 +31,10 @@ final class TickPollListener implements TuiListenerRegistrar
         $screen = $context->screen;
 
         $context->ticks->add(static function () use ($poller, $state, $client, $screen): ?bool {
-            $newEntries = $poller->poll($state, $client);
+            $changedBlocks = $poller->poll($state, $client);
 
-            if (null !== $newEntries) {
-                $screen->setTranscriptEntries($state->transcript);
+            if (null !== $changedBlocks) {
+                $screen->setTranscriptBlocks($state->transcript);
                 $screen->setWorkingMessage(null);
             }
 
