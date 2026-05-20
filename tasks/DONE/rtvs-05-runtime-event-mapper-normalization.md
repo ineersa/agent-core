@@ -25,14 +25,14 @@ Parallelizable with: RTVS-02, RTVS-03, RTVS-04.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/rtvs-05-runtime-event-mapper-normalization
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-05-runtime-event-mapper-normalization
 Fork run: 4ep1khmw3x94
 PR URL: https://github.com/ineersa/agent-core/pull/32
-PR Status: open
+PR Status: merged
 Started: 2026-05-19T21:59:11.393Z
-Completed:
+Completed: 2026-05-20T02:50:32.417Z
 
 ## Work log
 - Created: 2026-05-17T22:16:52.560Z
@@ -91,3 +91,58 @@ Completed:
 ## Task workflow update - 2026-05-20T02:48:01.223Z
 - Validation: rm -rf var/cache/dev && php bin/console list --no-interaction: OK.; grep compiled container: RuntimeEventMapper receives shared event_dispatcher; mapping and stream subscribers registered as EventDispatcher listeners.
 - Summary: Parent sanity check after fork 4ep1khmw3x94: verified container wiring after cache clear. Compiled AgentCommand constructs RuntimeEventMapper with shared event_dispatcher and InProcessAgentSessionClient with InMemoryRuntimeEventSink. Compiled event_dispatcher registers mapping subscribers for run_started/turn_advanced/agent_end/llm_step_completed and stream subscribers for llm_stream.start and Symfony AI TextDelta FQCN. This confirms the subscriber refactor is wired, not only unit-tested.
+
+## Task workflow update - 2026-05-20T02:50:32.417Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/rtvs-05-runtime-event-mapper-normalization into integration checkout.
+- Merge made by the 'ort' strategy.
+ config/services.yaml                               |  21 +
+ depfile.yaml                                       |   6 +-
+ .../Application/Pipeline/LlmStepResultHandler.php  |   1 +
+ .../Contract/Hook/LlmStreamObserverInterface.php   |  58 +++
+ .../SymfonyAi/LlmPlatformAdapter.php               |  71 ++-
+ .../Runtime/Contract/RuntimeEventSinkInterface.php |  22 +
+ .../Runtime/InProcess/InMemoryRuntimeEventSink.php |  60 +++
+ .../InProcess/InProcessAgentSessionClient.php      |  14 +-
+ .../Mapping/AssistantMessageMappingSubscriber.php  | 141 ++++++
+ .../Mapping/CancelAndFallbackMappingSubscriber.php | 100 ++++
+ .../Runtime/Mapping/HitlMappingSubscriber.php      |  56 +++
+ .../Mapping/RunLifecycleMappingSubscriber.php      |  89 ++++
+ .../Mapping/ToolExecutionMappingSubscriber.php     |  75 +++
+ .../Runtime/Process/JsonlRuntimeEventSink.php      |  47 ++
+ .../Runtime/Protocol/RunEventMappingEvent.php      |  36 ++
+ .../Runtime/Protocol/RuntimeEventMapper.php        |  49 +-
+ .../Stream/AssistantTextStreamSubscriber.php       | 117 +++++
+ .../Stream/AssistantThinkingStreamSubscriber.php   | 153 ++++++
+ .../Runtime/Stream/LlmStreamDispatchObserver.php   |  68 +++
+ .../Runtime/Stream/RuntimeStreamDeltaEvent.php     |  34 ++
+ .../Runtime/Stream/RuntimeStreamLifecycleEvent.php |  21 +
+ .../Runtime/Stream/ToolCallStreamSubscriber.php    | 132 +++++
+ src/Tui/Runtime/RuntimeEventPoller.php             |  72 ++-
+ .../InProcess/InMemoryRuntimeEventSinkTest.php     |  85 ++++
+ .../CodingAgent/Runtime/RuntimeEventMapperTest.php | 538 +++++++++++++++++++++
+ .../Runtime/Stream/StreamDeltaSubscriberTest.php   | 287 +++++++++++
+ 26 files changed, 2323 insertions(+), 30 deletions(-)
+ create mode 100644 src/AgentCore/Contract/Hook/LlmStreamObserverInterface.php
+ create mode 100644 src/CodingAgent/Runtime/Contract/RuntimeEventSinkInterface.php
+ create mode 100644 src/CodingAgent/Runtime/InProcess/InMemoryRuntimeEventSink.php
+ create mode 100644 src/CodingAgent/Runtime/Mapping/AssistantMessageMappingSubscriber.php
+ create mode 100644 src/CodingAgent/Runtime/Mapping/CancelAndFallbackMappingSubscriber.php
+ create mode 100644 src/CodingAgent/Runtime/Mapping/HitlMappingSubscriber.php
+ create mode 100644 src/CodingAgent/Runtime/Mapping/RunLifecycleMappingSubscriber.php
+ create mode 100644 src/CodingAgent/Runtime/Mapping/ToolExecutionMappingSubscriber.php
+ create mode 100644 src/CodingAgent/Runtime/Process/JsonlRuntimeEventSink.php
+ create mode 100644 src/CodingAgent/Runtime/Protocol/RunEventMappingEvent.php
+ create mode 100644 src/CodingAgent/Runtime/Stream/AssistantTextStreamSubscriber.php
+ create mode 100644 src/CodingAgent/Runtime/Stream/AssistantThinkingStreamSubscriber.php
+ create mode 100644 src/CodingAgent/Runtime/Stream/LlmStreamDispatchObserver.php
+ create mode 100644 src/CodingAgent/Runtime/Stream/RuntimeStreamDeltaEvent.php
+ create mode 100644 src/CodingAgent/Runtime/Stream/RuntimeStreamLifecycleEvent.php
+ create mode 100644 src/CodingAgent/Runtime/Stream/ToolCallStreamSubscriber.php
+ create mode 100644 tests/CodingAgent/Runtime/InProcess/InMemoryRuntimeEventSinkTest.php
+ create mode 100644 tests/CodingAgent/Runtime/RuntimeEventMapperTest.php
+ create mode 100644 tests/CodingAgent/Runtime/Stream/StreamDeltaSubscriberTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/rtvs-05-runtime-event-mapper-normalization.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR #32 state verified via gh: MERGED at 2026-05-20T02:50:03Z, merge commit f084179ff9f55ba96a3b26a36f2a3b35ea6288b8.; Fork validation before merge: castor check quality ok; 735/735 tests passed; deptrac 0 violations; PHPStan clean; CS clean; container compiles.
+- Summary: RTVS-05 completed and PR #32 merged. RuntimeEventMapper normalization plus transient Symfony AI stream delta transport are now merged, including the corrective Symfony EventDispatcher/EventSubscriberInterface refactor for stream deltas and RunEvent→RuntimeEvent mapping. PR #32 merge commit: f084179ff9f55ba96a3b26a36f2a3b35ea6288b8.
