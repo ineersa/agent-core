@@ -25,14 +25,14 @@ Parallelizable with: RTVS-03, RTVS-04, RTVS-05.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/rtvs-06-basic-transcript-block-renderer
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-06-basic-transcript-block-renderer
 Fork run: 7597iu5vd8sz
 PR URL: https://github.com/ineersa/agent-core/pull/33
-PR Status: open
+PR Status: merged
 Started: 2026-05-20T02:59:44.377Z
-Completed:
+Completed: 2026-05-20T03:18:59.646Z
 
 ## Work log
 - Created: 2026-05-17T22:16:59.539Z
@@ -59,3 +59,19 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/33
 - Validation: castor test --filter=TranscriptBlockRendererTest — OK (30 tests, 60 assertions); castor deptrac — OK (0 violations); castor phpstan --path=src/Tui/Transcript — OK (no errors); castor cs-check — OK (files: [])
 - Summary: RTVS-06 complete. Fork created project-native TranscriptBlockRenderer and TranscriptBlockWidget under src/Tui/Transcript plus focused tests. Renderer maps all 11 TranscriptBlockKindEnum cases to readable prefixes and ThemeColorEnum tokens, uses Symfony TUI TextWrapper::wrapTextWithAnsi() for ANSI-safe wrapping, preserves existing TranscriptWidget/ChatLayout/Poller wiring for RTVS-07, and imports no AgentCore internals. Branch commit: 818e0444.
+
+## Task workflow update - 2026-05-20T03:18:59.646Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/rtvs-06-basic-transcript-block-renderer into integration checkout.
+- Merge made by the 'ort' strategy.
+ src/Tui/Transcript/TranscriptBlockRenderer.php     | 120 ++++++
+ src/Tui/Transcript/TranscriptBlockWidget.php       |  64 +++
+ .../Tui/Transcript/TranscriptBlockRendererTest.php | 442 +++++++++++++++++++++
+ 3 files changed, 626 insertions(+)
+ create mode 100644 src/Tui/Transcript/TranscriptBlockRenderer.php
+ create mode 100644 src/Tui/Transcript/TranscriptBlockWidget.php
+ create mode 100644 tests/Tui/Transcript/TranscriptBlockRendererTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/rtvs-06-basic-transcript-block-renderer.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR #33 state verified as MERGED via gh pr view.; Merged commit: ef5d1b394d582c28493989825922b0b7186ef0f9
+- Summary: PR #33 merged at ef5d1b394d582c28493989825922b0b7186ef0f9. RTVS-06 closed: basic TranscriptBlock renderer/widget landed with focused tests and Castor validation.
