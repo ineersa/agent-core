@@ -25,14 +25,22 @@ Parallelizable with: none after dependencies; avoid concurrent edits with RTVS-0
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/rtvs-07-runtime-event-poller-projection-integration
+Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-07-runtime-event-poller-projection-integration
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-20T03:20:17.851Z
 Completed:
 
 ## Work log
 - Created: 2026-05-17T22:17:06.633Z
+
+## Task workflow update - 2026-05-20T03:20:17.851Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/rtvs-07-runtime-event-poller-projection-integration.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/rtvs-07-runtime-event-poller-projection-integration.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/rtvs-07-runtime-event-poller-projection-integration.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/rtvs-07-runtime-event-poller-projection-integration.
+- Summary: Starting RTVS-07: wire RuntimeEventPoller through TranscriptProjector and TranscriptBlock rendering, preserving runtime-events.jsonl persistence, sequence de-duplication, working status, and existing session behavior.
