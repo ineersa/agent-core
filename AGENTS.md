@@ -84,6 +84,11 @@ explicitly when testing TUI rendering changes.
   `RuntimeEventMapper`, `SettingsProvider`, or `TranscriptProjector`; do not use
   ambiguous bare names when a suffix can explain whether the artifact is an enum,
   trait, service, mapper, provider, projector, repository, factory, or DTO.
+- **Prefer Symfony-native extension points and typed objects over hand-rolled routers and array mappers.**
+  Before adding `instanceof` dispatch chains, stringly typed `match` routers, custom
+  `normalize*()` arrays, or manual payload walkers, check whether Symfony events,
+  subscribers/listeners, Serializer/Normalizer, Messenger handlers, or existing
+  Symfony AI DTOs already model the flow.
 - **Never add production APIs or code paths that exist solely to support tests.**
   Tests must use production constructors, factories, or create test-local
   fixtures/builders. Do not add test-only static factory methods, test-only
