@@ -203,6 +203,7 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
                 'usage' => $message->usage,
                 'tool_calls_count' => \count($toolCalls),
                 'assistant_message' => $assistantMessagePayload,
+                'text' => $assistantMessage->asText(),
             ],
         ]];
 

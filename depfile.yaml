@@ -98,7 +98,7 @@ parameters:
     - name: AppRuntimeInternals
       collectors:
         - type: directory
-          value: src/CodingAgent/Runtime/(InProcess|Process)/.*
+          value: src/CodingAgent/Runtime/(InProcess|Process|Stream|Mapping)/.*
 
     - name: AppRuntimeProjection
       collectors:
@@ -302,11 +302,14 @@ parameters:
       - AppConfig
       - SymfonyConsole
       - SymfonyMessenger
+      - SymfonyAiPlatform
+      - SymfonyEventDispatcher
 
     AppRuntimeContract:
       - AppRuntimeProjection
       - AgentCore
       - SymfonyConsole
+      - SymfonyEventDispatcher
 
     AppConfig:
       - SymfonyTui
@@ -351,6 +354,7 @@ parameters:
     AgentCore:
       - SymfonyLock
       - SymfonySerializer
+      - SymfonyAiPlatform
     SymfonyTui: ~
     SymfonyAiPlatform: ~
     SymfonyEventDispatcher: ~
