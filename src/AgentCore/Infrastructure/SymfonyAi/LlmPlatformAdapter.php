@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\ConvertToLlmHookInterface;
+use Ineersa\AgentCore\Contract\Hook\LlmStreamObserverInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface;
 use Ineersa\AgentCore\Contract\Model\PlatformInterface;
@@ -47,6 +48,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         private SymfonyPlatformInterface $platform,
         private iterable $transformContextHooks,
         private iterable $convertToLlmHooks,
+        private ?LlmStreamObserverInterface $streamObserver = null,
     ) {
     }
 
@@ -70,6 +72,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 ),
             ),
             $cancelToken,
+            $request->input->runId ?? '',
+            $request->input->stepId,
         );
     }
 
@@ -137,10 +141,16 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         return new NullCancellationToken();
     }
 
-    private function consumeStream(DeferredResult $deferredResult, CancellationTokenInterface $cancelToken): PlatformInvocationResult
-    {
+    private function consumeStream(
+        DeferredResult $deferredResult,
+        CancellationTokenInterface $cancelToken,
+        string $runId,
+        ?string $stepId,
+    ): PlatformInvocationResult {
         $aborted = false;
         $deltas = [];
+
+        $this->notifyStreamStart($runId, $stepId);
 
         try {
             foreach ($deferredResult->asStream() as $delta) {
@@ -151,11 +161,16 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
                 if ($delta instanceof DeltaInterface) {
                     $deltas[] = $delta;
+                    $this->notifyDelta($runId, $stepId, $delta);
                 }
             }
         } catch (\Throwable $exception) {
+            $this->notifyStreamError($runId, $stepId, $exception);
+
             return $this->errorResult($deltas, $exception, $deferredResult);
         }
+
+        $this->notifyStreamEnd($runId, $stepId);
 
         if ($aborted) {
             $this->abortConnection($deferredResult);
@@ -336,5 +351,57 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         }
 
         return \is_array($decoded) ? $decoded : [];
+    }
+
+    private function notifyStreamStart(string $runId, ?string $stepId): void
+    {
+        if (null === $this->streamObserver || '' === $runId) {
+            return;
+        }
+
+        try {
+            $this->streamObserver->onStreamStart($runId, $stepId);
+        } catch (\Throwable) {
+            // Observer failures must not break model invocation.
+        }
+    }
+
+    private function notifyDelta(string $runId, ?string $stepId, DeltaInterface $delta): void
+    {
+        if (null === $this->streamObserver || '' === $runId) {
+            return;
+        }
+
+        try {
+            $this->streamObserver->onDelta($runId, $stepId, $delta);
+        } catch (\Throwable) {
+            // Observer failures must not break model invocation.
+        }
+    }
+
+    private function notifyStreamEnd(string $runId, ?string $stepId): void
+    {
+        if (null === $this->streamObserver || '' === $runId) {
+            return;
+        }
+
+        try {
+            $this->streamObserver->onStreamEnd($runId, $stepId);
+        } catch (\Throwable) {
+            // Observer failures must not break model invocation.
+        }
+    }
+
+    private function notifyStreamError(string $runId, ?string $stepId, \Throwable $error): void
+    {
+        if (null === $this->streamObserver || '' === $runId) {
+            return;
+        }
+
+        try {
+            $this->streamObserver->onStreamError($runId, $stepId, $error);
+        } catch (\Throwable) {
+            // Observer failures must not break model invocation.
+        }
     }
 }

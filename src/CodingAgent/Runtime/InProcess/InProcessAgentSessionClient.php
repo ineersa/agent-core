@@ -14,6 +14,7 @@ use Ineersa\AgentCore\Infrastructure\Storage\SessionRunStore;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
+use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
@@ -36,6 +37,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly RuntimeEventMapper $mapper,
         private readonly SessionRunStore $runStore,
         private readonly SessionMetadataStore $sessionMetadataStore,
+        private readonly ?RuntimeEventSinkInterface $transientSink = null,
     ) {
     }
 
@@ -95,7 +97,17 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         $runEvents = $this->eventStore->allFor($runId);
 
         foreach ($runEvents as $runEvent) {
-            yield $this->mapper->toRuntimeEvent($runEvent);
+            $runtimeEvent = $this->mapper->toRuntimeEvent($runEvent);
+            if (null !== $runtimeEvent) {
+                yield $runtimeEvent;
+            }
+        }
+
+        // Drain transient streaming events from the in-memory sink.
+        // These are ephemeral deltas from the current LLM stream that
+        // have not yet been committed as canonical RunEvents.
+        if (null !== $this->transientSink && $this->transientSink instanceof InMemoryRuntimeEventSink) {
+            yield from $this->transientSink->drain($runId);
         }
     }
 
