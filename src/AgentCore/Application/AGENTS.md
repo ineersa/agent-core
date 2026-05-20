@@ -38,12 +38,9 @@ Note: `CollectToolBatch` is routed to `agent.execution.bus` in `config/messenger
   - dispatched by: `ExecuteToolCallWorker::__invoke()`
   - handled by: `RunOrchestrator::onToolCallResult()` -> `RunMessageProcessor` -> `ToolCallResultHandler`
 
-## Event -> projector/listener (application side)
+## Event -> listener (application side)
 
-- `RunCommit::commit()` owns durable persistence and projects committed `RunEvent` instances through `OutboxProjector::project()`.
-- `OutboxProjector` receives all `OutboxProjectorInterface` implementations via `agent_loop.outbox_projector` tagged services.
-- Each projector declares its `OutboxSink` via `sink()`. `OutboxProjector` enqueues events per sink and calls `processBatch()` on each projector.
-- Consuming apps can add custom projectors by implementing `OutboxProjectorInterface` (auto-tagged via `_instanceof`).
+- `RunCommit::commit()` owns durable persistence and commits `RunEvent` instances through `EventStoreInterface`.
 - In-process event dispatch goes through `RunEventDispatcher` + `EventSubscriberRegistry`.
 - Extension event listeners are provided through `agent_loop.extension.event_subscriber` tagged services.
 

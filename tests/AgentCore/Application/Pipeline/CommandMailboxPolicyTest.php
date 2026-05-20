@@ -7,7 +7,6 @@ namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 use Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\MessageIdempotencyService;
-use Ineersa\AgentCore\Application\Handler\OutboxProjector;
 use Ineersa\AgentCore\Application\Handler\ReplayService;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
@@ -32,7 +31,6 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 
 use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryOutboxStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
 
@@ -250,8 +248,6 @@ final class CommandMailboxPolicyTest extends TestCase
         $eventStore = new RunEventStore();
         $commandStore = new InMemoryCommandStore();
 
-        $outboxStore = new InMemoryOutboxStore();
-        $outboxProjector = new OutboxProjector($outboxStore, []);
         $replayService = new ReplayService($eventStore, new HotPromptStateStore());
 
         $commandBus = new MailboxRecordingMessageBus();
@@ -272,7 +268,6 @@ final class CommandMailboxPolicyTest extends TestCase
             runStore: $runStore,
             eventStore: $eventStore,
             commandStore: $commandStore,
-            outboxProjector: $outboxProjector,
             replayService: $replayService,
             stepDispatcher: $stepDispatcher,
         );

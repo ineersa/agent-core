@@ -2,11 +2,10 @@
 
 `Domain\Event` defines event contracts and lifecycle rules.
 
-## Event -> projector/listener map
+## Event -> listener map
 
 - `RunEvent` is the canonical persisted event envelope.
-- After commit, events are projected by `OutboxProjector` (application layer) through `OutboxProjectorInterface` tagged services.
-- Consuming apps can add custom projectors by implementing `OutboxProjectorInterface`.
+- After commit, events are persisted through `EventStoreInterface`.
 - In-process listeners consume events through:
   - `RunEventDispatcher`
   - `EventSubscriberRegistry`
@@ -31,4 +30,4 @@ The `CoreLifecycleEventType::validateOrder()` method is the source of truth for 
 
 ## Maintenance rule
 
-When event types, ordering rules, projection sinks, or subscriber contracts change, update this file and `src/Application/AGENTS.md` in the same change.
+When event types, ordering rules, or subscriber contracts change, update this file and `src/Application/AGENTS.md` in the same change.
