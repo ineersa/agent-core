@@ -29,10 +29,9 @@ final class RunMetrics
 
     private int $staleResultCount = 0;
 
-    /** @var array<'canonical_events'|'jsonl_fallback', int> */
+    /** @var array<'canonical_events', int> */
     private array $replayRebuildBySource = [
         'canonical_events' => 0,
-        'jsonl_fallback' => 0,
     ];
 
     private LatencyHistogram $turnDurationHistogram;
@@ -134,8 +133,7 @@ final class RunMetrics
 
     public function incrementReplayRebuildCount(string $source): void
     {
-        $metricSource = 'jsonl_fallback' === $source ? 'jsonl_fallback' : 'canonical_events';
-        ++$this->replayRebuildBySource[$metricSource];
+        ++$this->replayRebuildBySource['canonical_events'];
     }
 
     /**
@@ -149,7 +147,7 @@ final class RunMetrics
      * command_queue_lag: array{runs_tracked: int, sum: int, max: int, by_run: array<string, int>},
      * stale_result_count: int,
      * replay_rebuild_count: int,
-     * replay_rebuild_by_source: array<'canonical_events'|'jsonl_fallback', int>
+     * replay_rebuild_by_source: array<'canonical_events', int>
      * }
      */
     public function snapshot(): array

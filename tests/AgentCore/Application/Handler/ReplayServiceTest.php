@@ -8,33 +8,15 @@ use Ineersa\AgentCore\Application\Handler\ReplayService;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
-use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
-use Ineersa\AgentCore\Infrastructure\Storage\RunLogWriter;
-use League\Flysystem\Filesystem;
-use League\Flysystem\Local\LocalFilesystemAdapter;
 use PHPUnit\Framework\TestCase;
 
 final class ReplayServiceTest extends TestCase
 {
-    private string $basePath;
-
-    protected function setUp(): void
-    {
-        $this->basePath = sys_get_temp_dir().'/agent-core-replay-'.uniqid('', true);
-        mkdir($this->basePath, recursive: true);
-    }
-
-    protected function tearDown(): void
-    {
-        $this->deleteDirectory($this->basePath);
-    }
-
     public function testRebuildUsesCanonicalEventsAndRestoresDeletedHotPromptState(): void
     {
-        $filesystem = new Filesystem(new LocalFilesystemAdapter($this->basePath));
         $eventStore = new RunEventStore();
         $hotPromptStore = new HotPromptStateStore();
-        $replayService = new ReplayService($eventStore, new RunLogReader($filesystem, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer()), $hotPromptStore);
+        $replayService = new ReplayService($eventStore, $hotPromptStore);
 
         $runId = 'run-replay-canonical';
         $eventStore->append(new RunEvent(
@@ -90,63 +72,19 @@ final class ReplayServiceTest extends TestCase
         self::assertSame([], $integrity->missingSequences);
     }
 
-    public function testRebuildFallsBackToJsonlWhenCanonicalEventsAreUnavailable(): void
+    public function testRebuildReturnsEmptyResultWhenNoEventsExist(): void
     {
-        $filesystem = new Filesystem(new LocalFilesystemAdapter($this->basePath));
-        $writer = new RunLogWriter($filesystem, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer());
-
-        $runId = 'run-replay-jsonl';
-        $writer->append(new RunEvent(
-            runId: $runId,
-            seq: 1,
-            turnNo: 0,
-            type: 'run_started',
-            payload: ['messages' => []],
-            createdAt: new \DateTimeImmutable('2026-04-10T12:00:00+00:00'),
-        ));
-        $writer->append(new RunEvent(
-            runId: $runId,
-            seq: 3,
-            turnNo: 1,
-            type: 'assistant_message',
-            payload: ['assistant' => 'Recovered from JSONL'],
-            createdAt: new \DateTimeImmutable('2026-04-10T12:01:00+00:00'),
-        ));
-
         $eventStore = new RunEventStore();
         $hotPromptStore = new HotPromptStateStore();
-        $replayService = new ReplayService($eventStore, new RunLogReader($filesystem, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer()), $hotPromptStore);
+        $replayService = new ReplayService($eventStore, $hotPromptStore);
+
+        $runId = 'run-no-events';
 
         $rebuiltState = $replayService->rebuildHotPromptState($runId);
 
-        self::assertSame('jsonl_fallback', $rebuiltState->source);
-        self::assertSame([2], $rebuiltState->missingSequences);
-        self::assertFalse($rebuiltState->isContiguous);
-        self::assertSame(3, $rebuiltState->lastSeq);
-        self::assertCount(1, $rebuiltState->messages);
-    }
-
-    private function deleteDirectory(string $path): void
-    {
-        if (!is_dir($path)) {
-            return;
-        }
-
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($path, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-
-        foreach ($iterator as $item) {
-            if ($item->isDir()) {
-                rmdir($item->getPathname());
-
-                continue;
-            }
-
-            unlink($item->getPathname());
-        }
-
-        rmdir($path);
+        self::assertSame('canonical_events', $rebuiltState->source);
+        self::assertSame(0, $rebuiltState->lastSeq);
+        self::assertCount(0, $rebuiltState->messages);
+        self::assertTrue($rebuiltState->isContiguous);
     }
 }

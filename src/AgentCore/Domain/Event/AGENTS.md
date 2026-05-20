@@ -7,7 +7,6 @@
 - `RunEvent` is the canonical persisted event envelope.
 - After commit, events are projected by `OutboxProjector` (application layer) through `OutboxProjectorInterface` tagged services.
 - Built-in projectors:
-  - JSONL outbox sink -> `JsonlOutboxProjectorWorker` -> `RunLogWriter`
   - Mercure outbox sink -> `MercureOutboxProjectorWorker` -> `RunEventPublisher`
     - topic policy: `agent/runs/{runId}` (`RunTopicPolicy`)
     - event id: `seq`

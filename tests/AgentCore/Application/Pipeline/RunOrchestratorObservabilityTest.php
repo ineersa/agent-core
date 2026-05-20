@@ -7,8 +7,6 @@ namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 use Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\MessageIdempotencyService;
-use Ineersa\AgentCore\Application\Handler\JsonlOutboxProjectorWorker;
-
 use Ineersa\AgentCore\Application\Handler\OutboxProjector;
 use Ineersa\AgentCore\Application\Handler\ReplayService;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
@@ -36,12 +34,10 @@ use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryOutboxStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
-use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
-use Ineersa\AgentCore\Infrastructure\Storage\RunLogWriter;
+
 use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
-use League\Flysystem\Filesystem;
-use League\Flysystem\Local\LocalFilesystemAdapter;
+
 use PHPUnit\Framework\TestCase;
 use Psr\Log\AbstractLogger;
 use Stringable;
@@ -67,18 +63,12 @@ final class RunOrchestratorObservabilityTest extends TestCase
 
     public function testMetricsAndTracingAreRecordedAcrossTurnAndStaleResult(): void
     {
-        $filesystem = new Filesystem(new LocalFilesystemAdapter($this->basePath));
-
         $runStore = new InMemoryRunStore();
         $eventStore = new RunEventStore();
         $commandStore = new InMemoryCommandStore();
 
         $outboxStore = new InMemoryOutboxStore();
-        $runLogWriter = new RunLogWriter($filesystem, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer());
-
-        $jsonlWorker = new JsonlOutboxProjectorWorker($outboxStore, $runLogWriter);
-
-        $outboxProjector = new OutboxProjector($outboxStore, [$jsonlWorker]);
+        $outboxProjector = new OutboxProjector($outboxStore, []);
 
         $metrics = new RunMetrics();
         $traceLogger = new ObservabilityTraceLogger();
@@ -98,7 +88,7 @@ final class RunOrchestratorObservabilityTest extends TestCase
             eventStore: $eventStore,
             commandStore: $commandStore,
             outboxProjector: $outboxProjector,
-            replayService: new ReplayService($eventStore, new RunLogReader($filesystem, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer()), new HotPromptStateStore(), $metrics, $tracer),
+            replayService: new ReplayService($eventStore, new HotPromptStateStore(), $metrics, $tracer),
             stepDispatcher: $stepDispatcher,
             logger: $traceLogger,
             metrics: $metrics,

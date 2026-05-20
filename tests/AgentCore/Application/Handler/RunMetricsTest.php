@@ -28,7 +28,6 @@ final class RunMetricsTest extends TestCase
 
         $metrics->incrementStaleResultCount(2);
         $metrics->incrementReplayRebuildCount('canonical_events');
-        $metrics->incrementReplayRebuildCount('jsonl_fallback');
 
         $snapshot = $metrics->snapshot();
 
@@ -48,8 +47,7 @@ final class RunMetricsTest extends TestCase
         self::assertSame(3, $snapshot['command_queue_lag']['by_run']['run-metrics-1']);
 
         self::assertSame(2, $snapshot['stale_result_count']);
-        self::assertSame(2, $snapshot['replay_rebuild_count']);
+        self::assertSame(1, $snapshot['replay_rebuild_count']);
         self::assertSame(1, $snapshot['replay_rebuild_by_source']['canonical_events']);
-        self::assertSame(1, $snapshot['replay_rebuild_by_source']['jsonl_fallback']);
     }
 }

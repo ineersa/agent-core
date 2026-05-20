@@ -420,8 +420,6 @@ embedded IDs.
 | Session rename / alias | Low | Session IDs are 12-char hex — not human-memorable. Aliases or titles would help. |
 | Runtime event streaming | Medium | Current polling is synchronous full-scan. Incremental delivery would improve large sessions. |
 | Rebuild `state.json` from `events.jsonl` | Medium | Would make the materialized snapshot fully recoverable and justify treating it as a disposable cache. |
-| Cold archive / Flysystem projection wiring | Low | Outbox/Flysystem-style JSONL archive pieces should remain future wiring unless a web/server deployment needs database-backed hot state plus file-backed cold exports. |
-
 ## Related documents
 
 - [Hatfield Settings](settings.md) — configuring session path and theme
