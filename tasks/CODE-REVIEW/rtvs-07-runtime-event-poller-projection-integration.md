@@ -28,7 +28,7 @@ Parallelizable with: none after dependencies; avoid concurrent edits with RTVS-0
 Status: CODE-REVIEW
 Branch: task/rtvs-07-runtime-event-poller-projection-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-07-runtime-event-poller-projection-integration
-Fork run: qipk0vcmrg3b
+Fork run: qt3momjnksvl
 PR URL: https://github.com/ineersa/agent-core/pull/34
 PR Status: open
 Started: 2026-05-20T03:20:17.851Z
@@ -109,3 +109,7 @@ Completed:
 ## Task workflow update - 2026-05-20T23:01:28.133Z
 - Recorded fork run: qipk0vcmrg3b
 - Summary: Launched fork qipk0vcmrg3b in the RTVS-07 worktree to finish PR #34 after main cleanup. Scope: sync task branch with latest main (Flysystem/Mercure/outbox removals), preserve simplified architecture, wire ToolExecutor scalar constructor args and any legitimate DI blockers exposed by MessengerIntegrationCompilerPass, verify Messenger buses/handlers are live, run Castor validation, push updated PR branch. Constraints: no main commits, no FrameworkBundle/HTTP, no Flysystem/Mercure/outbox resurrection.
+
+## Task workflow update - 2026-05-20T23:03:08.703Z
+- Recorded fork run: qt3momjnksvl
+- Summary: Relaunched RTVS-07 finish fork with stricter implementation acceptance criteria after prior fork only fixed scalar DI/container compile. New fork qt3momjnksvl must add executable regression coverage proving real AgentRunner/Messenger bus dispatch invokes handlers and persists canonical events, plus verify RuntimeEventPoller -> TranscriptProjector -> TuiSessionState projection behavior. It must not stop at container inspection; deliverable is runtime-flow tests plus any narrow DI fixes needed, Castor validation, and push to PR #34.
