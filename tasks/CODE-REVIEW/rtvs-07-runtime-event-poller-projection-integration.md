@@ -28,7 +28,7 @@ Parallelizable with: none after dependencies; avoid concurrent edits with RTVS-0
 Status: CODE-REVIEW
 Branch: task/rtvs-07-runtime-event-poller-projection-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-07-runtime-event-poller-projection-integration
-Fork run: luxrhtkqpoae
+Fork run: 39x9hc0dv8ma
 PR URL: https://github.com/ineersa/agent-core/pull/34
 PR Status: open
 Started: 2026-05-20T03:20:17.851Z
@@ -77,3 +77,7 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/34
 - Validation: castor test --filter=RuntimeEventPollerProjectionTest — OK (10 tests, 38 assertions); castor deptrac — 0 violations; castor phpstan --path=src/Tui --path=src/CodingAgent/Runtime — OK; castor cs-fix && castor check — quality: ok; 775 Castor PHPUnit tests pass with 1 pre-existing PHPUnit notice in OutboxProjectionWorkerTest; debug-only raw PHPUnit with tui-e2e showed expected snapshot drift due TranscriptBlockWidget prefixes/footer content; castor test excludes tui-e2e per project rules
 - Summary: RTVS-07 completed and pushed at commit 1ff0dceb. RuntimeEventPoller now projects stable RuntimeEvents through TranscriptProjectorInterface into TranscriptBlock DTOs, synchronizes block updates into TuiSessionState, preserves runtime-events.jsonl persistence and lastSeq/seq=0 behavior, and TUI display now uses TranscriptBlockWidget via ChatScreen::setTranscriptBlocks(). Local UI/system/user messages are converted with TranscriptBlockFactory while preserving existing transcript.jsonl writes. Boundary-safe projector contract avoids TuiRuntime depending on ProjectionPipeline concrete classes.
+
+## Task workflow update - 2026-05-20T20:34:12.901Z
+- Recorded fork run: 39x9hc0dv8ma
+- Launched fork 39x9hc0dv8ma to debug smoke-test failure where TUI shows no LLM responses after RTVS-07. Fork instructed to inspect ANSI snapshot .hatfield/tmp/tui/snapshots/snapshot-ansi-20260520-163153.ansi, session/runtime logs, run targeted tests plus castor test:llm-real and castor run:agent-test if available, identify exact failing path, implement fix/tests if safe, validate with Castor, commit and push branch.
