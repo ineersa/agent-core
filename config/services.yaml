@@ -74,6 +74,18 @@ services:
     arguments:
       $listenerRegistrars: !tagged_iterator app.tui_listener
 
+  # ─── Transient runtime stream wiring ───
+
+  Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink: ~
+
+  Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface:
+    alias: Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink
+
+  Ineersa\CodingAgent\Runtime\Stream\RuntimeEventStreamObserver: ~
+
+  Ineersa\AgentCore\Contract\Hook\LlmStreamObserverInterface:
+    alias: Ineersa\CodingAgent\Runtime\Stream\RuntimeEventStreamObserver
+
   # ─── Symfony AI Platform wiring ───
   # PlatformInterface reads Hatfield config from autowired AppConfig,
   # so no explicit arguments are needed here.
