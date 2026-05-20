@@ -28,7 +28,7 @@ Parallelizable with: RTVS-02, RTVS-03, RTVS-04.
 Status: CODE-REVIEW
 Branch: task/rtvs-05-runtime-event-mapper-normalization
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-05-runtime-event-mapper-normalization
-Fork run: 1uirucdcjzc3
+Fork run: 4ep1khmw3x94
 PR URL: https://github.com/ineersa/agent-core/pull/32
 PR Status: open
 Started: 2026-05-19T21:59:11.393Z
@@ -75,3 +75,10 @@ Completed:
 ## Task workflow update - 2026-05-20T00:02:14.072Z
 - Validation: php bin/console list --no-interaction after cache clear: container compiles; compiled AgentCommand now constructs InProcessAgentSessionClient with InMemoryRuntimeEventSink.; castor test --filter='RuntimeEventStreamObserverTest|InMemoryRuntimeEventSinkTest': 23 tests, 64 assertions OK.; castor deptrac: 0 violations.; castor cs-check: clean.
 - Summary: Parent follow-up after fork: found runtime DI wiring gap while sanity-checking compiled container — observer/sink services were removed as unused and InProcessAgentSessionClient was constructed without a transient sink. Patched PR #32 with explicit service aliases in config/services.yaml: RuntimeEventSinkInterface -> InMemoryRuntimeEventSink, LlmStreamObserverInterface -> RuntimeEventStreamObserver, plus concrete service definitions. Committed/pushed fix as 542fe738 on task/rtvs-05-runtime-event-mapper-normalization.
+
+## Task workflow update - 2026-05-20T00:20:54.701Z
+- Review feedback: current RTVS-05 stream/mapping implementation is architecturally too manual. RuntimeEventStreamObserver uses a central instanceof match over Symfony AI DeltaInterface types, and RuntimeEventMapper uses many private normalize* array functions plus extractAssistantText() custom payload walking. Desired refactor: use Symfony EventDispatcher/EventSubscriberInterface for stream delta and RunEvent normalization pipelines, split handlers/subscribers by event family/type, use semantic DTOs for normalized runtime payloads and Symfony Serializer for DTO→array conversion, and reuse Symfony AI types/methods (e.g. AssistantMessage::asText(), ToolCall accessors) at the source boundary instead of reparsing normalized arrays where possible. Keep RuntimeEvent as the transport DTO, but avoid monolithic mapper/observer logic.
+
+## Task workflow update - 2026-05-20T00:21:20.293Z
+- Recorded fork run: 4ep1khmw3x94
+- Launched corrective fork run 4ep1khmw3x94 in RTVS-05 worktree to refactor PR #32 away from monolithic instanceof/array-normalization implementation. Target: Symfony EventDispatcher/EventSubscriberInterface pipelines for stream deltas and RunEvent→RuntimeEvent mapping, split subscribers by family/type, payload DTOs + Symfony Serializer normalization where practical, reuse Symfony AI AssistantMessage::asText()/ToolCall types at source boundaries, preserve transient delta semantics and existing protocol behavior.
