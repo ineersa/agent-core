@@ -10,13 +10,11 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\PromptStateStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Run\PromptState;
-use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
 
 final readonly class ReplayService
 {
     public function __construct(
         private EventStoreInterface $eventStore,
-        private RunLogReader $runLogReader,
         private PromptStateStoreInterface $promptStateStore,
         private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
@@ -74,16 +72,10 @@ final readonly class ReplayService
     private function eventsForReplay(string $runId): ResolvedReplayEvents
     {
         $events = $this->eventStore->allFor($runId);
-        if ([] !== $events) {
-            return new ResolvedReplayEvents(
-                events: $this->sortBySequence($events),
-                source: 'canonical_events',
-            );
-        }
 
         return new ResolvedReplayEvents(
-            events: $this->sortBySequence($this->runLogReader->allFor($runId)),
-            source: 'jsonl_fallback',
+            events: $this->sortBySequence($events),
+            source: 'canonical_events',
         );
     }
 

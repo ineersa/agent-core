@@ -7,9 +7,6 @@ namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 use Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\MessageIdempotencyService;
-use Ineersa\AgentCore\Application\Handler\JsonlOutboxProjectorWorker;
-
-use Ineersa\AgentCore\Application\Handler\OutboxProjector;
 use Ineersa\AgentCore\Application\Handler\ReplayService;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
@@ -29,14 +26,11 @@ use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 
 use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryOutboxStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
-use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
-use Ineersa\AgentCore\Infrastructure\Storage\RunLogWriter;
+
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
-use League\Flysystem\Filesystem;
-use League\Flysystem\Local\LocalFilesystemAdapter;
+
 use PHPUnit\Framework\TestCase;
 use Psr\Log\AbstractLogger;
 use Symfony\Component\Lock\LockFactory;
@@ -61,19 +55,11 @@ final class RunOrchestratorStructuredLoggingTest extends TestCase
 
     public function testCommitLogsStructuredEventContext(): void
     {
-        $filesystem = new Filesystem(new LocalFilesystemAdapter($this->basePath));
-
         $runStore = new InMemoryRunStore();
         $eventStore = new RunEventStore();
         $commandStore = new InMemoryCommandStore();
 
-        $outboxStore = new InMemoryOutboxStore();
-        $runLogWriter = new RunLogWriter($filesystem, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer());
-
-        $jsonlWorker = new JsonlOutboxProjectorWorker($outboxStore, $runLogWriter);
-
-        $outboxProjector = new OutboxProjector($outboxStore, [$jsonlWorker]);
-        $replayService = new ReplayService($eventStore, new RunLogReader($filesystem, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer()), new HotPromptStateStore());
+        $replayService = new ReplayService($eventStore, new HotPromptStateStore());
 
         $logger = new RecordingStructuredLogger();
 
@@ -90,7 +76,6 @@ final class RunOrchestratorStructuredLoggingTest extends TestCase
             runStore: $runStore,
             eventStore: $eventStore,
             commandStore: $commandStore,
-            outboxProjector: $outboxProjector,
             replayService: $replayService,
             stepDispatcher: $stepDispatcher,
             logger: $logger,

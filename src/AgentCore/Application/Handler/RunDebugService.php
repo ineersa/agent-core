@@ -16,7 +16,6 @@ use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Run\PromptState;
-use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
 
 final readonly class RunDebugService
 {
@@ -25,7 +24,6 @@ final readonly class RunDebugService
         private CommandStoreInterface $commandStore,
         private PromptStateStoreInterface $promptStateStore,
         private EventStoreInterface $eventStore,
-        private RunLogReader $runLogReader,
         private ReplayService $replayService,
         private ?RunMetrics $metrics = null,
     ) {
@@ -77,7 +75,7 @@ final readonly class RunDebugService
      *
      * @return array{
      * run_id: string,
-     * source: 'canonical_events'|'jsonl_fallback',
+     * source: 'canonical_events',
      * after_seq: int,
      * total_events: int,
      * resync_required: bool,
@@ -120,7 +118,7 @@ final readonly class RunDebugService
      *
      * @return array{
      * run_id: string,
-     * source: 'canonical_events'|'jsonl_fallback',
+     * source: 'canonical_events',
      * total_events: int,
      * limit: int,
      * events: list<RunEvent>
@@ -155,16 +153,10 @@ final readonly class RunDebugService
     private function eventsForRun(string $runId): ResolvedReplayEvents
     {
         $events = $this->eventStore->allFor($runId);
-        if ([] !== $events) {
-            return new ResolvedReplayEvents(
-                events: $this->sortBySequence($events),
-                source: 'canonical_events',
-            );
-        }
 
         return new ResolvedReplayEvents(
-            events: $this->sortBySequence($this->runLogReader->allFor($runId)),
-            source: 'jsonl_fallback',
+            events: $this->sortBySequence($events),
+            source: 'canonical_events',
         );
     }
 

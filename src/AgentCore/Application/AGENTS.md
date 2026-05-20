@@ -11,8 +11,6 @@ This README is an architecture map (not an index).
 - `ToolCallResult` -> `RunOrchestrator::onToolCallResult()` on `agent.command.bus`
 - `ExecuteLlmStep` -> `ExecuteLlmStepWorker::__invoke()` on `agent.execution.bus`
 - `ExecuteToolCall` -> `ExecuteToolCallWorker::__invoke()` on `agent.execution.bus`
-- `ProjectJsonlOutbox` -> `JsonlOutboxProjectorWorker::__invoke()` on `agent.publisher.bus`
-- `ProjectMercureOutbox` -> `MercureOutboxProjectorWorker::__invoke()` on `agent.publisher.bus`
 
 Note: `CollectToolBatch` is routed to `agent.execution.bus` in `config/messenger.php`, but there is currently no `AsMessageHandler` consumer for this message in `src/`.
 
@@ -40,15 +38,9 @@ Note: `CollectToolBatch` is routed to `agent.execution.bus` in `config/messenger
   - dispatched by: `ExecuteToolCallWorker::__invoke()`
   - handled by: `RunOrchestrator::onToolCallResult()` -> `RunMessageProcessor` -> `ToolCallResultHandler`
 
-## Event -> projector/listener (application side)
+## Event -> listener (application side)
 
-- `RunCommit::commit()` owns durable persistence and projects committed `RunEvent` instances through `OutboxProjector::project()`.
-- `OutboxProjector` receives all `OutboxProjectorInterface` implementations via `agent_loop.outbox_projector` tagged services.
-- Each projector declares its `OutboxSink` via `sink()`. `OutboxProjector` enqueues events per sink and calls `processBatch()` on each projector.
-- Built-in projectors:
-  - `JsonlOutboxProjectorWorker` -> `OutboxSink::Jsonl` -> `RunLogWriter`
-  - `MercureOutboxProjectorWorker` -> `OutboxSink::Mercure` -> `RunEventPublisher`
-- Consuming apps can add custom projectors by implementing `OutboxProjectorInterface` (auto-tagged via `_instanceof`).
+- `RunCommit::commit()` owns durable persistence and commits `RunEvent` instances through `EventStoreInterface`.
 - In-process event dispatch goes through `RunEventDispatcher` + `EventSubscriberRegistry`.
 - Extension event listeners are provided through `agent_loop.extension.event_subscriber` tagged services.
 

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
-use Ineersa\AgentCore\Application\Handler\OutboxProjector;
 use Ineersa\AgentCore\Application\Handler\ReplayService;
 use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
@@ -24,7 +23,6 @@ final readonly class RunCommit
         private RunStoreInterface $runStore,
         private EventStoreInterface $eventStore,
         private CommandStoreInterface $commandStore,
-        private OutboxProjector $outboxProjector,
         private ReplayService $replayService,
         private StepDispatcher $stepDispatcher,
         private ?HookDispatcher $hookDispatcher = null,
@@ -81,18 +79,6 @@ final readonly class RunCommit
             }
 
             if ($eventsPersisted) {
-                try {
-                    $this->outboxProjector->project($events);
-                } catch (\Throwable $exception) {
-                    $this->logger?->warning('agent_loop.commit.projection_failed', [
-                        'run_id' => $nextState->runId,
-                        'turn_no' => $nextState->turnNo,
-                        'step_id' => $nextState->activeStepId,
-                        'event_count' => \count($events),
-                        'error' => $exception->getMessage(),
-                    ]);
-                }
-
                 try {
                     $this->replayService->rebuildHotPromptState($nextState->runId);
                 } catch (\Throwable $exception) {

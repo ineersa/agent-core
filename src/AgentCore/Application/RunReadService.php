@@ -9,14 +9,12 @@ use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
 
 final readonly class RunReadService
 {
     public function __construct(
         private RunStoreInterface $runStore,
         private EventStoreInterface $eventStore,
-        private RunLogReader $runLogReader,
     ) {
     }
 
@@ -36,7 +34,7 @@ final readonly class RunReadService
     public function summary(string $runId): ?array
     {
         $state = $this->runStore->get($runId);
-        [$events] = $this->eventsForRun($runId);
+        $events = $this->sortBySequence($this->eventStore->allFor($runId));
 
         $createdAt = $events[0]->createdAt ?? new \DateTimeImmutable();
         $updatedAt = $events[array_key_last($events)]->createdAt ?? $createdAt;
@@ -109,7 +107,7 @@ final readonly class RunReadService
      *
      * @return array{
      * run_id: string,
-     * source: 'canonical_events'|'jsonl_fallback',
+     * source: 'canonical_events',
      * resync_required: bool,
      * missing_sequences: list<int>,
      * events: list<RunEvent>
@@ -117,10 +115,11 @@ final readonly class RunReadService
      */
     public function replayAfter(string $runId, int $afterSeq): ?array
     {
-        [$events, $source] = $this->eventsForRun($runId);
+        $events = $this->eventStore->allFor($runId);
+        $sorted = $this->sortBySequence($events);
 
         $replayEvents = [];
-        foreach ($events as $event) {
+        foreach ($sorted as $event) {
             if ($event->seq <= $afterSeq) {
                 continue;
             }
@@ -132,26 +131,11 @@ final readonly class RunReadService
 
         return [
             'run_id' => $runId,
-            'source' => $source,
+            'source' => 'canonical_events',
             'resync_required' => [] !== $missingSequences,
             'missing_sequences' => $missingSequences,
             'events' => $replayEvents,
         ];
-    }
-
-    /**
-     * Fetches all events associated with a specific run ID.
-     *
-     * @return array{0: list<RunEvent>, 1: 'canonical_events'|'jsonl_fallback'}
-     */
-    private function eventsForRun(string $runId): array
-    {
-        $events = $this->eventStore->allFor($runId);
-        if ([] !== $events) {
-            return [$this->sortBySequence($events), 'canonical_events'];
-        }
-
-        return [$this->sortBySequence($this->runLogReader->allFor($runId)), 'jsonl_fallback'];
     }
 
     /**

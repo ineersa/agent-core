@@ -7,9 +7,6 @@ namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 use Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\MessageIdempotencyService;
-use Ineersa\AgentCore\Application\Handler\JsonlOutboxProjectorWorker;
-
-use Ineersa\AgentCore\Application\Handler\OutboxProjector;
 use Ineersa\AgentCore\Application\Handler\ReplayService;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
@@ -34,14 +31,11 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 
 use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
-use Ineersa\AgentCore\Infrastructure\Storage\InMemoryOutboxStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
-use Ineersa\AgentCore\Infrastructure\Storage\RunLogReader;
-use Ineersa\AgentCore\Infrastructure\Storage\RunLogWriter;
+
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
-use League\Flysystem\Filesystem;
-use League\Flysystem\Local\LocalFilesystemAdapter;
+
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\InMemoryStore;
@@ -250,19 +244,11 @@ final class CommandMailboxPolicyTest extends TestCase
 
     private function createFixture(int $maxPendingCommands = 100, string $steerDrainMode = 'one_at_a_time'): CommandMailboxFixture
     {
-        $filesystem = new Filesystem(new LocalFilesystemAdapter($this->basePath));
-
         $runStore = new InMemoryRunStore();
         $eventStore = new RunEventStore();
         $commandStore = new InMemoryCommandStore();
 
-        $outboxStore = new InMemoryOutboxStore();
-        $runLogWriter = new RunLogWriter($filesystem, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer());
-
-        $jsonlWorker = new JsonlOutboxProjectorWorker($outboxStore, $runLogWriter);
-
-        $outboxProjector = new OutboxProjector($outboxStore, [$jsonlWorker]);
-        $replayService = new ReplayService($eventStore, new RunLogReader($filesystem, new \Ineersa\AgentCore\Schema\EventPayloadNormalizer()), new HotPromptStateStore());
+        $replayService = new ReplayService($eventStore, new HotPromptStateStore());
 
         $commandBus = new MailboxRecordingMessageBus();
         $executionBus = new MailboxRecordingMessageBus();
@@ -282,7 +268,6 @@ final class CommandMailboxPolicyTest extends TestCase
             runStore: $runStore,
             eventStore: $eventStore,
             commandStore: $commandStore,
-            outboxProjector: $outboxProjector,
             replayService: $replayService,
             stepDispatcher: $stepDispatcher,
         );

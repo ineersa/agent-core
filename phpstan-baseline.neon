@@ -19,12 +19,6 @@ parameters:
 			path: src/AgentCore/Application/RunReadService.php
 
 		-
-			message: '#^Property Ineersa\\AgentCore\\Domain\\Event\\RunEvent\:\:\$createdAt \(DateTimeImmutable\) on left side of \?\? is not nullable\.$#'
-			identifier: nullCoalesce.property
-			count: 2
-			path: src/AgentCore/Application/RunReadService.php
-
-		-
 			message: '#^Method Ineersa\\AgentCore\\Domain\\Run\\RunState\:\:__construct\(\) has parameter \$streamingMessage with no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1

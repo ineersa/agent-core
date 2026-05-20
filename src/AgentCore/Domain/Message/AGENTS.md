@@ -6,7 +6,6 @@
 
 - Command-bus payloads: `StartRun`, `ApplyCommand`, `AdvanceRun`, `LlmStepResult`, `ToolCallResult`
 - Execution-bus payloads: `ExecuteLlmStep`, `ExecuteToolCall`, `CollectToolBatch`
-- Publisher-bus payloads: `ProjectJsonlOutbox`, `ProjectMercureOutbox`
 
 For concrete producers/consumers, see `src/Application/AGENTS.md`.
 
