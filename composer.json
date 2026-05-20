@@ -12,7 +12,6 @@
         "symfony/messenger": "^8.1",
         "symfony/dotenv": "^8.1",
         "symfony/yaml": "^8.1",
-        "symfony/mercure": "^0.7",
         "doctrine/dbal": "^4.3",
         "doctrine/migrations": "^3.8",
         "symfony/lock": "^8.0",
