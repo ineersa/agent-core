@@ -25,14 +25,14 @@ Parallelizable with: none after dependencies; avoid concurrent edits with RTVS-0
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/rtvs-07-runtime-event-poller-projection-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-07-runtime-event-poller-projection-integration
 Fork run: p4y3dw3bgg2n
 PR URL: https://github.com/ineersa/agent-core/pull/34
-PR Status: open
+PR Status: merged
 Started: 2026-05-20T03:20:17.851Z
-Completed:
+Completed: 2026-05-21T22:28:21.019Z
 
 ## Work log
 - Created: 2026-05-17T22:17:06.633Z
@@ -171,3 +171,11 @@ Added 3 new catalog tests for provider-qualified names + size variants. Removed 
 ## Task workflow update - 2026-05-21T03:05:18.087Z
 - Recorded fork run: p4y3dw3bgg2n
 - Summary: Continuation fork p4y3dw3bgg2n launched after k43lkujngsn9 reported 3/4 issues fixed but second-turn LLM execution still broken. Instructions: preserve k43lkujngsn9 dirty changes, do not commit partial work, trace second-turn path StepDispatcher → executionBus → ExecuteLlmStepWorker → PlatformInterface/LlmPlatformAdapter → LlmStepResult → LlmStepResultHandler, fix so two prompts in one real TUI session produce two visible assistant blocks in order, validate via Castor product-level tests (`castor test:llm-real` / run:agent-test), then commit/push PR #34 only.
+
+## Task workflow update - 2026-05-21T22:28:21.019Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/rtvs-07-runtime-event-poller-projection-integration into integration checkout.
+- Already up to date.
+- Pulled integration checkout: Already up to date..
+- Validation: PR #34 merged into origin/main at 316fa192; castor test:llm-real: OK — 4 tests, 22 assertions, 12.1s; events.jsonl proof from final fork: seq 1-4 first turn run_started → turn_advanced → llm_step_completed → agent_end; seq 5-6 follow_up queued/applied; seq 7-9 second turn turn_advanced → llm_step_completed → agent_end
+- Summary: RTVS-07 merged via PR #34 and closed. Final runtime validation included real llama.cpp/TUI smoke coverage: `castor test:llm-real` passed (4 tests, 22 assertions, 12.1s) after fixing multi-turn routing. Key final fixes: RuntimeEventPoller now feeds RuntimeEvents through TranscriptProjectorInterface into TranscriptBlock rendering; TuiSessionState/ChatScreen use TranscriptBlockWidget; Messenger wiring live; first prompt passed as AgentMessage; provider-qualified model catalog resolved in ProjectedSymfonyModelCatalog; second normal messages route as follow_up when idle while steer is reserved for active/working runs; CommandMailboxPolicy applies FollowUp pending commands; real events.jsonl proves two-turn flow through seq 1-9 with second llm_step_completed and agent_end.
