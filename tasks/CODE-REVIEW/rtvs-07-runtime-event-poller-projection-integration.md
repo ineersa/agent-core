@@ -28,7 +28,7 @@ Parallelizable with: none after dependencies; avoid concurrent edits with RTVS-0
 Status: CODE-REVIEW
 Branch: task/rtvs-07-runtime-event-poller-projection-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-07-runtime-event-poller-projection-integration
-Fork run: iz1qku5c5946
+Fork run: 8gotfd7ycc6d
 PR URL: https://github.com/ineersa/agent-core/pull/34
 PR Status: open
 Started: 2026-05-20T03:20:17.851Z
@@ -122,3 +122,7 @@ Completed:
 - Recorded fork run: iz1qku5c5946
 - Validation: iz1qku5c5946: castor cache:clear -> clean, dev/test containers compile.; iz1qku5c5946: castor test --filter=MessengerRuntimeIntegrationTest -> 3/3 pass.; iz1qku5c5946: castor test --filter=RunLockManagerTest -> 4/4 pass.; iz1qku5c5946: castor deptrac -> 0 violations.; iz1qku5c5946: castor test -> 776 tests, 9498 assertions pass.; iz1qku5c5946: castor phpstan -> clean.; iz1qku5c5946: castor cs-fix + cs-check -> clean.; iz1qku5c5946: castor check -> quality: ok.; Real LLM smoke not run in fork environment because no model configured; recommended post-merge smoke with castor run:agent or castor test:llm-real.
 - Summary: Fork iz1qku5c5946 completed RTVS-07 runtime fix on PR #34 at commit c33663c7. Changes: production DI fixes for Messenger runtime (ToolExecutor/ToolExecutionPolicyResolver scalar args, tagged iterators, PromptStateStoreInterface/PlatformInterface aliases, StepDispatcher bus wiring), re-entrant RunLockManager guard for nested StartRun -> AdvanceRun dispatch, config/services_test.yaml with test.runtime_client alias for test-only container access, and executable integration tests proving AgentRunner/InProcessAgentSessionClient -> Messenger -> RunOrchestrator/StartRunHandler -> EventStore writes canonical events. No production public:true on low-level stores; no Flysystem/Mercure/outbox resurrection. PR #34 is now runtime-complete for the empty MessageBus regression.
+
+## Task workflow update - 2026-05-21T01:09:58.817Z
+- Recorded fork run: 8gotfd7ycc6d
+- Summary: Launched fork 8gotfd7ycc6d to investigate and fix real model selection failure seen in smoke test after RTVS-07: TUI now shows projected events, but LLM fails with `Model "llama_cpp/flash" not found in ProjectedSymfonyModelCatalog`. Fork scope: inspect Hatfield settings/model catalog/provider registry/model resolver path, determine why configured alias/model is missing, implement minimal config-driven fix with tests, validate with Castor, push PR #34 branch. No main commits.
