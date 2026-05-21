@@ -7,45 +7,34 @@ namespace Ineersa\CodingAgent\Logging;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Monolog\Formatter\JsonFormatter;
 use Monolog\Handler\RotatingFileHandler;
-use Monolog\Level;
 use Monolog\LogRecord;
 
 /**
  * Custom RotatingFileHandler for agent-core that writes JSONL logs
  * under .hatfield/logs/ with daily rotation and auto-directory creation.
  *
- * PHAR-safe: log directory is resolved from projectDir injected by the DI
- * container, not from __DIR__ or hardcoded relative paths.
+ * The log directory path, minimum level, and max rotation files are all
+ * driven by {@see LoggingConfig} resolved from Hatfield settings, following
+ * the same path-resolution pattern as theme paths and session storage.
+ *
+ * {@see LoggingConfig::$logDir} is always an absolute path (default:
+ * {@see <CWD>/.hatfield/logs}) resolved by {@see AppConfigLoader} from
+ * the {@see logging.path} setting.
  */
 final class HatfieldRotatingLogHandler extends RotatingFileHandler
 {
     /**
-     * @param string             $logDir        Absolute path to the log directory (e.g. /project/.hatfield/logs)
-     * @param int|Level          $level         Minimum log level (default: INFO). Overridden by logging.level
-     *                                          from Hatfield settings when LoggingConfig is provided.
-     * @param int                $maxFiles      Maximum number of rotated files to keep (default: 14).
-     *                                          Overridden by logging.max_files from Hatfield settings.
-     * @param LoggingConfig|null $loggingConfig hatfield logging settings; when present, {@see $level}
-     *                                          and {@see $maxFiles} defaults from this config take precedence
-     *                                          over the constructor argument defaults
+     * @param LoggingConfig $loggingConfig Hatfield logging settings with
+     *                                     the resolved log directory path,
+     *                                     minimum level, and max file count
      */
     public function __construct(
-        string $logDir,
-        int|Level $level = Level::Info,
-        int $maxFiles = 14,
-        ?LoggingConfig $loggingConfig = null,
+        LoggingConfig $loggingConfig,
     ) {
-        // Let Hatfield settings override constructor argument defaults.
-        // The DI container wires LoggingConfig automatically from AppConfig;
-        // tests can pass null to bypass settings loading.
-        if (null !== $loggingConfig) {
-            $level = $loggingConfig->level;
-            $maxFiles = $loggingConfig->maxFiles;
-        }
         parent::__construct(
-            filename: $logDir.'/agent.log',
-            maxFiles: $maxFiles,
-            level: $level,
+            filename: $loggingConfig->logDir.'/agent.log',
+            maxFiles: $loggingConfig->maxFiles,
+            level: $loggingConfig->level,
             bubble: true,
             filePermission: 0644,
             useLocking: false,

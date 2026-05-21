@@ -595,11 +595,15 @@ function run_agent_test(): void
 
 /**
  * Instantiate a LogReader for the project's .hatfield/logs/ directory.
+ *
+ * The default log directory is CWD/.hatfield/logs, matching the Hatfield
+ * settings default (logging.path: .hatfield/logs). Castor always runs from
+ * the project CWD, so getcwd() gives us the active project directory.
  */
 function create_log_reader(): LogReader
 {
-    $root = realpath(__DIR__.'/..');
-    $logDir = (false !== $root ? $root : __DIR__.'/..').'/.hatfield/logs';
+    $cwd = getcwd();
+    $logDir = (false !== $cwd ? $cwd : __DIR__.'/..').'/.hatfield/logs';
 
     return new LogReader(new LogParser(), $logDir);
 }
