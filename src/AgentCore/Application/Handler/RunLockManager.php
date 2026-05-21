@@ -5,9 +5,13 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Handler;
 
 use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\LockInterface;
 
-final readonly class RunLockManager
+final class RunLockManager
 {
+    /** @var array<string, LockInterface> */
+    private array $activeLocks = [];
+
     public function __construct(
         private LockFactory $lockFactory,
         private float $ttlSeconds = 30.0,
@@ -18,6 +22,10 @@ final readonly class RunLockManager
     /**
      * Acquires a lock for the run ID and executes the critical section.
      *
+     * Supports re-entrant calls: if this manager already holds the
+     * lock for the same runId, the critical section runs immediately
+     * without a second acquire/release cycle.
+     *
      * @template T
      *
      * @param callable():T $criticalSection
@@ -26,7 +34,14 @@ final readonly class RunLockManager
      */
     public function synchronized(string $runId, callable $criticalSection): mixed
     {
-        $lock = $this->lockFactory->createLock($this->lockKey($runId), $this->ttlSeconds, autoRelease: false);
+        $key = $this->lockKey($runId);
+
+        // Re-entrant guard: if we already hold this lock, run directly.
+        if (isset($this->activeLocks[$key])) {
+            return $criticalSection();
+        }
+
+        $lock = $this->lockFactory->createLock($key, $this->ttlSeconds, autoRelease: false);
 
         $acquireUntil = microtime(true) + max(0.001, $this->acquireTimeoutSeconds);
 
@@ -38,9 +53,13 @@ final readonly class RunLockManager
             usleep(20_000);
         }
 
+        $this->activeLocks[$key] = $lock;
+
         try {
             return $criticalSection();
         } finally {
+            unset($this->activeLocks[$key]);
+
             if ($lock->isAcquired()) {
                 $lock->release();
             }

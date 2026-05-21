@@ -11,10 +11,13 @@ services:
   Ineersa\AgentCore\Contract\EventStoreInterface:
     alias: Ineersa\AgentCore\Infrastructure\Storage\SessionRunEventStore
 
+  Ineersa\AgentCore\Contract\AgentRunnerInterface:
+    alias: Ineersa\AgentCore\Application\Pipeline\AgentRunner
+
   Ineersa\AgentCore\Contract\CommandStoreInterface:
     alias: Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore
 
-  Ineersa\AgentCore\Contract\AgentRunnerInterface:
-    alias: Ineersa\AgentCore\Application\Pipeline\AgentRunner
+  Ineersa\AgentCore\Contract\PromptStateStoreInterface:
+    alias: Ineersa\AgentCore\Infrastructure\Storage\InMemoryPromptStateStore
 
   Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper: ~
