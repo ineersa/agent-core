@@ -15,6 +15,7 @@ use Ineersa\Tui\Command\ExitApplication;
 use Ineersa\Tui\Command\StatusUpdate;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
+use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
@@ -95,6 +96,7 @@ final class SubmitListener implements TuiListenerRegistrar
                     runId: $state->sessionId,
                 );
                 $state->handle = $client->start($state->request);
+                $state->activity = RunActivityStateEnum::Starting;
                 $state->transcript[] = $blockFactory->system(
                     runId: $state->sessionId,
                     text: \sprintf('Run started: %s', $text),
@@ -111,17 +113,23 @@ final class SubmitListener implements TuiListenerRegistrar
                 $state->lastSeq = 0;
             } elseif (null !== $state->handle) {
                 // Route subsequent chat messages as follow_up or steer
-                // based on whether the agent is actively working:
-                //   - follow_up: normal next user message when idle
-                //   - steer:     steering/injected message while working
-                $isWorking = '' !== $screen->registry()->getWorkingMessage();
-                $client->send(
-                    $state->handle->runId,
-                    new UserCommand(
-                        type: $isWorking ? 'steer' : 'follow_up',
-                        text: $text,
-                    ),
-                );
+                // based on authoritative run activity state:
+                //   - follow_up: normal next user message when idle/completed
+                //   - steer:     steering/injected message while active
+                if ($state->activity->isActive()) {
+                    $client->send(
+                        $state->handle->runId,
+                        new UserCommand(type: 'steer', text: $text),
+                    );
+                } else {
+                    $client->send(
+                        $state->handle->runId,
+                        new UserCommand(type: 'follow_up', text: $text),
+                    );
+                    // Transition to Starting so that subsequent submits
+                    // while the agent picks up the follow_up use steer.
+                    $state->activity = RunActivityStateEnum::Starting;
+                }
             }
 
             // Show processing indicator via the working status widget.

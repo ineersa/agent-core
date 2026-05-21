@@ -79,6 +79,7 @@ final class RuntimeEventPoller
                 );
 
                 self::extractFooterUsage($state, $runtimeEvent);
+                self::updateActivity($state, $runtimeEvent);
                 $this->projector->accept($runtimeEvent->toArray());
 
                 if (!$processingRemoved) {
@@ -182,6 +183,66 @@ final class RuntimeEventPoller
         if (TranscriptBlockKindEnum::System === $last->kind && str_contains($last->text, 'Processing...')) {
             array_pop($state->transcript);
         }
+    }
+
+    /**
+     * Update TUI activity state based on the runtime event type.
+     *
+     * This is the authoritative transition source for run activity.
+     * SubmitListener sets Starting/Cancelling optimistically on send/cancel;
+     * this method confirms and advances to the confirmed state from events.
+     */
+    private static function updateActivity(TuiSessionState $state, RuntimeEvent $event): void
+    {
+        if ($state->activity->isTerminal()) {
+            return; // Terminal states are never overridden by later events.
+        }
+
+        $type = $event->type;
+
+        match ($type) {
+            RuntimeEventTypeEnum::RunStarted->value,
+            RuntimeEventTypeEnum::TurnStarted->value,
+            RuntimeEventTypeEnum::TurnCompleted->value,
+            RuntimeEventTypeEnum::AssistantMessageStarted->value,
+            RuntimeEventTypeEnum::AssistantTextStarted->value,
+            RuntimeEventTypeEnum::AssistantTextDelta->value,
+            RuntimeEventTypeEnum::AssistantTextCompleted->value,
+            RuntimeEventTypeEnum::AssistantThinkingStarted->value,
+            RuntimeEventTypeEnum::AssistantThinkingDelta->value,
+            RuntimeEventTypeEnum::AssistantThinkingCompleted->value,
+            RuntimeEventTypeEnum::AssistantMessageCompleted->value,
+            RuntimeEventTypeEnum::ToolCallStarted->value,
+            RuntimeEventTypeEnum::ToolCallArgumentsDelta->value,
+            RuntimeEventTypeEnum::ToolCallArgumentsCompleted->value,
+            RuntimeEventTypeEnum::ToolExecutionStarted->value,
+            RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+            RuntimeEventTypeEnum::ToolExecutionCompleted->value,
+            RuntimeEventTypeEnum::ToolExecutionFailed->value,
+            RuntimeEventTypeEnum::UserMessageSubmitted->value,
+            RuntimeEventTypeEnum::HumanInputAnswered->value,
+            RuntimeEventTypeEnum::ApprovalApproved->value,
+            RuntimeEventTypeEnum::ApprovalRejected->value,
+            RuntimeEventTypeEnum::HumanInputRejected->value => $state->activity = RunActivityStateEnum::Running,
+
+            RuntimeEventTypeEnum::HumanInputRequested->value,
+            RuntimeEventTypeEnum::ApprovalRequested->value => $state->activity = RunActivityStateEnum::WaitingHuman,
+
+            RuntimeEventTypeEnum::CancellationRequested->value,
+            RuntimeEventTypeEnum::OperationCancelled->value,
+            RuntimeEventTypeEnum::ToolExecutionCancelled->value => $state->activity = RunActivityStateEnum::Cancelling,
+
+            RuntimeEventTypeEnum::RunCompleted->value => $state->activity = RunActivityStateEnum::Completed,
+
+            RuntimeEventTypeEnum::RunFailed->value,
+            RuntimeEventTypeEnum::TurnFailed->value,
+            RuntimeEventTypeEnum::AssistantMessageFailed->value => $state->activity = RunActivityStateEnum::Failed,
+
+            RuntimeEventTypeEnum::RunCancelled->value,
+            RuntimeEventTypeEnum::TurnCancelled->value => $state->activity = RunActivityStateEnum::Cancelled,
+
+            default => null, // No transition for unknown/streaming/internal events
+        };
     }
 
     /**
