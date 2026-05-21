@@ -26,6 +26,7 @@ final class AppConfig
 {
     public function __construct(
         public TuiConfig $tui,
+        public LoggingConfig $logging,
         /** @var array<string, mixed> */
         public array $sessions = [],
         public ?AiConfig $ai = null,
@@ -51,6 +52,7 @@ final class AppConfig
 
         return new self(
             tui: TuiConfig::fromArray((array) ($data['tui'] ?? [])),
+            logging: LoggingConfig::fromArray($data),
             sessions: (array) ($data['sessions'] ?? []),
             ai: $ai,
             raw: $data,

@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\HomeSettingsWriter;
+use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
@@ -107,6 +108,7 @@ class ModelSelectionServiceTest extends TestCase
 
         return new AppConfig(
             tui: TuiConfig::fromArray((array) ($raw['tui'] ?? [])),
+            logging: new LoggingConfig(),
             sessions: (array) ($raw['sessions'] ?? []),
             ai: $ai,
             raw: $raw,

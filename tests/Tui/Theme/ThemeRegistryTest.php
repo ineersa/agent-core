@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Tests\Theme;
 
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
+use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
@@ -133,7 +134,7 @@ final class ThemeRegistryTest extends TestCase
     private function createRegistry(): ThemeRegistry
     {
         $resources = new AppResourceLocator($this->projectRoot);
-        $appConfig = new AppConfig(tui: new TuiConfig('cyberpunk', []));
+        $appConfig = new AppConfig(tui: new TuiConfig('cyberpunk', []), logging: new LoggingConfig());
 
         return new ThemeRegistry($appConfig, $resources);
     }
@@ -144,7 +145,7 @@ final class ThemeRegistryTest extends TestCase
         // getBuiltinThemesPath() returns $appRoot.'/config/themes', and since
         // the temp dir has no such subdirectory, loadDirectory() returns [].
         $resources = new AppResourceLocator($this->tempDir);
-        $appConfig = new AppConfig(tui: new TuiConfig('cyberpunk', []));
+        $appConfig = new AppConfig(tui: new TuiConfig('cyberpunk', []), logging: new LoggingConfig());
 
         return new ThemeRegistry($appConfig, $resources);
     }

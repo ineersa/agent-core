@@ -64,6 +64,12 @@ services:
       - '@Ineersa\CodingAgent\Config\AppConfigLoader'
       - '@Ineersa\CodingAgent\Config\AppResourceLocator'
 
+  # LoggingConfig is derived from AppConfig and autowireable.
+  Ineersa\CodingAgent\Config\LoggingConfig:
+    factory: ['Ineersa\CodingAgent\Config\LoggingConfig', 'fromAppConfig']
+    arguments:
+      - '@Ineersa\CodingAgent\Config\AppConfig'
+
   Ineersa\CodingAgent\Session\HatfieldSessionStore: ~
 
   Ineersa\AgentCore\Infrastructure\SymfonyAi\BeforeProviderRequestSubscriber:

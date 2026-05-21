@@ -15,6 +15,7 @@ use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Picker\FavoritePickerController;
 use Ineersa\Tui\Picker\ModelPickerController;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Psr\Log\LoggerInterface;
 
 /**
  * Handles /model slash commands: interactive picker, selection, and favorites.
@@ -38,6 +39,7 @@ final class ModelCommandHandler implements SlashCommandHandler
         private readonly TuiSessionState $state,
         private readonly ModelPickerController $pickerController,
         private readonly FavoritePickerController $favPickerController,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -97,6 +99,11 @@ final class ModelCommandHandler implements SlashCommandHandler
         try {
             $this->modelService->changeModel($ref, $this->state->sessionId);
         } catch (\RuntimeException $e) {
+            $this->logger->warning('Failed to change model', [
+                'exception' => $e,
+                'model' => $ref->toString(),
+            ]);
+
             return new TranscriptMessage($e->getMessage(), 'system', 'muted');
         }
 
@@ -157,6 +164,11 @@ final class ModelCommandHandler implements SlashCommandHandler
                 'system',
             );
         } catch (\RuntimeException $e) {
+            $this->logger->warning('Failed to toggle favorite', [
+                'exception' => $e,
+                'model' => $ref->toString(),
+            ]);
+
             return new TranscriptMessage($e->getMessage(), 'system', 'muted');
         }
     }
@@ -167,7 +179,10 @@ final class ModelCommandHandler implements SlashCommandHandler
     {
         try {
             $ordered = $this->modelService->getOrderedModels();
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
+            $this->logger->warning('Failed to get ordered models', [
+                'exception' => $e,
+            ]);
             $ordered = [];
         }
 

@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use PHPUnit\Framework\TestCase;
 
@@ -36,6 +37,7 @@ class AiConfigTest extends TestCase
 
         return new AppConfig(
             tui: TuiConfig::fromArray((array) ($data['tui'] ?? [])),
+            logging: new LoggingConfig(),
             sessions: (array) ($data['sessions'] ?? []),
             ai: $ai,
             raw: $data,

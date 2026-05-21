@@ -25,8 +25,8 @@ final readonly class RunCommit
         private CommandStoreInterface $commandStore,
         private ReplayService $replayService,
         private StepDispatcher $stepDispatcher,
+        private LoggerInterface $logger,
         private ?HookDispatcher $hookDispatcher = null,
-        private ?LoggerInterface $logger = null,
         private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
     ) {
@@ -65,7 +65,7 @@ final readonly class RunCommit
                     $rollbackError = $rollbackException->getMessage();
                 }
 
-                $this->logger?->warning('agent_loop.commit.event_persist_failed', [
+                $this->logger->warning('agent_loop.commit.event_persist_failed', [
                     'run_id' => $nextState->runId,
                     'turn_no' => $nextState->turnNo,
                     'step_id' => $nextState->activeStepId,
@@ -82,7 +82,7 @@ final readonly class RunCommit
                 try {
                     $this->replayService->rebuildHotPromptState($nextState->runId);
                 } catch (\Throwable $exception) {
-                    $this->logger?->warning('agent_loop.commit.hot_state_rebuild_failed', [
+                    $this->logger->warning('agent_loop.commit.hot_state_rebuild_failed', [
                         'run_id' => $nextState->runId,
                         'turn_no' => $nextState->turnNo,
                         'step_id' => $nextState->activeStepId,
@@ -97,7 +97,7 @@ final readonly class RunCommit
                 try {
                     $this->stepDispatcher->dispatchEffects($effects);
                 } catch (\Throwable $exception) {
-                    $this->logger?->warning('agent_loop.commit.effect_dispatch_failed', [
+                    $this->logger->warning('agent_loop.commit.effect_dispatch_failed', [
                         'run_id' => $nextState->runId,
                         'turn_no' => $nextState->turnNo,
                         'step_id' => $nextState->activeStepId,
@@ -112,7 +112,7 @@ final readonly class RunCommit
                     AfterTurnCommitHookContext::fromRunState($nextState, $events, \count($effects)),
                 );
             } catch (\Throwable $exception) {
-                $this->logger?->warning('agent_loop.commit.after_turn_commit_hook_failed', [
+                $this->logger->warning('agent_loop.commit.after_turn_commit_hook_failed', [
                     'run_id' => $nextState->runId,
                     'turn_no' => $nextState->turnNo,
                     'step_id' => $nextState->activeStepId,
@@ -175,7 +175,7 @@ final readonly class RunCommit
      */
     private function logCommittedEvents(RunState $state, array $events): void
     {
-        if (null === $this->logger || [] === $events) {
+        if ([] === $events) {
             return;
         }
 

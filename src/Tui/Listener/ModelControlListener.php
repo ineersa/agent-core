@@ -11,6 +11,7 @@ use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Picker\FavoritePickerController;
 use Ineersa\Tui\Picker\ModelPickerController;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Tui\Event\InputEvent;
 
 /**
@@ -33,6 +34,7 @@ final class ModelControlListener implements TuiListenerRegistrar
         private readonly AppConfig $appConfig,
         private readonly ModelPickerController $pickerController,
         private readonly FavoritePickerController $favPickerController,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -49,7 +51,7 @@ final class ModelControlListener implements TuiListenerRegistrar
         $this->favPickerController->setRuntimeRefs($tui, $screen, $state);
 
         // ── Register /model slash command (idempotent) ──
-        $modelHandler = new ModelCommandHandler($modelService, $appConfig, $state, $this->pickerController, $this->favPickerController);
+        $modelHandler = new ModelCommandHandler($modelService, $appConfig, $state, $this->pickerController, $this->favPickerController, $this->logger);
         if ($this->commandRegistry->has('model')) {
             $this->commandRegistry->setHandler('model', $modelHandler);
         } else {
