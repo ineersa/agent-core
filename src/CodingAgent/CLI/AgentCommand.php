@@ -132,6 +132,10 @@ final class AgentCommand
             try {
                 $command = JsonlCodec::decodeCommand($trimmed);
             } catch (\Throwable $e) {
+                $this->logger->warning('Headless JSONL decode error', [
+                    'exception' => $e,
+                    'raw_input' => mb_substr($trimmed, 0, 500),
+                ]);
                 $output->write(JsonlCodec::encodeEvent(new RuntimeEvent(
                     type: 'protocol_error',
                     runId: '',

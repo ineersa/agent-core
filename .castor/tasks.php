@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Logging\LogReader;
 use function Castor\run;
 use function CastorTasks\build_idea_run_config_xml;
 
+require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
 
 /**
