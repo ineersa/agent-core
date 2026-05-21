@@ -28,7 +28,7 @@ Parallelizable with: none after dependencies; avoid concurrent edits with RTVS-0
 Status: CODE-REVIEW
 Branch: task/rtvs-07-runtime-event-poller-projection-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-07-runtime-event-poller-projection-integration
-Fork run: b8cqcvay90t9
+Fork run: 2o63yc0exzs0
 PR URL: https://github.com/ineersa/agent-core/pull/34
 PR Status: open
 Started: 2026-05-20T03:20:17.851Z
@@ -149,3 +149,7 @@ Added 3 new catalog tests for provider-qualified names + size variants. Removed 
 - Recorded fork run: b8cqcvay90t9
 - Validation: b8cqcvay90t9: castor cache:clear -> dev+test containers compile.; b8cqcvay90t9: castor test -> 767 tests, 9455 assertions pass.; b8cqcvay90t9: castor deptrac -> 0 violations.; b8cqcvay90t9: castor phpstan -> no errors.; b8cqcvay90t9: castor cs-fix && castor cs-check -> clean.; b8cqcvay90t9: castor check -> quality: ok.; b8cqcvay90t9: castor test:tui and castor test:llm-real were not run in fork env because they require tmux + real LLM config; new TuiAgentSmokeTest is available under both groups for user execution.
 - Summary: Fork b8cqcvay90t9 addressed all PR #34 review comments at commit ac5da0fd. Removed unused agent.publisher.bus after outbox removal (BusNames Publisher, StepDispatcher publisher dependency/method, compiler pass bus list, messenger config, service wiring, tests). Moved provider-qualified model handling out of AgentCore ModelResolverRoutingSubscriber and into CodingAgent ProjectedSymfonyModelCatalog::parseModelName(), supporting provider/model and provider/model:size while keeping explicit qualified catalog keys preferred. Deleted weak internal MessengerRuntimeIntegrationTest and mocked RuntimeEventPollerProjectionTest plus config/services_test.yaml. Added real TUI smoke test tests/Tui/E2E/TuiAgentSmokeTest.php in tui-e2e + llm-real groups that starts agent in tmux, types prompt, submits, waits for assistant/error transcript block, captures ANSI snapshot/artifacts, and checks working status does not stay stuck. Added catalog regression tests for provider-qualified model resolution. PR #34 branch pushed at ac5da0fd.
+
+## Task workflow update - 2026-05-21T02:18:51.093Z
+- Recorded fork run: 2o63yc0exzs0
+- Summary: Launched urgent fork 2o63yc0exzs0 after user reproduced real TUI/LLM failure despite prior tests: `castor run:agent` with llama_cpp/flash and prompt hello produced no visible assistant/error output, while llama.cpp server logged `Jinja Exception: No messages provided`. Fork must first run/inspect current e2e/llm-real tests and explain why they didn't catch it, then create a real tmux test that types a prompt, submits, waits for visible transcript response/rendering, captures artifacts, demonstrates fail-first, fixes the actual runtime bug (hypothesis: StartRunRequest prompt mapped as systemPrompt with empty messages in InProcessAgentSessionClient/start path), makes the test pass, validates with Castor, commits/pushes PR #34 only.
