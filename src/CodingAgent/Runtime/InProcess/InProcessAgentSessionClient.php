@@ -47,9 +47,17 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             ? new RunMetadata(model: $request->model, reasoning: $request->reasoning)
             : null;
 
+        $messages = [];
+        if ('' !== $request->prompt) {
+            $messages[] = new AgentMessage(
+                role: 'user',
+                content: [['type' => 'text', 'text' => $request->prompt]],
+            );
+        }
+
         $input = new StartRunInput(
-            systemPrompt: $request->prompt,
-            messages: [],
+            systemPrompt: '',
+            messages: $messages,
             runId: '' !== $request->runId ? $request->runId : null,
             metadata: $metadata,
         );

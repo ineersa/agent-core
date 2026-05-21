@@ -149,6 +149,24 @@ final readonly class AssistantStreamProjectionSubscriber implements EventSubscri
         $messageId = (string) ($p['message_id'] ?? '');
 
         $event->state->finalizeMessageBlocks($messageId);
+
+        $text = (string) ($p['text'] ?? '');
+        if ('' === $text) {
+            return;
+        }
+
+        if (!$event->state->hasAnyBlockForMessageId($messageId)) {
+            $blockId = 'msg_'.$messageId;
+            $event->state->addBlock(new TranscriptBlock(
+                id: $blockId,
+                kind: TranscriptBlockKindEnum::AssistantMessage,
+                runId: $event->runId(),
+                seq: $event->state->nextSeq(),
+                text: $text,
+                meta: $event->state->buildAssistantMeta($p),
+                streaming: false,
+            ));
+        }
     }
 
     public function onMessageFailed(TranscriptProjectionEvent $event): void
