@@ -66,7 +66,14 @@ castor phpstan:baseline  # Regenerate PHPStan baseline
 castor cs-fix            # PHP CS Fixer (fix in place, full project)
 castor cs-fix src/X/     # CS Fixer on a specific path
 castor cs-check          # PHP CS Fixer (dry-run check only)
-castor cache:clear       # Remove generated QA caches
+castor cache:clear       # Remove generated QA caches and clear Symfony cache
+castor log:tail           # Show recent log entries as a table
+castor log:tail --level=ERROR --lines=50 --search=term
+castor log:search <query> # Search log entries across all files
+castor log:search <query> --level=WARNING --from="-1 hour" --to="now"
+castor log:files          # List log files with size and modification date
+castor log:clear          # Remove old rotated log files
+castor log:clear --older-than=7d
 castor run:agent         # Launch agent TUI in a tmux session
 castor run:agent-test    # Deterministic tmux session for snapshot testing
 castor worktree:remove <slug> --force [--delete-branch]

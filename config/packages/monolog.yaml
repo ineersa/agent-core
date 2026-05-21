@@ -1,0 +1,21 @@
+# Monolog structured logging with JSONL format.
+#
+# Wired directly in the container — no MonologBundle needed.
+# Logs are written as JSONL to .hatfield/logs/ with 14-day daily rotation.
+#
+# The Psr\Log\LoggerInterface alias ensures all services that type-hint
+# LoggerInterface receive the same Monolog logger instance.
+services:
+  Ineersa\CodingAgent\Logging\HatfieldRotatingLogHandler:
+    arguments:
+      $logDir: '%kernel.project_dir%/.hatfield/logs'
+      $level: !php/enum Monolog\Level::Info
+
+  Monolog\Logger:
+    arguments:
+      - 'app'
+    calls:
+      - pushHandler: ['@Ineersa\CodingAgent\Logging\HatfieldRotatingLogHandler']
+
+  Psr\Log\LoggerInterface:
+    alias: Monolog\Logger

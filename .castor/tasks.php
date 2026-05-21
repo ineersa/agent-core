@@ -3,6 +3,10 @@
 declare(strict_types=1);
 
 use Castor\Attribute\AsTask;
+use Ineersa\CodingAgent\Logging\LogEntry;
+use Ineersa\CodingAgent\Logging\LogFilter;
+use Ineersa\CodingAgent\Logging\LogParser;
+use Ineersa\CodingAgent\Logging\LogReader;
 
 use function Castor\run;
 use function CastorTasks\build_idea_run_config_xml;
@@ -121,9 +125,9 @@ function phpstan_baseline(): void
 }
 
 /**
- * Remove generated QA caches.
+ * Remove generated QA caches and clear Symfony cache.
  */
-#[AsTask(name: 'cache:clear', description: 'Remove generated QA caches (deptrac, php-cs-fixer, phpstan)')]
+#[AsTask(name: 'cache:clear', description: 'Remove generated QA caches and clear Symfony cache')]
 function cache_clear(): void
 {
     $files = [
@@ -132,6 +136,7 @@ function cache_clear(): void
     ];
     $dirs = [
         __DIR__.'/../var/phpstan',
+        __DIR__.'/../var/cache',
     ];
 
     foreach ($files as $file) {
@@ -186,7 +191,11 @@ function idea_run_configs(): void
         'phpstan:baseline' => 'Regenerate PHPStan baseline file.',
         'cs-fix' => 'Run PHP CS Fixer and modify files in place.',
         'cs-check' => 'Run PHP CS Fixer dry-run check.',
-        'cache:clear' => 'Remove generated QA caches.',
+        'cache:clear' => 'Remove generated QA caches and clear Symfony cache.',
+        'log:tail' => 'Show recent log entries.',
+        'log:search' => 'Search log entries.',
+        'log:files' => 'List log files.',
+        'log:clear' => 'Remove old rotated logs.',
         'run:agent' => 'Launch the agent TUI in tmux.',
         'run:agent-test' => 'Launch deterministic tmux session for snapshot testing.',
         'idea:run-configs' => 'Regenerate PhpStorm run configurations for Castor tasks.',
@@ -579,4 +588,185 @@ function run_agent_test(): void
     echo 'ANSI snap:    tmux capture-pane -p -e -t '.$paneId."\n";
     echo 'Send keys:    tmux send-keys -t '.$paneId." Enter\n";
     echo 'Tear down:    tmux kill-session -t '.$session."\n";
+}
+
+// ─── Log tasks ────────────────────────────────────────────────────
+
+/**
+ * Instantiate a LogReader for the project's .hatfield/logs/ directory.
+ */
+function create_log_reader(): LogReader
+{
+    $root = realpath(__DIR__.'/..');
+    $logDir = (false !== $root ? $root : __DIR__.'/..').'/.hatfield/logs';
+
+    return new LogReader(new LogParser(), $logDir);
+}
+
+/**
+ * Render log entries as a Symfony Console table.
+ *
+ * @param list<LogEntry> $entries
+ */
+function render_log_table(array $entries): void
+{
+    if ([] === $entries) {
+        echo "No matching log entries.\n";
+
+        return;
+    }
+
+    $io = new Symfony\Component\Console\Style\SymfonyStyle(
+        new Symfony\Component\Console\Input\ArgvInput(),
+        new Symfony\Component\Console\Output\ConsoleOutput(),
+    );
+
+    $rows = [];
+    foreach ($entries as $entry) {
+        $rows[] = [
+            $entry->datetime->format('Y-m-d H:i:s'),
+            $entry->level,
+            mb_substr($entry->message, 0, 120),
+        ];
+    }
+
+    $io->table(['Time', 'Level', 'Message'], $rows);
+}
+
+/**
+ * Show recent log entries.
+ *
+ * Usage:
+ *   castor log:tail
+ *   castor log:tail --level=ERROR
+ *   castor log:tail --lines=50
+ *   castor log:tail --search="timeout"
+ */
+#[AsTask(name: 'log:tail', description: 'Show recent log entries')]
+function log_tail(?string $level = null, int $lines = 50, ?string $search = null): void
+{
+    $reader = create_log_reader();
+    $filter = new LogFilter(level: $level, search: $search, limit: $lines);
+    $entries = $reader->tail($lines, $filter);
+    render_log_table($entries);
+}
+
+/**
+ * Search log entries across all log files.
+ *
+ * Usage:
+ *   castor log:search "timeout"
+ *   castor log:search "timeout" --level=WARNING
+ *   castor log:search "timeout" --from="-1 hour" --to="now"
+ */
+#[AsTask(name: 'log:search', description: 'Search log entries across all log files')]
+function log_search(string $query, ?string $level = null, ?string $from = null, ?string $to = null): void
+{
+    $reader = create_log_reader();
+    $fromDate = null !== $from ? new DateTimeImmutable($from) : null;
+    $toDate = null !== $to ? new DateTimeImmutable($to) : null;
+    $filter = new LogFilter(level: $level, search: $query, from: $fromDate, to: $toDate);
+
+    $entries = [];
+    $count = 0;
+    foreach ($reader->readFiles($reader->getLogFiles(), $filter) as $entry) {
+        $entries[] = $entry;
+        ++$count;
+        if ($count >= 500) {
+            break;
+        }
+    }
+
+    render_log_table($entries);
+}
+
+/**
+ * List log files with size and modification date.
+ */
+#[AsTask(name: 'log:files', description: 'List log files with size and modification date')]
+function log_files(): void
+{
+    $reader = create_log_reader();
+    $files = $reader->getLogFiles();
+
+    if ([] === $files) {
+        echo "No log files found.\n";
+
+        return;
+    }
+
+    $io = new Symfony\Component\Console\Style\SymfonyStyle(
+        new Symfony\Component\Console\Input\ArgvInput(),
+        new Symfony\Component\Console\Output\ConsoleOutput(),
+    );
+
+    $rows = [];
+    foreach ($files as $file) {
+        $size = filesize($file);
+        $mtime = filemtime($file);
+        $rows[] = [
+            basename($file),
+            false !== $size ? format_bytes($size) : '?',
+            false !== $mtime ? date('Y-m-d H:i:s', $mtime) : '?',
+            $file,
+        ];
+    }
+
+    $io->table(['File', 'Size', 'Modified', 'Path'], $rows);
+}
+
+/**
+ * Remove old rotated log files.
+ *
+ * Usage:
+ *   castor log:clear
+ *   castor log:clear --older-than=7d
+ */
+#[AsTask(name: 'log:clear', description: 'Remove old rotated log files')]
+function log_clear(string $olderThan = '7 days ago'): void
+{
+    $reader = create_log_reader();
+    $files = $reader->getLogFiles();
+    $cutoff = new DateTimeImmutable($olderThan);
+    $removed = 0;
+
+    foreach ($files as $file) {
+        $mtime = filemtime($file);
+        if (false === $mtime) {
+            continue;
+        }
+
+        $fileDate = (new DateTimeImmutable())->setTimestamp($mtime);
+        if ($fileDate >= $cutoff) {
+            continue;
+        }
+
+        if (unlink($file)) {
+            echo 'Removed '.basename($file).\PHP_EOL;
+            ++$removed;
+        }
+    }
+
+    if (0 === $removed) {
+        echo "No old log files to remove.\n";
+    } else {
+        echo "Removed {$removed} old log file(s).\n";
+    }
+}
+
+/**
+ * Format byte count to human-readable string.
+ */
+function format_bytes(int $bytes): string
+{
+    $units = ['B', 'KB', 'MB', 'GB'];
+    $unit = 0;
+    $size = (float) $bytes;
+
+    while ($size >= 1024 && $unit < count($units) - 1) {
+        $size /= 1024;
+        ++$unit;
+    }
+
+    return sprintf('%.1f %s', $size, $units[$unit]);
 }

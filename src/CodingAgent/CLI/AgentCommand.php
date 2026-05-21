@@ -14,6 +14,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Application\InteractiveMode;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
 use Symfony\Component\Console\Command\Command;
@@ -42,6 +43,7 @@ final class AgentCommand
         private JsonlProcessAgentSessionClient $processClient,
         private InteractiveMode $interactiveMode,
         private HatfieldSessionStore $sessionStore,
+        private LoggerInterface $logger,
     ) {
     }
 
@@ -70,11 +72,18 @@ final class AgentCommand
             throw new \RuntimeException('AgentCommand requires OutputInterface');
         }
 
-        if ($headless) {
-            return $this->runHeadless($output);
-        }
+        try {
+            if ($headless) {
+                return $this->runHeadless($output);
+            }
 
-        return $this->runTui($transport, $prompt, $resume, $model, $reasoning);
+            return $this->runTui($transport, $prompt, $resume, $model, $reasoning);
+        } catch (\Throwable $e) {
+            $this->logger->error('Unhandled exception in agent command', [
+                'exception' => $e,
+            ]);
+            throw $e;
+        }
     }
 
     private function runTui(string $transport, string $prompt, string $resume, string $model = '', string $reasoning = ''): int
