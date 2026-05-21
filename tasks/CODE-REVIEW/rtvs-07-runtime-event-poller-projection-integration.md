@@ -28,7 +28,7 @@ Parallelizable with: none after dependencies; avoid concurrent edits with RTVS-0
 Status: CODE-REVIEW
 Branch: task/rtvs-07-runtime-event-poller-projection-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-07-runtime-event-poller-projection-integration
-Fork run: k43lkujngsn9
+Fork run: p4y3dw3bgg2n
 PR URL: https://github.com/ineersa/agent-core/pull/34
 PR Status: open
 Started: 2026-05-20T03:20:17.851Z
@@ -167,3 +167,7 @@ Added 3 new catalog tests for provider-qualified names + size variants. Removed 
 ## Task workflow update - 2026-05-21T02:46:14.866Z
 - Recorded fork run: k43lkujngsn9
 - Summary: Launched urgent fork k43lkujngsn9 to fix remaining real TUI runtime issues after PR #34 smoke: thinking blocks render without text, transcript blocks are out of order, only first message works, and Working + Processing are shown together. Fork must reproduce with product-level Castor flow (`castor run:agent-test` / `castor test:llm-real` / `castor test:tui`), capture fail-first ANSI/session artifacts, fix all four issues, extend real tmux/llm-real e2e coverage to send two prompts and assert ordered visible assistant blocks, no empty thinking placeholders, no Processing+Working overlap, validate via Castor, commit/push PR #34 only.
+
+## Task workflow update - 2026-05-21T03:05:18.087Z
+- Recorded fork run: p4y3dw3bgg2n
+- Summary: Continuation fork p4y3dw3bgg2n launched after k43lkujngsn9 reported 3/4 issues fixed but second-turn LLM execution still broken. Instructions: preserve k43lkujngsn9 dirty changes, do not commit partial work, trace second-turn path StepDispatcher → executionBus → ExecuteLlmStepWorker → PlatformInterface/LlmPlatformAdapter → LlmStepResult → LlmStepResultHandler, fix so two prompts in one real TUI session produce two visible assistant blocks in order, validate via Castor product-level tests (`castor test:llm-real` / run:agent-test), then commit/push PR #34 only.
