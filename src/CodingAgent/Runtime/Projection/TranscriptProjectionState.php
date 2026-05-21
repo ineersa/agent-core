@@ -204,6 +204,24 @@ final class TranscriptProjectionState
     /**
      * Finalize all streaming blocks belonging to a given message.
      */
+    /**
+     * Check whether any projected block references the given message ID.
+     *
+     * Used by AssistantStreamProjectionSubscriber to determine whether
+     * a non-streaming message_completed event (e.g. placeholder) needs
+     * a fresh block created.
+     */
+    public function hasAnyBlockForMessageId(string $messageId): bool
+    {
+        foreach ($this->blocks as $block) {
+            if (($block->meta['message_id'] ?? '') === $messageId) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function finalizeMessageBlocks(string $messageId): void
     {
         foreach ($this->blocks as $id => $block) {

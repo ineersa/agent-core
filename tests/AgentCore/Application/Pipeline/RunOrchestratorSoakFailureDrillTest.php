@@ -267,7 +267,7 @@ final class RunOrchestratorSoakFailureDrillTest extends TestCase
 
         $replayService = new ReplayService($eventStore, new HotPromptStateStore());
 
-        $stepDispatcher = new StepDispatcher(new SoakFailureNullMessageBus(), new SoakFailureNullMessageBus());
+        $stepDispatcher = new StepDispatcher(new SoakFailureNullMessageBus());
         $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,

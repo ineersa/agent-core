@@ -70,7 +70,7 @@ final class RunOrchestratorObservabilityTest extends TestCase
         $traceLogger = new ObservabilityTraceLogger();
         $tracer = new RunTracer($traceLogger);
 
-        $stepDispatcher = new StepDispatcher(new ObservabilityNullMessageBus(), new ObservabilityNullMessageBus());
+        $stepDispatcher = new StepDispatcher(new ObservabilityNullMessageBus());
         $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,

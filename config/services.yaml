@@ -15,6 +15,21 @@ services:
     Ineersa\AgentCore\Contract\Hook\BeforeProviderRequestHookInterface:
       tags: ['agent_core.before_provider_request_hook']
 
+    Ineersa\AgentCore\Application\Pipeline\RunMessageHandler:
+      tags: ['agent_core.run_message_handler']
+
+    Ineersa\AgentCore\Contract\Extension\CommandHandlerInterface:
+      tags: ['agent_core.command_handler']
+
+    Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface:
+      tags: ['agent_core.hook_subscriber']
+
+    Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface:
+      tags: ['agent_core.transform_context_hook']
+
+    Ineersa\AgentCore\Contract\Hook\ConvertToLlmHookInterface:
+      tags: ['agent_core.convert_to_llm_hook']
+
   Ineersa\CodingAgent\:
     resource: '../src/CodingAgent/'
 
@@ -101,6 +116,9 @@ services:
     arguments:
       $dispatcher: '@event_dispatcher'
 
+  Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface:
+    alias: Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector
+
   # ─── Symfony AI Platform wiring ───
   # PlatformInterface reads Hatfield config from autowired AppConfig,
   # so no explicit arguments are needed here.
@@ -112,6 +130,22 @@ services:
   Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker:
     arguments:
       $defaultModel: '%app.default_model%'
+
+  # Tool executor wiring (scalar args not autowireable).
+  Ineersa\AgentCore\Application\Handler\ToolExecutor:
+    arguments:
+      $defaultMode: 'sequential'
+      $defaultTimeoutSeconds: 300
+      $maxParallelism: 4
+
+  # ToolExecutionPolicyResolver is created inline by ToolExecutor,
+  # but is also an optional dependency of LlmStepResultHandler.
+  # Wire scalars so the optional param resolves.
+  Ineersa\AgentCore\Application\Handler\ToolExecutionPolicyResolver:
+    arguments:
+      $defaultMode: 'sequential'
+      $defaultTimeoutSeconds: 300
+      $maxParallelism: 4
 
   # ─── AI-10 Per-turn model/reasoning routing ───
 
@@ -129,3 +163,30 @@ services:
     arguments:
       $modelResolver: '@Ineersa\AgentCore\Contract\Model\ModelResolverInterface'
       $providerRegistry: '@Ineersa\AgentCore\Contract\Model\ProviderRegistryInterface'
+
+  # ─── AgentCore pipeline wiring (services that need tagged iterators or scalar binding) ───
+
+  Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor:
+    arguments:
+      $handlers: !tagged_iterator agent_core.run_message_handler
+
+  Ineersa\AgentCore\Application\Handler\StepDispatcher:
+    arguments:
+      $executionBus: '@agent.execution.bus'
+
+  Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry:
+    arguments:
+      $handlers: !tagged_iterator agent_core.command_handler
+
+  Ineersa\AgentCore\Application\Handler\HookSubscriberRegistry:
+    arguments:
+      $subscribers: !tagged_iterator agent_core.hook_subscriber
+
+  # LlmPlatformAdapter hooks — currently no implementations exist.
+  Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter:
+    arguments:
+      $transformContextHooks: !tagged_iterator agent_core.transform_context_hook
+      $convertToLlmHooks: !tagged_iterator agent_core.convert_to_llm_hook
+
+  Ineersa\AgentCore\Contract\Model\PlatformInterface:
+    alias: Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter

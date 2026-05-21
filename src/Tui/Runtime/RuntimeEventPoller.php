@@ -5,42 +5,37 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Session\TranscriptEntry as PersistedTranscriptEntry;
-use Ineersa\Tui\Transcript\TranscriptEntry;
 use Psr\Log\LoggerInterface;
 
 /**
  * Polls AgentSessionClient for new runtime events on each TUI tick.
  *
- * Handles:
- *   - Throttled polling (POLL_INTERVAL)
- *   - Sequence-based deduplication
- *   - Event → transcript entry mapping (plain model, no theme)
- *   - Session persistence (runtime events + transcript entries)
- *
- * Extracted from the inline tick listener in InteractiveMode::run().
+ * Runtime events are persisted unchanged, then fed through the transcript
+ * projector so the UI renders projected TranscriptBlock DTOs instead of the
+ * previous raw event log entries.
  */
 final class RuntimeEventPoller
 {
-    /** @var float Polling interval in seconds (50ms) */
+    /** Polling interval in seconds (50ms). */
     private const float POLL_INTERVAL = 0.05;
 
     public function __construct(
         private readonly HatfieldSessionStore $sessionStore,
+        private readonly TranscriptProjectorInterface $projector,
         private readonly LoggerInterface $logger,
     ) {
     }
 
     /**
-     * Poll for new runtime events and return plain transcript entries.
+     * Poll for new runtime events and synchronize projected transcript blocks.
      *
-     * @param TuiSessionState    $state  Mutable session state
-     * @param AgentSessionClient $client Runtime client
-     *
-     * @return list<TranscriptEntry>|null New transcript entries, or null if nothing new
+     * @return list<TranscriptBlock>|null Changed/new transcript blocks, or null if nothing new
      */
     public function poll(TuiSessionState $state, AgentSessionClient $client): ?array
     {
@@ -55,21 +50,15 @@ final class RuntimeEventPoller
         $state->lastPoll = $now;
 
         try {
-            $eventsIter = $client->events($state->handle->runId);
-            $events = $eventsIter instanceof \Traversable
-                ? iterator_to_array($eventsIter)
-                : $eventsIter;
-
+            $events = $this->runtimeEvents($client, $state->handle->runId);
             if ([] === $events) {
                 return null;
             }
 
             $hasNew = false;
-            $newEntries = [];
             $processingRemoved = false;
 
             foreach ($events as $runtimeEvent) {
-                /** @var RuntimeEvent $runtimeEvent */
                 $seq = $runtimeEvent->seq;
 
                 // Seq 0 marks transient streaming events that do not
@@ -84,45 +73,25 @@ final class RuntimeEventPoller
                 }
                 $hasNew = true;
 
-                // Persist the runtime event
                 $this->sessionStore->appendRuntimeEvent(
                     $state->sessionId,
                     $runtimeEvent->toArray(),
                 );
 
-                // Extract usage/footer data from runtime events
                 self::extractFooterUsage($state, $runtimeEvent);
+                $this->projector->accept($runtimeEvent->toArray());
 
-                // Remove "Processing..." placeholder on first real event
                 if (!$processingRemoved) {
-                    $lastIdx = \count($state->transcript) - 1;
-                    if ($lastIdx >= 0 && str_contains($state->transcript[$lastIdx]->text, 'Processing...')) {
-                        array_pop($state->transcript);
-                    }
+                    self::removeProcessingPlaceholder($state);
                     $processingRemoved = true;
-                }
-
-                // Map event to plain transcript entry
-                $entry = self::formatEventToEntry($runtimeEvent);
-                if (null !== $entry) {
-                    $newEntries[] = $entry;
-                    $state->transcript[] = $entry;
-                    $this->sessionStore->appendTranscriptEntry(
-                        $state->sessionId,
-                        new PersistedTranscriptEntry(
-                            role: $entry->role,
-                            text: $entry->text,
-                            meta: [
-                                'run_id' => $runtimeEvent->runId,
-                                'seq' => $seq,
-                                'event_type' => $runtimeEvent->type,
-                            ],
-                        ),
-                    );
                 }
             }
 
-            return $hasNew ? $newEntries : null;
+            if (!$hasNew) {
+                return null;
+            }
+
+            return self::synchronizeProjectedBlocks($state, $this->projector->blocks());
         } catch (\Throwable $e) {
             $this->logger->warning('RuntimeEventPoller polling error', [
                 'exception' => $e,
@@ -133,85 +102,90 @@ final class RuntimeEventPoller
         }
     }
 
-    /**
-     * Convert a RuntimeEvent into a plain transcript entry (no theme colors).
-     *
-     * Returns null if the event type should not appear in the transcript.
-     */
-    public static function formatEventToEntry(RuntimeEvent $event): ?TranscriptEntry
+    /** @return list<RuntimeEvent> */
+    private function runtimeEvents(AgentSessionClient $client, string $runId): array
     {
-        $payload = $event->payload;
-        $t = RuntimeEventTypeEnum::tryFrom($event->type);
+        $events = $client->events($runId);
 
-        return match ($t) {
-            RuntimeEventTypeEnum::RunStarted => new TranscriptEntry(
-                text: \sprintf('Run started%s', isset($payload['step_id']) ? ' — '.$payload['step_id'] : ''),
-                role: 'system',
-                style: 'accent',
-            ),
-            RuntimeEventTypeEnum::RunCompleted,
-            RuntimeEventTypeEnum::RunCancelled,
-            RuntimeEventTypeEnum::RunFailed => new TranscriptEntry(
-                text: \sprintf('Run %s', str_replace('run.', '', $t->value)),
-                role: 'system',
-                style: 'muted',
-            ),
-            RuntimeEventTypeEnum::TurnStarted,
-            RuntimeEventTypeEnum::TurnCompleted,
-            RuntimeEventTypeEnum::TurnFailed,
-            RuntimeEventTypeEnum::TurnCancelled => null,
-            RuntimeEventTypeEnum::AssistantMessageCompleted => new TranscriptEntry(
-                text: mb_substr((string) ($payload['text'] ?? ''), 0, 500),
-                role: 'assistant',
-                style: 'message_update',
-            ),
-            RuntimeEventTypeEnum::AssistantMessageFailed => new TranscriptEntry(
-                text: \sprintf('Error: %s', mb_substr((string) ($payload['text'] ?? 'Unknown error'), 0, 200)),
-                role: 'system',
-                style: 'error',
-            ),
-            RuntimeEventTypeEnum::ToolExecutionStarted => new TranscriptEntry(
-                text: \sprintf('%s', (string) ($payload['tool_name'] ?? 'tool')),
-                role: 'tool',
-                style: 'tool_start',
-            ),
-            RuntimeEventTypeEnum::ToolExecutionCompleted,
-            RuntimeEventTypeEnum::ToolExecutionFailed => new TranscriptEntry(
-                text: \sprintf('%s %s',
-                    (string) ($payload['tool_name'] ?? (string) ($payload['tool_call_id'] ?? 'tool')),
-                    RuntimeEventTypeEnum::ToolExecutionFailed === $t ? '(failed)' : 'done',
-                ),
-                role: 'tool',
-                style: 'tool_end',
-            ),
-            RuntimeEventTypeEnum::HumanInputRequested => new TranscriptEntry(
-                text: \sprintf('? %s', (string) ($payload['prompt'] ?? 'Human input required.')),
-                role: 'system',
-                style: 'accent',
-            ),
-            RuntimeEventTypeEnum::CancellationRequested => new TranscriptEntry(
-                text: 'Cancelling…',
-                role: 'system',
-                style: 'muted',
-            ),
-            RuntimeEventTypeEnum::StatusUpdated => new TranscriptEntry(
-                text: \sprintf('· %s', $payload['debug.raw_type'] ?? $event->type),
-                role: 'system',
-                style: 'muted',
-            ),
-            default => new TranscriptEntry(
-                text: \sprintf('· %s', $event->type),
-                role: 'system',
-                style: 'muted',
-            ),
-        };
+        if ($events instanceof \Traversable) {
+            /** @var list<RuntimeEvent> $list */
+            $list = iterator_to_array($events, false);
+
+            return $list;
+        }
+
+        return $events;
+    }
+
+    /**
+     * @param list<TranscriptBlock> $projectedBlocks
+     *
+     * @return list<TranscriptBlock>
+     */
+    private static function synchronizeProjectedBlocks(TuiSessionState $state, array $projectedBlocks): array
+    {
+        $changed = [];
+
+        foreach ($projectedBlocks as $block) {
+            $idx = self::findBlockIndex($state->transcript, $block->id);
+
+            if (null === $idx) {
+                $state->transcript[] = $block;
+                $changed[] = $block;
+
+                continue;
+            }
+
+            if (self::blocksEqual($state->transcript[$idx], $block)) {
+                continue;
+            }
+
+            $state->transcript[$idx] = $block;
+            $changed[] = $block;
+        }
+
+        return $changed;
+    }
+
+    private static function blocksEqual(TranscriptBlock $left, TranscriptBlock $right): bool
+    {
+        return $left->id === $right->id
+            && $left->kind === $right->kind
+            && $left->runId === $right->runId
+            && $left->seq === $right->seq
+            && $left->text === $right->text
+            && $left->meta === $right->meta
+            && $left->streaming === $right->streaming
+            && $left->collapsed === $right->collapsed;
+    }
+
+    /** @param list<TranscriptBlock> $blocks */
+    private static function findBlockIndex(array $blocks, string $id): ?int
+    {
+        foreach ($blocks as $idx => $block) {
+            if ($block->id === $id) {
+                return $idx;
+            }
+        }
+
+        return null;
+    }
+
+    private static function removeProcessingPlaceholder(TuiSessionState $state): void
+    {
+        $lastIdx = \count($state->transcript) - 1;
+        if ($lastIdx < 0) {
+            return;
+        }
+
+        $last = $state->transcript[$lastIdx];
+        if (TranscriptBlockKindEnum::System === $last->kind && str_contains($last->text, 'Processing...')) {
+            array_pop($state->transcript);
+        }
     }
 
     /**
      * Extract token usage and cost from runtime events and accumulate into footer state.
-     *
-     * Called for every runtime event during polling. Only llm_step_completed events
-     * carry usage/cost metadata.
      */
     private static function extractFooterUsage(TuiSessionState $state, RuntimeEvent $event): void
     {
@@ -227,7 +201,6 @@ final class RuntimeEventPoller
         $state->inputTokens += (int) ($usage['input_tokens'] ?? $usage['prompt_tokens'] ?? 0);
         $state->outputTokens += (int) ($usage['output_tokens'] ?? $usage['completion_tokens'] ?? 0);
 
-        // Accumulate cost if the provider returns it in the usage payload
         $cost = $usage['cost'] ?? $usage['total_cost'] ?? null;
         if (\is_float($cost) || \is_int($cost)) {
             $state->totalCost += (float) $cost;

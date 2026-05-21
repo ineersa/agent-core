@@ -63,7 +63,7 @@ final class RunOrchestratorStructuredLoggingTest extends TestCase
 
         $logger = new RecordingStructuredLogger();
 
-        $stepDispatcher = new StepDispatcher(new NullMessageBus(), new NullMessageBus());
+        $stepDispatcher = new StepDispatcher(new NullMessageBus());
         $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,

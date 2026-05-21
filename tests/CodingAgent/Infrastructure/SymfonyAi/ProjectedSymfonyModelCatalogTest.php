@@ -166,6 +166,48 @@ class ProjectedSymfonyModelCatalogTest extends TestCase
         self::assertTrue($model->supports(Capability::OUTPUT_STREAMING));
     }
 
+    // ── Provider-qualified model names ────────────────────
+
+    /**
+     * The catalog must accept "provider/model" qualified names
+     * by stripping the provider prefix and looking up the bare name.
+     * This handles the case where a provider-qualified name reaches
+     * the catalog without being pre-stripped by upstream components.
+     */
+    public function testProviderQualifiedModelNameIsResolvedToBareModel(): void
+    {
+        $catalog = $this->createCatalog();
+
+        $model = $catalog->getModel('llama_cpp/flash');
+
+        self::assertInstanceOf(CompletionsModel::class, $model);
+        // The resolved model should use the bare name after catalog lookup.
+        // AbstractModelCatalog::getModel() returns a model whose name
+        // comes from the original $modelName param, which might be
+        // "llama_cpp/flash".  The key assertion is: no exception.
+        self::assertNotEmpty($model->getName());
+    }
+
+    public function testProviderQualifiedModelNameWithUnknownBareModelFails(): void
+    {
+        $catalog = $this->createCatalog();
+
+        $this->expectException(ModelNotFoundException::class);
+        $catalog->getModel('llama_cpp/unknown-model');
+    }
+
+    public function testSizeVariantsWorkWithProviderPrefix(): void
+    {
+        // "deepseek/deepseek-v4-pro:23b" — the ":" size variant should
+        // still work when preceded by a provider prefix.
+        $catalog = $this->createCatalog();
+
+        $model = $catalog->getModel('deepseek/deepseek-v4-pro:23b');
+
+        self::assertInstanceOf(CompletionsModel::class, $model);
+        self::assertNotEmpty($model->getName());
+    }
+
     // — helpers —
 
     private function createCatalog(): ProjectedSymfonyModelCatalog

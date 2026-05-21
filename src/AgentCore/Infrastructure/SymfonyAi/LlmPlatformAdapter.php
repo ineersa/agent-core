@@ -95,7 +95,33 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             return [];
         }
 
-        return $state->messages;
+        return $this->hydrateMessages($state->messages);
+    }
+
+    /**
+     * Convert raw arrays (from JSON-deserialized RunState) back to
+     * AgentMessage objects so downstream converters receive typed values.
+     *
+     * @param list<AgentMessage|array<string, mixed>> $raw
+     *
+     * @return list<AgentMessage>
+     */
+    private function hydrateMessages(array $raw): array
+    {
+        $messages = [];
+
+        foreach ($raw as $entry) {
+            if ($entry instanceof AgentMessage) {
+                $messages[] = $entry;
+            } elseif (\is_array($entry)) {
+                $hydrated = AgentMessage::fromPayload($entry);
+                if (null !== $hydrated) {
+                    $messages[] = $hydrated;
+                }
+            }
+        }
+
+        return $messages;
     }
 
     /**

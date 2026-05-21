@@ -5,10 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Application;
 
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\TranscriptEntry as PersistedTranscriptEntry;
 use Ineersa\Tui\Runtime\TuiSessionState;
-use Ineersa\Tui\Transcript\TranscriptEntry;
+use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 
 /**
  * Initializes session state for the interactive TUI.
@@ -25,6 +26,7 @@ final readonly class SessionInitializer
 {
     public function __construct(
         private HatfieldSessionStore $sessionStore,
+        private TranscriptBlockFactory $blockFactory,
     ) {
     }
 
@@ -66,21 +68,22 @@ final readonly class SessionInitializer
     }
 
     /**
-     * Build the initial transcript entries for the session.
+     * Build the initial transcript blocks for the session.
      *
-     * Returns plain model entries; theme colors/prefixes are applied
-     * at display time by ChatScreen/TranscriptWidget.
+     * Returns plain projection blocks; theme colors/prefixes are applied
+     * at display time by ChatScreen/TranscriptBlockWidget.
      *
-     * @return list<TranscriptEntry>
+     * @return list<TranscriptBlock>
      */
     public function buildInitialTranscript(TuiSessionState $state): array
     {
         if ($state->resuming) {
-            $entries = $this->loadTranscriptEntries($state->sessionId);
+            $entries = $this->loadTranscriptBlocks($state->sessionId);
             if ([] === $entries) {
-                return [new TranscriptEntry(
+                return [$this->blockFactory->system(
+                    runId: $state->sessionId,
                     text: 'Session '.$state->sessionId.' — no messages yet.',
-                    role: 'system',
+                    seq: 1,
                 )];
             }
 
@@ -97,32 +100,33 @@ final readonly class SessionInitializer
             ),
         );
 
-        return [new TranscriptEntry(
+        return [$this->blockFactory->system(
+            runId: $state->sessionId,
             text: 'Welcome to Hatfield. Type a message below to start.',
-            role: 'system',
+            seq: 1,
         )];
     }
 
     /**
-     * Load persisted transcript entries as plain model entries.
+     * Load persisted transcript entries as plain transcript blocks.
      *
-     * @return list<TranscriptEntry>
+     * @return list<TranscriptBlock>
      */
-    private function loadTranscriptEntries(string $sessionId): array
+    private function loadTranscriptBlocks(string $sessionId): array
     {
         $persisted = $this->sessionStore->getTranscript($sessionId);
         if ([] === $persisted) {
             return [];
         }
 
-        $entries = [];
-        foreach ($persisted as $entry) {
-            $entries[] = new TranscriptEntry(
-                text: $entry->text,
-                role: $entry->role,
-            );
+        $blocks = [];
+        foreach ($persisted as $idx => $entry) {
+            $seq = $idx + 1;
+            $blocks[] = 'user' === $entry->role
+                ? $this->blockFactory->user($sessionId, $entry->text, $seq)
+                : $this->blockFactory->system($sessionId, $entry->text, $seq, (string) ($entry->meta['style'] ?? ''));
         }
 
-        return $entries;
+        return $blocks;
     }
 }

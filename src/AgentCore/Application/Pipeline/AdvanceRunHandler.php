@@ -75,31 +75,55 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             );
         }
 
+        // When pending commands (steer/follow-up) added new messages while
+        // the run was Completed or Failed, transition to Running and proceed
+        // to the next turn — don't bail out early.
         if (\in_array($preparedState->status, [RunStatus::Completed, RunStatus::Failed, RunStatus::Cancelled, RunStatus::WaitingHuman], true)) {
-            if ([] === $boundaryEventSpecs) {
-                return new HandlerResult();
+            // If pending commands produced boundary events (messages were
+            // added), the run is no longer terminal — continue to the
+            // turn-advance path below.
+            if ([] !== $boundaryEventSpecs && \in_array($preparedState->status, [RunStatus::Completed, RunStatus::Failed], true)) {
+                $preparedState = new RunState(
+                    runId: $preparedState->runId,
+                    status: RunStatus::Running,
+                    version: $preparedState->version,
+                    turnNo: $preparedState->turnNo,
+                    lastSeq: $preparedState->lastSeq,
+                    isStreaming: $preparedState->isStreaming,
+                    streamingMessage: $preparedState->streamingMessage,
+                    pendingToolCalls: $preparedState->pendingToolCalls,
+                    errorMessage: null,
+                    messages: $preparedState->messages,
+                    activeStepId: $preparedState->activeStepId,
+                    retryableFailure: false,
+                );
+            // Fall through to the turn-advance code below.
+            } else {
+                if ([] === $boundaryEventSpecs) {
+                    return new HandlerResult();
+                }
+
+                $events = $this->stateTools->eventsFromSpecs($runId, $preparedState->turnNo, $state->lastSeq + 1, $boundaryEventSpecs);
+                $nextState = new RunState(
+                    runId: $preparedState->runId,
+                    status: $preparedState->status,
+                    version: $state->version + 1,
+                    turnNo: $preparedState->turnNo,
+                    lastSeq: $state->lastSeq + \count($events),
+                    isStreaming: $preparedState->isStreaming,
+                    streamingMessage: $preparedState->streamingMessage,
+                    pendingToolCalls: $preparedState->pendingToolCalls,
+                    errorMessage: $preparedState->errorMessage,
+                    messages: $preparedState->messages,
+                    activeStepId: $preparedState->activeStepId,
+                    retryableFailure: $preparedState->retryableFailure,
+                );
+
+                return new HandlerResult(
+                    nextState: $nextState,
+                    events: $events,
+                );
             }
-
-            $events = $this->stateTools->eventsFromSpecs($runId, $preparedState->turnNo, $state->lastSeq + 1, $boundaryEventSpecs);
-            $nextState = new RunState(
-                runId: $preparedState->runId,
-                status: $preparedState->status,
-                version: $state->version + 1,
-                turnNo: $preparedState->turnNo,
-                lastSeq: $state->lastSeq + \count($events),
-                isStreaming: $preparedState->isStreaming,
-                streamingMessage: $preparedState->streamingMessage,
-                pendingToolCalls: $preparedState->pendingToolCalls,
-                errorMessage: $preparedState->errorMessage,
-                messages: $preparedState->messages,
-                activeStepId: $preparedState->activeStepId,
-                retryableFailure: $preparedState->retryableFailure,
-            );
-
-            return new HandlerResult(
-                nextState: $nextState,
-                events: $events,
-            );
         }
 
         $nextTurnNo = $preparedState->turnNo + 1;

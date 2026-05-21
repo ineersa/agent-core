@@ -26,7 +26,7 @@ final class LlmStepResultHandlerTest extends TestCase
     public function testHandleWithToolCallsReturnsPostCommitBatchRegistrationCallback(): void
     {
         $executionBus = new LlmHandlerRecordingBus();
-        $stepDispatcher = new StepDispatcher($executionBus, new LlmHandlerRecordingBus());
+        $stepDispatcher = new StepDispatcher($executionBus);
 
         $commandStore = new InMemoryCommandStore();
         $handler = new LlmStepResultHandler(

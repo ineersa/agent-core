@@ -46,4 +46,60 @@ final class RunLockManagerTest extends TestCase
         $elapsedSeconds = microtime(true) - $startedAt;
         self::assertLessThan(1.0, $elapsedSeconds);
     }
+
+    /**
+     * Re-entrant guard: nested synchronized() calls for the same
+     * runId must NOT deadlock.
+     *
+     * Without the guard, StartRunHandler dispatches an initial
+     * AdvanceRun via post-commit callback inside the synchronized()
+     * block, causing the second process() call to attempt re-acquiring
+     * the same lock → deadlock with FlockStore.
+     */
+    public function testReentrantSynchronizedSameRunIdDoesNotDeadlock(): void
+    {
+        $manager = new RunLockManager(new LockFactory(new InMemoryStore()));
+
+        $outerRan = false;
+        $innerRan = false;
+
+        $manager->synchronized('reentrant-run', function () use ($manager, &$outerRan, &$innerRan): void {
+            $outerRan = true;
+
+            // Nested call for the SAME runId — must not deadlock.
+            $manager->synchronized('reentrant-run', function () use (&$innerRan): void {
+                $innerRan = true;
+            });
+        });
+
+        self::assertTrue($outerRan, 'Outer critical section must execute');
+        self::assertTrue($innerRan, 'Inner (re-entrant) critical section must execute');
+    }
+
+    /**
+     * Different run IDs must still lock independently — the
+     * re-entrant guard must not collapse separate locks.
+     */
+    public function testSynchronizedDifferentRunIdsLockIndependently(): void
+    {
+        $store = new InMemoryStore();
+        $manager = new RunLockManager(
+            new LockFactory($store),
+            ttlSeconds: 30.0,
+            acquireTimeoutSeconds: 0.05,
+        );
+
+        // Pre-acquire one lock externally to simulate contention.
+        $extLock = (new LockFactory($store))->createLock('agent_loop.run.run-a', 30.0, autoRelease: false);
+        self::assertTrue($extLock->acquire());
+
+        try {
+            // run-a should fail (externally held) ...
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage('Failed to acquire run lock for "run-a"');
+            $manager->synchronized('run-a', static fn (): string => 'nope');
+        } finally {
+            $extLock->release();
+        }
+    }
 }

@@ -15,7 +15,7 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Runtime\TuiTickDispatcher;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\TuiTheme;
-use Ineersa\Tui\Transcript\TranscriptEntry;
+use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Tui\Event\TickEvent;
@@ -49,6 +49,7 @@ final readonly class InteractiveMode
         private SessionInitializer $sessionInit,
         private iterable $listenerRegistrars,
         private PromptEditor $promptEditor,
+        private TranscriptBlockFactory $blockFactory,
         private LoggerInterface $logger,
     ) {
     }
@@ -85,7 +86,7 @@ final readonly class InteractiveMode
         $screen->mount($tui);
 
         // Set initial transcript
-        $screen->setTranscriptEntries($state->transcript);
+        $screen->setTranscriptBlocks($state->transcript);
 
         // ── Start or resume the run ──
         $this->startOrResumeRun($client, $state, $screen);
@@ -127,9 +128,10 @@ final readonly class InteractiveMode
     ): void {
         if (null !== $state->request && '' !== $state->request->prompt) {
             $state->handle = $client->start($state->request);
-            $state->transcript[] = new TranscriptEntry(
+            $state->transcript[] = $this->blockFactory->system(
+                runId: $state->sessionId,
                 text: \sprintf('Run started: %s', $state->request->prompt),
-                role: 'system',
+                seq: \count($state->transcript) + 1,
                 style: 'accent',
             );
             $this->sessionStore->appendTranscriptEntry(
@@ -144,16 +146,17 @@ final readonly class InteractiveMode
                 'run_id' => $state->handle->runId,
                 'prompt' => $state->request->prompt,
             ]);
-            $screen->setTranscriptEntries($state->transcript);
+            $screen->setTranscriptBlocks($state->transcript);
         } elseif ($state->resuming) {
             $meta = $this->sessionStore->loadMetadata($state->sessionId);
             $existingRunId = $meta['run_id'] ?? null;
             if (\is_string($existingRunId) && '' !== $existingRunId) {
                 try {
                     $state->handle = $client->resume($existingRunId);
-                    $state->transcript[] = new TranscriptEntry(
+                    $state->transcript[] = $this->blockFactory->system(
+                        runId: $state->sessionId,
                         text: \sprintf('Resumed run %s', $existingRunId),
-                        role: 'system',
+                        seq: \count($state->transcript) + 1,
                         style: 'muted',
                     );
                 } catch (\Throwable $e) {
@@ -161,13 +164,14 @@ final readonly class InteractiveMode
                         'exception' => $e,
                         'run_id' => $existingRunId,
                     ]);
-                    $state->transcript[] = new TranscriptEntry(
+                    $state->transcript[] = $this->blockFactory->system(
+                        runId: $state->sessionId,
                         text: 'Could not resume run — starting fresh.',
-                        role: 'system',
+                        seq: \count($state->transcript) + 1,
                         style: 'warning',
                     );
                 }
-                $screen->setTranscriptEntries($state->transcript);
+                $screen->setTranscriptBlocks($state->transcript);
             }
         }
     }

@@ -123,9 +123,9 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('assistant.text_started', [
             'message_id' => 'a1', 'content_index' => 0, 'block_id' => 'a1_t0',
         ]);
-        $this->accept('assistant.text_delta', ['block_id' => 'a1_t0', 'delta' => 'Hello']);
-        $this->accept('assistant.text_delta', ['block_id' => 'a1_t0', 'delta' => ', ']);
-        $this->accept('assistant.text_delta', ['block_id' => 'a1_t0', 'delta' => 'world!']);
+        $this->accept('assistant.text_delta', ['block_id' => 'a1_t0', 'text' => 'Hello']);
+        $this->accept('assistant.text_delta', ['block_id' => 'a1_t0', 'text' => ', ']);
+        $this->accept('assistant.text_delta', ['block_id' => 'a1_t0', 'text' => 'world!']);
 
         $blocks = $this->projector->blocks();
         $this->assertCount(1, $blocks);
@@ -141,7 +141,7 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('assistant.text_started', [
             'message_id' => 'a1', 'content_index' => 0, 'block_id' => 'a1_t0',
         ]);
-        $this->accept('assistant.text_delta', ['block_id' => 'a1_t0', 'delta' => 'Hey']);
+        $this->accept('assistant.text_delta', ['block_id' => 'a1_t0', 'text' => 'Hey']);
         $this->accept('assistant.text_completed', [
             'block_id' => 'a1_t0', 'text' => 'Hey there',
         ]);
@@ -159,8 +159,8 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('assistant.thinking_started', [
             'message_id' => 'a1', 'content_index' => 1, 'block_id' => 'a1_th0',
         ]);
-        $this->accept('assistant.thinking_delta', ['block_id' => 'a1_th0', 'delta' => 'Let me think...']);
-        $this->accept('assistant.thinking_delta', ['block_id' => 'a1_th0', 'delta' => ' done.']);
+        $this->accept('assistant.thinking_delta', ['block_id' => 'a1_th0', 'thinking' => 'Let me think...']);
+        $this->accept('assistant.thinking_delta', ['block_id' => 'a1_th0', 'thinking' => ' done.']);
 
         $blocks = $this->projector->blocks();
         $this->assertCount(1, $blocks);
@@ -177,9 +177,9 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('assistant.thinking_started', [
             'message_id' => 'a1', 'content_index' => 0, 'block_id' => 'a1_th0',
         ]);
-        $this->accept('assistant.thinking_delta', ['block_id' => 'a1_th0', 'delta' => 'Hmm']);
+        $this->accept('assistant.thinking_delta', ['block_id' => 'a1_th0', 'thinking' => 'Hmm']);
         $this->accept('assistant.thinking_completed', [
-            'block_id' => 'a1_th0', 'text' => 'Hmm, interesting.',
+            'block_id' => 'a1_th0', 'thinking' => 'Hmm, interesting.',
         ]);
 
         $blocks = $this->projector->blocks();
@@ -214,14 +214,14 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('assistant.thinking_started', [
             'message_id' => 'a1', 'content_index' => 0, 'block_id' => 'a1_th0',
         ]);
-        $this->accept('assistant.thinking_delta', ['block_id' => 'a1_th0', 'delta' => 'Analyzing...']);
+        $this->accept('assistant.thinking_delta', ['block_id' => 'a1_th0', 'thinking' => 'Analyzing...']);
         $this->accept('assistant.thinking_completed', [
-            'block_id' => 'a1_th0', 'text' => 'Analyzing the request.',
+            'block_id' => 'a1_th0', 'thinking' => 'Analyzing the request.',
         ]);
         $this->accept('assistant.text_started', [
             'message_id' => 'a1', 'content_index' => 1, 'block_id' => 'a1_t0',
         ]);
-        $this->accept('assistant.text_delta', ['block_id' => 'a1_t0', 'delta' => 'The answer is 42.']);
+        $this->accept('assistant.text_delta', ['block_id' => 'a1_t0', 'text' => 'The answer is 42.']);
         $this->accept('assistant.text_completed', ['block_id' => 'a1_t0']);
         $this->accept('assistant.message_completed', ['message_id' => 'a1']);
 
@@ -242,7 +242,7 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('assistant.text_started', [
             'message_id' => 'a1', 'block_id' => 'a1_t0',
         ]);
-        $this->accept('assistant.text_delta', ['block_id' => 'a1_t0', 'delta' => 'Streaming...']);
+        $this->accept('assistant.text_delta', ['block_id' => 'a1_t0', 'text' => 'Streaming...']);
 
         $this->assertTrue($this->projector->blocks()[0]->streaming);
 
@@ -257,7 +257,7 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('assistant.text_started', [
             'message_id' => 'a1', 'block_id' => 'a1_t0',
         ]);
-        $this->accept('assistant.text_delta', ['block_id' => 'a1_t0', 'delta' => 'Partial text...']);
+        $this->accept('assistant.text_delta', ['block_id' => 'a1_t0', 'text' => 'Partial text...']);
         $this->accept('assistant.message_failed', [
             'message_id' => 'a1', 'stop_reason' => 'provider_error', 'text' => 'API rate limit exceeded',
         ]);
@@ -987,13 +987,13 @@ final class TranscriptProjectorTest extends TestCase
             ['type' => 'user.message_submitted', 'payload' => ['message_id' => 'u1', 'text' => 'Explain FP']],
             ['type' => 'assistant.message_started', 'payload' => ['message_id' => 'a1']],
             ['type' => 'assistant.thinking_started', 'payload' => ['message_id' => 'a1', 'content_index' => 0, 'block_id' => 'a1_th0']],
-            ['type' => 'assistant.thinking_delta', 'payload' => ['block_id' => 'a1_th0', 'delta' => 'FP is about']],
-            ['type' => 'assistant.thinking_delta', 'payload' => ['block_id' => 'a1_th0', 'delta' => ' pure functions.']],
+            ['type' => 'assistant.thinking_delta', 'payload' => ['block_id' => 'a1_th0', 'thinking' => 'FP is about']],
+            ['type' => 'assistant.thinking_delta', 'payload' => ['block_id' => 'a1_th0', 'thinking' => ' pure functions.']],
             ['type' => 'assistant.thinking_completed', 'payload' => ['block_id' => 'a1_th0', 'text' => 'FP is about pure functions.']],
             ['type' => 'assistant.text_started', 'payload' => ['message_id' => 'a1', 'content_index' => 1, 'block_id' => 'a1_t0']],
-            ['type' => 'assistant.text_delta', 'payload' => ['block_id' => 'a1_t0', 'delta' => 'Functional']],
-            ['type' => 'assistant.text_delta', 'payload' => ['block_id' => 'a1_t0', 'delta' => ' programming']],
-            ['type' => 'assistant.text_delta', 'payload' => ['block_id' => 'a1_t0', 'delta' => ' uses immutable data.']],
+            ['type' => 'assistant.text_delta', 'payload' => ['block_id' => 'a1_t0', 'text' => 'Functional']],
+            ['type' => 'assistant.text_delta', 'payload' => ['block_id' => 'a1_t0', 'text' => ' programming']],
+            ['type' => 'assistant.text_delta', 'payload' => ['block_id' => 'a1_t0', 'text' => ' uses immutable data.']],
             ['type' => 'assistant.text_completed', 'payload' => ['block_id' => 'a1_t0', 'text' => 'Functional programming uses immutable data.']],
             ['type' => 'assistant.message_completed', 'payload' => ['message_id' => 'a1']],
         ];
