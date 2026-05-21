@@ -3,12 +3,12 @@
   "theme": "cyberpunk",
   "observational-memory": {
     "observationThresholdTokens": 5000,
-    "compactionThresholdTokens": 80000,
+    "compactionThresholdTokens": 50000,
     "reflectionThresholdTokens": 30000,
     "passive": false,
     "compactionModel": {
-      "provider": "llama.cpp",
-      "id": "flash"
+      "provider": "runpod",
+      "id": "Qwen3.6-27B"
     }
   },
   "hideThinkingBlock": false,
@@ -18,7 +18,7 @@
     "reserveTokens": 16384
   },
   "pi-fork": {
-    "defaultModel": "deepseek/deepseek-v4-pro",
+    "defaultModel": "deepseek/deepseek-v4-flash",
     "defaultThinking": "xhigh"
   },
   "jetbrainsIndex": {
