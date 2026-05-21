@@ -73,7 +73,29 @@ final readonly class ModelResolverRoutingSubscriber implements EventSubscriberIn
             $provider = $this->providerRegistry->get($resolvedModel->providerId);
             if (null !== $provider) {
                 $event->setProvider($provider);
+                // The provider's catalog stores models by bare name (e.g. "flash"),
+                // not by provider-qualified name (e.g. "llama_cpp/flash").
+                // Strip the provider prefix so catalog lookup works.
+                $event->setModel($this->bareModelName($resolvedModel->model, $resolvedModel->providerId));
             }
         }
+    }
+
+    /**
+     * Extract the bare model name from a provider-qualified model reference.
+     *
+     * "llama_cpp/flash" with providerId "llama_cpp" → "flash"
+     * "deepseek/deepseek-v4-pro" with providerId "deepseek" → "deepseek-v4-pro"
+     * Already-bare model names are returned unchanged.
+     */
+    private function bareModelName(string $model, string $providerId): string
+    {
+        $prefix = $providerId.'/';
+
+        if (str_starts_with($model, $prefix)) {
+            return substr($model, \strlen($prefix));
+        }
+
+        return $model;
     }
 }

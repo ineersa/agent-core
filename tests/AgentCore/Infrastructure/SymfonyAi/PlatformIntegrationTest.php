@@ -9,15 +9,16 @@ use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\ConvertToLlmHookInterface;
 use Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface;
 use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
+use Ineersa\AgentCore\Contract\Model\ProviderRegistryInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
-use Ineersa\AgentCore\Domain\Run\RunState;
-use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationOptions;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
 use Ineersa\AgentCore\Domain\Model\ProviderRequest;
 use Ineersa\AgentCore\Domain\Model\ResolvedModel;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\BeforeProviderRequestSubscriber;
@@ -26,16 +27,14 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ModelResolverRoutingSubscriber;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\PlatformInvocationMetadata;
 use PHPUnit\Framework\TestCase;
-use Symfony\AI\Agent\Toolbox\ToolResult;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
+use Symfony\AI\Agent\Toolbox\ToolResult;
 use Symfony\AI\Platform\Model;
 use Symfony\AI\Platform\ModelCatalog\FallbackModelCatalog;
 use Symfony\AI\Platform\ModelClientInterface;
 use Symfony\AI\Platform\Platform;
 use Symfony\AI\Platform\PlatformInterface as SymfonyPlatformInterface;
-use Symfony\AI\Platform\PlainConverter;
 use Symfony\AI\Platform\Provider;
-use Symfony\AI\Platform\Result\DeferredResult;
 use Symfony\AI\Platform\Result\InMemoryRawResult;
 use Symfony\AI\Platform\Result\RawResultInterface;
 use Symfony\AI\Platform\Result\ResultInterface;
@@ -181,19 +180,109 @@ final class PlatformIntegrationTest extends TestCase
             ),
         ));
 
-        self::assertSame(['transform_context', 'convert_to_llm', 'before_provider_request'], $calls);
-        self::assertSame('gpt-test-resolved-patched', $modelClient->capturedModel);
-        self::assertTrue($modelClient->capturedOptions['stream']);
-        self::assertSame(64, $modelClient->capturedOptions['max_tokens']);
-        self::assertSame(0.2, $modelClient->capturedOptions['temperature']);
-        self::assertSame('Search docs for turn 2', $modelClient->capturedOptions['tools'][0]['function']['description']);
-        self::assertArrayNotHasKey(PlatformInvocationMetadata::OPTION_KEY, $modelClient->capturedOptions);
+        $this->assertSame(['transform_context', 'convert_to_llm', 'before_provider_request'], $calls);
+        $this->assertSame('gpt-test-resolved-patched', $modelClient->capturedModel);
+        $this->assertTrue($modelClient->capturedOptions['stream']);
+        $this->assertSame(64, $modelClient->capturedOptions['max_tokens']);
+        $this->assertSame(0.2, $modelClient->capturedOptions['temperature']);
+        $this->assertSame('Search docs for turn 2', $modelClient->capturedOptions['tools'][0]['function']['description']);
+        $this->assertArrayNotHasKey(PlatformInvocationMetadata::OPTION_KEY, $modelClient->capturedOptions);
 
-        self::assertSame('Hello world', $response->assistantMessage?->asText());
-        self::assertNull($response->stopReason);
-        self::assertSame(7, $response->usage['input_tokens']);
-        self::assertSame(3, $response->usage['output_tokens']);
-        self::assertSame(10, $response->usage['total_tokens']);
+        $this->assertSame('Hello world', $response->assistantMessage?->asText());
+        $this->assertNull($response->stopReason);
+        $this->assertSame(7, $response->usage['input_tokens']);
+        $this->assertSame(3, $response->usage['output_tokens']);
+        $this->assertSame(10, $response->usage['total_tokens']);
+    }
+
+    /**
+     * Proves the regression fix: when the model resolver returns a
+     * provider-qualified model name (e.g. "llama_cpp/flash") AND a
+     * specific providerId, the subscriber must strip the provider
+     * prefix so the provider's catalog receives the bare name
+     * (e.g. "flash").  Without this fix, the provider's catalog
+     * throws ModelNotFoundException because its keys are bare
+     * model names, not provider-qualified strings.
+     */
+    public function testProviderQualifiedModelNameIsStrippedWhenProviderIsSet(): void
+    {
+        $eventDispatcher = new EventDispatcher();
+
+        $modelResolver = new class implements ModelResolverInterface {
+            public function resolve(
+                string $defaultModel,
+                \Symfony\AI\Platform\Message\MessageBag $messages,
+                ModelInvocationInput $input,
+                ModelResolutionOptions $options,
+            ): ResolvedModel {
+                unset($messages, $input, $options);
+
+                // Simulates SessionAwareModelResolver returning the
+                // provider-qualified model name.
+                return new ResolvedModel(
+                    model: 'llama_cpp/flash',
+                    providerId: 'llama_cpp',
+                );
+            }
+        };
+
+        $modelClient = new FakeSymfonyModelClient(new FakeTokenUsage());
+        $provider = new Provider(
+            name: 'llama_cpp',
+            modelClients: [$modelClient],
+            resultConverters: [new FakeStreamResultConverter(
+                static fn (): iterable => [new TextDelta('response')],
+            )],
+            modelCatalog: new FallbackModelCatalog(),
+            eventDispatcher: $eventDispatcher,
+        );
+
+        $providerRegistry = new class($provider) implements ProviderRegistryInterface {
+            public function __construct(private Provider $provider)
+            {
+            }
+
+            public function get(string $id): ?\Symfony\AI\Platform\ProviderInterface
+            {
+                return 'llama_cpp' === $id ? $this->provider : null;
+            }
+
+            public function all(): array
+            {
+                /* @var array<string, \Symfony\AI\Platform\ProviderInterface> */
+                return ['llama_cpp' => $this->provider];
+            }
+        };
+
+        $eventDispatcher->addSubscriber(
+            new ModelResolverRoutingSubscriber($modelResolver, $providerRegistry),
+        );
+
+        $platform = new Platform(
+            providers: [$provider],
+            eventDispatcher: $eventDispatcher,
+        );
+
+        // Invoke with the provider-qualified model name.
+        // The subscriber must strip the prefix so the provider
+        // receives "flash", not "llama_cpp/flash".
+        $messageBag = new \Symfony\AI\Platform\Message\MessageBag(\Symfony\AI\Platform\Message\Message::ofUser('Hello'));
+
+        $result = $platform->invoke(
+            model: 'llama_cpp/flash',
+            input: [
+                'message_bag' => $messageBag,
+            ],
+            options: PlatformInvocationMetadata::inject([], new PlatformInvocationMetadata(
+                input: new ModelInvocationInput(),
+                cancelToken: new ToggleCancellationToken(),
+            )),
+        );
+
+        // The model client should have received the bare model name,
+        // not the provider-qualified "llama_cpp/flash".
+        $this->assertSame('flash', $modelClient->capturedModel);
+        $this->assertNotNull($result);
     }
 
     public function testStreamingCancellationReturnsAbortedWithPartialOutput(): void
@@ -226,14 +315,14 @@ final class PlatformIntegrationTest extends TestCase
             ),
         ));
 
-        self::assertSame('aborted', $response->stopReason);
-        self::assertSame('A', $response->assistantMessage?->asText());
-        self::assertSame(15, $response->usage['total_tokens']);
+        $this->assertSame('aborted', $response->stopReason);
+        $this->assertSame('A', $response->assistantMessage?->asText());
+        $this->assertSame(15, $response->usage['total_tokens']);
     }
 
     /**
      * @param iterable<BeforeProviderRequestHookInterface> $beforeProviderRequestHooks
-     * @param \Closure(): iterable<mixed>                 $streamFactory
+     * @param \Closure(): iterable<mixed>                  $streamFactory
      */
     private function createSymfonyPlatform(
         FakeSymfonyModelClient $modelClient,
