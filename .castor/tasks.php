@@ -3,12 +3,6 @@
 declare(strict_types=1);
 
 use Castor\Attribute\AsTask;
-use Ineersa\CodingAgent\Config\AppConfigLoader;
-use Ineersa\CodingAgent\Config\SettingsPathResolver;
-use Ineersa\CodingAgent\Logging\LogEntry;
-use Ineersa\CodingAgent\Logging\LogFilter;
-use Ineersa\CodingAgent\Logging\LogParser;
-use Ineersa\CodingAgent\Logging\LogReader;
 
 use function Castor\run;
 use function CastorTasks\build_idea_run_config_xml;
@@ -594,215 +588,55 @@ function run_agent_test(): void
 }
 
 // ─── Log tasks ────────────────────────────────────────────────────
+//
+// Thin wrappers that delegate to Symfony console commands.
+// Parameter signatures mirror the command options/arguments so Castor
+// validates them. Values are forwarded directly to bin/console.
+// The app container resolves logging.path from Hatfield config —
+// Castor never resolves config or instantiates app services.
 
-/**
- * Resolve the log directory from Hatfield config (defaults → home → project).
- *
- * Uses the same resolution chain as the app: {@see AppConfigLoader} loads
- * and overlays all three YAML layers, then {@see SettingsPathResolver} resolves
- * the {@see logging.path} setting (relative paths → CWD, ~ → home,
- * %kernel.project_dir% → app install root).
- *
- * Falls back to getcwd()/project-root/.hatfield/logs if config loading fails.
- */
-function resolve_log_dir_for_castor(): string
-{
-    $projectRoot = dirname(__DIR__);
-
-    try {
-        $pathResolver = new SettingsPathResolver($projectRoot);
-        $loader = new AppConfigLoader($pathResolver);
-        $defaultsPath = $projectRoot.'/config/hatfield.defaults.yaml';
-
-        $config = $loader->load($defaultsPath);
-
-        if (isset($config['logging']['path']) && is_string($config['logging']['path']) && '' !== $config['logging']['path']) {
-            return $config['logging']['path'];
-        }
-    } catch (Throwable) {
-        // Config load failed — fall through to default.
-    }
-
-    $cwd = getcwd();
-
-    return (false !== $cwd ? $cwd : $projectRoot).'/.hatfield/logs';
-}
-
-/**
- * Instantiate a LogReader using the Hatfield-configured log directory.
- *
- * Reads {@see logging.path} from Hatfield config after applying
- * defaults → home → project precedence and path resolution.
- */
-function create_log_reader(): LogReader
-{
-    return new LogReader(new LogParser(), resolve_log_dir_for_castor());
-}
-
-/**
- * Render log entries as a Symfony Console table.
- *
- * @param list<LogEntry> $entries
- */
-function render_log_table(array $entries): void
-{
-    if ([] === $entries) {
-        echo "No matching log entries.\n";
-
-        return;
-    }
-
-    $io = new Symfony\Component\Console\Style\SymfonyStyle(
-        new Symfony\Component\Console\Input\ArgvInput(),
-        new Symfony\Component\Console\Output\ConsoleOutput(),
-    );
-
-    $rows = [];
-    foreach ($entries as $entry) {
-        $rows[] = [
-            $entry->datetime->format('Y-m-d H:i:s'),
-            $entry->level,
-            mb_substr($entry->message, 0, 120),
-        ];
-    }
-
-    $io->table(['Time', 'Level', 'Message'], $rows);
-}
-
-/**
- * Show recent log entries.
- *
- * Usage:
- *   castor log:tail
- *   castor log:tail --level=ERROR
- *   castor log:tail --lines=50
- *   castor log:tail --search="timeout"
- */
-#[AsTask(name: 'log:tail', description: 'Show recent log entries')]
+#[AsTask(name: 'log:tail', description: 'Show recent log entries (→ bin/console log:tail)')]
 function log_tail(?string $level = null, int $lines = 50, ?string $search = null): void
 {
-    $reader = create_log_reader();
-    $filter = new LogFilter(level: $level, search: $search, limit: $lines);
-    $entries = $reader->tail($lines, $filter);
-    render_log_table($entries);
+    $cmd = escapeshellcmd(\PHP_BINARY).' '.__DIR__.'/../bin/console log:tail';
+    if (null !== $level) {
+        $cmd .= ' --level='.escapeshellarg($level);
+    }
+    $cmd .= ' --lines='.$lines;
+    if (null !== $search) {
+        $cmd .= ' --search='.escapeshellarg($search);
+    }
+    passthru($cmd, $exitCode);
+    exit($exitCode);
 }
 
-/**
- * Search log entries across all log files.
- *
- * Usage:
- *   castor log:search "timeout"
- *   castor log:search "timeout" --level=WARNING
- *   castor log:search "timeout" --from="-1 hour" --to="now"
- */
-#[AsTask(name: 'log:search', description: 'Search log entries across all log files')]
+#[AsTask(name: 'log:search', description: 'Search log entries across all log files (→ bin/console log:search)')]
 function log_search(string $query, ?string $level = null, ?string $from = null, ?string $to = null): void
 {
-    $reader = create_log_reader();
-    $fromDate = null !== $from ? new DateTimeImmutable($from) : null;
-    $toDate = null !== $to ? new DateTimeImmutable($to) : null;
-    $filter = new LogFilter(level: $level, search: $query, from: $fromDate, to: $toDate);
-
-    $entries = [];
-    $count = 0;
-    foreach ($reader->readFiles($reader->getLogFiles(), $filter) as $entry) {
-        $entries[] = $entry;
-        ++$count;
-        if ($count >= 500) {
-            break;
-        }
+    $cmd = escapeshellcmd(\PHP_BINARY).' '.__DIR__.'/../bin/console log:search '.escapeshellarg($query);
+    if (null !== $level) {
+        $cmd .= ' --level='.escapeshellarg($level);
     }
-
-    render_log_table($entries);
+    if (null !== $from) {
+        $cmd .= ' --from='.escapeshellarg($from);
+    }
+    if (null !== $to) {
+        $cmd .= ' --to='.escapeshellarg($to);
+    }
+    passthru($cmd, $exitCode);
+    exit($exitCode);
 }
 
-/**
- * List log files with size and modification date.
- */
-#[AsTask(name: 'log:files', description: 'List log files with size and modification date')]
+#[AsTask(name: 'log:files', description: 'List log files with size and modification date (→ bin/console log:files)')]
 function log_files(): void
 {
-    $reader = create_log_reader();
-    $files = $reader->getLogFiles();
-
-    if ([] === $files) {
-        echo "No log files found.\n";
-
-        return;
-    }
-
-    $io = new Symfony\Component\Console\Style\SymfonyStyle(
-        new Symfony\Component\Console\Input\ArgvInput(),
-        new Symfony\Component\Console\Output\ConsoleOutput(),
-    );
-
-    $rows = [];
-    foreach ($files as $file) {
-        $size = filesize($file);
-        $mtime = filemtime($file);
-        $rows[] = [
-            basename($file),
-            false !== $size ? format_bytes($size) : '?',
-            false !== $mtime ? date('Y-m-d H:i:s', $mtime) : '?',
-            $file,
-        ];
-    }
-
-    $io->table(['File', 'Size', 'Modified', 'Path'], $rows);
+    passthru(escapeshellcmd(\PHP_BINARY).' '.__DIR__.'/../bin/console log:files', $exitCode);
+    exit($exitCode);
 }
 
-/**
- * Remove old rotated log files.
- *
- * Usage:
- *   castor log:clear
- *   castor log:clear --older-than=7d
- */
-#[AsTask(name: 'log:clear', description: 'Remove old rotated log files')]
+#[AsTask(name: 'log:clear', description: 'Remove old rotated log files (→ bin/console log:clear)')]
 function log_clear(string $olderThan = '7 days ago'): void
 {
-    $reader = create_log_reader();
-    $files = $reader->getLogFiles();
-    $cutoff = new DateTimeImmutable($olderThan);
-    $removed = 0;
-
-    foreach ($files as $file) {
-        $mtime = filemtime($file);
-        if (false === $mtime) {
-            continue;
-        }
-
-        $fileDate = (new DateTimeImmutable())->setTimestamp($mtime);
-        if ($fileDate >= $cutoff) {
-            continue;
-        }
-
-        if (unlink($file)) {
-            echo 'Removed '.basename($file).\PHP_EOL;
-            ++$removed;
-        }
-    }
-
-    if (0 === $removed) {
-        echo "No old log files to remove.\n";
-    } else {
-        echo "Removed {$removed} old log file(s).\n";
-    }
-}
-
-/**
- * Format byte count to human-readable string.
- */
-function format_bytes(int $bytes): string
-{
-    $units = ['B', 'KB', 'MB', 'GB'];
-    $unit = 0;
-    $size = (float) $bytes;
-
-    while ($size >= 1024 && $unit < count($units) - 1) {
-        $size /= 1024;
-        ++$unit;
-    }
-
-    return sprintf('%.1f %s', $size, $units[$unit]);
+    passthru(escapeshellcmd(\PHP_BINARY).' '.__DIR__.'/../bin/console log:clear --older-than='.escapeshellarg($olderThan), $exitCode);
+    exit($exitCode);
 }
