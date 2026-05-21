@@ -12,6 +12,7 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Input\Key;
@@ -45,6 +46,7 @@ final class ModelPickerController
     public function __construct(
         private readonly ModelSelectionService $modelService,
         private readonly AppConfig $appConfig,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -111,9 +113,10 @@ final class ModelPickerController
         // ── Ctrl+F favorite toggle ──
         $modelService = $this->modelService;
         $listWidget = $this->listWidget;
+        $logger = $this->logger;
 
         $this->listWidget->onInput(static function (string $data) use (
-            $screen, $state, $modelService, $listWidget,
+            $screen, $state, $modelService, $listWidget, $logger,
         ): bool {
             // Ctrl+F sends \x06 in most terminals
             if ("\x06" !== $data) {
@@ -132,7 +135,12 @@ final class ModelPickerController
 
             try {
                 $modelService->toggleFavorite($ref);
-            } catch (\RuntimeException) {
+            } catch (\RuntimeException $e) {
+                $logger->warning('Failed to toggle favorite from picker', [
+                    'exception' => $e,
+                    'model' => $ref->toString(),
+                ]);
+
                 return true;
             }
 
@@ -292,7 +300,12 @@ final class ModelPickerController
     ): void {
         try {
             $modelService->changeModel($ref, $state->sessionId);
-        } catch (\RuntimeException) {
+        } catch (\RuntimeException $e) {
+            $this->logger->warning('Failed to change model from picker', [
+                'exception' => $e,
+                'model' => $ref->toString(),
+            ]);
+
             // Silently fail — the picker controls the UX
             return;
         }

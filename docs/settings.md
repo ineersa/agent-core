@@ -107,6 +107,32 @@ See [Session Storage](session-storage.md) for the full directory layout,
 file purposes, resume flow, locking, future fork tree design, and
 backward compatibility.
 
+### `logging.path`
+
+Directory where application log files are stored. Relative paths resolve
+against the active project working directory (CWD), just like
+`sessions.path`. Supports the same placeholders: `%kernel.project_dir%`
+and `~`.
+
+**Default:** `.hatfield/logs` (resolves to `<CWD>/.hatfield/logs`)
+
+### `logging.level`
+
+Minimum log level for application logging. Logs are written as JSONL
+under the configured `logging.path` with daily rotation. Use a PSR-3 level name.
+
+**Allowed values:** `debug`, `info`, `notice`, `warning`, `error`,
+`critical`, `alert`, `emergency`
+
+**Default:** `info`
+
+### `logging.max_files`
+
+Maximum number of daily rotated log files to retain before deletion.
+Files are stored under `logging.path`. The default of 14 keeps two weeks of logs.
+
+**Default:** `14`
+
 ### `ai.default_model`
 
 The default model used for new agent sessions. Format is

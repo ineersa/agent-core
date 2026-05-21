@@ -37,6 +37,7 @@ use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\InMemoryStore;
 use Symfony\Component\Messenger\Envelope;
@@ -270,6 +271,8 @@ final class CommandMailboxPolicyTest extends TestCase
             commandStore: $commandStore,
             replayService: $replayService,
             stepDispatcher: $stepDispatcher,
+            hookDispatcher: null,
+            logger: new NullLogger(),
         );
 
         $runMessageProcessor = new RunMessageProcessor(

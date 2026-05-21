@@ -32,7 +32,11 @@ castor phpstan [path]
 castor phpstan:baseline
 castor cs-fix [path]
 castor cs-check
-castor cache:clear
+castor cache:clear       # clears QA caches and Symfony cache
+castor log:tail [--level=ERROR] [--lines=50] [--search=term]
+castor log:search <query> [--level=WARNING] [--from="-1 hour"] [--to=now]
+castor log:files         # list log files with size and modification date
+castor log:clear [--older-than=7d]
 castor run:agent         # launch TUI in tmux
 castor run:agent-test    # deterministic tmux session for snapshots
 castor worktree:remove <slug> --force [--delete-branch]

@@ -85,6 +85,7 @@ final class RunOrchestratorObservabilityTest extends TestCase
             commandStore: $commandStore,
             replayService: new ReplayService($eventStore, new HotPromptStateStore(), $metrics, $tracer),
             stepDispatcher: $stepDispatcher,
+            hookDispatcher: null,
             logger: $traceLogger,
             metrics: $metrics,
             tracer: $tracer,

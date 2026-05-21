@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\HomeSettingsWriter;
+use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\SessionAwareModelResolver;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
@@ -165,6 +166,7 @@ final class SessionAwareModelResolverTest extends TestCase
 
         return new AppConfig(
             tui: TuiConfig::fromArray((array) ($raw['tui'] ?? [])),
+            logging: new LoggingConfig(),
             sessions: (array) ($raw['sessions'] ?? []),
             ai: $ai,
             raw: $raw,

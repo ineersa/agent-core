@@ -7,6 +7,7 @@ use Castor\Attribute\AsTask;
 use function Castor\run;
 use function CastorTasks\build_idea_run_config_xml;
 
+require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
 
 /**
@@ -121,9 +122,9 @@ function phpstan_baseline(): void
 }
 
 /**
- * Remove generated QA caches.
+ * Remove generated QA caches and clear Symfony cache.
  */
-#[AsTask(name: 'cache:clear', description: 'Remove generated QA caches (deptrac, php-cs-fixer, phpstan)')]
+#[AsTask(name: 'cache:clear', description: 'Remove generated QA caches and clear Symfony cache')]
 function cache_clear(): void
 {
     $files = [
@@ -132,6 +133,7 @@ function cache_clear(): void
     ];
     $dirs = [
         __DIR__.'/../var/phpstan',
+        __DIR__.'/../var/cache',
     ];
 
     foreach ($files as $file) {
@@ -186,7 +188,11 @@ function idea_run_configs(): void
         'phpstan:baseline' => 'Regenerate PHPStan baseline file.',
         'cs-fix' => 'Run PHP CS Fixer and modify files in place.',
         'cs-check' => 'Run PHP CS Fixer dry-run check.',
-        'cache:clear' => 'Remove generated QA caches.',
+        'cache:clear' => 'Remove generated QA caches and clear Symfony cache.',
+        'log:tail' => 'Show recent log entries.',
+        'log:search' => 'Search log entries.',
+        'log:files' => 'List log files.',
+        'log:clear' => 'Remove old rotated logs.',
         'run:agent' => 'Launch the agent TUI in tmux.',
         'run:agent-test' => 'Launch deterministic tmux session for snapshot testing.',
         'idea:run-configs' => 'Regenerate PhpStorm run configurations for Castor tasks.',
@@ -579,4 +585,58 @@ function run_agent_test(): void
     echo 'ANSI snap:    tmux capture-pane -p -e -t '.$paneId."\n";
     echo 'Send keys:    tmux send-keys -t '.$paneId." Enter\n";
     echo 'Tear down:    tmux kill-session -t '.$session."\n";
+}
+
+// ─── Log tasks ────────────────────────────────────────────────────
+//
+// Thin wrappers that delegate to Symfony console commands.
+// Parameter signatures mirror the command options/arguments so Castor
+// validates them. Values are forwarded directly to bin/console.
+// The app container resolves logging.path from Hatfield config —
+// Castor never resolves config or instantiates app services.
+
+#[AsTask(name: 'log:tail', description: 'Show recent log entries (→ bin/console log:tail)')]
+function log_tail(?string $level = null, int $lines = 50, ?string $search = null): void
+{
+    $cmd = escapeshellcmd(\PHP_BINARY).' '.__DIR__.'/../bin/console log:tail';
+    if (null !== $level) {
+        $cmd .= ' --level='.escapeshellarg($level);
+    }
+    $cmd .= ' --lines='.$lines;
+    if (null !== $search) {
+        $cmd .= ' --search='.escapeshellarg($search);
+    }
+    passthru($cmd, $exitCode);
+    exit($exitCode);
+}
+
+#[AsTask(name: 'log:search', description: 'Search log entries across all log files (→ bin/console log:search)')]
+function log_search(string $query, ?string $level = null, ?string $from = null, ?string $to = null): void
+{
+    $cmd = escapeshellcmd(\PHP_BINARY).' '.__DIR__.'/../bin/console log:search '.escapeshellarg($query);
+    if (null !== $level) {
+        $cmd .= ' --level='.escapeshellarg($level);
+    }
+    if (null !== $from) {
+        $cmd .= ' --from='.escapeshellarg($from);
+    }
+    if (null !== $to) {
+        $cmd .= ' --to='.escapeshellarg($to);
+    }
+    passthru($cmd, $exitCode);
+    exit($exitCode);
+}
+
+#[AsTask(name: 'log:files', description: 'List log files with size and modification date (→ bin/console log:files)')]
+function log_files(): void
+{
+    passthru(escapeshellcmd(\PHP_BINARY).' '.__DIR__.'/../bin/console log:files', $exitCode);
+    exit($exitCode);
+}
+
+#[AsTask(name: 'log:clear', description: 'Remove old rotated log files (→ bin/console log:clear)')]
+function log_clear(string $olderThan = '7 days ago'): void
+{
+    passthru(escapeshellcmd(\PHP_BINARY).' '.__DIR__.'/../bin/console log:clear --older-than='.escapeshellarg($olderThan), $exitCode);
+    exit($exitCode);
 }

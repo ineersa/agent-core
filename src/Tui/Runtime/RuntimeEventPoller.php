@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\TranscriptEntry as PersistedTranscriptEntry;
 use Ineersa\Tui\Transcript\TranscriptEntry;
+use Psr\Log\LoggerInterface;
 
 /**
  * Polls AgentSessionClient for new runtime events on each TUI tick.
@@ -29,6 +30,7 @@ final class RuntimeEventPoller
 
     public function __construct(
         private readonly HatfieldSessionStore $sessionStore,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -121,8 +123,12 @@ final class RuntimeEventPoller
             }
 
             return $hasNew ? $newEntries : null;
-        } catch (\Throwable) {
-            // Silently skip polling errors; show nothing to user
+        } catch (\Throwable $e) {
+            $this->logger->warning('RuntimeEventPoller polling error', [
+                'exception' => $e,
+                'run_id' => $state->handle->runId,
+            ]);
+
             return null;
         }
     }

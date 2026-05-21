@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\HomeSettingsWriter;
+use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
@@ -185,6 +186,7 @@ class ModelPickerControllerTest extends TestCase
         $ai = AiConfig::optionalFromArray(['ai' => $aiData]);
         $appConfig = new AppConfig(
             tui: TuiConfig::fromArray(['theme' => 'cyberpunk']),
+            logging: new LoggingConfig(),
             sessions: [],
             ai: $ai,
             raw: ['ai' => $aiData],

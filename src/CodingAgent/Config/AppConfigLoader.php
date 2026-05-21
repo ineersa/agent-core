@@ -124,8 +124,9 @@ final class AppConfigLoader
     /**
      * Resolve path placeholders in the merged config.
      *
-     * Currently resolves {@see tui::$themePaths} and {@see sessions.path}.
-     * Extend as more path-containing config keys are added.
+     * Currently resolves {@see tui::$themePaths}, {@see sessions.path},
+     * and {@see logging.path}. Extend as more path-containing config keys
+     * are added.
      *
      * @param array<string, mixed> $data
      *
@@ -149,6 +150,13 @@ final class AppConfigLoader
         if (isset($data['sessions']['path']) && \is_string($data['sessions']['path'])) {
             $data['sessions']['path'] = $this->pathResolver->resolve(
                 $data['sessions']['path'],
+                $cwd,
+            );
+        }
+
+        if (isset($data['logging']['path']) && \is_string($data['logging']['path'])) {
+            $data['logging']['path'] = $this->pathResolver->resolve(
+                $data['logging']['path'],
                 $cwd,
             );
         }
