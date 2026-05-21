@@ -28,7 +28,7 @@ Parallelizable with: none after dependencies; avoid concurrent edits with RTVS-0
 Status: CODE-REVIEW
 Branch: task/rtvs-07-runtime-event-poller-projection-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-07-runtime-event-poller-projection-integration
-Fork run: qt3momjnksvl
+Fork run: iz1qku5c5946
 PR URL: https://github.com/ineersa/agent-core/pull/34
 PR Status: open
 Started: 2026-05-20T03:20:17.851Z
@@ -113,3 +113,7 @@ Completed:
 ## Task workflow update - 2026-05-20T23:03:08.703Z
 - Recorded fork run: qt3momjnksvl
 - Summary: Relaunched RTVS-07 finish fork with stricter implementation acceptance criteria after prior fork only fixed scalar DI/container compile. New fork qt3momjnksvl must add executable regression coverage proving real AgentRunner/Messenger bus dispatch invokes handlers and persists canonical events, plus verify RuntimeEventPoller -> TranscriptProjector -> TuiSessionState projection behavior. It must not stop at container inspection; deliverable is runtime-flow tests plus any narrow DI fixes needed, Castor validation, and push to PR #34.
+
+## Task workflow update - 2026-05-21T00:44:42.251Z
+- Recorded fork run: iz1qku5c5946
+- Summary: Relaunched RTVS-07 completion fork with explicit user decision: do not make production infra stores public for tests. Fork iz1qku5c5946 must rewrite the Messenger runtime regression test to use the production runtime boundary (InProcessAgentSessionClient::initializeSessionsBasePath + start/events) or services_test.yaml for test-only visibility, remove production public:true added solely for tests, keep only legitimate DI wiring, prove handler execution/persisted events, validate RunLockManager re-entrant fix if needed, run Castor QA, commit/push PR #34.
