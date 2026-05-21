@@ -28,7 +28,7 @@ Parallelizable with: none after dependencies; avoid concurrent edits with RTVS-0
 Status: CODE-REVIEW
 Branch: task/rtvs-07-runtime-event-poller-projection-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-07-runtime-event-poller-projection-integration
-Fork run: 2o63yc0exzs0
+Fork run: k43lkujngsn9
 PR URL: https://github.com/ineersa/agent-core/pull/34
 PR Status: open
 Started: 2026-05-20T03:20:17.851Z
@@ -163,3 +163,7 @@ Added 3 new catalog tests for provider-qualified names + size variants. Removed 
 - Recorded fork run: 2o63yc0exzs0
 - Validation: 2o63yc0exzs0: curl llama.cpp server -> HTTP 200 reachable.; 2o63yc0exzs0: fail-first TuiAgentSmokeTest before fix -> failed with no ◇/✕ block, stuck idle, events.jsonl had messages:[] and placeholder response.; 2o63yc0exzs0: TuiAgentSmokeTest after fix against real llama_cpp/flash -> 2 tests, 5 assertions pass; ANSI snapshot shows `◇ hello`.; 2o63yc0exzs0: events.jsonl verified real LLM responses: `hello` and `Hello! How can I assist you today?`.; 2o63yc0exzs0: castor deptrac -> 0 violations.; 2o63yc0exzs0: castor phpstan --path=src/... -> no errors.; 2o63yc0exzs0: castor cs-fix && castor cs-check -> clean.; 2o63yc0exzs0: castor check -> quality: ok, 767 tests, 9455 assertions.
 - Summary: Fork 2o63yc0exzs0 completed the real TUI/LLM smoke fix at PR #34 commit 8db1d0c0. It reproduced the failure first with TuiAgentSmokeTest against llama_cpp/flash: no visible assistant/error block and events showed run_started with messages:[] plus placeholder LLM response. Root causes fixed: InProcessAgentSessionClient::start() was treating first user prompt as systemPrompt and passing empty messages; LlmPlatformAdapter needed to hydrate JSON-deserialized RunState messages back into AgentMessage objects; AssistantStreamProjectionSubscriber did not create blocks for coarse/non-streaming assistant.message_completed events. Fixes: start() now creates an AgentMessage(user, prompt) and leaves systemPrompt empty; LlmPlatformAdapter hydrates array payloads with AgentMessage::fromPayload(); TranscriptProjectionState gained hasAnyBlockForMessageId(); AssistantStreamProjectionSubscriber creates a non-streaming assistant block when completion text exists and no stream block exists. TUI smoke now shows real assistant blocks like `◇ hello` and `◇ Hello! How can I assist you today?`. PR #34 now has executable product-level proof.
+
+## Task workflow update - 2026-05-21T02:46:14.866Z
+- Recorded fork run: k43lkujngsn9
+- Summary: Launched urgent fork k43lkujngsn9 to fix remaining real TUI runtime issues after PR #34 smoke: thinking blocks render without text, transcript blocks are out of order, only first message works, and Working + Processing are shown together. Fork must reproduce with product-level Castor flow (`castor run:agent-test` / `castor test:llm-real` / `castor test:tui`), capture fail-first ANSI/session artifacts, fix all four issues, extend real tmux/llm-real e2e coverage to send two prompts and assert ordered visible assistant blocks, no empty thinking placeholders, no Processing+Working overlap, validate via Castor, commit/push PR #34 only.
