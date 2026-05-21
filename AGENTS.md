@@ -77,6 +77,25 @@ castor idea:run-configs  # Generate PhpStorm run configurations
 require tmux and are environment-sensitive. Use `castor test:tui`
 explicitly when testing TUI rendering changes.
 
+### Required TUI/runtime validation
+
+For any change that touches TUI runtime behavior, `AgentSessionClient`, model
+routing, Messenger runtime wiring, `TranscriptProjector`, `RuntimeEventPoller`,
+transcript rendering, or LLM-visible execution flow, unit tests are not enough.
+You MUST run a product-level Castor workflow and attach/record the result:
+
+- `castor run:agent-test` to drive the agent in tmux and capture snapshots, or
+- `castor test:tui` for tmux snapshot/e2e assertions, or
+- `castor test:llm-real` when the change depends on a real model such as
+  `llama_cpp/flash`.
+
+The validation must exercise the actual user flow: start the agent, type a
+prompt, submit it, wait for a visible assistant response or visible error block,
+and inspect/capture the TUI snapshot plus session artifacts (`events.jsonl`,
+`runtime-events.jsonl`, `transcript.jsonl`) on failure. Do not claim runtime/TUI
+work is done based only on mocked poller tests, DTO tests, container compilation,
+or isolated service tests.
+
 ## Development rules
 
 - **Use explicit semantic suffixes in type names so the role is knowable from the name alone.**
