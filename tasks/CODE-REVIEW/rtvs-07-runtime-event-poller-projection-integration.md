@@ -28,7 +28,7 @@ Parallelizable with: none after dependencies; avoid concurrent edits with RTVS-0
 Status: CODE-REVIEW
 Branch: task/rtvs-07-runtime-event-poller-projection-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-07-runtime-event-poller-projection-integration
-Fork run: 8gotfd7ycc6d
+Fork run: b8cqcvay90t9
 PR URL: https://github.com/ineersa/agent-core/pull/34
 PR Status: open
 Started: 2026-05-20T03:20:17.851Z
@@ -131,3 +131,7 @@ Completed:
 - Recorded fork run: 8gotfd7ycc6d
 - Validation: 8gotfd7ycc6d: castor test --filter=testProviderQualifiedModelNameIsStrippedWhenProviderIsSet -> 1 test, 2 assertions pass.; 8gotfd7ycc6d: castor test --filter=PlatformIntegrationTest -> 3 tests, 17 assertions pass.; 8gotfd7ycc6d: castor deptrac -> 0 violations.; 8gotfd7ycc6d: castor phpstan -> no errors.; 8gotfd7ycc6d: castor cs-fix + cs-check -> clean.; 8gotfd7ycc6d: castor check -> quality: ok, 777 tests, 9500 assertions.; Real LLM smoke not run in fork environment due to unavailable model/API config; user should rerun castor run:agent with configured llama_cpp/flash after PR update/merge.
 - Summary: Fork 8gotfd7ycc6d fixed the real model selection/catalog failure seen in smoke test. Root cause: ModelResolverRoutingSubscriber set both explicit provider (`llama_cpp`) and provider-qualified model (`llama_cpp/flash`), then Symfony provider catalog looked up the qualified string even though ProjectedSymfonyModelCatalog stores bare model names like `flash`. Fix: when providerId is set and provider is resolved, strip the providerId prefix before setting the model on the Symfony AI request event. Added regression test proving the model client receives `flash` when resolver returns `ResolvedModel(model: "llama_cpp/flash", providerId: "llama_cpp")`. Commit 0bd831eb pushed to PR #34.
+
+## Task workflow update - 2026-05-21T01:50:08.332Z
+- Recorded fork run: b8cqcvay90t9
+- Summary: Launched fork b8cqcvay90t9 to address PR #34 review comments and replace weak internal tests with real e2e/llm-real coverage. Scope: inspect PR comments, remove/rewrite MessengerRuntimeIntegrationTest and RuntimeEventPollerProjectionTest if they only prove internals, add meaningful TUI tmux and/or llama_cpp/flash llm-real smoke tests that capture visible transcript behavior/artifacts, move provider-qualified model normalization out of AgentCore ModelResolverRoutingSubscriber into CodingAgent SymfonyAi catalog/factory layer, and reassess/justify or remove unused publisher bus wiring. Fork must validate via Castor, commit/push PR #34 only.
