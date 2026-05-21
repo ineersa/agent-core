@@ -62,7 +62,9 @@ final readonly class AssistantStreamProjectionSubscriber implements EventSubscri
         $p = $event->payload();
         $state = $event->state;
         $blockId = (string) ($p['block_id'] ?? '');
-        $delta = (string) ($p['delta'] ?? '');
+        // The stream observer stores text under the 'text' key,
+        // not 'delta' (which is only used in mock-style tests).
+        $delta = (string) ($p['text'] ?? '');
 
         $block = $state->getBlock($blockId);
         if (null === $block || false === $block->streaming) {
@@ -114,7 +116,9 @@ final readonly class AssistantStreamProjectionSubscriber implements EventSubscri
         $p = $event->payload();
         $state = $event->state;
         $blockId = (string) ($p['block_id'] ?? '');
-        $delta = (string) ($p['delta'] ?? '');
+        // The stream observer stores thinking text under the 'thinking'
+        // key (not 'delta' like text deltas).
+        $delta = (string) ($p['thinking'] ?? '');
 
         $block = $state->getBlock($blockId);
         if (null === $block || false === $block->streaming) {
@@ -135,8 +139,11 @@ final readonly class AssistantStreamProjectionSubscriber implements EventSubscri
             return;
         }
 
+        // Thinking text arrives under the 'thinking' key from the stream
+        // observer, not 'text'.
+        $thinkingText = (string) ($p['thinking'] ?? '');
         $state->updateBlock($blockId, $block
-            ->with(text: isset($p['text']) ? (string) $p['text'] : $block->text)
+            ->with(text: '' !== $thinkingText ? $thinkingText : $block->text)
             ->finalize(),
         );
     }

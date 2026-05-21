@@ -102,6 +102,21 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
     public function events(string $runId): iterable
     {
+        // Yield transient streaming events BEFORE canonical events.
+        // During the LLM stream, the RuntimeEventStreamObserver emits
+        // thinking/text deltas into the in-memory sink. These arrive
+        // before coarse completion events (llm_step_completed) that
+        // finalize the message. Yielding transients first ensures the
+        // projector sees streaming block creation/updates before the
+        // completion handler tries to finalize them, preventing:
+        //   - Duplicate assistant blocks (one from completion, one
+        //     from later streaming deltas)
+        //   - Thinking blocks appearing after the main response
+        //   - Empty thinking blocks when deltas arrive too late
+        if (null !== $this->transientSink && $this->transientSink instanceof InMemoryRuntimeEventSink) {
+            yield from $this->transientSink->drain($runId);
+        }
+
         $runEvents = $this->eventStore->allFor($runId);
 
         foreach ($runEvents as $runEvent) {
@@ -109,13 +124,6 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             if (null !== $runtimeEvent) {
                 yield $runtimeEvent;
             }
-        }
-
-        // Drain transient streaming events from the in-memory sink.
-        // These are ephemeral deltas from the current LLM stream that
-        // have not yet been committed as canonical RunEvents.
-        if (null !== $this->transientSink && $this->transientSink instanceof InMemoryRuntimeEventSink) {
-            yield from $this->transientSink->drain($runId);
         }
     }
 

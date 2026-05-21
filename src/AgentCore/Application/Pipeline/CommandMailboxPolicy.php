@@ -102,6 +102,49 @@ final readonly class CommandMailboxPolicy
             }
 
             if (CoreCommandKind::FollowUp === $pendingCommand->kind) {
+                $messagePayload = $pendingCommand->payload['message'] ?? null;
+                if (!\is_array($messagePayload)) {
+                    $this->commandStore->markRejected($state->runId, $pendingCommand->idempotencyKey, 'Invalid follow_up payload: missing message.');
+                    $eventSpecs[] = [
+                        'type' => 'agent_command_rejected',
+                        'payload' => [
+                            'kind' => CoreCommandKind::FollowUp,
+                            'idempotency_key' => $pendingCommand->idempotencyKey,
+                            'reason' => 'Invalid follow_up payload: missing message.',
+                        ],
+                    ];
+
+                    continue;
+                }
+
+                $hydratedMessage = AgentMessage::fromPayload($messagePayload);
+                if (null === $hydratedMessage) {
+                    $this->commandStore->markRejected($state->runId, $pendingCommand->idempotencyKey, 'Invalid follow_up payload: malformed message envelope.');
+                    $eventSpecs[] = [
+                        'type' => 'agent_command_rejected',
+                        'payload' => [
+                            'kind' => CoreCommandKind::FollowUp,
+                            'idempotency_key' => $pendingCommand->idempotencyKey,
+                            'reason' => 'Invalid follow_up payload: malformed message envelope.',
+                        ],
+                    ];
+
+                    continue;
+                }
+
+                $messages[] = $hydratedMessage;
+                $this->commandStore->markApplied($state->runId, $pendingCommand->idempotencyKey);
+                $eventSpecs[] = [
+                    'type' => 'agent_command_applied',
+                    'payload' => [
+                        'kind' => CoreCommandKind::FollowUp,
+                        'idempotency_key' => $pendingCommand->idempotencyKey,
+                        'options' => [
+                            'cancel_safe' => $pendingCommand->options->safe,
+                        ],
+                    ],
+                ];
+
                 continue;
             }
 

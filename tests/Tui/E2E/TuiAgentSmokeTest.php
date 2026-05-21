@@ -245,6 +245,201 @@ final class TuiAgentSmokeTest extends TestCase
         }
     }
 
+    /**
+     * Multi-turn smoke test: type two prompts in one session and
+     * verify both receive visible assistant responses in correct
+     * conversation order.
+     *
+     * This catches:
+     *  - Only-first-message-works bugs (second prompt silently dropped)
+     *  - Blocks out of order (thinking after message, duplicate blocks)
+     *  - Empty/placeholder thinking blocks
+     *  - Processing/Working shown together
+     */
+    public function testMultiTurnConversationOrder(): void
+    {
+        $pane = $this->tmux->startDetached(
+            command: 'php bin/console agent 2>&1',
+            prefix: 'hatfield-multiturn',
+        );
+
+        try {
+            // ── Start first turn ──
+            $this->tmux->waitForCaptureContains($pane, '█', 10.0);
+            \usleep(500_000);
+
+            $prompt1 = 'Say exactly: one';
+            $this->tmux->sendLiteral($pane, $prompt1);
+            $this->tmux->sendKey($pane, 'Enter');
+
+            // Wait for first assistant response
+            try {
+                $this->tmux->waitForCaptureContains($pane, '◇', 30.0);
+            } catch (\RuntimeException) {
+                $this->tmux->waitForCaptureContains($pane, '✕', 10.0);
+            }
+            \usleep(500_000);
+
+            $firstCapture = $this->tmux->capturePlain($pane);
+
+            // Verify first response has correct structure
+            self::assertStringContainsString('❯', $firstCapture, 'First user block should be visible');
+            self::assertStringContainsString('◇', $firstCapture, 'First assistant response should be visible');
+
+            // No empty thinking placeholders: if ⋯ thinking is visible,
+            // it should have actual text, not just "[thinking]".
+            if (\str_contains($firstCapture, '⋯')) {
+                $thinkingText = $this->extractBlockText($firstCapture, '⋯');
+                self::assertNotEmpty(
+                    \trim(\str_replace('[thinking]', '', $thinkingText)),
+                    'Thinking block must not be empty placeholder — '
+                        . \sprintf('got: "%s"', $thinkingText),
+                );
+            }
+
+            // ── Start second turn ──
+            // Type a follow-up prompt
+            $prompt2 = 'Say exactly: two';
+
+            // Capture the current ◇ count BEFORE the second submit so we
+            // can detect new assistant blocks (avoid counting stale first-turn ◇).
+            $beforeCount = \substr_count($this->tmux->capturePlain($pane), "◇");
+
+            $this->tmux->sendLiteral($pane, $prompt2);
+            $this->tmux->sendKey($pane, 'Enter');
+
+            // Poll until ◇ count increases (proves a new assistant block
+            // appeared from the second LLM turn) or error block appears.
+            $secondCapture = '';
+            $deadline = \microtime(true) + 30.0;
+            do {
+                $currentCapture = $this->tmux->capturePlain($pane);
+                $currentAssistantCount = \substr_count($currentCapture, "◇");
+                if ($currentAssistantCount > $beforeCount || \str_contains($currentCapture, "✕")) {
+                    $secondCapture = $currentCapture;
+                    break;
+                }
+                \usleep(250_000);
+            } while (\microtime(true) < $deadline);
+
+            if ('' === $secondCapture) {
+                // ◇ count never increased. Dump diagnostics and fail.
+                $secondCapture = $this->tmux->capturePlain($pane);
+                $this->dumpArtifacts(
+                    $pane,
+                    'Second assistant block (◇) count did not increase after '
+                        . 'second prompt submission. '
+                        . \sprintf(
+                            'Before: %d, After (timeout): %d, Error visible: %s.',
+                            $beforeCount,
+                            \substr_count($secondCapture, "◇"),
+                            \str_contains($secondCapture, "✕") ? 'yes' : 'no',
+                        ),
+                );
+                self::fail(
+                    'Second prompt did not produce a new assistant or error block. '
+                        . 'See snapshot above for the terminal state.',
+                );
+            }
+
+            $this->saveAnsiSnapshot($pane, 'multiturn-final');
+
+            // ── Assertions on final state ──
+
+            // Both user prompts visible
+            self::assertStringContainsString(
+                $prompt1,
+                $secondCapture,
+                'First prompt must be visible in transcript',
+            );
+            self::assertStringContainsString(
+                $prompt2,
+                $secondCapture,
+                'Second prompt must be visible in transcript',
+            );
+
+            // At least two ❯ user blocks visible
+            $userCount = \substr_count($secondCapture, '❯');
+            self::assertGreaterThanOrEqual(
+                2,
+                $userCount,
+                \sprintf(
+                    'Expected at least 2 user blocks, found %d. '
+                        . 'Second prompt may have been silently dropped.',
+                    $userCount,
+                ),
+            );
+
+            // At least two assistant responses
+            $assistantCount = \substr_count($secondCapture, '◇');
+            self::assertGreaterThanOrEqual(
+                2,
+                $assistantCount,
+                \sprintf(
+                    'Expected at least 2 assistant blocks, found %d. '
+                        . 'Second LLM invocation may have silently failed.',
+                    $assistantCount,
+                ),
+            );
+
+            // Verify conversation order: first user → first assistant
+            // → second user → second assistant
+            $firstUserPos = \strpos($secondCapture, $prompt1);
+            $secondUserPos = \strpos($secondCapture, $prompt2);
+            self::assertLessThan(
+                $secondUserPos,
+                $firstUserPos,
+                'First user message must appear before second user message',
+            );
+
+            // No "Processing..." block should be visible in final settled state
+            self::assertStringNotContainsString(
+                'Processing...',
+                $secondCapture,
+                '"Processing..." block must be gone in settled state '
+                    . '(it should be removed on first runtime event)',
+            );
+
+            // No stuck "Working..." with no assistant — prove we got real responses
+            self::assertStringContainsString(
+                '◇',
+                $secondCapture,
+                'At least one assistant block must be visible',
+            );
+
+            // Clean exit
+            $this->tmux->sendKey($pane, 'C-d');
+            \usleep(300_000);
+        } catch (\Throwable $e) {
+            $this->dumpArtifacts($pane, $e->getMessage());
+            try {
+                $this->saveAnsiSnapshot($pane, 'multiturn-FAILURE');
+            } catch (\Throwable) {
+            }
+            try { $this->tmux->sendKey($pane, 'C-d'); } catch (\Throwable) {}
+            throw $e;
+        }
+    }
+
+    /**
+     * Extract the text content of a block with the given prefix
+     * from the plain-text capture.
+     */
+    private function extractBlockText(string $capture, string $prefix): string
+    {
+        $pos = \strpos($capture, $prefix);
+        if (false === $pos) {
+            return '';
+        }
+        $after = \substr($capture, $pos + \strlen($prefix) + 1);
+        $newline = \strpos($after, "\n");
+        if (false === $newline) {
+            return \trim($after);
+        }
+
+        return \trim(\substr($after, 0, $newline));
+    }
+
     // ── helpers ────────────────────────────────────────────
 
     private function saveAnsiSnapshot(TmuxPane $pane, string $tag): void

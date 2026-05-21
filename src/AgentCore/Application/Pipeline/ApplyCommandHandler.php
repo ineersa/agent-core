@@ -127,9 +127,19 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             ],
         );
 
+        // Steer and follow-up commands must trigger AdvanceRun so the
+        // queued command is picked up and the LLM is invoked.  Without
+        // this callback, the command sits in the store forever.
+        $postCommit = [];
+        $followUpAdvance = $this->followUpAdvanceCallback($runId, $message->kind);
+        if (null !== $followUpAdvance) {
+            $postCommit[] = $followUpAdvance;
+        }
+
         return new HandlerResult(
             nextState: $nextState,
             events: [$queuedEvent],
+            postCommit: $postCommit,
         );
     }
 

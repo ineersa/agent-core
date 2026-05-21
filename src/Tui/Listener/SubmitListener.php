@@ -110,19 +110,25 @@ final class SubmitListener implements TuiListenerRegistrar
                 );
                 $state->lastSeq = 0;
             } elseif (null !== $state->handle) {
+                // Route subsequent chat messages as follow_up or steer
+                // based on whether the agent is actively working:
+                //   - follow_up: normal next user message when idle
+                //   - steer:     steering/injected message while working
+                $isWorking = '' !== $screen->registry()->getWorkingMessage();
                 $client->send(
                     $state->handle->runId,
-                    new UserCommand(type: 'message', text: $text),
+                    new UserCommand(
+                        type: $isWorking ? 'steer' : 'follow_up',
+                        text: $text,
+                    ),
                 );
             }
 
-            // Show processing indicator
-            $state->transcript[] = $blockFactory->system(
-                runId: $state->sessionId,
-                text: 'Processing...',
-                seq: \count($state->transcript) + 1,
-                style: 'muted',
-            );
+            // Show processing indicator via the working status widget.
+            // We intentionally do NOT add a "Processing..." transcript
+            // block — it duplicates the Working status and clutters the
+            // transcript.  The RuntimeEventPoller will transition the
+            // working state to idle when events arrive.
             $screen->setWorkingMessage('Working...');
 
             // Update transcript display
