@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use Castor\Attribute\AsTask;
+use Ineersa\CodingAgent\Config\AppConfigLoader;
+use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Logging\LogEntry;
 use Ineersa\CodingAgent\Logging\LogFilter;
 use Ineersa\CodingAgent\Logging\LogParser;
@@ -594,18 +596,47 @@ function run_agent_test(): void
 // ─── Log tasks ────────────────────────────────────────────────────
 
 /**
- * Instantiate a LogReader for the project's .hatfield/logs/ directory.
+ * Resolve the log directory from Hatfield config (defaults → home → project).
  *
- * The default log directory is CWD/.hatfield/logs, matching the Hatfield
- * settings default (logging.path: .hatfield/logs). Castor always runs from
- * the project CWD, so getcwd() gives us the active project directory.
+ * Uses the same resolution chain as the app: {@see AppConfigLoader} loads
+ * and overlays all three YAML layers, then {@see SettingsPathResolver} resolves
+ * the {@see logging.path} setting (relative paths → CWD, ~ → home,
+ * %kernel.project_dir% → app install root).
+ *
+ * Falls back to getcwd()/project-root/.hatfield/logs if config loading fails.
+ */
+function resolve_log_dir_for_castor(): string
+{
+    $projectRoot = dirname(__DIR__);
+
+    try {
+        $pathResolver = new SettingsPathResolver($projectRoot);
+        $loader = new AppConfigLoader($pathResolver);
+        $defaultsPath = $projectRoot.'/config/hatfield.defaults.yaml';
+
+        $config = $loader->load($defaultsPath);
+
+        if (isset($config['logging']['path']) && is_string($config['logging']['path']) && '' !== $config['logging']['path']) {
+            return $config['logging']['path'];
+        }
+    } catch (Throwable) {
+        // Config load failed — fall through to default.
+    }
+
+    $cwd = getcwd();
+
+    return (false !== $cwd ? $cwd : $projectRoot).'/.hatfield/logs';
+}
+
+/**
+ * Instantiate a LogReader using the Hatfield-configured log directory.
+ *
+ * Reads {@see logging.path} from Hatfield config after applying
+ * defaults → home → project precedence and path resolution.
  */
 function create_log_reader(): LogReader
 {
-    $cwd = getcwd();
-    $logDir = (false !== $cwd ? $cwd : __DIR__.'/..').'/.hatfield/logs';
-
-    return new LogReader(new LogParser(), $logDir);
+    return new LogReader(new LogParser(), resolve_log_dir_for_castor());
 }
 
 /**
