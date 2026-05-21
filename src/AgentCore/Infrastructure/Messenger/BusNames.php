@@ -8,5 +8,4 @@ final class BusNames
 {
     public const string Command = 'agent.command.bus';
     public const string Execution = 'agent.execution.bus';
-    public const string Publisher = 'agent.publisher.bus';
 }

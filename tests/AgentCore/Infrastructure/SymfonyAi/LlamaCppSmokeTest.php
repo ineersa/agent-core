@@ -113,7 +113,7 @@ final class LlamaCppSmokeTest extends TestCase
             baseUrl: $baseUrl,
             apiKey: $apiKey,
             httpClient: null,
-            modelCatalog: new ProjectedSymfonyModelCatalog([$modelRef => $modelDefinition]),
+            modelCatalog: new ProjectedSymfonyModelCatalog([$modelName => $modelDefinition]),
             eventDispatcher: $eventDispatcher,
             supportsCompletions: true,
             supportsEmbeddings: false,

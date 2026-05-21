@@ -455,9 +455,8 @@ final class RunOrchestratorTopologyTest extends TestCase
 
         $commandBus = new RecordingMessageBus();
         $executionBus = new RecordingMessageBus();
-        $publisherBus = new RecordingMessageBus();
 
-        $stepDispatcher = new StepDispatcher($executionBus, $publisherBus);
+        $stepDispatcher = new StepDispatcher($executionBus);
         $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,

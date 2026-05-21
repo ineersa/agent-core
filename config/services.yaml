@@ -167,7 +167,6 @@ services:
   Ineersa\AgentCore\Application\Handler\StepDispatcher:
     arguments:
       $executionBus: '@agent.execution.bus'
-      $publisherBus: '@agent.publisher.bus'
 
   Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry:
     arguments:

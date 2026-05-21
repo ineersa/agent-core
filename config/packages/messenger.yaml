@@ -26,12 +26,6 @@ services:
       - []
     public: true
 
-  agent.publisher.bus:
-    class: Symfony\Component\Messenger\MessageBus
-    arguments:
-      - []
-    public: true
-
   Symfony\Component\Messenger\MessageBus $commandBus:
     alias: agent.command.bus
 

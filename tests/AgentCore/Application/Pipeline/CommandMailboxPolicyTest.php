@@ -252,9 +252,8 @@ final class CommandMailboxPolicyTest extends TestCase
 
         $commandBus = new MailboxRecordingMessageBus();
         $executionBus = new MailboxRecordingMessageBus();
-        $publisherBus = new MailboxRecordingMessageBus();
 
-        $stepDispatcher = new StepDispatcher($executionBus, $publisherBus);
+        $stepDispatcher = new StepDispatcher($executionBus);
         $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,

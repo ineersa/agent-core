@@ -35,7 +35,6 @@ final class MessengerIntegrationCompilerPass implements CompilerPassInterface
     private const array BUS_IDS = [
         'agent.command.bus',
         'agent.execution.bus',
-        'agent.publisher.bus',
     ];
 
     public function process(ContainerBuilder $container): void
