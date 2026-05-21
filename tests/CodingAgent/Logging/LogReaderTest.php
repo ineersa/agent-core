@@ -23,7 +23,7 @@ final class LogReaderTest extends TestCase
         if (is_dir($this->logDir)) {
             $this->rmDir($this->logDir);
         }
-        mkdir($this->logDir, 0777, true);
+        mkdir($this->logDir, 0755, true);
 
         $this->reader = new LogReader(new LogParser(), $this->logDir);
     }
