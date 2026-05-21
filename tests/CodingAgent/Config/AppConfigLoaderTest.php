@@ -42,6 +42,8 @@ tui:
         - '~/.hatfield/themes'
 sessions:
     path: '.hatfield/sessions'
+logging:
+    path: .hatfield/logs
 YAML
         );
 
@@ -187,6 +189,33 @@ YAML
 
         self::assertArrayHasKey('path', $config['sessions']);
         self::assertStringContainsString('.hatfield/sessions', (string) $config['sessions']['path']);
+    }
+
+    public function testLoggingPathResolvedToCwd(): void
+    {
+        $projectCwd = $this->tmpDir.'/project';
+        $this->chdirToProject($projectCwd);
+
+        $config = $this->loader->load($this->defaultsPath);
+
+        self::assertArrayHasKey('path', $config['logging']);
+        $logPath = (string) $config['logging']['path'];
+        self::assertStringContainsString($projectCwd, $logPath);
+        self::assertStringContainsString('.hatfield/logs', $logPath);
+    }
+
+    public function testLoggingPathNotKernelProjectDir(): void
+    {
+        $projectCwd = $this->tmpDir.'/project';
+        $this->chdirToProject($projectCwd);
+
+        $config = $this->loader->load($this->defaultsPath);
+
+        $logPath = (string) $config['logging']['path'];
+        // Must NOT contain the app install dir — logs are project-local
+        self::assertStringNotContainsString('/app', $logPath);
+        // Must contain the actual project CWD
+        self::assertStringContainsString($projectCwd, $logPath);
     }
 
     // ── overlayConfig() unit tests (no file I/O) ──────────────────────────

@@ -10,6 +10,7 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Input\Key;
@@ -39,6 +40,7 @@ final class FavoritePickerController
 
     public function __construct(
         private readonly ModelSelectionService $modelService,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -92,9 +94,10 @@ final class FavoritePickerController
         // ── Space toggles favorite ──
         $modelService = $this->modelService;
         $listWidget = $this->listWidget;
+        $logger = $this->logger;
 
         $this->listWidget->onInput(static function (string $data) use (
-            $modelService, $listWidget, $screen,
+            $modelService, $listWidget, $screen, $logger,
         ): bool {
             // We handle space via select_toggle_fav in keybindings,
             // but SelectListWidget routes confirm to select_confirm.
@@ -118,7 +121,12 @@ final class FavoritePickerController
 
             try {
                 $modelService->toggleFavorite($ref);
-            } catch (\RuntimeException) {
+            } catch (\RuntimeException $e) {
+                $logger->warning('Failed to toggle favorite from favorites picker', [
+                    'exception' => $e,
+                    'model' => $ref->toString(),
+                ]);
+
                 return true;
             }
 

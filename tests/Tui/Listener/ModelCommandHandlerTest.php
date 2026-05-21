@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\HomeSettingsWriter;
+use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
@@ -24,6 +25,7 @@ use Ineersa\Tui\Picker\ModelPickerController;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\Yaml\Yaml;
 
 class ModelCommandHandlerTest extends TestCase
@@ -103,6 +105,7 @@ class ModelCommandHandlerTest extends TestCase
 
         return new AppConfig(
             tui: TuiConfig::fromArray((array) ($raw['tui'] ?? [])),
+            logging: new LoggingConfig(),
             sessions: (array) ($raw['sessions'] ?? []),
             ai: $ai,
             raw: $raw,
@@ -175,10 +178,10 @@ class ModelCommandHandlerTest extends TestCase
     {
         $appConfig = $this->makeAppConfig([] !== $aiData ? $aiData : $this->standardAiData());
 
-        $pickerController = new ModelPickerController($this->modelService, $appConfig);
-        $favPickerController = new FavoritePickerController($this->modelService);
+        $pickerController = new ModelPickerController($this->modelService, $appConfig, new NullLogger());
+        $favPickerController = new FavoritePickerController($this->modelService, new NullLogger());
 
-        return new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, $favPickerController);
+        return new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, $favPickerController, new NullLogger());
     }
 
     private function slash(string $name, string $args = ''): SlashCommand
@@ -228,9 +231,9 @@ class ModelCommandHandlerTest extends TestCase
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new HomeSettingsWriter($pathResolver);
         $this->modelService = new ModelSelectionService($appConfig, $homeWriter, $this->sessionMetaStore);
-        $pickerController = new ModelPickerController($this->modelService, $appConfig);
-        $favPickerController = new FavoritePickerController($this->modelService);
-        $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, $favPickerController);
+        $pickerController = new ModelPickerController($this->modelService, $appConfig, new NullLogger());
+        $favPickerController = new FavoritePickerController($this->modelService, new NullLogger());
+        $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, $favPickerController, new NullLogger());
 
         $result = $handler->handle($this->slash('model'));
 
@@ -311,8 +314,8 @@ class ModelCommandHandlerTest extends TestCase
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new HomeSettingsWriter($pathResolver);
         $this->modelService = new ModelSelectionService($appConfig, $homeWriter, $this->sessionMetaStore);
-        $pickerController = new ModelPickerController($this->modelService, $appConfig);
-        $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, new FavoritePickerController($this->modelService));
+        $pickerController = new ModelPickerController($this->modelService, $appConfig, new NullLogger());
+        $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, new FavoritePickerController($this->modelService, new NullLogger()), new NullLogger());
 
         // Fallback textual list shows all models with * markers
         $result = $handler->handle($this->slash('model', 'fav'));
@@ -355,8 +358,8 @@ class ModelCommandHandlerTest extends TestCase
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new HomeSettingsWriter($pathResolver);
         $this->modelService = new ModelSelectionService($appConfig, $homeWriter, $this->sessionMetaStore);
-        $pickerController = new ModelPickerController($this->modelService, $appConfig);
-        $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, new FavoritePickerController($this->modelService));
+        $pickerController = new ModelPickerController($this->modelService, $appConfig, new NullLogger());
+        $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, new FavoritePickerController($this->modelService, new NullLogger()), new NullLogger());
 
         $result = $handler->handle($this->slash('model', 'fav deepseek/deepseek-v4-pro'));
 

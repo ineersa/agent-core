@@ -78,6 +78,7 @@ final class RunOrchestratorStructuredLoggingTest extends TestCase
             commandStore: $commandStore,
             replayService: $replayService,
             stepDispatcher: $stepDispatcher,
+            hookDispatcher: null,
             logger: $logger,
         );
 

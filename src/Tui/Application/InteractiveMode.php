@@ -16,6 +16,7 @@ use Ineersa\Tui\Runtime\TuiTickDispatcher;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\TuiTheme;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Tui\Event\TickEvent;
 use Symfony\Component\Tui\Tui;
@@ -49,6 +50,7 @@ final readonly class InteractiveMode
         private iterable $listenerRegistrars,
         private PromptEditor $promptEditor,
         private TranscriptBlockFactory $blockFactory,
+        private LoggerInterface $logger,
     ) {
     }
 
@@ -157,7 +159,11 @@ final readonly class InteractiveMode
                         seq: \count($state->transcript) + 1,
                         style: 'muted',
                     );
-                } catch (\Throwable) {
+                } catch (\Throwable $e) {
+                    $this->logger->warning('Failed to resume run', [
+                        'exception' => $e,
+                        'run_id' => $existingRunId,
+                    ]);
                     $state->transcript[] = $this->blockFactory->system(
                         runId: $state->sessionId,
                         text: 'Could not resume run — starting fresh.',

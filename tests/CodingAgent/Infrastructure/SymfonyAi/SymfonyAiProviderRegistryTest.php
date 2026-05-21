@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Infrastructure\SymfonyAi;
 
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderRegistry;
@@ -21,6 +22,7 @@ final class SymfonyAiProviderRegistryTest extends TestCase
         parent::setUp();
         $this->appConfig = new AppConfig(
             tui: TuiConfig::fromArray(['theme' => 'cyberpunk']),
+            logging: new LoggingConfig(),
         );
     }
 

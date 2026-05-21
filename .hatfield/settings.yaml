@@ -30,6 +30,27 @@ tui:
 #     path: .hatfield/sessions
 
 # ---------------------------------------------------------------------------
+# Logging configuration
+# ---------------------------------------------------------------------------
+#
+# Controls application logging. Logs use JSONL format with daily rotation
+# (one file per day). The log directory, minimum level, and rotation count
+# are all configurable.
+#
+# logging:
+#     # Log storage directory. Relative paths resolve against the active
+#     # project CWD. Supports ~ (home) and %kernel.project_dir%.
+#     # Default: .hatfield/logs
+#     path: .hatfield/logs
+#
+#     # Minimum log level. PSR-3 level names (lowercase):
+#     #   debug, info, notice, warning, error, critical, alert, emergency
+#     level: info
+#
+#     # Number of daily rotated log files to retain before deletion.
+#     max_files: 14
+
+# ---------------------------------------------------------------------------
 # AI provider and model configuration
 # ---------------------------------------------------------------------------
 #

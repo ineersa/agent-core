@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Psr\Log\LoggerInterface;
 
 /**
  * Polls AgentSessionClient for new runtime events on each TUI tick.
@@ -27,6 +28,7 @@ final class RuntimeEventPoller
     public function __construct(
         private readonly HatfieldSessionStore $sessionStore,
         private readonly TranscriptProjectorInterface $projector,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -90,8 +92,12 @@ final class RuntimeEventPoller
             }
 
             return self::synchronizeProjectedBlocks($state, $this->projector->blocks());
-        } catch (\Throwable) {
-            // Runtime polling must not break terminal rendering.
+        } catch (\Throwable $e) {
+            $this->logger->warning('RuntimeEventPoller polling error', [
+                'exception' => $e,
+                'run_id' => $state->handle->runId,
+            ]);
+
             return null;
         }
     }

@@ -13,7 +13,7 @@ final class RunTracer
 
     private int $sequence = 0;
 
-    public function __construct(private readonly ?LoggerInterface $logger = null)
+    public function __construct(private readonly LoggerInterface $logger)
     {
     }
 
@@ -35,7 +35,7 @@ final class RunTracer
         $this->spanStack[] = $spanId;
         $startedAt = hrtime(true);
 
-        $this->logger?->info('agent_loop.trace.start', [
+        $this->logger->info('agent_loop.trace.start', [
             'span_id' => $spanId,
             'parent_span_id' => $parentSpanId,
             'span_name' => $name,
@@ -54,7 +54,7 @@ final class RunTracer
 
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
 
-            $this->logger?->info('agent_loop.trace.finish', [
+            $this->logger->info('agent_loop.trace.finish', [
                 'span_id' => $spanId,
                 'parent_span_id' => $parentSpanId,
                 'span_name' => $name,
