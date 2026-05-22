@@ -37,14 +37,21 @@ Move slow LLM and tool work out of the run-control path by routing ExecuteLlmSte
 - steer/cancel commands arrive while LLM work in progress
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/async-04-async-execution-transports
+Worktree: /home/ineersa/projects/agent-core-worktrees/async-04-async-execution-transports
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-22T19:03:33.774Z
 Completed:
 
 ## Work log
 - Created: 2026-05-22T01:54:03.465Z
+
+## Task workflow update - 2026-05-22T19:03:33.774Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/async-04-async-execution-transports.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/async-04-async-execution-transports.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/async-04-async-execution-transports.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/async-04-async-execution-transports.
