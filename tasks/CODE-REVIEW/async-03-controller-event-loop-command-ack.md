@@ -49,7 +49,7 @@ Build the controller process — a Revolt event loop that reads TUI commands, AC
 Status: CODE-REVIEW
 Branch: task/async-03-controller-event-loop-command-ack
 Worktree: /home/ineersa/projects/agent-core-worktrees/async-03-controller-event-loop-command-ack
-Fork run: slhj3ckvypgm
+Fork run: zgjw1bmhr7ec
 PR URL: https://github.com/ineersa/agent-core/pull/40
 PR Status: open
 Started: 2026-05-22T02:34:22.140Z
@@ -75,3 +75,8 @@ Completed:
 - Pushed task/async-03-controller-event-loop-command-ack to origin.
 - branch 'task/async-03-controller-event-loop-command-ack' set up to track 'origin/task/async-03-controller-event-loop-command-ack'.
 - Created PR: https://github.com/ineersa/agent-core/pull/40
+
+## Task workflow update - 2026-05-22T17:45:33.614Z
+- Recorded fork run: zgjw1bmhr7ec
+- Validation: 810 tests pass, 0 deptrac, phpstan clean, cs clean
+- Summary: All review issues fixed by fork zgjw1bmhr7ec. Commit 5edb9a60. Controller decomposed into 7 focused classes. Symfony Process everywhere. 3 new enum cases. 810 tests pass.

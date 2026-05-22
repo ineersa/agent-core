@@ -32,6 +32,7 @@ See plan "Future: shared consumer pool" section:
 - Worker status heartbeats via publish bus
 - Per-run hard kill with worker status map
 - Parallel tool calls via multiple tool consumers on same transport
+- Controller process restart: TUI detects controller death via stdout EOF, respawns via AgentProcessSupervisor, reconnects, replays missed events from canonical events.jsonl
 
 ## Acceptance criteria
 - duplicate messages do not duplicate canonical events
