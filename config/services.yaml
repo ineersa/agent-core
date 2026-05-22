@@ -99,9 +99,7 @@ services:
 
   # ─── Controller event loop ───
 
-  Ineersa\CodingAgent\Runtime\Controller\ConsumerSupervisor:
-    arguments:
-      $projectDir: '%kernel.project_dir%'
+  Ineersa\CodingAgent\Runtime\Controller\ConsumerSupervisor: ~
 
   Ineersa\CodingAgent\Runtime\Controller\PublishTransportPoller:
     arguments:

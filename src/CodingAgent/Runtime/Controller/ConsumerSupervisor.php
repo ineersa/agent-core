@@ -28,7 +28,6 @@ final class ConsumerSupervisor
     private array $consumers = [];
 
     public function __construct(
-        private readonly string $projectDir,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -41,12 +40,12 @@ final class ConsumerSupervisor
      */
     public function launch(string $transportName): void
     {
-        $console = $this->projectDir.'/bin/console';
+        $entrypoint = $_SERVER['argv'][0];
 
         $process = new Process(
             [
                 \PHP_BINARY,
-                $console,
+                $entrypoint,
                 'messenger:consume',
                 $transportName,
                 '--no-interaction',
