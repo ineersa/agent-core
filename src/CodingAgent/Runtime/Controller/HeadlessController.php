@@ -70,6 +70,14 @@ final class HeadlessController
             payload: ['version' => '1.0', 'transport' => 'controller'],
         ));
 
+        // Launch messenger consumers for async execution transports.
+        // These consume from llm and tool Doctrine queues, picking up
+        // ExecuteLlmStep and ExecuteToolCall messages dispatched by the
+        // StepDispatcher after routing changes (ASYNC-04).
+        // The run_control consumer will be launched in ASYNC-05.
+        $this->consumerSupervisor->launch('llm');
+        $this->consumerSupervisor->launch('tool');
+
         // Non-blocking stdin: read JSONL commands from TUI.
         EventLoop::onReadable(\STDIN, function (string $watcherId, $stream): void {
             if ($this->shuttingDown) {
