@@ -15,9 +15,8 @@
   must match the directory name. A mismatch indicates data corruption.
 - **Append-only event stream.** `events.jsonl` is the canonical record of
   everything that happened in a run. `state.json` is a materialized RunState
-  snapshot and concurrency checkpoint. `transcript.jsonl` and
-  `runtime-events.jsonl` are projections/debug logs that can be rebuilt from the
-  canonical stream if necessary.
+  snapshot and concurrency checkpoint. `transcript.jsonl` is a projection that
+  can be rebuilt from the canonical stream if necessary.
 
 ## Directory layout
 
@@ -27,7 +26,6 @@
   state.json               AgentCore RunState materialized snapshot/checkpoint
   events.jsonl             AgentCore RunEvent canonical event stream
   transcript.jsonl         TUI/user-facing transcript projection
-  runtime-events.jsonl     Runtime protocol event log (projection/debug)
   attachments/             (future) pasted files, images, diffs
 ```
 
@@ -39,7 +37,6 @@
 | `state.json` | No — materialized snapshot/checkpoint | `SessionRunStore::compareAndSwap()` | `SessionRunStore::get()`, resume flow | JSON (Symfony Serializer) |
 | `events.jsonl` | **Yes — canonical domain event stream** | `SessionRunEventStore::append()` | `SessionRunEventStore::allFor()`, `InProcessAgentSessionClient::events()`, TUI tick callback | JSONL (EventPayloadNormalizer) |
 | `transcript.jsonl` | No — TUI projection | `HatfieldSessionStore::appendTranscriptEntry()` | `HatfieldSessionStore::getTranscript()`, resume display | JSONL (TranscriptEntry DTO) |
-| `runtime-events.jsonl` | No — protocol projection/debug | TUI tick callback | Debugging, future replay | JSONL (RuntimeEvent DTO) |
 
 ### metadata.yaml
 
@@ -76,10 +73,10 @@ Current-state snapshot / checkpoint
                 │ projects user/protocol views
                 ▼
 TUI/protocol projections
-┌──────────────────────────┐   ┌──────────────────────────┐
-│ transcript.jsonl         │   │ runtime-events.jsonl     │
-│ user-facing transcript   │   │ protocol/debug event log │
-└──────────────────────────┘   └──────────────────────────┘
+┌──────────────────────────┐
+│ transcript.jsonl         │
+│ user-facing transcript   │
+└──────────────────────────┘
 ```
 
 In the current local filesystem implementation, both the canonical stream and
@@ -146,13 +143,6 @@ One JSON object per line, produced by `TranscriptEntry::toArray()`:
 
 Roles include `user`, `assistant`, `tool`, `system`, and `error`.
 
-### runtime-events.jsonl
-
-One JSON object per line, produced by `RuntimeEvent::toArray()`:
-
-```jsonl
-{"v":"1.0","type":"run_started","run_id":"a1b2c3d4e5f6","seq":1,"payload":{"run_id":"a1b2c3d4e5f6","status":"running"}}
-```
 
 This file is a debug/projection log. The canonical source of events is `events.jsonl`.
 
@@ -213,7 +203,6 @@ layer — not during persistence.
    - `events.jsonl` — `run_id` field in every line
    - `metadata.yaml` — `session_id`, `run_id`; set `parent_id` and `root_id`
    - `transcript.jsonl` — `meta.run_id` and `meta.session_id` where present
-   - `runtime-events.jsonl` — `run_id` field in every line
 
 ## Resume flow
 
@@ -373,7 +362,6 @@ Implementation outline:
    - `state.json`
    - `events.jsonl`
    - `transcript.jsonl`
-   - `runtime-events.jsonl`
 4. Set `parent_id`, `root_id`, and `fork` block in the new metadata.
 5. Resume: `php bin/console agent --resume bbb222`.
 
