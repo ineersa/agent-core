@@ -37,14 +37,21 @@ Wire stream subscribers to use RuntimeEventPublisherInterface in async mode. Del
 - in-process mode still works via sink
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/async-02-wire-publish-delete-runtime-events-jsonl
+Worktree: /home/ineersa/projects/agent-core-worktrees/async-02-wire-publish-delete-runtime-events-jsonl
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-22T02:33:43.728Z
 Completed:
 
 ## Work log
 - Created: 2026-05-22T01:53:30.881Z
+
+## Task workflow update - 2026-05-22T02:33:43.728Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/async-02-wire-publish-delete-runtime-events-jsonl.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/async-02-wire-publish-delete-runtime-events-jsonl.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/async-02-wire-publish-delete-runtime-events-jsonl.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/async-02-wire-publish-delete-runtime-events-jsonl.
