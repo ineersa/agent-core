@@ -46,14 +46,21 @@ Build the controller process — a Revolt event loop that reads TUI commands, AC
 - command_ack event type added to RuntimeEventTypeEnum
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/async-03-controller-event-loop-command-ack
+Worktree: /home/ineersa/projects/agent-core-worktrees/async-03-controller-event-loop-command-ack
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-22T02:34:22.140Z
 Completed:
 
 ## Work log
 - Created: 2026-05-22T01:53:47.888Z
+
+## Task workflow update - 2026-05-22T02:34:22.140Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/async-03-controller-event-loop-command-ack.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/async-03-controller-event-loop-command-ack.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/async-03-controller-event-loop-command-ack.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/async-03-controller-event-loop-command-ack.
