@@ -39,25 +39,10 @@ services:
   Ineersa\Tui\:
     resource: '../src/Tui/'
 
-  # ─── File-backed agent-core stores ───
-  # These need explicit wiring because $projectDir is a string that
-  # cannot be autowired. LockFactory is autowired via FrameworkBundle's
-  # lock configuration (config/packages/framework.yaml → framework.lock).
-
-  Ineersa\AgentCore\Infrastructure\Storage\SessionRunStore:
-    arguments:
-      $projectDir: '%kernel.project_dir%'
-
-  Ineersa\AgentCore\Infrastructure\Storage\SessionRunEventStore:
-    arguments:
-      $projectDir: '%kernel.project_dir%'
-
-  Ineersa\AgentCore\Infrastructure\Storage\JsonlIdempotencyStore:
-    arguments:
-      $projectDir: '%kernel.project_dir%'
+  # ─── Session stores — resolved via HatfieldSessionStore for path ───
 
   Ineersa\AgentCore\Contract\IdempotencyStoreInterface:
-    alias: Ineersa\AgentCore\Infrastructure\Storage\JsonlIdempotencyStore
+    alias: Ineersa\CodingAgent\Session\JsonlIdempotencyStore
 
   # ─── Hatfield config services ───
 
@@ -100,10 +85,6 @@ services:
   # ─── Transient runtime stream wiring ───
 
   Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink: ~
-
-  Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient:
-    arguments:
-      $idempotencyStore: '@Ineersa\AgentCore\Infrastructure\Storage\JsonlIdempotencyStore'
 
   Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface:
     alias: Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink

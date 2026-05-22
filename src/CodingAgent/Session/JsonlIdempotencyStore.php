@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Infrastructure\Storage;
+namespace Ineersa\CodingAgent\Session;
 
 use Ineersa\AgentCore\Contract\IdempotencyStoreInterface;
 
@@ -13,29 +13,19 @@ use Ineersa\AgentCore\Contract\IdempotencyStoreInterface;
  * Uses LOCK_EX for atomic appends and LOCK_SH for safe concurrent reads.
  *
  * Cross-process safe: multiple consumers in different processes can
- * check and mark concurrently without corruption. Follows the same
- * pattern as SessionRunEventStore's events.jsonl.
+ * check and mark concurrently without corruption.
+ *
+ * Uses HatfieldSessionStore::resolveSessionsBasePath() as the single
+ * source of truth for the sessions directory.
  */
 final class JsonlIdempotencyStore implements IdempotencyStoreInterface
 {
-    private string $sessionsBasePath;
+    private readonly string $sessionsBasePath;
 
     public function __construct(
-        string $projectDir,
+        HatfieldSessionStore $hatfieldSessionStore,
     ) {
-        $this->sessionsBasePath = $projectDir.'/.hatfield/sessions';
-    }
-
-    /**
-     * Override the sessions base directory at runtime.
-     *
-     * Called by InProcessAgentSessionClient::initializeSessionsBasePath()
-     * before any run operations to ensure the store writes to the active
-     * project CWD, not the app install root.
-     */
-    public function setSessionsBasePath(string $path): void
-    {
-        $this->sessionsBasePath = $path;
+        $this->sessionsBasePath = $hatfieldSessionStore->resolveSessionsBasePath();
     }
 
     public function isHandled(string $scope, string $runId, string $idempotencyKey): bool

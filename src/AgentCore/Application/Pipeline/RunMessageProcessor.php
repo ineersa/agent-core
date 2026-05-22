@@ -49,7 +49,7 @@ final readonly class RunMessageProcessor
         private RunCommit $runCommit,
         private StepDispatcher $stepDispatcher,
         iterable $handlers,
-        private ?LoggerInterface $logger = null,
+        private LoggerInterface $logger,
     ) {
         $this->handlers = [...$handlers];
     }
@@ -105,7 +105,7 @@ final readonly class RunMessageProcessor
                 }
 
                 // CAS conflict — retry with exponential backoff.
-                $this->logger?->debug('agent_loop.processor.cas_conflict_retry', [
+                $this->logger->warning('agent_loop.processor.cas_conflict_retry', [
                     'scope' => $scope,
                     'run_id' => $runId,
                     'message_type' => $message::class,
@@ -119,13 +119,16 @@ final readonly class RunMessageProcessor
                 }
             }
 
-            // All retries exhausted — log and drop the message.
-            $this->logger?->warning('agent_loop.processor.cas_conflict_exhausted', [
+            // All retries exhausted — throw so the message is properly
+            // rejected and the transport can handle it (e.g., retry or DLQ).
+            $this->logger->error('agent_loop.processor.cas_conflict_exhausted', [
                 'scope' => $scope,
                 'run_id' => $runId,
                 'message_type' => $message::class,
                 'attempts' => self::MAX_CAS_RETRIES,
             ]);
+
+            throw new CasRetryExhaustedException(\sprintf('CAS conflict exhausted after %d attempts for run %s, message %s', self::MAX_CAS_RETRIES, $runId, $message::class));
         });
     }
 

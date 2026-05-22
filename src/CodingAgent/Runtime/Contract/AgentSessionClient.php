@@ -30,16 +30,4 @@ interface AgentSessionClient
     public function events(string $runId): iterable;
 
     public function cancel(string $runId): void;
-
-    /**
-     * Configure the sessions base directory for storage backends.
-     *
-     * Called by the TUI layer before any start/resume operation to ensure
-     * run state and events are written under the active project cwd rather
-     * than the application install root. Required for PHAR distribution.
-     *
-     * For in-process transport: delegates to concrete store setters.
-     * For process transport: stored to pass through to subprocess spawn.
-     */
-    public function initializeSessionsBasePath(string $sessionsBasePath): void;
 }

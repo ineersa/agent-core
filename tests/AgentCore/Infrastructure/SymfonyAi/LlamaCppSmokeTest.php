@@ -25,6 +25,9 @@ use Ineersa\CodingAgent\Config\SessionAwareModelResolver;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -72,8 +75,15 @@ final class LlamaCppSmokeTest extends TestCase
         file_put_contents($this->homeDir.'/.hatfield/settings.yaml', "tui:\n    theme: cyberpunk\n");
 
         // Session metadata store
-        $this->sessionMetaStore = new SessionMetadataStore();
-        $this->sessionMetaStore->setSessionsBasePath($this->tempDir.'/project/.hatfield/sessions');
+        $hatfieldSessionStore = new HatfieldSessionStore(
+            appConfig: new AppConfig(
+                tui: new TuiConfig(theme: 'default'),
+                logging: new LoggingConfig(),
+                cwd: $this->tempDir.'/project',
+            ),
+            lockFactory: new LockFactory(new FlockStore()),
+        );
+        $this->sessionMetaStore = new SessionMetadataStore($hatfieldSessionStore);
     }
 
     protected function tearDown(): void

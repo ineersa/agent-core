@@ -484,6 +484,7 @@ final class RunOrchestratorTopologyTest extends TestCase
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: $runCommit,
             stepDispatcher: $stepDispatcher,
+            logger: new \Psr\Log\NullLogger(),
             handlers: [
                 new StartRunHandler(
                     stateTools: $stateTools,

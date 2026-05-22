@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Infrastructure\Storage;
+namespace Ineersa\CodingAgent\Session;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -20,29 +20,20 @@ use Symfony\Component\Lock\LockFactory;
  *
  * Directory name is canonical; embedded runId in each event
  * must match. Mismatches throw on read.
+ *
+ * Uses HatfieldSessionStore::resolveSessionsBasePath() as the single
+ * source of truth for the sessions directory.
  */
 final class SessionRunEventStore implements EventStoreInterface
 {
-    private string $sessionsBasePath;
+    private readonly string $sessionsBasePath;
 
     public function __construct(
-        string $projectDir,
+        HatfieldSessionStore $hatfieldSessionStore,
         private readonly EventPayloadNormalizer $eventPayloadNormalizer,
         private readonly LockFactory $lockFactory,
     ) {
-        $this->sessionsBasePath = $projectDir.'/.hatfield/sessions';
-    }
-
-    /**
-     * Set the sessions base directory.
-     *
-     * Called by the CodingAgent runtime layer before any run operations
-     * to ensure the store writes to the active project cwd, not the app
-     * install root. Required for PHAR distribution.
-     */
-    public function setSessionsBasePath(string $path): void
-    {
-        $this->sessionsBasePath = $path;
+        $this->sessionsBasePath = $hatfieldSessionStore->resolveSessionsBasePath();
     }
 
     public function append(RunEvent $event): void

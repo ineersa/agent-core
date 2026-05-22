@@ -14,6 +14,9 @@ use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
@@ -54,8 +57,15 @@ class ModelCommandHandlerTest extends TestCase
 
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new HomeSettingsWriter($pathResolver);
-        $this->sessionMetaStore = new SessionMetadataStore();
-        $this->sessionMetaStore->setSessionsBasePath($this->tempDir.'/project/.hatfield/sessions');
+        $hatfieldSessionStore = new HatfieldSessionStore(
+            appConfig: new AppConfig(
+                tui: new TuiConfig(theme: 'default'),
+                logging: new LoggingConfig(),
+                cwd: $this->tempDir.'/project',
+            ),
+            lockFactory: new LockFactory(new FlockStore()),
+        );
+        $this->sessionMetaStore = new SessionMetadataStore($hatfieldSessionStore);
 
         $appConfig = $this->makeAppConfig($this->standardAiData());
         $this->modelService = new ModelSelectionService($appConfig, $homeWriter, $this->sessionMetaStore);

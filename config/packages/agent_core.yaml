@@ -6,10 +6,10 @@ services:
   # File-backed stores (canonical container: .hatfield/sessions/<runId>/)
   # session_id === run_id in Hatfield.
   Ineersa\AgentCore\Contract\RunStoreInterface:
-    alias: Ineersa\AgentCore\Infrastructure\Storage\SessionRunStore
+    alias: Ineersa\CodingAgent\Session\SessionRunStore
 
   Ineersa\AgentCore\Contract\EventStoreInterface:
-    alias: Ineersa\AgentCore\Infrastructure\Storage\SessionRunEventStore
+    alias: Ineersa\CodingAgent\Session\SessionRunEventStore
 
   Ineersa\AgentCore\Contract\AgentRunnerInterface:
     alias: Ineersa\AgentCore\Application\Pipeline\AgentRunner

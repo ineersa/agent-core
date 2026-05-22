@@ -72,10 +72,6 @@ final readonly class InteractiveMode
     ): int {
         $theme = $this->themeFactory->create($theme);
 
-        // ── Configure storage to use active project cwd ──
-        $sessionsBasePath = $this->sessionStore->resolveSessionsBasePath();
-        $client->initializeSessionsBasePath($sessionsBasePath);
-
         // ── Initialize session ──
         $state = $this->sessionInit->initialize($sessionId, $request);
         $state->transcript = $this->sessionInit->buildInitialTranscript($state);

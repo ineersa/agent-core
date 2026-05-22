@@ -312,6 +312,7 @@ parameters:
       - SymfonyEventDispatcher
 
     AppConfig:
+      - AppSession
       - SymfonyTui
       - SymfonyConsole
       - SymfonyYaml
@@ -321,10 +322,12 @@ parameters:
       - SymfonyAiPlatform
 
     AppSession:
+      - AgentCore
       - AppConfig
       - SymfonyConsole
       - SymfonyLock
       - SymfonyYaml
+      - SymfonySerializer
 
     AppCli:
       - AppRuntimeContract

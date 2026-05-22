@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Infrastructure\Storage;
+namespace Ineersa\CodingAgent\Session;
 
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -19,29 +19,21 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
  *
  * Directory name is canonical; the embedded runId inside state.json
  * is validated on read. Mismatches cause runtime errors.
+ *
+ * Uses HatfieldSessionStore::resolveSessionsBasePath() as the single
+ * source of truth for the sessions directory, ensuring all session
+ * stores write to the same location.
  */
 final class SessionRunStore implements RunStoreInterface
 {
-    private string $sessionsBasePath;
+    private readonly string $sessionsBasePath;
 
     public function __construct(
-        string $projectDir,
+        HatfieldSessionStore $hatfieldSessionStore,
         private readonly NormalizerInterface&DenormalizerInterface $serializer,
         private readonly LockFactory $lockFactory,
     ) {
-        $this->sessionsBasePath = $projectDir.'/.hatfield/sessions';
-    }
-
-    /**
-     * Set the sessions base directory.
-     *
-     * Called by the CodingAgent runtime layer before any run operations
-     * to ensure the store writes to the active project cwd, not the app
-     * install root. Required for PHAR distribution.
-     */
-    public function setSessionsBasePath(string $path): void
-    {
-        $this->sessionsBasePath = $path;
+        $this->sessionsBasePath = $hatfieldSessionStore->resolveSessionsBasePath();
     }
 
     public function get(string $runId): ?RunState
