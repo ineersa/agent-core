@@ -107,7 +107,6 @@ YAML);
         self::assertFileExists($sessionPath.'/state.json');
         self::assertFileExists($sessionPath.'/events.jsonl');
         self::assertFileExists($sessionPath.'/transcript.jsonl');
-        self::assertFileExists($sessionPath.'/runtime-events.jsonl');
 
         // Empty transcript
         $entries = $this->store->getTranscript($sessionId);
@@ -183,25 +182,6 @@ YAML);
         self::assertSame('deepseek-v4', $meta['model']);
         self::assertArrayHasKey('session_id', $meta); // Original field preserved
         self::assertArrayHasKey('updated_at', $meta);
-    }
-
-    public function testAppendRuntimeEvent(): void
-    {
-        $sessionId = $this->store->createSession();
-
-        $this->store->appendRuntimeEvent($sessionId, [
-            'v' => 1,
-            'type' => 'run_started',
-            'runId' => 'abc',
-            'seq' => 1,
-            'payload' => ['prompt' => 'test'],
-        ]);
-
-        $sessionPath = $this->tempDir.'/.hatfield/sessions/'.$sessionId;
-        $content = file_get_contents($sessionPath.'/runtime-events.jsonl');
-        self::assertNotFalse($content);
-        self::assertStringContainsString('run_started', $content);
-        self::assertStringContainsString('abc', $content);
     }
 
     public function testTranscriptEntryFromArray(): void

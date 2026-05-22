@@ -549,7 +549,6 @@ RuntimeEventPoller::poll(state, client)
     │
     ├─ client->events(runId)        → iterable<RuntimeEvent>
     ├─ skip events with seq ≤ lastSeq (dedup)
-    ├─ persist to runtime-events.jsonl
     ├─ formatEventToEntry(event) → TranscriptEntry (plain model, NO theme)
     ├─ append to state.transcript[]
     ├─ persist to transcript.jsonl

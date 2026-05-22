@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Stream;
 
+use Ineersa\AgentCore\Contract\RuntimeEventPublisherInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -18,11 +19,15 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  * ToolCallStart → tool_call.started.
  * ToolInputDelta → tool_call.arguments_delta.
  * ToolCallComplete → tool_call.arguments_completed (one per ToolCall).
+ *
+ * Events are emitted both to the runtime event sink (in-process) and
+ * the runtime event publisher (cross-process via Messenger in async mode).
  */
 final readonly class ToolCallStreamSubscriber implements EventSubscriberInterface
 {
     public function __construct(
         private RuntimeEventSinkInterface $sink,
+        private readonly ?RuntimeEventPublisherInterface $runtimeEventPublisher = null,
     ) {
     }
 
@@ -122,11 +127,14 @@ final readonly class ToolCallStreamSubscriber implements EventSubscriberInterfac
             $merged['block_id'] = $blockId;
         }
 
-        $this->sink->emit(new RuntimeEvent(
+        $event = new RuntimeEvent(
             type: $type->value,
             runId: $runId,
             seq: 0,
             payload: $merged,
-        ));
+        );
+
+        $this->sink->emit($event);
+        $this->runtimeEventPublisher?->publishEvent($event);
     }
 }

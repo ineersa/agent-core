@@ -7,9 +7,9 @@ namespace Ineersa\CodingAgent\Runtime\Protocol;
 /**
  * Stable runtime event name constants.
  *
- * Every RuntimeEvent emitted by the runtime or persisted in runtime-events.jsonl
- * MUST use one of these type strings to ensure stable tooling, projections, and
- * replay without coupling to raw AgentCore RunEvent type names.
+ * Every RuntimeEvent emitted by the runtime MUST use one of these type strings
+ * to ensure stable tooling, projections, and replay without coupling to raw
+ * AgentCore RunEvent type names.
  *
  * Refer to AGENTS.md in this directory for payload shape documentation.
  */
