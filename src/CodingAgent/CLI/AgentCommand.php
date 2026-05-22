@@ -56,8 +56,8 @@ final class AgentCommand
         #[Option(description: 'Run in controller event-loop mode (stdin/stdout, non-blocking)')]
         bool $controller = false,
 
-        #[Option(description: 'Transport type: "in-process" (default) or "process"')]
-        string $transport = 'in-process',
+        #[Option(description: 'Transport type: "process" (default, spawns --controller) or "in-process" (sync, broken after ASYNC-05)')]
+        string $transport = 'process',
 
         #[Option(description: 'Initial prompt for a new run')]
         string $prompt = '',
@@ -191,6 +191,9 @@ final class AgentCommand
         $model = isset($command->payload['model']) ? (string) $command->payload['model'] : null;
         $reasoning = isset($command->payload['reasoning']) ? (string) $command->payload['reasoning'] : null;
         $client = $this->inProcessClient;
+
+        // Non-blocking: dispatches StartRun to run_control transport.
+        // Events flow through EventStore / publish transport, not stdout.
         $handle = $client->start(new StartRunRequest(
             prompt: $prompt,
             model: '' !== $model ? $model : null,
@@ -204,9 +207,9 @@ final class AgentCommand
             payload: ['status' => 'running'],
         )));
 
-        foreach ($client->events($handle->runId) as $event) {
-            $output->write(JsonlCodec::encodeEvent($event));
-        }
+        // Note: --headless mode does NOT forward subsequent events to stdout.
+        // Use --controller for full event forwarding via EventStore drain
+        // and publish transport polling.
     }
 
     private function handleHeadlessResume(RuntimeCommand $command, OutputInterface $output): void
@@ -233,9 +236,8 @@ final class AgentCommand
             payload: ['status' => 'running'],
         )));
 
-        foreach ($client->events($handle->runId) as $event) {
-            $output->write(JsonlCodec::encodeEvent($event));
-        }
+        // Note: --headless mode does NOT forward subsequent events to stdout.
+        // Use --controller for full event forwarding.
     }
 
     private function handleHeadlessMessage(RuntimeCommand $command, OutputInterface $output): void
@@ -265,9 +267,8 @@ final class AgentCommand
             payload: ['commandId' => $command->id],
         )));
 
-        foreach ($client->events($runId) as $event) {
-            $output->write(JsonlCodec::encodeEvent($event));
-        }
+        // Note: --headless mode does NOT forward subsequent events to stdout.
+        // Use --controller for full event forwarding.
     }
 
     private function handleHeadlessCancel(RuntimeCommand $command, OutputInterface $output): void

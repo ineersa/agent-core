@@ -13,8 +13,8 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 /**
  * Handles resume commands via Symfony EventDispatcher.
  *
- * Resumes an existing agent session via the in-process client and forwards
- * all runtime events from the resumed run.
+ * Dispatches a resume command to the run_control transport (ASYNC-05)
+ * and immediately returns to the event loop.
  */
 #[AsEventListener(event: ControllerCommandEvent::class)]
 final readonly class ResumeHandler
@@ -43,6 +43,8 @@ final readonly class ResumeHandler
             return;
         }
 
+        // Non-blocking: dispatches ApplyCommand (resume) to run_control
+        // transport and returns immediately.
         $handle = $this->client->resume($runId);
 
         $event->emit(new RuntimeEvent(
@@ -52,9 +54,7 @@ final readonly class ResumeHandler
             payload: ['status' => 'running'],
         ));
 
-        // Forward all events from the resumed run.
-        foreach ($this->client->events($handle->runId) as $runtimeEvent) {
-            $event->emit($runtimeEvent);
-        }
+        // Events are NOT iterated here — they arrive through the controller's
+        // periodic EventStore drain and publish transport poller (ASYNC-05).
     }
 }
