@@ -43,12 +43,12 @@ This task may absorb or supersede the existing TODO `2026-05-18-add-monolog-logg
 - Because this touches runtime/container/CLI infrastructure, run a product-level workflow: `castor run:agent-test` or `castor test:tui`, and report session artifacts on failure.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/framework-bundle-cli-infrastructure-messenger-monolog
 Worktree: /home/ineersa/projects/agent-core-worktrees/framework-bundle-cli-infrastructure-messenger-monolog
 Fork run: 2yayxrwbk5nn
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/37
+PR Status: open
 Started: 2026-05-22T00:40:50.133Z
 Completed:
 
@@ -71,3 +71,11 @@ Completed:
 - Recorded fork run: 2yayxrwbk5nn
 - Validation: php bin/console list --raw | grep -E 'messenger|debug:messenger|agent' -> Messenger commands available including messenger:consume/debug:messenger plus agent/log commands (per fork).; php bin/console debug:messenger -> agent.command.bus and agent.execution.bus handlers wired (per fork).; castor deptrac -> 0 violations (per fork).; castor test -> 806 tests, 9558 assertions, all pass (per fork).; castor phpstan --path=src/CodingAgent -> no errors (per fork).; castor cs-check -> passes clean (per fork).; castor cache:clear -> passes (per fork).; castor run:agent-test -> TUI launches in tmux, agent responds with visible user+assistant transcript blocks, session artifacts present (per fork).
 - Summary: Implementation fork completed and was merged with local main plan updates in the worktree. Final worktree HEAD: 6f3c7870 (merge), implementation commit: 19e4f534. Changes adopt FrameworkBundle for CLI infrastructure, normal framework.messenger bus wiring, MonologBundle service handler config, remove MessengerIntegrationCompilerPass, delete custom serializer.yaml, update AGENTS.md policy/deptrac, and mark the older Monolog TODO as superseded. The async headless Messenger plan update is included in the task branch via main merge.
+
+## Task workflow update - 2026-05-22T00:56:35.102Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/framework-bundle-cli-infrastructure-messenger-monolog to origin.
+- branch 'task/framework-bundle-cli-infrastructure-messenger-monolog' set up to track 'origin/task/framework-bundle-cli-infrastructure-messenger-monolog'.
+- Created PR: https://github.com/ineersa/agent-core/pull/37
+- Validation: php bin/console list --raw | grep -E 'messenger|debug:messenger|agent' -> Messenger commands available including messenger:consume/debug:messenger plus agent/log commands (per fork).; php bin/console debug:messenger -> agent.command.bus and agent.execution.bus handlers wired (per fork).; castor deptrac -> 0 violations (per fork).; castor test -> 806 tests, 9558 assertions, all pass (per fork).; castor phpstan --path=src/CodingAgent -> no errors (per fork).; castor cs-check -> passes clean (per fork).; castor cache:clear -> passes (per fork).; castor run:agent-test -> TUI launches in tmux, agent responds with visible user+assistant transcript blocks, session artifacts present (per fork).
+- Summary: FrameworkBundle CLI infrastructure implementation complete. Branch HEAD 0b1a9412 includes implementation commit 19e4f534 plus async plan/task metadata updates from main. Adds FrameworkBundle and MonologBundle, replaces custom Messenger compiler pass/raw bus wiring with framework.messenger, exposes Messenger console commands, configures MonologBundle with HatfieldRotatingLogHandler, updates AGENTS.md policy, marks prior Monolog task superseded, and preserves HTTP-less app constraints.
