@@ -1,5 +1,21 @@
 # Add Monolog logging with JSONL format, exception logging, and Castor log tasks
 
+## SUPERSEDED
+
+This task is superseded by `framework-bundle-cli-infrastructure-messenger-monolog`.
+
+What was done:
+- `monolog/monolog` is installed.
+- `HatfieldRotatingLogHandler`, `LogEntry`, `LogParser`, `LogFilter`, `LogReader` created.
+- Castor log tasks (`log:tail`, `log:search`, `log:files`, `log:clear`) exist.
+- Logger injection in AgentCommand, InteractiveMode, RuntimeEventPoller, RunTracer, RunCommit exists.
+
+What the FrameworkBundle task changed:
+- Switched from raw `Monolog\Logger` DI wiring to MonologBundle config.
+- `config/packages/monolog.yaml` now uses `monolog.handlers.main.type: service` referencing the existing `HatfieldRotatingLogHandler`.
+- `Psr\Log\LoggerInterface` is now aliased by MonologBundle automatically.
+
+## Original metadata (preserved for history)
 ## Goal
 ## Plan
 See `.pi/plans/logging-plan.md` for the full plan.

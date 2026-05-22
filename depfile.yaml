@@ -178,7 +178,7 @@ parameters:
     - name: ForbiddenHttp
       collectors:
         - type: classNameRegex
-          value: '#^(Symfony\\\\Component\\\\HttpKernel|Symfony\\\\Bundle\\\\FrameworkBundle)\\\\#i'
+          value: '#^Symfony\\Component\\HttpKernel\\#i'
 
   ruleset:
     TuiApplication:
