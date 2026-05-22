@@ -41,12 +41,12 @@ Establish the transport layer and publish bus infrastructure. This is the founda
 - sync mode unchanged
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/async-01-doctrine-transport-publish-bus
 Worktree: /home/ineersa/projects/agent-core-worktrees/async-01-doctrine-transport-publish-bus
-Fork run:
-PR URL:
-PR Status:
+Fork run: z5nqtsm3hnhw
+PR URL: https://github.com/ineersa/agent-core/pull/38
+PR Status: open
 Started: 2026-05-22T01:57:43.688Z
 Completed:
 
@@ -59,3 +59,14 @@ Completed:
 - Created worktree /home/ineersa/projects/agent-core-worktrees/async-01-doctrine-transport-publish-bus.
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/async-01-doctrine-transport-publish-bus.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/async-01-doctrine-transport-publish-bus.
+
+## Task workflow update - 2026-05-22T02:11:05.303Z
+- Recorded fork run: z5nqtsm3hnhw
+- Validation: castor check: 806 tests pass, 0 deptrac violations, phpstan clean, cs-check clean; debug:messenger shows 3 buses + 4 transports; messenger:setup-transports creates 4 Doctrine tables; Container XML confirms all services wired correctly
+- Summary: Implemented by fork z5nqtsm3hnhw. Commit bf70d6cb on task/async-01-doctrine-transport-publish-bus. 12 files changed (+594/-4). Doctrine SQLite transport + publish bus infrastructure established. RuntimeEventPublisherInterface in AgentCore uses scalar types to respect deptrac boundaries. MessengerRuntimeEventPublisher in CodingAgent bridges to RuntimeEvent DTO. All validation passes.
+
+## Task workflow update - 2026-05-22T02:11:53.526Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/async-01-doctrine-transport-publish-bus to origin.
+- branch 'task/async-01-doctrine-transport-publish-bus' set up to track 'origin/task/async-01-doctrine-transport-publish-bus'.
+- Created PR: https://github.com/ineersa/agent-core/pull/38
