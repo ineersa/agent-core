@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\CLI;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Controller\HeadlessController;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
@@ -44,12 +45,16 @@ final class AgentCommand
         private InteractiveMode $interactiveMode,
         private HatfieldSessionStore $sessionStore,
         private LoggerInterface $logger,
+        private ?HeadlessController $controller = null,
     ) {
     }
 
     public function __invoke(
         #[Option(description: 'Run in headless JSONL protocol mode (stdin/stdout)')]
         bool $headless = false,
+
+        #[Option(description: 'Run in controller event-loop mode (stdin/stdout, non-blocking)')]
+        bool $controller = false,
 
         #[Option(description: 'Transport type: "in-process" (default) or "process"')]
         string $transport = 'in-process',
@@ -73,6 +78,10 @@ final class AgentCommand
         }
 
         try {
+            if ($controller) {
+                return $this->runController();
+            }
+
             if ($headless) {
                 return $this->runHeadless($output);
             }
@@ -107,6 +116,15 @@ final class AgentCommand
             ) : null,
             sessionId: $sessionId,
         );
+    }
+
+    private function runController(): int
+    {
+        if (null === $this->controller) {
+            throw new \RuntimeException('Controller service not available');
+        }
+
+        return $this->controller->run();
     }
 
     private function runHeadless(OutputInterface $output): int

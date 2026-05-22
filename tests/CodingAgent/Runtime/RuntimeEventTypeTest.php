@@ -15,18 +15,18 @@ final class RuntimeEventTypeTest extends TestCase
     /**
      * Every case must have a non-empty dot-separated string value.
      */
-    public function test_every_case_has_non_empty_value(): void
+    public function testEveryCaseHasNonEmptyValue(): void
     {
         $cases = RuntimeEventTypeEnum::cases();
 
-        self::assertNotEmpty($cases, 'Enum must have at least one case');
+        $this->assertNotEmpty($cases, 'Enum must have at least one case');
 
         foreach ($cases as $case) {
-            self::assertNotEmpty(
+            $this->assertNotEmpty(
                 $case->value,
                 \sprintf('Case %s must have a non-empty string value', $case->name),
             );
-            self::assertStringContainsString(
+            $this->assertStringContainsString(
                 '.',
                 $case->value,
                 \sprintf('Case %s value "%s" must contain a dot separator', $case->name, $case->value),
@@ -41,7 +41,7 @@ final class RuntimeEventTypeTest extends TestCase
      * .pi/plans/runtime-transcript-vertical-slice-plan.md § Proposed
      * normalized runtime event families.
      */
-    public function test_all_planned_event_names_are_covered(): void
+    public function testAllPlannedEventNamesAreCovered(): void
     {
         $expected = [
             // Run/turn lifecycle
@@ -100,12 +100,21 @@ final class RuntimeEventTypeTest extends TestCase
             RuntimeEventTypeEnum::UsageUpdated,
             RuntimeEventTypeEnum::ContextUpdated,
             RuntimeEventTypeEnum::CostUpdated,
+
+            // Command protocol (controller <-> TUI)
+            RuntimeEventTypeEnum::CommandAck,
+            RuntimeEventTypeEnum::CommandRejected,
+
+            // Runtime lifecycle (controller process)
+            RuntimeEventTypeEnum::RuntimeReady,
+            RuntimeEventTypeEnum::ProtocolError,
+            RuntimeEventTypeEnum::RunResumed,
         ];
 
         $cases = RuntimeEventTypeEnum::cases();
 
         foreach ($expected as $expectedCase) {
-            self::assertContains(
+            $this->assertContains(
                 $expectedCase,
                 $cases,
                 \sprintf(
@@ -116,7 +125,7 @@ final class RuntimeEventTypeTest extends TestCase
             );
         }
 
-        self::assertSameSize(
+        $this->assertSameSize(
             $expected,
             $cases,
             'RuntimeEventTypeEnum enum has unexpected extra cases — update this test',
@@ -127,10 +136,10 @@ final class RuntimeEventTypeTest extends TestCase
      * Each event type string must match the documented format:
      * lowercase letters, digits, underscores, dots.
      */
-    public function test_value_strings_match_naming_convention(): void
+    public function testValueStringsMatchNamingConvention(): void
     {
         foreach (RuntimeEventTypeEnum::cases() as $case) {
-            self::assertMatchesRegularExpression(
+            $this->assertMatchesRegularExpression(
                 '/^[a-z0-9_]+(\.[a-z0-9_]+)+$/',
                 $case->value,
                 \sprintf(
@@ -145,12 +154,12 @@ final class RuntimeEventTypeTest extends TestCase
     /**
      * No two enum cases may share the same string value.
      */
-    public function test_no_duplicate_string_values(): void
+    public function testNoDuplicateStringValues(): void
     {
         $seen = [];
 
         foreach (RuntimeEventTypeEnum::cases() as $case) {
-            self::assertArrayNotHasKey(
+            $this->assertArrayNotHasKey(
                 $case->value,
                 $seen,
                 \sprintf(
@@ -168,9 +177,9 @@ final class RuntimeEventTypeTest extends TestCase
      * Verify family() returns the expected category for every case.
      */
     #[DataProvider('familyProvider')]
-    public function test_family(RuntimeEventTypeEnum $case, string $expectedFamily): void
+    public function testFamily(RuntimeEventTypeEnum $case, string $expectedFamily): void
     {
-        self::assertSame($expectedFamily, $case->family());
+        $this->assertSame($expectedFamily, $case->family());
     }
 
     /**
@@ -187,6 +196,7 @@ final class RuntimeEventTypeTest extends TestCase
             RuntimeEventTypeEnum::RunCompleted,
             RuntimeEventTypeEnum::RunFailed,
             RuntimeEventTypeEnum::RunCancelled,
+            RuntimeEventTypeEnum::RunResumed,
         ];
 
         foreach ($lifecycle as $case) {
@@ -257,6 +267,19 @@ final class RuntimeEventTypeTest extends TestCase
             yield $case->name => [$case, 'cancellation'];
         }
 
+        $command = [
+            RuntimeEventTypeEnum::CommandAck,
+            RuntimeEventTypeEnum::CommandRejected,
+        ];
+
+        foreach ($command as $case) {
+            yield $case->name => [$case, 'command'];
+        }
+
+        yield RuntimeEventTypeEnum::RuntimeReady->name => [RuntimeEventTypeEnum::RuntimeReady, 'runtime'];
+
+        yield RuntimeEventTypeEnum::ProtocolError->name => [RuntimeEventTypeEnum::ProtocolError, 'protocol'];
+
         $metadata = [
             RuntimeEventTypeEnum::ModelChanged,
             RuntimeEventTypeEnum::ReasoningChanged,
@@ -273,52 +296,62 @@ final class RuntimeEventTypeTest extends TestCase
     /**
      * Verify the helper predicates.
      */
-    public function test_helper_predicates(): void
+    public function testHelperPredicates(): void
     {
-        self::assertTrue(RuntimeEventTypeEnum::RunStarted->isLifecycle());
-        self::assertFalse(RuntimeEventTypeEnum::RunStarted->isAssistantStream());
-        self::assertFalse(RuntimeEventTypeEnum::RunStarted->isTool());
-        self::assertFalse(RuntimeEventTypeEnum::RunStarted->isHitl());
-        self::assertFalse(RuntimeEventTypeEnum::RunStarted->isCancellation());
+        $this->assertTrue(RuntimeEventTypeEnum::RunStarted->isLifecycle());
+        $this->assertFalse(RuntimeEventTypeEnum::RunStarted->isAssistantStream());
+        $this->assertFalse(RuntimeEventTypeEnum::RunStarted->isTool());
+        $this->assertFalse(RuntimeEventTypeEnum::RunStarted->isHitl());
+        $this->assertFalse(RuntimeEventTypeEnum::RunStarted->isCancellation());
 
-        self::assertTrue(RuntimeEventTypeEnum::AssistantTextDelta->isAssistantStream());
-        self::assertFalse(RuntimeEventTypeEnum::AssistantTextDelta->isLifecycle());
+        $this->assertTrue(RuntimeEventTypeEnum::AssistantTextDelta->isAssistantStream());
+        $this->assertFalse(RuntimeEventTypeEnum::AssistantTextDelta->isLifecycle());
 
-        self::assertTrue(RuntimeEventTypeEnum::ToolCallStarted->isTool());
-        self::assertTrue(RuntimeEventTypeEnum::ToolExecutionCompleted->isTool());
+        $this->assertTrue(RuntimeEventTypeEnum::ToolCallStarted->isTool());
+        $this->assertTrue(RuntimeEventTypeEnum::ToolExecutionCompleted->isTool());
 
-        self::assertTrue(RuntimeEventTypeEnum::HumanInputRequested->isHitl());
-        self::assertTrue(RuntimeEventTypeEnum::CancellationRequested->isCancellation());
+        $this->assertTrue(RuntimeEventTypeEnum::HumanInputRequested->isHitl());
+        $this->assertTrue(RuntimeEventTypeEnum::CancellationRequested->isCancellation());
+
+        $this->assertTrue(RuntimeEventTypeEnum::RuntimeReady->isRuntime());
+        $this->assertFalse(RuntimeEventTypeEnum::RuntimeReady->isLifecycle());
+
+        $this->assertTrue(RuntimeEventTypeEnum::ProtocolError->isProtocol());
+        $this->assertFalse(RuntimeEventTypeEnum::ProtocolError->isLifecycle());
+
+        $this->assertTrue(RuntimeEventTypeEnum::RunResumed->isLifecycle());
+        $this->assertFalse(RuntimeEventTypeEnum::RunResumed->isCancellation());
     }
 
     /**
      * RuntimeEventTypeEnum::from() must round-trip from the string value.
      */
-    public function test_from_string_value_roundtrip(): void
+    public function testFromStringValueRoundtrip(): void
     {
         foreach (RuntimeEventTypeEnum::cases() as $case) {
             $restored = RuntimeEventTypeEnum::from($case->value);
-            self::assertSame($case, $restored);
+            $this->assertSame($case, $restored);
         }
     }
 
     /**
      * RuntimeEventTypeEnum::tryFrom() must return null for unknown values.
      */
-    public function test_tryFrom_unknown_value_returns_null(): void
+    public function testTryFromUnknownValueReturnsNull(): void
     {
-        self::assertNull(RuntimeEventTypeEnum::tryFrom('nonexistent.event'));
-        self::assertNull(RuntimeEventTypeEnum::tryFrom(''));
+        $this->assertNull(RuntimeEventTypeEnum::tryFrom('nonexistent.event'));
+        $this->assertNull(RuntimeEventTypeEnum::tryFrom(''));
     }
 
     /**
      * Verify the total count of enumerated event types so accidental
      * additions or deletions are caught in review.
      */
-    public function test_total_count_is_expected(): void
+    public function testTotalCountIsExpected(): void
     {
         // 8 lifecycle + 1 user_input + 9 assistant + 8 tool + 2 progress
-        // + 6 HITL + 2 cancellation + 5 metadata = 41
-        self::assertCount(41, RuntimeEventTypeEnum::cases());
+        // + 6 HITL + 2 cancellation + 5 metadata + 2 command
+        // + 1 runtime + 1 protocol + 1 resumed = 46
+        $this->assertCount(46, RuntimeEventTypeEnum::cases());
     }
 }
