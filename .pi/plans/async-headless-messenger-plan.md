@@ -83,46 +83,57 @@ Push model. No event feed table. No cleanup needed — Messenger transport handl
 
 ### Controller event loop
 
+Uses Revolt event loop (`revolt/event-loop` v1.0, already installed via `symfony/tui`).
+
 ```php
-// Simplified controller loop
-while (true) {
-    $read = [$stdin];
-    $write = null;
-    $except = null;
+use Revolt\EventLoop;
 
-    // 1. Non-blocking check for TUI commands
-    stream_select($read, $write, $except, 0, 10_000); // 10ms timeout
-    if (in_array($stdin, $read)) {
-        $command = readJsonlLine($stdin);
-        if ($command) {
-            writeJsonl($stdout, command_ack($command, 'accepted'));
-            $commandBus->dispatch(mapCommand($command));
-        }
+// 1. React to TUI commands immediately when bytes arrive on stdin
+EventLoop::onReadable($stdin, function (string $streamId, $stream) {
+    $command = readJsonlLine($stream);
+    if ($command) {
+        writeJsonl($stdout, command_ack($command, 'accepted'));
+        $commandBus->dispatch(mapCommand($command));
     }
+});
 
-    // 2. Poll publish transport for runtime events
+// 2. Poll publish transport on a tight interval (10ms) for runtime events
+EventLoop::repeat(0.01, function () use ($publishReceiver, $stdout) {
     $envelopes = $publishReceiver->get();
     foreach ($envelopes as $envelope) {
         $message = $envelope->getMessage(); // PublishRuntimeEvent
         writeJsonl($stdout, $message->event->toArray());
-        $publishReceiver->ack($envelope); // removes from queue
+        $publishReceiver->ack($envelope);
     }
+});
 
-    // 3. Check child process health
+// 3. Supervise consumer child processes every 5 seconds
+EventLoop::repeat(5.0, function () {
     superviseConsumers();
+});
 
-    // 4. Brief sleep to avoid busy loop
-    usleep(10_000); // 10ms
-}
+// 4. Handle SIGTERM/SIGINT gracefully
+EventLoop::onSignal(SIGTERM, function () {
+    stopConsumers();
+    EventLoop::stop();
+});
+
+EventLoop::run();
 ```
 
-No ReactPHP needed. `stream_select` + Symfony Messenger `Receiver::get()` handles everything.
+Key Revolt APIs used:
+- `onReadable($stream, $callback)` — fires when stdin has bytes, true non-blocking I/O
+- `repeat($interval, $callback)` — periodic publish transport poll + consumer supervision
+- `onSignal($signo, $callback)` — graceful shutdown on SIGTERM/SIGINT
+- `queue($callback)` — deferred work without blocking the loop
+- `run()` — enters event loop, blocks until `stop()`
 
 ### Latency
 
-- Command ACK: ~1-10ms (stdin read + stdout write + Messenger dispatch)
-- Event forwarding: ~10-20ms (10ms poll interval + Receiver::get() + stdout write)
+- Command ACK: ~1-5ms (onReadable fires immediately on stdin data)
+- Event forwarding: ~10-15ms (10ms repeat interval + Receiver::get() + stdout write)
 - Cancel propagation: ACK immediately, cancel state set in run_control consumer
+- Consumer supervision: 5s check interval, hard-kill timeout configurable
 
 ## Publish bus design
 
@@ -588,7 +599,7 @@ Suggested new tests:
 | In-memory idempotency duplicates events | High | Persist idempotency before multi-worker scaling |
 | Controller crash loses in-flight transients | Low | Acceptable — transients are streaming snapshots, not state |
 | Command bus becomes async by mistake | High | Explicit routing config; command bus never routes to Doctrine transport |
-| Controller event loop stalls | Medium | Keep controller thin; measure tick latency; add watchdog timer |
+| Controller event loop stalls | Medium | Revolt event loop is production-grade; keep controller callbacks thin; no blocking I/O in callbacks |
 | Removing runtime-events.jsonl breaks in-process path | Medium | In-process path never reads the file (uses InMemoryRuntimeEventSink) |
 
 ## Recommended task breakdown
@@ -638,3 +649,4 @@ The `OutboxSink` concept can return as `Pipe` (TUI) and `Mercure` (web).
 - 2026-05-21: revised for FrameworkBundle adoption
 - 2026-05-21: revised with publish bus + SQLite event feed table
 - 2026-05-21: revised with controller as event hub — no feed table, controller polls publish transport and pushes to TUI, runtime-events.jsonl deleted, publish bus carries only transient streaming deltas, canonical events stay in events.jsonl
+- 2026-05-21: revised controller to use Revolt event loop (already available via symfony/tui) instead of manual stream_select
