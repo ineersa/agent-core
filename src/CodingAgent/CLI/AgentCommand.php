@@ -79,7 +79,7 @@ final class AgentCommand
 
         try {
             if ($controller) {
-                return $this->runController($output);
+                return $this->runController();
             }
 
             if ($headless) {
@@ -118,7 +118,7 @@ final class AgentCommand
         );
     }
 
-    private function runController(OutputInterface $output): int
+    private function runController(): int
     {
         if (null === $this->controller) {
             throw new \RuntimeException('Controller service not available');

@@ -99,9 +99,15 @@ services:
 
   # ─── Controller event loop ───
 
-  Ineersa\CodingAgent\Runtime\Controller\HeadlessController:
+  Ineersa\CodingAgent\Runtime\Controller\ConsumerSupervisor:
     arguments:
-      $publishReceiver: '@messenger.transport.publish'
+      $projectDir: '%kernel.project_dir%'
+
+  Ineersa\CodingAgent\Runtime\Controller\PublishTransportPoller:
+    arguments:
+      $receiver: '@messenger.transport.publish'
+
+  # HeadlessController is autowired via resource import.
 
   # ─── Messenger publish bus wiring ───
 
