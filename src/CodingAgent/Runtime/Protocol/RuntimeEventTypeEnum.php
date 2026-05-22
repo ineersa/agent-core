@@ -83,18 +83,29 @@ enum RuntimeEventTypeEnum: string
     case ContextUpdated = 'context.updated';
     case CostUpdated = 'cost.updated';
 
+    // ── Command protocol (controller <-> TUI) ───────────────────────────────
+
+    case CommandAck = 'command.ack';
+    case CommandRejected = 'command.rejected';
+
+    // ── Runtime lifecycle (controller process) ─────────────────────────────
+
+    case RuntimeReady = 'runtime.ready';
+    case ProtocolError = 'protocol.error';
+    case RunResumed = 'run.resumed';
+
     /**
      * Return the event family name for grouping and documentation.
      *
      * @return string One of: lifecycle, user_input, assistant_stream, tool,
-     *                progress, hitl, cancellation, metadata
+     *                progress, hitl, cancellation, metadata, runtime, protocol
      */
     public function family(): string
     {
         return match ($this) {
             self::RunStarted, self::TurnStarted, self::TurnCompleted,
             self::TurnFailed, self::TurnCancelled, self::RunCompleted,
-            self::RunFailed, self::RunCancelled => 'lifecycle',
+            self::RunFailed, self::RunCancelled, self::RunResumed => 'lifecycle',
 
             self::UserMessageSubmitted => 'user_input',
 
@@ -116,6 +127,11 @@ enum RuntimeEventTypeEnum: string
             self::ApprovalApproved, self::ApprovalRejected => 'hitl',
 
             self::CancellationRequested, self::OperationCancelled => 'cancellation',
+
+            self::CommandAck, self::CommandRejected => 'command',
+
+            self::RuntimeReady => 'runtime',
+            self::ProtocolError => 'protocol',
 
             self::ModelChanged, self::ReasoningChanged, self::UsageUpdated,
             self::ContextUpdated, self::CostUpdated => 'metadata',
@@ -160,5 +176,21 @@ enum RuntimeEventTypeEnum: string
     public function isCancellation(): bool
     {
         return 'cancellation' === $this->family();
+    }
+
+    /**
+     * Return true when the event type belongs to the runtime family.
+     */
+    public function isRuntime(): bool
+    {
+        return 'runtime' === $this->family();
+    }
+
+    /**
+     * Return true when the event type belongs to the protocol family.
+     */
+    public function isProtocol(): bool
+    {
+        return 'protocol' === $this->family();
     }
 }

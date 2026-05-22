@@ -98,7 +98,7 @@ parameters:
     - name: AppRuntimeInternals
       collectors:
         - type: directory
-          value: src/CodingAgent/Runtime/(InProcess|Process|Stream|Mapping|Publish)/.*
+          value: src/CodingAgent/Runtime/(InProcess|Process|Stream|Mapping|Publish|Controller)/.*
 
     - name: AppRuntimeProjection
       collectors:

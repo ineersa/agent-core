@@ -49,7 +49,7 @@ Build the controller process — a Revolt event loop that reads TUI commands, AC
 Status: IN-PROGRESS
 Branch: task/async-03-controller-event-loop-command-ack
 Worktree: /home/ineersa/projects/agent-core-worktrees/async-03-controller-event-loop-command-ack
-Fork run:
+Fork run: slhj3ckvypgm
 PR URL:
 PR Status:
 Started: 2026-05-22T02:34:22.140Z
@@ -64,3 +64,8 @@ Completed:
 - Created worktree /home/ineersa/projects/agent-core-worktrees/async-03-controller-event-loop-command-ack.
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/async-03-controller-event-loop-command-ack.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/async-03-controller-event-loop-command-ack.
+
+## Task workflow update - 2026-05-22T17:12:29.937Z
+- Recorded fork run: slhj3ckvypgm
+- Validation: 806 tests pass, 0 deptrac violations, phpstan clean, cs-check clean; bin/console agent --controller flag available; messenger.transport.publish injectable as ReceiverInterface
+- Summary: Implemented by fork slhj3ckvypgm. Commit f83fb806. 6 files changed (+531/-7). Revolt event loop controller with command ACK, publish transport polling, consumer supervision. New --controller flag. InProcessAgentSessionClient used for command dispatch (blocks, but ACK emitted first). 806 tests pass, deptrac clean.
