@@ -2,7 +2,7 @@
 #
 # Only DBAL — no ORM. The connection is used exclusively by
 # Symfony Messenger Doctrine transport for async message queues
-# (run_control, llm, tool, publish) defined in framework.yaml.
+# (run_control, llm, tool, publish) defined in config/packages/messenger.yaml.
 #
 doctrine:
     dbal:
@@ -10,4 +10,6 @@ doctrine:
         connections:
             default:
                 driver: pdo_sqlite
-                path: '%kernel.project_dir%/.hatfield/messenger.sqlite'
+                # CWD-based: .hatfield/ lives relative to the user's working directory,
+                # not the app install root. See Kernel::build() where app.cwd is set.
+                path: '%app.cwd%/.hatfield/messenger.sqlite'
