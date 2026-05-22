@@ -5,32 +5,69 @@ Context after RTVS-07 merge:
 
 RTVS-07 is merged and real `castor test:llm-real` passed for two-turn TUI/LLM flow. However several architectural/runtime follow-ups were discovered and should be handled before RTVS-08 replay work.
 
-Findings to preserve:
+## Implementation — completed in fork run
 
-1. `SubmitListener` currently decides follow_up vs steer using `$screen->registry()->getWorkingMessage() !== ''`. This is likely only a presentation heuristic, not an authoritative run activity signal. Need a proper runtime/TUI state indicator for whether the agent is actively running/processing vs idle/completed.
-2. Command semantics clarified by user:
-   - `follow_up` = normal next user message when LLM/run is idle/completed; should be sent as a normal user message for the next turn.
-   - `steer` = steering/injected message while LLM/tool loop is running; should queue and apply at next safe boundary between LLM/tool turns.
-3. `after_turn_commit_hook_failed` warning fires on every commit with `events must be a list of AfterTurnCommitEventSummary.` It is non-blocking in RTVS-07 but should be fixed or deliberately removed/noised down.
-4. TUI/LLM execution is still synchronous in the in-process path. During a second submit, rendering can block until the LLM call returns. This is acceptable short-term but should be documented/considered before richer streaming UX.
-5. The product-level TUI smoke tests now cover a lot of RTVS-09/10 intent. RTVS-09 and RTVS-10 should be reviewed/re-scoped instead of blindly implemented. RTVS-08 replay should wait until these follow-ups are resolved so replay doesn't codify unstable runtime semantics.
+### AC1: Authoritative TUI run activity state (replaces getWorkingMessage heuristic)
 
-Related RTVS status guidance:
-- RTVS-09 deterministic vertical slice tests: likely mostly covered by `TuiAgentSmokeTest` + real `castor test:llm-real`; reassess and either close, shrink, or convert to focused regression coverage.
-- RTVS-10 manual smoke/docs: largely covered by AGENTS.md validation rule + real smoke workflow; reassess docs gaps only.
-- RTVS-08 session replay: defer until follow_up/steer state semantics and hook warning are settled.
+- Created `src/Tui/Runtime/RunActivityStateEnum` with states:
+  `Idle`, `Starting`, `Running`, `WaitingHuman`, `Cancelling`, `Completed`, `Failed`, `Cancelled`
+- Added `RunActivityStateEnum::$activity` field to `TuiSessionState` (default: `Idle`)
+- Updated `SubmitListener` to use `$state->activity->isActive()` instead of
+  `$screen->registry()->getWorkingMessage() !== ''`
+  - Idle → `follow_up` (transitioned to `Starting` optimistically)
+  - Active → `steer`
+- Updated `RuntimeEventPoller` with `updateActivity()` method that transitions
+  `$state->activity` based on each observed `RuntimeEventTypeEnum` value:
+  - Start/turn/assistant/tool/user events → `Running`
+  - HITL request events → `WaitingHuman`
+  - Cancel request → `Cancelling`
+  - Run completion/failure/cancellation → terminal states
+  - Terminal states are never overwritten
+
+### AC2: Fix after_turn_commit_hook_failed warning
+
+Root cause: Production serializer lacked `ArrayDenormalizer` and
+`PhpDocExtractor`, so `HookDispatcher::dispatchAfterTurnCommit()` could not
+denormalize `AfterTurnCommitHookContext::events` to
+`list<AfterTurnCommitEventSummary>`, causing the constructor type check to fail.
+
+Fix: Updated `config/packages/serializer.yaml` with full serializer metadata:
+- Added `ArrayDenormalizer` to normalizer stack
+- Configured `ObjectNormalizer` with `ClassMetadataFactory` (AttributeLoader),
+  `MetadataAwareNameConverter`, and `PropertyInfoExtractor` (PhpDocExtractor +
+  ReflectionExtractor)
+- All supporting services wired as named DI services
+
+Previously the warning fired on **every** commit. With the fix, the denormalize
+round-trip in HookDispatcher produces correctly typed objects.
+
+### AC3: RTVS-08/09/10 task scope updates per user decision
+
+- RTVS-09: **Removed** (`rm tasks/TODO/rtvs-09-*.md`)
+- RTVS-10: **Removed** (`rm tasks/TODO/rtvs-10-*.md`)
+- RTVS-08: Updated with explicit dependency on RTVS-11 AC1 + AC2
+
+### AC4: Async/process runtime plan
+
+Separate plan document created at `docs/async-process-runtime-plan.md` covering:
+- Architecture: TUI process ↔ headless control process ↔ worker runtime
+- Command ack latency targets
+- Graceful vs hard cancel ladder
+- Steer queue and application at safe boundaries
+- Non-blocking LLM/polling constraints
+- Implementation phases
 
 ## Acceptance criteria
-- Replace `getWorkingMessage()`-based follow_up/steer decision with an authoritative run activity signal or document why the current heuristic is acceptable short-term.
-- Validate follow_up vs steer semantics with a real product-level flow: idle second message uses follow_up; active/running submit uses steer or has an explicit tested behavior.
-- Fix or intentionally remove/no-op the universal `after_turn_commit_hook_failed` warning; logs should not emit this warning on every normal commit.
-- Reassess RTVS-08/09/10 task scopes and update task files accordingly: 09/10 may be closed/shrunk if already covered; 08 remains deferred until follow-ups are done.
-- Run and report required product-level validation (`castor test:llm-real` or `castor run:agent-test`) plus normal quality gates for any runtime changes.
+- [x] Replace `getWorkingMessage()`-based follow_up/steer decision with an authoritative run activity signal.
+- [ ] Validate follow_up vs steer semantics with a real product-level flow (`castor test:llm-real`).
+- [x] Fix universal `after_turn_commit_hook_failed` warning — logs should not emit this warning on every normal commit.
+- [x] Reassess RTVS-08/09/10 task scopes and update task files: 09/10 removed; 08 updated with dependency notes.
+- [ ] Run and report product-level validation.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/rtvs-11-runtime-followups-and-rtvs-replan
+Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-11-runtime-followups-and-rtvs-replan
 Fork run:
 PR URL:
 PR Status:
@@ -39,3 +76,4 @@ Completed:
 
 ## Work log
 - Created: 2026-05-21T22:28:39.502Z
+- Fork implementation completed: RunActivityStateEnum, TuiSessionState activity field, SubmitListener heuristic removal, RuntimeEventPoller activity transitions, serializer fix, task file cleanup, async process plan.

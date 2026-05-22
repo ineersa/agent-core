@@ -26,6 +26,15 @@ final class TuiSessionState
     public ?RunHandle $handle = null;
     public ?StartRunRequest $request = null;
 
+    /**
+     * Authoritative TUI activity state for the current run.
+     *
+     * Updated by SubmitListener (on send/start/cancel) and by
+     * RuntimeEventPoller (on each poll from runtime events).
+     * Replaces the prior getWorkingMessage() heuristic.
+     */
+    public RunActivityStateEnum $activity = RunActivityStateEnum::Idle;
+
     /** @var list<TranscriptBlock> Transcript blocks (plain, un-themed) */
     public array $transcript = [];
 
