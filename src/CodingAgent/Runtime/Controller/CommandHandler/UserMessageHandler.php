@@ -14,8 +14,10 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 /**
  * Handles user_message commands via Symfony EventDispatcher.
  *
- * Sends a user message for the current run and forwards all resulting
- * runtime events (steer/follow-up response).
+ * Dispatches a user message to the run_control transport (ASYNC-05)
+ * and immediately returns to the event loop. Events from the consumer
+ * process are forwarded to TUI via the controller's periodic EventStore
+ * drain timer.
  */
 #[AsEventListener(event: ControllerCommandEvent::class)]
 final readonly class UserMessageHandler
@@ -44,14 +46,15 @@ final readonly class UserMessageHandler
             return;
         }
 
+        // Non-blocking: dispatches ApplyCommand to run_control transport and
+        // returns immediately. The run_control consumer picks it up and
+        // processes the message.
         $this->client->send($runId, new UserCommand(
             type: 'message',
             text: (string) ($command->payload['text'] ?? ''),
         ));
 
-        // Forward all events from the follow-up steer/response.
-        foreach ($this->client->events($runId) as $runtimeEvent) {
-            $event->emit($runtimeEvent);
-        }
+        // Events are NOT iterated here — they arrive through the controller's
+        // periodic EventStore drain and publish transport poller (ASYNC-05).
     }
 }

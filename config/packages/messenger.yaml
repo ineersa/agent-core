@@ -16,15 +16,22 @@
 # Transports use Doctrine SQLite backed by .hatfield/messenger.sqlite.
 # See config/packages/doctrine.yaml for DBAL configuration.
 #
-# After ASYNC-04:
+# After ASYNC-05:
+# - StartRun → run_control transport (messenger:consume run_control)
+# - ApplyCommand → run_control transport
+# - AdvanceRun → run_control transport
 # - ExecuteLlmStep → llm transport (messenger:consume llm)
 # - ExecuteToolCall → tool transport (messenger:consume tool)
+# - PublishRuntimeEvent → publish transport (controller polls, forwards to TUI)
 # - Result messages (LlmStepResult, ToolCallResult) stay sync on command bus
 #   within the consumer process where the worker ran. RunOrchestrator is
 #   registered for agent.command.bus and handles results in the same process.
-# - PublishRuntimeEvent → publish transport (controller polls, forwards to TUI)
-# - StartRun, ApplyCommand, AdvanceRun remain un-routed (sync command bus).
-#   ASYNC-05 will route these to run_control transport.
+#
+# run_control transport uses PhpSerializer because StartRun contains complex
+# objects (StartRunPayload with AgentMessage[] and RunMetadata) that would
+# not round-trip correctly through the default Symfony Serializer.
+# llm, tool, and publish transports use the default Symfony Serializer since
+# their messages contain only scalar/array properties.
 
 framework:
     messenger:
@@ -47,12 +54,17 @@ framework:
                     allow_no_senders: true
 
         transports:
-            run_control: 'doctrine://default?queue_name=run_control'
+            run_control:
+                dsn: 'doctrine://default?queue_name=run_control'
+                serializer: 'messenger.transport.native_php_serializer'
             llm:         'doctrine://default?queue_name=llm'
             tool:        'doctrine://default?queue_name=tool'
             publish:     'doctrine://default?queue_name=publish'
 
         routing:
+            Ineersa\AgentCore\Domain\Message\StartRun: run_control
+            Ineersa\AgentCore\Domain\Message\ApplyCommand: run_control
+            Ineersa\AgentCore\Domain\Message\AdvanceRun: run_control
             Ineersa\AgentCore\Domain\Message\ExecuteLlmStep: llm
             Ineersa\AgentCore\Domain\Message\ExecuteToolCall: tool
             Ineersa\AgentCore\Domain\Message\PublishRuntimeEvent: publish

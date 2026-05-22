@@ -16,9 +16,11 @@ use Symfony\Component\Process\Process;
 /**
  * Process-isolated implementation of AgentSessionClient.
  *
- * Spawns `bin/console agent --headless` and communicates via JSONL over stdin/stdout.
- * Each command is written as a JSONL line to stdin; events are read from stdout.
- * Stderr is reserved for logs/debug output.
+ * Spawns `bin/console agent --controller` and communicates via JSONL over stdin/stdout.
+ * The controller process launches messenger:consume run_control, llm, and tool
+ * subprocesses, enabling fully async execution. Each command is written as a
+ * JSONL line to stdin; events are read from stdout. Stderr is reserved for
+ * logs/debug output.
  *
  * @todo Implement full process lifecycle, reconnection, heartbeat detection.
  */
@@ -69,6 +71,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     public function start(StartRunRequest $request): RunHandle
     {
         $this->ensureProcessRunning();
+        $this->waitForRuntimeReady();
 
         $cmd = new RuntimeCommand(
             id: uniqid('cmd_', true),
@@ -84,20 +87,32 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
         $this->writeCommand($cmd);
 
-        // Read the first event to get the run ID
-        /** @var RuntimeEvent $event */
-        foreach ($this->readEvents() as $event) {
-            if ('run_started' === $event->type) {
-                $this->runIdMap[$cmd->id] = $event->runId;
+        // Read events until run_started arrives.
+        $timeout = 15.0;
+        $start = microtime(true);
 
-                return new RunHandle(runId: $event->runId, status: 'running');
+        while (microtime(true) - $start < $timeout) {
+            /** @var RuntimeEvent $event */
+            foreach ($this->readEvents() as $event) {
+                if ('run_started' === $event->type) {
+                    $this->runIdMap[$cmd->id] = $event->runId;
+
+                    return new RunHandle(runId: $event->runId, status: 'running');
+                }
+
+                if ('runtime.ready' === $event->type) {
+                    continue; // Already ready, skip.
+                }
+
+                // Buffer non-matching events
+                $this->eventBuffer->enqueue($event);
             }
 
-            // Buffer non-matching events
-            $this->eventBuffer->enqueue($event);
+            // No events yet — brief sleep to avoid busy-wait.
+            usleep(10_000);
         }
 
-        throw new \RuntimeException('Agent process did not emit run_started event');
+        throw new \RuntimeException('Agent process did not emit run_started event within '.$timeout.'s');
     }
 
     public function resume(string $runId): RunHandle
@@ -203,8 +218,11 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             throw new \RuntimeException(\sprintf('Console not found at %s', $consolePath));
         }
 
+        // Spawn controller mode instead of legacy headless mode.
+        // The controller launches messenger:consume run_control, llm, and
+        // tool processes, enabling full async execution (ASYNC-05).
         $this->process = new Process(
-            command: ['php', $consolePath, 'agent', '--headless'],
+            command: ['php', $consolePath, 'agent', '--controller'],
             cwd: $this->projectDir,
             env: [
                 'APP_ENV' => $_SERVER['APP_ENV'] ?? 'dev',
@@ -214,6 +232,33 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
         $this->process->setTimeout(null);
         $this->process->start();
+    }
+
+    /**
+     * Wait for the controller to emit runtime.ready before sending commands.
+     *
+     * The controller boots the kernel and launches consumers before
+     * entering the event loop. This method blocks until runtime.ready
+     * is received, up to 15 seconds.
+     */
+    private function waitForRuntimeReady(): void
+    {
+        $timeout = 15.0;
+        $start = microtime(true);
+
+        while (microtime(true) - $start < $timeout) {
+            foreach ($this->readEvents() as $event) {
+                if ('runtime.ready' === $event->type) {
+                    return;
+                }
+
+                $this->eventBuffer->enqueue($event);
+            }
+
+            usleep(10_000);
+        }
+
+        throw new \RuntimeException('Controller did not emit runtime.ready within '.$timeout.'s');
     }
 
     private function writeCommand(RuntimeCommand $command): void

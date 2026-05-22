@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
+use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -27,6 +28,11 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
  * - PublishTransportPoller polls the Doctrine publish transport
  * - ConsumerSupervisor manages messenger:consume child processes
  *
+ * Canonical runtime events (committed by consumer processes to events.jsonl)
+ * are polled via InProcessAgentSessionClient and forwarded to TUI through
+ * a periodic event drain timer. Transient streaming deltas flow through
+ * the publish transport.
+ *
  * Command protocol:
  *   TUI → stdin JSONL  → controller parses → emits command.ack → dispatches event
  *   Controller → stdout JSONL → TUI reads events including command.ack
@@ -40,6 +46,9 @@ final class HeadlessController
     /** 10ms publish transport poll interval. */
     private const float PUBLISH_POLL_INTERVAL = 0.01;
 
+    /** 50ms event drain poll interval. */
+    private const float EVENT_DRAIN_INTERVAL = 0.05;
+
     /** 5s consumer supervision interval. */
     private const float SUPERVISE_INTERVAL = 5.0;
 
@@ -48,11 +57,15 @@ final class HeadlessController
 
     private bool $shuttingDown = false;
 
+    /** @var array<string, int> runId => lastForwardedSeq */
+    private array $runEventCursors = [];
+
     public function __construct(
         private readonly PublishTransportPoller $publishPoller,
         private readonly ConsumerSupervisor $consumerSupervisor,
         private readonly EventDispatcherInterface $dispatcher,
         private readonly LoggerInterface $logger,
+        private readonly ?InProcessAgentSessionClient $eventClient = null,
     ) {
     }
 
@@ -70,11 +83,11 @@ final class HeadlessController
             payload: ['version' => '1.0', 'transport' => 'controller'],
         ));
 
-        // Launch messenger consumers for async execution transports.
-        // These consume from llm and tool Doctrine queues, picking up
-        // ExecuteLlmStep and ExecuteToolCall messages dispatched by the
-        // StepDispatcher after routing changes (ASYNC-04).
-        // The run_control consumer will be launched in ASYNC-05.
+        // Launch messenger consumers for async execution and command transports.
+        // - run_control consumes StartRun, ApplyCommand, AdvanceRun (ASYNC-05)
+        // - llm consumes ExecuteLlmStep (ASYNC-04)
+        // - tool consumes ExecuteToolCall (ASYNC-04)
+        $this->consumerSupervisor->launch('run_control');
         $this->consumerSupervisor->launch('llm');
         $this->consumerSupervisor->launch('tool');
 
@@ -108,6 +121,46 @@ final class HeadlessController
 
             foreach ($this->publishPoller->poll() as $event) {
                 $this->emit($event);
+            }
+        });
+
+        // Periodic event drain: poll canonical events from EventStore via
+        // InProcessAgentSessionClient and forward to TUI. Only runs when
+        // there are active runs registered via emit(). The TUI deduplicates
+        // by seq, so re-forwarding already-seen events is harmless.
+        EventLoop::repeat(self::EVENT_DRAIN_INTERVAL, function (): void {
+            if ($this->shuttingDown || null === $this->eventClient) {
+                return;
+            }
+
+            // Snapshot active run IDs to avoid modification during iteration.
+            $activeRuns = array_keys($this->runEventCursors);
+
+            foreach ($activeRuns as $runId) {
+                $cursor = $this->runEventCursors[$runId] ?? null;
+                if (null === $cursor) {
+                    continue; // Run was cleaned up during iteration.
+                }
+
+                try {
+                    foreach ($this->eventClient->events($runId) as $event) {
+                        if ($event->seq > 0 && $event->seq <= $cursor) {
+                            continue;
+                        }
+
+                        $this->emitInternal($event);
+
+                        if ($event->seq > 0) {
+                            $this->runEventCursors[$runId] = max($cursor, $event->seq);
+                            $cursor = $this->runEventCursors[$runId];
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    $this->logger->warning('Controller event drain error', [
+                        'run_id' => $runId,
+                        'exception' => $e,
+                    ]);
+                }
             }
         });
 
@@ -148,7 +201,8 @@ final class HeadlessController
         $this->ackCommand($command);
 
         // Dispatch via Symfony EventDispatcher to #[AsEventListener] handlers.
-        // May block — command bus is sync until ASYNC-05.
+        // Command bus dispatch is non-blocking — messages are routed to
+        // async Doctrine transports (ASYNC-05).
         try {
             $emit = $this->emit(...);
             $event = new ControllerCommandEvent($command, $emit);
@@ -227,7 +281,30 @@ final class HeadlessController
 
     // ── Output ───────────────────────────────────────────────────────────
 
+    /**
+     * Emit a runtime event to TUI stdout.
+     *
+     * Automatically registers run event cursors when start/resume events
+     * are emitted, and releases them on terminal events.
+     */
     private function emit(RuntimeEvent $event): void
+    {
+        // Auto-register/release event drain cursors based on event type.
+        if (RuntimeEventTypeEnum::RunStarted->value === $event->type
+            || RuntimeEventTypeEnum::RunResumed->value === $event->type
+        ) {
+            $this->runEventCursors[$event->runId] = $this->runEventCursors[$event->runId] ?? 0;
+        } elseif (RuntimeEventTypeEnum::RunCompleted->value === $event->type
+            || RuntimeEventTypeEnum::RunFailed->value === $event->type
+            || RuntimeEventTypeEnum::RunCancelled->value === $event->type
+        ) {
+            unset($this->runEventCursors[$event->runId]);
+        }
+
+        $this->emitInternal($event);
+    }
+
+    private function emitInternal(RuntimeEvent $event): void
     {
         if (null === $this->stdout) {
             return;
