@@ -8,14 +8,17 @@ use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\HomeSettingsWriter;
-use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
-use Ineersa\CodingAgent\Config\TuiConfig;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
 
@@ -41,8 +44,15 @@ class ModelSelectionServiceTest extends TestCase
 
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new HomeSettingsWriter($pathResolver);
-        $this->sessionMetaStore = new SessionMetadataStore();
-        $this->sessionMetaStore->setSessionsBasePath($this->tempDir.'/project/.hatfield/sessions');
+        $hatfieldSessionStore = new HatfieldSessionStore(
+            appConfig: new AppConfig(
+                tui: new TuiConfig(theme: 'default'),
+                logging: new LoggingConfig(),
+                cwd: $this->tempDir.'/project',
+            ),
+            lockFactory: new LockFactory(new FlockStore()),
+        );
+        $this->sessionMetaStore = new SessionMetadataStore($hatfieldSessionStore);
 
         // Create a default AppConfig (no AI section — tests will call buildService() explicitly)
         $this->service = $this->buildService([]);

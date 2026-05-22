@@ -6,11 +6,10 @@ namespace Ineersa\CodingAgent\Runtime\InProcess;
 
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\IdempotencyStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
-use Ineersa\AgentCore\Infrastructure\Storage\SessionRunEventStore;
-use Ineersa\AgentCore\Infrastructure\Storage\SessionRunStore;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
@@ -35,9 +34,9 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly AgentRunnerInterface $runner,
         private readonly EventStoreInterface $eventStore,
         private readonly RuntimeEventMapper $mapper,
-        private readonly SessionRunStore $runStore,
         private readonly SessionMetadataStore $sessionMetadataStore,
         private readonly ?RuntimeEventSinkInterface $transientSink = null,
+        private readonly ?IdempotencyStoreInterface $idempotencyStore = null,
     ) {
     }
 
@@ -130,16 +129,5 @@ final class InProcessAgentSessionClient implements AgentSessionClient
     public function cancel(string $runId): void
     {
         $this->runner->cancel($runId);
-    }
-
-    public function initializeSessionsBasePath(string $sessionsBasePath): void
-    {
-        $this->runStore->setSessionsBasePath($sessionsBasePath);
-
-        if ($this->eventStore instanceof SessionRunEventStore) {
-            $this->eventStore->setSessionsBasePath($sessionsBasePath);
-        }
-
-        $this->sessionMetadataStore->setSessionsBasePath($sessionsBasePath);
     }
 }

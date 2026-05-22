@@ -2,10 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Tests\Infrastructure\Storage;
+namespace Ineersa\CodingAgent\Tests\Session;
 
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Infrastructure\Storage\SessionRunEventStore;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
@@ -27,8 +31,18 @@ final class SessionRunEventStoreTest extends TestCase
         mkdir($this->projectDir, 0777, true);
         mkdir($this->projectDir.'/.hatfield/sessions', 0777, true);
 
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'default'),
+            logging: new LoggingConfig(),
+            cwd: $this->projectDir,
+        );
+        $hatfieldSessionStore = new HatfieldSessionStore(
+            appConfig: $appConfig,
+            lockFactory: new LockFactory(new FlockStore()),
+        );
+
         $this->store = new SessionRunEventStore(
-            projectDir: $this->projectDir,
+            hatfieldSessionStore: $hatfieldSessionStore,
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
         );
@@ -109,8 +123,17 @@ final class SessionRunEventStoreTest extends TestCase
         $this->store->append($event);
 
         // New store instance (simulates recreating services after restart)
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'default'),
+            logging: new LoggingConfig(),
+            cwd: $this->projectDir,
+        );
+        $hatfieldSessionStore = new HatfieldSessionStore(
+            appConfig: $appConfig,
+            lockFactory: new LockFactory(new FlockStore()),
+        );
         $newStore = new SessionRunEventStore(
-            projectDir: $this->projectDir,
+            hatfieldSessionStore: $hatfieldSessionStore,
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
         );
@@ -155,82 +178,6 @@ final class SessionRunEventStoreTest extends TestCase
         self::assertCount(1, $eventsB);
         self::assertSame('agent_start', $eventsB[0]->type);
         self::assertSame($runB, $eventsB[0]->runId);
-    }
-
-    public function testSetSessionsBasePathOverridesDefault(): void
-    {
-        $customDir = sys_get_temp_dir().'/hatfield-custom-eventstore-'.getmypid();
-        if (is_dir($customDir)) {
-            $this->rmDir($customDir);
-        }
-        mkdir($customDir, 0777, true);
-
-        try {
-            $this->store->setSessionsBasePath($customDir);
-
-            $runId = 'run-'.bin2hex(random_bytes(4));
-            $event = new RunEvent(
-                runId: $runId,
-                seq: 1,
-                turnNo: 0,
-                type: 'run_started',
-                payload: ['prompt' => 'hello'],
-            );
-
-            $this->store->append($event);
-
-            // Verify events.jsonl was written to the custom directory
-            $customEventsPath = $customDir.'/'.$runId.'/events.jsonl';
-            self::assertFileExists($customEventsPath, 'events.jsonl must be written to the custom sessions base path');
-
-            // Verify NOT written to the default directory
-            $defaultEventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
-            self::assertFileDoesNotExist($defaultEventsPath, 'events.jsonl must not be written to the default projectDir');
-
-            // Verify retrieval from custom path
-            $events = $this->store->allFor($runId);
-            self::assertCount(1, $events);
-            self::assertSame($runId, $events[0]->runId);
-            self::assertSame('hello', $events[0]->payload['prompt']);
-        } finally {
-            if (is_dir($customDir)) {
-                $this->rmDir($customDir);
-            }
-        }
-    }
-
-    public function testSetSessionsBasePathRunIsolationStillWorks(): void
-    {
-        $customDir = sys_get_temp_dir().'/hatfield-custom-eventstore-iso-'.getmypid();
-        if (is_dir($customDir)) {
-            $this->rmDir($customDir);
-        }
-        mkdir($customDir, 0777, true);
-
-        try {
-            $this->store->setSessionsBasePath($customDir);
-
-            $runA = 'run-'.bin2hex(random_bytes(2));
-            $runB = 'run-'.bin2hex(random_bytes(2));
-
-            $this->store->append(new RunEvent(runId: $runA, seq: 1, turnNo: 0, type: 'run_started'));
-            $this->store->append(new RunEvent(runId: $runB, seq: 1, turnNo: 0, type: 'agent_start'));
-
-            $eventsA = $this->store->allFor($runA);
-            $eventsB = $this->store->allFor($runB);
-
-            self::assertCount(1, $eventsA);
-            self::assertSame('run_started', $eventsA[0]->type);
-            self::assertSame($runA, $eventsA[0]->runId);
-
-            self::assertCount(1, $eventsB);
-            self::assertSame('agent_start', $eventsB[0]->type);
-            self::assertSame($runB, $eventsB[0]->runId);
-        } finally {
-            if (is_dir($customDir)) {
-                $this->rmDir($customDir);
-            }
-        }
     }
 
     private function rmDir(string $dir): void

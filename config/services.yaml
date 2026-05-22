@@ -39,18 +39,10 @@ services:
   Ineersa\Tui\:
     resource: '../src/Tui/'
 
-  # ─── File-backed agent-core stores ───
-  # These need explicit wiring because $projectDir is a string that
-  # cannot be autowired. LockFactory is autowired via FrameworkBundle's
-  # lock configuration (config/packages/framework.yaml → framework.lock).
+  # ─── Session stores — resolved via HatfieldSessionStore for path ───
 
-  Ineersa\AgentCore\Infrastructure\Storage\SessionRunStore:
-    arguments:
-      $projectDir: '%kernel.project_dir%'
-
-  Ineersa\AgentCore\Infrastructure\Storage\SessionRunEventStore:
-    arguments:
-      $projectDir: '%kernel.project_dir%'
+  Ineersa\AgentCore\Contract\IdempotencyStoreInterface:
+    alias: Ineersa\CodingAgent\Session\JsonlIdempotencyStore
 
   # ─── Hatfield config services ───
 

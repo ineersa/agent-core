@@ -10,9 +10,32 @@ use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
+use Psr\Log\LoggerInterface;
 
+/**
+ * Orchestrates message processing through the run pipeline.
+ *
+ * For each message:
+ *  1. Acquires the run lock (re-entrant-safe)
+ *  2. Checks idempotency — skips if already handled
+ *  3. Re-reads the latest run state from the store
+ *  4. Resolves and runs the appropriate handler
+ *  5. Commits state changes with CAS retry and exponential backoff
+ *  6. Dispatches post-commit effects and callbacks
+ *  7. Marks the message as handled
+ *
+ * The CAS retry loop (ASYNC-06) re-reads state and re-executes the
+ * handler on each attempt, ensuring correctness under concurrent
+ * consumer contention.
+ */
 final readonly class RunMessageProcessor
 {
+    /** Maximum consecutive CAS retry attempts before giving up. */
+    private const int MAX_CAS_RETRIES = 3;
+
+    /** Initial retry delay in milliseconds (doubles each attempt). */
+    private const int INITIAL_RETRY_DELAY_MS = 50;
+
     /** @var list<RunMessageHandler> */
     private array $handlers;
 
@@ -26,6 +49,7 @@ final readonly class RunMessageProcessor
         private RunCommit $runCommit,
         private StepDispatcher $stepDispatcher,
         iterable $handlers,
+        private LoggerInterface $logger,
     ) {
         $this->handlers = [...$handlers];
     }
@@ -40,29 +64,71 @@ final readonly class RunMessageProcessor
                 return;
             }
 
-            $state = $this->runStore->get($runId) ?? RunState::queued($runId);
-
             $handler = $this->resolveHandler($message);
-            $result = $handler->handle($message, $state);
+            $delayMs = self::INITIAL_RETRY_DELAY_MS;
 
-            if (null !== $result->nextState) {
-                $committed = $this->runCommit->commit($state, $result->nextState, $result->events, $result->effects);
-                if (!$committed) {
+            for ($attempt = 0; $attempt < self::MAX_CAS_RETRIES; ++$attempt) {
+                $state = $this->runStore->get($runId) ?? RunState::queued($runId);
+                $result = $handler->handle($message, $state);
+
+                // No state change — nothing to commit.
+                if (null === $result->nextState) {
+                    if ($result->markHandled) {
+                        $this->idempotency->markHandled($scope, $runId, $idempotencyKey);
+                    }
+
                     return;
                 }
 
-                if ([] !== $result->postCommitEffects) {
-                    $this->stepDispatcher->dispatchEffects($result->postCommitEffects);
+                $committed = $this->runCommit->commit(
+                    $state,
+                    $result->nextState,
+                    $result->events,
+                    $result->effects,
+                );
+
+                if ($committed) {
+                    // Success — post-commit effects and callbacks.
+                    if ([] !== $result->postCommitEffects) {
+                        $this->stepDispatcher->dispatchEffects($result->postCommitEffects);
+                    }
+
+                    foreach ($result->postCommit as $callback) {
+                        $callback();
+                    }
+
+                    if ($result->markHandled) {
+                        $this->idempotency->markHandled($scope, $runId, $idempotencyKey);
+                    }
+
+                    return;
                 }
 
-                foreach ($result->postCommit as $callback) {
-                    $callback();
+                // CAS conflict — retry with exponential backoff.
+                $this->logger->warning('agent_loop.processor.cas_conflict_retry', [
+                    'scope' => $scope,
+                    'run_id' => $runId,
+                    'message_type' => $message::class,
+                    'attempt' => $attempt + 1,
+                    'max_retries' => self::MAX_CAS_RETRIES,
+                ]);
+
+                if ($attempt < self::MAX_CAS_RETRIES - 1) {
+                    usleep($delayMs * 1000);
+                    $delayMs *= 2;
                 }
             }
 
-            if ($result->markHandled) {
-                $this->idempotency->markHandled($scope, $runId, $idempotencyKey);
-            }
+            // All retries exhausted — throw so the message is properly
+            // rejected and the transport can handle it (e.g., retry or DLQ).
+            $this->logger->error('agent_loop.processor.cas_conflict_exhausted', [
+                'scope' => $scope,
+                'run_id' => $runId,
+                'message_type' => $message::class,
+                'attempts' => self::MAX_CAS_RETRIES,
+            ]);
+
+            throw new CasRetryExhaustedException(\sprintf('CAS conflict exhausted after %d attempts for run %s, message %s', self::MAX_CAS_RETRIES, $runId, $message::class));
         });
     }
 

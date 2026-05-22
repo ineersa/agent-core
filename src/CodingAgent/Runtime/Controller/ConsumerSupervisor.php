@@ -11,21 +11,35 @@ use Symfony\Component\Process\Process;
  * Manages messenger:consume child processes for the controller.
  *
  * Launches Symfony Process-based consumers for a given transport,
- * supervises their health via isRunning(), and gracefully stops them
- * on shutdown.
+ * supervises their health via isRunning(), restarts crashed consumers
+ * with exponential backoff, and gracefully stops them on shutdown.
+ *
+ * Restart policy:
+ * - Up to 3 restarts within a 60-second window per transport.
+ * - After exhausting retries, the consumer is not restarted and
+ *   a critical warning is logged.
+ * - The restart window is sliding: if 60 seconds pass without a
+ *   restart, the counter resets.
  *
  * Process management:
  * - Launch: creates a non-blocking Symfony Process with timeout(null)
- * - Supervision: polls isRunning() every 5s, logs crashed consumers
+ * - Supervision: polls isRunning() every 5s, restarts if crashed
  * - Shutdown: sends SIGTERM with 5s grace period, then SIGKILL
- *
- * Currently used for consumer process tracking; actual launching of
- * llm/tool/run_control consumers is deferred to ASYNC-04+.
+ * - stderr output is captured and logged on crash for diagnostics
  */
 final class ConsumerSupervisor
 {
-    /** @var list<Process> */
+    private const int MAX_RESTARTS = 3;
+    private const int RESTART_WINDOW_SECONDS = 60;
+    private const int INITIAL_RESTART_DELAY_MS = 1000;
+    /** @var array<string, Process> transportName => process */
     private array $consumers = [];
+
+    /** @var array<string, int> transportName => restart count */
+    private array $restartCounts = [];
+
+    /** @var array<string, float> transportName => start of restart window (microtime) */
+    private array $restartWindows = [];
 
     public function __construct(
         private readonly LoggerInterface $logger,
@@ -56,7 +70,7 @@ final class ConsumerSupervisor
 
         $process->start();
 
-        $this->consumers[] = $process;
+        $this->consumers[$transportName] = $process;
 
         $this->logger->info('Launched messenger consumer', [
             'transport' => $transportName,
@@ -67,30 +81,31 @@ final class ConsumerSupervisor
     /**
      * Check consumer child process health.
      *
-     * Removes crashed/exited processes from the tracked list and logs
-     * warnings for diagnostics. Does NOT auto-restart by default —
-     * the controller's run_control consumer is single-instance and
-     * should be restarted manually or via a supervisor layer.
+     * Removes crashed/exited processes from the tracked list and
+     * automatically restarts them if the restart policy allows.
+     * Captures and logs stderr output on crash for diagnostics.
      */
     public function supervise(): void
     {
-        if ([] === $this->consumers) {
-            return;
-        }
-
-        $alive = [];
-        foreach ($this->consumers as $process) {
+        foreach ($this->consumers as $transportName => $process) {
             if ($process->isRunning()) {
-                $alive[] = $process;
-            } else {
-                $this->logger->warning('Consumer process exited unexpectedly', [
-                    'pid' => $process->getPid(),
-                    'exit_code' => $process->getExitCode(),
-                ]);
+                continue;
             }
-        }
 
-        $this->consumers = $alive;
+            $exitCode = $process->getExitCode();
+            $stderr = $process->getErrorOutput();
+
+            $this->logger->warning('Consumer process exited unexpectedly', [
+                'transport' => $transportName,
+                'pid' => $process->getPid(),
+                'exit_code' => $exitCode,
+                'stderr' => '' !== $stderr ? $stderr : null,
+            ]);
+
+            unset($this->consumers[$transportName]);
+
+            $this->attemptRestart($transportName);
+        }
     }
 
     /**
@@ -109,17 +124,70 @@ final class ConsumerSupervisor
             'count' => \count($this->consumers),
         ]);
 
-        foreach ($this->consumers as $process) {
+        foreach ($this->consumers as $transportName => $process) {
             $pid = $process->getPid();
             $process->stop(5, \SIGTERM);
 
             if ($process->isRunning()) {
                 $this->logger->warning('Consumer did not stop gracefully, sending SIGKILL', [
+                    'transport' => $transportName,
                     'pid' => $pid,
                 ]);
             }
         }
 
         $this->consumers = [];
+    }
+
+    /**
+     * Try to restart a crashed consumer, respecting the restart policy.
+     */
+    private function attemptRestart(string $transportName): void
+    {
+        $now = microtime(true);
+
+        // Check if restart window has expired — reset counter
+        if (isset($this->restartWindows[$transportName])) {
+            $elapsed = $now - $this->restartWindows[$transportName];
+            if ($elapsed > self::RESTART_WINDOW_SECONDS) {
+                $this->restartCounts[$transportName] = 0;
+                unset($this->restartWindows[$transportName]);
+            }
+        }
+
+        $count = $this->restartCounts[$transportName] ?? 0;
+
+        if ($count >= self::MAX_RESTARTS) {
+            $this->logger->critical('Consumer restart limit reached, not restarting', [
+                'transport' => $transportName,
+                'max_restarts' => self::MAX_RESTARTS,
+                'window_seconds' => self::RESTART_WINDOW_SECONDS,
+            ]);
+
+            return;
+        }
+
+        // Start restart window on first restart
+        if (!isset($this->restartWindows[$transportName])) {
+            $this->restartWindows[$transportName] = $now;
+        }
+
+        $this->restartCounts[$transportName] = $count + 1;
+
+        // Exponential backoff: 1s, 2s, 4s
+        $delayMs = self::INITIAL_RESTART_DELAY_MS * (2 ** $count);
+
+        $this->logger->info('Restarting consumer with backoff', [
+            'transport' => $transportName,
+            'restart_attempt' => $count + 1,
+            'max_restarts' => self::MAX_RESTARTS,
+            'delay_ms' => $delayMs,
+        ]);
+
+        // Sleep before restarting (outside event loop — this runs in
+        // the supervisor repeat callback, which is one-shot per tick)
+        usleep($delayMs * 1000);
+
+        $this->launch($transportName);
     }
 }

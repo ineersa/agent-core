@@ -2,11 +2,15 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Tests\Infrastructure\Storage;
+namespace Ineersa\CodingAgent\Tests\Session;
 
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\SessionRunStore;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Infrastructure\Storage\SessionRunStore;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
@@ -37,8 +41,18 @@ final class SessionRunStoreTest extends TestCase
             [new JsonEncoder()],
         );
 
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'default'),
+            logging: new LoggingConfig(),
+            cwd: $this->projectDir,
+        );
+        $hatfieldSessionStore = new HatfieldSessionStore(
+            appConfig: $appConfig,
+            lockFactory: new LockFactory(new FlockStore()),
+        );
+
         $this->store = new SessionRunStore(
-            projectDir: $this->projectDir,
+            hatfieldSessionStore: $hatfieldSessionStore,
             serializer: $serializer,
             lockFactory: new LockFactory(new FlockStore()),
         );
@@ -115,8 +129,17 @@ final class SessionRunStoreTest extends TestCase
             [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer()],
             [new JsonEncoder()],
         );
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'default'),
+            logging: new LoggingConfig(),
+            cwd: $this->projectDir,
+        );
+        $hatfieldSessionStore = new HatfieldSessionStore(
+            appConfig: $appConfig,
+            lockFactory: new LockFactory(new FlockStore()),
+        );
         $newStore = new SessionRunStore(
-            projectDir: $this->projectDir,
+            hatfieldSessionStore: $hatfieldSessionStore,
             serializer: $serializer,
             lockFactory: new LockFactory(new FlockStore()),
         );
@@ -165,71 +188,6 @@ final class SessionRunStoreTest extends TestCase
 
         $staleAfterComplete = $this->store->findRunningStaleBefore($future);
         self::assertEmpty($staleAfterComplete, 'Completed runs should not be returned as stale');
-    }
-
-    public function testSetSessionsBasePathOverridesDefault(): void
-    {
-        // Create a custom sessions directory outside the default projectDir
-        $customDir = sys_get_temp_dir().'/hatfield-custom-runstore-'.getmypid();
-        if (is_dir($customDir)) {
-            $this->rmDir($customDir);
-        }
-        mkdir($customDir, 0777, true);
-
-        try {
-            $this->store->setSessionsBasePath($customDir);
-
-            $runId = 'run-'.bin2hex(random_bytes(4));
-            $state = new RunState(runId: $runId, status: RunStatus::Queued, version: 1);
-
-            $result = $this->store->compareAndSwap($state, 0);
-            self::assertTrue($result, 'CAS should succeed with custom sessions base path');
-
-            // Verify state.json was written to the custom directory, not the default
-            $customStatePath = $customDir.'/'.$runId.'/state.json';
-            self::assertFileExists($customStatePath, 'state.json must be written to the custom sessions base path');
-
-            // Verify NOT written to the default directory
-            $defaultStatePath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/state.json';
-            self::assertFileDoesNotExist($defaultStatePath, 'state.json must not be written to the default projectDir');
-
-            // Verify retrieval from custom path
-            $loaded = $this->store->get($runId);
-            self::assertNotNull($loaded);
-            self::assertSame($runId, $loaded->runId);
-        } finally {
-            if (is_dir($customDir)) {
-                $this->rmDir($customDir);
-            }
-        }
-    }
-
-    public function testSetSessionsBasePathAndFindStaleWorks(): void
-    {
-        // When sessions base path is overridden, findRunningStaleBefore must
-        // scan the overridden directory.
-        $customDir = sys_get_temp_dir().'/hatfield-custom-runstore-stale-'.getmypid();
-        if (is_dir($customDir)) {
-            $this->rmDir($customDir);
-        }
-        mkdir($customDir, 0777, true);
-
-        try {
-            $this->store->setSessionsBasePath($customDir);
-
-            $runId = 'run-'.bin2hex(random_bytes(4));
-            $state = new RunState(runId: $runId, status: RunStatus::Running, version: 1);
-            $this->store->compareAndSwap($state, 0);
-
-            $future = new \DateTimeImmutable('+10 minutes');
-            $stale = $this->store->findRunningStaleBefore($future);
-            self::assertNotEmpty($stale, 'findRunningStaleBefore must scan custom sessions base path');
-            self::assertSame($runId, $stale[0]->runId);
-        } finally {
-            if (is_dir($customDir)) {
-                $this->rmDir($customDir);
-            }
-        }
     }
 
     private function rmDir(string $dir): void

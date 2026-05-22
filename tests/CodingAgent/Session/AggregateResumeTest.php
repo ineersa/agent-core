@@ -2,13 +2,17 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Tests\Infrastructure\Storage;
+namespace Ineersa\CodingAgent\Tests\Session;
 
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\SessionRunEventStore;
+use Ineersa\CodingAgent\Session\SessionRunStore;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Infrastructure\Storage\SessionRunEventStore;
-use Ineersa\AgentCore\Infrastructure\Storage\SessionRunStore;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
@@ -26,6 +30,7 @@ use Symfony\Component\Serializer\Serializer;
 final class AggregateResumeTest extends TestCase
 {
     private string $projectDir = '';
+    private HatfieldSessionStore $hatfieldSessionStore;
 
     protected function setUp(): void
     {
@@ -37,6 +42,16 @@ final class AggregateResumeTest extends TestCase
         }
         mkdir($this->projectDir, 0777, true);
         mkdir($this->projectDir.'/.hatfield/sessions', 0777, true);
+
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'default'),
+            logging: new LoggingConfig(),
+            cwd: $this->projectDir,
+        );
+        $this->hatfieldSessionStore = new HatfieldSessionStore(
+            appConfig: $appConfig,
+            lockFactory: new LockFactory(new FlockStore()),
+        );
     }
 
     protected function tearDown(): void
@@ -69,8 +84,8 @@ final class AggregateResumeTest extends TestCase
         $lockFactory1 = new LockFactory(new FlockStore());
         $normalizer1 = new EventPayloadNormalizer();
 
-        $runStore1 = new SessionRunStore($this->projectDir, $serializer1, $lockFactory1);
-        $eventStore1 = new SessionRunEventStore($this->projectDir, $normalizer1, $lockFactory1);
+        $runStore1 = new SessionRunStore($this->hatfieldSessionStore, $serializer1, $lockFactory1);
+        $eventStore1 = new SessionRunEventStore($this->hatfieldSessionStore, $normalizer1, $lockFactory1);
 
         // Create run state
         $initialState = new RunState(runId: $runId, status: RunStatus::Queued, version: 1);
@@ -92,8 +107,8 @@ final class AggregateResumeTest extends TestCase
         $lockFactory2 = new LockFactory(new FlockStore());
         $normalizer2 = new EventPayloadNormalizer();
 
-        $runStore2 = new SessionRunStore($this->projectDir, $serializer2, $lockFactory2);
-        $eventStore2 = new SessionRunEventStore($this->projectDir, $normalizer2, $lockFactory2);
+        $runStore2 = new SessionRunStore($this->hatfieldSessionStore, $serializer2, $lockFactory2);
+        $eventStore2 = new SessionRunEventStore($this->hatfieldSessionStore, $normalizer2, $lockFactory2);
 
         // Phase 4: Verify state survives
         $loadedState = $runStore2->get($runId);

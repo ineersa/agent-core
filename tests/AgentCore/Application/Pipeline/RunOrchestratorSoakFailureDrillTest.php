@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 use Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\MessageIdempotencyService;
+use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
 use Ineersa\AgentCore\Application\Handler\ReplayService;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
@@ -222,7 +223,7 @@ final class RunOrchestratorSoakFailureDrillTest extends TestCase
         self::assertSame('call-b', $toolMessages[1]->toolCallId);
     }
 
-    public function testTransientEventStoreFailureDuringCommitRollsBackStateAndSupportsRetry(): void
+    public function testTransientEventStoreFailureDuringCommitRollsBackStateAndIsRecoveredByRetryLoop(): void
     {
         $eventStore = new FailOnceEventStore(new RunEventStore());
         $fixture = $this->createFixture($eventStore);
@@ -236,27 +237,31 @@ final class RunOrchestratorSoakFailureDrillTest extends TestCase
             payload: new StartRunPayload(messages: []),
         );
 
+        // The CAS retry loop in RunMessageProcessor automatically recovers
+        // from transient EventStore failures: the first commit() attempt
+        // fails and rolls back, then the retry loop re-reads state and
+        // re-executes the handler, and the second attempt succeeds.
         $fixture->orchestrator->onStartRun($start);
 
-        $rolledBackState = $fixture->runStore->get('run-failure-drill-1');
-        self::assertNotNull($rolledBackState);
-        self::assertSame(RunStatus::Queued, $rolledBackState->status);
-        self::assertSame(0, $rolledBackState->version);
-        self::assertSame(0, $rolledBackState->lastSeq);
-        self::assertSame([], $eventStore->allFor('run-failure-drill-1'));
-
-        $fixture->orchestrator->onStartRun($start);
-
+        // After the automatic retry recovery, state is committed.
         $state = $fixture->runStore->get('run-failure-drill-1');
         self::assertNotNull($state);
+        self::assertSame(RunStatus::Running, $state->status);
         self::assertSame(1, $state->version);
         self::assertSame(1, $state->lastSeq);
-        self::assertSame(RunStatus::Running, $state->status);
 
         $events = $eventStore->allFor('run-failure-drill-1');
         self::assertCount(1, $events);
         self::assertSame(1, $events[0]->seq);
         self::assertSame('run_started', $events[0]->type);
+
+        // Second dispatch of the same message is idempotency-skipped.
+        $fixture->orchestrator->onStartRun($start);
+
+        $stateAfterIdempotency = $fixture->runStore->get('run-failure-drill-1');
+        self::assertNotNull($stateAfterIdempotency);
+        self::assertSame(1, $stateAfterIdempotency->version);
+        self::assertSame(1, $stateAfterIdempotency->lastSeq);
     }
 
     private function createFixture(?EventStoreInterface $eventStore = null): SoakFailureDrillFixture
@@ -288,10 +293,11 @@ final class RunOrchestratorSoakFailureDrillTest extends TestCase
 
         $runMessageProcessor = new RunMessageProcessor(
             runStore: $runStore,
-            idempotency: new MessageIdempotencyService(),
+            idempotency: new MessageIdempotencyService(new InMemoryIdempotencyStore()),
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: $runCommit,
             stepDispatcher: $stepDispatcher,
+            logger: new \Psr\Log\NullLogger(),
             handlers: [
                 new StartRunHandler(
                     stateTools: $stateTools,

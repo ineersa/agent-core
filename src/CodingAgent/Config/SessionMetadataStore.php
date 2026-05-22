@@ -4,31 +4,24 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Symfony\Component\Yaml\Yaml;
 
 /**
  * File-backed session metadata store.
  *
- * Reads and writes session metadata.yaml files under a project-scoped
- * sessions base path, which is set once via {@see setSessionsBasePath}
- * before any session I/O occurs.
- *
- * This is intentionally separate from HatfieldSessionStore to keep the
- * metadata read/write path free of session-locking and fork-tree complexities.
+ * Reads and writes session metadata.yaml files under the Hatfield
+ * sessions directory, using HatfieldSessionStore::resolveSessionsBasePath()
+ * as the single source of truth for path resolution.
  */
 final class SessionMetadataStore
 {
-    private ?string $sessionsBasePath = null;
+    private readonly string $sessionsBasePath;
 
-    /**
-     * Set the sessions base directory.
-     *
-     * Must be called once before any read/write. Called from
-     * runtime client initialization alongside other stores.
-     */
-    public function setSessionsBasePath(string $basePath): void
-    {
-        $this->sessionsBasePath = $basePath;
+    public function __construct(
+        HatfieldSessionStore $hatfieldSessionStore,
+    ) {
+        $this->sessionsBasePath = $hatfieldSessionStore->resolveSessionsBasePath();
     }
 
     /**

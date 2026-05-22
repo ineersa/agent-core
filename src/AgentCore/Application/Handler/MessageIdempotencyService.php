@@ -4,23 +4,31 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Handler;
 
-final class MessageIdempotencyService
+use Ineersa\AgentCore\Contract\IdempotencyStoreInterface;
+
+/**
+ * Persistent idempotency check for bus messages.
+ *
+ * Delegates to IdempotencyStoreInterface for cross-process safe,
+ * crash-robust tracking of which messages have been handled.
+ *
+ * Replaces the previous in-memory array implementation that lost
+ * state on process restart and was unsafe across consumers.
+ */
+final readonly class MessageIdempotencyService
 {
-    /** @var array<string, true> */
-    private array $handled = [];
+    public function __construct(
+        private IdempotencyStoreInterface $store,
+    ) {
+    }
 
     public function wasHandled(string $scope, string $runId, string $idempotencyKey): bool
     {
-        return isset($this->handled[$this->index($scope, $runId, $idempotencyKey)]);
+        return $this->store->isHandled($scope, $runId, $idempotencyKey);
     }
 
     public function markHandled(string $scope, string $runId, string $idempotencyKey): void
     {
-        $this->handled[$this->index($scope, $runId, $idempotencyKey)] = true;
-    }
-
-    private function index(string $scope, string $runId, string $idempotencyKey): string
-    {
-        return \sprintf('%s|%s|%s', $scope, $runId, $idempotencyKey);
+        $this->store->markHandled($scope, $runId, $idempotencyKey);
     }
 }
