@@ -5,31 +5,36 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 
 /**
- * Handles user_message commands.
+ * Handles user_message commands via Symfony EventDispatcher.
  *
  * Sends a user message for the current run and forwards all resulting
  * runtime events (steer/follow-up response).
- *
- * @see CommandHandlerInterface
  */
-final readonly class UserMessageHandler implements CommandHandlerInterface
+#[AsEventListener(event: ControllerCommandEvent::class)]
+final readonly class UserMessageHandler
 {
     public function __construct(
         private readonly InProcessAgentSessionClient $client,
     ) {
     }
 
-    public function handle(RuntimeCommand $command, callable $emit): void
+    public function __invoke(ControllerCommandEvent $event): void
     {
+        if ('user_message' !== $event->command->type) {
+            return;
+        }
+
+        $command = $event->command;
         $runId = $command->runId ?? '';
         if ('' === $runId) {
-            $emit(new RuntimeEvent(
+            $event->emit(new RuntimeEvent(
                 type: RuntimeEventTypeEnum::ProtocolError->value,
                 runId: '',
                 seq: 0,
@@ -45,8 +50,8 @@ final readonly class UserMessageHandler implements CommandHandlerInterface
         ));
 
         // Forward all events from the follow-up steer/response.
-        foreach ($this->client->events($runId) as $event) {
-            $emit($event);
+        foreach ($this->client->events($runId) as $runtimeEvent) {
+            $event->emit($runtimeEvent);
         }
     }
 }

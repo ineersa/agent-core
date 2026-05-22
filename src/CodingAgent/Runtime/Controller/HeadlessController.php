@@ -4,11 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
-use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\CancelHandler;
-use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\CommandHandlerInterface;
-use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\ResumeHandler;
-use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\StartRunHandler;
-use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\UserMessageHandler;
+use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -16,25 +12,26 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Non-blocking headless controller using Revolt event loop.
  *
  * Orchestrates the controller event loop: reads JSONL commands from stdin,
- * ACKs immediately, dispatches to focused command handlers, and forwards
- * runtime events from both in-process dispatch and the Messenger publish
- * transport to stdout.
+ * ACKs immediately, dispatches through Symfony EventDispatcher to focused
+ * #[AsEventListener] command handlers, and forwards runtime events from
+ * the publish transport to stdout.
  *
  * Responsibilities are delegated to collaborators:
- * - CommandHandlerInterface implementations handle individual command types
+ * - EventDispatcherInterface routes commands to #[AsEventListener] handlers
  * - PublishTransportPoller polls the Doctrine publish transport
  * - ConsumerSupervisor manages messenger:consume child processes
  *
  * Command protocol:
- *   TUI → stdin JSONL  → controller parses → emits command.ack → dispatches
+ *   TUI → stdin JSONL  → controller parses → emits command.ack → dispatches event
  *   Controller → stdout JSONL → TUI reads events including command.ack
  *
- * @see CommandHandlerInterface
+ * @see ControllerCommandEvent
  * @see PublishTransportPoller
  * @see ConsumerSupervisor
  */
@@ -54,10 +51,7 @@ final class HeadlessController
     public function __construct(
         private readonly PublishTransportPoller $publishPoller,
         private readonly ConsumerSupervisor $consumerSupervisor,
-        private readonly StartRunHandler $startRunHandler,
-        private readonly UserMessageHandler $userMessageHandler,
-        private readonly CancelHandler $cancelHandler,
-        private readonly ResumeHandler $resumeHandler,
+        private readonly EventDispatcherInterface $dispatcher,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -137,25 +131,20 @@ final class HeadlessController
 
     private function handleCommandLine(string $line): void
     {
-        try {
-            $command = JsonlCodec::decodeCommand($line);
-        } catch (\Throwable $e) {
-            $this->emit(new RuntimeEvent(
-                type: RuntimeEventTypeEnum::ProtocolError->value,
-                runId: '',
-                seq: 0,
-                payload: ['error' => \sprintf('JSONL decode error: %s', $e->getMessage())],
-            ));
-
+        $command = $this->decodeCommand($line);
+        if (null === $command) {
             return;
         }
 
         // ACK immediately before any processing.
         $this->ackCommand($command);
 
-        // Dispatch command (may block — command bus is sync until ASYNC-05).
+        // Dispatch via Symfony EventDispatcher to #[AsEventListener] handlers.
+        // May block — command bus is sync until ASYNC-05.
         try {
-            $this->dispatchCommand($command);
+            $emit = $this->emit(...);
+            $event = new ControllerCommandEvent($command, $emit);
+            $this->dispatcher->dispatch($event);
         } catch (\Throwable $e) {
             $this->logger->error('Controller command dispatch failed', [
                 'command_type' => $command->type,
@@ -166,27 +155,24 @@ final class HeadlessController
         }
     }
 
-    private function dispatchCommand(RuntimeCommand $command): void
+    private function decodeCommand(string $line): ?RuntimeCommand
     {
-        $emit = $this->emit(...);
+        try {
+            return JsonlCodec::decodeCommand($line);
+        } catch (\Throwable $e) {
+            $this->emit(new RuntimeEvent(
+                type: RuntimeEventTypeEnum::ProtocolError->value,
+                runId: '',
+                seq: 0,
+                payload: ['error' => \sprintf('JSONL decode error: %s', $e->getMessage())],
+            ));
 
-        match ($command->type) {
-            'start_run' => $this->startRunHandler->handle($command, $emit),
-            'user_message' => $this->userMessageHandler->handle($command, $emit),
-            'cancel' => $this->cancelHandler->handle($command, $emit),
-            'resume' => $this->resumeHandler->handle($command, $emit),
-            default => $this->emitCommandRejected(
-                $command,
-                \sprintf('Unknown command type: "%s"', $command->type),
-            ),
-        };
+            return null;
+        }
     }
 
     // ── ACK protocol ─────────────────────────────────────────────────────
 
-    /**
-     * Emit command.ack for an accepted command.
-     */
     private function ackCommand(RuntimeCommand $command): void
     {
         $this->emit(new RuntimeEvent(
@@ -201,9 +187,6 @@ final class HeadlessController
         ));
     }
 
-    /**
-     * Emit command.rejected for a failed command.
-     */
     private function emitCommandRejected(RuntimeCommand $command, string $reason): void
     {
         $this->emit(new RuntimeEvent(
@@ -246,9 +229,13 @@ final class HeadlessController
         $written = @fwrite($this->stdout, $line);
 
         if (false === $written || 0 === $written) {
-            $this->logger->warning('Controller stdout write failed', [
+            $this->logger->error('Controller stdout write failed, initiating shutdown', [
                 'event_type' => $event->type,
             ]);
+            $this->shutdown();
+            EventLoop::getDriver()->stop();
+
+            return;
         }
 
         fflush($this->stdout);

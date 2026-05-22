@@ -4,31 +4,36 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
+use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 
 /**
- * Handles resume commands.
+ * Handles resume commands via Symfony EventDispatcher.
  *
  * Resumes an existing agent session via the in-process client and forwards
  * all runtime events from the resumed run.
- *
- * @see CommandHandlerInterface
  */
-final readonly class ResumeHandler implements CommandHandlerInterface
+#[AsEventListener(event: ControllerCommandEvent::class)]
+final readonly class ResumeHandler
 {
     public function __construct(
         private readonly InProcessAgentSessionClient $client,
     ) {
     }
 
-    public function handle(RuntimeCommand $command, callable $emit): void
+    public function __invoke(ControllerCommandEvent $event): void
     {
+        if ('resume' !== $event->command->type) {
+            return;
+        }
+
+        $command = $event->command;
         $runId = $command->runId ?? '';
         if ('' === $runId) {
-            $emit(new RuntimeEvent(
+            $event->emit(new RuntimeEvent(
                 type: RuntimeEventTypeEnum::ProtocolError->value,
                 runId: '',
                 seq: 0,
@@ -40,7 +45,7 @@ final readonly class ResumeHandler implements CommandHandlerInterface
 
         $handle = $this->client->resume($runId);
 
-        $emit(new RuntimeEvent(
+        $event->emit(new RuntimeEvent(
             type: RuntimeEventTypeEnum::RunResumed->value,
             runId: $handle->runId,
             seq: 1,
@@ -48,8 +53,8 @@ final readonly class ResumeHandler implements CommandHandlerInterface
         ));
 
         // Forward all events from the resumed run.
-        foreach ($this->client->events($handle->runId) as $event) {
-            $emit($event);
+        foreach ($this->client->events($handle->runId) as $runtimeEvent) {
+            $event->emit($runtimeEvent);
         }
     }
 }

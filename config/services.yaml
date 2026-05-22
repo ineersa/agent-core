@@ -105,7 +105,9 @@ services:
     arguments:
       $receiver: '@messenger.transport.publish'
 
-  # HeadlessController is autowired via resource import.
+  Ineersa\CodingAgent\Runtime\Controller\HeadlessController:
+    arguments:
+      $dispatcher: '@event_dispatcher'
 
   # ─── Messenger publish bus wiring ───
 
