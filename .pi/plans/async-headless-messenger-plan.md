@@ -1,7 +1,7 @@
 # Async headless runtime and Messenger worker plan
 
 Date: 2026-05-21  
-Status: revised — publish bus + SQLite event feed model, RuntimeEventPoller polls DB directly
+Status: revised — controller as event hub, publish bus for transient streaming deltas only
 
 ## Purpose
 
@@ -13,9 +13,9 @@ Core invariants:
 
 - TUI talks only to `AgentSessionClient` / runtime protocol DTOs.
 - `src/AgentCore/` remains the canonical run/state/event engine.
-- `.hatfield/sessions/<id>/events.jsonl` remains the canonical event log.
+- `.hatfield/sessions/<id>/events.jsonl` remains the canonical event log (written by RunCommit, unchanged).
 - `.hatfield/sessions/<id>/state.json` remains the run-state checkpoint/CAS file.
-- `runtime-events.jsonl` is deprecated as a live transport; may remain as optional debug artifact temporarily but will be removed.
+- `runtime-events.jsonl` is deleted. No transition period.
 
 ## Target process topology
 
@@ -23,54 +23,197 @@ Core invariants:
 TUI process
   - owns terminal rendering/input
   - sends JSONL RuntimeCommand to controller
-  - RuntimeEventPoller polls SQLite event feed directly
-  - no file tailing, no JSONL event parsing from controller
+  - reads JSONL RuntimeEvent/command_ack from controller stdout
+  - RuntimeEventPoller reads from controller stdout buffer (same as today)
         |
         v
-Headless controller process
-  - nonblocking stdin/stdout JSONL loop
-  - validates and ACKs commands quickly
-  - dispatches StartRun / ApplyCommand into Messenger
-  - launches/supervises Messenger consumers
-  - does NOT relay events to TUI (TUI reads feed directly)
-  - does NOT run AgentCore LLM/tool work inline
+Headless controller process (event loop)
+  - stream_select-based event loop, never blocks
+  - reads stdin for TUI commands → ACKs immediately → dispatches to Messenger
+  - polls publish transport Receiver::get() → forwards RuntimeEvent JSONL to stdout
+  - supervises Messenger consumers (start/restart/health)
+  - does NOT run AgentCore LLM/tool work
+  - does NOT store events — just forwards them
         |
         v
 Messenger transports / consumers (Doctrine SQLite)
   run_control consumer
     - StartRun, ApplyCommand, AdvanceRun, LlmStepResult, ToolCallResult
     - owns canonical state transitions/commits
-    - publishes RuntimeEvent → publish bus
+    - writes canonical events.jsonl (unchanged)
 
   llm consumer
     - ExecuteLlmStep
     - invokes Symfony AI / provider stream
-    - publishes streaming deltas → publish bus
+    - publishes streaming deltas → publish transport
     - dispatches LlmStepResult back to run_control
 
   tool consumer
     - ExecuteToolCall
     - executes tool subprocesses/callables
-    - publishes tool execution events → publish bus
+    - publishes tool execution events → publish transport
     - dispatches ToolCallResult back to run_control
-
-  publish consumer
-    - PublishRuntimeEvent messages
-    - writes to runtime_event_feed SQLite table
-    - single writer to avoid contention
 ```
+
+No separate publish consumer process. The controller IS the publish consumer — it polls the publish transport directly in its event loop and forwards to TUI.
+
+## Event delivery: controller as event hub
+
+### Why controller-relayed, not SQLite feed table
+
+Previous plan had TUI polling SQLite directly. Problems:
+
+- Hundreds of streaming deltas per few seconds × 3 parallel agents = massive write pressure on SQLite.
+- No push model — TUI must poll, adding latency.
+- Another storage layer to manage and clean up.
+
+Better: the controller already has a JSONL pipe to TUI. It already sits between TUI and workers. Use it as the event hub — same role as Mercure, but over a pipe instead of SSE.
+
+```text
+workers → PublishRuntimeEvent → publish transport (SQLite queue)
+                                          ↓
+                    controller polls Receiver::get() (non-blocking)
+                                          ↓
+                    controller writes RuntimeEvent JSONL to stdout
+                                          ↓
+                    TUI RuntimeEventPoller reads from stdout buffer
+```
+
+Push model. No event feed table. No cleanup needed — Messenger transport handles ACK/delete automatically.
+
+### Controller event loop
+
+```php
+// Simplified controller loop
+while (true) {
+    $read = [$stdin];
+    $write = null;
+    $except = null;
+
+    // 1. Non-blocking check for TUI commands
+    stream_select($read, $write, $except, 0, 10_000); // 10ms timeout
+    if (in_array($stdin, $read)) {
+        $command = readJsonlLine($stdin);
+        if ($command) {
+            writeJsonl($stdout, command_ack($command, 'accepted'));
+            $commandBus->dispatch(mapCommand($command));
+        }
+    }
+
+    // 2. Poll publish transport for runtime events
+    $envelopes = $publishReceiver->get();
+    foreach ($envelopes as $envelope) {
+        $message = $envelope->getMessage(); // PublishRuntimeEvent
+        writeJsonl($stdout, $message->event->toArray());
+        $publishReceiver->ack($envelope); // removes from queue
+    }
+
+    // 3. Check child process health
+    superviseConsumers();
+
+    // 4. Brief sleep to avoid busy loop
+    usleep(10_000); // 10ms
+}
+```
+
+No ReactPHP needed. `stream_select` + Symfony Messenger `Receiver::get()` handles everything.
+
+### Latency
+
+- Command ACK: ~1-10ms (stdin read + stdout write + Messenger dispatch)
+- Event forwarding: ~10-20ms (10ms poll interval + Receiver::get() + stdout write)
+- Cancel propagation: ACK immediately, cancel state set in run_control consumer
+
+## Publish bus design
+
+### What the publish bus carries
+
+**Only transient streaming deltas** (seq=0). Canonical events stay in `events.jsonl` — that path already works and doesn't change.
+
+Publish sources:
+
+1. **Stream subscribers** (`AssistantTextStreamSubscriber`, `AssistantThinkingStreamSubscriber`, `ToolCallStreamSubscriber`) — LLM/tool streaming deltas. These are the events that don't cross process boundaries today.
+
+2. Canonical events from RunCommit do NOT go through the publish bus. They're already in `events.jsonl` and `InProcessAgentSessionClient::events()` reads them from `EventStore`.
+
+### Interface in AgentCore
+
+The publish contract lives in AgentCore. CodingAgent provides the Messenger implementation.
+
+```php
+// src/AgentCore/Contract/RuntimeEventPublisherInterface.php
+interface RuntimeEventPublisherInterface
+{
+    /**
+     * Publish a transient runtime event for live consumers.
+     * Used for streaming deltas that don't appear in canonical events.jsonl.
+     */
+    public function publish(RuntimeEvent $event): void;
+}
+```
+
+AgentCore calls this interface. CodingAgent wires the implementation:
+
+```php
+// src/CodingAgent/Runtime/Publish/MessengerRuntimeEventPublisher.php
+final class MessengerRuntimeEventPublisher implements RuntimeEventPublisherInterface
+{
+    public function __construct(
+        private MessageBusInterface $publisherBus,
+    ) {}
+
+    public function publish(RuntimeEvent $event): void
+    {
+        $this->publisherBus->dispatch(
+            new PublishRuntimeEvent($event->runId, $event),
+        );
+    }
+}
+```
+
+### Publisher message
+
+```php
+// src/AgentCore/Domain/Message/PublishRuntimeEvent.php
+final readonly class PublishRuntimeEvent
+{
+    public function __construct(
+        public string $runId,
+        public RuntimeEvent $event,
+    ) {}
+}
+```
+
+Only carries transient events. No canonical_seq, no transient flag — everything on this bus is transient by definition.
+
+### How stream subscribers use it
+
+Current:
+```php
+// AssistantTextStreamSubscriber
+$this->sink->emit($runtimeEvent); // InMemoryRuntimeEventSink or JsonlRuntimeEventSink
+```
+
+New (async mode):
+```php
+$this->publisher->publish($runtimeEvent); // → Messenger publish transport
+```
+
+The sink (`RuntimeEventSinkInterface`) continues to exist for in-process mode. In async mode, stream subscribers use the publisher instead.
+
+### Cleanup
+
+No event feed table means no cleanup. The controller ACKs envelopes from the publish transport as it forwards them. Messenger Doctrine transport handles row deletion automatically.
+
+Old messages in the transport queue from crashed sessions are cleaned when the controller starts or via `messenger:setup-transports` which can reset queues.
 
 ## Transport: Doctrine SQLite
 
 All Messenger transports use Doctrine transport backed by a single SQLite database.
 
-Required packages (already have `doctrine/dbal`):
-
 ```bash
 composer require symfony/doctrine-messenger doctrine/doctrine-bundle
 ```
-
-Database file: `.hatfield/messenger.sqlite`
 
 ```yaml
 # config/packages/doctrine.yaml
@@ -84,174 +227,41 @@ doctrine:
 # config/packages/framework.yaml (messenger section)
 framework:
   messenger:
+    default_bus: agent.command.bus
+    buses:
+      agent.command.bus:
+        default_middleware: { enabled: true, allow_no_handlers: false, allow_no_senders: true }
+      agent.execution.bus:
+        default_middleware: { enabled: true, allow_no_handlers: false, allow_no_senders: true }
+      agent.publisher.bus:
+        default_middleware: { enabled: true, allow_no_handlers: true, allow_no_senders: true }
     transports:
       run_control: 'doctrine://default?queue_name=run_control'
       llm:         'doctrine://default?queue_name=llm'
       tool:        'doctrine://default?queue_name=tool'
       publish:     'doctrine://default?queue_name=publish'
     routing:
-      # command bus messages → run_control
-      StartRun:          { send: run_control }
-      ApplyCommand:      { send: run_control }
-      AdvanceRun:        { send: run_control }
-      LlmStepResult:     { send: run_control }
-      ToolCallResult:    { send: run_control }
-      # execution bus messages
-      ExecuteLlmStep:    { send: llm }
-      ExecuteToolCall:   { send: tool }
-      # publish messages
-      PublishRuntimeEvent: { send: publish }
+      StartRun:             { send: run_control }
+      ApplyCommand:         { send: run_control }
+      AdvanceRun:           { send: run_control }
+      LlmStepResult:        { send: run_control }
+      ToolCallResult:       { send: run_control }
+      ExecuteLlmStep:       { send: llm }
+      ExecuteToolCall:      { send: tool }
+      PublishRuntimeEvent:  { send: publish }
 ```
 
-Same database also holds the `runtime_event_feed` table for TUI polling.
-
-## Publish bus and event feed
-
-### The old publisher bus
-
-Agent-core previously had `agent.publisher.bus` with `OutboxProjector`, `OutboxStoreInterface`, `OutboxSink`, `InMemoryOutboxStore`, `JsonlOutboxProjectorWorker`, and `MercureOutboxProjectorWorker`. All were removed during RTVS-07 cleanup because they had become dead code (the outbox projector was removed from RunCommit, StepDispatcher.publish() had zero callers).
-
-The old outbox had design issues we want to avoid:
-
-- `InMemoryOutboxStore` was not persistent (useless for multi-process).
-- It operated on domain `RunEvent` objects, not protocol `RuntimeEvent` DTOs.
-- The Mercure publisher was always a noop ($hub was null).
-- The JSONL outbox wrote to cold Flysystem storage (also removed).
-
-### New design: publish bus + SQLite event feed
-
-We rebuild the concept correctly:
-
-**Publisher message:**
-
-```php
-// src/AgentCore/Domain/Message/PublishRuntimeEvent.php
-final readonly class PublishRuntimeEvent
-{
-    public function __construct(
-        public string $runId,
-        public RuntimeEvent $event,
-        public bool $transient,      // seq=0 streaming deltas
-        public ?int $canonicalSeq,   // null for transients, seq>0 for canonical
-    ) {}
-}
-```
-
-**Publisher sources (where messages are dispatched from):**
-
-1. **Stream subscribers** (`AssistantTextStreamSubscriber`, `AssistantThinkingStreamSubscriber`, `ToolCallStreamSubscriber`) — emit streaming deltas (seq=0, transient=true) via `RuntimeEventSinkInterface`.
-
-2. **RunCommit::commit()** — after canonical events are persisted, publishes stable runtime events (seq>0, transient=false).
-
-Both call sites dispatch `PublishRuntimeEvent` to `agent.publisher.bus`.
-
-**RuntimeEventSinkInterface replacement:**
-
-The current `InMemoryRuntimeEventSink` (in-process only) gets a new companion:
-`MessengerPublishRuntimeEventSink` that dispatches to `agent.publisher.bus`.
-
-In multi-process mode, the sink alias switches from `InMemoryRuntimeEventSink` to `MessengerPublishRuntimeEventSink`. Workers use the Messenger-based sink; the publish consumer writes to the shared feed.
-
-**Publish consumer (the single writer):**
-
-```php
-// Handler for PublishRuntimeEvent on agent.publisher.bus
-#[AsMessageHandler(bus: 'agent.publisher.bus')]
-final class PublishRuntimeEventWorker
-{
-    public function __construct(
-        private RuntimeEventFeedStore $feedStore,
-    ) {}
-
-    public function __invoke(PublishRuntimeEvent $message): void
-    {
-        $this->feedStore->append(
-            runId: $message->runId,
-            event: $message->event,
-            transient: $message->transient,
-            canonicalSeq: $message->canonicalSeq,
-        );
-    }
-}
-```
-
-**Feed store table:**
-
-```sql
-CREATE TABLE runtime_event_feed (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_id TEXT NOT NULL,
-    canonical_seq INTEGER DEFAULT NULL,
-    transient BOOLEAN NOT NULL DEFAULT 0,
-    type TEXT NOT NULL,
-    payload_json TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-CREATE INDEX idx_feed_run_id_id ON runtime_event_feed(run_id, id);
-```
-
-### How TUI reads events
-
-`RuntimeEventPoller` polls the SQLite feed table directly — same model as Mercure (subscriber reads from hub). No JSONL file, no controller relay.
-
-```php
-// Simplified RuntimeEventPoller::poll() in async mode
-public function poll(TuiSessionState $state): ?array
-{
-    $rows = $this->feedStore->fetchAfter(
-        runId: $state->handle->runId,
-        afterId: $state->lastFeedId,  // replaces lastSeq for feed cursor
-    );
-
-    if (empty($rows)) {
-        return null;
-    }
-
-    foreach ($rows as $row) {
-        $event = RuntimeEvent::fromArray(json_decode($row['payload_json'], true));
-        // ... existing projection logic (extractFooterUsage, updateActivity, projector->accept)
-        $state->lastFeedId = $row['id'];
-    }
-
-    return self::synchronizeProjectedBlocks($state, $this->projector->blocks());
-}
-```
-
-The TUI process opens its own SQLite connection (read-only is fine). SQLite WAL mode allows concurrent readers while the publish consumer writes.
-
-### Event feed cleanup
-
-Lifecycle-bounded, no per-tick deletion:
-
-- **During run:** poller reads `WHERE run_id = ? AND id > ?`. No deletes. Table stays small per run.
-- **On run terminal (Completed/Failed/Cancelled):** `DELETE FROM runtime_event_feed WHERE run_id = ?`. Run is done, TUI has projected everything.
-- **On session start (new run or resume):** `DELETE FROM runtime_event_feed WHERE run_id = ?`. Clear stale events from previous crash.
-- **Periodic housekeeping (optional):** `DELETE FROM runtime_event_feed WHERE created_at < datetime('now', '-7 days')`. Catches abandoned sessions.
-
-No mark-and-sweep, no transaction-per-tick overhead. The `id > lastId` cursor pattern is inherently deduplicating and O(log n).
-
-### Why not controller-relayed JSONL?
-
-- Controller relaying creates an unnecessary bottleneck and single point of failure.
-- SQLite WAL mode handles concurrent reads efficiently.
-- The feed table doubles as a debug artifact (query by run_id, type, time range).
-- Same model as Mercure: publisher writes to hub, subscribers read from hub.
-
-### What about Mercure for web?
-
-The publish bus is the right place to add Mercure back later. A second publish consumer (`MercurePublishWorker`) can consume from the same transport and push to a Mercure hub for web clients. The `OutboxSink` enum can return as `Feed`, `Mercure`, or similar.
-
-For now, only the SQLite feed consumer exists.
+Database file: `.hatfield/messenger.sqlite` — only Messenger transport tables. No event feed table.
 
 ## Message routing model
 
 ### Three buses
 
 ```text
-agent.command.bus (sync within process)
+agent.command.bus (sync within run_control consumer process)
   - StartRun, ApplyCommand, AdvanceRun, LlmStepResult, ToolCallResult
-  - run-control consumer owns this bus's handler dispatch
   - self-advance callbacks (postCommit) dispatch back here
+  - stays synchronous — the run_control consumer owns this
 
 agent.execution.bus (async via Doctrine transport)
   - ExecuteLlmStep → llm transport
@@ -259,7 +269,7 @@ agent.execution.bus (async via Doctrine transport)
 
 agent.publisher.bus (async via Doctrine transport)
   - PublishRuntimeEvent → publish transport
-  - publish consumer writes to runtime_event_feed
+  - controller polls and forwards to TUI
 ```
 
 ### Routing summary
@@ -273,68 +283,97 @@ agent.publisher.bus (async via Doctrine transport)
 | ToolCallResult | command | run_control | RunOrchestrator::onToolCallResult |
 | ExecuteLlmStep | execution | llm | ExecuteLlmStepWorker |
 | ExecuteToolCall | execution | tool | ExecuteToolCallWorker |
-| PublishRuntimeEvent | publisher | publish | PublishRuntimeEventWorker |
+| PublishRuntimeEvent | publisher | publish | Controller event loop (Receiver::get) |
 
 ### Result routing
 
-Workers dispatch results back to command bus:
+Workers dispatch results back to command bus through Doctrine transport:
 
 - `ExecuteLlmStepWorker` → `LlmStepResult` → run_control transport
 - `ExecuteToolCallWorker` → `ToolCallResult` → run_control transport
 
-In async mode these go through Doctrine transport, not in-process recursion.
-
 ### Critical: command bus stays sync per-process
 
-The command bus self-advance pattern (postCommit callbacks dispatch AdvanceRun synchronously) only works within a single run-control consumer process. The command bus must NOT become async across processes — only execution and publish buses cross process boundaries.
+The command bus self-advance pattern (postCommit callbacks dispatch AdvanceRun synchronously) only works within a single run-control consumer process. Command bus messages must NOT route to Doctrine transport.
+
+### Critical: publish transport is fire-and-forget
+
+The controller ACKs publish messages as it forwards them. If the controller crashes, un-ACKed messages remain in the transport and are picked up on restart. Transient deltas may be lost during a crash — this is acceptable since they're streaming snapshots, not canonical state.
 
 ## Controller responsibilities
 
-The controller process should be boring.
+The controller is a thin event loop process.
 
-It may:
+It must:
 
-- launch and restart `messenger:consume run_control`, `llm`, `tool`, and `publish` child processes;
-- read TUI JSONL commands without blocking on agent execution;
-- emit `command_ack` / rejected ACK quickly;
+- run a `stream_select`-based event loop that never blocks;
+- read TUI JSONL commands from stdin (non-blocking);
+- ACK commands immediately (write `command_ack` to stdout);
 - dispatch valid commands to Messenger;
-- capture child stderr/stdout into logs for debugging;
-- escalate hard-cancel by stopping a worker process only after graceful cancellation times out.
+- poll publish transport `Receiver::get()` and forward events to stdout;
+- launch and supervise `messenger:consume` child processes (run_control, llm, tool);
+- capture child stderr/stdout into logs;
+- escalate hard-cancel by stopping a worker process after graceful cancellation timeout.
 
-It should not:
+It must not:
 
 - perform LLM calls;
 - execute tools;
-- manually process AgentCore state transitions;
-- relay runtime events to TUI (TUI polls SQLite directly);
+- process AgentCore state transitions;
+- buffer or store events — forward and forget;
 - become a replacement for Messenger consumers.
 
-## Storage and state sharing
+### Consumer supervision
 
-### Canonical files
+```text
+controller starts:
+  messenger:consume run_control  (child process 1)
+  messenger:consume llm          (child process 2)
+  messenger:consume tool         (child process 3)
+```
 
-- `.hatfield/sessions/<id>/events.jsonl` — canonical append-only event stream, source for replay.
-- `.hatfield/sessions/<id>/state.json` — materialized RunState checkpoint, CAS-protected.
-- `.hatfield/sessions/<id>/metadata.yaml` — session identity/metadata.
+Controller monitors child processes. On crash:
 
-### Messenger/event feed database
+- log the failure;
+- restart the consumer;
+- if restart count exceeds threshold, report error to TUI.
 
-- `.hatfield/messenger.sqlite` — shared database for:
-  - Messenger Doctrine transport queues (4 tables, one per transport)
-  - `runtime_event_feed` table (TUI polling source)
+## What changes in existing code
 
-### Projection files
+### RuntimeEventPoller — no change needed
 
-- `.hatfield/sessions/<id>/transcript.jsonl` — user-facing transcript projection, rebuildable from canonical events.
-- `runtime-events.jsonl` — deprecated. May remain as debug artifact temporarily, will be removed once feed-based polling is proven.
+The poller already reads from `AgentSessionClient::events()` which in process mode reads from stdout. The controller forwards the same JSONL events. The poller doesn't need to know whether events came from in-process memory or from a controller pipe.
 
-### Workers reading state
+### RuntimeEventSinkInterface — unchanged for in-process
 
-Workers read shared state from session files:
+`InMemoryRuntimeEventSink` and `JsonlRuntimeEventSink` continue to work for in-process mode. No changes.
 
-- `LlmPlatformAdapter` resolves context from `RunStore` using `runId`.
-- Tool execution uses `RunStore` for cancellation via `RunCancellationToken`.
-- Run-control handlers load/commit `RunState` through session stores.
+### Stream subscribers — add publisher in async mode
+
+Current:
+```php
+$this->sink->emit($runtimeEvent);
+```
+
+New (async mode):
+```php
+$this->publisher->publish($runtimeEvent);
+```
+
+This is a coding-agent-level wiring change. AgentCore defines `RuntimeEventPublisherInterface`; coding agent provides the Messenger implementation.
+
+### RunCommit — unchanged
+
+Canonical events stay in `events.jsonl`. RunCommit doesn't touch the publish bus.
+
+### runtime-events.jsonl — deleted
+
+Remove all references:
+- `HatfieldSessionStore::initializeSession()` — remove `file_put_contents($sessionPath.'/runtime-events.jsonl', '')`.
+- `RuntimeEventPoller::poll()` — remove `$this->sessionStore->appendRuntimeEvent()`.
+- `HatfieldSessionStoreTest` — remove assertion on `runtime-events.jsonl`.
+- `TuiAgentSmokeTest` — remove from artifact list.
+- `docs/session-storage.md` — remove references.
 
 ## Runtime protocol changes
 
@@ -354,51 +393,33 @@ Add command acknowledgements:
 }
 ```
 
-Recommended additions:
+Add `RuntimeEventTypeEnum::CommandAck`.
 
-- `RuntimeEventTypeEnum::CommandAck`
-- `ping` / `pong` command-event pair for controller health
+## Storage summary
 
-## What changes in existing code
+### What stays
 
-### RuntimeEventPoller
+| File | Role | Writer |
+|---|---|---|
+| `events.jsonl` | Canonical event log | RunCommit via SessionRunEventStore |
+| `state.json` | Run-state CAS checkpoint | RunOrchestrator via SessionRunStore |
+| `metadata.yaml` | Session identity | SessionInitializer |
+| `transcript.jsonl` | Transcript projection | TranscriptProjector |
+| `messenger.sqlite` | Messenger transport queues | Doctrine transport |
 
-Current flow:
-```
-TickPollListener → RuntimeEventPoller::poll($state, $client)
-  → $client->events($runId)
-    → [InProcess] InMemoryRuntimeEventSink::drain() + EventStore
-  → appendRuntimeEvent() → runtime-events.jsonl
-  → projector->accept()
-```
+### What is deleted
 
-New flow (async mode):
-```
-TickPollListener → RuntimeEventPoller::poll($state)
-  → $feedStore->fetchAfter($runId, $state->lastFeedId)
-  → projector->accept()
-  → state->lastFeedId = last row id
-```
+| File | Reason |
+|---|---|
+| `runtime-events.jsonl` | Replaced by controller-relayed publish events. No transition period. |
 
-The poller no longer calls `AgentSessionClient::events()` in async mode. It reads from the SQLite feed table directly. In-process mode continues using the existing path for backward compatibility.
+### Workers reading state
 
-### RuntimeEventSinkInterface
+Workers read shared state from session files (unchanged):
 
-Current: `emit(RuntimeEvent)` → `InMemoryRuntimeEventSink` (in-process) or `JsonlRuntimeEventSink` (headless).
-
-New: add `MessengerPublishRuntimeEventSink` that dispatches `PublishRuntimeEvent` to `agent.publisher.bus`. Wired as the default sink alias in async mode.
-
-### Stream subscribers
-
-Current: `AssistantTextStreamSubscriber`, `AssistantThinkingStreamSubscriber`, `ToolCallStreamSubscriber` call `$this->sink->emit(RuntimeEvent)`.
-
-No change needed in subscribers themselves. The sink implementation switches from in-memory to Messenger-based.
-
-### RunCommit
-
-Current: no publish call (old OutboxProjector was removed).
-
-New: after canonical events are persisted and mapped to RuntimeEvent, dispatch `PublishRuntimeEvent` for each stable event to `agent.publisher.bus`.
+- `LlmPlatformAdapter` resolves context from `RunStore` using `runId`.
+- Tool execution uses `RunStore` for cancellation via `RunCancellationToken`.
+- Run-control handlers load/commit `RunState` through session stores.
 
 ## Required hardening before multi-process is safe
 
@@ -406,7 +427,7 @@ New: after canonical events are persisted and mapped to RuntimeEvent, dispatch `
 |---|---|---|
 | Idempotency | `MessageIdempotencyService` is in-memory | persistent per-session or transport-backed idempotency store |
 | CAS conflicts | failed `compareAndSwap()` can drop progress | retry/backoff or explicit retryable worker failure |
-| Runtime stream | `InMemoryRuntimeEventSink` is per-process | Messenger publish bus + SQLite feed |
+| Runtime stream | `InMemoryRuntimeEventSink` is per-process | Publish bus + controller relay |
 | Serialization | some result payloads include DTO/value objects | serializer round-trip tests for every transported message |
 | Supervision | `AgentProcessSupervisor` is scaffold-level | start/restart/heartbeat/log capture for consumers |
 | Cancellation | graceful cancellation depends on worker checks | ACK immediately, set cancellation state, escalate hard kill later |
@@ -415,11 +436,11 @@ New: after canonical events are persisted and mapped to RuntimeEvent, dispatch `
 
 ### Phase 0 — FrameworkBundle/Messenger foundation ✅ DONE
 
-Completed in PR #37. FrameworkBundle adopted, Messenger commands available, custom compiler pass removed.
+Completed in PR #37.
 
-### Phase 1 — Doctrine SQLite transport + publish bus
+### Phase 1 — Doctrine SQLite transport + publish bus infrastructure
 
-Goal: establish the transport layer and publish bus infrastructure.
+Goal: establish the transport layer and publish bus.
 
 Tasks:
 
@@ -427,59 +448,60 @@ Tasks:
 - configure Doctrine DBAL with SQLite at `.hatfield/messenger.sqlite`;
 - add `agent.publisher.bus` to framework.yaml;
 - define four Doctrine transports (run_control, llm, tool, publish);
-- create `PublishRuntimeEvent` message class;
-- create `PublishRuntimeEventWorker` handler;
-- create `RuntimeEventFeedStore` with `runtime_event_feed` table;
-- create `MessengerPublishRuntimeEventSink` implementing `RuntimeEventSinkInterface`;
-- wire publish bus transport and handler;
+- create `RuntimeEventPublisherInterface` in AgentCore `Contract/`;
+- create `PublishRuntimeEvent` message in AgentCore `Domain/Message/`;
+- create `MessengerRuntimeEventPublisher` in CodingAgent implementing the interface;
+- wire publisher bus transport and alias;
 - verify with `debug:messenger`.
 
 Acceptance criteria:
 
-- `bin/console debug:messenger` shows all four buses, transports, and handlers;
-- `bin/console messenger:consume publish` processes a test message;
-- `RuntimeEventFeedStore::append()` and `::fetchAfter()` work correctly;
+- `bin/console debug:messenger` shows all three buses, four transports;
+- `MessengerRuntimeEventPublisher` dispatches to publish transport;
+- `Receiver::get()` on publish transport returns dispatched messages;
 - all existing tests still pass (sync mode unchanged).
 
-### Phase 2 — Wire publish sources + RuntimeEventPoller feed polling
+### Phase 2 — Wire publish sources + delete runtime-events.jsonl
 
-Goal: make workers publish events and TUI read from feed.
+Goal: make workers publish transient events, remove runtime-events.jsonl.
 
 Tasks:
 
-- wire stream subscribers → `MessengerPublishRuntimeEventSink` in async mode;
-- wire `RunCommit::commit()` to publish stable runtime events;
-- add feed-based polling mode to `RuntimeEventPoller`;
-- TuiSessionState gets `lastFeedId` field for feed cursor;
-- deprecate `runtime-events.jsonl` writes in poller (keep behind flag for transition);
-- add feed cleanup on terminal state / session start.
+- wire stream subscribers to use `RuntimeEventPublisherInterface` in async mode;
+- delete all `runtime-events.jsonl` references (creation, writing, assertions, docs);
+- update `HatfieldSessionStore::initializeSession()` to not create the file;
+- update `RuntimeEventPoller::poll()` to not write to the file;
+- update tests (`HatfieldSessionStoreTest`, `TuiAgentSmokeTest`);
+- update `docs/session-storage.md`.
 
 Acceptance criteria:
 
-- LLM streaming deltas appear in `runtime_event_feed` table during a run;
-- RuntimeEventPoller reads deltas from feed and renders in TUI;
-- canonical events appear in feed after RunCommit;
-- feed cleanup runs on run completion;
-- in-process mode still works without feed table (backward compat).
+- streaming deltas are dispatched to publish transport;
+- no `runtime-events.jsonl` file created anywhere;
+- all tests pass;
+- in-process mode still works (uses sink, not publisher).
 
-### Phase 3 — command ACK and controller skeleton
+### Phase 3 — Controller event loop + command ACK
 
-Goal: separate command receipt from command execution at the protocol level.
+Goal: build the controller process with event loop, command handling, and publish forwarding.
 
 Tasks:
 
+- implement controller event loop using `stream_select` + `Receiver::get()`;
 - add `command_ack` runtime event type;
-- make headless controller ACK valid JSONL commands before dispatching Messenger messages;
-- reject invalid commands with rejected ACK;
-- controller launches/supervises four Messenger consumers.
+- controller reads stdin JSONL, ACKs, dispatches to Messenger;
+- controller polls publish transport, forwards to stdout JSONL;
+- controller launches/supervises `messenger:consume run_control`, `llm`, `tool`;
+- controller handles hard-cancel (stop worker process).
 
 Acceptance criteria:
 
-- parent can correlate every command ID to an ACK;
-- ACK is emitted before long-running work completes;
-- existing in-process TUI behavior remains unchanged.
+- controller accepts commands and ACKs within ~10ms;
+- controller forwards publish events to stdout within ~20ms;
+- controller supervises consumers (restart on crash);
+- TUI works through controller (prompt → response visible).
 
-### Phase 4 — async execution transports
+### Phase 4 — Async execution transports
 
 Goal: move slow LLM/tool work out of the run-control path.
 
@@ -488,7 +510,6 @@ Tasks:
 - route `ExecuteLlmStep` to `llm` transport;
 - route `ExecuteToolCall` to `tool` transport;
 - route `LlmStepResult` / `ToolCallResult` back to `run_control`;
-- controller launches `messenger:consume llm` and `messenger:consume tool`;
 - keep run-control single-consumer at first.
 
 Acceptance criteria:
@@ -496,17 +517,17 @@ Acceptance criteria:
 - controller command handling returns quickly after scheduling execution;
 - LLM/tool work runs in separate consumer process;
 - canonical `events.jsonl` and `state.json` remain correct;
-- streaming deltas flow through publish bus to feed to TUI;
+- streaming deltas flow through publish bus → controller → TUI;
 - steer/cancel commands arrive while LLM work is in progress.
 
-### Phase 5 — async run-control consumer
+### Phase 5 — Async run-control consumer
 
 Goal: make orchestration itself a proper consumer path.
 
 Tasks:
 
 - route `StartRun`, `ApplyCommand`, `AdvanceRun`, `LlmStepResult`, `ToolCallResult` to `run_control`;
-- controller dispatches and returns to JSONL loop;
+- controller dispatches and returns to event loop;
 - ensure self-advance callbacks enqueue correctly;
 - validate terminal/stale-result/idempotent behavior.
 
@@ -516,7 +537,7 @@ Acceptance criteria:
 - run-control consumer can be restarted without corrupting state;
 - one run progresses from start to LLM to result to completion through transports.
 
-### Phase 6 — persistent idempotency, CAS retry, and supervision
+### Phase 6 — Persistent idempotency, CAS retry, and supervision
 
 Goal: make the multi-process topology robust.
 
@@ -524,8 +545,7 @@ Tasks:
 
 - persist idempotency keys;
 - make CAS conflicts retryable;
-- supervise all consumers;
-- capture stderr/stdout logs;
+- harden consumer supervision;
 - add heartbeat/restart policy;
 - add hard-cancel escalation.
 
@@ -540,8 +560,6 @@ Acceptance criteria:
 
 Per AGENTS.md, runtime/TUI changes require product-level Castor validation.
 
-Required validation for each implementation slice touching runtime/TUI:
-
 ```bash
 castor test
 castor deptrac
@@ -550,35 +568,28 @@ castor cs-check
 castor run:agent-test
 ```
 
-Product validation must exercise:
-
-1. start agent in tmux;
-2. type prompt, submit;
-3. wait for visible assistant response;
-4. send steer/cancel during in-flight work for async slices;
-5. capture TUI snapshot and session artifacts on failure.
-
 Suggested new tests:
 
-- `debug:messenger` shows all four buses with correct transports/handlers;
-- `RuntimeEventFeedStore` round-trip (append → fetchAfter);
+- `debug:messenger` shows all three buses with correct transports/handlers;
 - serializer round-trip for `PublishRuntimeEvent` and all transported messages;
+- `MessengerRuntimeEventPublisher` dispatches to correct transport;
+- controller event loop forwards publish events to stdout;
 - command ACK emitted before fake slow LLM worker completes;
-- feed cleanup on terminal state;
-- duplicate publish is idempotent in feed (dedupe by run_id + canonical_seq);
-- cancel during slow LLM updates state in feed.
+- cancel during slow LLM ACKs immediately and updates state;
+- duplicate publish is handled correctly (transport dedup or idempotent projection);
+- `runtime-events.jsonl` is never created.
 
 ## Risks and mitigations
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| SQLite write contention under load | Medium | Single publish consumer is the only writer; WAL mode allows concurrent reads |
-| Message serialization fails for nested RuntimeEvent DTOs | High | Add explicit transport serializer tests before enabling workers |
+| SQLite write contention under load | Medium | Only Messenger transport tables; WAL mode for concurrent read/write |
+| Message serialization fails for nested RuntimeEvent DTOs | High | Explicit transport serializer tests before enabling workers |
 | In-memory idempotency duplicates events | High | Persist idempotency before multi-worker scaling |
-| Feed table grows unbounded | Low | Lifecycle cleanup on terminal + periodic housekeeping |
-| `runtime-events.jsonl` removal breaks existing tests | Medium | Keep behind flag initially, update tests to use feed, then remove |
-| Command bus becomes async by mistake | High | Explicit routing config; command bus messages never route to Doctrine transport |
-| Feed latency too high for streaming UX | Medium | Publish consumer should be lightweight (single INSERT); measure end-to-end latency |
+| Controller crash loses in-flight transients | Low | Acceptable — transients are streaming snapshots, not state |
+| Command bus becomes async by mistake | High | Explicit routing config; command bus never routes to Doctrine transport |
+| Controller event loop stalls | Medium | Keep controller thin; measure tick latency; add watchdog timer |
+| Removing runtime-events.jsonl breaks in-process path | Medium | In-process path never reads the file (uses InMemoryRuntimeEventSink) |
 
 ## Recommended task breakdown
 
@@ -588,33 +599,42 @@ Suggested new tests:
    - Install doctrine-messenger + doctrine-bundle.
    - Configure SQLite DBAL connection.
    - Add `agent.publisher.bus` and four Doctrine transports.
-   - Create `PublishRuntimeEvent`, `PublishRuntimeEventWorker`, `RuntimeEventFeedStore`, `MessengerPublishRuntimeEventSink`.
+   - Create `RuntimeEventPublisherInterface` in AgentCore, `PublishRuntimeEvent` message, `MessengerRuntimeEventPublisher` in CodingAgent.
    - Verify with `debug:messenger`.
 
-3. **ASYNC-02 Wire publish sources + feed polling**
-   - Wire stream subscribers and RunCommit to publish bus.
-   - Add feed-based polling to RuntimeEventPoller.
-   - Add feed cleanup on terminal/session start.
-   - Deprecate `runtime-events.jsonl`.
+3. **ASYNC-02 Wire publish sources + delete runtime-events.jsonl**
+   - Wire stream subscribers to publisher in async mode.
+   - Delete all runtime-events.jsonl references.
+   - All tests pass, no file created.
 
-4. **ASYNC-03 Protocol ACK and controller skeleton**
-   - Add `command_ack` event type.
-   - Controller ACK/reject commands.
-   - Controller supervises four consumers.
+4. **ASYNC-03 Controller event loop + command ACK**
+   - Build controller with stream_select loop.
+   - Command ACK/reject. Consumer supervision.
+   - Publish forwarding to stdout.
 
 5. **ASYNC-04 Async execution transports**
-   - Route LLM/tool messages to async transports.
-   - Verify TUI stays responsive during LLM work.
+   - Route LLM/tool to async transports.
+   - Verify streaming through publish bus.
 
 6. **ASYNC-05 Async run-control consumer**
-   - Route command bus messages to run_control transport.
-   - Validate self-advance callbacks work across transport.
+   - Route command messages to run_control transport.
+   - Validate self-advance across transport.
 
 7. **ASYNC-06 Persistent idempotency, CAS retry, supervision**
    - Harden for production multi-process use.
+
+## Future: Mercure for web
+
+The `agent.publisher.bus` is the natural place to add Mercure back. When web UIs are needed:
+
+- add a second handler on the publish transport (`MercurePublishWorker`);
+- or use Messenger worker routing to send publish messages to both controller and Mercure consumer.
+
+The `OutboxSink` concept can return as `Pipe` (TUI) and `Mercure` (web).
 
 ## History
 
 - 2026-05-21: initial plan (no FrameworkBundle, custom wiring)
 - 2026-05-21: revised for FrameworkBundle adoption
-- 2026-05-21: revised with publish bus + SQLite event feed model (RuntimeEventPoller polls DB directly, no controller relay, lifecycle-bounded cleanup, Mercure as future publish consumer)
+- 2026-05-21: revised with publish bus + SQLite event feed table
+- 2026-05-21: revised with controller as event hub — no feed table, controller polls publish transport and pushes to TUI, runtime-events.jsonl deleted, publish bus carries only transient streaming deltas, canonical events stay in events.jsonl
