@@ -41,7 +41,7 @@ See plan "Future: shared consumer pool" section:
 - multiple sessions don't corrupt each other
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/async-06-idempotency-cas-supervision
 Worktree: /home/ineersa/projects/agent-core-worktrees/async-06-idempotency-cas-supervision
 Fork run:
