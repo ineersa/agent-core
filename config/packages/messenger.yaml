@@ -1,33 +1,6 @@
-# Synchronous Messenger buses for the no-FrameworkBundle kernel.
+# Messenger buses are now configured in config/packages/framework.yaml
+# under framework.messenger. This file is intentionally left minimal.
 #
-# These are raw DI service definitions, NOT framework.messenger YAML config.
-# FrameworkBundle is intentionally excluded (see AGENTS.md).  The bus
-# middleware (HandleMessageMiddleware) and handler registration
-# (via #[AsMessageHandler] attribute) are wired by
-# MessengerIntegrationCompilerPass during container compilation.
-#
-# Each bus starts with an empty constructor argument ([]).
-# During compilation, the compiler pass replaces it with the actual
-# middleware stack built from {bus}.middleware parameters.
-services:
-  _defaults:
-    autowire: true
-    autoconfigure: true
-
-  agent.command.bus:
-    class: Symfony\Component\Messenger\MessageBus
-    arguments:
-      - []
-    public: true
-
-  agent.execution.bus:
-    class: Symfony\Component\Messenger\MessageBus
-    arguments:
-      - []
-    public: true
-
-  Symfony\Component\Messenger\MessageBus $commandBus:
-    alias: agent.command.bus
-
-  Symfony\Component\Messenger\MessageBusInterface:
-    alias: agent.command.bus
+# Bus definitions:
+#   agent.command.bus  — orchestrator handlers (StartRun, ApplyCommand, etc.)
+#   agent.execution.bus — worker handlers (ExecuteLlmStep, ExecuteToolCall)
