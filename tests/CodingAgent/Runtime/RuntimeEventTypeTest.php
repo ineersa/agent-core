@@ -100,6 +100,10 @@ final class RuntimeEventTypeTest extends TestCase
             RuntimeEventTypeEnum::UsageUpdated,
             RuntimeEventTypeEnum::ContextUpdated,
             RuntimeEventTypeEnum::CostUpdated,
+
+            // Command protocol (controller <-> TUI)
+            RuntimeEventTypeEnum::CommandAck,
+            RuntimeEventTypeEnum::CommandRejected,
         ];
 
         $cases = RuntimeEventTypeEnum::cases();
@@ -318,7 +322,7 @@ final class RuntimeEventTypeTest extends TestCase
     public function test_total_count_is_expected(): void
     {
         // 8 lifecycle + 1 user_input + 9 assistant + 8 tool + 2 progress
-        // + 6 HITL + 2 cancellation + 5 metadata = 41
-        self::assertCount(41, RuntimeEventTypeEnum::cases());
+        // + 6 HITL + 2 cancellation + 5 metadata + 2 command = 43
+        self::assertCount(43, RuntimeEventTypeEnum::cases());
     }
 }

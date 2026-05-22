@@ -97,6 +97,12 @@ services:
   Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface:
     alias: Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink
 
+  # ─── Controller event loop ───
+
+  Ineersa\CodingAgent\Runtime\Controller\HeadlessController:
+    arguments:
+      $publishReceiver: '@messenger.transport.publish'
+
   # ─── Messenger publish bus wiring ───
 
   Ineersa\CodingAgent\Runtime\Publish\MessengerRuntimeEventPublisher:

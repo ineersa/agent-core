@@ -7,9 +7,9 @@ namespace Ineersa\CodingAgent\Runtime\Protocol;
 /**
  * Stable runtime event name constants.
  *
- * Every RuntimeEvent emitted by the runtime or persisted in runtime-events.jsonl
- * MUST use one of these type strings to ensure stable tooling, projections, and
- * replay without coupling to raw AgentCore RunEvent type names.
+ * Every RuntimeEvent emitted by the runtime MUST use one of these type strings
+ * to ensure stable tooling, projections, and replay without coupling to raw
+ * AgentCore RunEvent type names.
  *
  * Refer to AGENTS.md in this directory for payload shape documentation.
  */
@@ -83,6 +83,11 @@ enum RuntimeEventTypeEnum: string
     case ContextUpdated = 'context.updated';
     case CostUpdated = 'cost.updated';
 
+    // ── Command protocol (controller <-> TUI) ───────────────────────────────
+
+    case CommandAck = 'command.ack';
+    case CommandRejected = 'command.rejected';
+
     /**
      * Return the event family name for grouping and documentation.
      *
@@ -116,6 +121,8 @@ enum RuntimeEventTypeEnum: string
             self::ApprovalApproved, self::ApprovalRejected => 'hitl',
 
             self::CancellationRequested, self::OperationCancelled => 'cancellation',
+
+            self::CommandAck, self::CommandRejected => 'command',
 
             self::ModelChanged, self::ReasoningChanged, self::UsageUpdated,
             self::ContextUpdated, self::CostUpdated => 'metadata',
