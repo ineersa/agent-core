@@ -43,14 +43,26 @@ This task may absorb or supersede the existing TODO `2026-05-18-add-monolog-logg
 - Because this touches runtime/container/CLI infrastructure, run a product-level workflow: `castor run:agent-test` or `castor test:tui`, and report session artifacts on failure.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
-Fork run:
+Status: IN-PROGRESS
+Branch: task/framework-bundle-cli-infrastructure-messenger-monolog
+Worktree: /home/ineersa/projects/agent-core-worktrees/framework-bundle-cli-infrastructure-messenger-monolog
+Fork run: 2yayxrwbk5nn
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-22T00:40:50.133Z
 Completed:
 
 ## Work log
 - Created: 2026-05-22T00:39:54.580Z
+
+## Task workflow update - 2026-05-22T00:40:50.133Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/framework-bundle-cli-infrastructure-messenger-monolog.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/framework-bundle-cli-infrastructure-messenger-monolog.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/framework-bundle-cli-infrastructure-messenger-monolog.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/framework-bundle-cli-infrastructure-messenger-monolog.
+- Summary: Starting FrameworkBundle CLI infrastructure work: adopt FrameworkBundle for Messenger/Monolog, remove custom Messenger compiler pass where possible, preserve no-HTTP policy, and validate via Castor/product workflow.
+
+## Task workflow update - 2026-05-22T00:41:06.871Z
+- Recorded fork run: 2yayxrwbk5nn
+- Summary: Launched implementation fork in worktree /home/ineersa/projects/agent-core-worktrees/framework-bundle-cli-infrastructure-messenger-monolog. Scope: adopt FrameworkBundle for CLI/container infrastructure, normal Messenger commands/config, MonologBundle logging, remove custom Messenger compiler pass where possible, update docs/task board, and run Castor/product validation.
