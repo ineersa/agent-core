@@ -634,6 +634,51 @@ Suggested new tests:
 7. **ASYNC-06 Persistent idempotency, CAS retry, supervision**
    - Harden for production multi-process use.
 
+## Future: shared consumer pool
+
+Initial implementation uses per-session controllers that supervise their own consumers (Option B). The natural evolution is a shared worker pool:
+
+```text
+Shared consumers (long-lived, started once per project/CWD)
+  messenger:consume run_control  →  1 process
+  messenger:consume llm          →  N processes (scale for parallel LLM)
+  messenger:consume tool         →  N processes (scale for parallel tools)
+
+Per-session controllers (one per TUI instance)
+  only does: stdin/stdout JSONL bridge + publish forwarding
+  does NOT launch or supervise consumers
+```
+
+Messages carry `runId`. Any consumer can process any message — loads `state.json` from `.hatfield/sessions/<runId>/`. Interleaving is safe.
+
+Parallel tool calls: run-control dispatches N `ExecuteToolCall` messages, N tool consumers pick them up in parallel. Zero code changes, just more consumer processes.
+
+### Worker status and hard cancel
+
+Consumers heartbeat their current assignment through the publish bus:
+
+```json
+{"type":"worker_status","consumerId":"tool-3","messageId":"abc123","runId":"session-A","status":"executing","startedAt":"..."}
+```
+
+Controller maintains a map of consumer → {messageId, runId, startedAt}. On hard-cancel timeout, controller knows exactly which PID to SIGTERM/SIGKILL.
+
+Or: worker status in a `worker_status` SQLite table, polled by controller. Same pattern as everything else.
+
+### Cancel ladder
+
+```
+1. cancel command → controller ACKs immediately
+2. dispatch ApplyCommand(cancel) → run_control sets cancellation state
+3. workers check cancel token at natural boundaries (stream chunks, tool dispatches)
+4. tool worker with bash child → SIGTERM child, wait, SIGKILL child
+5. worker finishes, sends cancelled result
+6. hard cancel (timeout, future): controller SIGTERM specific consumer PID
+7. absolute last resort: SIGKILL → risk orphaned bash children
+```
+
+Initial implementation: steps 1-5 only. Steps 6-7 deferred until shared consumer pool is implemented.
+
 ## Future: Mercure for web
 
 The `agent.publisher.bus` is the natural place to add Mercure back. When web UIs are needed:
@@ -650,3 +695,4 @@ The `OutboxSink` concept can return as `Pipe` (TUI) and `Mercure` (web).
 - 2026-05-21: revised with publish bus + SQLite event feed table
 - 2026-05-21: revised with controller as event hub — no feed table, controller polls publish transport and pushes to TUI, runtime-events.jsonl deleted, publish bus carries only transient streaming deltas, canonical events stay in events.jsonl
 - 2026-05-21: revised controller to use Revolt event loop (already available via symfony/tui) instead of manual stream_select
+- 2026-05-21: added shared consumer pool future section, worker status heartbeat, cancel ladder
