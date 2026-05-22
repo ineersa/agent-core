@@ -480,7 +480,7 @@ final class TuiAgentSmokeTest extends TestCase
             $lastDir = $dirs[0] ?? null;
             if (null !== $lastDir) {
                 \fwrite(\STDERR, "Last session: {$lastDir}\n\n");
-                foreach (['events.jsonl', 'runtime-events.jsonl', 'transcript.jsonl', 'state.json', 'metadata.yaml'] as $file) {
+                foreach (['events.jsonl', 'transcript.jsonl', 'state.json', 'metadata.yaml'] as $file) {
                     $path = $lastDir . '/' . $file;
                     if (\file_exists($path)) {
                         $content = \file_get_contents($path);

@@ -19,7 +19,7 @@ use Symfony\Component\Yaml\Yaml;
  *     state.json          AgentCore RunState hot state cache (via SessionRunStore)
  *     events.jsonl        AgentCore RunEvent canonical stream (via SessionRunEventStore)
  *     transcript.jsonl    Append-only TUI transcript projection
- *     runtime-events.jsonl Append-only runtime protocol event log
+ *     transcript.jsonl    Append-only TUI transcript projection
  *
  * session_id === run_id in Hatfield. One directory equals one session
  * equals one agent run equals one future fork tree node.
@@ -46,7 +46,6 @@ final class HatfieldSessionStore
      *   state.json (empty, written by SessionRunStore on first CAS)
      *   events.jsonl (empty)
      *   transcript.jsonl (empty)
-     *   runtime-events.jsonl (empty)
      *
      * @param string $prompt    Optional initial prompt for metadata
      * @param string $sessionId Optional pre-generated ID; auto-generated if empty
@@ -85,12 +84,10 @@ final class HatfieldSessionStore
             file_put_contents($sessionPath.'/state.json', '');
             file_put_contents($sessionPath.'/events.jsonl', '');
             file_put_contents($sessionPath.'/transcript.jsonl', '');
-            file_put_contents($sessionPath.'/runtime-events.jsonl', '');
 
             chmod($sessionPath.'/state.json', 0644);
             chmod($sessionPath.'/events.jsonl', 0644);
             chmod($sessionPath.'/transcript.jsonl', 0644);
-            chmod($sessionPath.'/runtime-events.jsonl', 0644);
         } finally {
             $lock->release();
         }
@@ -187,27 +184,6 @@ final class HatfieldSessionStore
         }
 
         return $entries;
-    }
-
-    /**
-     * Append a runtime protocol event to a session.
-     */
-    public function appendRuntimeEvent(string $sessionId, array $event): void
-    {
-        $path = $this->getSessionDir($sessionId).'/runtime-events.jsonl';
-        $lock = $this->lockFactory->createLock('hatfield-session-'.$sessionId);
-
-        try {
-            $lock->acquire(true);
-            $this->ensureSessionDir($sessionId);
-            file_put_contents(
-                $path,
-                json_encode($event, \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES)."\n",
-                \FILE_APPEND | \LOCK_EX,
-            );
-        } finally {
-            $lock->release();
-        }
     }
 
     /**

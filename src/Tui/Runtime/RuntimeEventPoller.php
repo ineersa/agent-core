@@ -10,15 +10,15 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Psr\Log\LoggerInterface;
 
 /**
  * Polls AgentSessionClient for new runtime events on each TUI tick.
  *
- * Runtime events are persisted unchanged, then fed through the transcript
- * projector so the UI renders projected TranscriptBlock DTOs instead of the
- * previous raw event log entries.
+ * Runtime events update activity state, extract token usage, and are fed
+ * through the transcript projector so the UI renders projected TranscriptBlock
+ * DTOs. Events are NOT persisted here — canonical storage happens in AgentCore
+ * (events.jsonl) and streaming deltas go through RuntimeEventPublisherInterface.
  */
 final class RuntimeEventPoller
 {
@@ -26,7 +26,6 @@ final class RuntimeEventPoller
     private const float POLL_INTERVAL = 0.05;
 
     public function __construct(
-        private readonly HatfieldSessionStore $sessionStore,
         private readonly TranscriptProjectorInterface $projector,
         private readonly LoggerInterface $logger,
     ) {
@@ -72,11 +71,6 @@ final class RuntimeEventPoller
                     $state->lastSeq = $seq;
                 }
                 $hasNew = true;
-
-                $this->sessionStore->appendRuntimeEvent(
-                    $state->sessionId,
-                    $runtimeEvent->toArray(),
-                );
 
                 self::extractFooterUsage($state, $runtimeEvent);
                 self::updateActivity($state, $runtimeEvent);
