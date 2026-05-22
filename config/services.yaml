@@ -97,6 +97,15 @@ services:
   Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface:
     alias: Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink
 
+  # ─── Messenger publish bus wiring ───
+
+  Ineersa\CodingAgent\Runtime\Publish\MessengerRuntimeEventPublisher:
+    arguments:
+      $publisherBus: '@agent.publisher.bus'
+
+  Ineersa\AgentCore\Contract\RuntimeEventPublisherInterface:
+    alias: Ineersa\CodingAgent\Runtime\Publish\MessengerRuntimeEventPublisher
+
   # Stream observer delegates to Symfony EventDispatcher with per-delta subscribers.
   Ineersa\CodingAgent\Runtime\Stream\LlmStreamDispatchObserver:
     arguments:
