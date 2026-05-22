@@ -31,6 +31,13 @@ class Kernel extends AbstractKernel
         $container->setParameter('kernel.charset', 'UTF-8');
         $container->setParameter('kernel.default_locale', 'en');
 
+        // CWD-based path for runtime data files (sessions, messenger SQLite, logs).
+        // Do NOT use %kernel.project_dir% — that's the app install root, not the
+        // user's project directory. .hatfield/ lives relative to the CWD, and users
+        // may run the agent from a different working directory.
+        $cwd = getcwd();
+        $container->setParameter('app.cwd', false !== $cwd ? $cwd : sys_get_temp_dir());
+
         // FrameworkBundle and MessengerPass handle all Messenger wiring
         // (buses, middleware, #[AsMessageHandler] attribute, handler-to-bus locators).
         // No custom compiler passes are needed.
