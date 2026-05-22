@@ -4,12 +4,27 @@
 #   agent.command.bus    — sync orchestration for StartRun/ApplyCommand/AdvanceRun
 #                          and results (LlmStepResult, ToolCallResult). Self-advance
 #                          callbacks (postCommit) dispatch back here synchronously.
-#   agent.execution.bus  — async LLM/tool work after ASYNC-04 (currently sync).
+#                          Results are handled sync within consumer processes — they
+#                          are NOT routed through Doctrine transport.
+#   agent.execution.bus  — async LLM/tool work. ExecuteLlmStep → llm transport,
+#                          ExecuteToolCall → tool transport. Workers consume from
+#                          their respective queues and dispatch results back to
+#                          agent.command.bus within the same consumer process.
 #   agent.publisher.bus  — async runtime event delivery for transient streaming
 #                          deltas. Controller polls and forwards to TUI.
 #
 # Transports use Doctrine SQLite backed by .hatfield/messenger.sqlite.
 # See config/packages/doctrine.yaml for DBAL configuration.
+#
+# After ASYNC-04:
+# - ExecuteLlmStep → llm transport (messenger:consume llm)
+# - ExecuteToolCall → tool transport (messenger:consume tool)
+# - Result messages (LlmStepResult, ToolCallResult) stay sync on command bus
+#   within the consumer process where the worker ran. RunOrchestrator is
+#   registered for agent.command.bus and handles results in the same process.
+# - PublishRuntimeEvent → publish transport (controller polls, forwards to TUI)
+# - StartRun, ApplyCommand, AdvanceRun remain un-routed (sync command bus).
+#   ASYNC-05 will route these to run_control transport.
 
 framework:
     messenger:
@@ -38,4 +53,6 @@ framework:
             publish:     'doctrine://default?queue_name=publish'
 
         routing:
+            Ineersa\AgentCore\Domain\Message\ExecuteLlmStep: llm
+            Ineersa\AgentCore\Domain\Message\ExecuteToolCall: tool
             Ineersa\AgentCore\Domain\Message\PublishRuntimeEvent: publish
