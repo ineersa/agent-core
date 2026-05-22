@@ -52,6 +52,13 @@ services:
     arguments:
       $projectDir: '%kernel.project_dir%'
 
+  Ineersa\AgentCore\Infrastructure\Storage\JsonlIdempotencyStore:
+    arguments:
+      $projectDir: '%kernel.project_dir%'
+
+  Ineersa\AgentCore\Contract\IdempotencyStoreInterface:
+    alias: Ineersa\AgentCore\Infrastructure\Storage\JsonlIdempotencyStore
+
   # ─── Hatfield config services ───
 
   Ineersa\CodingAgent\Config\AppResourceLocator:
@@ -93,6 +100,10 @@ services:
   # ─── Transient runtime stream wiring ───
 
   Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink: ~
+
+  Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient:
+    arguments:
+      $idempotencyStore: '@Ineersa\AgentCore\Infrastructure\Storage\JsonlIdempotencyStore'
 
   Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface:
     alias: Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink
