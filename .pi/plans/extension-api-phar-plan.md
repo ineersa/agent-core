@@ -360,16 +360,46 @@ Do not present in-process extensions as sandboxed.
 - Whether to support global user extensions under `~/.hatfield/extensions` in addition to project-local extensions.
 - Whether extension config should be passed through `ExtensionApiInterface`, constructor injection, or a dedicated `ExtensionContextDTO`.
 
-## Candidate implementation tasks
+## Tracked v1 tasks, order, and parallelism
 
-- EXT-00: Create `src/CodingAgent/ExtensionApi/` contracts under namespace `Ineersa\Hatfield\ExtensionApi`, plus Composer autoload, Deptrac, and AGENTS boundary rules so the API can be extracted later.
-- EXT-01: Add `.hatfield/extensions` initialization with Composer project template.
-- EXT-02: Add settings schema for `extensions.enabled` and optional per-extension config.
-- EXT-03: Implement extension autoload loading from `<cwd>/.hatfield/extensions/vendor/autoload.php`.
-- EXT-04: Implement extension factory/loader and call `HatfieldExtensionInterface::register()`.
-- EXT-05: Implement `ExtensionApiInterface::registerTool()` adapter into CodingAgent `ToolRegistry`.
-- EXT-06: Add PHAR build/scoper rules: scope internal deps, keep `Ineersa\Hatfield\ExtensionApi\*` unscoped.
-- EXT-07: Add docs warning that extensions are trusted in-process code, not sandboxed.
+Use three implementation tasks for v1. They intentionally keep extension support small while preserving a clean extraction path.
+
+1. **EXT-00: Extension API contracts and boundary**
+   - Create `src/CodingAgent/ExtensionApi/` contracts under namespace `Ineersa\Hatfield\ExtensionApi`.
+   - Add Composer autoload mapping for `Ineersa\Hatfield\ExtensionApi\`.
+   - Keep Deptrac/AGENTS boundary rules green.
+   - This is the only hard prerequisite for the other extension tasks.
+
+2. **EXT-01: Project extension loader and settings**
+   - Depends on EXT-00.
+   - Add `extensions.enabled` settings shape.
+   - Load `<cwd>/.hatfield/extensions/vendor/autoload.php` when present.
+   - Instantiate enabled `HatfieldExtensionInterface` classes and call `register($api)`.
+   - May include `.hatfield/extensions/composer.json` template/init if simple; otherwise leave init convenience for later.
+
+3. **EXT-02: Tool registry bridge**
+   - Depends on EXT-00.
+   - Implement `ExtensionApiInterface::registerTool()` adapter into the CodingAgent `ToolRegistry`.
+   - Ensure registered extension tools still flow through registry policy: scope, active tool set, provider schema exposure, execution allowlist, and hooks.
+
+### Parallelization
+
+- EXT-00 must land first.
+- After EXT-00, EXT-01 and EXT-02 can proceed mostly in parallel:
+  - EXT-01 owns settings, project autoload loading, extension class instantiation, and lifecycle errors.
+  - EXT-02 owns tool-registration mapping into the registry and execution policy integration.
+- Final integration requires EXT-01 and EXT-02 together: load a test extension from `.hatfield/extensions`, call `registerTool()`, and verify the tool appears in the registry/active schema path according to registry policy.
+
+### Later backlog, not v1 tracked tasks
+
+- PHAR build/scoper rules for keeping `Ineersa\Hatfield\ExtensionApi\*` available and vendor deps scoped.
+- Dedicated `hatfield extension:init` command.
+- Per-extension config object or context DTO.
+- Global user extensions under `~/.hatfield/extensions`.
+- Standalone `ineersa/hatfield-extension-api` repository/package extraction automation.
+- Marketplace/autodiscovery.
+- Out-of-process MCP/JSON-RPC extension protocol.
+- Extension docs beyond the minimal trusted-code warning in v1.
 
 ## Non-goals for v1
 
