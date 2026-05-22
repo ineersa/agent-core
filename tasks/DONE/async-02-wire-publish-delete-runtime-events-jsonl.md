@@ -37,12 +37,12 @@ Wire stream subscribers to use RuntimeEventPublisherInterface in async mode. Del
 - in-process mode still works via sink
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/async-02-wire-publish-delete-runtime-events-jsonl
 Worktree: /home/ineersa/projects/agent-core-worktrees/async-02-wire-publish-delete-runtime-events-jsonl
 Fork run: i3hor7ekeqdg
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/39
+PR Status: open
 Started: 2026-05-22T02:33:43.728Z
 Completed:
 
@@ -60,3 +60,9 @@ Completed:
 - Recorded fork run: i3hor7ekeqdg
 - Validation: 805 tests pass, 0 deptrac violations, phpstan clean, cs-check clean; grep runtime-events.jsonl in src/ tests/ docs/ returns zero results
 - Summary: Implemented by fork i3hor7ekeqdg. Commit 7a7e3bcc. 11 files changed (+46/-85). Stream subscribers wired to publish to both sink and publisher bus. All runtime-events.jsonl references deleted. RuntimeEventPoller no longer depends on HatfieldSessionStore. 805 tests pass, deptrac clean.
+
+## Task workflow update - 2026-05-22T17:12:08.326Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/async-02-wire-publish-delete-runtime-events-jsonl to origin.
+- branch 'task/async-02-wire-publish-delete-runtime-events-jsonl' set up to track 'origin/task/async-02-wire-publish-delete-runtime-events-jsonl'.
+- Created PR: https://github.com/ineersa/agent-core/pull/39
