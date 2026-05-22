@@ -60,6 +60,20 @@ framework:
                     enabled: true
                     allow_no_handlers: false
                     allow_no_senders: true
+            agent.publisher.bus:
+                default_middleware:
+                    enabled: true
+                    allow_no_handlers: true
+                    allow_no_senders: true
+
+        transports:
+            run_control: 'doctrine://default?queue_name=run_control'
+            llm:         'doctrine://default?queue_name=llm'
+            tool:        'doctrine://default?queue_name=tool'
+            publish:     'doctrine://default?queue_name=publish'
+
+        routing:
+            Ineersa\AgentCore\Domain\Message\PublishRuntimeEvent: publish
 
     lock:
         resources:
