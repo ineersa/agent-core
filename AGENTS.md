@@ -69,8 +69,10 @@ Validation must exercise the real user flow: start agent, type prompt, submit, w
 
 - Symfony 8.1 HTTP-less app using `Symfony\Component\DependencyInjection\Kernel\AbstractKernel` + `KernelTrait`.
 - `bin/console` uses `Symfony\Component\Console\Application` with the kernel container.
-- `config/bundles.php` registers `ConsoleBundle`; `ServicesBundle` comes through required bundles.
-- Do not add `FrameworkBundle`, `HttpKernel`, `public/index.php`, HTTP stack, router, or FrameworkBundle-only config.
+- `config/bundles.php` registers `FrameworkBundle`, `MonologBundle`, and `ConsoleBundle`.
+- FrameworkBundle is allowed **only for CLI/container infrastructure** (Messenger buses, Serializer, PropertyInfo, Lock, Monolog, Console commands, DI container services).
+- Do **not** add HTTP controllers, routes, `public/index.php`, HTTP stack, Router, Session, or FrameworkBundle features that imply web serving.
+- HTTP/routing/session/profiler features are explicitly disabled in `config/packages/framework.yaml`.
 - Prefer Symfony 8.1 invokable commands (`__invoke()`) and YAML config.
 
 ## Hatfield settings and sessions

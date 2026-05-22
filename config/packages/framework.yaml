@@ -1,0 +1,72 @@
+# FrameworkBundle configuration for CLI-only infrastructure.
+#
+# This enables Symfony Messenger buses, Serializer, PropertyInfo, Lock,
+# and Console integration without HTTP controllers, routing, sessions,
+# or public/index.php.
+
+framework:
+    secret: '%env(APP_SECRET)%'
+    http_method_override: false
+    handle_all_throwables: true
+    php_errors:
+        log: true
+
+    # CLI-only — disable HTTP/routing stack
+    router:
+        enabled: false
+        resource: ''
+    session:
+        enabled: false
+    form:
+        enabled: false
+    assets:
+        enabled: false
+
+    # Optional features — explicitly disabled
+    profiler:
+        enabled: false
+    translator:
+        enabled: false
+    validation:
+        enabled: true
+        enable_attributes: true
+    web_link:
+        enabled: false
+    workflows:
+        enabled: false
+    webhook:
+        enabled: false
+    html_sanitizer:
+        enabled: false
+
+    # Required infrastructure
+    serializer:
+        enabled: true
+        enable_attributes: true
+
+    property_info:
+        enabled: true
+
+    messenger:
+        default_bus: agent.command.bus
+        buses:
+            agent.command.bus:
+                default_middleware:
+                    enabled: true
+                    allow_no_handlers: false
+                    allow_no_senders: true
+            agent.execution.bus:
+                default_middleware:
+                    enabled: true
+                    allow_no_handlers: false
+                    allow_no_senders: true
+
+    lock:
+        resources:
+            default: flock
+
+    cache:
+        pools:
+            cache.default:
+                adapter: cache.adapter.filesystem
+                default_lifetime: 3600

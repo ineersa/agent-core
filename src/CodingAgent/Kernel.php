@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent;
 
-use Ineersa\CodingAgent\Integration\MessengerIntegrationCompilerPass;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Kernel\AbstractKernel;
 use Symfony\Component\DependencyInjection\Kernel\KernelTrait;
@@ -26,14 +25,15 @@ class Kernel extends AbstractKernel
 
     public function build(ContainerBuilder $container): void
     {
-        // Register #[AsMessageHandler] → messenger.message_handler tag mapping
-        // BEFORE any compiler passes run, so the autoconfigure scanner discovers
-        // handler services and MessengerPass can wire them into buses.
-        MessengerIntegrationCompilerPass::registerHandlerAttribute($container);
+        // FrameworkBundle requires kernel.charset for web/service infrastructure.
+        // HttpKernel\Kernel normally sets this; we must set it manually since our
+        // Kernel extends AbstractKernel (not HttpKernel\Kernel).
+        $container->setParameter('kernel.charset', 'UTF-8');
+        $container->setParameter('kernel.default_locale', 'en');
 
-        // Wire bus infrastructure (tagging, middleware, HandlersLocator) and
-        // delegate to Symfony's own MessengerPass for handler-to-bus wiring.
-        $container->addCompilerPass(new MessengerIntegrationCompilerPass());
+        // FrameworkBundle and MessengerPass handle all Messenger wiring
+        // (buses, middleware, #[AsMessageHandler] attribute, handler-to-bus locators).
+        // No custom compiler passes are needed.
     }
 
     public function getConfigDir(): string
