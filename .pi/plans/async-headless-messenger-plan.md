@@ -1,244 +1,209 @@
 # Async headless runtime and Messenger worker plan
 
-Date: 2026-05-21
+Date: 2026-05-21  
+Status: revised after deciding to adopt FrameworkBundle for CLI infrastructure
 
 ## Purpose
 
 Make Hatfield's TUI/headless runtime responsive while AgentCore performs slow LLM and tool work.
 
-The original AgentCore design already contains the right split: orchestration commands are modeled as Messenger messages and expensive execution is separated behind an execution bus. The current flaw is that all buses are wired as synchronous in-process `MessageBus` services, so `AgentRunner::start()` can still run the whole LLM/tool loop before returning.
+The simpler target is now to use Symfony FrameworkBundle/Messenger in the CLI app instead of maintaining custom Messenger wiring. The controller process should not become a bespoke queue/worker runtime. It should launch/supervise normal Messenger consumers and translate between TUI JSONL commands and AgentCore messages/events.
 
-This plan describes how to restore the intended async shape without violating the repository boundaries:
+Core invariants remain:
 
 - TUI talks only to `AgentSessionClient` / runtime protocol DTOs.
 - `src/AgentCore/` remains the canonical run/state/event engine.
 - `.hatfield/sessions/<id>/events.jsonl` remains the canonical event log.
 - `.hatfield/sessions/<id>/state.json` remains the run-state checkpoint/CAS file.
-- runtime/transcript JSONL files remain projections or transport aids, not canonical history.
+- `runtime-events.jsonl` and `transcript.jsonl` remain projections/debug/live-transport aids, not canonical history.
 
-## Current state
+## Key correction from the old plan
 
-### Existing async seams
+The old plan assumed we could not use FrameworkBundle, so it proposed custom Messenger transport wiring, custom worker commands, and a smarter headless controller.
 
-AgentCore already has two logical buses:
+That is no longer the preferred path.
 
-- `agent.command.bus`
-  - `StartRun`
-  - `AdvanceRun`
-  - `ApplyCommand`
-  - `LlmStepResult`
-  - `ToolCallResult`
+With FrameworkBundle:
 
-- `agent.execution.bus`
-  - `ExecuteLlmStep`
-  - `ExecuteToolCall`
+- use normal `framework.messenger` configuration;
+- use normal `bin/console messenger:consume ...` worker processes;
+- route messages by class to separate transports;
+- let consumers do orchestration, LLM calls, and tool calls;
+- keep the controller process focused on JSONL protocol, ACKs, event forwarding, and consumer supervision.
 
-Relevant files:
+This should dramatically reduce custom infrastructure.
 
-- `config/packages/messenger.yaml`
-- `src/CodingAgent/Integration/MessengerIntegrationCompilerPass.php`
-- `src/AgentCore/Application/Pipeline/AgentRunner.php`
-- `src/AgentCore/Application/Pipeline/RunOrchestrator.php`
-- `src/AgentCore/Application/Pipeline/RunMessageProcessor.php`
-- `src/AgentCore/Application/Handler/StepDispatcher.php`
-- `src/AgentCore/Application/Handler/ExecuteLlmStepWorker.php`
-- `src/AgentCore/Application/Handler/ExecuteToolCallWorker.php`
-
-The key seam is:
-
-```text
-AdvanceRunHandler
-  -> HandlerResult effects: ExecuteLlmStep / ExecuteToolCall
-  -> RunCommit
-  -> StepDispatcher
-  -> agent.execution.bus
-```
-
-Today `agent.execution.bus` is synchronous, so dispatching an `ExecuteLlmStep` immediately invokes `ExecuteLlmStepWorker`, which blocks on `LlmPlatformAdapter::invoke()`.
-
-### Current headless/process transport
-
-Existing process runtime files:
-
-- `src/CodingAgent/Runtime/Process/JsonlProcessAgentSessionClient.php`
-- `src/CodingAgent/Runtime/Process/AgentProcessSupervisor.php`
-- `src/CodingAgent/Runtime/Process/JsonlRuntimeEventSink.php`
-- `src/CodingAgent/CLI/AgentCommand.php` (`--headless`)
-
-The process transport is useful but not sufficient yet. The subprocess reads a JSONL command from stdin, then runs the in-process client synchronously. While it is blocked in LLM/tool work, it cannot read the next command, so steer/cancel are only observed after the current work completes.
-
-Current blocking shape:
+## Target process topology
 
 ```text
 TUI process
-  -> JsonlProcessAgentSessionClient writes JSONL command
-  -> bin/console agent --headless
-    -> fgets(stdin)
-    -> handleHeadlessStart()/handleHeadlessMessage()
-      -> InProcessAgentSessionClient
-        -> AgentRunner
-          -> synchronous command bus
-            -> synchronous execution bus
-              -> LLM/tool work blocks
+  - owns terminal rendering/input
+  - sends JSONL RuntimeCommand
+  - reads JSONL RuntimeEvent / command_ack
+        |
+        v
+Headless controller process
+  - nonblocking stdin/stdout JSONL loop
+  - validates and ACKs commands quickly
+  - dispatches StartRun / ApplyCommand into Messenger
+  - tails/polls canonical/projection events and forwards RuntimeEvent JSONL
+  - launches/monitors Messenger consumers
+  - does NOT run AgentCore LLM/tool work inline
+        |
+        v
+Messenger transports / consumers
+  run_control consumer
+    - StartRun
+    - ApplyCommand
+    - AdvanceRun
+    - LlmStepResult
+    - ToolCallResult
+    - owns canonical state transitions/commits
+
+  llm consumer
+    - ExecuteLlmStep
+    - invokes Symfony AI / provider stream
+    - dispatches LlmStepResult back to run_control
+
+  tool consumer
+    - ExecuteToolCall
+    - executes tool subprocesses/callables
+    - dispatches ToolCallResult back to run_control
 ```
 
-## Storage model
+Initial consumer count:
+
+```bash
+bin/console messenger:consume run_control
+bin/console messenger:consume llm
+bin/console messenger:consume tool
+```
+
+The controller may start exactly one consumer per transport at first. Scaling to multiple tool/LLM workers is a later step after idempotency and CAS retry are hardened.
+
+## Message routing model
+
+### Logical buses
+
+AgentCore already has two logical buses:
+
+- `agent.command.bus` for orchestration/control messages.
+- `agent.execution.bus` for expensive execution messages.
+
+With FrameworkBundle, keep the two buses if they remain useful internally, but route by message class to transports:
+
+```text
+run_control transport:
+  Ineersa\AgentCore\Domain\Message\StartRun
+  Ineersa\AgentCore\Domain\Message\ApplyCommand
+  Ineersa\AgentCore\Domain\Message\AdvanceRun
+  Ineersa\AgentCore\Domain\Message\LlmStepResult
+  Ineersa\AgentCore\Domain\Message\ToolCallResult
+
+llm transport:
+  Ineersa\AgentCore\Domain\Message\ExecuteLlmStep
+
+tool transport:
+  Ineersa\AgentCore\Domain\Message\ExecuteToolCall
+```
+
+The exact bus/transport mapping should be validated during implementation. The important property is process separation:
+
+- command-reading controller path must not block on LLM/tool execution;
+- LLM worker must not directly mutate canonical state except through result messages;
+- tool worker must not directly mutate canonical state except through result messages;
+- run-control worker is the primary owner of `state.json` / `events.jsonl` commits.
+
+### Result routing
+
+Current workers dispatch results back to `MessageBusInterface $commandBus`:
+
+- `ExecuteLlmStepWorker` dispatches `LlmStepResult`.
+- `ExecuteToolCallWorker` dispatches `ToolCallResult`.
+
+In async mode, those result dispatches should enqueue onto the run-control path, not synchronously recurse in the LLM/tool worker process unless intentionally configured for an early spike.
+
+## Controller responsibilities
+
+The controller process should be boring.
+
+It may:
+
+- launch and restart `messenger:consume run_control`, `llm`, and `tool` child processes;
+- read TUI JSONL commands without blocking on agent execution;
+- emit `command_ack` / rejected ACK quickly;
+- dispatch valid commands to Messenger;
+- forward runtime events to stdout JSONL by tailing/polling session files or a projection stream;
+- capture child stderr/stdout into logs for debugging;
+- escalate hard-cancel by stopping a worker process only after graceful cancellation times out.
+
+It should not:
+
+- perform LLM calls;
+- execute tools;
+- manually process AgentCore state transitions;
+- directly mutate canonical `state.json` except for narrowly-scoped session metadata/bootstrap if unavoidable;
+- become a replacement for Messenger consumers.
+
+For normal prompts, the controller should dispatch messages and let run-control consumers update canonical state:
+
+```text
+controller receives start/follow_up/steer/cancel
+  -> ACK command
+  -> dispatch StartRun or ApplyCommand
+  -> run_control consumer loads state.json/events.jsonl
+  -> RunCommit writes canonical state/events
+```
+
+## Storage and state sharing
 
 ### Canonical files
 
 - `.hatfield/sessions/<id>/events.jsonl`
   - canonical append-only AgentCore domain event stream
   - written by `SessionRunEventStore`
-  - read by replay, runtime mapping, projections
+  - source for replay and durable projections
 
 - `.hatfield/sessions/<id>/state.json`
   - materialized `RunState` checkpoint
-  - written via `SessionRunStore::compareAndSwap()`
-  - useful for cross-process run status / cancellation checks
+  - written through `SessionRunStore::compareAndSwap()`
+  - read by workers for context and cancellation checks
 
 - `.hatfield/sessions/<id>/metadata.yaml`
   - canonical session identity/tree/metadata
 
-### Projection / debug / transport files
+### Projection / transport files
 
 - `.hatfield/sessions/<id>/transcript.jsonl`
   - user-facing transcript projection
   - rebuildable from canonical events
 
 - `.hatfield/sessions/<id>/runtime-events.jsonl`
-  - runtime protocol projection/debug log
-  - useful for polling or diagnostics
+  - runtime protocol projection/debug/live transport aid
+  - useful for controller-to-TUI forwarding
   - not canonical replay history
 
-For the async design, `events.jsonl` should be the source of truth. `runtime-events.jsonl` may be used as a simple local transport/projection for the TUI/headless controller, but it should remain rebuildable and disposable.
+### Do consumers already read state?
 
-## Target architecture
+Mostly yes:
 
-```text
-TUI process
-  - owns terminal rendering and input
-  - sends JSONL RuntimeCommand
-  - reads JSONL RuntimeEvent / command_ack
-        |
-        v
-Headless controller process
-  - nonblocking stdin/stdout loop
-  - acks commands quickly
-  - dispatches StartRun / ApplyCommand into runtime
-  - tails/polls runtime/domain events and forwards RuntimeEvent JSONL
-  - never performs LLM/tool work inline
-        |
-        v
-AgentCore orchestration
-  - command bus processes run state transitions
-  - writes state.json and events.jsonl
-  - emits effects for slow work
-        |
-        v
-Execution workers
-  - LLM worker consumes ExecuteLlmStep
-  - tool worker consumes ExecuteToolCall
-  - dispatches LlmStepResult / ToolCallResult back to command bus
-```
+- `LlmPlatformAdapter` resolves context from `RunStore` using `runId` from `ExecuteLlmStep`.
+- tool execution already receives `runId` and can use `RunStore` for cancellation through `RunCancellationToken`.
+- run-control handlers load/commit `RunState` through the session stores.
 
-Desired responsiveness:
+Therefore the main missing pieces are not “how do workers see state?” but:
 
-- start/follow-up/steer/cancel command accepted: ~10-100 ms
-- visible command ACK in TUI: next poll/tick
-- steer applied: next safe AgentCore boundary between LLM/tool turns
-- graceful cancel: as soon as the running worker checks cancellation; hard-kill remains a later process-supervision option
-
-## Core design decisions
-
-### 1. Keep command semantics separate from presentation state
-
-The command router should use explicit run activity state, not TUI text such as `workingMessage`.
-
-- idle/completed/failed/cancelled -> next user text is `follow_up`
-- starting/running/waiting_human/cancelling -> next user text is `steer` or HITL answer depending on current runtime state
-
-RTVS-11 adds the first version of this TUI activity state.
-
-### 2. Make expensive work async before making everything async
-
-The lowest-risk restoration of the original architecture is to async only the execution bus first:
-
-```text
-agent.command.bus: synchronous inside one orchestration process
-agent.execution.bus: async transport consumed by LLM/tool workers
-```
-
-This preserves the existing self-advancing command-bus callbacks while moving blocking LLM/tool work out of the command-reading path.
-
-Only after storage/idempotency/retry are hardened should `agent.command.bus` itself become fully async.
-
-### 3. Do not make `runtime-events.jsonl` canonical
-
-`runtime-events.jsonl` can be a projection or local transport. The canonical event stream is `events.jsonl`. Session replay should rebuild from `events.jsonl`, not from runtime stream deltas.
-
-Streaming deltas are transient and user-visible. Completed assistant/tool results should eventually be represented by canonical AgentCore events.
-
-### 4. Do not depend on FrameworkBundle messenger config
-
-This app intentionally does not use FrameworkBundle. Current `config/packages/messenger.yaml` defines raw DI services, and `MessengerIntegrationCompilerPass` wires middleware/handlers.
-
-So async transport support must be implemented in the current HTTP-less app style, either by:
-
-- manually wiring Symfony Messenger senders/receivers/workers, or
-- adding a small project-specific worker command around the existing message bus and chosen transport, or
-- introducing only the required Symfony Messenger components, not FrameworkBundle.
-
-Archive docs mention `messenger:consume`, but the current app may not expose that command until worker/receiver services are explicitly wired.
-
-## Required infrastructure changes
-
-### Shared/persistent services
-
-Before multi-process workers are safe, replace or harden these in-memory services:
-
-| Current service | Problem | Target |
-|---|---|---|
-| `InMemoryCommandStore` | pending command queue is per-process | file/SQLite/transport-backed command queue |
-| `MessageIdempotencyService` | handled idempotency keys are per-process | persistent idempotency key store |
-| `HotPromptStateStore` | hot prompt state is per-process | file-backed prompt state or rebuild-on-demand cache |
-| `InMemoryRuntimeEventSink` | stream deltas vanish across processes | JSONL/stdout/file-backed runtime event sink for process mode |
-
-Potential session-local files:
-
-```text
-.hatfield/sessions/<id>/
-  pending-commands.jsonl       # optional shared command queue
-  handled-messages.jsonl       # idempotency keys
-  prompt-state.json            # optional hot prompt cache
-```
-
-### CAS/retry behavior
-
-`SessionRunStore::compareAndSwap()` is useful cross-process protection, but a failed CAS currently means the message is effectively dropped. In async mode, CAS failure should cause a controlled retry/backoff, not silent loss.
-
-Required work:
-
-- identify all `RunCommit::commit()` false-return paths;
-- ensure async message handlers throw/retry on transient CAS conflict;
-- keep terminal/stale-result checks idempotent and non-retryable where appropriate.
-
-### Message serialization
-
-Transporting only `ExecuteLlmStep` and `ExecuteToolCall` is easier than transporting every command/result type, but serialization still needs validation.
-
-Risk areas:
-
-- `LlmStepResult` payloads may contain Symfony AI DTO/value objects.
-- `AgentMessage` and tool result payloads must round-trip exactly.
-- serializer config must include array and phpdoc/property-info support.
-
-Initial tests should round-trip all Messenger message classes that cross a process/transport boundary.
+- process-safe idempotency;
+- CAS retry/backoff;
+- transport serialization;
+- process-safe transient runtime event streaming;
+- reliable consumer supervision.
 
 ## Runtime protocol changes
 
 Add generic command acknowledgements.
 
-Current `RuntimeCommand` already has an `id`. The headless/controller process should echo it quickly:
+Current `RuntimeCommand` already has an `id`. The controller should echo it quickly:
 
 ```json
 {
@@ -254,7 +219,7 @@ Current `RuntimeCommand` already has an `id`. The headless/controller process sh
 }
 ```
 
-Also support rejected ACKs:
+Rejected commands use the same event type:
 
 ```json
 {
@@ -270,133 +235,184 @@ Also support rejected ACKs:
 Recommended additions:
 
 - `RuntimeEventTypeEnum::CommandAck`
-- optional `cmdRef` or `commandId` payload convention for events caused by a command
-- `ping` / `pong` command-event pair for process health
+- optional `cmdRef` / `commandId` payload convention for events caused by a command
+- `ping` / `pong` command-event pair for controller health
+
+## Streaming/runtime event projection
+
+The old outbox/publisher idea may be worth reintroducing narrowly.
+
+Do **not** resurrect the old generic Flysystem/Mercure outbox stack blindly. But a small durable projection/publisher path could be useful:
+
+```text
+canonical events.jsonl
+  -> projector/publisher worker
+  -> runtime-events.jsonl and/or controller stdout JSONL
+```
+
+Options, in increasing sophistication:
+
+1. controller tails `events.jsonl` and maps to runtime events itself;
+2. run-control consumer writes `runtime-events.jsonl` as a projection after commits;
+3. dedicated publisher transport/consumer projects domain events to runtime events;
+4. later, replace file tailing with a DB/outbox table if persistence moves off JSONL.
+
+For the first implementation, prefer the least custom path that works. If controller-side event tailing becomes too stateful, add a narrow publisher/projection consumer.
+
+Streaming deltas are special:
+
+- LLM deltas are emitted by the LLM worker, not by run-control commits.
+- `InMemoryRuntimeEventSink` will not cross process boundaries.
+- Process mode needs a file/stdout/transport-backed runtime event sink.
+
+Likely first cut:
+
+- LLM/tool workers append transient runtime events to `runtime-events.jsonl` with a transient marker such as `seq=0` or separate stream IDs;
+- controller tails `runtime-events.jsonl` and forwards to TUI;
+- canonical completed messages still land in `events.jsonl` through `LlmStepResult` / `ToolCallResult`.
+
+## FrameworkBundle/Messenger setup assumptions
+
+The FrameworkBundle adoption task should establish:
+
+- FrameworkBundle registered for CLI/container infrastructure;
+- no HTTP controllers/routes/public index;
+- normal `framework.messenger` config;
+- `bin/console messenger:consume` available;
+- `debug:messenger` available if supported;
+- MonologBundle configured for structured app logs.
+
+After that, async runtime tasks should use Symfony-native Messenger features instead of custom worker commands where possible.
+
+Possible local/dev transports:
+
+- Doctrine transport if dependency/config is acceptable;
+- Redis transport if dependency/config is acceptable;
+- filesystem/SQLite/custom transport only if standard transports are unsuitable;
+- in-memory/sync only for tests, not for responsiveness validation.
+
+## Required hardening before multi-process is safe
+
+| Area | Current risk | Target |
+|---|---|---|
+| Idempotency | `MessageIdempotencyService` is in-memory | persistent per-session or transport-backed idempotency store |
+| CAS conflicts | failed `compareAndSwap()` can drop progress | retry/backoff or explicit retryable worker failure |
+| Runtime stream | `InMemoryRuntimeEventSink` is per-process | file/stdout/transport-backed sink |
+| Serialization | some result payloads include DTO/value objects | serializer round-trip tests for every transported message |
+| Supervision | `AgentProcessSupervisor` is scaffold-level | start/restart/heartbeat/log capture for consumers |
+| Cancellation | graceful cancellation depends on worker checks | ACK immediately, set cancellation state, escalate hard kill later |
 
 ## Implementation phases
 
-### Phase 0 — document and prove current blocking behavior
+### Phase 0 — FrameworkBundle/Messenger foundation
 
-Goal: make the failure mode explicit and measurable.
+Goal: stop maintaining custom Messenger infrastructure.
 
 Tasks:
 
-- Add a short architecture note or test fixture showing that `--headless` currently blocks while handling a start/user command.
-- Add a product-level latency target for command ACK/cancel responsiveness.
-- Capture baseline with `castor run:agent-test` or a process transport smoke.
+- adopt FrameworkBundle for CLI/container infrastructure;
+- configure `framework.messenger` buses/transports;
+- expose `messenger:consume` / `debug:messenger`;
+- configure Monolog via MonologBundle;
+- update repository policy docs: FrameworkBundle allowed for CLI infra, HTTP stack still disallowed.
 
 Acceptance criteria:
 
-- A prompt can be submitted in process/headless mode.
-- A second command sent while LLM work is running is shown to be queued or delayed today.
-- Baseline timings are recorded in the task notes.
+- `bin/console list` shows Messenger commands;
+- `bin/console debug:messenger` shows handlers/buses/transports;
+- `castor deptrac`, `castor test`, `castor phpstan`, `castor cs-check` pass;
+- product-level TUI/headless smoke still works.
 
-### Phase 1 — protocol ACK and nonblocking headless controller skeleton
+### Phase 1 — command ACK and controller skeleton
 
 Goal: separate command receipt from command execution at the protocol level.
 
 Tasks:
 
-- Add `command_ack` runtime event type.
-- Make `AgentCommand --headless` acknowledge valid JSONL commands immediately before dispatching work.
-- Ensure invalid commands produce rejected ACK or visible error event.
-- Add heartbeat support if simple.
+- add `command_ack` runtime event type;
+- make headless controller ACK valid JSONL commands before dispatching Messenger messages;
+- reject invalid commands with rejected ACK/visible error event;
+- add heartbeat if simple;
+- controller can still use sync transports for this phase, but the ACK behavior must be explicit and testable.
 
 Acceptance criteria:
 
-- Parent can correlate every command ID to an ACK.
-- ACK appears before the long-running LLM/tool operation completes.
-- Existing in-process TUI behavior remains unchanged.
+- parent can correlate every command ID to an ACK;
+- ACK is emitted before long-running work completes once async transports are enabled;
+- existing in-process TUI behavior remains unchanged.
 
-### Phase 2 — async execution bus spike
+### Phase 2 — async execution transports
 
-Goal: make `ExecuteLlmStep` and `ExecuteToolCall` leave the command-reading/orchestration path.
+Goal: move slow LLM/tool work out of the run-control path.
 
 Tasks:
 
-- Introduce an async transport abstraction compatible with the no-FrameworkBundle app.
-- Wire `agent.execution.bus` with sender middleware for:
-  - `ExecuteLlmStep`
-  - `ExecuteToolCall`
-- Add a worker/consumer command for the execution bus.
-- Keep `agent.command.bus` synchronous inside the orchestration process for this phase.
-- Ensure worker results dispatch back as `LlmStepResult` / `ToolCallResult` into the orchestrator path.
-
-Open design question for this phase:
-
-- Does the execution worker dispatch result messages back over an async command transport, or does a controller/orchestrator process expose a result channel? The simplest first slice may run a single orchestration process and an execution worker process connected by a local transport.
+- route `ExecuteLlmStep` to `llm` transport;
+- route `ExecuteToolCall` to `tool` transport;
+- route `LlmStepResult` / `ToolCallResult` back to `run_control`;
+- controller launches one `messenger:consume llm` and one `messenger:consume tool`;
+- keep run-control single-consumer at first.
 
 Acceptance criteria:
 
-- `AgentRunner::start()` returns quickly after scheduling `ExecuteLlmStep`.
-- LLM/tool work runs in a separate worker/consumer process.
-- Canonical `events.jsonl` and `state.json` are still written correctly.
-- TUI/headless command loop can receive a cancel/steer command while LLM work is in progress.
+- `AgentRunner::start()`/controller command handling returns quickly after scheduling execution;
+- LLM/tool work runs in separate consumer process(es);
+- canonical `events.jsonl` and `state.json` remain correct;
+- TUI/headless command loop receives steer/cancel while LLM work is in progress.
 
-### Phase 3 — shared runtime event sink
+### Phase 3 — async run-control consumer
 
-Goal: stream user-visible runtime events across processes.
+Goal: make orchestration itself a proper consumer path.
 
 Tasks:
 
-- Decide process-mode stream sink:
-  - stdout JSONL from worker/controller, or
-  - append-only `runtime-events.jsonl` projection tailed by controller, or
-  - both, with stdout as live transport and file as debug artifact.
-- Replace `InMemoryRuntimeEventSink` for process/worker mode.
-- Ensure stream deltas use `seq=0` or another explicit transient marker.
-- Keep completed canonical events in `events.jsonl`.
+- route `StartRun`, `ApplyCommand`, `AdvanceRun`, `LlmStepResult`, and `ToolCallResult` to `run_control`;
+- controller dispatches start/follow-up/steer/cancel and returns to JSONL loop;
+- ensure self-advance callbacks enqueue correctly rather than requiring same-stack recursion;
+- validate terminal/stale-result/idempotent behavior.
 
 Acceptance criteria:
 
-- TUI shows streaming assistant text/thinking/tool deltas when execution runs in another process.
+- controller never blocks on run-control processing;
+- run-control consumer can be restarted without corrupting state;
+- one run progresses from start to LLM to result to completion through transports.
+
+### Phase 4 — process-safe runtime event stream
+
+Goal: keep the TUI visibly live while work happens in other processes.
+
+Tasks:
+
+- replace process-mode `InMemoryRuntimeEventSink` with file/stdout/transport-backed sink;
+- decide whether controller tails `events.jsonl`, tails `runtime-events.jsonl`, or consumes a publisher/projection transport;
+- preserve transient-vs-canonical distinction;
+- keep session artifacts useful on failure.
+
+Acceptance criteria:
+
+- TUI shows assistant/thinking/tool deltas from a worker process;
+- completed canonical events still replay from `events.jsonl`;
 - `runtime-events.jsonl` is not required for replay correctness.
-- Session artifacts remain useful on failure.
 
-### Phase 4 — persistent idempotency and command/prompt stores
+### Phase 5 — persistent idempotency, CAS retry, and supervision
 
-Goal: make multi-process command/result handling safe.
-
-Tasks:
-
-- Add persistent `MessageIdempotencyService` implementation.
-- Add shared `CommandStoreInterface` implementation or replace command queue behavior with transport-backed messages.
-- Add file-backed or rebuild-on-demand prompt-state cache.
-- Make CAS conflict handling retryable.
-
-Acceptance criteria:
-
-- Duplicate command/result messages do not produce duplicate canonical events.
-- CAS conflicts are retried or surfaced explicitly, not silently dropped.
-- A worker restart can continue from `events.jsonl`/`state.json` without losing queued commands.
-
-### Phase 5 — fully async command bus and process supervision
-
-Goal: support a robust production-ish topology.
+Goal: make the multi-process topology robust.
 
 Tasks:
 
-- Move selected command-bus messages to async transport if needed.
-- Add run/orchestrator consumer process.
-- Add LLM and tool consumer process groups.
-- Teach `AgentProcessSupervisor` to manage controller/worker lifecycles.
-- Add heartbeat, stderr capture, restart, and hard-cancel escalation.
-
-Potential process groups:
-
-```bash
-bin/console agent --headless-controller
-bin/console agent:worker command --limit=... --memory-limit=...
-bin/console agent:worker llm --limit=... --memory-limit=...
-bin/console agent:worker tool --limit=... --memory-limit=...
-```
+- persist idempotency keys;
+- make CAS conflicts retryable or explicitly non-retryable;
+- supervise `run_control`, `llm`, and `tool` consumers;
+- capture stderr/stdout logs;
+- add heartbeat/restart policy;
+- add hard-cancel escalation.
 
 Acceptance criteria:
 
-- TUI remains responsive under slow LLM/tool calls.
-- Cancel command is ACKed quickly and either gracefully cancels or escalates to hard worker termination.
-- Multiple runs do not corrupt session state/events.
-- All workers can be restarted without losing canonical history.
+- duplicate command/result messages do not duplicate canonical events;
+- worker restart does not lose queued work;
+- cancel ACKs quickly and either gracefully cancels or escalates;
+- multiple sessions/runs do not corrupt each other.
 
 ## Testing and validation
 
@@ -429,10 +445,11 @@ Product validation must exercise:
 
 Suggested new tests:
 
-- serializer round-trip for all messages crossing async transport;
-- execution-bus async dispatch does not block `AgentRunner::start()`;
-- command ACK emitted before LLM worker completes;
-- cancel command during slow/fake LLM updates `state.json` / emits cancellation runtime event;
+- `debug:messenger`/container test shows routed handlers/transports;
+- serializer round-trip for all messages crossing async transports;
+- command ACK emitted before fake slow LLM worker completes;
+- execution transport dispatch does not block controller command loop;
+- cancel during slow/fake LLM updates state/emits cancellation runtime event;
 - duplicate worker result is idempotent;
 - CAS conflict triggers retry/backoff.
 
@@ -440,45 +457,53 @@ Suggested new tests:
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| Async transport requires FrameworkBundle assumptions | High | Wire Messenger components manually in existing no-FrameworkBundle style |
+| FrameworkBundle drags in HTTP assumptions | Medium/High | Allow CLI/container infra only; forbid public index/controllers/router unless separately approved |
+| Message routing causes recursive sync behavior | High | Validate with process-level test and `debug:messenger`; ensure LLM/tool/result classes route to transports |
 | Message serialization fails for nested DTOs | High | Add explicit transport serializer tests before enabling workers |
-| In-memory idempotency causes duplicate events | High | Persist idempotency before multi-process command/result consumers |
-| Streaming deltas lost across process boundary | Medium/High | Add process-safe runtime event sink before moving LLM worker out of process |
+| In-memory idempotency duplicates events | High | Persist idempotency before multi-worker scaling |
+| Streaming deltas lost across process boundary | Medium/High | Add process-safe runtime event sink before relying on worker streaming |
 | CAS failure silently drops messages | High | Convert transient CAS conflicts to retryable worker failures |
-| `runtime-events.jsonl` becomes accidental source of truth | Medium | Document and enforce `events.jsonl` as canonical replay source |
-| Operational complexity grows too early | Medium | Start with async execution bus only; defer full command-bus async |
+| `runtime-events.jsonl` becomes accidental source of truth | Medium | Keep replay from `events.jsonl`; document projection status |
+| Operational complexity grows too early | Medium | Start with one controller and one consumer per transport |
 
-## Recommended next task breakdown
+## Recommended task breakdown
 
-1. **ASYNC-01 Protocol ACK and headless latency baseline**
+1. **ASYNC-00 FrameworkBundle CLI infrastructure**
+   - Adopt FrameworkBundle/Messenger/MonologBundle.
+   - Remove custom Messenger compiler pass.
+   - Establish normal `messenger:consume` workflow.
+
+2. **ASYNC-01 Protocol ACK and controller skeleton**
    - Add `command_ack` event.
-   - Measure current delay while a slow fake/real LLM is running.
+   - Add controller ACK/heartbeat behavior.
+   - Measure current vs async command latency.
 
-2. **ASYNC-02 Execution bus transport spike**
-   - Manually wire async send/receive for `agent.execution.bus` in HTTP-less app.
-   - Add worker command.
+3. **ASYNC-02 Async transport routing spike**
+   - Route run-control, LLM, and tool messages to transports.
+   - Launch one consumer for each transport.
+   - Prove LLM/tool work no longer blocks command intake.
 
-3. **ASYNC-03 Process-safe runtime event sink**
-   - Stream deltas from worker/controller to TUI without relying on in-memory sink.
+4. **ASYNC-03 Process-safe runtime event sink/projection**
+   - Make worker stream deltas visible to TUI across processes.
+   - Decide whether a narrow publisher/projection consumer is needed.
 
-4. **ASYNC-04 Persistent idempotency and CAS retry**
-   - Make cross-process processing safe.
+5. **ASYNC-04 Persistent idempotency and CAS retry**
+   - Make duplicate delivery and concurrent commits safe.
 
-5. **ASYNC-05 Controller/worker supervision**
-   - Promote `AgentProcessSupervisor` from scaffold to real lifecycle manager.
+6. **ASYNC-05 Consumer supervision and hard cancel**
+   - Controller manages run-control/llm/tool consumers.
+   - Add restart/log/heartbeat/hard-kill policy.
 
 ## Scout notes
 
-This plan is based on scout reconnaissance run on 2026-05-21. Raw output was saved by pi at:
+This plan is based on scout reconnaissance run on 2026-05-21 and subsequent architecture decisions in the same session.
 
-```text
-/home/ineersa/.pi/agent/tmp/2026-05--f3a0cc48.txt
-```
-
-Important scout conclusions:
+Important conclusions:
 
 - AgentCore is already architected for command vs execution separation.
-- `agent.execution.bus` is the best first async seam.
-- `events.jsonl` is appropriate as canonical cross-process event log.
+- FrameworkBundle makes the worker plan much simpler than custom no-FrameworkBundle wiring.
+- Three initial consumers are enough: run-control, LLM, tool.
+- Workers can read shared state from session files; the harder problems are idempotency, CAS retry, serialization, and runtime event streaming.
+- `events.jsonl` is the canonical cross-process event log.
 - `runtime-events.jsonl` should remain projection/debug/live transport, not canonical replay.
-- Current headless mode blocks because command reading and LLM/tool execution share the same synchronous call path.
+- The controller must not be the process that blocks on LLM/tool work.
