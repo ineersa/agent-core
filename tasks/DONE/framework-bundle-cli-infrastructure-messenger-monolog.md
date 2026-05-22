@@ -43,14 +43,14 @@ This task may absorb or supersede the existing TODO `2026-05-18-add-monolog-logg
 - Because this touches runtime/container/CLI infrastructure, run a product-level workflow: `castor run:agent-test` or `castor test:tui`, and report session artifacts on failure.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/framework-bundle-cli-infrastructure-messenger-monolog
 Worktree: /home/ineersa/projects/agent-core-worktrees/framework-bundle-cli-infrastructure-messenger-monolog
 Fork run: 2yayxrwbk5nn
 PR URL: https://github.com/ineersa/agent-core/pull/37
-PR Status: open
+PR Status: merged
 Started: 2026-05-22T00:40:50.133Z
-Completed:
+Completed: 2026-05-22T01:07:05.924Z
 
 ## Work log
 - Created: 2026-05-22T00:39:54.580Z
@@ -79,3 +79,28 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/37
 - Validation: php bin/console list --raw | grep -E 'messenger|debug:messenger|agent' -> Messenger commands available including messenger:consume/debug:messenger plus agent/log commands (per fork).; php bin/console debug:messenger -> agent.command.bus and agent.execution.bus handlers wired (per fork).; castor deptrac -> 0 violations (per fork).; castor test -> 806 tests, 9558 assertions, all pass (per fork).; castor phpstan --path=src/CodingAgent -> no errors (per fork).; castor cs-check -> passes clean (per fork).; castor cache:clear -> passes (per fork).; castor run:agent-test -> TUI launches in tmux, agent responds with visible user+assistant transcript blocks, session artifacts present (per fork).
 - Summary: FrameworkBundle CLI infrastructure implementation complete. Branch HEAD 0b1a9412 includes implementation commit 19e4f534 plus async plan/task metadata updates from main. Adds FrameworkBundle and MonologBundle, replaces custom Messenger compiler pass/raw bus wiring with framework.messenger, exposes Messenger console commands, configures MonologBundle with HatfieldRotatingLogHandler, updates AGENTS.md policy, marks prior Monolog task superseded, and preserves HTTP-less app constraints.
+
+## Task workflow update - 2026-05-22T01:07:05.924Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/framework-bundle-cli-infrastructure-messenger-monolog into integration checkout.
+- Merge made by the 'ort' strategy.
+ .env                                               |    3 +
+ AGENTS.md                                          |    6 +-
+ composer.json                                      |    4 +-
+ composer.lock                                      | 1455 ++++++++++++++++----
+ config/bundles.php                                 |    2 +
+ config/packages/framework.yaml                     |   72 +
+ config/packages/messenger.yaml                     |   37 +-
+ config/packages/monolog.yaml                       |   32 +-
+ config/packages/serializer.yaml                    |   85 --
+ config/services.yaml                               |    9 +-
+ depfile.yaml                                       |    2 +-
+ .../MessengerIntegrationCompilerPass.php           |  154 ---
+ src/CodingAgent/Kernel.php                         |   18 +-
+ ...jsonl-format-exception-logging-and-castor-lo.md |   16 +
+ 14 files changed, 1313 insertions(+), 582 deletions(-)
+ create mode 100644 config/packages/framework.yaml
+ delete mode 100644 config/packages/serializer.yaml
+ delete mode 100644 src/CodingAgent/Integration/MessengerIntegrationCompilerPass.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/framework-bundle-cli-infrastructure-messenger-monolog.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
