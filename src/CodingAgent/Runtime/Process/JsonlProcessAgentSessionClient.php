@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
 
 /**
@@ -27,6 +28,8 @@ use Symfony\Component\Process\Process;
 final class JsonlProcessAgentSessionClient implements AgentSessionClient
 {
     private ?Process $process = null;
+
+    private ?InputStream $input = null;
 
     /** @var \SplQueue<RuntimeEvent> */
     private \SplQueue $eventBuffer;
@@ -221,6 +224,8 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         );
 
         $this->process->setTimeout(null);
+        $this->input = new InputStream();
+        $this->process->setInput($this->input);
         $this->process->start();
     }
 
@@ -257,7 +262,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             throw new \RuntimeException('Process not started');
         }
 
-        $this->process->getInputStream()->write(JsonlCodec::encodeCommand($command));
+        $this->input?->write(JsonlCodec::encodeCommand($command));
     }
 
     /**

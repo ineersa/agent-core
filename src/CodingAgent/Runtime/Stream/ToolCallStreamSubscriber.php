@@ -135,6 +135,11 @@ final readonly class ToolCallStreamSubscriber implements EventSubscriberInterfac
         );
 
         $this->sink->emit($event);
-        $this->runtimeEventPublisher?->publishEvent($event);
+        $this->runtimeEventPublisher?->publish(
+            $event->runId,
+            $event->type,
+            $event->seq,
+            $event->payload,
+        );
     }
 }

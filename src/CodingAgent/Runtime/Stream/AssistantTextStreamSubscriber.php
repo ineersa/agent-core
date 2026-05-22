@@ -111,7 +111,12 @@ final class AssistantTextStreamSubscriber implements EventSubscriberInterface
         );
 
         $this->sink->emit($event);
-        $this->runtimeEventPublisher?->publishEvent($event);
+        $this->runtimeEventPublisher?->publish(
+            $event->runId,
+            $event->type,
+            $event->seq,
+            $event->payload,
+        );
     }
 
     private function blockId(string $runId, ?string $stepId, string $kind): string

@@ -6,11 +6,9 @@ namespace Ineersa\CodingAgent\Runtime\InProcess;
 
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\IdempotencyStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
-use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
@@ -34,9 +32,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly AgentRunnerInterface $runner,
         private readonly EventStoreInterface $eventStore,
         private readonly RuntimeEventMapper $mapper,
-        private readonly SessionMetadataStore $sessionMetadataStore,
         private readonly ?RuntimeEventSinkInterface $transientSink = null,
-        private readonly ?IdempotencyStoreInterface $idempotencyStore = null,
     ) {
     }
 
