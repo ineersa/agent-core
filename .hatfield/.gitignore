@@ -12,3 +12,4 @@ tmp/
 cache/
 logs/
 messenger.sqlite
+messenger.sqlite-journal
