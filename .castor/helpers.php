@@ -186,6 +186,32 @@ function summarize_junit_xml(string $xmlPath): string
     );
 }
 
+function summarize_deptrac_json(string $jsonOutput): string
+{
+    $jsonOutput = trim($jsonOutput);
+    if ('' === $jsonOutput) {
+        return 'summary unavailable';
+    }
+
+    $decoded = json_decode($jsonOutput, true);
+    if (!\is_array($decoded)) {
+        return 'summary unavailable';
+    }
+
+    $report = $decoded['Report'] ?? null;
+    if (!\is_array($report)) {
+        return 'summary unavailable';
+    }
+
+    return \sprintf(
+        'violations=%d,errors=%d,uncovered=%d,allowed=%d',
+        (int) ($report['Violations'] ?? 0),
+        (int) ($report['Errors'] ?? 0),
+        (int) ($report['Uncovered'] ?? 0),
+        (int) ($report['Allowed'] ?? 0),
+    );
+}
+
 function xml_escape(string $value): string
 {
     return htmlspecialchars($value, \ENT_XML1 | \ENT_QUOTES, 'UTF-8');

@@ -6,6 +6,15 @@ use Castor\Attribute\AsTask;
 
 use function Castor\run;
 use function CastorTasks\build_idea_run_config_xml;
+use function CastorTasks\is_llm_mode;
+use function CastorTasks\persist_process_output;
+use function CastorTasks\relative_report_path;
+use function CastorTasks\report_path;
+use function CastorTasks\run_quiet_command;
+use function CastorTasks\summarize_deptrac_json;
+use function CastorTasks\summarize_junit_xml;
+use function CastorTasks\summarize_php_cs_fixer_json;
+use function CastorTasks\summarize_phpstan_json;
 
 require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
@@ -53,7 +62,36 @@ function quality(): void
 #[AsTask(description: 'Run Deptrac architecture boundary validation')]
 function deptrac(): void
 {
-    run('vendor/bin/deptrac analyze --config-file=depfile.yaml --no-progress');
+    $cmd = 'vendor/bin/deptrac --config-file=depfile.yaml';
+
+    if (!is_llm_mode()) {
+        run($cmd.' --no-progress');
+
+        return;
+    }
+
+    $process = run_quiet_command($cmd.' --formatter=json --no-progress --no-ansi');
+    persist_process_output($process, 'deptrac.log');
+
+    $stdout = trim($process->getOutput());
+    if ('' !== $stdout) {
+        file_put_contents(report_path('deptrac.json'), $stdout.\PHP_EOL);
+    }
+
+    $summary = summarize_deptrac_json($stdout);
+
+    /*
+     * Deptrac exits 0 even with violations (baseline-tracked). Only throw if the process
+     * crashed for unrelated reasons.
+     */
+    if (0 !== $process->getExitCode()) {
+        throw new RuntimeException(sprintf('deptrac failed (%s); report=%s; log=%s', $summary, relative_report_path('deptrac.json'), relative_report_path('deptrac.log')));
+    }
+
+    echo sprintf(
+        'deptrac: ok (%s)',
+        $summary,
+    ).\PHP_EOL;
 }
 
 /**
@@ -66,11 +104,32 @@ function deptrac(): void
 #[AsTask(description: 'Run PHPUnit tests (excludes tmux e2e and real LLM smoke tests)')]
 function test(string $filter = ''): void
 {
-    $cmd = 'vendor/bin/phpunit --exclude-group tui-e2e --exclude-group llm-real --colors=always';
+    $cmd = 'vendor/bin/phpunit --exclude-group tui-e2e --exclude-group llm-real';
     if ('' !== $filter) {
         $cmd .= ' --filter='.escapeshellarg($filter);
     }
-    run($cmd);
+
+    if (!is_llm_mode()) {
+        run($cmd.' --colors=always');
+
+        return;
+    }
+
+    $junitPath = report_path('phpunit.junit.xml');
+    $process = run_quiet_command($cmd.' --colors=never --no-progress --no-results --log-junit '.$junitPath);
+    persist_process_output($process, 'phpunit.log');
+
+    $summary = summarize_junit_xml($junitPath);
+
+    if (0 !== $process->getExitCode()) {
+        throw new RuntimeException(sprintf('test failed (%s); junit=%s; log=%s', $summary, relative_report_path('phpunit.junit.xml'), relative_report_path('phpunit.log')));
+    }
+
+    echo sprintf(
+        'test: ok (%s); junit=%s',
+        $summary,
+        relative_report_path('phpunit.junit.xml'),
+    ).\PHP_EOL;
 }
 
 /**
@@ -83,7 +142,31 @@ function cs_fix(string $path = ''): void
     if ('' !== $path) {
         $cmd .= ' '.escapeshellarg($path);
     }
-    run($cmd);
+
+    if (!is_llm_mode()) {
+        run($cmd);
+
+        return;
+    }
+
+    $process = run_quiet_command($cmd.' --format=json --show-progress=none --no-ansi');
+    persist_process_output($process, 'php-cs-fixer.log');
+
+    $stdout = trim($process->getOutput());
+    if ('' !== $stdout) {
+        file_put_contents(report_path('php-cs-fixer.json'), $stdout.\PHP_EOL);
+    }
+
+    $summary = summarize_php_cs_fixer_json($stdout);
+
+    if (0 !== $process->getExitCode()) {
+        throw new RuntimeException(sprintf('cs-fix failed (%s); report=%s; log=%s', $summary, relative_report_path('php-cs-fixer.json'), relative_report_path('php-cs-fixer.log')));
+    }
+
+    echo sprintf(
+        'cs-fix: ok (%s)',
+        $summary,
+    ).\PHP_EOL;
 }
 
 /**
@@ -92,11 +175,35 @@ function cs_fix(string $path = ''): void
 #[AsTask(description: 'Run PHP CS Fixer (dry-run, check only)')]
 function cs_check(string $path = ''): void
 {
-    $cmd = 'vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php --dry-run --diff';
+    $cmd = 'vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php --dry-run';
     if ('' !== $path) {
         $cmd .= ' '.escapeshellarg($path);
     }
-    run($cmd);
+
+    if (!is_llm_mode()) {
+        run($cmd.' --diff');
+
+        return;
+    }
+
+    $process = run_quiet_command($cmd.' --format=json --show-progress=none --no-ansi');
+    persist_process_output($process, 'php-cs-fixer-check.log');
+
+    $stdout = trim($process->getOutput());
+    if ('' !== $stdout) {
+        file_put_contents(report_path('php-cs-fixer-check.json'), $stdout.\PHP_EOL);
+    }
+
+    $summary = summarize_php_cs_fixer_json($stdout);
+
+    if (0 !== $process->getExitCode()) {
+        throw new RuntimeException(sprintf('cs-check failed (%s); report=%s; log=%s', $summary, relative_report_path('php-cs-fixer-check.json'), relative_report_path('php-cs-fixer-check.log')));
+    }
+
+    echo sprintf(
+        'cs-check: ok (%s)',
+        $summary,
+    ).\PHP_EOL;
 }
 
 /**
@@ -105,11 +212,41 @@ function cs_check(string $path = ''): void
 #[AsTask(description: 'Run PHPStan static analysis')]
 function phpstan(string $path = ''): void
 {
-    $cmd = 'vendor/bin/phpstan analyse -c phpstan.dist.neon --no-progress';
+    $cmd = 'vendor/bin/phpstan analyse -c phpstan.dist.neon';
     if ('' !== $path) {
         $cmd .= ' '.escapeshellarg($path);
     }
-    run($cmd);
+
+    if (!is_llm_mode()) {
+        run($cmd.' --no-progress');
+
+        return;
+    }
+
+    $process = run_quiet_command($cmd.' --error-format=json --no-progress --no-ansi');
+    persist_process_output($process, 'phpstan.log');
+
+    $stdout = trim($process->getOutput());
+    if ('' !== $stdout) {
+        file_put_contents(report_path('phpstan.json'), $stdout.\PHP_EOL);
+    }
+
+    $summary = summarize_phpstan_json($stdout);
+
+    /*
+     * PHPStan exits 1 when there are any file errors, including pre-existing baseline
+     * errors. We only throw when there are genuine new errors (totals.errors > 0).
+     */
+    $decoded = json_decode($stdout, true);
+    $newErrors = $decoded['totals']['errors'] ?? 0;
+    if (0 !== $process->getExitCode() && 0 !== $newErrors) {
+        throw new RuntimeException(sprintf('phpstan failed (%s); report=%s; log=%s', $summary, relative_report_path('phpstan.json'), relative_report_path('phpstan.log')));
+    }
+
+    echo sprintf(
+        'phpstan: ok (%s)',
+        $summary,
+    ).\PHP_EOL;
 }
 
 /**
@@ -606,6 +743,7 @@ function log_tail(?string $level = null, int $lines = 50, ?string $search = null
     if (null !== $search) {
         $cmd .= ' --search='.escapeshellarg($search);
     }
+    $cmd .= ' --format='.(is_llm_mode() ? 'toon' : 'jsonl');
     passthru($cmd, $exitCode);
     exit($exitCode);
 }
@@ -623,6 +761,7 @@ function log_search(string $query, ?string $level = null, ?string $from = null, 
     if (null !== $to) {
         $cmd .= ' --to='.escapeshellarg($to);
     }
+    $cmd .= ' --format='.(is_llm_mode() ? 'toon' : 'jsonl');
     passthru($cmd, $exitCode);
     exit($exitCode);
 }
@@ -630,7 +769,9 @@ function log_search(string $query, ?string $level = null, ?string $from = null, 
 #[AsTask(name: 'log:files', description: 'List log files with size and modification date (→ bin/console log:files)')]
 function log_files(): void
 {
-    passthru(escapeshellcmd(\PHP_BINARY).' '.__DIR__.'/../bin/console log:files', $exitCode);
+    $cmd = escapeshellcmd(\PHP_BINARY).' '.__DIR__.'/../bin/console log:files';
+    $cmd .= ' --format='.(is_llm_mode() ? 'toon' : 'jsonl');
+    passthru($cmd, $exitCode);
     exit($exitCode);
 }
 
