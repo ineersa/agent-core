@@ -36,7 +36,10 @@ class Kernel extends AbstractKernel
         // user's project directory. .hatfield/ lives relative to the CWD, and users
         // may run the agent from a different working directory.
         $cwd = getcwd();
-        $container->setParameter('app.cwd', false !== $cwd ? $cwd : sys_get_temp_dir());
+        if (false === $cwd) {
+            throw new \RuntimeException('No current working directory available.');
+        }
+        $container->setParameter('app.cwd', $cwd);
 
         // FrameworkBundle and MessengerPass handle all Messenger wiring
         // (buses, middleware, #[AsMessageHandler] attribute, handler-to-bus locators).
