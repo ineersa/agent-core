@@ -14,8 +14,24 @@ Exclusions:
 - Do not implement fork/branch session trees.
 - Do not implement rich compaction UI.
 
-Dependencies: RTVS-07.
-Parallelizable with: RTVS-09 fixture preparation only, but avoid concurrent edits to session replay code.
+Dependencies:
+- RTVS-07 (RuntimeEventPoller projection integration) — MERGED.
+- RTVS-11 AC1 (explicit TUI run activity state) — completes the follow_up/steer
+  semantics that replay must preserve; replay should not codify the previous
+  getWorkingMessage() heuristic.
+- RTVS-11 AC2 (after_turn_commit_hook_fixed) — replay replaying persisted events
+  should not trigger hook deserialization warnings; fix must be in place before
+  heavy replay development to avoid noisy log noise.
+- Async/process runtime plan (RTVS-11 AC4) — deferred/separate, but the replay
+  design should anticipate that live polling may eventually come from a separate
+  headless process rather than in-process calls.
+
+Note: RTVS-09 and RTVS-10 have been removed per user decision. Their intent
+(regression coverage, manual smoke) is absorbed by existing tests and AGENTS.md
+validation rules.
+
+Parallelizable with: none remaining in the RTVS family.
+- Avoid concurrent edits to session replay code and RuntimeEventPoller.
 
 ## Acceptance criteria
 - Resuming a session rebuilds transcript blocks from runtime-events.jsonl.
