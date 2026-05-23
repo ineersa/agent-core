@@ -62,11 +62,7 @@ final class StdoutRuntimeEventSink implements RuntimeEventSinkInterface
 
         $written = @fwrite(self::$stdout, $line);
         if (false === $written || 0 === $written) {
-            throw new \RuntimeException(sprintf(
-                'StdoutRuntimeEventSink: fwrite to STDOUT pipe failed (event: %s). '
-                . 'The controller process may be dead — aborting LLM consumer.',
-                $event->type->value,
-            ));
+            throw new \RuntimeException(\sprintf('StdoutRuntimeEventSink: fwrite to STDOUT pipe failed (event: %s). The controller process may be dead — aborting LLM consumer.', $event->type->value));
         }
 
         fflush(self::$stdout);

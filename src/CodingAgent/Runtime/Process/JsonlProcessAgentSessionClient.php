@@ -30,6 +30,11 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
  */
 final class JsonlProcessAgentSessionClient implements AgentSessionClient
 {
+    /** Max controller restarts per sliding window before giving up. */
+    private const int MAX_RESTARTS = 3;
+
+    /** Sliding window in seconds for restart rate-limiting. */
+    private const float RESTART_WINDOW = 60.0;
     /** @var resource|null */
     private $process;
 
@@ -46,6 +51,19 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     /** @var array<string, string> */
     private array $runIdMap = [];
+
+    /**
+     * The most recently active run ID tracked across start/resume/send/cancel.
+     * Used to auto-resume a run after the controller process is restarted.
+     */
+    private ?string $activeRunId = null;
+
+    /**
+     * Timestamps of recent controller restarts for rate-limiting.
+     *
+     * @var array<int, float>
+     */
+    private array $restartTimestamps = [];
 
     public function __construct()
     {
@@ -107,6 +125,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             foreach ($this->readEvents() as $event) {
                 if ('run.started' === $event->type || 'run_started' === $event->type) {
                     $this->runIdMap[$cmd->id] = $event->runId;
+                    $this->activeRunId = $event->runId;
 
                     return new RunHandle(runId: $event->runId, status: 'running');
                 }
@@ -130,6 +149,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     public function resume(string $runId): RunHandle
     {
+        $this->activeRunId = $runId;
         $this->ensureProcessRunning();
 
         $cmd = new RuntimeCommand(
@@ -138,13 +158,20 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             runId: $runId,
         );
 
-        $this->writeCommand($cmd);
+        try {
+            $this->writeCommand($cmd);
+        } catch (\RuntimeException) {
+            // Pipe may have broken — restart and retry once.
+            $this->ensureProcessRunning();
+            $this->writeCommand($cmd);
+        }
 
         return new RunHandle(runId: $runId, status: 'running');
     }
 
     public function send(string $runId, UserCommand $command): void
     {
+        $this->activeRunId = $runId;
         $this->ensureProcessRunning();
 
         $type = match ($command->type) {
@@ -165,11 +192,22 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             ]),
         );
 
-        $this->writeCommand($cmd);
+        try {
+            $this->writeCommand($cmd);
+        } catch (\RuntimeException) {
+            // Pipe may have broken — restart and retry once.
+            $this->ensureProcessRunning();
+            $this->writeCommand($cmd);
+        }
     }
 
     public function events(string $runId): iterable
     {
+        $this->activeRunId = $runId;
+
+        // Transparently restart the controller process if it died.
+        $this->ensureProcessRunning();
+
         // Drain buffered events first.
         while (!$this->eventBuffer->isEmpty()) {
             $event = $this->eventBuffer->dequeue();
@@ -184,12 +222,11 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                 yield $event;
             }
         }
-
-        $this->assertProcessStillRunning('polling runtime events');
     }
 
     public function cancel(string $runId): void
     {
+        $this->activeRunId = $runId;
         $this->ensureProcessRunning();
 
         $cmd = new RuntimeCommand(
@@ -198,7 +235,13 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             runId: $runId,
         );
 
-        $this->writeCommand($cmd);
+        try {
+            $this->writeCommand($cmd);
+        } catch (\RuntimeException) {
+            // Pipe may have broken — restart and retry once.
+            $this->ensureProcessRunning();
+            $this->writeCommand($cmd);
+        }
     }
 
     private function ensureProcessRunning(): void
@@ -207,8 +250,31 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             return;
         }
 
-        $this->stopProcess();
+        $hadRunningProcess = null !== $this->process;
 
+        if ($hadRunningProcess) {
+            $this->enforceRestartRateLimit();
+        }
+
+        $this->stopProcess();
+        $this->spawnProcess();
+
+        // If we had an active run before the crash, resume it transparently.
+        if ($hadRunningProcess && null !== $this->activeRunId) {
+            $this->waitForRuntimeReady();
+            $this->writeCommand(new RuntimeCommand(
+                id: uniqid('cmd_', true),
+                type: 'resume',
+                runId: $this->activeRunId,
+            ));
+        }
+    }
+
+    /**
+     * Spawn the controller child process and set up pipe plumbing.
+     */
+    private function spawnProcess(): void
+    {
         $consolePath = $this->projectDir.'/bin/console';
 
         if (!is_file($consolePath)) {
@@ -260,6 +326,29 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         stream_set_blocking($this->pipes[0], true);
         stream_set_blocking($this->pipes[1], false);
         stream_set_blocking($this->pipes[2], false);
+    }
+
+    /**
+     * Enforce restart rate limiting: max MAX_RESTARTS per RESTART_WINDOW seconds.
+     *
+     * @throws \RuntimeException when the restart limit is exceeded
+     */
+    private function enforceRestartRateLimit(): void
+    {
+        $now = microtime(true);
+
+        // Prune timestamps outside the sliding window.
+        foreach ($this->restartTimestamps as $i => $ts) {
+            if ($now - $ts > self::RESTART_WINDOW) {
+                unset($this->restartTimestamps[$i]);
+            }
+        }
+
+        if (\count($this->restartTimestamps) >= self::MAX_RESTARTS) {
+            throw new \RuntimeException(\sprintf('Controller process has crashed too many times (%d restarts in %.0fs).', self::MAX_RESTARTS, self::RESTART_WINDOW));
+        }
+
+        $this->restartTimestamps[] = $now;
     }
 
     /**
