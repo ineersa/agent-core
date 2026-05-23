@@ -22,14 +22,21 @@ The Symfony AI generic bridge `ModelClient` merges all options into the JSON bod
 - castor test:llm-real passes and shows usage data
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/fix-stream-include-usage
+Worktree: /home/ineersa/projects/agent-core-worktrees/fix-stream-include-usage
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-23T22:32:27.799Z
 Completed:
 
 ## Work log
 - Created: 2026-05-23T22:32:13.269Z
+
+## Task workflow update - 2026-05-23T22:32:27.799Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/fix-stream-include-usage.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/fix-stream-include-usage.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/fix-stream-include-usage.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/fix-stream-include-usage.
