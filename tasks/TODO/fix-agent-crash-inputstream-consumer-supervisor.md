@@ -94,3 +94,6 @@ Completed:
 
 ## Work log
 - Created: 2026-05-22T23:17:09.029Z
+
+## Task workflow update - 2026-05-23T02:38:39.818Z
+- CRITICAL DESIGN CHANGE: PID-file approach is wrong — will kill other controller instances in same CWD. Must scope cleanup to own process tree only: JsonlProcessAgentSessionClient kills its own proc_open resource on destruct; Controller SIGTERM handler cascades to its own consumers via ConsumerSupervisor::shutdown(); on boot, only clean up consumers whose ppid=1 (orphaned) not ones with a living controller parent. No global process killing, no PID files.

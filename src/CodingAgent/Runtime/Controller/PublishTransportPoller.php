@@ -39,32 +39,44 @@ final readonly class PublishTransportPoller
     public function poll(): iterable
     {
         try {
-            foreach ($this->receiver->get() as $envelope) {
-                try {
-                    $message = $envelope->getMessage();
+            // Drain ALL available messages in a single poll tick.
+            // DoctrineReceiver::get() returns only ONE message per call,
+            // so we loop until the queue is empty. This batches all
+            // pending streaming deltas into a single poll tick, keeping
+            // the TUI responsive even under high delta throughput.
+            while (true) {
+                $envelopes = $this->receiver->get();
+                if ([] === $envelopes) {
+                    return;
+                }
 
-                    if (!$message instanceof PublishRuntimeEvent) {
-                        $this->logger->warning('Unexpected message on publish transport', [
-                            'message_class' => $message::class,
+                foreach ($envelopes as $envelope) {
+                    try {
+                        $message = $envelope->getMessage();
+
+                        if (!$message instanceof PublishRuntimeEvent) {
+                            $this->logger->warning('Unexpected message on publish transport', [
+                                'message_class' => $message::class,
+                            ]);
+                            $this->receiver->reject($envelope);
+
+                            continue;
+                        }
+
+                        yield new RuntimeEvent(
+                            type: $message->type,
+                            runId: $message->runId,
+                            seq: $message->seq,
+                            payload: $message->payload,
+                        );
+
+                        $this->receiver->ack($envelope);
+                    } catch (\Throwable $e) {
+                        $this->logger->error('Failed to process publish transport message', [
+                            'exception' => $e,
                         ]);
                         $this->receiver->reject($envelope);
-
-                        continue;
                     }
-
-                    yield new RuntimeEvent(
-                        type: $message->type,
-                        runId: $message->runId,
-                        seq: $message->seq,
-                        payload: $message->payload,
-                    );
-
-                    $this->receiver->ack($envelope);
-                } catch (\Throwable $e) {
-                    $this->logger->error('Failed to process publish transport message', [
-                        'exception' => $e,
-                    ]);
-                    $this->receiver->reject($envelope);
                 }
             }
         } catch (\Throwable $e) {

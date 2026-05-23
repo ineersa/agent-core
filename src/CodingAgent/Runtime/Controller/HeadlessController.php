@@ -43,8 +43,8 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
  */
 final class HeadlessController
 {
-    /** 250ms publish transport poll interval; SQLite queues lock under 10ms busy polling. */
-    private const float PUBLISH_POLL_INTERVAL = 0.25;
+    /** 20ms publish transport poll interval for responsive streaming. */
+    private const float PUBLISH_POLL_INTERVAL = 0.02;
 
     /** 50ms event drain poll interval. */
     private const float EVENT_DRAIN_INTERVAL = 0.05;
@@ -150,7 +150,13 @@ final class HeadlessController
 
                 try {
                     foreach ($this->eventClient->events($runId) as $event) {
-                        if ($event->seq > 0 && $event->seq <= $cursor) {
+                        // Skip transient streaming deltas (seq=0) — these are
+                        // delivered via publish transport, not canonical events.
+                        if (0 === $event->seq) {
+                            continue;
+                        }
+
+                        if ($event->seq <= $cursor) {
                             continue;
                         }
 

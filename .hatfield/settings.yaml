@@ -132,7 +132,7 @@ ai:
                     max_tokens: 65536
                     input: [text, image]
                     tool_calling: true
-                    reasoning: false
+                    reasoning: true
                     cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
 
         llama_cpp_test:
