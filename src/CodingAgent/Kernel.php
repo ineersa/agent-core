@@ -47,12 +47,13 @@ class Kernel extends AbstractKernel
 
     public function boot(): void
     {
-        // Ensure HATFIELD_CWD env var is set before parent::boot() compiles or
-        // resolves the container. This way the compiled container's %env(...)%
-        // placeholder resolves to the actual CWD on every boot.
+        // Always resolve HATFIELD_CWD from actual getcwd() — never inherit a
+        // stale value from parent process env. Each process gets its CWD from
+        // --cwd flag (chdir) or from OS at startup.
         $cwd = getcwd();
-        if (false !== $cwd && !isset($_ENV['HATFIELD_CWD'])) {
+        if (false !== $cwd) {
             $_ENV['HATFIELD_CWD'] = $cwd;
+            putenv('HATFIELD_CWD='.$cwd);
         }
 
         parent::boot();
