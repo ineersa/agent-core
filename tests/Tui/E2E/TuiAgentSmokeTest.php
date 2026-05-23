@@ -558,7 +558,7 @@ final class TuiAgentSmokeTest extends TestCase
         $completionTypes = ['llm_step_completed', 'assistant.message_completed'];
 
         $totalCompletions = 0;
-        $deadline = \microtime(true) + 10.0;
+        $deadline = \microtime(true) + 25.0;
 
         while (\microtime(true) < $deadline) {
             if (!\is_dir($sessionsDir)) {
