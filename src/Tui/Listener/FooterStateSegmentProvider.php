@@ -69,7 +69,10 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
         );
 
         if ($s->contextWindow > 0) {
-            $used = $s->inputTokens + $s->outputTokens;
+            // Context window usage uses the latest input_tokens value
+            // (not accumulated) — this represents the actual context size
+            // sent to the API for the latest turn.
+            $used = $s->latestInputTokens;
             $pct = $used > 0 ? min(100, ($used / $s->contextWindow) * 100) : 0.0;
             $pctColor = $pct > 75 ? ThemeColorEnum::Error : ($pct > 50 ? ThemeColorEnum::Warning : ThemeColorEnum::Success);
             $ctxDetail = \sprintf('%.0f%% %s/%s', $pct, self::fmt($used), self::fmt($s->contextWindow));
@@ -84,14 +87,15 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
         );
 
         // ── Group 3: Throughput (priority 15, optional) ──
-        // Only show t/s when we have output tokens AND LLM has started streaming.
-        // Uses llmStartTime/llmEndTime for the active streaming duration instead
-        // of total session elapsed, so the figure freezes once the response completes.
-        if ($s->outputTokens > 0 && $s->llmStartTime > 0) {
+        // Only show t/s when we have output tokens in the current turn
+        // AND LLM has started streaming. Uses per-turn timing
+        // (turnStartTime/llmEndTime) so the figure reflects only the
+        // current turn's throughput and freezes once the response completes.
+        if ($s->turnOutputTokens > 0 && $s->turnStartTime > 0) {
             $endTime = $s->llmEndTime > 0.0 ? $s->llmEndTime : microtime(true);
-            $elapsed = $endTime - $s->llmStartTime;
+            $elapsed = $endTime - $s->turnStartTime;
             if ($elapsed > 0) {
-                $tps = $s->outputTokens / $elapsed;
+                $tps = $s->turnOutputTokens / $elapsed;
                 $segments[] = new FooterSegment(
                     text: \sprintf('⚡ %.1f t/s', $tps),
                     priority: 15,

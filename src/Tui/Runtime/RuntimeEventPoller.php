@@ -282,10 +282,24 @@ final class RuntimeEventPoller
 
     /**
      * Extract token usage and cost from runtime events, track LLM timing,
-     * and accumulate into footer state.
+     * and update footer state.
+     *
+     * Per-turn metrics (turnOutputTokens, turnStartTime) are reset on
+     * TurnStarted. The latestInputTokens field stores the most recent
+     * input_tokens from AssistantMessageCompleted (not accumulated) for
+     * accurate context window display. Accumulated inputTokens/outputTokens
+     * are kept for the billing display.
      */
     private static function extractFooterUsage(TuiSessionState $state, RuntimeEvent $event): void
     {
+        // Reset per-turn metrics when a new turn starts
+        if (RuntimeEventTypeEnum::TurnStarted->value === $event->type) {
+            $state->turnOutputTokens = 0;
+            $state->turnStartTime = microtime(true);
+
+            return;
+        }
+
         // Track LLM start time from the first text delta or text started event
         if (RuntimeEventTypeEnum::AssistantTextStarted->value === $event->type) {
             if (0.0 === $state->llmStartTime) {
@@ -307,8 +321,17 @@ final class RuntimeEventPoller
             return;
         }
 
-        $state->inputTokens += (int) ($usage['input_tokens'] ?? $usage['prompt_tokens'] ?? 0);
-        $state->outputTokens += (int) ($usage['output_tokens'] ?? $usage['completion_tokens'] ?? 0);
+        // Latest input_tokens (not accumulated) for context window display
+        $state->latestInputTokens = (int) ($usage['input_tokens'] ?? $usage['prompt_tokens'] ?? 0);
+
+        // Accumulated totals for the billing display (running sum across the session)
+        $state->inputTokens += $state->latestInputTokens;
+
+        $outputTokens = (int) ($usage['output_tokens'] ?? $usage['completion_tokens'] ?? 0);
+        $state->outputTokens += $outputTokens;
+
+        // Per-turn output tokens for t/s calculation
+        $state->turnOutputTokens += $outputTokens;
 
         $cost = $usage['cost'] ?? $usage['total_cost'] ?? null;
         if (\is_float($cost) || \is_int($cost)) {
