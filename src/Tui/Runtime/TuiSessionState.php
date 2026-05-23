@@ -57,6 +57,10 @@ final class TuiSessionState
     public float $totalCost = 0.0;
     /** Context window size of the current model, or 0 when unknown. */
     public int $contextWindow = 0;
+    /** Timestamp when the LLM first starts generating (set on AssistantTextStarted). */
+    public float $llmStartTime = 0.0;
+    /** Timestamp when the LLM response completes (set on AssistantMessageCompleted). */
+    public float $llmEndTime = 0.0;
     public float $sessionStartTime = 0.0;
     public string $cwd = '';
     public string $branch = '';

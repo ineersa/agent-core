@@ -42,8 +42,11 @@ final class FooterBarWidget implements TuiWidget
             return [$context->theme->color(ThemeColorEnum::Footer, '  ◆ agent-core  |  type /help for commands')];
         }
 
-        // Build left-side parts with per-segment coloring and smart separators.
-        $renderedParts = [];
+        // ── Build segment structs with ANSI text and separator prefix ──
+        // Each struct stores the rendered text and the separator that precedes it.
+        // The first segment has an empty separator; subsequent segments use
+        // either a pipe (group gap >= 5) or a single space.
+        $structs = [];
         $prevPriority = null;
 
         foreach ($segments as $segment) {
@@ -52,42 +55,94 @@ final class FooterBarWidget implements TuiWidget
                 $text = $context->theme->color($segment->color, $text);
             }
 
-            // Insert separator before this segment (skip first)
+            $separator = '';
             if (null !== $prevPriority) {
                 $gap = $segment->priority - $prevPriority;
                 if ($gap >= self::GROUP_SEPARATOR_GAP) {
-                    $renderedParts[] = $context->theme->color(ThemeColorEnum::Dim, '  |  ');
+                    $separator = $context->theme->color(ThemeColorEnum::Dim, '  |  ');
                 } else {
-                    $renderedParts[] = ' ';
+                    $separator = ' ';
                 }
             }
 
-            $renderedParts[] = $text;
+            $structs[] = ['text' => $text, 'separator' => $separator];
             $prevPriority = $segment->priority;
         }
 
-        $left = implode('', $renderedParts);
+        // ── Build right-side status text ──
+        $right = implode(' ', $statusEntries);
+        $rightSep = '' !== $right ? '  ' : '';
 
-        // Build right-side status text from entries
-        $statusParts = [];
-        foreach ($statusEntries as $text) {
-            $statusParts[] = $text;
-        }
-
-        $right = implode(' ', $statusParts);
-        $separator = ('' !== $right) ? '  ' : '';
-
-        // ANSI-aware truncation of the left part if combined exceeds available width
-        $combined = \sprintf('%s%s%s', $left, $separator, $right);
+        // ── Distribute segments across lines ──
         $available = max(10, $context->terminalWidth - 2);
 
-        if (AnsiUtils::visibleWidth($combined) > $available) {
-            $rightVisible = AnsiUtils::visibleWidth($separator.$right);
-            $leftMax = max(0, $available - $rightVisible);
-            $left = AnsiUtils::truncateToWidth($left, $leftMax);
-            $combined = \sprintf('%s%s%s', $left, $separator, $right);
+        // No segments at all: render status on single line
+        if ([] === $structs) {
+            $combined = \sprintf('%s%s', $rightSep, $right);
+            if (AnsiUtils::visibleWidth($combined) > $available) {
+                $combined = AnsiUtils::truncateToWidth($combined, $available);
+            }
+
+            return [\sprintf('  %s', ltrim($combined))];
         }
 
-        return [\sprintf('  %s', $combined)];
+        $lines = [];   // list of list of structs
+        $currentLine = [];
+        $currentWidth = 2; // leading "  " indent
+
+        foreach ($structs as $struct) {
+            $segWidth = AnsiUtils::visibleWidth($struct['text']);
+            $separatorWidth = AnsiUtils::visibleWidth($struct['separator']);
+
+            // First segment on a line has no separator
+            $addedWidth = [] === $currentLine ? $segWidth : $separatorWidth + $segWidth;
+
+            if ($currentWidth + $addedWidth <= $available) {
+                $currentLine[] = $struct;
+                $currentWidth += $addedWidth;
+            } else {
+                // Finish current line and start a new one with this segment
+                if ([] !== $currentLine) {
+                    $lines[] = $currentLine;
+                }
+                $currentLine = [$struct];
+                $currentWidth = 2 + $segWidth;
+            }
+        }
+
+        $lines[] = $currentLine;
+
+        // ── Render each line ──
+        $output = [];
+        $lineCount = \count($lines);
+
+        foreach ($lines as $lineIdx => $lineStructs) {
+            $parts = [];
+            foreach ($lineStructs as $struct) {
+                // Only add separator if not the first element on this line
+                if ([] !== $parts) {
+                    $parts[] = $struct['separator'];
+                }
+                $parts[] = $struct['text'];
+            }
+
+            $lineContent = implode('', $parts);
+
+            if ($lineIdx === $lineCount - 1) {
+                // Last line: append right-side status and truncate if needed
+                $combined = \sprintf('%s%s%s', $lineContent, $rightSep, $right);
+                if (AnsiUtils::visibleWidth($combined) > $available) {
+                    $rightVisible = AnsiUtils::visibleWidth($rightSep.$right);
+                    $leftMax = max(0, $available - $rightVisible);
+                    $lineContent = AnsiUtils::truncateToWidth($lineContent, $leftMax);
+                    $combined = \sprintf('%s%s%s', $lineContent, $rightSep, $right);
+                }
+                $output[] = \sprintf('  %s', $combined);
+            } else {
+                $output[] = \sprintf('  %s', $lineContent);
+            }
+        }
+
+        return $output;
     }
 }

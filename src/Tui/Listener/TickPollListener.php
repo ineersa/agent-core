@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
+use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 
@@ -35,7 +36,16 @@ final class TickPollListener implements TuiListenerRegistrar
 
             if (null !== $changedBlocks) {
                 $screen->setTranscriptBlocks($state->transcript);
+            }
+
+            // Update working status based on authoritative activity state.
+            // SubmitListener sets 'Working...' optimistically on send;
+            // this keeps it visible while active and clears it when idle/terminal.
+            if (RunActivityStateEnum::Idle === $state->activity
+                || $state->activity->isTerminal()) {
                 $screen->setWorkingMessage(null);
+            } elseif ($state->activity->isActive()) {
+                $screen->setWorkingMessage('Working...');
             }
 
             return null;

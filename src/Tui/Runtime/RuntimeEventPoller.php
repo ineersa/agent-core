@@ -281,13 +281,26 @@ final class RuntimeEventPoller
     }
 
     /**
-     * Extract token usage and cost from runtime events and accumulate into footer state.
+     * Extract token usage and cost from runtime events, track LLM timing,
+     * and accumulate into footer state.
      */
     private static function extractFooterUsage(TuiSessionState $state, RuntimeEvent $event): void
     {
+        // Track LLM start time from the first text delta or text started event
+        if (RuntimeEventTypeEnum::AssistantTextStarted->value === $event->type) {
+            if (0.0 === $state->llmStartTime) {
+                $state->llmStartTime = microtime(true);
+            }
+
+            return;
+        }
+
         if (RuntimeEventTypeEnum::AssistantMessageCompleted->value !== $event->type) {
             return;
         }
+
+        // Record LLM end time when the response completes
+        $state->llmEndTime = microtime(true);
 
         $usage = $event->payload['usage'] ?? [];
         if (!\is_array($usage)) {

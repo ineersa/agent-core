@@ -69,7 +69,7 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
         );
 
         if ($s->contextWindow > 0) {
-            $used = $s->inputTokens;
+            $used = $s->inputTokens + $s->outputTokens;
             $pct = $used > 0 ? min(100, ($used / $s->contextWindow) * 100) : 0.0;
             $pctColor = $pct > 75 ? ThemeColorEnum::Error : ($pct > 50 ? ThemeColorEnum::Warning : ThemeColorEnum::Success);
             $ctxDetail = \sprintf('%.0f%% %s/%s', $pct, self::fmt($used), self::fmt($s->contextWindow));
@@ -84,8 +84,12 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
         );
 
         // ── Group 3: Throughput (priority 15, optional) ──
-        if ($s->outputTokens > 0) {
-            $elapsed = microtime(true) - $s->sessionStartTime;
+        // Only show t/s when we have output tokens AND LLM has started streaming.
+        // Uses llmStartTime/llmEndTime for the active streaming duration instead
+        // of total session elapsed, so the figure freezes once the response completes.
+        if ($s->outputTokens > 0 && $s->llmStartTime > 0) {
+            $endTime = $s->llmEndTime > 0.0 ? $s->llmEndTime : microtime(true);
+            $elapsed = $endTime - $s->llmStartTime;
             if ($elapsed > 0) {
                 $tps = $s->outputTokens / $elapsed;
                 $segments[] = new FooterSegment(
