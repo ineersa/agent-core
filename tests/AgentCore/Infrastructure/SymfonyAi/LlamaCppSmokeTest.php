@@ -102,7 +102,8 @@ final class LlamaCppSmokeTest extends TestCase
         $modelName = $llamaCpp['model'];
         $apiKey = $llamaCpp['api_key'];
         $completionsPath = $llamaCpp['completions_path'];
-        $modelRef = 'llama_cpp/'.$modelName;
+        $llamaCppProviderKey = $llamaCpp['provider_key'];
+        $modelRef = $llamaCppProviderKey.'/'.$modelName;
 
         // ── Session metadata: pre-set model and reasoning ──
         $this->writeSessionMetadata($this->sessionId, [
@@ -115,8 +116,8 @@ final class LlamaCppSmokeTest extends TestCase
         $modelResolver = $this->createSessionAwareResolver($appConfig);
         $eventDispatcher = new EventDispatcher();
 
-        $providerConfig = $appConfig->catalog?->getProvider('llama_cpp');
-        self::assertNotNull($providerConfig, 'Expected llama_cpp provider in test AppConfig');
+        $providerConfig = $appConfig->catalog?->getProvider($llamaCppProviderKey);
+        self::assertNotNull($providerConfig, 'Expected '.$llamaCppProviderKey.' provider in test AppConfig');
         $modelDefinition = $providerConfig->models[$modelName] ?? null;
         self::assertNotNull($modelDefinition, 'Expected configured llama_cpp model in test AppConfig');
 
@@ -130,19 +131,21 @@ final class LlamaCppSmokeTest extends TestCase
             supportsCompletions: true,
             supportsEmbeddings: false,
             completionsPath: $completionsPath,
-            name: 'llama_cpp',
+            name: $llamaCppProviderKey,
         );
 
         $eventDispatcher->addSubscriber(new ModelResolverRoutingSubscriber(
             $modelResolver,
-            new class($provider) implements ProviderRegistryInterface {
-                public function __construct(private readonly ProviderInterface $provider)
-                {
+            new class($llamaCppProviderKey, $provider) implements ProviderRegistryInterface {
+                public function __construct(
+                    private readonly string $providerKey,
+                    private readonly ProviderInterface $provider,
+                ) {
                 }
 
                 public function get(string $id): ?ProviderInterface
                 {
-                    return 'llama_cpp' === $id ? $this->provider : null;
+                    return $this->providerKey === $id ? $this->provider : null;
                 }
             },
         ));
@@ -267,6 +270,25 @@ final class LlamaCppSmokeTest extends TestCase
                         ],
                     ],
                 ],
+                'llama_cpp_test' => [
+                    'type' => 'generic',
+                    'enabled' => true,
+                    'base_url' => $baseUrl,
+                    'api_key' => $apiKey,
+                    'completions_path' => $completionsPath,
+                    'supports_completions' => true,
+                    'supports_embeddings' => false,
+                    'models' => [
+                        'lfm2.5' => [
+                            'id' => 'lfm2.5',
+                            'name' => 'lfm2.5',
+                            'context_window' => 32768,
+                            'max_tokens' => 32768,
+                            'input' => ['text'],
+                            'reasoning' => false,
+                        ],
+                    ],
+                ],
             ],
         ];
 
@@ -289,7 +311,14 @@ final class LlamaCppSmokeTest extends TestCase
      * project Hatfield settings. The Castor task sets LLAMA_CPP_SMOKE_TEST=1,
      * so `castor test:llm-real` runs against the committed project config by default.
      *
-     * @return array{base_url: string, model: string, api_key: string, completions_path: string}
+     * Supports two providers:
+     *   - `llama_cpp` (production, port 8052)
+     *   - `llama_cpp_test` (fast test, port 9052)
+     *
+     * Select the test provider by setting LLAMA_CPP_TEST_PROVIDER=llama_cpp_test
+     * or by making it the default model in settings.yaml.
+     *
+     * @return array{base_url: string, model: string, api_key: string, completions_path: string, provider_key: string}
      */
     private function resolveLlamaCppSettings(): array
     {
@@ -300,25 +329,34 @@ final class LlamaCppSmokeTest extends TestCase
             $settings = \is_array($parsed) ? $parsed : [];
         }
 
-        $provider = $settings['ai']['providers']['llama_cpp'] ?? [];
+        // Determine which provider key to use.
+        // Priority: 1) env override, 2) default_model prefix, 3) fall back to llama_cpp
+        $defaultModel = (string) ($settings['ai']['default_model'] ?? '');
+        $providerKey = getenv('LLAMA_CPP_TEST_PROVIDER') ?: 'llama_cpp';
+
+        // If default_model points to llama_cpp_test/, honour that
+        if (str_starts_with($defaultModel, 'llama_cpp_test/')) {
+            $providerKey = 'llama_cpp_test';
+        }
+
+        $provider = $settings['ai']['providers'][$providerKey] ?? $settings['ai']['providers']['llama_cpp'] ?? [];
         $provider = \is_array($provider) ? $provider : [];
 
         $baseUrl = getenv('LLAMA_CPP_BASE_URL') ?: (string) ($provider['base_url'] ?? '');
         if ('' === $baseUrl) {
             self::markTestSkipped(
-                'No llama.cpp base URL configured. Set LLAMA_CPP_BASE_URL or configure '
-                .'ai.providers.llama_cpp.base_url in .hatfield/settings.yaml.'
+                'No '.$providerKey.' base URL configured. Set LLAMA_CPP_BASE_URL or configure '
+                .'ai.providers.'.$providerKey.'.base_url in .hatfield/settings.yaml.'
             );
         }
 
         $models = isset($provider['models']) && \is_array($provider['models']) ? $provider['models'] : [];
-        $defaultModel = (string) ($settings['ai']['default_model'] ?? '');
-        $modelFromDefault = str_starts_with($defaultModel, 'llama_cpp/') ? substr($defaultModel, 10) : '';
+        $modelFromDefault = str_starts_with($defaultModel, $providerKey.'/') ? substr($defaultModel, \strlen($providerKey) + 1) : '';
         $firstConfiguredModel = array_key_first($models);
 
         $model = getenv('LLAMA_CPP_MODEL')
             ?: $modelFromDefault
-            ?: (\is_string($firstConfiguredModel) ? $firstConfiguredModel : 'flash');
+            ?: (\is_string($firstConfiguredModel) ? $firstConfiguredModel : 'lfm2.5');
 
         $apiKey = getenv('LLAMA_CPP_API_KEY') ?: $this->resolveSecret((string) ($provider['api_key'] ?? 'dummy'));
         $completionsPath = (string) ($provider['completions_path'] ?? '/chat/completions');
@@ -328,6 +366,7 @@ final class LlamaCppSmokeTest extends TestCase
             'model' => $model,
             'api_key' => '' !== $apiKey ? $apiKey : 'dummy',
             'completions_path' => '' !== $completionsPath ? $completionsPath : '/chat/completions',
+            'provider_key' => $providerKey,
         ];
     }
 
