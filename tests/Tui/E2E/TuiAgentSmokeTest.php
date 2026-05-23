@@ -82,16 +82,12 @@ final class TuiAgentSmokeTest extends TestCase
                 needle: '█',   // Hatfield logo
                 timeout: 10.0,
             );
-            \usleep(500_000); // extra settle
-
             // Step 2: Type a prompt
             $prompt = 'Respond with exactly one word: hello.';
             $this->tmux->sendLiteral($pane, $prompt);
-            \usleep(200_000);
 
             // Step 3: Submit
             $this->tmux->sendKey($pane, 'Enter');
-            \usleep(500_000);
 
             // Step 4: Wait for response — an assistant block (◇) or
             // an explicit error block (✕).  "Working..." / "Processing..."
@@ -100,7 +96,7 @@ final class TuiAgentSmokeTest extends TestCase
                 $capture = $this->tmux->waitForCaptureContains(
                     pane: $pane,
                     needle: '◇',    // TranscriptBlockKind::AssistantMessage prefix
-                    timeout: 180.0,
+                    timeout: 30.0,
                 );
             } catch (\RuntimeException $e) {
                 // Maybe the LLM failed — look for an error block instead.
@@ -176,7 +172,6 @@ final class TuiAgentSmokeTest extends TestCase
 
             // Clean exit
             $this->tmux->sendKey($pane, 'C-d');
-            \usleep(300_000);
         } catch (\Throwable $e) {
             $this->dumpArtifacts($pane, $e->getMessage());
             // Always try to save an artifact, even on failure.
@@ -215,7 +210,6 @@ final class TuiAgentSmokeTest extends TestCase
         try {
             // Wait for TUI startup
             $this->tmux->waitForCaptureContains($pane, '█', 10.0);
-            \usleep(500_000);
 
             // Send prompt
             $this->tmux->sendLiteral($pane, 'hello');
@@ -224,12 +218,11 @@ final class TuiAgentSmokeTest extends TestCase
             // Wait for either an assistant block or error block.
             // This proves the working status didn't stay stuck.
             try {
-                $this->tmux->waitForCaptureContains($pane, '◇', 180.0);
+                $this->tmux->waitForCaptureContains($pane, '◇', 30.0);
             } catch (\RuntimeException) {
                 $this->tmux->waitForCaptureContains($pane, '✕', 10.0);
             }
 
-            \usleep(300_000);
             $capture = $this->tmux->capturePlain($pane);
 
             // The "Working..." indicator should NOT be stuck.
@@ -244,7 +237,6 @@ final class TuiAgentSmokeTest extends TestCase
             );
 
             $this->tmux->sendKey($pane, 'C-d');
-            \usleep(300_000);
         } catch (\Throwable $e) {
             $this->dumpArtifacts($pane, $e->getMessage());
             try { $this->tmux->sendKey($pane, 'C-d'); } catch (\Throwable) {}
@@ -274,7 +266,6 @@ final class TuiAgentSmokeTest extends TestCase
         try {
             // ── Start first turn ──
             $this->tmux->waitForCaptureContains($pane, '█', 10.0);
-            \usleep(500_000);
 
             $prompt1 = 'Say exactly: one';
             $this->tmux->sendLiteral($pane, $prompt1);
@@ -282,11 +273,10 @@ final class TuiAgentSmokeTest extends TestCase
 
             // Wait for first assistant response
             try {
-                $this->tmux->waitForCaptureContains($pane, '◇', 180.0);
+                $this->tmux->waitForCaptureContains($pane, '◇', 30.0);
             } catch (\RuntimeException) {
                 $this->tmux->waitForCaptureContains($pane, '✕', 10.0);
             }
-            \usleep(500_000);
 
             $firstCapture = $this->tmux->capturePlain($pane);
 
@@ -319,7 +309,7 @@ final class TuiAgentSmokeTest extends TestCase
             // Poll until ◇ count increases (proves a new assistant block
             // appeared from the second LLM turn) or error block appears.
             $secondCapture = '';
-            $deadline = \microtime(true) + 180.0;
+            $deadline = \microtime(true) + 30.0;
             do {
                 $currentCapture = $this->tmux->capturePlain($pane);
                 $currentAssistantCount = \substr_count($currentCapture, "◇");
@@ -327,7 +317,7 @@ final class TuiAgentSmokeTest extends TestCase
                     $secondCapture = $currentCapture;
                     break;
                 }
-                \usleep(250_000);
+                \usleep(100_000);
             } while (\microtime(true) < $deadline);
 
             if ('' === $secondCapture) {
@@ -417,7 +407,6 @@ final class TuiAgentSmokeTest extends TestCase
 
             // Clean exit
             $this->tmux->sendKey($pane, 'C-d');
-            \usleep(300_000);
         } catch (\Throwable $e) {
             $this->dumpArtifacts($pane, $e->getMessage());
             try {
