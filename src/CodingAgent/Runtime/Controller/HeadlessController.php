@@ -76,6 +76,12 @@ final class HeadlessController
             throw new \RuntimeException('Cannot open stdout for controller mode');
         }
 
+        // Reap orphaned messenger:consume processes left behind by SIGKILL'd
+        // previous runs. Only kills processes whose parent is init (ppid=1)
+        // and whose CWD matches ours — never touches consumers owned by
+        // a living controller instance.
+        $this->killOrphanedConsumers();
+
         $this->emit(new RuntimeEvent(
             type: RuntimeEventTypeEnum::RuntimeReady->value,
             runId: '',
@@ -265,6 +271,129 @@ final class HeadlessController
     }
 
     // ── Shutdown ─────────────────────────────────────────────────────────
+
+    /**
+     * Reap orphaned messenger:consume processes on startup.
+     *
+     * When a previous TUI process was SIGKILL'd, the controller's onSignal
+     * handler never fires, leaving messenger:consume children adopted by init
+     * (ppid=1). These orphans hold the SQLite DB lock and prevent new
+     * controllers from booting.
+     *
+     * Only kills processes whose:
+     *  - parent PID is 1 (truly orphaned, not owned by another controller)
+     *  - CWD matches the current working directory
+     *  - command line matches our known queue names
+     *
+     * Multi-instance safe: living controllers' consumers have ppid != 1.
+     */
+    private function killOrphanedConsumers(): void
+    {
+        $cwd = getcwd();
+        if (false === $cwd) {
+            return;
+        }
+
+        $knownTransportNames = ['run_control', 'llm', 'tool'];
+        $queueHit = false;
+
+        // Find all messenger:consume PIDs.
+        $pgrepOutput = [];
+        $pgrepStatus = 0;
+        exec('pgrep -f messenger:consume 2>/dev/null', $pgrepOutput, $pgrepStatus);
+        if (0 !== $pgrepStatus || [] === $pgrepOutput) {
+            return;
+        }
+
+        $killedPids = [];
+
+        foreach ($pgrepOutput as $line) {
+            $pid = (int) trim($line);
+            if ($pid <= 0) {
+                continue;
+            }
+
+            // Check parent PID: only ppid=1 means orphaned.
+            $stat = @file_get_contents("/proc/{$pid}/stat");
+            if (false === $stat) {
+                continue;
+            }
+
+            // ppid is the 4th space-separated field in /proc/pid/stat.
+            $fields = explode(' ', $stat);
+            $ppid = (int) ($fields[3] ?? 0);
+            if (1 !== $ppid) {
+                continue; // Parent still alive — belongs to another controller.
+            }
+
+            // Verify CWD matches ours.
+            $procCwd = @readlink("/proc/{$pid}/cwd");
+            if (false === $procCwd || $procCwd !== $cwd) {
+                continue;
+            }
+
+            // Verify command line contains one of our queue names.
+            $cmdline = @file_get_contents("/proc/{$pid}/cmdline");
+            if (false === $cmdline) {
+                continue;
+            }
+
+            $queueName = null;
+            foreach ($knownTransportNames as $name) {
+                if (str_contains($cmdline, $name)) {
+                    $queueName = $name;
+                    break;
+                }
+            }
+            if (null === $queueName) {
+                continue;
+            }
+
+            $queueHit = true;
+
+            $this->logger->info('Reaping orphaned consumer', [
+                'pid' => $pid,
+                'ppid' => $ppid,
+                'transport' => $queueName,
+            ]);
+
+            // Send SIGTERM, wait briefly, escalate to SIGKILL if needed.
+            @posix_kill($pid, \SIGTERM);
+            $killedPids[] = $pid;
+        }
+
+        if ([] !== $killedPids) {
+            // Give the processes a moment to clean up.
+            usleep(500_000);
+
+            foreach ($killedPids as $pid) {
+                // Check if still running.
+                if (false !== @file_get_contents("/proc/{$pid}/stat")) {
+                    @posix_kill($pid, \SIGKILL);
+                    $this->logger->warning('Orphaned consumer did not stop gracefully, sent SIGKILL', [
+                        'pid' => $pid,
+                    ]);
+                }
+            }
+        }
+
+        // If we killed orphaned consumers, clean up the stale SQLite DB so
+        // the new controller gets a fresh file. The DB is at
+        // <cwd>/.hatfield/messenger.sqlite and Doctrine auto-creates it.
+        if ($queueHit && [] !== $killedPids) {
+            $dbPath = $cwd.'/.hatfield/messenger.sqlite';
+            if (is_file($dbPath)) {
+                // Rename stale DB so Doctrine auto-creates a fresh one.
+                $stalePath = $dbPath.'.stale.'.time();
+                if (@rename($dbPath, $stalePath)) {
+                    $this->logger->info('Renamed stale messenger database from orphaned run', [
+                        'from' => $dbPath,
+                        'to' => $stalePath,
+                    ]);
+                }
+            }
+        }
+    }
 
     private function shutdown(): void
     {

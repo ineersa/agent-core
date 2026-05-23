@@ -31,19 +31,30 @@ class Kernel extends AbstractKernel
         $container->setParameter('kernel.charset', 'UTF-8');
         $container->setParameter('kernel.default_locale', 'en');
 
-        // CWD-based path for runtime data files (sessions, messenger SQLite, logs).
-        // Do NOT use %kernel.project_dir% — that's the app install root, not the
-        // user's project directory. .hatfield/ lives relative to the CWD, and users
-        // may run the agent from a different working directory.
-        $cwd = getcwd();
-        if (false === $cwd) {
-            throw new \RuntimeException('No current working directory available.');
-        }
-        $container->setParameter('app.cwd', $cwd);
+        // app.cwd must be resolved at RUNTIME, not compile time. Container
+        // compilation may happen in a different working directory (tests,
+        // parallel controllers). Baking getcwd() into the cached container
+        // would cause a stale CWD to leak across compilations.
+        $container->setParameter('app.cwd', '%env(default:kernel.project_dir:string:HATFIELD_CWD)%');
 
         // FrameworkBundle and MessengerPass handle all Messenger wiring
         // (buses, middleware, #[AsMessageHandler] attribute, handler-to-bus locators).
         // No custom compiler passes are needed.
+    }
+
+    public function boot(): void
+    {
+        parent::boot();
+
+        // Resolve app.cwd at boot time so it reflects the actual working
+        // directory. HATFIELD_CWD is set by the parent process (JsonlProcess-
+        // AgentSessionClient) or defaults to the CWD of the calling process.
+        // The env var is set via proc_open($env) for the controller child
+        // or via putenv() in AgentCommand for the main TUI process.
+        $cwd = getcwd();
+        if (false !== $cwd) {
+            $_ENV['HATFIELD_CWD'] = $cwd;
+        }
     }
 
     public function getConfigDir(): string

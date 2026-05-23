@@ -70,6 +70,20 @@ final readonly class InteractiveMode
         ?TuiTheme $theme = null,
         string $sessionId = '',
     ): int {
+        // ── Install signal handlers for graceful process cleanup ──
+        // SIGTERM: graceful exit → PHP shutdown → __destruct → stopProcess() kills controller
+        // SIGINT:  same, but only if the TUI isn't handling Ctrl+C internally (CtrlCInputInterceptor)
+        // SIGKILL: uncatchable; orphaned consumers are reaped on next controller startup
+        if (\function_exists('pcntl_async_signals') && \function_exists('pcntl_signal')) {
+            pcntl_async_signals(true);
+            pcntl_signal(\SIGTERM, static function (): void {
+                exit(0);
+            });
+            pcntl_signal(\SIGINT, static function (): void {
+                exit(0);
+            });
+        }
+
         $theme = $this->themeFactory->create($theme);
 
         // ── Initialize session ──
