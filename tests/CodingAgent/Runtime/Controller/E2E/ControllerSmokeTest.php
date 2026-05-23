@@ -42,6 +42,13 @@ final class ControllerSmokeTest extends TestCase
     private string $stderrBuf = '';
     private string $runId = '';
 
+    /**
+     * Session-scoped queue name prefix, derived from the run ID (first 12 chars).
+     * Each test generates a unique prefix so queue messages never leak across
+     * parallel test runs or into a currently running production session.
+     */
+    private string $sessionId = '';
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -57,6 +64,10 @@ final class ControllerSmokeTest extends TestCase
         if (false === $this->projectDir) {
             throw new \RuntimeException('Cannot resolve project root.');
         }
+
+        // Per-session messaging: each test run gets its own Doctrine queue
+        // prefix so messages never leak across parallel or sequential tests.
+        $this->sessionId = substr(bin2hex(random_bytes(16)), 0, 12);
 
         $this->tempDir = $this->projectDir.'/var/tmp/test-controller-'.uniqid('', true);
 
@@ -179,9 +190,13 @@ final class ControllerSmokeTest extends TestCase
         $env = [
             'APP_ENV' => 'dev',
             'APP_DEBUG' => '1',
-            'HATFIELD_RUN_CONTROL_TRANSPORT_DSN' => 'doctrine://default?queue_name=run_control',
-            'HATFIELD_LLM_TRANSPORT_DSN' => 'doctrine://default?queue_name=llm',
-            'HATFIELD_TOOL_TRANSPORT_DSN' => 'doctrine://default?queue_name=tool',
+            // Per-session queue names: each test session gets its own
+            // Doctrine transport filter so messages never leak across
+            // parallel tests or into a currently running production session.
+            'HATFIELD_RUN_CONTROL_TRANSPORT_DSN' => "doctrine://default?queue_name=run_control_{$this->sessionId}",
+            'HATFIELD_LLM_TRANSPORT_DSN' => "doctrine://default?queue_name=llm_{$this->sessionId}",
+            'HATFIELD_TOOL_TRANSPORT_DSN' => "doctrine://default?queue_name=tool_{$this->sessionId}",
+            'HATFIELD_SESSION_ID' => $this->sessionId,
             'LLAMA_CPP_SMOKE_TEST' => '1',
         ];
 
@@ -517,7 +532,7 @@ final class ControllerSmokeTest extends TestCase
             // Inject default_model and default_reasoning after the 'ai:' line
             $settings = preg_replace(
                 '/^ai:\n/m',
-                "ai:\n    default_model: llama_cpp_test/lfm2.5\n    default_reasoning: off\n",
+                "ai:\n    default_model: llama_cpp_test/test\n    default_reasoning: off\n",
                 $settings,
                 1,
             ) ?? $settings;
@@ -526,7 +541,7 @@ final class ControllerSmokeTest extends TestCase
             $settings = <<<'YAML'
 # Minimal test settings
 ai:
-    default_model: llama_cpp_test/lfm2.5
+    default_model: llama_cpp_test/test
     default_reasoning: off
     providers:
         llama_cpp_test:
@@ -540,8 +555,8 @@ ai:
             supports_embeddings: false
             supports_thinking_levels: false
             models:
-                lfm2.5:
-                    name: lfm2.5
+                test:
+                    name: test
                     context_window: 32768
                     max_tokens: 32768
                     input: [text]
