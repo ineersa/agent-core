@@ -86,7 +86,7 @@ final class ControllerSmokeTest extends TestCase
         $this->spawnController();
 
         // ── Wait for runtime.ready ──
-        $this->waitForEvent('runtime.ready', 15.0);
+        $this->waitForEvent('runtime.ready', 5.0);
 
         // ── Send start_run ──
         $startCmdId = 'cmd_start_'.uniqid();
@@ -100,7 +100,7 @@ final class ControllerSmokeTest extends TestCase
         ]);
 
         // ── Collect events until run completes or timeout ──
-        $events = $this->collectEvents(45.0);
+        $events = $this->collectEvents(15.0);
         $byType = [];
         foreach ($events as $e) {
             $type = (string) ($e['type'] ?? 'unknown');
