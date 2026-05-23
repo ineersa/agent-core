@@ -41,6 +41,12 @@ final class TuiSessionState
     public int $lastSeq = 0;
     public float $lastPoll = 0.0;
 
+    /** Number of consecutive runtime polling errors. Resets after a successful poll. */
+    public int $runtimePollErrorCount = 0;
+
+    /** Last runtime polling error message surfaced/logged for diagnostics. */
+    public string $lastRuntimePollError = '';
+
     // ── Footer/runtime projection state ──
     // Updated by FooterStateListener on each poll.
     public string $footerModel = '';

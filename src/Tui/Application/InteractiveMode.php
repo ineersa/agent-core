@@ -123,25 +123,37 @@ final readonly class InteractiveMode
         ChatScreen $screen,
     ): void {
         if (null !== $state->request && '' !== $state->request->prompt) {
-            $state->handle = $client->start($state->request);
-            $state->transcript[] = $this->blockFactory->system(
-                runId: $state->sessionId,
-                text: \sprintf('Run started: %s', $state->request->prompt),
-                seq: \count($state->transcript) + 1,
-                style: 'accent',
-            );
-            $this->sessionStore->appendTranscriptEntry(
-                $state->sessionId,
-                new PersistedTranscriptEntry(
-                    role: 'system',
+            try {
+                $state->handle = $client->start($state->request);
+                $state->transcript[] = $this->blockFactory->system(
+                    runId: $state->sessionId,
                     text: \sprintf('Run started: %s', $state->request->prompt),
-                    meta: ['run_id' => $state->handle->runId],
-                ),
-            );
-            $this->sessionStore->updateMetadata($state->sessionId, [
-                'run_id' => $state->handle->runId,
-                'prompt' => $state->request->prompt,
-            ]);
+                    seq: \count($state->transcript) + 1,
+                    style: 'accent',
+                );
+                $this->sessionStore->appendTranscriptEntry(
+                    $state->sessionId,
+                    new PersistedTranscriptEntry(
+                        role: 'system',
+                        text: \sprintf('Run started: %s', $state->request->prompt),
+                        meta: ['run_id' => $state->handle->runId],
+                    ),
+                );
+                $this->sessionStore->updateMetadata($state->sessionId, [
+                    'run_id' => $state->handle->runId,
+                    'prompt' => $state->request->prompt,
+                ]);
+            } catch (\Throwable $e) {
+                $this->logger->error('Failed to start initial run', [
+                    'exception' => $e,
+                    'session_id' => $state->sessionId,
+                ]);
+                $state->transcript[] = $this->blockFactory->error(
+                    runId: $state->sessionId,
+                    text: 'Runtime error: '.$e->getMessage(),
+                    seq: \count($state->transcript) + 1,
+                );
+            }
             $screen->setTranscriptBlocks($state->transcript);
         } elseif ($state->resuming) {
             $meta = $this->sessionStore->loadMetadata($state->sessionId);

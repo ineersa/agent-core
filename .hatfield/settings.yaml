@@ -114,7 +114,7 @@ ai:
         llama_cpp:
             type: generic
             enabled: true
-            base_url: http://192.168.2.38:8052/v1
+            base_url: http://192.168.2.38:9052/v1
             api: openai-completions
             api_key: dummy
             completions_path: /chat/completions
@@ -127,7 +127,7 @@ ai:
             supports_thinking_levels: false
             models:
                 flash:
-                    name: flash
+                    name: lfm2.5
                     context_window: 200000
                     max_tokens: 65536
                     input: [text, image]

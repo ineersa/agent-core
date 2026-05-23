@@ -642,8 +642,26 @@ function run_agent_test(): void
     $session = 'hatfield-agent-test';
     $width = 120;
     $height = 40;
+    $testDir = sprintf('%s/var/tmp/run-agent-test-%s', $root, bin2hex(random_bytes(6)));
+    $homeDir = $testDir.'/home';
 
-    $snapDir = $root.'/.hatfield/tmp/tui';
+    mkdir($testDir.'/.hatfield', 0777, true);
+    mkdir($homeDir.'/.hatfield', 0777, true);
+
+    $projectSettings = $root.'/.hatfield/settings.yaml';
+    if (is_readable($projectSettings)) {
+        $settings = (string) file_get_contents($projectSettings);
+        $settings = preg_replace(
+            '/^ai:\n/m',
+            "ai:\n    default_model: llama_cpp/flash\n    default_reasoning: off\n",
+            $settings,
+            1,
+        ) ?? $settings;
+        file_put_contents($testDir.'/.hatfield/settings.yaml', $settings);
+        file_put_contents($homeDir.'/.hatfield/settings.yaml', $settings);
+    }
+
+    $snapDir = $testDir.'/.hatfield/tmp/tui';
     $snapPath = $snapDir.'/latest.txt';
     $metaPath = $snapDir.'/agent-test.env';
 
@@ -654,11 +672,13 @@ function run_agent_test(): void
     // Tear down any previous test session
     shell_exec(sprintf('tmux kill-session -t %s 2>/dev/null', escapeshellarg($session)));
 
-    // Build a single bash -c command: run agent (blocks until user exits).
-    // The TUI event loop keeps the process alive until Ctrl+D or double Ctrl+C.
     $innerCmd = sprintf(
-        'cd %s && php bin/console agent --prompt="hello from tui test"',
-        escapeshellarg($root)
+        'cd %s && APP_ENV=dev HOME=%s %s %s agent --prompt=%s --model=llama_cpp/flash --reasoning=off 2>&1',
+        escapeshellarg($testDir),
+        escapeshellarg($homeDir),
+        escapeshellarg(\PHP_BINARY),
+        escapeshellarg($root.'/bin/console'),
+        escapeshellarg('Say exactly: hello')
     );
 
     // Launch detached, capturing the pane id.
@@ -674,15 +694,9 @@ function run_agent_test(): void
     $paneId = trim($output ?? '');
 
     if ('' === $paneId) {
-        echo "ERROR: Failed to create tmux session.\n";
-        echo 'Command: '.$cmd."\n";
-        echo 'Output: '.($output ?? '<none>')."\n";
-
-        return;
+        throw new RuntimeException("Failed to create tmux session.\nCommand: {$cmd}\nOutput: ".($output ?? '<none>'));
     }
 
-    // Some tmux servers ignore new-session -x/-y and keep the global
-    // default-size (often 80x24). Force the intended deterministic size.
     shell_exec(sprintf(
         'tmux resize-window -t %s -x %d -y %d 2>/dev/null',
         escapeshellarg($session),
@@ -690,38 +704,88 @@ function run_agent_test(): void
         $height
     ));
 
-    // Wait for the command to start and render.
-    sleep(2);
-
-    // Plain-text snapshot.
-    $snapshot = shell_exec(sprintf('tmux capture-pane -p -t %s', escapeshellarg($paneId)));
-    if (null !== $snapshot) {
+    $deadline = microtime(true) + 180.0;
+    $snapshot = '';
+    $matched = false;
+    while (microtime(true) < $deadline) {
+        $snapshot = shell_exec(sprintf('tmux capture-pane -p -t %s 2>&1', escapeshellarg($paneId))) ?? '';
         file_put_contents($snapPath, $snapshot);
+
+        if (str_contains($snapshot, '◇') || str_contains($snapshot, '✕') || str_contains(strtolower($snapshot), 'runtime error')) {
+            $matched = true;
+            break;
+        }
+
+        $paneCheck = [];
+        exec(sprintf('tmux display-message -p -t %s "#{pane_id}" 2>/dev/null', escapeshellarg($paneId)), $paneCheck, $paneExit);
+        if (0 !== $paneExit) {
+            throw new RuntimeException("Agent tmux pane exited before response.\n".agent_test_diagnostics($testDir, $snapshot));
+        }
+
+        usleep(250_000);
     }
 
-    // Write metadata for automation.
+    if (!$matched) {
+        throw new RuntimeException("Timed out waiting for assistant/error block.\n".agent_test_diagnostics($testDir, $snapshot));
+    }
+
     $meta = [
         'session' => $session,
         'pane_id' => $paneId,
         'width' => $width,
         'height' => $height,
         'snapshot_path' => $snapPath,
+        'test_dir' => $testDir,
         'root' => $root,
         'created_at' => date('c'),
     ];
     file_put_contents($metaPath, json_encode($meta, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES)."\n");
 
-    // Print instructions.
     echo 'Test session:  '.$session."\n";
     echo 'Pane:         '.$paneId."\n";
     echo 'Snapshot:     '.$snapPath."\n";
     echo 'Metadata:     '.$metaPath."\n";
+    echo 'Test CWD:     '.$testDir."\n";
+    echo "\n";
+    echo "Latest snapshot:\n".$snapshot."\n";
     echo "\n";
     echo 'Inspect:      tmux attach-session -t '.$session."\n";
     echo 'Plain snap:   tmux capture-pane -p -t '.$paneId."\n";
     echo 'ANSI snap:    tmux capture-pane -p -e -t '.$paneId."\n";
-    echo 'Send keys:    tmux send-keys -t '.$paneId." Enter\n";
     echo 'Tear down:    tmux kill-session -t '.$session."\n";
+}
+
+function agent_test_diagnostics(string $testDir, string $snapshot): string
+{
+    $out = "Test CWD: {$testDir}\n\nPlain snapshot:\n{$snapshot}\n\n";
+
+    $messenger = $testDir.'/.hatfield/messenger.sqlite';
+    $out .= sprintf("Messenger DB: %s (%s)\n\n", $messenger, is_file($messenger) ? filesize($messenger).' bytes' : 'missing');
+
+    $logFiles = glob($testDir.'/.hatfield/logs/*.log');
+    if (false === $logFiles) {
+        $logFiles = [];
+    }
+    foreach ($logFiles as $logFile) {
+        $lines = explode("\n", (string) file_get_contents($logFile));
+        $out .= "--- log {$logFile} tail ---\n".implode("\n", array_slice($lines, -80))."\n\n";
+    }
+
+    $sessionDirs = glob($testDir.'/.hatfield/sessions/*', \GLOB_ONLYDIR);
+    if (false === $sessionDirs) {
+        $sessionDirs = [];
+    }
+    foreach ($sessionDirs as $sessionDir) {
+        $out .= "Session: {$sessionDir}\n";
+        foreach (['metadata.yaml', 'state.json', 'events.jsonl', 'transcript.jsonl', 'idempotency.jsonl'] as $file) {
+            $path = $sessionDir.'/'.$file;
+            $out .= is_file($path)
+                ? "--- {$file} ---\n".(string) file_get_contents($path)."\n\n"
+                : "--- {$file}: missing ---\n\n";
+        }
+    }
+
+    return $out;
 }
 
 // ─── Log tasks ────────────────────────────────────────────────────

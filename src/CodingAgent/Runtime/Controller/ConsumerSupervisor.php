@@ -54,21 +54,44 @@ final class ConsumerSupervisor
      */
     public function launch(string $transportName): void
     {
-        $entrypoint = $_SERVER['argv'][0];
+        $entrypoint = (string) ($_SERVER['argv'][0] ?? '');
+        $cwd = getcwd();
 
-        $process = new Process(
-            [
-                \PHP_BINARY,
-                $entrypoint,
-                'messenger:consume',
-                $transportName,
-                '--no-interaction',
-                '--time-limit=3600',
-            ],
-            timeout: null,
-        );
+        if ('' === $entrypoint || false === $cwd) {
+            $this->logger->error('Cannot launch messenger consumer: invalid entrypoint or CWD', [
+                'transport' => $transportName,
+                'entrypoint' => $entrypoint,
+                'cwd' => false === $cwd ? null : $cwd,
+            ]);
 
-        $process->start();
+            return;
+        }
+
+        try {
+            $process = new Process(
+                [
+                    \PHP_BINARY,
+                    $entrypoint,
+                    'messenger:consume',
+                    $transportName,
+                    '--no-interaction',
+                    '--time-limit=3600',
+                ],
+                cwd: $cwd,
+                timeout: null,
+            );
+
+            $process->start();
+        } catch (\Throwable $e) {
+            $this->logger->error('Failed to launch messenger consumer', [
+                'transport' => $transportName,
+                'entrypoint' => $entrypoint,
+                'cwd' => $cwd,
+                'exception' => $e,
+            ]);
+
+            return;
+        }
 
         $this->consumers[$transportName] = $process;
 

@@ -64,7 +64,8 @@ final class LlamaCppSmokeTest extends TestCase
             );
         }
 
-        $this->tempDir = sys_get_temp_dir().'/hatfield-llamacpp-'.uniqid('', true);
+        $projectRoot = \dirname(__DIR__, 4);
+        $this->tempDir = $projectRoot.'/var/tmp/hatfield-llamacpp-'.uniqid('', true);
         $this->homeDir = $this->tempDir.'/home';
         $this->sessionId = 'llamacpp-smoke-'.uniqid('', true);
 
@@ -180,19 +181,28 @@ final class LlamaCppSmokeTest extends TestCase
         );
 
         // ── Invoke ──
-        $result = $adapter->invoke(new ModelInvocationRequest(
-            model: 'fallback/unused',
-            input: new ModelInvocationInput(
-                runId: $this->sessionId,
-                turnNo: 1,
-                stepId: 'turn-1-llm-1',
-            ),
-        ));
+        try {
+            $result = $adapter->invoke(new ModelInvocationRequest(
+                model: 'fallback/unused',
+                input: new ModelInvocationInput(
+                    runId: $this->sessionId,
+                    turnNo: 1,
+                    stepId: 'turn-1-llm-1',
+                ),
+            ));
+        } catch (\Throwable $e) {
+            self::fail('Real llama.cpp invocation failed: '.$e->getMessage()."\n".$this->collectSessionDiagnostics());
+        }
 
         // ── Assertions ──
         self::assertNotNull($result->assistantMessage, 'Expected a non-null assistant message');
         $text = $result->assistantMessage->asText();
         self::assertNotEmpty($text, 'Expected non-empty assistant text from llama.cpp');
+        self::assertStringContainsString(
+            'hello',
+            strtolower($text),
+            'Expected llama.cpp response to contain "hello" for the deterministic prompt. Response: '.$text,
+        );
 
         // Verify usage if the provider returned it (do not fail if absent)
         if (isset($result->usage['total_tokens'])) {
@@ -270,7 +280,7 @@ final class LlamaCppSmokeTest extends TestCase
             ai: $ai,
             raw: $raw,
             catalog: null !== $ai ? new HatfieldModelCatalog($ai) : null,
-            cwd: getcwd() ?: '/',
+            cwd: $this->tempDir.'/project',
         );
     }
 
@@ -344,6 +354,28 @@ final class LlamaCppSmokeTest extends TestCase
             mkdir($dir, 0777, true);
         }
         file_put_contents($dir.'/metadata.yaml', Yaml::dump($meta, 4, 2));
+    }
+
+    private function collectSessionDiagnostics(): string
+    {
+        $sessionDir = $this->tempDir.'/project/.hatfield/sessions/'.$this->sessionId;
+        $chunks = [
+            'Temp dir: '.$this->tempDir,
+            'Session dir: '.$sessionDir,
+        ];
+
+        foreach (['metadata.yaml', 'state.json', 'events.jsonl', 'transcript.jsonl', 'idempotency.jsonl'] as $file) {
+            $path = $sessionDir.'/'.$file;
+            if (!is_file($path)) {
+                $chunks[] = "--- {$file}: missing ---";
+                continue;
+            }
+
+            $content = (string) file_get_contents($path);
+            $chunks[] = "--- {$file} (".strlen($content)." bytes) ---\n".$content;
+        }
+
+        return implode("\n\n", $chunks);
     }
 
     private function removeDir(string $dir): void

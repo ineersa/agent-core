@@ -55,11 +55,11 @@ framework:
 
         transports:
             run_control:
-                dsn: 'doctrine://default?queue_name=run_control'
+                dsn: '%env(HATFIELD_RUN_CONTROL_TRANSPORT_DSN)%'
                 serializer: 'messenger.transport.native_php_serializer'
-            llm:         'doctrine://default?queue_name=llm'
-            tool:        'doctrine://default?queue_name=tool'
-            publish:     'doctrine://default?queue_name=publish'
+            llm:         '%env(HATFIELD_LLM_TRANSPORT_DSN)%'
+            tool:        '%env(HATFIELD_TOOL_TRANSPORT_DSN)%'
+            publish:     '%env(HATFIELD_PUBLISH_TRANSPORT_DSN)%'
 
         routing:
             Ineersa\AgentCore\Domain\Message\StartRun: run_control

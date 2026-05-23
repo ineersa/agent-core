@@ -67,12 +67,6 @@ parameters:
 			path: src/CodingAgent/Runtime/Process/JsonlProcessAgentSessionClient.php
 
 		-
-			message: '#^Property Ineersa\\CodingAgent\\Runtime\\Process\\JsonlProcessAgentSessionClient\:\:\$codec is never read, only written\.$#'
-			identifier: property.onlyWritten
-			count: 1
-			path: src/CodingAgent/Runtime/Process/JsonlProcessAgentSessionClient.php
-
-		-
 			message: '#^Property Ineersa\\CodingAgent\\Runtime\\Process\\JsonlProcessAgentSessionClient\:\:\$runIdMap is never read, only written\.$#'
 			identifier: property.onlyWritten
 			count: 1

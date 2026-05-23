@@ -51,8 +51,14 @@ final class RuntimeEventPoller
         try {
             $events = $this->runtimeEvents($client, $state->handle->runId);
             if ([] === $events) {
+                $state->runtimePollErrorCount = 0;
+                $state->lastRuntimePollError = '';
+
                 return null;
             }
+
+            $state->runtimePollErrorCount = 0;
+            $state->lastRuntimePollError = '';
 
             $hasNew = false;
             $processingRemoved = false;
@@ -88,13 +94,47 @@ final class RuntimeEventPoller
 
             return self::synchronizeProjectedBlocks($state, $this->projector->blocks());
         } catch (\Throwable $e) {
+            ++$state->runtimePollErrorCount;
+            $state->lastRuntimePollError = $e->getMessage();
+
             $this->logger->warning('RuntimeEventPoller polling error', [
                 'exception' => $e,
                 'run_id' => $state->handle->runId,
+                'consecutive_errors' => $state->runtimePollErrorCount,
             ]);
 
-            return null;
+            if (!$this->isFatalPollingError($e) && $state->runtimePollErrorCount < 3) {
+                return null;
+            }
+
+            $state->activity = RunActivityStateEnum::Failed;
+
+            $block = new TranscriptBlock(
+                id: \sprintf('runtime_poll_error_%s_%d', $state->handle->runId, $state->runtimePollErrorCount),
+                kind: TranscriptBlockKindEnum::Error,
+                runId: $state->handle->runId,
+                seq: $state->lastSeq + 1,
+                text: 'Runtime transport error: '.$e->getMessage(),
+                meta: ['exception' => $e::class],
+            );
+
+            $state->transcript[] = $block;
+
+            return [$block];
         }
+    }
+
+    private function isFatalPollingError(\Throwable $e): bool
+    {
+        $message = strtolower($e->getMessage());
+
+        foreach (['process', 'pipe', 'transport', 'no such file', 'exited', 'closed', 'stdin', 'stdout'] as $needle) {
+            if (str_contains($message, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** @return list<RuntimeEvent> */

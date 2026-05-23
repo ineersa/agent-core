@@ -43,8 +43,8 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
  */
 final class HeadlessController
 {
-    /** 10ms publish transport poll interval. */
-    private const float PUBLISH_POLL_INTERVAL = 0.01;
+    /** 250ms publish transport poll interval; SQLite queues lock under 10ms busy polling. */
+    private const float PUBLISH_POLL_INTERVAL = 0.25;
 
     /** 50ms event drain poll interval. */
     private const float EVENT_DRAIN_INTERVAL = 0.05;

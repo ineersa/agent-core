@@ -89,47 +89,60 @@ final class SubmitListener implements TuiListenerRegistrar
                 ),
             );
 
-            // Start a run if this is the first message
-            if (null === $state->handle && null === $state->request) {
-                $state->request = new StartRunRequest(
-                    prompt: $text,
-                    runId: $state->sessionId,
-                );
-                $state->handle = $client->start($state->request);
-                $state->activity = RunActivityStateEnum::Starting;
-                $state->transcript[] = $blockFactory->system(
-                    runId: $state->sessionId,
-                    text: \sprintf('Run started: %s', $text),
-                    seq: \count($state->transcript) + 1,
-                    style: 'accent',
-                );
-                $sessionStore->updateMetadata(
-                    $state->sessionId,
-                    [
-                        'run_id' => $state->sessionId,
-                        'prompt' => $text,
-                    ],
-                );
-                $state->lastSeq = 0;
-            } elseif (null !== $state->handle) {
-                // Route subsequent chat messages as follow_up or steer
-                // based on authoritative run activity state:
-                //   - follow_up: normal next user message when idle/completed
-                //   - steer:     steering/injected message while active
-                if ($state->activity->isActive()) {
-                    $client->send(
-                        $state->handle->runId,
-                        new UserCommand(type: 'steer', text: $text),
+            try {
+                // Start a run if this is the first message
+                if (null === $state->handle && null === $state->request) {
+                    $state->request = new StartRunRequest(
+                        prompt: $text,
+                        runId: $state->sessionId,
                     );
-                } else {
-                    $client->send(
-                        $state->handle->runId,
-                        new UserCommand(type: 'follow_up', text: $text),
-                    );
-                    // Transition to Starting so that subsequent submits
-                    // while the agent picks up the follow_up use steer.
+                    $state->handle = $client->start($state->request);
                     $state->activity = RunActivityStateEnum::Starting;
+                    $state->transcript[] = $blockFactory->system(
+                        runId: $state->sessionId,
+                        text: \sprintf('Run started: %s', $text),
+                        seq: \count($state->transcript) + 1,
+                        style: 'accent',
+                    );
+                    $sessionStore->updateMetadata(
+                        $state->sessionId,
+                        [
+                            'run_id' => $state->sessionId,
+                            'prompt' => $text,
+                        ],
+                    );
+                    $state->lastSeq = 0;
+                } elseif (null !== $state->handle) {
+                    // Route subsequent chat messages as follow_up or steer
+                    // based on authoritative run activity state:
+                    //   - follow_up: normal next user message when idle/completed
+                    //   - steer:     steering/injected message while active
+                    if ($state->activity->isActive()) {
+                        $client->send(
+                            $state->handle->runId,
+                            new UserCommand(type: 'steer', text: $text),
+                        );
+                    } else {
+                        $client->send(
+                            $state->handle->runId,
+                            new UserCommand(type: 'follow_up', text: $text),
+                        );
+                        // Transition to Starting so that subsequent submits
+                        // while the agent picks up the follow_up use steer.
+                        $state->activity = RunActivityStateEnum::Starting;
+                    }
                 }
+            } catch (\Throwable $e) {
+                $state->activity = RunActivityStateEnum::Failed;
+                $state->transcript[] = $blockFactory->error(
+                    runId: $state->sessionId,
+                    text: 'Runtime error: '.$e->getMessage(),
+                    seq: \count($state->transcript) + 1,
+                );
+                $screen->setWorkingMessage('');
+                $screen->setTranscriptBlocks($state->transcript);
+
+                return;
             }
 
             // Show processing indicator via the working status widget.

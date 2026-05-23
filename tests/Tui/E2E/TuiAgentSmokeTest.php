@@ -30,6 +30,7 @@ final class TuiAgentSmokeTest extends TestCase
     private TmuxHarness $tmux;
     private string $snapshotDir;
     private string $projectRoot;
+    private string $testProjectDir;
 
     protected function setUp(): void
     {
@@ -39,7 +40,8 @@ final class TuiAgentSmokeTest extends TestCase
 
         $this->tmux = new TmuxHarness();
         $this->projectRoot = \realpath(__DIR__ . '/../../..');
-        $this->snapshotDir = $this->projectRoot . '/.hatfield/tmp/tui/smoke';
+        $this->testProjectDir = $this->createIsolatedProjectDir();
+        $this->snapshotDir = $this->testProjectDir . '/.hatfield/tmp/tui/smoke';
         @\mkdir($this->snapshotDir, 0o777, true);
     }
 
@@ -47,6 +49,9 @@ final class TuiAgentSmokeTest extends TestCase
     {
         if (isset($this->tmux)) {
             $this->tmux->killAll();
+        }
+        if (isset($this->testProjectDir)) {
+            $this->removeDir($this->testProjectDir);
         }
     }
 
@@ -65,8 +70,9 @@ final class TuiAgentSmokeTest extends TestCase
     public function testTypePromptAndVerifyTranscriptBlocks(): void
     {
         $pane = $this->tmux->startDetached(
-            command: 'php bin/console agent 2>&1',
+            command: $this->agentCommand(),
             prefix: 'hatfield-agent-smoke',
+            cwd: $this->testProjectDir,
         );
 
         try {
@@ -94,7 +100,7 @@ final class TuiAgentSmokeTest extends TestCase
                 $capture = $this->tmux->waitForCaptureContains(
                     pane: $pane,
                     needle: '◇',    // TranscriptBlockKind::AssistantMessage prefix
-                    timeout: 30.0,
+                    timeout: 180.0,
                 );
             } catch (\RuntimeException $e) {
                 // Maybe the LLM failed — look for an error block instead.
@@ -201,8 +207,9 @@ final class TuiAgentSmokeTest extends TestCase
     public function testWorkingStatusTransitionsAfterSubmit(): void
     {
         $pane = $this->tmux->startDetached(
-            command: 'php bin/console agent 2>&1',
+            command: $this->agentCommand(),
             prefix: 'hatfield-agent-status',
+            cwd: $this->testProjectDir,
         );
 
         try {
@@ -217,7 +224,7 @@ final class TuiAgentSmokeTest extends TestCase
             // Wait for either an assistant block or error block.
             // This proves the working status didn't stay stuck.
             try {
-                $this->tmux->waitForCaptureContains($pane, '◇', 30.0);
+                $this->tmux->waitForCaptureContains($pane, '◇', 180.0);
             } catch (\RuntimeException) {
                 $this->tmux->waitForCaptureContains($pane, '✕', 10.0);
             }
@@ -259,8 +266,9 @@ final class TuiAgentSmokeTest extends TestCase
     public function testMultiTurnConversationOrder(): void
     {
         $pane = $this->tmux->startDetached(
-            command: 'php bin/console agent 2>&1',
+            command: $this->agentCommand(),
             prefix: 'hatfield-multiturn',
+            cwd: $this->testProjectDir,
         );
 
         try {
@@ -274,7 +282,7 @@ final class TuiAgentSmokeTest extends TestCase
 
             // Wait for first assistant response
             try {
-                $this->tmux->waitForCaptureContains($pane, '◇', 30.0);
+                $this->tmux->waitForCaptureContains($pane, '◇', 180.0);
             } catch (\RuntimeException) {
                 $this->tmux->waitForCaptureContains($pane, '✕', 10.0);
             }
@@ -311,7 +319,7 @@ final class TuiAgentSmokeTest extends TestCase
             // Poll until ◇ count increases (proves a new assistant block
             // appeared from the second LLM turn) or error block appears.
             $secondCapture = '';
-            $deadline = \microtime(true) + 30.0;
+            $deadline = \microtime(true) + 180.0;
             do {
                 $currentCapture = $this->tmux->capturePlain($pane);
                 $currentAssistantCount = \substr_count($currentCapture, "◇");
@@ -442,6 +450,38 @@ final class TuiAgentSmokeTest extends TestCase
 
     // ── helpers ────────────────────────────────────────────
 
+    private function agentCommand(): string
+    {
+        return \sprintf(
+            'APP_ENV=dev HOME=%s %s %s agent --model=llama_cpp/flash --reasoning=off 2>&1',
+            \escapeshellarg($this->testProjectDir.'/home'),
+            \escapeshellarg(\PHP_BINARY),
+            \escapeshellarg($this->projectRoot.'/bin/console'),
+        );
+    }
+
+    private function createIsolatedProjectDir(): string
+    {
+        $dir = \sprintf('%s/var/tmp/tui-e2e-%s', $this->projectRoot, \bin2hex(\random_bytes(6)));
+        @\mkdir($dir.'/.hatfield', 0o777, true);
+        @\mkdir($dir.'/home/.hatfield', 0o777, true);
+
+        $projectSettings = $this->projectRoot.'/.hatfield/settings.yaml';
+        if (\is_readable($projectSettings)) {
+            $settings = (string) \file_get_contents($projectSettings);
+            $settings = \preg_replace(
+                '/^ai:\n/m',
+                "ai:\n    default_model: llama_cpp/flash\n    default_reasoning: off\n",
+                $settings,
+                1,
+            ) ?? $settings;
+            \file_put_contents($dir.'/.hatfield/settings.yaml', $settings);
+            \file_put_contents($dir.'/home/.hatfield/settings.yaml', $settings);
+        }
+
+        return $dir;
+    }
+
     private function saveAnsiSnapshot(TmuxPane $pane, string $tag): void
     {
         $ansi = $this->tmux->captureAnsi($pane);
@@ -451,19 +491,22 @@ final class TuiAgentSmokeTest extends TestCase
     }
 
     /**
-     * Collect diagnostic artifacts: ANSI snapshot and session files.
+     * Collect diagnostic artifacts: ANSI snapshot, logs, messenger DB info,
+     * and session files from the isolated test CWD.
      */
     private function dumpArtifacts(TmuxPane $pane, string $context): void
     {
-        // Capture pane state
         $ansi = $this->tmux->captureAnsi($pane);
         $plain = $this->tmux->capturePlain($pane);
+        $paneExists = $this->tmux->paneExists($pane) ? 'yes' : 'no';
 
         \fwrite(\STDERR, "\n\n=== TUI SMOKE FAILURE ===\n");
-        \fwrite(\STDERR, "Context: {$context}\n\n");
+        \fwrite(\STDERR, "Context: {$context}\n");
+        \fwrite(\STDERR, "Pane exists: {$paneExists}\n");
+        \fwrite(\STDERR, "Test CWD: {$this->testProjectDir}\n\n");
 
         $ts = \date('Ymd-His');
-        $dumpDir = $this->projectRoot . '/.hatfield/tmp/tui/failures';
+        $dumpDir = $this->projectRoot . '/var/tmp/tui-failures';
         @\mkdir($dumpDir, 0o777, true);
 
         \file_put_contents("{$dumpDir}/fail-{$ts}.ansi", $ansi);
@@ -471,28 +514,82 @@ final class TuiAgentSmokeTest extends TestCase
 
         \fwrite(\STDERR, "Plain snapshot:\n{$plain}\n\n");
 
-        // dump last session's files if available
-        $sessionsDir = $this->projectRoot . '/.hatfield/sessions';
-        if (\is_dir($sessionsDir)) {
-            $dirs = \glob($sessionsDir . '/*', \GLOB_ONLYDIR) ?: [];
-            \usort($dirs, static fn (string $a, string $b): int =>
-                \filemtime($b) <=> \filemtime($a));
-            $lastDir = $dirs[0] ?? null;
-            if (null !== $lastDir) {
-                \fwrite(\STDERR, "Last session: {$lastDir}\n\n");
-                foreach (['events.jsonl', 'transcript.jsonl', 'state.json', 'metadata.yaml'] as $file) {
-                    $path = $lastDir . '/' . $file;
-                    if (\file_exists($path)) {
-                        $content = \file_get_contents($path);
-                        $size = \strlen($content);
-                        \fwrite(\STDERR, "--- {$file} ({$size} bytes) ---\n{$content}\n\n");
-                    } else {
-                        \fwrite(\STDERR, "--- {$file} (missing) ---\n\n");
-                    }
+        $messengerDb = $this->testProjectDir.'/.hatfield/messenger.sqlite';
+        \fwrite(\STDERR, \sprintf(
+            "Messenger DB: %s (%s)\n\n",
+            $messengerDb,
+            \is_file($messengerDb) ? \filesize($messengerDb).' bytes' : 'missing',
+        ));
+
+        $this->dumpLogFiles($this->testProjectDir.'/.hatfield/logs');
+        $this->dumpSessionFiles($this->testProjectDir.'/.hatfield/sessions');
+
+        \fwrite(\STDERR, "=== END TUI SMOKE FAILURE ===\n\n");
+    }
+
+    private function dumpLogFiles(string $logsDir): void
+    {
+        \fwrite(\STDERR, "Logs dir: {$logsDir}\n");
+        if (!\is_dir($logsDir)) {
+            \fwrite(\STDERR, "--- logs missing ---\n\n");
+
+            return;
+        }
+
+        foreach (\glob($logsDir.'/*.log') ?: [] as $logFile) {
+            $content = (string) \file_get_contents($logFile);
+            $tail = \implode("\n", \array_slice(\explode("\n", $content), -80));
+            \fwrite(\STDERR, "--- log {$logFile} tail ---\n{$tail}\n\n");
+        }
+    }
+
+    private function dumpSessionFiles(string $sessionsDir): void
+    {
+        \fwrite(\STDERR, "Sessions dir: {$sessionsDir}\n");
+        if (!\is_dir($sessionsDir)) {
+            \fwrite(\STDERR, "--- sessions missing ---\n\n");
+
+            return;
+        }
+
+        $dirs = \glob($sessionsDir . '/*', \GLOB_ONLYDIR) ?: [];
+        \usort($dirs, static fn (string $a, string $b): int => \filemtime($b) <=> \filemtime($a));
+
+        foreach (\array_slice($dirs, 0, 3) as $sessionDir) {
+            \fwrite(\STDERR, "Session: {$sessionDir}\n\n");
+            foreach (['events.jsonl', 'transcript.jsonl', 'state.json', 'metadata.yaml', 'idempotency.jsonl'] as $file) {
+                $path = $sessionDir . '/' . $file;
+                if (\file_exists($path)) {
+                    $content = (string) \file_get_contents($path);
+                    $size = \strlen($content);
+                    \fwrite(\STDERR, "--- {$file} ({$size} bytes) ---\n{$content}\n\n");
+                } else {
+                    \fwrite(\STDERR, "--- {$file} (missing) ---\n\n");
                 }
             }
         }
+    }
 
-        \fwrite(\STDERR, "=== END TUI SMOKE FAILURE ===\n\n");
+    private function removeDir(string $dir): void
+    {
+        if (!\is_dir($dir)) {
+            return;
+        }
+
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST,
+        );
+
+        foreach ($iterator as $file) {
+            if ($file->isDir()) {
+                \rmdir($file->getPathname());
+            } else {
+                @\chmod($file->getPathname(), 0o644);
+                \unlink($file->getPathname());
+            }
+        }
+
+        \rmdir($dir);
     }
 }

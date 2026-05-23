@@ -11,25 +11,33 @@ use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
-use Symfony\Component\Process\InputStream;
-use Symfony\Component\Process\Process;
 
 /**
  * Process-isolated implementation of AgentSessionClient.
  *
- * Spawns `bin/console agent --controller` and communicates via JSONL over stdin/stdout.
+ * Spawns `bin/console agent --controller` and communicates via JSONL over
+ * long-lived stdin/stdout pipes. Symfony Process intentionally is not used for
+ * this parent/child control channel: Process input is designed for finite input
+ * known before start(), and its pipe implementation closes stdin when the input
+ * iterator is initially empty. The controller protocol needs write-after-start,
+ * so this class owns proc_open() pipes directly.
+ *
  * The controller process launches messenger:consume run_control, llm, and tool
- * subprocesses, enabling fully async execution. Each command is written as a
- * JSONL line to stdin; events are read from stdout. Stderr is reserved for
- * logs/debug output.
+ * subprocesses, enabling fully async execution. Stderr is reserved for
+ * logs/debug output and is included in transport failure exceptions.
  *
  * @todo Implement full process lifecycle, reconnection, heartbeat detection.
  */
 final class JsonlProcessAgentSessionClient implements AgentSessionClient
 {
-    private ?Process $process = null;
+    /** @var resource|null */
+    private $process;
 
-    private ?InputStream $input = null;
+    /** @var array<int, resource> */
+    private array $pipes = [];
+
+    private string $stdoutBuffer = '';
+    private string $stderrBuffer = '';
 
     /** @var \SplQueue<RuntimeEvent> */
     private \SplQueue $eventBuffer;
@@ -39,9 +47,8 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     /** @var array<string, string> */
     private array $runIdMap = [];
 
-    public function __construct(
-        private readonly JsonlCodec $codec = new JsonlCodec(),
-    ) {
+    public function __construct()
+    {
         $this->eventBuffer = new \SplQueue();
 
         /*
@@ -49,11 +56,12 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
          *
          * dirname(__DIR__, 4) walks up from
          *   src/CodingAgent/Runtime/Process/
-         * to the project root, where bin/console lives.
+         * to the app install root, where bin/console lives.
          *
-         * This depends on the source-tree layout and will NOT work inside
-         * a PHAR, Docker image, or other redistributable build where the
-         * executable binary and source tree are packaged differently.
+         * Runtime data does NOT use this path. The controller process is
+         * spawned with the caller's current working directory so .hatfield/
+         * sessions, logs, and messenger.sqlite stay relative to the user's
+         * project/test CWD.
          *
          * TODO: Replace with a SelfExecutableLocator / BinaryLocator that
          * resolves the headless-agent binary path from:
@@ -97,25 +105,27 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         while (microtime(true) - $start < $timeout) {
             /** @var RuntimeEvent $event */
             foreach ($this->readEvents() as $event) {
-                if ('run_started' === $event->type) {
+                if ('run.started' === $event->type || 'run_started' === $event->type) {
                     $this->runIdMap[$cmd->id] = $event->runId;
 
                     return new RunHandle(runId: $event->runId, status: 'running');
                 }
 
-                if ('runtime.ready' === $event->type) {
-                    continue; // Already ready, skip.
+                if ('runtime.ready' === $event->type || 'command.ack' === $event->type) {
+                    continue;
                 }
 
-                // Buffer non-matching events
+                // Buffer non-matching events.
                 $this->eventBuffer->enqueue($event);
             }
+
+            $this->assertProcessStillRunning('waiting for run_started');
 
             // No events yet — brief sleep to avoid busy-wait.
             usleep(10_000);
         }
 
-        throw new \RuntimeException('Agent process did not emit run_started event within '.$timeout.'s');
+        throw new \RuntimeException('Agent process did not emit run_started event within '.$timeout.'s'."\n".$this->diagnosticOutput());
     }
 
     public function resume(string $runId): RunHandle
@@ -160,7 +170,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     public function events(string $runId): iterable
     {
-        // Drain buffered events first
+        // Drain buffered events first.
         while (!$this->eventBuffer->isEmpty()) {
             $event = $this->eventBuffer->dequeue();
             if ($event->runId === $runId) {
@@ -168,12 +178,14 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             }
         }
 
-        // Read new events from the process
+        // Read new events from the process.
         foreach ($this->readEvents() as $event) {
             if ($event->runId === $runId) {
                 yield $event;
             }
         }
+
+        $this->assertProcessStillRunning('polling runtime events');
     }
 
     public function cancel(string $runId): void
@@ -191,50 +203,72 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     private function ensureProcessRunning(): void
     {
-        if (null !== $this->process && $this->process->isRunning()) {
+        if (null !== $this->process && $this->isProcessRunning()) {
             return;
         }
 
-        /*
-         * TODO: Replace hard-coded bin/console path with the
-         * SelfExecutableLocator pattern (see constructor docblock and
-         * src/CodingAgent/Runtime/Process/AGENTS.md).
-         *
-         * In a PHAR/distribution build there is no bin/console — the
-         * binary is the PHAR itself or a renamed shim.  The locator
-         * should return the correct binary path for the current build
-         * type (source checkout, PHAR, Docker, etc.).
-         */
+        $this->stopProcess();
+
         $consolePath = $this->projectDir.'/bin/console';
 
         if (!is_file($consolePath)) {
             throw new \RuntimeException(\sprintf('Console not found at %s', $consolePath));
         }
 
-        // Spawn controller mode instead of legacy headless mode.
-        // The controller launches messenger:consume run_control, llm, and
-        // tool processes, enabling full async execution (ASYNC-05).
-        $this->process = new Process(
-            command: ['php', $consolePath, 'agent', '--controller'],
-            cwd: $this->projectDir,
-            env: [
-                'APP_ENV' => $_SERVER['APP_ENV'] ?? 'dev',
-                'APP_DEBUG' => $_SERVER['APP_DEBUG'] ?? '1',
-            ],
+        $runtimeCwd = getcwd();
+        if (false === $runtimeCwd) {
+            throw new \RuntimeException('No current working directory available for controller process.');
+        }
+
+        $descriptors = [
+            0 => ['pipe', 'r'], // stdin: parent writes JSONL commands
+            1 => ['pipe', 'w'], // stdout: parent reads JSONL events
+            2 => ['pipe', 'w'], // stderr: diagnostics/log leakage
+        ];
+
+        $currentEnv = getenv();
+        $env = array_merge(\is_array($currentEnv) ? $currentEnv : $_ENV, [
+            'APP_ENV' => $_SERVER['APP_ENV'] ?? $_ENV['APP_ENV'] ?? 'dev',
+            'APP_DEBUG' => $_SERVER['APP_DEBUG'] ?? $_ENV['APP_DEBUG'] ?? '1',
+            // Controller/worker mode must use real async queues. The parent
+            // TUI process defaults to sync:// so --transport=in-process remains
+            // usable without a consumer pool.
+            'HATFIELD_RUN_CONTROL_TRANSPORT_DSN' => 'doctrine://default?queue_name=run_control',
+            'HATFIELD_LLM_TRANSPORT_DSN' => 'doctrine://default?queue_name=llm',
+            'HATFIELD_TOOL_TRANSPORT_DSN' => 'doctrine://default?queue_name=tool',
+            'HATFIELD_PUBLISH_TRANSPORT_DSN' => 'doctrine://default?queue_name=publish',
+        ]);
+
+        $pipes = [];
+        $process = @proc_open(
+            [\PHP_BINARY, $consolePath, 'agent', '--controller'],
+            $descriptors,
+            $pipes,
+            $runtimeCwd,
+            $env,
         );
 
-        $this->process->setTimeout(null);
-        $this->input = new InputStream();
-        $this->process->setInput($this->input);
-        $this->process->start();
+        if (!\is_resource($process)) {
+            throw new \RuntimeException('Failed to start controller process via proc_open().');
+        }
+
+        /* @var array<int, resource> $pipes */
+        $this->process = $process;
+        $this->pipes = $pipes;
+        $this->stdoutBuffer = '';
+        $this->stderrBuffer = '';
+
+        stream_set_blocking($this->pipes[0], true);
+        stream_set_blocking($this->pipes[1], false);
+        stream_set_blocking($this->pipes[2], false);
     }
 
     /**
      * Wait for the controller to emit runtime.ready before sending commands.
      *
-     * The controller boots the kernel and launches consumers before
-     * entering the event loop. This method blocks until runtime.ready
-     * is received, up to 15 seconds.
+     * The controller boots the kernel and launches consumers before entering
+     * the event loop. This method blocks until runtime.ready is received, up to
+     * 15 seconds, and includes controller stderr when startup fails.
      */
     private function waitForRuntimeReady(): void
     {
@@ -250,19 +284,27 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                 $this->eventBuffer->enqueue($event);
             }
 
+            $this->assertProcessStillRunning('waiting for runtime.ready');
+
             usleep(10_000);
         }
 
-        throw new \RuntimeException('Controller did not emit runtime.ready within '.$timeout.'s');
+        throw new \RuntimeException('Controller did not emit runtime.ready within '.$timeout.'s'."\n".$this->diagnosticOutput());
     }
 
     private function writeCommand(RuntimeCommand $command): void
     {
-        if (null === $this->process) {
-            throw new \RuntimeException('Process not started');
+        if (null === $this->process || !isset($this->pipes[0]) || !\is_resource($this->pipes[0])) {
+            throw new \RuntimeException('Controller stdin pipe is not available. '.$this->diagnosticOutput());
         }
 
-        $this->input?->write(JsonlCodec::encodeCommand($command));
+        $line = JsonlCodec::encodeCommand($command);
+        $written = @fwrite($this->pipes[0], $line);
+        if (false === $written || $written < \strlen($line)) {
+            throw new \RuntimeException('Failed to write command to controller stdin. '.$this->diagnosticOutput());
+        }
+
+        fflush($this->pipes[0]);
     }
 
     /**
@@ -274,9 +316,27 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             return;
         }
 
-        $output = $this->process->getIncrementalOutput();
+        $this->drainStderr();
 
-        foreach (explode("\n", $output) as $line) {
+        if (!isset($this->pipes[1]) || !\is_resource($this->pipes[1])) {
+            return;
+        }
+
+        $chunk = stream_get_contents($this->pipes[1]);
+        if (false === $chunk || '' === $chunk) {
+            return;
+        }
+
+        $this->stdoutBuffer .= $chunk;
+        $lastNewline = strrpos($this->stdoutBuffer, "\n");
+        if (false === $lastNewline) {
+            return;
+        }
+
+        $complete = substr($this->stdoutBuffer, 0, $lastNewline + 1);
+        $this->stdoutBuffer = substr($this->stdoutBuffer, $lastNewline + 1);
+
+        foreach (explode("\n", $complete) as $line) {
             $trimmed = trim($line);
             if ('' === $trimmed) {
                 continue;
@@ -284,23 +344,86 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
             try {
                 yield JsonlCodec::decodeEvent($trimmed);
-            } catch (\JsonException) {
-                // Skip malformed lines (stderr noise that leaked to stdout)
+            } catch (\JsonException|\RuntimeException) {
+                // Skip malformed stdout lines, but preserve them as diagnostics.
+                $this->stderrBuffer .= "\n[malformed stdout] ".$trimmed;
                 continue;
             }
         }
     }
 
+    private function assertProcessStillRunning(string $context): void
+    {
+        if (null === $this->process || $this->isProcessRunning()) {
+            return;
+        }
+
+        throw new \RuntimeException(\sprintf('Controller process exited while %s. %s', $context, $this->diagnosticOutput()));
+    }
+
+    /** @phpstan-impure */
+    private function isProcessRunning(): bool
+    {
+        if (null === $this->process) {
+            return false;
+        }
+
+        $status = proc_get_status($this->process);
+
+        return true === $status['running'];
+    }
+
+    private function drainStderr(): void
+    {
+        if (!isset($this->pipes[2]) || !\is_resource($this->pipes[2])) {
+            return;
+        }
+
+        $chunk = stream_get_contents($this->pipes[2]);
+        if (false !== $chunk && '' !== $chunk) {
+            $this->stderrBuffer .= $chunk;
+        }
+    }
+
+    private function diagnosticOutput(): string
+    {
+        $this->drainStderr();
+
+        $stderr = trim($this->stderrBuffer);
+        $stdout = trim($this->stdoutBuffer);
+
+        return \sprintf(
+            'Controller diagnostics: stderr=%s stdout_buffer=%s',
+            '' !== $stderr ? $stderr : '<empty>',
+            '' !== $stdout ? $stdout : '<empty>',
+        );
+    }
+
     private function stopProcess(): void
     {
+        foreach ($this->pipes as $pipe) {
+            if (\is_resource($pipe)) {
+                @fclose($pipe);
+            }
+        }
+        $this->pipes = [];
+
         if (null === $this->process) {
             return;
         }
 
-        if ($this->process->isRunning()) {
-            $this->process->stop(3);
+        if ($this->isProcessRunning()) {
+            @proc_terminate($this->process, \SIGTERM);
+            $deadline = microtime(true) + 3.0;
+            while ($this->isProcessRunning() && microtime(true) < $deadline) {
+                usleep(50_000);
+            }
+            if ($this->isProcessRunning()) {
+                @proc_terminate($this->process, \SIGKILL);
+            }
         }
 
+        @proc_close($this->process);
         $this->process = null;
     }
 }

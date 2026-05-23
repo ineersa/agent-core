@@ -57,13 +57,14 @@ final class TmuxHarness
         string $prefix = 'hatfield-e2e',
         int $width = 120,
         int $height = 40,
+        ?string $cwd = null,
     ): TmuxPane {
         $session = sprintf('%s-%d-%d', $prefix, $this->pid, count($this->sessionNames));
         $this->sessionNames[] = $session;
 
         $innerCmd = sprintf(
             'cd %s && %s',
-            escapeshellarg($this->root),
+            escapeshellarg($cwd ?? $this->root),
             $command,
         );
 
@@ -114,7 +115,7 @@ final class TmuxHarness
     public function capturePlain(TmuxPane $pane): string
     {
         return shell_exec(
-            sprintf('tmux capture-pane -p -t %s', escapeshellarg($pane->paneId)),
+            sprintf('tmux capture-pane -p -t %s 2>&1', escapeshellarg($pane->paneId)),
         ) ?? '';
     }
 
@@ -124,7 +125,7 @@ final class TmuxHarness
     public function captureAnsi(TmuxPane $pane): string
     {
         return shell_exec(
-            sprintf('tmux capture-pane -p -e -t %s', escapeshellarg($pane->paneId)),
+            sprintf('tmux capture-pane -p -e -t %s 2>&1', escapeshellarg($pane->paneId)),
         ) ?? '';
     }
 
@@ -152,6 +153,14 @@ final class TmuxHarness
             escapeshellarg($pane->paneId),
             escapeshellarg($key),
         ));
+    }
+
+    public function paneExists(TmuxPane $pane): bool
+    {
+        $output = [];
+        exec(sprintf('tmux display-message -p -t %s "#{pane_id}" 2>/dev/null', escapeshellarg($pane->paneId)), $output, $exitCode);
+
+        return 0 === $exitCode;
     }
 
     // ── polling ────────────────────────────────────────────
