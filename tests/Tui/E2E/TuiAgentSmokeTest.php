@@ -453,7 +453,7 @@ final class TuiAgentSmokeTest extends TestCase
     private function agentCommand(): string
     {
         return \sprintf(
-            'APP_ENV=dev HOME=%s %s %s agent --model=llama_cpp_test/test --reasoning=off 2>&1',
+            'APP_ENV=dev HOME=%s %s %s agent --model=llama_cpp_test/test 2>&1',
             \escapeshellarg($this->testProjectDir.'/home'),
             \escapeshellarg(\PHP_BINARY),
             \escapeshellarg($this->projectRoot.'/bin/console'),

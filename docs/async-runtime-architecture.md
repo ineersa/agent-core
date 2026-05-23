@@ -59,6 +59,8 @@ Focus on topology, message flow, event delivery, and process supervision.
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
 │  │ messenger:consume│  │ messenger:consume│  │ messenger:consume│  │
 │  │ run_control      │  │ llm              │  │ tool             │  │
+│  │ (session-scoped  │  │ (session-scoped  │  │ (session-scoped  │  │
+│  │  queue names)    │  │  queue names)    │  │  queue names)    │  │
 │  │                  │  │                  │  │                  │  │
 │  │ RunOrchestrator  │  │ ExecuteLlmStep   │  │ ExecuteToolCall  │  │
 │  │ ├─ onStartRun    │  │ Worker           │  │ Worker           │  │
@@ -71,7 +73,8 @@ Focus on topology, message flow, event delivery, and process supervision.
 │           ▼                     ▼                     ▼
 │  ┌─────────────────────────────────────────────────────────────┐ │
 │  │             Doctrine SQLite (.hatfield/messenger.sqlite)     │ │
-│  │  3 queues: run_control | llm | tool                          │ │
+│  │  Per-session queues (sessionId = runId):                    │ │
+│  │   run_control_{sessionId} | llm_{sessionId} | tool_{sessionId} │ │
 │  │  PhpSerializer (run_control) | Symfony Serializer (llm,tool) │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────┘
@@ -285,26 +288,38 @@ TUI                        Controller(crashed!)       New Controller
 
 ```
 ┌──────────────┬───────────────────────────────────────┬──────────────────┐
-│ Queue        │ Messages                              │ Serializer        │
-├──────────────┼───────────────────────────────────────┼──────────────────┤
-│ run_control  │ StartRun                              │ PhpSerializer    │
-│              │ ApplyCommand (steer/follow_up/cancel/  │ (native PHP)     │
-│              │   continue/human_response)            │                  │
-│              │ AdvanceRun                            │ Reason: StartRun  │
-│              │ LlmStepResult  (sync, within process) │ contains complex  │
-│              │ ToolCallResult (sync, within process) │ objects (AgentMsg │
-│              │                                       │ [], RunMetadata)  │
-├──────────────┼───────────────────────────────────────┼──────────────────┤
-│ llm          │ ExecuteLlmStep                        │ Symfony          │
-│              │                                       │ Serializer       │
-│              │ Processed by: ExecuteLlmStepWorker    │ (scalar/array    │
-│              │ Result → agent.command.bus (sync)     │ only)            │
-├──────────────┼───────────────────────────────────────┼──────────────────┤
-│ tool         │ ExecuteToolCall                       │ Symfony          │
-│              │                                       │ Serializer       │
-│              │ Processed by: ExecuteToolCallWorker   │ (scalar/array    │
-│              │ Result → agent.command.bus (sync)     │ only)            │
-└──────────────┴───────────────────────────────────────┴──────────────────┘
+│ Queue                        │ Messages                    │ Serializer        │
+├──────────────────────────────┼─────────────────────────────┼──────────────────┤
+│ run_control_{sessionId}      │ StartRun                    │ PhpSerializer    │
+│                              │ ApplyCommand (steer/        │ (native PHP)     │
+│                              │   follow_up/cancel/        │                  │
+│                              │   continue/human_response) │ Reason: StartRun  │
+│                              │ AdvanceRun                  │ contains complex  │
+│                              │ LlmStepResult  (sync)      │ objects (AgentMsg │
+│                              │ ToolCallResult (sync)      │ [], RunMetadata)  │
+├──────────────────────────────┼─────────────────────────────┼──────────────────┤
+│ llm_{sessionId}              │ ExecuteLlmStep              │ Symfony          │
+│                              │                             │ Serializer       │
+│                              │ Processed by:               │ (scalar/array    │
+│                              │ ExecuteLlmStepWorker        │ only)            │
+│                              │ Result → command.bus (sync) │                  │
+├──────────────────────────────┼─────────────────────────────┼──────────────────┤
+│ tool_{sessionId}             │ ExecuteToolCall             │ Symfony          │
+│                              │                             │ Serializer       │
+│                              │ Processed by:               │ (scalar/array    │
+│                              │ ExecuteToolCallWorker       │ only)            │
+│                              │ Result → command.bus (sync) │                  │
+└──────────────────────────────┴─────────────────────────────┴──────────────────┘
+
+Per-session scoping:
+  - sessionId = runId (full UUID). session_id === run_id per AGENTS.md.
+  - Each controller session owns its own set of queue names.
+  - No cross-session message stealing: consumer reads only its session's
+    queue_name column filter.
+  - One session cannot be opened in 2 Hatfield instances simultaneously
+    (same queue names would race).
+  - HATFIELD_SESSION_ID env var passed to controller + consumers for
+    targeted orphan process cleanup.
 
 Storage:
   .hatfield/messenger.sqlite
@@ -526,8 +541,9 @@ Seq=0 events (transient) are never deduplicated. Seq>0 events skip if seq ≤ cu
 pgrep -f messenger:consume
   → for each PID:
     → check ppid == 1 (orphaned by SIGKILL'd parent)
-    → check /proc/pid/cwd matches our CWD
-    → check /proc/pid/cmdline contains known queue name
+    → check /proc/pid/environ for HATFIELD_SESSION_ID= match
+      → only kills consumers from our own session
+      → multi-instance safe: different session IDs won't match
     → posix_kill(SIGTERM) → 500ms wait → posix_kill(SIGKILL) if alive
 ```
 
@@ -599,6 +615,14 @@ pgrep -f messenger:consume
 │
 ├── messenger.sqlite           Doctrine SQLite transport
 │   └── messenger_messages     Queue table (auto_setup: true)
+│       queue_name column filters by session:
+│         run_control_{runId}, llm_{runId}, tool_{runId}
+│
+├── env vars (set by JsonlProcessAgentSessionClient::spawnProcess):
+│   HATFIELD_SESSION_ID=<runId>
+│   HATFIELD_RUN_CONTROL_TRANSPORT_DSN=doctrine://default?queue_name=run_control_<runId>
+│   HATFIELD_LLM_TRANSPORT_DSN=doctrine://default?queue_name=llm_<runId>
+│   HATFIELD_TOOL_TRANSPORT_DSN=doctrine://default?queue_name=tool_<runId>
 │
 └── sessions/
     └── <runId>/               runId = session_id = UUID

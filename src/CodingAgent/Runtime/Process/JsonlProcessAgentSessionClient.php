@@ -59,9 +59,10 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     private ?string $activeRunId = null;
 
     /**
-     * Short session identifier derived from the run ID (first 12 chars).
+     * Session-scoped identifier (the full run ID).
      * Used to scope Doctrine Messenger queue names per session so that
-     * cross-session message stealing cannot occur.
+     * cross-session message stealing cannot occur. One session per
+     * Hatfield instance — session_id === run_id per AGENTS.md.
      */
     private ?string $sessionId = null;
 
@@ -126,8 +127,9 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
         // Derive session-scoped queue names from the request runId before
         // spawning the controller process, so its env vars carry the right DSNs.
+        // session_id === run_id per AGENTS.md — no truncation needed.
         $runId = '' !== $request->runId ? $request->runId : null;
-        $this->sessionId = null !== $runId ? substr($runId, 0, 12) : null;
+        $this->sessionId = $runId;
 
         $this->ensureProcessRunning();
         $this->waitForRuntimeReady();
