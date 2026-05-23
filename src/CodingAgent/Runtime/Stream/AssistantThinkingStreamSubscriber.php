@@ -32,6 +32,11 @@ final class AssistantThinkingStreamSubscriber implements EventSubscriberInterfac
 {
     private bool $thinkingStarted = false;
 
+    /**
+     * @param RuntimeEventSinkInterface  $sink       in-process sink (always available)
+     * @param ?RuntimeEventSinkInterface $stdoutSink STDOUT pipe sink for LLM consumer (nullable:
+     *                                               in in-process/test mode there is no STDOUT pipe; the sink auto-detects TTY and returns early)
+     */
     public function __construct(
         private readonly RuntimeEventSinkInterface $sink,
         private readonly ?RuntimeEventSinkInterface $stdoutSink = null,

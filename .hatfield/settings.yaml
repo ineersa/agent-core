@@ -147,8 +147,8 @@ ai:
             supports_embeddings: false
             supports_thinking_levels: false
             models:
-                lfm2.5:
-                    name: lfm2.5
+                test:
+                    name: test
                     context_window: 32768
                     max_tokens: 32768
                     input: [text]

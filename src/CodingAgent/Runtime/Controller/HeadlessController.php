@@ -30,6 +30,11 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
  *   pipe. Stream subscribers inside the LLM consumer write JSONL to STDOUT;
  *   the controller reads incrementally and forwards.
  *
+ * Canonical runtime events (committed by consumer processes to events.jsonl)
+ * are polled via InProcessAgentSessionClient and forwarded to TUI through
+ * a periodic event drain timer. Transient streaming deltas flow through
+ * the LLM consumer stdout pipe.
+ *
  * Responsibilities are delegated to collaborators:
  * - EventDispatcherInterface routes commands to #[AsEventListener] handlers
  * - ConsumerSupervisor manages messenger:consume child processes
@@ -290,6 +295,8 @@ final class HeadlessController
         $this->ackCommand($command);
 
         // Dispatch via Symfony EventDispatcher to #[AsEventListener] handlers.
+        // Command bus dispatch is non-blocking — messages are routed to
+        // async Doctrine transports.
         try {
             $emit = $this->emit(...);
             $event = new ControllerCommandEvent($command, $emit);

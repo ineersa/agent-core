@@ -279,9 +279,9 @@ final class LlamaCppSmokeTest extends TestCase
                     'supports_completions' => true,
                     'supports_embeddings' => false,
                     'models' => [
-                        'lfm2.5' => [
-                            'id' => 'lfm2.5',
-                            'name' => 'lfm2.5',
+                        'test' => [
+                            'id' => 'test',
+                            'name' => 'test',
                             'context_window' => 32768,
                             'max_tokens' => 32768,
                             'input' => ['text'],
@@ -356,7 +356,7 @@ final class LlamaCppSmokeTest extends TestCase
 
         $model = getenv('LLAMA_CPP_MODEL')
             ?: $modelFromDefault
-            ?: (\is_string($firstConfiguredModel) ? $firstConfiguredModel : 'lfm2.5');
+            ?: (\is_string($firstConfiguredModel) ? $firstConfiguredModel : 'test');
 
         $apiKey = getenv('LLAMA_CPP_API_KEY') ?: $this->resolveSecret((string) ($provider['api_key'] ?? 'dummy'));
         $completionsPath = (string) ($provider['completions_path'] ?? '/chat/completions');

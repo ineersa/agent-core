@@ -44,6 +44,9 @@ final class ConsumerSupervisor
     /** @var array<string, float> transportName => start of restart window (microtime) */
     private array $restartWindows = [];
 
+    /** Set by shutdown() to prevent pending delay callbacks from launching new consumers. */
+    private bool $shuttingDown = false;
+
     public function __construct(
         private readonly LoggerInterface $logger,
     ) {
@@ -143,6 +146,8 @@ final class ConsumerSupervisor
      */
     public function shutdown(): void
     {
+        $this->shuttingDown = true;
+
         if ([] === $this->consumers) {
             return;
         }
@@ -218,6 +223,10 @@ final class ConsumerSupervisor
         // Non-blocking delay: schedule the launch after backoff without
         // blocking the event loop.
         EventLoop::delay($delayMs / 1000, function () use ($transportName): void {
+            if ($this->shuttingDown) {
+                return;
+            }
+
             // Re-check restart window hasn't expired while waiting.
             if (isset($this->restartWindows[$transportName])) {
                 $this->launch($transportName);

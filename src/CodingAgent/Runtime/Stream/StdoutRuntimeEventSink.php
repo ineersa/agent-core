@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Runtime\Stream;
 
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
-use Psr\Log\LoggerInterface;
 
 /**
  * Writes transient runtime events to STDOUT as JSONL.
@@ -30,12 +29,8 @@ final class StdoutRuntimeEventSink implements RuntimeEventSinkInterface
     /** @var bool|null */
     private static $isPipe;
 
-    /**
-     * @param LoggerInterface $logger used to log json_encode or write failures
-     */
-    public function __construct(
-        private readonly LoggerInterface $logger,
-    ) {
+    public function __construct()
+    {
     }
 
     public function emit(RuntimeEvent $event): void
@@ -62,7 +57,7 @@ final class StdoutRuntimeEventSink implements RuntimeEventSinkInterface
 
         $written = @fwrite(self::$stdout, $line);
         if (false === $written || 0 === $written) {
-            throw new \RuntimeException(\sprintf('StdoutRuntimeEventSink: fwrite to STDOUT pipe failed (event: %s). The controller process may be dead — aborting LLM consumer.', $event->type->value));
+            throw new \RuntimeException(\sprintf('StdoutRuntimeEventSink: fwrite to STDOUT pipe failed (event: %s). The controller process may be dead — aborting LLM consumer.', $event->type));
         }
 
         fflush(self::$stdout);

@@ -59,6 +59,20 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     private ?string $activeRunId = null;
 
     /**
+     * Whether ensureProcessRunning() auto-resumed the active run during
+     * this restart cycle. Used to prevent duplicate resume commands when
+     * resume() is called after a transparent restart.
+     */
+    private bool $autoResumed = false;
+
+    /**
+     * Whether runtime.ready has been received from the current controller
+     * process. Reset on spawnProcess(). Prevents waitForRuntimeReady()
+     * from blocking after the first call consumes the single ready event.
+     */
+    private bool $runtimeReadyReceived = false;
+
+    /**
      * Timestamps of recent controller restarts for rate-limiting.
      *
      * @var array<int, float>
@@ -99,8 +113,20 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     public function start(StartRunRequest $request): RunHandle
     {
+        // New run — clear stale state from any previous run or crash.
+        $this->activeRunId = null;
+        $this->autoResumed = false;
+
         $this->ensureProcessRunning();
         $this->waitForRuntimeReady();
+
+        // Track the intended runId for crash recovery BEFORE sending the
+        // command, so if the controller dies before run.started arrives,
+        // the activeRunId is already set and auto-resume will target it.
+        $runId = '' !== $request->runId ? $request->runId : null;
+        if (null !== $runId) {
+            $this->activeRunId = $runId;
+        }
 
         $cmd = new RuntimeCommand(
             id: uniqid('cmd_', true),
@@ -151,6 +177,14 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     {
         $this->activeRunId = $runId;
         $this->ensureProcessRunning();
+
+        // If ensureProcessRunning() auto-resumed the run after a restart,
+        // skip the explicit resume write to avoid sending a duplicate command.
+        if ($this->autoResumed) {
+            $this->autoResumed = false;
+
+            return new RunHandle(runId: $runId, status: 'running');
+        }
 
         $cmd = new RuntimeCommand(
             id: uniqid('cmd_', true),
@@ -267,6 +301,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                 type: 'resume',
                 runId: $this->activeRunId,
             ));
+            $this->autoResumed = true;
         }
     }
 
@@ -322,6 +357,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->pipes = $pipes;
         $this->stdoutBuffer = '';
         $this->stderrBuffer = '';
+        $this->runtimeReadyReceived = false;
 
         stream_set_blocking($this->pipes[0], true);
         stream_set_blocking($this->pipes[1], false);
@@ -360,12 +396,18 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
      */
     private function waitForRuntimeReady(): void
     {
+        if ($this->runtimeReadyReceived) {
+            return;
+        }
+
         $timeout = 15.0;
         $start = microtime(true);
 
         while (microtime(true) - $start < $timeout) {
             foreach ($this->readEvents() as $event) {
                 if ('runtime.ready' === $event->type) {
+                    $this->runtimeReadyReceived = true;
+
                     return;
                 }
 
