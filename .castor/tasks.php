@@ -549,6 +549,23 @@ function test_llm_real(): void
     run('LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit --group llm-real --colors=always');
 }
 
+/**
+ * Run the controller E2E smoke test.
+ *
+ * Spawns `agent --controller` as a subprocess, sends JSONL commands
+ * over stdin, reads JSONL events from stdout, and asserts the full
+ * async runtime pipeline (controller event loop -> messenger consumers
+ * -> LLM invocation -> event delivery).
+ *
+ * Uses the fast llama_cpp_test/lfm2.5 model on port 9052.
+ * Same fast test model as test:llm-real and TUI E2E tests.
+ */
+#[AsTask(name: 'test:controller', description: 'Run controller E2E smoke test (spawns --controller, sends JSONL)')]
+function test_controller(): void
+{
+    run('LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit --filter ControllerSmokeTest --colors=always');
+}
+
 #[AsTask(name: 'test:tui-update', description: 'Run TUI e2e tests and update golden snapshots')]
 function test_tui_update(): void
 {

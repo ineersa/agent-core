@@ -12,12 +12,11 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 
 /**
- * Handles user_message commands via Symfony EventDispatcher.
+ * Handles user_message, follow_up, and steer commands via Symfony EventDispatcher.
  *
- * Dispatches a user message to the run_control transport (ASYNC-05)
- * and immediately returns to the event loop. Events from the consumer
- * process are forwarded to TUI via the controller's periodic EventStore
- * drain timer.
+ * Dispatches the message to the run_control transport and immediately returns
+ * to the event loop. Events from the consumer process are forwarded to TUI via
+ * the controller's periodic EventStore drain and LLM consumer stdout streaming.
  */
 #[AsEventListener(event: ControllerCommandEvent::class)]
 final readonly class UserMessageHandler
@@ -29,7 +28,7 @@ final readonly class UserMessageHandler
 
     public function __invoke(ControllerCommandEvent $event): void
     {
-        if ('user_message' !== $event->command->type) {
+        if (!\in_array($event->command->type, ['user_message', 'follow_up', 'steer'], true)) {
             return;
         }
 
@@ -49,12 +48,22 @@ final readonly class UserMessageHandler
         // Non-blocking: dispatches ApplyCommand to run_control transport and
         // returns immediately. The run_control consumer picks it up and
         // processes the message.
+        // Map command type to UserCommand type:
+        //   steer       -> message (injected while agent is running)
+        //   follow_up   -> follow_up (normal next message when idle)
+        //   user_message -> message (generic message)
+        $commandType = match ($command->type) {
+            'follow_up' => 'follow_up',
+            'steer' => 'message',
+            default => 'message',
+        };
         $this->client->send($runId, new UserCommand(
-            type: 'message',
+            type: $commandType,
             text: (string) ($command->payload['text'] ?? ''),
         ));
 
         // Events are NOT iterated here — they arrive through the controller's
-        // periodic EventStore drain and publish transport poller (ASYNC-05).
+        // periodic EventStore drain (canonical seq > 0 events) and LLM
+        // consumer stdout (transient seq = 0 streaming deltas).
     }
 }

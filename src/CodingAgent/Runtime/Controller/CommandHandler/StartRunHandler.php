@@ -14,10 +14,10 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 /**
  * Handles start_run commands via Symfony EventDispatcher.
  *
- * Dispatches a start_run command to the run_control transport (ASYNC-05)
- * and immediately returns to the event loop. Runtime events from the
- * consumer process are forwarded to TUI via the controller's periodic
- * EventStore drain timer.
+ * Dispatches a start_run command to the run_control transport and immediately
+ * returns to the event loop. Runtime events from the consumer process are
+ * forwarded to TUI via the controller's periodic EventStore drain and LLM
+ * consumer stdout streaming.
  */
 #[AsEventListener(event: ControllerCommandEvent::class)]
 final readonly class StartRunHandler
@@ -37,14 +37,16 @@ final readonly class StartRunHandler
         $prompt = (string) ($command->payload['prompt'] ?? '');
         $model = isset($command->payload['model']) ? (string) $command->payload['model'] : null;
         $reasoning = isset($command->payload['reasoning']) ? (string) $command->payload['reasoning'] : null;
+        $runId = $command->runId ?? '';
 
         // Non-blocking: dispatches StartRun to run_control transport and returns
         // immediately. The run_control consumer picks up the message and processes
         // the run asynchronously. Events flow back through:
         //   1. EventStore (committed by consumer) → controller event drain → TUI
-        //   2. Publish transport (streaming deltas) → controller poll → TUI
+        //   2. LLM consumer stdout (streaming deltas) → controller poll → TUI
         $handle = $this->client->start(new StartRunRequest(
             prompt: $prompt,
+            runId: '' !== $runId ? $runId : '',
             model: '' !== $model ? $model : null,
             reasoning: '' !== $reasoning ? $reasoning : null,
         ));
@@ -52,11 +54,12 @@ final readonly class StartRunHandler
         $event->emit(new RuntimeEvent(
             type: RuntimeEventTypeEnum::RunStarted->value,
             runId: $handle->runId,
-            seq: 1,
+            seq: 0,
             payload: ['status' => 'running'],
         ));
 
         // Events are NOT iterated here — they arrive through the controller's
-        // periodic EventStore drain and publish transport poller (ASYNC-05).
+        // periodic EventStore drain (canonical seq > 0) and LLM consumer
+        // stdout (transient seq = 0 streaming deltas).
     }
 }

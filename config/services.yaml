@@ -82,33 +82,40 @@ services:
     arguments:
       $listenerRegistrars: !tagged_iterator app.tui_listener
 
-  # ─── Transient runtime stream wiring ───
+  # ─── Runtime stream wiring ───
 
   Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink: ~
 
   Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface:
     alias: Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink
 
+  Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink: ~
+
+  # Stream subscribers: autowiring cannot resolve RuntimeEventSinkInterface
+  # because there are two implementations (in-process and STDOUT). Explicitly
+  # wire the in-process sink as $sink and the STDOUT sink as $stdoutSink.
+  Ineersa\CodingAgent\Runtime\Stream\AssistantTextStreamSubscriber:
+    arguments:
+      $sink: '@Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink'
+      $stdoutSink: '@Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink'
+
+  Ineersa\CodingAgent\Runtime\Stream\AssistantThinkingStreamSubscriber:
+    arguments:
+      $sink: '@Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink'
+      $stdoutSink: '@Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink'
+
+  Ineersa\CodingAgent\Runtime\Stream\ToolCallStreamSubscriber:
+    arguments:
+      $sink: '@Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink'
+      $stdoutSink: '@Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink'
+
   # ─── Controller event loop ───
 
   Ineersa\CodingAgent\Runtime\Controller\ConsumerSupervisor: ~
 
-  Ineersa\CodingAgent\Runtime\Controller\PublishTransportPoller:
-    arguments:
-      $receiver: '@messenger.transport.publish'
-
   Ineersa\CodingAgent\Runtime\Controller\HeadlessController:
     arguments:
       $dispatcher: '@event_dispatcher'
-
-  # ─── Messenger publish bus wiring ───
-
-  Ineersa\CodingAgent\Runtime\Publish\MessengerRuntimeEventPublisher:
-    arguments:
-      $publisherBus: '@agent.publisher.bus'
-
-  Ineersa\AgentCore\Contract\RuntimeEventPublisherInterface:
-    alias: Ineersa\CodingAgent\Runtime\Publish\MessengerRuntimeEventPublisher
 
   # Stream observer delegates to Symfony EventDispatcher with per-delta subscribers.
   Ineersa\CodingAgent\Runtime\Stream\LlmStreamDispatchObserver:
