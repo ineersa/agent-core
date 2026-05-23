@@ -37,14 +37,16 @@ final readonly class StartRunHandler
         $prompt = (string) ($command->payload['prompt'] ?? '');
         $model = isset($command->payload['model']) ? (string) $command->payload['model'] : null;
         $reasoning = isset($command->payload['reasoning']) ? (string) $command->payload['reasoning'] : null;
+        $runId = $command->runId ?? '';
 
         // Non-blocking: dispatches StartRun to run_control transport and returns
         // immediately. The run_control consumer picks up the message and processes
         // the run asynchronously. Events flow back through:
         //   1. EventStore (committed by consumer) → controller event drain → TUI
-        //   2. Publish transport (streaming deltas) → controller poll → TUI
+        //   2. LLM consumer stdout (streaming deltas) → controller poll → TUI
         $handle = $this->client->start(new StartRunRequest(
             prompt: $prompt,
+            runId: '' !== $runId ? $runId : '',
             model: '' !== $model ? $model : null,
             reasoning: '' !== $reasoning ? $reasoning : null,
         ));
