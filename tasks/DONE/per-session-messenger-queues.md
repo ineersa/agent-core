@@ -65,14 +65,14 @@ The `messenger.yaml` transport DSNs stay the same (they read from env vars). The
 - Existing tests pass, cs-fix clean, phpstan clean
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/per-session-messenger-queues
 Worktree: /home/ineersa/projects/agent-core-worktrees/per-session-messenger-queues
 Fork run:
 PR URL: https://github.com/ineersa/agent-core/pull/45
-PR Status: open
+PR Status: merged
 Started: 2026-05-23T19:43:44.422Z
-Completed:
+Completed: 2026-05-23T21:40:37.861Z
 
 ## Work log
 - Created: 2026-05-23T19:43:28.868Z
@@ -89,3 +89,16 @@ Completed:
 - Pushed task/per-session-messenger-queues to origin.
 - branch 'task/per-session-messenger-queues' set up to track 'origin/task/per-session-messenger-queues'.
 - Created PR: https://github.com/ineersa/agent-core/pull/45
+
+## Task workflow update - 2026-05-23T21:40:37.861Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/per-session-messenger-queues into integration checkout.
+- Merge made by the 'ort' strategy.
+ docs/async-runtime-architecture.md                 | 70 +++++++++++++++-------
+ .../Runtime/Controller/HeadlessController.php      | 47 ++++++---------
+ .../Process/JsonlProcessAgentSessionClient.php     | 34 ++++++++---
+ .../Runtime/Controller/E2E/ControllerSmokeTest.php | 29 ++++++---
+ tests/Tui/E2E/TuiAgentSmokeTest.php                |  4 +-
+ 5 files changed, 116 insertions(+), 68 deletions(-)
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/per-session-messenger-queues.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
