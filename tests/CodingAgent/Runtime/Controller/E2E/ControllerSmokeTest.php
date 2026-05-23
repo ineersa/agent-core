@@ -532,7 +532,7 @@ final class ControllerSmokeTest extends TestCase
             // Inject default_model and default_reasoning after the 'ai:' line
             $settings = preg_replace(
                 '/^ai:\n/m',
-                "ai:\n    default_model: llama_cpp_test/lfm2.5\n    default_reasoning: off\n",
+                "ai:\n    default_model: llama_cpp_test/test\n    default_reasoning: off\n",
                 $settings,
                 1,
             ) ?? $settings;
@@ -541,7 +541,7 @@ final class ControllerSmokeTest extends TestCase
             $settings = <<<'YAML'
 # Minimal test settings
 ai:
-    default_model: llama_cpp_test/lfm2.5
+    default_model: llama_cpp_test/test
     default_reasoning: off
     providers:
         llama_cpp_test:
@@ -555,8 +555,8 @@ ai:
             supports_embeddings: false
             supports_thinking_levels: false
             models:
-                lfm2.5:
-                    name: lfm2.5
+                test:
+                    name: test
                     context_window: 32768
                     max_tokens: 32768
                     input: [text]
