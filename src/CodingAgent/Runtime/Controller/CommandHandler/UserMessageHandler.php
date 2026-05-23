@@ -29,7 +29,7 @@ final readonly class UserMessageHandler
 
     public function __invoke(ControllerCommandEvent $event): void
     {
-        if ('user_message' !== $event->command->type) {
+        if (!\in_array($event->command->type, ['user_message', 'follow_up'], true)) {
             return;
         }
 
@@ -49,8 +49,9 @@ final readonly class UserMessageHandler
         // Non-blocking: dispatches ApplyCommand to run_control transport and
         // returns immediately. The run_control consumer picks it up and
         // processes the message.
+        $commandType = 'follow_up' === $command->type ? 'follow_up' : 'message';
         $this->client->send($runId, new UserCommand(
-            type: 'message',
+            type: $commandType,
             text: (string) ($command->payload['text'] ?? ''),
         ));
 

@@ -22,10 +22,10 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 final class StdoutRuntimeEventSink implements RuntimeEventSinkInterface
 {
     /** @var resource|false|null */
-    private static $stdout = null;
+    private static $stdout;
 
     /** @var bool|null */
-    private static $isPipe = null;
+    private static $isPipe;
 
     public function emit(RuntimeEvent $event): void
     {
@@ -38,7 +38,7 @@ final class StdoutRuntimeEventSink implements RuntimeEventSinkInterface
         }
 
         if (null === self::$stdout) {
-            $handle = @fopen('php://stdout', 'ab');
+            $handle = @fopen('php://stdout', 'a');
             self::$stdout = false === $handle ? false : $handle;
         }
 
@@ -46,7 +46,7 @@ final class StdoutRuntimeEventSink implements RuntimeEventSinkInterface
             return;
         }
 
-        $line = json_encode($event->toArray(), \JSON_UNESCAPED_UNICODE) . "\n";
+        $line = json_encode($event->toArray(), \JSON_UNESCAPED_UNICODE)."\n";
         @fwrite(self::$stdout, $line);
     }
 }
