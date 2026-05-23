@@ -241,7 +241,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
         $pipes = [];
         $process = @proc_open(
-            [\PHP_BINARY, $consolePath, 'agent', '--controller'],
+            [\PHP_BINARY, $consolePath, 'agent', '--controller', '--cwd='.$runtimeCwd],
             $descriptors,
             $pipes,
             $runtimeCwd,

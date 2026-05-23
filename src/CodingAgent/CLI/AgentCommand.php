@@ -71,6 +71,9 @@ final class AgentCommand
         #[Option(description: 'Reasoning/thinking level: off, minimal, low, medium, high, xhigh')]
         string $reasoning = '',
 
+        #[Option(description: 'Working directory for session/storage resolution (defaults to current CWD)')]
+        string $cwd = '',
+
         ?OutputInterface $output = null,
     ): int {
         if (null === $output) {
@@ -78,6 +81,16 @@ final class AgentCommand
         }
 
         try {
+            // Override CWD before any service access when --cwd is provided.
+            // This ensures app.cwd reflects the requested directory, not the
+            // directory where the cached container was compiled.
+            if ('' !== $cwd) {
+                if (!is_dir($cwd)) {
+                    throw new \RuntimeException(\sprintf('Working directory does not exist: %s', $cwd));
+                }
+                chdir($cwd);
+            }
+
             if ($controller) {
                 return $this->runController();
             }

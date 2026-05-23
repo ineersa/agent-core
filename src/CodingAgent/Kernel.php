@@ -31,10 +31,13 @@ class Kernel extends AbstractKernel
         $container->setParameter('kernel.charset', 'UTF-8');
         $container->setParameter('kernel.default_locale', 'en');
 
-        // app.cwd must be resolved at RUNTIME, not compile time. Container
-        // compilation may happen in a different working directory (tests,
-        // parallel controllers). Baking getcwd() into the cached container
-        // would cause a stale CWD to leak across compilations.
+        // app.cwd must reflect the actual working directory at runtime, not the
+        // directory where the container was compiled. Use the HATFIELD_CWD env var
+        // with a fallback to kernel.project_dir. The env var is set by:
+        //   - AgentCommand (--cwd flag or getcwd() at startup)
+        //   - JsonlProcessAgentSessionClient (passes --cwd=<path> to controller)
+        //   - ConsumerSupervisor (Symfony Process cwd: argument sets child CWD)
+        // Each process resolves its own CWD independently.
         $container->setParameter('app.cwd', '%env(default:kernel.project_dir:string:HATFIELD_CWD)%');
 
         // FrameworkBundle and MessengerPass handle all Messenger wiring
@@ -44,17 +47,15 @@ class Kernel extends AbstractKernel
 
     public function boot(): void
     {
-        parent::boot();
-
-        // Resolve app.cwd at boot time so it reflects the actual working
-        // directory. HATFIELD_CWD is set by the parent process (JsonlProcess-
-        // AgentSessionClient) or defaults to the CWD of the calling process.
-        // The env var is set via proc_open($env) for the controller child
-        // or via putenv() in AgentCommand for the main TUI process.
+        // Ensure HATFIELD_CWD env var is set before parent::boot() compiles or
+        // resolves the container. This way the compiled container's %env(...)%
+        // placeholder resolves to the actual CWD on every boot.
         $cwd = getcwd();
-        if (false !== $cwd) {
+        if (false !== $cwd && !isset($_ENV['HATFIELD_CWD'])) {
             $_ENV['HATFIELD_CWD'] = $cwd;
         }
+
+        parent::boot();
     }
 
     public function getConfigDir(): string

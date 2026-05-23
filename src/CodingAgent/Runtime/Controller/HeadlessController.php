@@ -295,7 +295,6 @@ final class HeadlessController
         }
 
         $knownTransportNames = ['run_control', 'llm', 'tool'];
-        $queueHit = false;
 
         // Find all messenger:consume PIDs.
         $pgrepOutput = [];
@@ -349,8 +348,6 @@ final class HeadlessController
                 continue;
             }
 
-            $queueHit = true;
-
             $this->logger->info('Reaping orphaned consumer', [
                 'pid' => $pid,
                 'ppid' => $ppid,
@@ -372,23 +369,6 @@ final class HeadlessController
                     @posix_kill($pid, \SIGKILL);
                     $this->logger->warning('Orphaned consumer did not stop gracefully, sent SIGKILL', [
                         'pid' => $pid,
-                    ]);
-                }
-            }
-        }
-
-        // If we killed orphaned consumers, clean up the stale SQLite DB so
-        // the new controller gets a fresh file. The DB is at
-        // <cwd>/.hatfield/messenger.sqlite and Doctrine auto-creates it.
-        if ($queueHit && [] !== $killedPids) {
-            $dbPath = $cwd.'/.hatfield/messenger.sqlite';
-            if (is_file($dbPath)) {
-                // Rename stale DB so Doctrine auto-creates a fresh one.
-                $stalePath = $dbPath.'.stale.'.time();
-                if (@rename($dbPath, $stalePath)) {
-                    $this->logger->info('Renamed stale messenger database from orphaned run', [
-                        'from' => $dbPath,
-                        'to' => $stalePath,
                     ]);
                 }
             }
