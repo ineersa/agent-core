@@ -10,6 +10,19 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
+/**
+ * Maps TextDelta streaming deltas to assistant text transient events.
+ *
+ * First TextDelta → assistant.text_started (with block_id).
+ * Subsequent TextDelta values → assistant.text_delta.
+ * Resets per-stream state on llm_stream.start.
+ *
+ * Events are emitted both to the runtime event sink (in-process) and
+ * the StdoutRuntimeEventSink (cross-process via LLM consumer stdout pipe
+ * in async mode).
+ *
+ * @internal
+ */
 final class AssistantTextStreamSubscriber implements EventSubscriberInterface
 {
     private bool $textStarted = false;

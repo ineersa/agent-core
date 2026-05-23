@@ -12,6 +12,19 @@ use Symfony\AI\Platform\Result\Stream\Delta\ToolCallStart;
 use Symfony\AI\Platform\Result\Stream\Delta\ToolInputDelta;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
+/**
+ * Maps tool-call streaming deltas to tool call transient events.
+ *
+ * ToolCallStart → tool_call.started.
+ * ToolInputDelta → tool_call.arguments_delta.
+ * ToolCallComplete → tool_call.arguments_completed (one per ToolCall).
+ *
+ * Events are emitted both to the runtime event sink (in-process) and
+ * the StdoutRuntimeEventSink (cross-process via LLM consumer stdout pipe
+ * in async mode).
+ *
+ * @internal
+ */
 final class ToolCallStreamSubscriber implements EventSubscriberInterface
 {
     public function __construct(

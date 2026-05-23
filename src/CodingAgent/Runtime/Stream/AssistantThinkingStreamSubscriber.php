@@ -12,6 +12,22 @@ use Symfony\AI\Platform\Result\Stream\Delta\ThinkingDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\ThinkingStart;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
+/**
+ * Maps thinking streaming deltas (ThinkingStart, ThinkingDelta,
+ * ThinkingComplete) to assistant thinking transient events.
+ *
+ * ThinkingStart → assistant.thinking_started.
+ * ThinkingDelta → assistant.thinking_delta (with implicit start if needed).
+ * ThinkingComplete → assistant.thinking_completed.
+ * ThinkingSignature → silently skipped.
+ * Resets per-stream state on llm_stream.start.
+ *
+ * Events are emitted both to the runtime event sink (in-process) and
+ * the StdoutRuntimeEventSink (cross-process via LLM consumer stdout pipe
+ * in async mode).
+ *
+ * @internal
+ */
 final class AssistantThinkingStreamSubscriber implements EventSubscriberInterface
 {
     private bool $thinkingStarted = false;

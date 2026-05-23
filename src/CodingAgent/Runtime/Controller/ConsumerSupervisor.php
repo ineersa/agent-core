@@ -177,6 +177,7 @@ final class ConsumerSupervisor
     {
         $now = microtime(true);
 
+        // Check if restart window has expired — reset counter.
         if (isset($this->restartWindows[$transportName])) {
             $elapsed = $now - $this->restartWindows[$transportName];
             if ($elapsed > self::RESTART_WINDOW_SECONDS) {
@@ -197,12 +198,14 @@ final class ConsumerSupervisor
             return;
         }
 
+        // Start restart window on first restart.
         if (!isset($this->restartWindows[$transportName])) {
             $this->restartWindows[$transportName] = $now;
         }
 
         $this->restartCounts[$transportName] = $count + 1;
 
+        // Exponential backoff: 1s, 2s, 4s
         $delayMs = self::INITIAL_RESTART_DELAY_MS * (2 ** $count);
 
         $this->logger->info('Restarting consumer with backoff', [
