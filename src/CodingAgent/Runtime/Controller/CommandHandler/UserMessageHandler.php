@@ -12,12 +12,11 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 
 /**
- * Handles user_message commands via Symfony EventDispatcher.
+ * Handles user_message, follow_up, and steer commands via Symfony EventDispatcher.
  *
- * Dispatches a user message to the run_control transport (ASYNC-05)
- * and immediately returns to the event loop. Events from the consumer
- * process are forwarded to TUI via the controller's periodic EventStore
- * drain timer.
+ * Dispatches the message to the run_control transport and immediately returns
+ * to the event loop. Events from the consumer process are forwarded to TUI via
+ * the controller's periodic EventStore drain and LLM consumer stdout streaming.
  */
 #[AsEventListener(event: ControllerCommandEvent::class)]
 final readonly class UserMessageHandler
@@ -64,6 +63,7 @@ final readonly class UserMessageHandler
         ));
 
         // Events are NOT iterated here — they arrive through the controller's
-        // periodic EventStore drain and publish transport poller (ASYNC-05).
+        // periodic EventStore drain (canonical seq > 0 events) and LLM
+        // consumer stdout (transient seq = 0 streaming deltas).
     }
 }

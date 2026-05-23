@@ -19,6 +19,7 @@ use Psr\Log\LoggerInterface;
  * through the transcript projector so the UI renders projected TranscriptBlock
  * DTOs. Events are NOT persisted here — canonical storage happens in AgentCore
  * (events.jsonl) and transient streaming deltas go through the controller's
+ * LLM consumer stdout pipe.
  */
 final class RuntimeEventPoller
 {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
 use Psr\Log\LoggerInterface;
+use Revolt\EventLoop;
 use Symfony\Component\Process\Process;
 
 /**
@@ -167,6 +168,10 @@ final class ConsumerSupervisor
 
     /**
      * Try to restart a crashed consumer, respecting the restart policy.
+     *
+     * Uses Revolt EventLoop::delay() instead of usleep() so the event loop
+     * remains responsive during backoff (stdin commands, LLM stdout polling,
+     * event drain, and signal handling continue to work).
      */
     private function attemptRestart(string $transportName): void
     {
@@ -207,8 +212,13 @@ final class ConsumerSupervisor
             'delay_ms' => $delayMs,
         ]);
 
-        usleep($delayMs * 1000);
-
-        $this->launch($transportName);
+        // Non-blocking delay: schedule the launch after backoff without
+        // blocking the event loop.
+        EventLoop::delay($delayMs / 1000, function () use ($transportName): void {
+            // Re-check restart window hasn't expired while waiting.
+            if (isset($this->restartWindows[$transportName])) {
+                $this->launch($transportName);
+            }
+        });
     }
 }

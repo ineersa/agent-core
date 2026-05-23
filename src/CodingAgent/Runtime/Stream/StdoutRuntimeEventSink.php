@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Runtime\Stream;
 
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Psr\Log\LoggerInterface;
 
 /**
  * Writes transient runtime events to STDOUT as JSONL.
@@ -18,6 +19,8 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
  * terminal is a TTY and events must NOT be written to it — they're delivered
  * through the in-process sink instead. In the LLM consumer, STDOUT is a pipe
  * to the controller.
+ *
+ * @internal
  */
 final class StdoutRuntimeEventSink implements RuntimeEventSinkInterface
 {
@@ -27,10 +30,18 @@ final class StdoutRuntimeEventSink implements RuntimeEventSinkInterface
     /** @var bool|null */
     private static $isPipe;
 
+    /**
+     * @param LoggerInterface $logger used to log json_encode or write failures
+     */
+    public function __construct(
+        private readonly LoggerInterface $logger,
+    ) {
+    }
+
     public function emit(RuntimeEvent $event): void
     {
         if (null === self::$isPipe) {
-            self::$isPipe = !posix_isatty(\STDOUT);
+            self::$isPipe = \function_exists('posix_isatty') && !posix_isatty(\STDOUT);
         }
 
         if (!self::$isPipe) {
@@ -38,7 +49,7 @@ final class StdoutRuntimeEventSink implements RuntimeEventSinkInterface
         }
 
         if (null === self::$stdout) {
-            $handle = @fopen('php://stdout', 'a');
+            $handle = fopen('php://stdout', 'a');
             self::$stdout = false === $handle ? false : $handle;
         }
 
@@ -46,7 +57,16 @@ final class StdoutRuntimeEventSink implements RuntimeEventSinkInterface
             return;
         }
 
-        $line = json_encode($event->toArray(), \JSON_UNESCAPED_UNICODE)."\n";
-        @fwrite(self::$stdout, $line);
+        $encoded = json_encode($event->toArray(), \JSON_UNESCAPED_UNICODE | \JSON_THROW_ON_ERROR);
+        $line = $encoded."\n";
+
+        $written = @fwrite(self::$stdout, $line);
+        if (false === $written || 0 === $written) {
+            $this->logger->error('StdoutRuntimeEventSink: fwrite failed', [
+                'event_type' => $event->type,
+            ]);
+        }
+
+        fflush(self::$stdout);
     }
 }

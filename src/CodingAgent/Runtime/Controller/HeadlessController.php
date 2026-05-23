@@ -35,7 +35,7 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 final class HeadlessController
 {
     /** 10ms LLM stdout poll interval for responsive streaming. */
-    private const float LLM_STDOUT_POLL_INTERVAL = 0.01;
+    private const float STREAMING_EVENT_POLL_INTERVAL = 0.01;
 
     /** 50ms event drain poll interval. */
     private const float EVENT_DRAIN_INTERVAL = 0.05;
@@ -50,6 +50,18 @@ final class HeadlessController
 
     /** @var array<string, int> runId => lastForwardedSeq */
     private array $runEventCursors = [];
+
+    /**
+     * Partial-line buffer for LLM consumer stdout reads.
+     *
+     * getIncrementalOutput() can return partial JSONL (no trailing newline).
+     * This buffer accumulates incomplete lines across poll cycles so they
+     * are not silently lost. Complete lines (trailing \n) are processed;
+     * leftovers stay in the buffer for the next poll.
+     *
+     * @see JsonlProcessAgentSessionClient for the same pattern
+     */
+    private string $llmStdoutBuffer = '';
 
     public function __construct(
         private readonly ConsumerSupervisor $consumerSupervisor,
@@ -104,7 +116,7 @@ final class HeadlessController
         });
 
         // Poll LLM consumer stdout for transient streaming deltas.
-        EventLoop::repeat(self::LLM_STDOUT_POLL_INTERVAL, function (): void {
+        EventLoop::repeat(self::STREAMING_EVENT_POLL_INTERVAL, function (): void {
             if ($this->shuttingDown) {
                 return;
             }
@@ -183,10 +195,14 @@ final class HeadlessController
      *
      * Stream subscribers running inside the LLM consumer process write JSONL
      * lines to STDOUT. This reads incremental output from the child process
-     * pipe, parses valid RuntimeEvent JSONL, and forwards to the TUI.
+     * pipe, accumulates partial lines across polls, parses valid RuntimeEvent
+     * JSONL, and forwards to the TUI.
      *
      * Non-JSONL lines (e.g. messenger:consume output) are silently skipped.
-     * The output cursor tracks the byte offset to avoid re-reading.
+     * Incomplete lines (no trailing \n) are buffered and completed on the
+     * next poll cycle.
+     *
+     * @see JsonlProcessAgentSessionClient::consumeOutput() for the same pattern
      */
     private function pollLlmStdout(): void
     {
@@ -198,13 +214,22 @@ final class HeadlessController
 
         $output = $llmProcess->getIncrementalOutput();
 
-        if ('' === $output) {
+        if ('' === $output && '' === $this->llmStdoutBuffer) {
             return;
         }
 
-        $lines = explode("\n", $output);
+        // Accumulate with partial-line buffer (same pattern as JsonlProcessAgentSessionClient).
+        $this->llmStdoutBuffer .= $output;
+        $lastNewline = strrpos($this->llmStdoutBuffer, "\n");
+        if (false === $lastNewline) {
+            // No complete line yet — wait for more data.
+            return;
+        }
 
-        foreach ($lines as $line) {
+        $complete = substr($this->llmStdoutBuffer, 0, $lastNewline + 1);
+        $this->llmStdoutBuffer = substr($this->llmStdoutBuffer, $lastNewline + 1);
+
+        foreach (explode("\n", $complete) as $line) {
             $trimmed = trim($line);
             if ('' === $trimmed) {
                 continue;
@@ -425,8 +450,10 @@ final class HeadlessController
         $written = @fwrite($this->stdout, $line);
 
         if (false === $written || 0 === $written) {
+            $error = error_get_last();
             $this->logger->error('Controller stdout write failed, initiating shutdown', [
                 'event_type' => $event->type,
+                'error' => $error['message'] ?? 'unknown',
             ]);
             $this->shutdown();
             EventLoop::getDriver()->stop();

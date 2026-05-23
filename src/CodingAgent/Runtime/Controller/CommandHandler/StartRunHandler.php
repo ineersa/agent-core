@@ -14,10 +14,10 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 /**
  * Handles start_run commands via Symfony EventDispatcher.
  *
- * Dispatches a start_run command to the run_control transport (ASYNC-05)
- * and immediately returns to the event loop. Runtime events from the
- * consumer process are forwarded to TUI via the controller's periodic
- * EventStore drain timer.
+ * Dispatches a start_run command to the run_control transport and immediately
+ * returns to the event loop. Runtime events from the consumer process are
+ * forwarded to TUI via the controller's periodic EventStore drain and LLM
+ * consumer stdout streaming.
  */
 #[AsEventListener(event: ControllerCommandEvent::class)]
 final readonly class StartRunHandler
@@ -54,11 +54,12 @@ final readonly class StartRunHandler
         $event->emit(new RuntimeEvent(
             type: RuntimeEventTypeEnum::RunStarted->value,
             runId: $handle->runId,
-            seq: 1,
+            seq: 0,
             payload: ['status' => 'running'],
         ));
 
         // Events are NOT iterated here — they arrive through the controller's
-        // periodic EventStore drain and publish transport poller (ASYNC-05).
+        // periodic EventStore drain (canonical seq > 0) and LLM consumer
+        // stdout (transient seq = 0 streaming deltas).
     }
 }
