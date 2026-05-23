@@ -59,6 +59,14 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     private ?string $activeRunId = null;
 
     /**
+     * Session-scoped identifier (the full run ID).
+     * Used to scope Doctrine Messenger queue names per session so that
+     * cross-session message stealing cannot occur. One session per
+     * Hatfield instance — session_id === run_id per AGENTS.md.
+     */
+    private ?string $sessionId = null;
+
+    /**
      * Whether ensureProcessRunning() auto-resumed the active run during
      * this restart cycle. Used to prevent duplicate resume commands when
      * resume() is called after a transparent restart.
@@ -117,13 +125,18 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->activeRunId = null;
         $this->autoResumed = false;
 
+        // Derive session-scoped queue names from the request runId before
+        // spawning the controller process, so its env vars carry the right DSNs.
+        // session_id === run_id per AGENTS.md — no truncation needed.
+        $runId = '' !== $request->runId ? $request->runId : null;
+        $this->sessionId = $runId;
+
         $this->ensureProcessRunning();
         $this->waitForRuntimeReady();
 
-        // Track the intended runId for crash recovery BEFORE sending the
-        // command, so if the controller dies before run.started arrives,
-        // the activeRunId is already set and auto-resume will target it.
-        $runId = '' !== $request->runId ? $request->runId : null;
+        // activeRunId was set above from the request runId for crash recovery
+        // before spawning the process, so if the controller dies before
+        // run.started arrives, auto-resume will target it.
         if (null !== $runId) {
             $this->activeRunId = $runId;
         }
@@ -328,15 +341,22 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         ];
 
         $currentEnv = getenv();
+        // Build session-scoped queue names so no cross-session message
+        // stealing can occur. Falls back to 'default' before start().
+        $queueSuffix = $this->sessionId ?? 'default';
+
         $env = array_merge(\is_array($currentEnv) ? $currentEnv : $_ENV, [
             'APP_ENV' => $_SERVER['APP_ENV'] ?? $_ENV['APP_ENV'] ?? 'dev',
             'APP_DEBUG' => $_SERVER['APP_DEBUG'] ?? $_ENV['APP_DEBUG'] ?? '1',
             // Controller/worker mode must use real async queues. The parent
             // TUI process defaults to sync:// so --transport=in-process remains
             // usable without a consumer pool.
-            'HATFIELD_RUN_CONTROL_TRANSPORT_DSN' => 'doctrine://default?queue_name=run_control',
-            'HATFIELD_LLM_TRANSPORT_DSN' => 'doctrine://default?queue_name=llm',
-            'HATFIELD_TOOL_TRANSPORT_DSN' => 'doctrine://default?queue_name=tool',
+            'HATFIELD_RUN_CONTROL_TRANSPORT_DSN' => "doctrine://default?queue_name=run_control_{$queueSuffix}",
+            'HATFIELD_LLM_TRANSPORT_DSN' => "doctrine://default?queue_name=llm_{$queueSuffix}",
+            'HATFIELD_TOOL_TRANSPORT_DSN' => "doctrine://default?queue_name=tool_{$queueSuffix}",
+            // Pass session ID so the controller can identify and reap its own
+            // orphaned consumers when a previous session was SIGKILL'd.
+            'HATFIELD_SESSION_ID' => $this->sessionId ?? 'unknown',
         ]);
 
         $pipes = [];

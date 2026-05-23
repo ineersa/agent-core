@@ -67,6 +67,12 @@ final class HeadlessController
     private array $runEventCursors = [];
 
     /**
+     * Session identifier from HATFIELD_SESSION_ID env var.
+     * Used to scope orphan cleanup to only this session's consumers.
+     */
+    private readonly string $sessionId;
+
+    /**
      * Partial-line buffer for LLM consumer stdout reads.
      *
      * getIncrementalOutput() can return partial JSONL (no trailing newline).
@@ -84,6 +90,7 @@ final class HeadlessController
         private readonly LoggerInterface $logger,
         private readonly ?InProcessAgentSessionClient $eventClient = null,
     ) {
+        $this->sessionId = $_SERVER['HATFIELD_SESSION_ID'] ?? $_ENV['HATFIELD_SESSION_ID'] ?? 'unknown';
     }
 
     public function run(): int
@@ -370,20 +377,13 @@ final class HeadlessController
      *
      * Only kills processes whose:
      *  - parent PID is 1 (truly orphaned, not owned by another controller)
-     *  - CWD matches the current working directory
-     *  - command line matches our known queue names
+     *  - environment contains our session ID (HATFIELD_SESSION_ID match)
      *
-     * Multi-instance safe: living controllers' consumers have ppid != 1.
+     * Multi-instance safe: living controllers' consumers have ppid != 1
+     * and different session IDs won't match ours.
      */
     private function killOrphanedConsumers(): void
     {
-        $cwd = getcwd();
-        if (false === $cwd) {
-            return;
-        }
-
-        $knownTransportNames = ['run_control', 'llm', 'tool'];
-
         // Find all messenger:consume PIDs.
         $pgrepOutput = [];
         $pgrepStatus = 0;
@@ -414,34 +414,23 @@ final class HeadlessController
                 continue;
             }
 
-            // Verify CWD matches ours.
-            $procCwd = @readlink("/proc/{$pid}/cwd");
-            if (false === $procCwd || $procCwd !== $cwd) {
+            // Verify this orphaned consumer belongs to our session by checking
+            // /proc/pid/environ for HATFIELD_SESSION_ID. \0-separated env entries.
+            $pidEnv = @file_get_contents("/proc/{$pid}/environ");
+            if (false === $pidEnv) {
                 continue;
             }
 
-            // Verify command line contains one of our queue names.
-
-            $cmdline = @file_get_contents("/proc/{$pid}/cmdline");
-            if (false === $cmdline) {
-                continue;
-            }
-
-            $queueName = null;
-            foreach ($knownTransportNames as $name) {
-                if (str_contains($cmdline, $name)) {
-                    $queueName = $name;
-                    break;
-                }
-            }
-            if (null === $queueName) {
+            $sessionMarker = "HATFIELD_SESSION_ID={$this->sessionId}";
+            if (!str_contains($pidEnv, $sessionMarker)) {
+                // Belongs to a different session — leave it alone.
                 continue;
             }
 
             $this->logger->info('Reaping orphaned consumer', [
                 'pid' => $pid,
                 'ppid' => $ppid,
-                'transport' => $queueName,
+                'session_id' => $this->sessionId,
             ]);
 
             // Send SIGTERM, wait briefly, escalate to SIGKILL if needed.
