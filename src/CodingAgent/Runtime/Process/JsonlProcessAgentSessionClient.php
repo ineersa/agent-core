@@ -236,7 +236,6 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             'HATFIELD_RUN_CONTROL_TRANSPORT_DSN' => 'doctrine://default?queue_name=run_control',
             'HATFIELD_LLM_TRANSPORT_DSN' => 'doctrine://default?queue_name=llm',
             'HATFIELD_TOOL_TRANSPORT_DSN' => 'doctrine://default?queue_name=tool',
-            'HATFIELD_PUBLISH_TRANSPORT_DSN' => 'doctrine://default?queue_name=publish',
         ]);
 
         $pipes = [];

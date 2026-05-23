@@ -26,6 +26,8 @@ use Symfony\Component\Process\Process;
  * - Supervision: polls isRunning() every 5s, restarts if crashed
  * - Shutdown: sends SIGTERM with 5s grace period, then SIGKILL
  * - stderr output is captured and logged on crash for diagnostics
+ * - getProcess(): exposes the Process object so HeadlessController can
+ *   read the LLM consumer's stdout for transient streaming deltas
  */
 final class ConsumerSupervisor
 {
@@ -48,9 +50,6 @@ final class ConsumerSupervisor
 
     /**
      * Launch a messenger:consume child process for the given transport.
-     *
-     * The process runs non-blocking with no time limit. Tracked for
-     * supervision and graceful shutdown.
      */
     public function launch(string $transportName): void
     {
@@ -102,11 +101,18 @@ final class ConsumerSupervisor
     }
 
     /**
-     * Check consumer child process health.
+     * Get the Symfony Process for a transport, if launched.
      *
-     * Removes crashed/exited processes from the tracked list and
-     * automatically restarts them if the restart policy allows.
-     * Captures and logs stderr output on crash for diagnostics.
+     * The controller uses this to read the LLM consumer's stdout pipe
+     * for transient streaming deltas (thinking, text, tool-call args).
+     */
+    public function getProcess(string $transportName): ?Process
+    {
+        return $this->consumers[$transportName] ?? null;
+    }
+
+    /**
+     * Check consumer child process health.
      */
     public function supervise(): void
     {
@@ -133,9 +139,6 @@ final class ConsumerSupervisor
 
     /**
      * Gracefully stop all tracked consumer processes.
-     *
-     * Sends SIGTERM with a 5-second grace period. Processes that do not
-     * terminate within the timeout receive SIGKILL.
      */
     public function shutdown(): void
     {
@@ -169,7 +172,6 @@ final class ConsumerSupervisor
     {
         $now = microtime(true);
 
-        // Check if restart window has expired — reset counter
         if (isset($this->restartWindows[$transportName])) {
             $elapsed = $now - $this->restartWindows[$transportName];
             if ($elapsed > self::RESTART_WINDOW_SECONDS) {
@@ -190,14 +192,12 @@ final class ConsumerSupervisor
             return;
         }
 
-        // Start restart window on first restart
         if (!isset($this->restartWindows[$transportName])) {
             $this->restartWindows[$transportName] = $now;
         }
 
         $this->restartCounts[$transportName] = $count + 1;
 
-        // Exponential backoff: 1s, 2s, 4s
         $delayMs = self::INITIAL_RESTART_DELAY_MS * (2 ** $count);
 
         $this->logger->info('Restarting consumer with backoff', [
@@ -207,8 +207,6 @@ final class ConsumerSupervisor
             'delay_ms' => $delayMs,
         ]);
 
-        // Sleep before restarting (outside event loop — this runs in
-        // the supervisor repeat callback, which is one-shot per tick)
         usleep($delayMs * 1000);
 
         $this->launch($transportName);

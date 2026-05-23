@@ -4,31 +4,19 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Stream;
 
-use Ineersa\AgentCore\Contract\RuntimeEventPublisherInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
-/**
- * Maps TextDelta streaming deltas to assistant text transient events.
- *
- * First TextDelta → assistant.text_started (with block_id).
- * Subsequent TextDelta values → assistant.text_delta.
- *
- * Resets per-stream state on llm_stream.start.
- *
- * Events are emitted both to the runtime event sink (in-process) and
- * the runtime event publisher (cross-process via Messenger in async mode).
- */
 final class AssistantTextStreamSubscriber implements EventSubscriberInterface
 {
     private bool $textStarted = false;
 
     public function __construct(
         private readonly RuntimeEventSinkInterface $sink,
-        private readonly ?RuntimeEventPublisherInterface $runtimeEventPublisher = null,
+        private readonly ?RuntimeEventSinkInterface $stdoutSink = null,
     ) {
     }
 
@@ -110,13 +98,12 @@ final class AssistantTextStreamSubscriber implements EventSubscriberInterface
             payload: $merged,
         );
 
+        // In-process sink (active in all modes).
         $this->sink->emit($event);
-        $this->runtimeEventPublisher?->publish(
-            $event->runId,
-            $event->type,
-            $event->seq,
-            $event->payload,
-        );
+
+        // Cross-process STDOUT sink (active in async/controller mode
+        // inside the LLM consumer child process).
+        $this->stdoutSink?->emit($event);
     }
 
     private function blockId(string $runId, ?string $stepId, string $kind): string

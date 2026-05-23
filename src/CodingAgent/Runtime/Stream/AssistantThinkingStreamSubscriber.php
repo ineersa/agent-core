@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Stream;
 
-use Ineersa\AgentCore\Contract\RuntimeEventPublisherInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -13,27 +12,13 @@ use Symfony\AI\Platform\Result\Stream\Delta\ThinkingDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\ThinkingStart;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
-/**
- * Maps thinking streaming deltas (ThinkingStart, ThinkingDelta,
- * ThinkingComplete) to assistant thinking transient events.
- *
- * ThinkingStart → assistant.thinking_started.
- * ThinkingDelta → assistant.thinking_delta (with implicit start if needed).
- * ThinkingComplete → assistant.thinking_completed.
- * ThinkingSignature → silently skipped.
- *
- * Resets per-stream state on llm_stream.start.
- *
- * Events are emitted both to the runtime event sink (in-process) and
- * the runtime event publisher (cross-process via Messenger in async mode).
- */
 final class AssistantThinkingStreamSubscriber implements EventSubscriberInterface
 {
     private bool $thinkingStarted = false;
 
     public function __construct(
         private readonly RuntimeEventSinkInterface $sink,
-        private readonly ?RuntimeEventPublisherInterface $runtimeEventPublisher = null,
+        private readonly ?RuntimeEventSinkInterface $stdoutSink = null,
     ) {
     }
 
@@ -147,12 +132,7 @@ final class AssistantThinkingStreamSubscriber implements EventSubscriberInterfac
         );
 
         $this->sink->emit($event);
-        $this->runtimeEventPublisher?->publish(
-            $event->runId,
-            $event->type,
-            $event->seq,
-            $event->payload,
-        );
+        $this->stdoutSink?->emit($event);
     }
 
     private function blockId(string $runId, ?string $stepId, string $kind): string

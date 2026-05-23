@@ -20,31 +20,22 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
  *
  * Orchestrates the controller event loop: reads JSONL commands from stdin,
  * ACKs immediately, dispatches through Symfony EventDispatcher to focused
- * #[AsEventListener] command handlers, and forwards runtime events from
- * the publish transport to stdout.
+ * #[AsEventListener] command handlers, and forwards runtime events to
+ * stdout for the TUI.
  *
- * Responsibilities are delegated to collaborators:
- * - EventDispatcherInterface routes commands to #[AsEventListener] handlers
- * - PublishTransportPoller polls the Doctrine publish transport
- * - ConsumerSupervisor manages messenger:consume child processes
+ * Event sources:
+ * - Canonical events: polled from events.jsonl via InProcessAgentSessionClient
+ *   event drain (seq > 0).
+ * - Transient streaming deltas: read from the LLM consumer child process stdout
+ *   pipe. Stream subscribers inside the LLM consumer write JSONL to STDOUT;
+ *   the controller reads incrementally and forwards.
  *
- * Canonical runtime events (committed by consumer processes to events.jsonl)
- * are polled via InProcessAgentSessionClient and forwarded to TUI through
- * a periodic event drain timer. Transient streaming deltas flow through
- * the publish transport.
- *
- * Command protocol:
- *   TUI → stdin JSONL  → controller parses → emits command.ack → dispatches event
- *   Controller → stdout JSONL → TUI reads events including command.ack
- *
- * @see ControllerCommandEvent
- * @see PublishTransportPoller
  * @see ConsumerSupervisor
  */
 final class HeadlessController
 {
-    /** 20ms publish transport poll interval for responsive streaming. */
-    private const float PUBLISH_POLL_INTERVAL = 0.02;
+    /** 10ms LLM stdout poll interval for responsive streaming. */
+    private const float LLM_STDOUT_POLL_INTERVAL = 0.01;
 
     /** 50ms event drain poll interval. */
     private const float EVENT_DRAIN_INTERVAL = 0.05;
@@ -61,7 +52,6 @@ final class HeadlessController
     private array $runEventCursors = [];
 
     public function __construct(
-        private readonly PublishTransportPoller $publishPoller,
         private readonly ConsumerSupervisor $consumerSupervisor,
         private readonly EventDispatcherInterface $dispatcher,
         private readonly LoggerInterface $logger,
@@ -77,9 +67,7 @@ final class HeadlessController
         }
 
         // Reap orphaned messenger:consume processes left behind by SIGKILL'd
-        // previous runs. Only kills processes whose parent is init (ppid=1)
-        // and whose CWD matches ours — never touches consumers owned by
-        // a living controller instance.
+        // previous runs.
         $this->killOrphanedConsumers();
 
         $this->emit(new RuntimeEvent(
@@ -90,9 +78,6 @@ final class HeadlessController
         ));
 
         // Launch messenger consumers for async execution and command transports.
-        // - run_control consumes StartRun, ApplyCommand, AdvanceRun (ASYNC-05)
-        // - llm consumes ExecuteLlmStep (ASYNC-04)
-        // - tool consumes ExecuteToolCall (ASYNC-04)
         $this->consumerSupervisor->launch('run_control');
         $this->consumerSupervisor->launch('llm');
         $this->consumerSupervisor->launch('tool');
@@ -105,7 +90,6 @@ final class HeadlessController
 
             $line = fgets($stream);
             if (false === $line) {
-                // EOF or error — close stdin watcher.
                 EventLoop::cancel($watcherId);
 
                 return;
@@ -119,39 +103,31 @@ final class HeadlessController
             $this->handleCommandLine($trimmed);
         });
 
-        // Poll the publish Doctrine transport for forwarded runtime events.
-        EventLoop::repeat(self::PUBLISH_POLL_INTERVAL, function (): void {
+        // Poll LLM consumer stdout for transient streaming deltas.
+        EventLoop::repeat(self::LLM_STDOUT_POLL_INTERVAL, function (): void {
             if ($this->shuttingDown) {
                 return;
             }
 
-            foreach ($this->publishPoller->poll() as $event) {
-                $this->emit($event);
-            }
+            $this->pollLlmStdout();
         });
 
-        // Periodic event drain: poll canonical events from EventStore via
-        // InProcessAgentSessionClient and forward to TUI. Only runs when
-        // there are active runs registered via emit(). The TUI deduplicates
-        // by seq, so re-forwarding already-seen events is harmless.
+        // Periodic event drain: poll canonical events from events.jsonl.
         EventLoop::repeat(self::EVENT_DRAIN_INTERVAL, function (): void {
             if ($this->shuttingDown || null === $this->eventClient) {
                 return;
             }
 
-            // Snapshot active run IDs to avoid modification during iteration.
             $activeRuns = array_keys($this->runEventCursors);
 
             foreach ($activeRuns as $runId) {
                 $cursor = $this->runEventCursors[$runId] ?? null;
                 if (null === $cursor) {
-                    continue; // Run was cleaned up during iteration.
+                    continue;
                 }
 
                 try {
                     foreach ($this->eventClient->events($runId) as $event) {
-                        // Skip transient streaming deltas (seq=0) — these are
-                        // delivered via publish transport, not canonical events.
                         if (0 === $event->seq) {
                             continue;
                         }
@@ -176,7 +152,7 @@ final class HeadlessController
             }
         });
 
-        // Consumer supervision: check child process health is alive.
+        // Consumer supervision: check child process health.
         EventLoop::repeat(self::SUPERVISE_INTERVAL, function (): void {
             if ($this->shuttingDown) {
                 return;
@@ -200,6 +176,60 @@ final class HeadlessController
         return Command::SUCCESS;
     }
 
+    // ── LLM stdout polling ───────────────────────────────────────────────
+
+    /**
+     * Poll the LLM consumer child process stdout for transient streaming deltas.
+     *
+     * Stream subscribers running inside the LLM consumer process write JSONL
+     * lines to STDOUT. This reads incremental output from the child process
+     * pipe, parses valid RuntimeEvent JSONL, and forwards to the TUI.
+     *
+     * Non-JSONL lines (e.g. messenger:consume output) are silently skipped.
+     * The output cursor tracks the byte offset to avoid re-reading.
+     */
+    private function pollLlmStdout(): void
+    {
+        $llmProcess = $this->consumerSupervisor->getProcess('llm');
+
+        if (null === $llmProcess) {
+            return;
+        }
+
+        $output = $llmProcess->getIncrementalOutput();
+
+        if ('' === $output) {
+            return;
+        }
+
+        $lines = explode("\n", $output);
+
+        foreach ($lines as $line) {
+            $trimmed = trim($line);
+            if ('' === $trimmed) {
+                continue;
+            }
+
+            $data = json_decode($trimmed, true);
+
+            if (!\is_array($data) || !isset($data['v'], $data['type'])) {
+                // Not a valid RuntimeEvent — likely messenger:consume
+                // informational output. Silently skip.
+                continue;
+            }
+
+            try {
+                $event = RuntimeEvent::fromArray($data);
+                $this->emit($event);
+            } catch (\Throwable $e) {
+                $this->logger->debug('Skipping unparseable JSONL from LLM consumer stdout', [
+                    'line' => mb_substr($trimmed, 0, 200),
+                    'exception' => $e,
+                ]);
+            }
+        }
+    }
+
     // ── Command handling ─────────────────────────────────────────────────
 
     private function handleCommandLine(string $line): void
@@ -209,12 +239,8 @@ final class HeadlessController
             return;
         }
 
-        // ACK immediately before any processing.
         $this->ackCommand($command);
 
-        // Dispatch via Symfony EventDispatcher to #[AsEventListener] handlers.
-        // Command bus dispatch is non-blocking — messages are routed to
-        // async Doctrine transports (ASYNC-05).
         try {
             $emit = $this->emit(...);
             $event = new ControllerCommandEvent($command, $emit);
@@ -278,21 +304,6 @@ final class HeadlessController
 
     // ── Shutdown ─────────────────────────────────────────────────────────
 
-    /**
-     * Reap orphaned messenger:consume processes on startup.
-     *
-     * When a previous TUI process was SIGKILL'd, the controller's onSignal
-     * handler never fires, leaving messenger:consume children adopted by init
-     * (ppid=1). These orphans hold the SQLite DB lock and prevent new
-     * controllers from booting.
-     *
-     * Only kills processes whose:
-     *  - parent PID is 1 (truly orphaned, not owned by another controller)
-     *  - CWD matches the current working directory
-     *  - command line matches our known queue names
-     *
-     * Multi-instance safe: living controllers' consumers have ppid != 1.
-     */
     private function killOrphanedConsumers(): void
     {
         $cwd = getcwd();
@@ -302,7 +313,6 @@ final class HeadlessController
 
         $knownTransportNames = ['run_control', 'llm', 'tool'];
 
-        // Find all messenger:consume PIDs.
         $pgrepOutput = [];
         $pgrepStatus = 0;
         exec('pgrep -f messenger:consume 2>/dev/null', $pgrepOutput, $pgrepStatus);
@@ -318,26 +328,22 @@ final class HeadlessController
                 continue;
             }
 
-            // Check parent PID: only ppid=1 means orphaned.
             $stat = @file_get_contents("/proc/{$pid}/stat");
             if (false === $stat) {
                 continue;
             }
 
-            // ppid is the 4th space-separated field in /proc/pid/stat.
             $fields = explode(' ', $stat);
             $ppid = (int) ($fields[3] ?? 0);
             if (1 !== $ppid) {
-                continue; // Parent still alive — belongs to another controller.
+                continue;
             }
 
-            // Verify CWD matches ours.
             $procCwd = @readlink("/proc/{$pid}/cwd");
             if (false === $procCwd || $procCwd !== $cwd) {
                 continue;
             }
 
-            // Verify command line contains one of our queue names.
             $cmdline = @file_get_contents("/proc/{$pid}/cmdline");
             if (false === $cmdline) {
                 continue;
@@ -360,17 +366,14 @@ final class HeadlessController
                 'transport' => $queueName,
             ]);
 
-            // Send SIGTERM, wait briefly, escalate to SIGKILL if needed.
             @posix_kill($pid, \SIGTERM);
             $killedPids[] = $pid;
         }
 
         if ([] !== $killedPids) {
-            // Give the processes a moment to clean up.
             usleep(500_000);
 
             foreach ($killedPids as $pid) {
-                // Check if still running.
                 if (false !== @file_get_contents("/proc/{$pid}/stat")) {
                     @posix_kill($pid, \SIGKILL);
                     $this->logger->warning('Orphaned consumer did not stop gracefully, sent SIGKILL', [
@@ -396,15 +399,8 @@ final class HeadlessController
 
     // ── Output ───────────────────────────────────────────────────────────
 
-    /**
-     * Emit a runtime event to TUI stdout.
-     *
-     * Automatically registers run event cursors when start/resume events
-     * are emitted, and releases them on terminal events.
-     */
     private function emit(RuntimeEvent $event): void
     {
-        // Auto-register/release event drain cursors based on event type.
         if (RuntimeEventTypeEnum::RunStarted->value === $event->type
             || RuntimeEventTypeEnum::RunResumed->value === $event->type
         ) {

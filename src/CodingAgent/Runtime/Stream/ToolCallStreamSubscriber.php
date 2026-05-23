@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Stream;
 
-use Ineersa\AgentCore\Contract\RuntimeEventPublisherInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -13,21 +12,11 @@ use Symfony\AI\Platform\Result\Stream\Delta\ToolCallStart;
 use Symfony\AI\Platform\Result\Stream\Delta\ToolInputDelta;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
-/**
- * Maps tool-call streaming deltas to tool call transient events.
- *
- * ToolCallStart → tool_call.started.
- * ToolInputDelta → tool_call.arguments_delta.
- * ToolCallComplete → tool_call.arguments_completed (one per ToolCall).
- *
- * Events are emitted both to the runtime event sink (in-process) and
- * the runtime event publisher (cross-process via Messenger in async mode).
- */
-final readonly class ToolCallStreamSubscriber implements EventSubscriberInterface
+final class ToolCallStreamSubscriber implements EventSubscriberInterface
 {
     public function __construct(
-        private RuntimeEventSinkInterface $sink,
-        private readonly ?RuntimeEventPublisherInterface $runtimeEventPublisher = null,
+        private readonly RuntimeEventSinkInterface $sink,
+        private readonly ?RuntimeEventSinkInterface $stdoutSink = null,
     ) {
     }
 
@@ -135,11 +124,6 @@ final readonly class ToolCallStreamSubscriber implements EventSubscriberInterfac
         );
 
         $this->sink->emit($event);
-        $this->runtimeEventPublisher?->publish(
-            $event->runId,
-            $event->type,
-            $event->seq,
-            $event->payload,
-        );
+        $this->stdoutSink?->emit($event);
     }
 }
