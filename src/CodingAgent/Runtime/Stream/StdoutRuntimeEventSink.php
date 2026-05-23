@@ -60,11 +60,13 @@ final class StdoutRuntimeEventSink implements RuntimeEventSinkInterface
         $encoded = json_encode($event->toArray(), \JSON_UNESCAPED_UNICODE | \JSON_THROW_ON_ERROR);
         $line = $encoded."\n";
 
-        $written = @fwrite(self::$stdout, $line);
+        $written = fwrite(self::$stdout, $line);
         if (false === $written || 0 === $written) {
-            $this->logger->error('StdoutRuntimeEventSink: fwrite failed', [
-                'event_type' => $event->type,
-            ]);
+            throw new \RuntimeException(sprintf(
+                'StdoutRuntimeEventSink: fwrite to STDOUT pipe failed (event: %s). '
+                . 'The controller process may be dead — aborting LLM consumer.',
+                $event->type->value,
+            ));
         }
 
         fflush(self::$stdout);
