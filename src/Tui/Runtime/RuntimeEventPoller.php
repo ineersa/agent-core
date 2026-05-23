@@ -18,7 +18,8 @@ use Psr\Log\LoggerInterface;
  * Runtime events update activity state, extract token usage, and are fed
  * through the transcript projector so the UI renders projected TranscriptBlock
  * DTOs. Events are NOT persisted here — canonical storage happens in AgentCore
- * (events.jsonl) and streaming deltas go through RuntimeEventPublisherInterface.
+ * (events.jsonl) and transient streaming deltas go through the controller's
+ * LLM consumer stdout pipe.
  */
 final class RuntimeEventPoller
 {

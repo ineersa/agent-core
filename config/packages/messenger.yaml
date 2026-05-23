@@ -1,6 +1,6 @@
 # Messenger bus, transport, and routing configuration.
 #
-# Three buses:
+# Two buses:
 #   agent.command.bus    — sync orchestration for StartRun/ApplyCommand/AdvanceRun
 #                          and results (LlmStepResult, ToolCallResult). Self-advance
 #                          callbacks (postCommit) dispatch back here synchronously.
@@ -10,8 +10,6 @@
 #                          ExecuteToolCall → tool transport. Workers consume from
 #                          their respective queues and dispatch results back to
 #                          agent.command.bus within the same consumer process.
-#   agent.publisher.bus  — async runtime event delivery for transient streaming
-#                          deltas. Controller polls and forwards to TUI.
 #
 # Transports use Doctrine SQLite backed by .hatfield/messenger.sqlite.
 # See config/packages/doctrine.yaml for DBAL configuration.
@@ -22,15 +20,19 @@
 # - AdvanceRun → run_control transport
 # - ExecuteLlmStep → llm transport (messenger:consume llm)
 # - ExecuteToolCall → tool transport (messenger:consume tool)
-# - PublishRuntimeEvent → publish transport (controller polls, forwards to TUI)
 # - Result messages (LlmStepResult, ToolCallResult) stay sync on command bus
 #   within the consumer process where the worker ran. RunOrchestrator is
 #   registered for agent.command.bus and handles results in the same process.
 #
+# Transient streaming deltas (thinking, text, tool-call arguments) are
+# delivered via STDOUT from the LLM consumer child process. The controller
+# reads the child's stdout pipe and forwards events to the TUI. No
+# Doctrine publish transport is needed.
+#
 # run_control transport uses PhpSerializer because StartRun contains complex
 # objects (StartRunPayload with AgentMessage[] and RunMetadata) that would
 # not round-trip correctly through the default Symfony Serializer.
-# llm, tool, and publish transports use the default Symfony Serializer since
+# llm and tool transports use the default Symfony Serializer since
 # their messages contain only scalar/array properties.
 
 framework:
@@ -47,11 +49,6 @@ framework:
                     enabled: true
                     allow_no_handlers: false
                     allow_no_senders: true
-            agent.publisher.bus:
-                default_middleware:
-                    enabled: true
-                    allow_no_handlers: true
-                    allow_no_senders: true
 
         transports:
             run_control:
@@ -59,7 +56,6 @@ framework:
                 serializer: 'messenger.transport.native_php_serializer'
             llm:         '%env(HATFIELD_LLM_TRANSPORT_DSN)%'
             tool:        '%env(HATFIELD_TOOL_TRANSPORT_DSN)%'
-            publish:     '%env(HATFIELD_PUBLISH_TRANSPORT_DSN)%'
 
         routing:
             Ineersa\AgentCore\Domain\Message\StartRun: run_control
@@ -67,4 +63,3 @@ framework:
             Ineersa\AgentCore\Domain\Message\AdvanceRun: run_control
             Ineersa\AgentCore\Domain\Message\ExecuteLlmStep: llm
             Ineersa\AgentCore\Domain\Message\ExecuteToolCall: tool
-            Ineersa\AgentCore\Domain\Message\PublishRuntimeEvent: publish

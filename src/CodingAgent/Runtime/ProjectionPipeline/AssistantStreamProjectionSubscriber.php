@@ -46,6 +46,12 @@ final readonly class AssistantStreamProjectionSubscriber implements EventSubscri
         $state = $event->state;
         $blockId = (string) ($p['block_id'] ?? '');
 
+        // Use step_id as message_id so canonical message_completed can
+        // find and finalize this streaming block instead of creating a duplicate.
+        if (!isset($p['message_id']) && isset($p['step_id'])) {
+            $p['message_id'] = (string) $p['step_id'];
+        }
+
         $state->addBlock(new TranscriptBlock(
             id: $blockId,
             kind: TranscriptBlockKindEnum::AssistantMessage,
@@ -98,6 +104,12 @@ final readonly class AssistantStreamProjectionSubscriber implements EventSubscri
         $p = $event->payload();
         $state = $event->state;
         $blockId = (string) ($p['block_id'] ?? '');
+
+        // Use step_id as message_id so canonical message_completed can
+        // find and finalize this streaming block instead of creating a duplicate.
+        if (!isset($p['message_id']) && isset($p['step_id'])) {
+            $p['message_id'] = (string) $p['step_id'];
+        }
 
         $state->addBlock(new TranscriptBlock(
             id: $blockId,

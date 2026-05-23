@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Stream;
 
-use Ineersa\AgentCore\Contract\RuntimeEventPublisherInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -21,19 +20,26 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  * ThinkingDelta → assistant.thinking_delta (with implicit start if needed).
  * ThinkingComplete → assistant.thinking_completed.
  * ThinkingSignature → silently skipped.
- *
  * Resets per-stream state on llm_stream.start.
  *
  * Events are emitted both to the runtime event sink (in-process) and
- * the runtime event publisher (cross-process via Messenger in async mode).
+ * the StdoutRuntimeEventSink (cross-process via LLM consumer stdout pipe
+ * in async mode).
+ *
+ * @internal
  */
 final class AssistantThinkingStreamSubscriber implements EventSubscriberInterface
 {
     private bool $thinkingStarted = false;
 
+    /**
+     * @param RuntimeEventSinkInterface  $sink       in-process sink (always available)
+     * @param ?RuntimeEventSinkInterface $stdoutSink STDOUT pipe sink for LLM consumer (nullable:
+     *                                               in in-process/test mode there is no STDOUT pipe; the sink auto-detects TTY and returns early)
+     */
     public function __construct(
         private readonly RuntimeEventSinkInterface $sink,
-        private readonly ?RuntimeEventPublisherInterface $runtimeEventPublisher = null,
+        private readonly ?RuntimeEventSinkInterface $stdoutSink = null,
     ) {
     }
 
@@ -147,12 +153,7 @@ final class AssistantThinkingStreamSubscriber implements EventSubscriberInterfac
         );
 
         $this->sink->emit($event);
-        $this->runtimeEventPublisher?->publish(
-            $event->runId,
-            $event->type,
-            $event->seq,
-            $event->payload,
-        );
+        $this->stdoutSink?->emit($event);
     }
 
     private function blockId(string $runId, ?string $stepId, string $kind): string
