@@ -60,14 +60,14 @@ Transient streaming deltas (seq = 0):
 - castor test passes, deptrac clean, phpstan clean, cs-check clean
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/async-stdout-runtime-events
 Worktree: /home/ineersa/projects/agent-core-worktrees/async-stdout-runtime-events
 Fork run: n3l3bqdzrx97
 PR URL: https://github.com/ineersa/agent-core/pull/44
-PR Status: open
+PR Status: merged
 Started: 2026-05-23T04:27:28.409Z
-Completed:
+Completed: 2026-05-23T19:25:33.657Z
 
 ## Work log
 - Created: 2026-05-23T04:27:03.231Z
@@ -89,3 +89,42 @@ Completed:
 - Pushed task/async-stdout-runtime-events to origin.
 - branch 'task/async-stdout-runtime-events' set up to track 'origin/task/async-stdout-runtime-events'.
 - Created PR: https://github.com/ineersa/agent-core/pull/44
+
+## Task workflow update - 2026-05-23T19:25:33.657Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/async-stdout-runtime-events into integration checkout.
+- Merge made by the 'ort' strategy.
+ .castor/tasks.php                                  |  17 +
+ .env                                               |   3 +-
+ AGENTS.md                                          |  81 ++-
+ config/packages/messenger.yaml                     |  19 +-
+ config/services.yaml                               |  33 +-
+ depfile.yaml                                       |   2 +-
+ docs/async-runtime-architecture.md                 | 734 +++++++++++++++++++++
+ .../Contract/RuntimeEventPublisherInterface.php    |  30 -
+ .../Domain/Message/PublishRuntimeEvent.php         |  31 -
+ .../Controller/CommandHandler/StartRunHandler.php  |  17 +-
+ .../CommandHandler/UserMessageHandler.php          |  25 +-
+ .../Runtime/Controller/ConsumerSupervisor.php      |  52 +-
+ .../Runtime/Controller/HeadlessController.php      | 136 +++-
+ .../Runtime/Controller/PublishTransportPoller.php  |  75 ---
+ .../Process/JsonlProcessAgentSessionClient.php     | 142 +++-
+ .../AssistantStreamProjectionSubscriber.php        |  12 +
+ .../Publish/MessengerRuntimeEventPublisher.php     |  47 --
+ .../Stream/AssistantTextStreamSubscriber.php       |  25 +-
+ .../Stream/AssistantThinkingStreamSubscriber.php   |  21 +-
+ .../Runtime/Stream/StdoutRuntimeEventSink.php      |  65 ++
+ .../Runtime/Stream/ToolCallStreamSubscriber.php    |  19 +-
+ src/Tui/Runtime/RuntimeEventPoller.php             |   3 +-
+ .../Infrastructure/SymfonyAi/LlamaCppSmokeTest.php |  69 +-
+ .../Runtime/Controller/E2E/ControllerSmokeTest.php | 580 ++++++++++++++++
+ 24 files changed, 1913 insertions(+), 325 deletions(-)
+ create mode 100644 docs/async-runtime-architecture.md
+ delete mode 100644 src/AgentCore/Contract/RuntimeEventPublisherInterface.php
+ delete mode 100644 src/AgentCore/Domain/Message/PublishRuntimeEvent.php
+ delete mode 100644 src/CodingAgent/Runtime/Controller/PublishTransportPoller.php
+ delete mode 100644 src/CodingAgent/Runtime/Publish/MessengerRuntimeEventPublisher.php
+ create mode 100644 src/CodingAgent/Runtime/Stream/StdoutRuntimeEventSink.php
+ create mode 100644 tests/CodingAgent/Runtime/Controller/E2E/ControllerSmokeTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/async-stdout-runtime-events.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
