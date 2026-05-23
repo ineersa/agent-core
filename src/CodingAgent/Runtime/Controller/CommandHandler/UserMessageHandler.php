@@ -29,7 +29,7 @@ final readonly class UserMessageHandler
 
     public function __invoke(ControllerCommandEvent $event): void
     {
-        if (!\in_array($event->command->type, ['user_message', 'follow_up'], true)) {
+        if (!\in_array($event->command->type, ['user_message', 'follow_up', 'steer'], true)) {
             return;
         }
 
@@ -49,7 +49,15 @@ final readonly class UserMessageHandler
         // Non-blocking: dispatches ApplyCommand to run_control transport and
         // returns immediately. The run_control consumer picks it up and
         // processes the message.
-        $commandType = 'follow_up' === $command->type ? 'follow_up' : 'message';
+        // Map command type to UserCommand type:
+        //   steer       -> message (injected while agent is running)
+        //   follow_up   -> follow_up (normal next message when idle)
+        //   user_message -> message (generic message)
+        $commandType = match ($command->type) {
+            'follow_up' => 'follow_up',
+            'steer' => 'message',
+            default => 'message',
+        };
         $this->client->send($runId, new UserCommand(
             type: $commandType,
             text: (string) ($command->payload['text'] ?? ''),
