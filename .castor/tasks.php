@@ -653,7 +653,7 @@ function run_agent_test(): void
         $settings = (string) file_get_contents($projectSettings);
         $settings = preg_replace(
             '/^ai:\n/m',
-            "ai:\n    default_model: llama_cpp/flash\n    default_reasoning: off\n",
+            "ai:\n    default_model: llama_cpp_test/lfm2.5\n    default_reasoning: off\n",
             $settings,
             1,
         ) ?? $settings;
@@ -673,7 +673,7 @@ function run_agent_test(): void
     shell_exec(sprintf('tmux kill-session -t %s 2>/dev/null', escapeshellarg($session)));
 
     $innerCmd = sprintf(
-        'cd %s && APP_ENV=dev HOME=%s %s %s agent --prompt=%s --model=llama_cpp/flash --reasoning=off 2>&1',
+        'cd %s && APP_ENV=dev HOME=%s %s %s agent --prompt=%s --model=llama_cpp_test/lfm2.5 --reasoning=off 2>&1',
         escapeshellarg($testDir),
         escapeshellarg($homeDir),
         escapeshellarg(\PHP_BINARY),

@@ -114,7 +114,7 @@ ai:
         llama_cpp:
             type: generic
             enabled: true
-            base_url: http://192.168.2.38:9052/v1
+            base_url: http://192.168.2.38:8052/v1
             api: openai-completions
             api_key: dummy
             completions_path: /chat/completions
@@ -127,11 +127,32 @@ ai:
             supports_thinking_levels: false
             models:
                 flash:
-                    name: lfm2.5
+                    name: flash
                     context_window: 200000
                     max_tokens: 65536
                     input: [text, image]
                     tool_calling: true
+                    reasoning: false
+                    cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
+
+        llama_cpp_test:
+            type: generic
+            enabled: true
+            base_url: http://192.168.2.38:9052/v1
+            api: openai-completions
+            api_key: dummy
+            completions_path: /chat/completions
+            embeddings_path: /embeddings
+            supports_completions: true
+            supports_embeddings: false
+            supports_thinking_levels: false
+            models:
+                lfm2.5:
+                    name: lfm2.5
+                    context_window: 32768
+                    max_tokens: 32768
+                    input: [text]
+                    tool_calling: false
                     reasoning: false
                     cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
 

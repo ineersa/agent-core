@@ -453,7 +453,7 @@ final class TuiAgentSmokeTest extends TestCase
     private function agentCommand(): string
     {
         return \sprintf(
-            'APP_ENV=dev HOME=%s %s %s agent --model=llama_cpp/flash --reasoning=off 2>&1',
+            'APP_ENV=dev HOME=%s %s %s agent --model=llama_cpp_test/lfm2.5 --reasoning=off 2>&1',
             \escapeshellarg($this->testProjectDir.'/home'),
             \escapeshellarg(\PHP_BINARY),
             \escapeshellarg($this->projectRoot.'/bin/console'),
@@ -471,7 +471,7 @@ final class TuiAgentSmokeTest extends TestCase
             $settings = (string) \file_get_contents($projectSettings);
             $settings = \preg_replace(
                 '/^ai:\n/m',
-                "ai:\n    default_model: llama_cpp/flash\n    default_reasoning: off\n",
+                "ai:\n    default_model: llama_cpp_test/lfm2.5\n    default_reasoning: off\n",
                 $settings,
                 1,
             ) ?? $settings;
