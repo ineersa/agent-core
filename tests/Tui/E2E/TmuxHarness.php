@@ -120,6 +120,27 @@ final class TmuxHarness
     }
 
     /**
+     * Capture pane content with terminal scrollback history as plain text.
+     *
+     * Unlike capturePlain() which only captures the visible portion of the
+     * pane, this captures the last N lines of scrollback history. This is
+     * useful when content has scrolled off the visible area due to
+     * long model output (thinking blocks, verbose responses).
+     *
+     * @param int $lines Maximum number of history lines to capture
+     */
+    public function capturePlainWithHistory(TmuxPane $pane, int $lines = 1000): string
+    {
+        return shell_exec(
+            sprintf(
+                'tmux capture-pane -p -S -%d -E - -t %s 2>&1',
+                $lines,
+                escapeshellarg($pane->paneId),
+            ),
+        ) ?? '';
+    }
+
+    /**
      * Capture the visible pane content with ANSI escape codes preserved.
      */
     public function captureAnsi(TmuxPane $pane): string
@@ -200,6 +221,102 @@ final class TmuxHarness
             $needle,
             $pane->paneId,
             substr_count($lastCapture, "\n") + 1,
+            $lastCapture,
+        ));
+    }
+
+    /**
+     * Poll the pane's full scrollback history until it contains the given
+     * needle or timeout expires.
+     *
+     * Unlike waitForCaptureContains() which only checks the visible portion
+     * of the pane, this checks the full terminal scrollback. Use this when
+     * content may have scrolled off the visible area (e.g., due to long
+     * model output) but you still need to assert it exists.
+     *
+     * @param TmuxPane $pane    the pane to poll
+     * @param string   $needle  substring to look for
+     * @param float    $timeout seconds to wait (default 10.0)
+     * @param int      $history Maximum history lines to search
+     *
+     * @return string The history capture that finally matched.
+     *
+     * @throws \RuntimeException if the timeout expires without finding the needle.
+     */
+    public function waitForHistoryContains(
+        TmuxPane $pane,
+        string $needle,
+        float $timeout = 10.0,
+        int $history = 1000,
+    ): string {
+        $deadline = microtime(true) + $timeout;
+        $lastCapture = '';
+
+        while (microtime(true) < $deadline) {
+            $lastCapture = $this->capturePlainWithHistory($pane, $history);
+
+            if (str_contains($lastCapture, $needle)) {
+                return $lastCapture;
+            }
+
+            usleep(100_000); // 100ms
+        }
+
+        throw new \RuntimeException(sprintf(
+            'Timed out after %.1fs waiting for needle "%s" in pane %s history. Last capture (%d lines):'."\n%s",
+            $timeout,
+            $needle,
+            $pane->paneId,
+            substr_count($lastCapture, "\n") + 1,
+            $lastCapture,
+        ));
+    }
+
+    /**
+     * Poll full terminal history until a callback predicate returns true, or
+     * timeout expires.
+     *
+     * Unlike waitForHistoryContains() which checks for a fixed substring,
+     * this accepts an arbitrary predicate — useful for counting occurrences
+     * (e.g. second `❯` or `◇` in a multi-turn conversation).
+     *
+     * @param TmuxPane             $pane     the pane to poll
+     * @param callable(string):bool $callback receives the full history capture, must return true when condition met
+     * @param float                $timeout  seconds to wait (default 10.0)
+     * @param string               $message  diagnostic error message on timeout
+     * @param int                  $history  Maximum history lines to search
+     *
+     * @return string The history capture that satisfied the callback.
+     *
+     * @throws \RuntimeException if the timeout expires without the callback returning true.
+     */
+    public function waitForCallback(
+        TmuxPane $pane,
+        callable $callback,
+        float $timeout = 10.0,
+        string $message = '',
+        int $history = 1000,
+    ): string {
+        $deadline = microtime(true) + $timeout;
+        $lastCapture = '';
+
+        while (microtime(true) < $deadline) {
+            $lastCapture = $this->capturePlainWithHistory($pane, $history);
+
+            if ($callback($lastCapture)) {
+                return $lastCapture;
+            }
+
+            usleep(100_000); // 100ms
+        }
+
+        throw new \RuntimeException(sprintf(
+            '%s Timed out after %.1fs. Last capture (%d lines):'."
+%s",
+            '' !== $message ? $message.' ' : '',
+            $timeout,
+            substr_count($lastCapture, "
+") + 1,
             $lastCapture,
         ));
     }

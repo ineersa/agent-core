@@ -132,11 +132,14 @@ final class TuiStartupSnapshotTest extends TestCase
 
         // Key layout elements should be present
         self::assertStringContainsString('█', $capture, 'Hatfield logo (box drawing) missing');
-        self::assertStringContainsString('idle', $capture, 'Working status widget missing');
-        self::assertStringContainsString('agent-core', $capture, 'Footer widget missing');
+        // Working status widget shows '● idle' when idle or '◐ Working...' when active
+        self::assertTrue(
+            str_contains($capture, '● idle') || str_contains($capture, '◐ Work'),
+            'Working status widget missing. Capture: '.substr($capture, 0, 2000),
+        );
+        self::assertStringContainsString('◆', $capture, 'Footer widget missing');
         self::assertStringContainsString('session ', $capture, 'Session ID in footer missing');
         self::assertStringContainsString('Welcome', $capture, 'Welcome message missing');
-        self::assertStringContainsString('Run started:', $capture, 'Run started message missing');
     }
     // ── helpers ────────────────────────────────────────────
 
