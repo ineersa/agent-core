@@ -7,7 +7,6 @@ namespace Ineersa\Tui\Application;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Session\TranscriptEntry as PersistedTranscriptEntry;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\TuiListenerRegistrar;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
@@ -139,20 +138,6 @@ final readonly class InteractiveMode
         if (null !== $state->request && '' !== $state->request->prompt) {
             try {
                 $state->handle = $client->start($state->request);
-                $state->transcript[] = $this->blockFactory->system(
-                    runId: $state->sessionId,
-                    text: \sprintf('Run started: %s', $state->request->prompt),
-                    seq: \count($state->transcript) + 1,
-                    style: 'accent',
-                );
-                $this->sessionStore->appendTranscriptEntry(
-                    $state->sessionId,
-                    new PersistedTranscriptEntry(
-                        role: 'system',
-                        text: \sprintf('Run started: %s', $state->request->prompt),
-                        meta: ['run_id' => $state->handle->runId],
-                    ),
-                );
                 $this->sessionStore->updateMetadata($state->sessionId, [
                     'run_id' => $state->handle->runId,
                     'prompt' => $state->request->prompt,

@@ -98,12 +98,6 @@ final class SubmitListener implements TuiListenerRegistrar
                     );
                     $state->handle = $client->start($state->request);
                     $state->activity = RunActivityStateEnum::Starting;
-                    $state->transcript[] = $blockFactory->system(
-                        runId: $state->sessionId,
-                        text: \sprintf('Run started: %s', $text),
-                        seq: \count($state->transcript) + 1,
-                        style: 'accent',
-                    );
                     $sessionStore->updateMetadata(
                         $state->sessionId,
                         [
