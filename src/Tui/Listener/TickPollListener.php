@@ -41,11 +41,14 @@ final class TickPollListener implements TuiListenerRegistrar
             // Update working status based on authoritative activity state.
             // SubmitListener sets 'Working...' optimistically on send;
             // this keeps it visible while active and clears it when idle/terminal.
-            if (RunActivityStateEnum::Idle === $state->activity
-                || $state->activity->isTerminal()) {
-                $screen->setWorkingMessage(null);
-            } elseif ($state->activity->isActive()) {
-                $screen->setWorkingMessage('Working...');
+            static $lastMsg = null;
+            $msg = (RunActivityStateEnum::Idle === $state->activity || $state->activity->isTerminal())
+                ? null
+                : 'Working...';
+
+            if ($msg !== $lastMsg) {
+                $screen->setWorkingMessage($msg);
+                $lastMsg = $msg;
             }
 
             return null;

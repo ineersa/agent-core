@@ -272,6 +272,55 @@ final class TmuxHarness
         ));
     }
 
+    /**
+     * Poll full terminal history until a callback predicate returns true, or
+     * timeout expires.
+     *
+     * Unlike waitForHistoryContains() which checks for a fixed substring,
+     * this accepts an arbitrary predicate — useful for counting occurrences
+     * (e.g. second `❯` or `◇` in a multi-turn conversation).
+     *
+     * @param TmuxPane             $pane     the pane to poll
+     * @param callable(string):bool $callback receives the full history capture, must return true when condition met
+     * @param float                $timeout  seconds to wait (default 10.0)
+     * @param string               $message  diagnostic error message on timeout
+     * @param int                  $history  Maximum history lines to search
+     *
+     * @return string The history capture that satisfied the callback.
+     *
+     * @throws \RuntimeException if the timeout expires without the callback returning true.
+     */
+    public function waitForCallback(
+        TmuxPane $pane,
+        callable $callback,
+        float $timeout = 10.0,
+        string $message = '',
+        int $history = 1000,
+    ): string {
+        $deadline = microtime(true) + $timeout;
+        $lastCapture = '';
+
+        while (microtime(true) < $deadline) {
+            $lastCapture = $this->capturePlainWithHistory($pane, $history);
+
+            if ($callback($lastCapture)) {
+                return $lastCapture;
+            }
+
+            usleep(100_000); // 100ms
+        }
+
+        throw new \RuntimeException(sprintf(
+            '%s Timed out after %.1fs. Last capture (%d lines):'."
+%s",
+            '' !== $message ? $message.' ' : '',
+            $timeout,
+            substr_count($lastCapture, "
+") + 1,
+            $lastCapture,
+        ));
+    }
+
     // ── normalisation ──────────────────────────────────────
 
     /**

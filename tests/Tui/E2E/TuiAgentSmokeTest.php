@@ -315,6 +315,12 @@ final class TuiAgentSmokeTest extends TestCase
             // Type a follow-up prompt
             $prompt2 = 'Say exactly: two';
 
+            // Snapshot current history so we can wait for NEW occurrences
+            // of ❯ and ◇ (the first turn's blocks are already in history).
+            $beforeSecond = $this->tmux->capturePlainWithHistory($pane);
+            $beforeUserCount = \substr_count($beforeSecond, '❯');
+            $beforeAsstCount = \substr_count($beforeSecond, '◇');
+
             $this->tmux->sendLiteral($pane, $prompt2);
             $this->tmux->sendKey($pane, 'Enter');
 
@@ -322,18 +328,28 @@ final class TuiAgentSmokeTest extends TestCase
             // (the first prompt's assistant response may have scrolled the
             // ❯ off the visible area)
             try {
-                $this->tmux->waitForHistoryContains($pane, '❯', 10.0);
+                $this->tmux->waitForCallback(
+                    $pane,
+                    static fn (string $capture): bool => \substr_count($capture, '❯') > $beforeUserCount,
+                    10.0,
+                    'Second ❯ user block did not appear after second prompt submission.',
+                );
             } catch (\RuntimeException $e) {
                 $this->dumpArtifacts(
                     $pane,
-                    'Second ❯ user block did not appear after second prompt submission.',
+                    $e->getMessage(),
                 );
                 self::fail('Second prompt should produce a user block (❯).');
             }
 
             // Wait for second assistant response using full history
             try {
-                $this->tmux->waitForHistoryContains($pane, '◇', 30.0);
+                $this->tmux->waitForCallback(
+                    $pane,
+                    static fn (string $capture): bool => \substr_count($capture, '◇') > $beforeAsstCount,
+                    30.0,
+                    'Second assistant block (◇) did not appear after second prompt.',
+                );
             } catch (\RuntimeException) {
                 $this->tmux->waitForHistoryContains($pane, '✕', 10.0);
             }
@@ -529,23 +545,6 @@ final class TuiAgentSmokeTest extends TestCase
         }
     }
 
-    /**
-     * Read ALL session artifacts (events.jsonl) across all session dirs and
-     * count LLM step completions.
-     *
-     * The TUI session dir (12-char hex) contains transcript/state/metadata
-     * but NOT runtime events. Runtime events are stored in a separate
-     * UUID-named session directory by AgentCore's SessionRunEventStore.
-     *
-     * We search ALL session directories and count `llm_step_completed` events
-     * (the RunEvent type produced by AgentCore — not to be confused with the
-     * RuntimeEvent type `assistant.message_completed` which is what the
-     * RuntimeEventMapper translates it to).
-     *
-     * Polls with a timeout (up to 10s) for event files to appear.
-     *
-     * @return array{total: int, first: int, second: int}
-     */
     private function removeDir(string $dir): void
     {
         if (!\is_dir($dir)) {

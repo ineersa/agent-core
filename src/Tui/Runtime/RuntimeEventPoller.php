@@ -296,15 +296,7 @@ final class RuntimeEventPoller
         if (RuntimeEventTypeEnum::TurnStarted->value === $event->type) {
             $state->turnOutputTokens = 0;
             $state->turnStartTime = microtime(true);
-
-            return;
-        }
-
-        // Track LLM start time from the first text delta or text started event
-        if (RuntimeEventTypeEnum::AssistantTextStarted->value === $event->type) {
-            if (0.0 === $state->llmStartTime) {
-                $state->llmStartTime = microtime(true);
-            }
+            $state->llmEndTime = 0.0;
 
             return;
         }

@@ -57,9 +57,7 @@ final class TuiSessionState
     public float $totalCost = 0.0;
     /** Context window size of the current model, or 0 when unknown. */
     public int $contextWindow = 0;
-    /** Timestamp when the LLM first starts generating (set on AssistantTextStarted once per session). */
-    public float $llmStartTime = 0.0;
-    /** Timestamp when the LLM response completes (set on AssistantMessageCompleted). */
+    /** Timestamp when the LLM response completes (set on AssistantMessageCompleted, reset per-turn on TurnStarted). */
     public float $llmEndTime = 0.0;
 
     // ── Per-turn metrics ──
