@@ -107,6 +107,11 @@ final class FooterBarWidget implements TuiWidget
                 }
                 $currentLine = [$struct];
                 $currentWidth = 2 + $segWidth;
+
+                if ($segWidth > $available) {
+                    $currentLine[0]['text'] = AnsiUtils::truncateToWidth($struct['text'], $available);
+                    $currentWidth = 2 + $available;
+                }
             }
         }
 

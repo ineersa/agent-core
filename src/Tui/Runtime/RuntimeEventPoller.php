@@ -297,6 +297,7 @@ final class RuntimeEventPoller
             $state->turnOutputTokens = 0;
             $state->turnStartTime = microtime(true);
             $state->llmEndTime = 0.0;
+            $state->latestInputTokens = 0;
 
             return;
         }
