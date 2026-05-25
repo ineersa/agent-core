@@ -22,7 +22,7 @@ EXT-01 owns settings, project autoload loading, extension class instantiation, a
 Status: IN-PROGRESS
 Branch: task/ext-01-project-extension-loader-settings
 Worktree: /home/ineersa/projects/agent-core-worktrees/ext-01-project-extension-loader-settings
-Fork run: rjmg3otsslpq
+Fork run: mpp1639c53wq
 PR URL:
 PR Status:
 Started: 2026-05-25T21:07:02.252Z
@@ -41,3 +41,7 @@ Completed:
 ## Task workflow update - 2026-05-25T21:07:30.467Z
 - Recorded fork run: rjmg3otsslpq
 - Launched implementation fork rjmg3otsslpq in /home/ineersa/projects/agent-core-worktrees/ext-01-project-extension-loader-settings.
+
+## Task workflow update - 2026-05-25T21:15:47.194Z
+- Recorded fork run: mpp1639c53wq
+- Previous fork rjmg3otsslpq ended with partial uncommitted implementation while fixing tests (`array_merge_recursive` settings override issue). Launched continuation fork mpp1639c53wq to finish EXT-01, avoid `/tmp` logger paths, prefer var/tmp or ArrayLogger/test logger, validate, and commit.
