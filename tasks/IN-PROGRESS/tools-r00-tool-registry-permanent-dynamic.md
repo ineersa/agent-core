@@ -29,14 +29,21 @@ Pi scout reference: pi keeps rich coding-agent tool metadata (`promptSnippet`, `
 - Validation includes `castor deptrac` and targeted tests for permanent registration, dynamic add/remove/set/get, ordering, dedupe, duplicate handling, snapshots, `toolsRef` resolution, provider schema filtering, and active allowlist behavior.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/tools-r00-tool-registry-permanent-dynamic
+Worktree: /home/ineersa/projects/agent-core-worktrees/tools-r00-tool-registry-permanent-dynamic
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-25T20:57:55.181Z
 Completed:
 
 ## Work log
 - Created: 2026-05-25T16:34:24.419Z
+
+## Task workflow update - 2026-05-25T20:57:55.181Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/tools-r00-tool-registry-permanent-dynamic.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/tools-r00-tool-registry-permanent-dynamic.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/tools-r00-tool-registry-permanent-dynamic.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/tools-r00-tool-registry-permanent-dynamic.
