@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\CLI;
 
+use Ineersa\CodingAgent\Extension\ExtensionManager;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
@@ -45,6 +46,7 @@ final class AgentCommand
         private InteractiveMode $interactiveMode,
         private HatfieldSessionStore $sessionStore,
         private LoggerInterface $logger,
+        private ExtensionManager $extensionManager,
         private ?HeadlessController $controller = null,
     ) {
     }
@@ -90,6 +92,11 @@ final class AgentCommand
                 }
                 chdir($cwd);
             }
+
+            // Load extensions before agent mode selection.
+            // This ensures enabled extensions register their tools and
+            // resources before any interactive or controller session starts.
+            $this->extensionManager->loadExtensions();
 
             if ($controller) {
                 return $this->runController();

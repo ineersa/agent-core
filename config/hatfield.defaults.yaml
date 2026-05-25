@@ -23,6 +23,30 @@ sessions:
     path: '.hatfield/sessions'
 
 # ---------------------------------------------------------------------------
+# Extensions
+# ---------------------------------------------------------------------------
+#
+# Hatfield supports in-process PHP extensions that can register tools and
+# integrate with the agent runtime. Extensions must implement
+# Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface.
+#
+# Extensions installed via Composer under .hatfield/extensions/vendor/ are
+# autoloaded automatically at startup when the extensions.enabled list is
+# non-empty.
+#
+# To enable an extension, add its fully-qualified class name to the list:
+#
+#   extensions:
+#       enabled:
+#           - Acme\HatfieldTaskWorkflow\TaskWorkflowExtension
+#
+# The list is empty by default — no extensions are loaded unless explicitly
+# enabled.
+#
+extensions:
+    enabled: []
+
+# ---------------------------------------------------------------------------
 # Logging configuration
 # ---------------------------------------------------------------------------
 #

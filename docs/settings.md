@@ -133,6 +133,30 @@ Files are stored under `logging.path`. The default of 14 keeps two weeks of logs
 
 **Default:** `14`
 
+### `extensions.enabled`
+
+List of enabled extension class names. Each class must implement
+`Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface`.
+
+Extensions are loaded before the agent runtime starts, allowing them to
+register tools and other integrations.
+
+Extension packages installed via Composer under `.hatfield/extensions/vendor/`
+are autoloaded automatically at startup when this list is non-empty.
+
+**Default:** `[]` (no extensions enabled).
+
+**Example:**
+
+```yaml
+extensions:
+  enabled:
+    - Acme\HatfieldTaskWorkflow\TaskWorkflowExtension
+```
+
+See `.pi/plans/extension-api-phar-plan.md` for the full extension loading
+and isolation model.
+
 ### `ai.default_model`
 
 The default model used for new agent sessions. Format is

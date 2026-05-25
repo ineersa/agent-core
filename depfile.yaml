@@ -100,6 +100,11 @@ parameters:
         - type: directory
           value: src/CodingAgent/ExtensionApi/.*
 
+    - name: AppExtension
+      collectors:
+        - type: directory
+          value: src/CodingAgent/Extension/.*
+
     - name: AppRuntimeInternals
       collectors:
         - type: directory
@@ -342,6 +347,7 @@ parameters:
       - SymfonySerializer
 
     AppCli:
+      - AppExtension
       - AppExtensionApi
       - AppTool
       - AppRuntimeContract
@@ -367,6 +373,10 @@ parameters:
       - SymfonyEventDispatcher
 
     AppRuntimeProjection: ~
+
+    AppExtension:
+      - AppExtensionApi
+      - AppConfig
 
     AppTool:
       - AgentCore
