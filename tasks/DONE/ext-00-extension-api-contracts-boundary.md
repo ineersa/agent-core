@@ -17,14 +17,14 @@ This task is the prerequisite for EXT-01 and EXT-02.
 - Validation: `castor deptrac` passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/ext-00-extension-api-contracts-boundary
 Worktree: /home/ineersa/projects/agent-core-worktrees/ext-00-extension-api-contracts-boundary
 Fork run: rvecjxx62y81
 PR URL: https://github.com/ineersa/agent-core/pull/47
-PR Status: open
+PR Status: merged
 Started: 2026-05-25T20:58:23.513Z
-Completed:
+Completed: 2026-05-25T21:06:55.573Z
 
 ## Work log
 - Created: 2026-05-22T22:43:01.641Z
@@ -47,3 +47,22 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/47
 - Validation: castor deptrac: OK (0 violations, 325 uncovered, 729 allowed); vendor/bin/phpunit tests/CodingAgent/ExtensionApi/ExtensionApiContractsTest.php: OK (10 tests, 25 assertions; PHPUnit notice only); php bin/console list: OK container compiles; composer dump-autoload + class load check: OK; castor cs-fix --path src/CodingAgent/ExtensionApi/ and tests/CodingAgent/ExtensionApi/: applied formatting; castor cs-check --path src/CodingAgent/ExtensionApi/ tests/CodingAgent/ExtensionApi/: OK
 - Summary: Implemented EXT-00 in worktree /home/ineersa/projects/agent-core-worktrees/ext-00-extension-api-contracts-boundary and committed dc406b07 on task/ext-00-extension-api-contracts-boundary. Added public Extension API boundary under src/CodingAgent/ExtensionApi/ using namespace Ineersa\Hatfield\ExtensionApi: HatfieldExtensionInterface, ExtensionApiInterface, ToolRegistrationDTO. Added Composer PSR-4 mapping and excluded ExtensionApi from CodingAgent service autodiscovery to avoid namespace mismatch. Added focused contract tests. Boundary remains PHP-native/API-local only; no AgentCore/CodingAgent internals/TUI/Symfony dependencies.
+
+## Task workflow update - 2026-05-25T21:06:55.573Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/ext-00-extension-api-contracts-boundary into integration checkout.
+- Merge made by the 'ort' strategy.
+ composer.json                                      |   1 +
+ config/services.yaml                               |   1 +
+ .../ExtensionApi/ExtensionApiInterface.php         |  28 ++++
+ .../ExtensionApi/HatfieldExtensionInterface.php    |  22 +++
+ .../ExtensionApi/ToolRegistrationDTO.php           |  37 +++++
+ .../ExtensionApi/ExtensionApiContractsTest.php     | 166 +++++++++++++++++++++
+ 6 files changed, 255 insertions(+)
+ create mode 100644 src/CodingAgent/ExtensionApi/ExtensionApiInterface.php
+ create mode 100644 src/CodingAgent/ExtensionApi/HatfieldExtensionInterface.php
+ create mode 100644 src/CodingAgent/ExtensionApi/ToolRegistrationDTO.php
+ create mode 100644 tests/CodingAgent/ExtensionApi/ExtensionApiContractsTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/ext-00-extension-api-contracts-boundary.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Summary: PR #47 was merged on GitHub; moving EXT-00 to DONE and syncing integration checkout.
