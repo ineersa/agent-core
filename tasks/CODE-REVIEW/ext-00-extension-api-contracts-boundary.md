@@ -17,12 +17,12 @@ This task is the prerequisite for EXT-01 and EXT-02.
 - Validation: `castor deptrac` passes.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/ext-00-extension-api-contracts-boundary
 Worktree: /home/ineersa/projects/agent-core-worktrees/ext-00-extension-api-contracts-boundary
 Fork run: rvecjxx62y81
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/47
+PR Status: open
 Started: 2026-05-25T20:58:23.513Z
 Completed:
 
@@ -39,3 +39,11 @@ Completed:
 ## Task workflow update - 2026-05-25T20:58:58.551Z
 - Recorded fork run: rvecjxx62y81
 - Launched implementation fork rvecjxx62y81 in /home/ineersa/projects/agent-core-worktrees/ext-00-extension-api-contracts-boundary.
+
+## Task workflow update - 2026-05-25T21:03:33.122Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/ext-00-extension-api-contracts-boundary to origin.
+- branch 'task/ext-00-extension-api-contracts-boundary' set up to track 'origin/task/ext-00-extension-api-contracts-boundary'.
+- Created PR: https://github.com/ineersa/agent-core/pull/47
+- Validation: castor deptrac: OK (0 violations, 325 uncovered, 729 allowed); vendor/bin/phpunit tests/CodingAgent/ExtensionApi/ExtensionApiContractsTest.php: OK (10 tests, 25 assertions; PHPUnit notice only); php bin/console list: OK container compiles; composer dump-autoload + class load check: OK; castor cs-fix --path src/CodingAgent/ExtensionApi/ and tests/CodingAgent/ExtensionApi/: applied formatting; castor cs-check --path src/CodingAgent/ExtensionApi/ tests/CodingAgent/ExtensionApi/: OK
+- Summary: Implemented EXT-00 in worktree /home/ineersa/projects/agent-core-worktrees/ext-00-extension-api-contracts-boundary and committed dc406b07 on task/ext-00-extension-api-contracts-boundary. Added public Extension API boundary under src/CodingAgent/ExtensionApi/ using namespace Ineersa\Hatfield\ExtensionApi: HatfieldExtensionInterface, ExtensionApiInterface, ToolRegistrationDTO. Added Composer PSR-4 mapping and excluded ExtensionApi from CodingAgent service autodiscovery to avoid namespace mismatch. Added focused contract tests. Boundary remains PHP-native/API-local only; no AgentCore/CodingAgent internals/TUI/Symfony dependencies.
