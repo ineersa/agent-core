@@ -6,11 +6,16 @@ Update prompts/docs to teach the model how to use the final toolbox.
 Plan source: `.pi/plans/toolbox-design-plan.md`.
 
 Dependencies:
+- Depends on TOOLS-R00 and SYSTEM-01 for registry-aware prompt assembly.
+- Depends on SYSTEM-02 for AGENTS.md project context discovery/injection behavior.
+- Depends on SYSTEM-03 for skills registry/discovery/preload context behavior.
 - Depends on final tool names/schemas from TOOLS-03 (`write`), TOOLS-04 (`view_image`), TOOLS-06 (`edit`), TOOLS-07 (`read`), and TOOLS-09 (`bash`).
 
 Scope:
-- Find the system prompt / agent instruction assembly code in `src/CodingAgent/`.
-- Add concise guidance:
+- Use the system prompt assembly code from SYSTEM-01 in `src/CodingAgent/`.
+- Ensure docs/prompt wording matches SYSTEM-02: AGENTS.md is loaded as an initial user-context message for new sessions, not spliced into SYSTEM.md/system prompt.
+- Ensure docs/prompt wording matches SYSTEM-03: skills are exposed through `<skills_instructions>`/`<available_skills>` in the initial user-context message, and `--skills` preloads skill bodies there rather than in the system prompt.
+- Add final concise guidance:
   - Use `read` to examine files. Output uses `cat -n` line numbers.
   - Use those line numbers for unified diff `@@` headers in `edit`.
   - Use `edit` for targeted changes to existing files.
@@ -28,7 +33,7 @@ Out of scope:
 - Prompt/instructions mention the final tool names and intended usage accurately.
 - Edit guidance explicitly says to provide standard unified diffs and use `read` line numbers for `@@` headers.
 - Prompt does not claim model-controlled backgrounding; it explains `bg_status` for already-backgrounded processes.
-- Existing prompt assembly tests pass or new focused tests cover the inserted guidance.
+- Existing prompt assembly/context tests pass or new focused tests cover the inserted guidance, AGENTS.md context-channel wording, and skills context-channel wording.
 - Focused tests pass with Castor/PHPUnit.
 
 ## Workflow metadata

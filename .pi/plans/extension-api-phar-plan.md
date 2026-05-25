@@ -4,7 +4,7 @@
 
 Design Hatfield extension loading for a PHAR-distributed app while allowing project-local and reusable third-party extensions to register tools and other runtime integrations.
 
-Hatfield should support a Pi-like extension API (`registerTool()`, hooks, prompt additions), but with PHP/PHAR-appropriate dependency isolation and explicit project-local enablement.
+Hatfield should support a Pi-like extension API (`registerTool()`, hooks, append prompt files), but with PHP/PHAR-appropriate dependency isolation and explicit project-local enablement.
 
 ## Core model
 
@@ -123,16 +123,8 @@ interface ExtensionApiInterface
     public function registerTool(ToolRegistrationDTO $tool): void;
 
     // Later / optional:
-    // public function addSystemPromptSection(...): void;
     // public function onBeforeToolCall(...): void;
     // public function onAfterToolCall(...): void;
-}
-
-enum ToolScopeEnum
-{
-    case PermanentPrompt; // appears in stable system prompt and active by default
-    case Dynamic;         // can be activated for session/turn, not prompt-listed
-    case Internal;        // not directly model-callable
 }
 
 final readonly class ToolRegistrationDTO
@@ -144,9 +136,12 @@ final readonly class ToolRegistrationDTO
         public mixed $handler,
         public ?string $promptSummary = null,
         public array $promptGuidelines = [],
-        public ToolScopeEnum $scope = ToolScopeEnum::Dynamic,
     ) {}
 }
+
+// ExtensionApiInterface::registerTool() registers permanent tools.
+// Dynamic tools are managed by CodingAgent ToolRegistry dynamic-tool methods
+// and AgentCore toolsRef/ToolSetResolverInterface plumbing, not by this initial public extension DTO.
 ```
 
 Hatfield PHAR includes this namespace unscoped. External extension code can reference these interfaces at runtime because the PHAR autoloader is already registered before extension classes are loaded.
@@ -164,7 +159,6 @@ hatfield-extension-api/
     HatfieldExtensionInterface.php
     ExtensionApiInterface.php
     ToolRegistrationDTO.php
-    ToolScopeEnum.php
 ```
 
 Package `composer.json`:
@@ -338,10 +332,9 @@ Third-party registration means “available to the registry,” not “automatic
 
 The registry still owns:
 
-- prompt-visible permanent tools;
-- dynamic tools not shown in cached prompt;
-- internal tools;
-- session/turn active tool set;
+- permanent tools shown in the stable system prompt;
+- dynamic tools not shown in the stable system prompt;
+- request/turn active tool set;
 - provider schema tools;
 - execution allowlist;
 - before/after tool-call hooks.
@@ -378,17 +371,20 @@ Use three implementation tasks for v1. They intentionally keep extension support
    - May include `.hatfield/extensions/composer.json` template/init if simple; otherwise leave init convenience for later.
 
 3. **EXT-02: Tool registry bridge**
-   - Depends on EXT-00.
+   - Depends on EXT-00 and TOOLS-R00 from `.pi/plans/toolbox-design-plan.md`.
    - Implement `ExtensionApiInterface::registerTool()` adapter into the CodingAgent `ToolRegistry`.
-   - Ensure registered extension tools still flow through registry policy: scope, active tool set, provider schema exposure, execution allowlist, and hooks.
+   - Ensure registered extension tools become permanent ToolRegistry entries and still flow through registry policy: active tool set, provider schema exposure, execution allowlist, prompt summary/guideline dedupe, and hooks.
 
 ### Parallelization
 
-- EXT-00 must land first.
-- After EXT-00, EXT-01 and EXT-02 can proceed mostly in parallel:
+- EXT-00 must land before EXT-01 and EXT-02.
+- TOOLS-R00 can land independently of the extension loader/API work and is the hard prerequisite for EXT-02.
+- After EXT-00, EXT-01 can proceed.
+- After EXT-00 + TOOLS-R00, EXT-02 can proceed.
+- EXT-01 and EXT-02 can still proceed mostly in parallel once their prerequisites are met:
   - EXT-01 owns settings, project autoload loading, extension class instantiation, and lifecycle errors.
   - EXT-02 owns tool-registration mapping into the registry and execution policy integration.
-- Final integration requires EXT-01 and EXT-02 together: load a test extension from `.hatfield/extensions`, call `registerTool()`, and verify the tool appears in the registry/active schema path according to registry policy.
+- Final integration requires EXT-01, EXT-02, and TOOLS-R00 together: load a test extension from `.hatfield/extensions`, call `registerTool()`, and verify the tool appears in the registry/active schema path according to registry policy.
 
 ### Later backlog, not v1 tracked tasks
 

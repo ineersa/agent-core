@@ -22,14 +22,14 @@ The Symfony AI generic bridge `ModelClient` merges all options into the JSON bod
 - castor test:llm-real passes and shows usage data
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/fix-stream-include-usage
 Worktree: /home/ineersa/projects/agent-core-worktrees/fix-stream-include-usage
 Fork run:
 PR URL: https://github.com/ineersa/agent-core/pull/46
-PR Status: open
+PR Status: merged
 Started: 2026-05-23T22:32:27.799Z
-Completed:
+Completed: 2026-05-24T00:40:25.549Z
 
 ## Work log
 - Created: 2026-05-23T22:32:13.269Z
@@ -63,3 +63,11 @@ Completed:
 - Fixed events.jsonl going to UUID directory: JsonlProcessAgentSessionClient now passes sessionId as runId to controller
 - Replaced artifact polling hack with proper tmux scrollback capture (waitForHistoryContains)
 - All 5 TUI e2e tests pass in ~13s
+
+## Task workflow update - 2026-05-24T00:40:25.549Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/fix-stream-include-usage into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/fix-stream-include-usage.
+- Deleted branch task/fix-stream-include-usage.
+- Pulled integration checkout: Already up to date..
