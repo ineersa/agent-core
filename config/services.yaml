@@ -69,10 +69,14 @@ services:
 
   # ─── Extension wiring ───
 
-  Ineersa\CodingAgent\Extension\ExtensionApiBridge: ~
+  Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge: ~
 
   Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface:
-    alias: Ineersa\CodingAgent\Extension\ExtensionApiBridge
+    alias: Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge
+
+  # Retained for backward compat (referenced in extension manager tests).
+  # No longer the primary ExtensionApiInterface implementation.
+  Ineersa\CodingAgent\Extension\ExtensionApiBridge: ~
 
   Ineersa\CodingAgent\Extension\ExtensionManager:
     arguments:
