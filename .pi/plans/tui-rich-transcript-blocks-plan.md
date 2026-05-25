@@ -33,25 +33,26 @@ Non-goals for the first implementation:
    - `UserMessage`
    - `AssistantMessage`
    - visible `AssistantThinking`
-6. Do not use `MarkdownWidget` for tool results, tool calls, system/progress/error/question/approval/cancelled blocks in v1.
-7. Thinking visibility is config-only in v1; no mutable thinking visibility in `TranscriptDisplayState`.
-8. Visible thinking is full Markdown, styled dim/italic using thinking-specific styling.
-9. Hidden thinking renders one small placeholder per thinking block: `⋯ Thinking`.
-10. `Ctrl+O` toggles previewable blocks only and is live/session-only.
-11. `Ctrl+O` must not affect user, assistant, thinking, system, error, progress, question, approval, cancelled, or tool-call blocks.
-12. V1 previewable scope is limited to:
+6. SYSTEM-03 preloaded `<skill name="..." location="...">` context blocks should render as compact SKILL/context blocks, not as read-tool output and not as ordinary user Markdown.
+7. Do not use `MarkdownWidget` for tool results, tool calls, system/progress/error/question/approval/cancelled blocks in v1.
+8. Thinking visibility is config-only in v1; no mutable thinking visibility in `TranscriptDisplayState`.
+9. Visible thinking is full Markdown, styled dim/italic using thinking-specific styling.
+10. Hidden thinking renders one small placeholder per thinking block: `⋯ Thinking`.
+11. `Ctrl+O` toggles previewable blocks only and is live/session-only.
+12. `Ctrl+O` must not affect user, assistant, thinking, system, error, progress, question, approval, cancelled, or tool-call blocks.
+13. V1 previewable scope is limited to:
     - normal `ToolResult` previews
     - diff-rendered `ToolResult` previews
-13. Diffs are a rendering classification of existing `ToolResult` blocks, not a new `TranscriptBlockKindEnum::Diff` in v1.
-14. Diff rendering should be used for edit/write tool outputs only.
-15. Hatfield config and TUI rendering config stay separated:
+14. Diffs are a rendering classification of existing `ToolResult` blocks, not a new `TranscriptBlockKindEnum::Diff` in v1.
+15. Diff rendering should be used for edit/write tool outputs only.
+16. Hatfield config and TUI rendering config stay separated:
     - `Ineersa\CodingAgent\Config\TuiTranscriptConfig`
     - `Ineersa\Tui\Transcript\TranscriptDisplayConfig`
     - mapper/adapter between them at the TUI application boundary.
-16. Update `depfile.yaml` to allow Symfony TUI dependency in the `TuiTranscript` layer.
-17. `Ctrl+O` handling is listener-owned, matching existing TUI listener registrar style.
-18. Tool call arguments should be rendered visibly; do not omit them. Use fenced YAML in the tool-call card for v1.
-19. Card density is intentionally adjustable after real usage; start compact/subtle rather than over-designing borders now.
+17. Update `depfile.yaml` to allow Symfony TUI dependency in the `TuiTranscript` layer.
+18. `Ctrl+O` handling is listener-owned, matching existing TUI listener registrar style.
+19. Tool call arguments should be rendered visibly; do not omit them. Use fenced YAML in the tool-call card for v1.
+20. Card density is intentionally adjustable after real usage; start compact/subtle rather than over-designing borders now.
 
 ## Scouting notes
 
