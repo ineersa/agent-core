@@ -59,7 +59,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         $messages = $this->applyTransformHooks($messages, $cancelToken);
         $messageBag = $this->applyConvertHooks($messages, $cancelToken);
 
-        $input = new Input($request->model, $messageBag, []);
+        $options = $this->buildInputOptions($request);
+        $input = new Input($request->model, $messageBag, $options);
         $this->toolDescriptionProcessor->processInput($input);
 
         return $this->consumeStream(
@@ -152,6 +153,29 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         }
 
         return $resolvedMessageBag ?? $this->messageConverter->toMessageBag($messages);
+    }
+
+    /**
+     * Build Input options, propagating toolsRef, turnNo, and runId for
+     * DynamicToolDescriptionProcessor / ToolSetResolver resolution.
+     *
+     * @return array<string, mixed>
+     */
+    private function buildInputOptions(ModelInvocationRequest $request): array
+    {
+        $options = [];
+
+        if (null !== $request->input->toolsRef) {
+            $options['tools_ref'] = $request->input->toolsRef;
+        }
+        if (null !== $request->input->turnNo) {
+            $options['turn_no'] = $request->input->turnNo;
+        }
+        if (null !== $request->input->runId) {
+            $options['run_id'] = $request->input->runId;
+        }
+
+        return $options;
     }
 
     private function cancellationToken(ModelInvocationRequest $request): CancellationTokenInterface
