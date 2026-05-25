@@ -18,14 +18,25 @@ EXT-02 can run mostly in parallel with EXT-01 after EXT-00 and TOOLS-R00 land; f
 - Validation includes `castor deptrac` and targeted tests using a fake extension/tool registration.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
-Fork run:
+Status: IN-PROGRESS
+Branch: task/ext-02-tool-registry-bridge
+Worktree: /home/ineersa/projects/agent-core-worktrees/ext-02-tool-registry-bridge
+Fork run: krnppsz9uqev
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-25T22:56:48.576Z
 Completed:
 
 ## Work log
 - Created: 2026-05-22T22:43:22.435Z
+
+## Task workflow update - 2026-05-25T22:56:48.576Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/ext-02-tool-registry-bridge.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/ext-02-tool-registry-bridge.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/ext-02-tool-registry-bridge.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/ext-02-tool-registry-bridge.
+
+## Task workflow update - 2026-05-25T22:57:16.688Z
+- Recorded fork run: krnppsz9uqev
+- Launched implementation fork krnppsz9uqev in /home/ineersa/projects/agent-core-worktrees/ext-02-tool-registry-bridge.
