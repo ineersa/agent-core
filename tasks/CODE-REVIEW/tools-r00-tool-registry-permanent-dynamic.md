@@ -29,12 +29,12 @@ Pi scout reference: pi keeps rich coding-agent tool metadata (`promptSnippet`, `
 - Validation includes `castor deptrac` and targeted tests for permanent registration, dynamic add/remove/set/get, ordering, dedupe, duplicate handling, snapshots, `toolsRef` resolution, provider schema filtering, and active allowlist behavior.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/tools-r00-tool-registry-permanent-dynamic
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-r00-tool-registry-permanent-dynamic
 Fork run: v2b9aavby81k
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/48
+PR Status: open
 Started: 2026-05-25T20:57:55.181Z
 Completed:
 
@@ -51,3 +51,11 @@ Completed:
 ## Task workflow update - 2026-05-25T20:58:47.312Z
 - Recorded fork run: v2b9aavby81k
 - Launched implementation fork v2b9aavby81k in /home/ineersa/projects/agent-core-worktrees/tools-r00-tool-registry-permanent-dynamic.
+
+## Task workflow update - 2026-05-25T21:06:01.470Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/tools-r00-tool-registry-permanent-dynamic to origin.
+- branch 'task/tools-r00-tool-registry-permanent-dynamic' set up to track 'origin/task/tools-r00-tool-registry-permanent-dynamic'.
+- Created PR: https://github.com/ineersa/agent-core/pull/48
+- Validation: vendor/bin/phpunit tests/CodingAgent/Tool/ToolRegistryTest.php: OK (19 tests); vendor/bin/phpunit tests/CodingAgent/Tool/CodingAgentToolSetResolverTest.php: OK (4 tests); vendor/bin/phpunit tests/AgentCore/Infrastructure/SymfonyAi/DynamicToolDescriptionProcessorTest.php: OK (9 tests); vendor/bin/phpunit tests/AgentCore/Infrastructure/SymfonyAi/PlatformIntegrationTest.php: OK (3 tests); castor test: OK (838 tests, 0 failures); castor deptrac: OK (0 violations, 330 uncovered, 729 allowed)
+- Summary: Implemented TOOLS-R00 in worktree /home/ineersa/projects/agent-core-worktrees/tools-r00-tool-registry-permanent-dynamic and committed ce178c6a on task/tools-r00-tool-registry-permanent-dynamic. Added CodingAgent ToolRegistryInterface/ToolRegistry with permanent and dynamic tool sets, prompt line/guideline dedupe, deterministic ordering, duplicate/collision handling, and active tool names. Added AgentCore ActiveToolSet DTO and ToolSetResolverInterface seam. Wired LlmPlatformAdapter to propagate toolsRef/runId/turnNo into Symfony AI Input options. Updated DynamicToolDescriptionProcessor to resolve toolsRef via optional resolver and reuse existing flat-name filtering. Added CodingAgentToolSetResolver mapping registry snapshots to ActiveToolSet. Updated services and deptrac AppTool layer. Extension API bridge, PHAR, concrete tools, SYSTEM-01 prompt assembly, and ToolExecutor allowlist enforcement remain out of scope.
