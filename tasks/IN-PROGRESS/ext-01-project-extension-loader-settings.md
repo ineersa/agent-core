@@ -19,14 +19,21 @@ EXT-01 owns settings, project autoload loading, extension class instantiation, a
 - Validation includes `castor deptrac` and targeted tests for settings/autoload/class loading behavior.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/ext-01-project-extension-loader-settings
+Worktree: /home/ineersa/projects/agent-core-worktrees/ext-01-project-extension-loader-settings
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-25T21:07:02.252Z
 Completed:
 
 ## Work log
 - Created: 2026-05-22T22:43:13.274Z
+
+## Task workflow update - 2026-05-25T21:07:02.252Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/ext-01-project-extension-loader-settings.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/ext-01-project-extension-loader-settings.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/ext-01-project-extension-loader-settings.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/ext-01-project-extension-loader-settings.
