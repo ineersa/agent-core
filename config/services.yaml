@@ -32,6 +32,7 @@ services:
 
   Ineersa\CodingAgent\:
     resource: '../src/CodingAgent/'
+    exclude: '../src/CodingAgent/ExtensionApi/'
 
   Ineersa\AgentCore\:
     resource: '../src/AgentCore/'

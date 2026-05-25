@@ -41,6 +41,7 @@
         "psr-4": {
             "Ineersa\\AgentCore\\": "src/AgentCore/",
             "Ineersa\\CodingAgent\\": "src/CodingAgent/",
+            "Ineersa\\Hatfield\\ExtensionApi\\": "src/CodingAgent/ExtensionApi/",
             "Ineersa\\Tui\\": "src/Tui/"
         }
     },
