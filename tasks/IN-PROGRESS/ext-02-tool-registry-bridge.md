@@ -21,7 +21,7 @@ EXT-02 can run mostly in parallel with EXT-01 after EXT-00 and TOOLS-R00 land; f
 Status: IN-PROGRESS
 Branch: task/ext-02-tool-registry-bridge
 Worktree: /home/ineersa/projects/agent-core-worktrees/ext-02-tool-registry-bridge
-Fork run:
+Fork run: krnppsz9uqev
 PR URL:
 PR Status:
 Started: 2026-05-25T22:56:48.576Z
@@ -36,3 +36,7 @@ Completed:
 - Created worktree /home/ineersa/projects/agent-core-worktrees/ext-02-tool-registry-bridge.
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/ext-02-tool-registry-bridge.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/ext-02-tool-registry-bridge.
+
+## Task workflow update - 2026-05-25T22:57:16.688Z
+- Recorded fork run: krnppsz9uqev
+- Launched implementation fork krnppsz9uqev in /home/ineersa/projects/agent-core-worktrees/ext-02-tool-registry-bridge.
