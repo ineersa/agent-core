@@ -29,14 +29,14 @@ Pi scout reference: pi keeps rich coding-agent tool metadata (`promptSnippet`, `
 - Validation includes `castor deptrac` and targeted tests for permanent registration, dynamic add/remove/set/get, ordering, dedupe, duplicate handling, snapshots, `toolsRef` resolution, provider schema filtering, and active allowlist behavior.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/tools-r00-tool-registry-permanent-dynamic
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-r00-tool-registry-permanent-dynamic
 Fork run: v2b9aavby81k
 PR URL: https://github.com/ineersa/agent-core/pull/48
-PR Status: open
+PR Status: merged
 Started: 2026-05-25T20:57:55.181Z
-Completed:
+Completed: 2026-05-25T21:11:08.117Z
 
 ## Work log
 - Created: 2026-05-25T16:34:24.419Z
@@ -59,3 +59,32 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/48
 - Validation: vendor/bin/phpunit tests/CodingAgent/Tool/ToolRegistryTest.php: OK (19 tests); vendor/bin/phpunit tests/CodingAgent/Tool/CodingAgentToolSetResolverTest.php: OK (4 tests); vendor/bin/phpunit tests/AgentCore/Infrastructure/SymfonyAi/DynamicToolDescriptionProcessorTest.php: OK (9 tests); vendor/bin/phpunit tests/AgentCore/Infrastructure/SymfonyAi/PlatformIntegrationTest.php: OK (3 tests); castor test: OK (838 tests, 0 failures); castor deptrac: OK (0 violations, 330 uncovered, 729 allowed)
 - Summary: Implemented TOOLS-R00 in worktree /home/ineersa/projects/agent-core-worktrees/tools-r00-tool-registry-permanent-dynamic and committed ce178c6a on task/tools-r00-tool-registry-permanent-dynamic. Added CodingAgent ToolRegistryInterface/ToolRegistry with permanent and dynamic tool sets, prompt line/guideline dedupe, deterministic ordering, duplicate/collision handling, and active tool names. Added AgentCore ActiveToolSet DTO and ToolSetResolverInterface seam. Wired LlmPlatformAdapter to propagate toolsRef/runId/turnNo into Symfony AI Input options. Updated DynamicToolDescriptionProcessor to resolve toolsRef via optional resolver and reuse existing flat-name filtering. Added CodingAgentToolSetResolver mapping registry snapshots to ActiveToolSet. Updated services and deptrac AppTool layer. Extension API bridge, PHAR, concrete tools, SYSTEM-01 prompt assembly, and ToolExecutor allowlist enforcement remain out of scope.
+
+## Task workflow update - 2026-05-25T21:11:08.117Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/tools-r00-tool-registry-permanent-dynamic into integration checkout.
+- Auto-merging config/services.yaml
+Merge made by the 'ort' strategy.
+ config/services.yaml                               |  10 +
+ depfile.yaml                                       |  11 +
+ src/AgentCore/Contract/Tool/ActiveToolSet.php      |  26 +++
+ .../Contract/Tool/ToolSetResolverInterface.php     |  32 +++
+ .../SymfonyAi/DynamicToolDescriptionProcessor.php  |  55 +++++
+ .../SymfonyAi/LlmPlatformAdapter.php               |  26 ++-
+ .../Tool/CodingAgentToolSetResolver.php            |  35 +++
+ src/CodingAgent/Tool/ToolRegistry.php              | 175 +++++++++++++-
+ src/CodingAgent/Tool/ToolRegistryInterface.php     | 117 ++++++++++
+ .../DynamicToolDescriptionProcessorTest.php        | 255 +++++++++++++++++++++
+ .../Tool/CodingAgentToolSetResolverTest.php        |  70 ++++++
+ tests/CodingAgent/Tool/ToolRegistryTest.php        | 210 +++++++++++++++++
+ 12 files changed, 1019 insertions(+), 3 deletions(-)
+ create mode 100644 src/AgentCore/Contract/Tool/ActiveToolSet.php
+ create mode 100644 src/AgentCore/Contract/Tool/ToolSetResolverInterface.php
+ create mode 100644 src/CodingAgent/Tool/CodingAgentToolSetResolver.php
+ create mode 100644 src/CodingAgent/Tool/ToolRegistryInterface.php
+ create mode 100644 tests/AgentCore/Infrastructure/SymfonyAi/DynamicToolDescriptionProcessorTest.php
+ create mode 100644 tests/CodingAgent/Tool/CodingAgentToolSetResolverTest.php
+ create mode 100644 tests/CodingAgent/Tool/ToolRegistryTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/tools-r00-tool-registry-permanent-dynamic.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Summary: PR #48 was merged on GitHub; moving TOOLS-R00 to DONE and syncing integration checkout.
