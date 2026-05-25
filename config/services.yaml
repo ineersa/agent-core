@@ -67,6 +67,17 @@ services:
       - '@Ineersa\CodingAgent\Config\AppConfigLoader'
       - '@Ineersa\CodingAgent\Config\AppResourceLocator'
 
+  # ─── Extension wiring ───
+
+  Ineersa\CodingAgent\Extension\ExtensionApiBridge: ~
+
+  Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface:
+    alias: Ineersa\CodingAgent\Extension\ExtensionApiBridge
+
+  Ineersa\CodingAgent\Extension\ExtensionManager:
+    arguments:
+      $extensionApi: '@Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface'
+
   # LoggingConfig is derived from AppConfig and autowireable.
   Ineersa\CodingAgent\Config\LoggingConfig:
     factory: ['Ineersa\CodingAgent\Config\LoggingConfig', 'fromAppConfig']
