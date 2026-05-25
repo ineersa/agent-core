@@ -4,6 +4,8 @@
 Plan source: `.pi/plans/toolbox-design-plan.md` section 6.
 Related extension plan: `.pi/plans/extension-api-phar-plan.md`.
 
+This task can land before PHAR packaging and before the public Extension API tasks. It owns the CodingAgent-internal registry abstraction and AgentCore toolset resolution seam. EXT-02 later bridges `ExtensionApiInterface::registerTool()` into this registry; TOOLS-R00 must not depend on extension loader/PHAR packaging code.
+
 Implement the CodingAgent-owned ToolRegistry policy layer above Symfony AI Toolbox. The registry must separate permanent tools, which contribute to the stable system prompt, from dynamic tools, which can be added/removed per request and never appear in the stable system prompt.
 
 Pi scout reference: pi keeps rich coding-agent tool metadata (`promptSnippet`, `promptGuidelines`) separate from the lean runtime tool contract and builds system prompt sections from the active registered metadata.
@@ -23,6 +25,7 @@ Pi scout reference: pi keeps rich coding-agent tool metadata (`promptSnippet`, `
 - CodingAgent provides the concrete `ToolSetResolverInterface` implementation that maps AgentCore `toolsRef` values to ToolRegistry active snapshots, including current dynamic tools.
 - Provider tool schemas and tool execution allowlists are derived from the same resolved active snapshot.
 - No dependency is introduced from AgentCore or TUI to CodingAgent ToolRegistry internals.
+- No dependency is introduced from TOOLS-R00 registry code to PHAR packaging or extension loader internals; extension integration remains an EXT-02 bridge concern.
 - Validation includes `castor deptrac` and targeted tests for permanent registration, dynamic add/remove/set/get, ordering, dedupe, duplicate handling, snapshots, `toolsRef` resolution, provider schema filtering, and active allowlist behavior.
 
 ## Workflow metadata
