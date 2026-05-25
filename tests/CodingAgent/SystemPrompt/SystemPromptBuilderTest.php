@@ -332,9 +332,28 @@ final class SystemPromptBuilderTest extends TestCase
 
     /* ───────── CWD handling ───────── */
 
+    public function testCwdWithTrailingSlashDoesNotCauseDoubleSlash(): void
+    {
+        $trailingCwd = $this->tmpDir . '/';
+        \file_put_contents(
+            $this->tmpDir . '/.hatfield/SYSTEM.md',
+            'CWD: {%cwd%}',
+        );
+
+        $registry = $this->createEmptyRegistry();
+        $builder = new SystemPromptBuilder($registry, $this->projectDir);
+
+        // Pass CWD with trailing slash; should not produce //.hatfield paths.
+        $result = $builder->build($trailingCwd);
+
+        // CWD in output should not have trailing slash
+        self::assertStringContainsString('CWD: ' . $this->tmpDir, $result);
+        self::assertStringNotContainsString('CWD: ' . $this->tmpDir . '/', $result);
+        self::assertStringNotContainsString('//.hatfield', $result);
+    }
+
     public function testCustomCwdPassedToBuilder(): void
     {
-        $customCwd = '/custom/test/dir';
         \file_put_contents(
             $this->tmpDir . '/.hatfield/SYSTEM.md',
             'CWD: {%cwd%}',
@@ -373,8 +392,8 @@ final class SystemPromptBuilderTest extends TestCase
     {
         // This test verifies that the SystemPromptBuilder produces output that
         // would be correctly injected as a system AgentMessage.
-        // The actual InProcessAgentSessionClient integration is tested via
-        // the InProcessAgentSessionClient test.
+        // Verifies the builder output is non-empty and contains valid system
+        // prompt text from the built-in template.
 
         $registry = $this->createEmptyRegistry();
         $builder = new SystemPromptBuilder($registry, $this->projectDir);

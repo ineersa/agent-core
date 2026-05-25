@@ -54,6 +54,7 @@ final readonly class SystemPromptBuilder
     public function build(string $cwd = ''): string
     {
         $cwd = '' !== $cwd ? $cwd : $this->resolveCwd();
+        $cwd = rtrim($cwd, '/');
 
         // Resolve and render the base template.
         $baseContent = $this->loadBaseTemplate($cwd);
