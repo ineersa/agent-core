@@ -190,6 +190,11 @@ parameters:
         - type: classNameRegex
           value: '#^Symfony\\Component\\HttpKernel\\#i'
 
+    - name: AppTool
+      collectors:
+        - type: directory
+          value: src/CodingAgent/Tool/.*
+
   ruleset:
     TuiApplication:
       - AppRuntimeContract
@@ -309,6 +314,7 @@ parameters:
       - AppRuntimeContract
       - AppRuntimeProjection
       - AppExtensionApi
+      - AppTool
       - AgentCore
       - AppConfig
       - SymfonyConsole
@@ -343,6 +349,7 @@ parameters:
     AppCli:
       - AppExtension
       - AppExtensionApi
+      - AppTool
       - AppRuntimeContract
       - AppRuntimeProjection
       - AppRuntimeProjectionPipeline
@@ -370,6 +377,10 @@ parameters:
     AppExtension:
       - AppExtensionApi
       - AppConfig
+
+    AppTool:
+      - AgentCore
+      - SymfonyAiPlatform
 
     AppExtensionApi: ~
 
