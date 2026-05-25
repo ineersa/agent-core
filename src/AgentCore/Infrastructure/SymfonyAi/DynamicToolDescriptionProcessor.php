@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 
+use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Symfony\AI\Agent\Input;
 use Symfony\AI\Agent\InputProcessorInterface;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
@@ -13,12 +14,23 @@ final readonly class DynamicToolDescriptionProcessor implements InputProcessorIn
 {
     public function __construct(
         private ?ToolboxInterface $toolbox = null,
+        private ?ToolSetResolverInterface $toolSetResolver = null,
     ) {
     }
 
     public function processInput(Input $input): void
     {
         $options = $input->getOptions();
+
+        // Resolve active toolset via ToolSetResolver when a tools_ref is present.
+        // If the resolver short-circuits (empty active set), finalise options and return.
+        if ($this->toolSetResolver !== null && isset($options['tools_ref']) && \is_string($options['tools_ref'])) {
+            if ($this->resolveToolset($options, $input)) {
+                return;
+            }
+            // Fall through to existing tool filtering logic with the resolved names.
+        }
+
         $currentTools = $options['tools'] ?? null;
 
         if (\is_array($currentTools) && $this->isToolArray($currentTools)) {
@@ -62,6 +74,49 @@ final readonly class DynamicToolDescriptionProcessor implements InputProcessorIn
         unset($options['tool_descriptions']);
         $options['tools'] = $tools;
         $input->setOptions($options);
+    }
+
+    /**
+     * Resolve active tool names from ToolSetResolver.
+     *
+     * When the resolved set has tools, inject them as a flat string array
+     * into options['tools'] and return false so downstream filtering runs.
+     * When the set is empty, finalise options immediately (short-circuit)
+     * and return true so the caller returns early, preventing fallback.
+     *
+     * Always cleans up resolver-specific options to prevent leaking.
+     *
+     * @param array<string, mixed> $options (by reference)
+     *
+     * @return bool True to short-circuit (no tools available); false to continue.
+     */
+    private function resolveToolset(array &$options, Input $input): bool
+    {
+        \assert(null !== $this->toolSetResolver);
+
+        $toolsRef = $options['tools_ref'];
+        $turnNo = isset($options['turn_no']) && \is_int($options['turn_no']) ? $options['turn_no'] : null;
+        $runId = isset($options['run_id']) && \is_string($options['run_id']) ? $options['run_id'] : null;
+
+        $activeSet = $this->toolSetResolver->resolve($toolsRef, $turnNo, $runId);
+
+        // Clean up resolver-only options so they don't leak to the platform.
+        unset($options['tools_ref'], $options['turn_no'], $options['run_id']);
+
+        if ([] === $activeSet->toolNames) {
+            // Empty active set: clear everything and short-circuit so
+            // downstream does not fall back to the full toolbox.
+            unset($options['tools'], $options['tool_descriptions']);
+            $input->setOptions($options);
+
+            return true;
+        }
+
+        // Inject resolved tool names as a flat string array so existing
+        // filtering logic picks them up.
+        $options['tools'] = $activeSet->toolNames;
+
+        return false;
     }
 
     /**

@@ -146,6 +146,16 @@ services:
     arguments:
       $defaultModel: '%app.default_model%'
 
+  # ToolRegistry — concrete CodingAgent registry for permanent/dynamic tools.
+  Ineersa\CodingAgent\Tool\ToolRegistryInterface:
+    alias: Ineersa\CodingAgent\Tool\ToolRegistry
+
+  # CodingAgent ToolSetResolver — bridges ToolRegistry to AgentCore resolver seam.
+  Ineersa\CodingAgent\Tool\CodingAgentToolSetResolver: ~
+
+  Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface:
+    alias: Ineersa\CodingAgent\Tool\CodingAgentToolSetResolver
+
   # Tool executor wiring (scalar args not autowireable).
   Ineersa\AgentCore\Application\Handler\ToolExecutor:
     arguments:
