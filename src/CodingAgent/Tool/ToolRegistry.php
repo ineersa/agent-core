@@ -42,11 +42,7 @@ final class ToolRegistry implements ToolRegistryInterface
         array $promptGuidelines = [],
     ): void {
         if ('' === $name || '' === $description) {
-            throw new \InvalidArgumentException(\sprintf(
-                'Tool name and description must be non-empty strings, got name="%s" description="%s".',
-                $name,
-                $description,
-            ));
+            throw new \InvalidArgumentException(\sprintf('Tool name and description must be non-empty strings, got name="%s" description="%s".', $name, $description));
         }
 
         // Idempotent: identical re-registration is a no-op
@@ -72,18 +68,11 @@ final class ToolRegistry implements ToolRegistryInterface
         mixed $handler,
     ): void {
         if ('' === $name || '' === $description) {
-            throw new \InvalidArgumentException(\sprintf(
-                'Dynamic tool name and description must be non-empty strings, got name="%s" description="%s".',
-                $name,
-                $description,
-            ));
+            throw new \InvalidArgumentException(\sprintf('Dynamic tool name and description must be non-empty strings, got name="%s" description="%s".', $name, $description));
         }
 
         if (isset($this->permanentTools[$name])) {
-            throw new \InvalidArgumentException(\sprintf(
-                'Cannot register dynamic tool "%s": a permanent tool with the same name already exists.',
-                $name,
-            ));
+            throw new \InvalidArgumentException(\sprintf('Cannot register dynamic tool "%s": a permanent tool with the same name already exists.', $name));
         }
 
         // Replace if already a dynamic tool (update in place)

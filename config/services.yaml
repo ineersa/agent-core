@@ -162,6 +162,11 @@ services:
     arguments:
       $defaultModel: '%app.default_model%'
 
+  # ─── System prompt builder ───
+  Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder:
+    arguments:
+      $projectDir: '%kernel.project_dir%'
+
   # ToolRegistry — concrete CodingAgent registry for permanent/dynamic tools.
   Ineersa\CodingAgent\Tool\ToolRegistryInterface:
     alias: Ineersa\CodingAgent\Tool\ToolRegistry
