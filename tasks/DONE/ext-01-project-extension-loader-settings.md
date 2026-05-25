@@ -19,14 +19,14 @@ EXT-01 owns settings, project autoload loading, extension class instantiation, a
 - Validation includes `castor deptrac` and targeted tests for settings/autoload/class loading behavior.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/ext-01-project-extension-loader-settings
 Worktree: /home/ineersa/projects/agent-core-worktrees/ext-01-project-extension-loader-settings
 Fork run: mpp1639c53wq
 PR URL: https://github.com/ineersa/agent-core/pull/49
-PR Status: open
+PR Status: merged
 Started: 2026-05-25T21:07:02.252Z
-Completed:
+Completed: 2026-05-25T22:54:04.252Z
 
 ## Work log
 - Created: 2026-05-22T22:43:13.274Z
@@ -53,3 +53,30 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/49
 - Validation: vendor/bin/phpunit tests/CodingAgent/Extension/ExtensionManagerTest.php: OK (10 tests, 26 assertions); castor deptrac: OK (0 violations, 326 uncovered, 740 allowed); castor test: OK (826 tests, 0 failures); castor cs-fix on new/modified files: applied formatting; castor cs-check on new/modified files: OK
 - Summary: Implemented EXT-01 in worktree /home/ineersa/projects/agent-core-worktrees/ext-01-project-extension-loader-settings and committed 2f437726 on task/ext-01-project-extension-loader-settings. Added ExtensionManager to load configured extension classes from .hatfield/extensions/vendor/autoload.php and call HatfieldExtensionInterface::register() with ExtensionApiInterface. Added ExtensionApiBridge collecting ToolRegistrationDTO registrations with getRegistrations()/drainRegistrations() for EXT-02. Wired AgentCommand to load extensions before interactive/controller mode selection. Added extensions.enabled defaults/docs, services wiring, AppExtension deptrac layer, tests. Fixed prior partial-work issues: array_merge_recursive test helper morphing overrides and /tmp logger paths; tests now use project-local var/tmp. Removed unused extension stubs. EXT-02 registry bridge, PHAR packaging, and ToolRegistry internals remain out of scope.
+
+## Task workflow update - 2026-05-25T22:54:04.252Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/ext-01-project-extension-loader-settings into integration checkout.
+- Merge made by the 'ort' strategy.
+ config/hatfield.defaults.yaml                      |  24 ++
+ config/services.yaml                               |  11 +
+ depfile.yaml                                       |  10 +
+ docs/settings.md                                   |  24 ++
+ src/CodingAgent/CLI/AgentCommand.php               |   7 +
+ src/CodingAgent/Extension/ExtensionApiBridge.php   |  66 +++
+ src/CodingAgent/Extension/ExtensionApiService.php  |  10 -
+ src/CodingAgent/Extension/ExtensionManager.php     | 146 +++++++
+ src/CodingAgent/Extension/ExtensionRuntime.php     |  10 -
+ src/CodingAgent/Extension/Loader.php               |  10 -
+ .../CodingAgent/Extension/ExtensionManagerTest.php | 451 +++++++++++++++++++++
+ 11 files changed, 739 insertions(+), 30 deletions(-)
+ create mode 100644 src/CodingAgent/Extension/ExtensionApiBridge.php
+ delete mode 100644 src/CodingAgent/Extension/ExtensionApiService.php
+ create mode 100644 src/CodingAgent/Extension/ExtensionManager.php
+ delete mode 100644 src/CodingAgent/Extension/ExtensionRuntime.php
+ delete mode 100644 src/CodingAgent/Extension/Loader.php
+ create mode 100644 tests/CodingAgent/Extension/ExtensionManagerTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/ext-01-project-extension-loader-settings.
+- Pulled integration checkout: Already up to date..
+- Validation: castor deptrac: OK (violations=0, errors=0, uncovered=331, allowed=740); castor test --filter=ExtensionManagerTest: OK (10 tests, 26 assertions, 0 errors, 0 failures)
+- Summary: Resolved PR #49 merge conflict by merging current main into task/ext-01-project-extension-loader-settings and keeping both AppExtension and AppTool deptrac rules. Pushed merge commit 70e5d7f0 to the task branch. Validation after conflict resolution: castor deptrac and castor test --filter=ExtensionManagerTest passed. Moving EXT-01 to DONE per user approval to merge/close.
