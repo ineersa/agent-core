@@ -24,14 +24,31 @@ Scout notes:
 - Validation includes focused PHPUnit/Castor tests and `castor deptrac`.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
-Fork run:
-PR URL:
-PR Status:
-Started:
+Status: CODE-REVIEW
+Branch: task/system-01-system-prompt-template-overrides
+Worktree: /home/ineersa/projects/agent-core-worktrees/system-01-system-prompt-template-overrides
+Fork run: g5drakp1bp8i
+PR URL: https://github.com/ineersa/agent-core/pull/51
+PR Status: open
+Started: 2026-05-25T23:32:12.519Z
 Completed:
 
 ## Work log
 - Created: 2026-05-25T16:34:12.747Z
+
+## Task workflow update - 2026-05-25T23:32:12.519Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/system-01-system-prompt-template-overrides.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/system-01-system-prompt-template-overrides.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/system-01-system-prompt-template-overrides.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/system-01-system-prompt-template-overrides.
+
+## Task workflow update - 2026-05-25T23:38:41.366Z
+- Recorded fork run: g5drakp1bp8i
+- Summary: Implementation complete. Created SystemPromptBuilder service with template resolution (project > home > built-in), append template loading/rendering, placeholder substitution for all 5 vars, and system message injection into InProcessAgentSessionClient. 15 focused PHPUnit tests pass. All Castor quality checks pass (deptrac, phpstan, cs-check). Pre-existing ExtensionApi test failures unrelated.
+
+## Task workflow update - 2026-05-25T23:38:55.385Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/system-01-system-prompt-template-overrides to origin.
+- branch 'task/system-01-system-prompt-template-overrides' set up to track 'origin/task/system-01-system-prompt-template-overrides'.
+- Created PR: https://github.com/ineersa/agent-core/pull/51

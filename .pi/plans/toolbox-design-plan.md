@@ -324,12 +324,14 @@ final class EditFileTool {
 src/CodingAgent/Tool/
   PathResolver.php            # Static helper: resolvePath(), expand ~, normalize, cwd-relative
   OutputCap.php              # Output capping + temp file persistence
-  PatchRunner.php            # Wraps GNU patch subprocess via CancellableProcessRunner
+  PatchRunner.php            # Wraps GNU patch subprocess via ForegroundProcessRunner
   ToolExecutionContext.php    # Current run/tool cancellation and timeout context
   ToolExecutionContextAccessor.php  # Ambient context around Symfony Toolbox execution
   CancellationGuard.php       # Cooperative checkpoint helper for short tools
-  CancellableProcessRunner.php # Shared process runner with timeout/cancel/TERM->KILL
-  ProcessSpec.php             # Command/cwd/env/timeout/kill-group process request DTO
+  ToolProcessRegistry.php     # Cross-process foreground/background PID registry
+  ToolProcessTerminator.php   # TERM -> grace -> KILL process/group termination helper
+  ForegroundProcessRunner.php # Shared process starter/waiter with registry + timeout support
+  ProcessSpec.php             # Command/cwd/env/timeout/process-group process request DTO
   ProcessRunResult.php        # stdout/stderr/exit/cancel/timeout/duration result DTO
   BackgroundProcessManager.php  # Holds bg process map, log paths, cleanup
 ```
@@ -640,7 +642,7 @@ Tasks are intentionally small and prefixed with `TOOLS-` so smaller models can i
   - Depends on: none.
   - Can parallelize with: TOOLS-00, TOOLS-01, TOOLS-02, EXT-00.
 
-- **TOOLS-00** — Tool cancellation context, guard, and cancellable process runner.
+- **TOOLS-00** — Tool cancellation context, guard, foreground process registry, terminator, and runner.
   - Depends on: none.
   - Can parallelize with: TOOLS-R00, TOOLS-01, TOOLS-02.
 
@@ -715,15 +717,20 @@ AgentCore already models run cancellation:
 - `RunCancellationToken` polling `RunStore`
 - `LlmPlatformAdapter` aborting streamed model consumption when cancellation is requested
 
-Tool execution should build on that existing run-level cancellation instead of introducing a separate cancellation system.
+Tool execution should build on that existing run-level cancellation and the async-runtime cancel ladder. Do not introduce model-visible cancellation parameters in tool schemas.
 
 ### Key decision
 
 Tools owned by CodingAgent can remain Symfony AI toolbox tools and still be cancellable.
 
-Because our tool classes are app-owned services, they can inject app-owned execution helpers and check the current run status while executing. We do not need model-visible cancellation parameters in tool schemas.
+There are two cancellation paths:
 
-### Recommended implementation: ToolExecutionContextAccessor
+1. **Cooperative PHP checkpoints** for short app-owned tools.
+2. **Runtime-owned process termination** for foreground shell/subprocess tools. The controller reacts to accepted cancellation and kills registered foreground tool process groups; individual tools do not own their own cancellation polling loops.
+
+Killing the Messenger `tool` consumer is a future hard-cancel fallback, not the primary foreground-tool cancellation mechanism. It is coarser, may interact with message retry semantics, and may not kill grandchildren spawned by bash.
+
+### ToolExecutionContextAccessor
 
 Keep `#[AsTool]` and Symfony Toolbox for schema/discovery/execution, but add an app-owned ambient execution context around each toolbox invocation.
 
@@ -731,6 +738,7 @@ Keep `#[AsTool]` and Symfony Toolbox for schema/discovery/execution, but add an 
 interface ToolExecutionContext
 {
     public function runId(): string;
+    public function turnNo(): int;
     public function toolCallId(): string;
     public function toolName(): string;
     public function cancellationToken(): CancellationTokenInterface;
@@ -748,6 +756,12 @@ final class ToolExecutionContextAccessor
         return $this->stack[array_key_last($this->stack)] ?? null;
     }
 
+    public function requireCurrent(): ToolExecutionContext
+    {
+        return $this->current()
+            ?? throw new \LogicException('A tool execution context is required.');
+    }
+
     public function with(ToolExecutionContext $context, callable $callback): mixed
     {
         $this->stack[] = $context;
@@ -761,7 +775,7 @@ final class ToolExecutionContextAccessor
 }
 ```
 
-`ToolExecutor` creates the context from the current `ToolCall` and wraps Symfony Toolbox execution:
+`ToolExecutor` creates the context from the current `ToolCall`/`ExecuteToolCall` message and wraps Symfony Toolbox execution:
 
 ```php
 return $this->contextAccessor->with(
@@ -770,41 +784,17 @@ return $this->contextAccessor->with(
 );
 ```
 
-Tool services that need cancellation inject `ToolExecutionContextAccessor`:
+Tool services that need run/tool metadata inject `ToolExecutionContextAccessor` and call `requireCurrent()`.
 
-```php
-#[AsTool('bash', description: 'Execute a bash command')]
-final class BashTool
-{
-    public function __construct(
-        private readonly ToolExecutionContextAccessor $contexts,
-        private readonly BashProcessRunner $runner,
-    ) {}
-
-    public function __invoke(string $command, ?int $timeout = null): ToolResult
-    {
-        $context = $this->contexts->current()
-            ?? throw new \LogicException('BashTool requires a tool execution context.');
-
-        return $this->runner->run($command, $timeout, $context);
-    }
-}
-```
-
-This keeps cancellation out of the model-facing schema while letting app-owned tools react to cancellation.
+This keeps cancellation out of the model-facing schema while letting app-owned tools access run/tool metadata and the existing cancellation token.
 
 ### Concurrency note
 
 The accessor stack is acceptable for synchronous CLI/Messenger tool execution. If future in-process parallel/fiber execution is introduced, replace the simple stack with an operation-id/fiber-local context strategy or use a native execution registry that passes context explicitly.
 
-### Generalized cancellation helpers
+### Cooperative cancellation helpers
 
-Do not implement polling loops or process termination separately in each tool. Use shared services:
-
-1. `CancellationGuard` for cheap cooperative checkpoints in non-process tools.
-2. `CancellableProcessRunner` for all tools that shell out or spawn subprocesses.
-
-Example guard:
+Use `CancellationGuard` for cheap checkpoints in non-process tools.
 
 ```php
 final readonly class CancellationGuard
@@ -818,9 +808,61 @@ final readonly class CancellationGuard
 }
 ```
 
-Short tools (`read`, `write`, `view_image`, `edit` validation steps) call checkpoints at safe boundaries. They should not each own custom cancellation loops.
+Short tools (`read` setup, `write`, `view_image`, `edit` validation steps) call checkpoints before starting and at safe boundaries. They should not each own custom cancellation loops.
 
-Example process runner contracts:
+### Foreground process tracking and termination
+
+TOOLS-00 should introduce shared process primitives that foreground tools and future background tooling can reuse.
+
+Core services/value objects:
+
+```php
+enum ToolProcessKindEnum: string
+{
+    case ForegroundTool = 'foreground_tool';
+    case BackgroundTool = 'background_tool';
+}
+
+final readonly class ToolProcessRecordDTO
+{
+    public function __construct(
+        public string $runId,
+        public int $turnNo,
+        public string $toolCallId,
+        public ToolProcessKindEnum $kind,
+        public int $pid,
+        public ?int $processGroupId,
+        public string $commandPreview,
+        public string $cwd,
+        public ?string $logPath,
+        public \DateTimeImmutable $startedAt,
+    ) {}
+}
+
+interface ToolProcessRegistry
+{
+    public function register(ToolProcessRecordDTO $record): void;
+    public function unregister(string $runId, string $toolCallId): void;
+
+    /** @return list<ToolProcessRecordDTO> */
+    public function foregroundForRun(string $runId): array;
+}
+```
+
+`ToolProcessRegistry` must be cross-process, because the controller process must be able to see PIDs registered by the Messenger `tool` consumer. Use a locked JSON/JSONL store under `.hatfield/tmp/` or another project-local ignored runtime location; do not rely on in-memory state only.
+
+`ToolProcessTerminator` owns the termination ladder for a registered process:
+
+- prefer process-group termination on Unix (`posix_kill(-$pgid, SIGTERM)` then `SIGKILL` after a short grace period);
+- fallback to direct process PID termination;
+- treat missing/exited processes as already stopped;
+- keep Windows support as a deferred/simple fallback unless already easy through Symfony Process/taskkill.
+
+### ForegroundProcessRunner
+
+`ForegroundProcessRunner` replaces the previous monolithic `CancellableProcessRunner` idea. It should start a subprocess, register its PID/process group, wait for completion, and unregister in `finally`.
+
+Example contracts:
 
 ```php
 final readonly class ProcessSpec
@@ -831,7 +873,8 @@ final readonly class ProcessSpec
         public string $cwd,
         public array $env = [],
         public ?int $timeoutSeconds = null,
-        public bool $killProcessGroup = true,
+        public bool $createProcessGroup = true,
+        public ?string $commandPreview = null,
     ) {}
 }
 
@@ -849,21 +892,21 @@ final readonly class ProcessRunResult
 }
 ```
 
-`CancellableProcessRunner` owns:
+`ForegroundProcessRunner` owns:
 
-- starting `Symfony\Component\Process\Process`,
-- output streaming and OutputCap/log accumulation,
-- timeout enforcement,
-- cancellation-token polling,
-- process group/tree termination,
-- TERM -> grace period -> KILL escalation,
-- normalized `ProcessRunResult` output.
+- starting `Symfony\Component\Process\Process`;
+- creating a process group/session where practical (for bash/process-tree safety);
+- registering `ToolProcessKindEnum::ForegroundTool` in `ToolProcessRegistry` once PID/PGID are known;
+- output capture hooks, with OutputCap/log persistence supplied by later tasks;
+- timeout enforcement by delegating termination to `ToolProcessTerminator`;
+- detecting cancellation after process exit by checking the context token/run state and returning `cancelled=true` rather than a generic failure;
+- unregistering in `finally`.
 
-Avoid traits for core cancellation behavior. A small trait/helper for `requireCurrentContext()` is acceptable, but process management and polling should live in testable services.
+It should not be the primary cancellation signal loop. On user cancellation, the controller/runtime side terminates registered foreground processes; the runner merely observes that the process ended under a cancelled token.
 
 ### Bash cancellation contract
 
-Bash is the first tool that must support true mid-execution interruption, but it should not own the low-level polling/kill loop. Bash should build a `ProcessSpec`, call `CancellableProcessRunner`, and format the `ProcessRunResult` into a `ToolResult`.
+Bash is the first tool that must support true mid-execution interruption, but it should not own low-level cancellation polling or process-tree kill logic. Bash should build a `ProcessSpec`, call `ForegroundProcessRunner`, and format the `ProcessRunResult` into a `ToolResult`.
 
 Sketch:
 
@@ -893,25 +936,25 @@ Structured cancellation details from bash should include:
 ]
 ```
 
-### Process tree termination
+### Controller cancellation hook
 
-Plain `Process::stop()` may not be enough for shell commands that spawn children. The bash runner should own a small process-kill helper.
+When a cancel command is accepted and projected as `cancellation.requested`, the controller/runtime process should:
 
-Unix strategy:
+1. query `ToolProcessRegistry::foregroundForRun($runId)`;
+2. call `ToolProcessTerminator` for each foreground record;
+3. leave background processes alone unless explicitly stopped through `bg_status` or future policy;
+4. let the existing `ToolCallResultHandler`/`LlmStepResultHandler` transition `RunStatus::Cancelling` to terminal `Cancelled`.
 
-- Prefer starting bash as a process-group/session leader, e.g. via `setsid` when available.
-- Kill the process group using negative PID: `posix_kill(-$pid, SIGTERM)` then `SIGKILL` after grace period.
-- Fallback to killing the direct process if process-group setup is unavailable.
-
-Windows strategy can be deferred or implemented separately with Symfony Process options / taskkill.
+This matches the async runtime ladder: cooperative checks are level 1; registered foreground PID/process-group termination is level 2. Consumer SIGTERM/SIGKILL remains a future last-resort layer.
 
 ### Generic toolbox tools
 
 Not every Symfony Toolbox callable is automatically interruptible. For app-owned tools:
 
-- short tools (`read`, `write`, `edit`, `view_image`) check cancellation before starting and at safe boundaries;
-- long tools (`bash`, future search/indexing/subagents) check during execution;
-- unknown third-party tools remain pre/post cancellable only unless they opt into the context accessor.
+- short pure-PHP tools check cancellation before starting and at safe boundaries;
+- foreground subprocess tools register their PIDs/process groups and rely on controller/runtime termination on cancellation;
+- background processes use the same registry/terminator primitives but are not killed by ordinary run cancellation;
+- unknown third-party tools remain pre/post cancellable only unless they opt into the context accessor or process registry.
 
 ### Pipeline semantics
 
@@ -919,8 +962,7 @@ A cancelled tool should not be treated like an ordinary model-visible tool error
 
 Preferred behavior:
 
-- return structured `cancelled=true` details from the tool;
+- foreground subprocess exits promptly because the controller killed the registered process group;
+- the tool returns structured `cancelled=true` details when it observes a cancelled token/run state;
 - `ToolCallResultHandler` sees `RunStatus::Cancelling` and transitions the run to `Cancelled`;
-- do not continue the turn by feeding cancelled tool output back into the model.
-
-The existing `ToolCallResultHandler` already handles `RunStatus::Cancelling`; bash mainly needs to ensure the process actually stops promptly.
+- cancelled tool output is not fed back into the model for another turn.

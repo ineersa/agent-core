@@ -6,7 +6,7 @@ Implement the `bash` tool with foreground execution, output capping, and user-co
 Plan source: `.pi/plans/toolbox-design-plan.md`.
 
 Dependencies:
-- Depends on TOOLS-00 (`ToolExecutionContext`, `CancellableProcessRunner`).
+- Depends on TOOLS-00 (`ToolExecutionContext`, `ForegroundProcessRunner`, `ToolProcessRegistry`, `ToolProcessTerminator`).
 - Depends on TOOLS-02 (`OutputCap`).
 - Depends on TOOLS-08 (`BackgroundProcessManager`).
 
@@ -15,11 +15,11 @@ Scope:
 - Register with `#[AsTool('bash', description: 'Execute a bash command')]`.
 - Schema should be derived from `__invoke(string $command, ?int $timeout = null)`.
 - Do NOT add `run_in_background` or any model-controlled background parameter.
-- Execute foreground commands through `CancellableProcessRunner` using configured shell (`bash` on Unix, fallback to `sh`) and project cwd.
+- Execute foreground commands through `ForegroundProcessRunner` using configured shell (`bash` on Unix, fallback to `sh`) and project cwd.
 - Capture stdout+stderr and pass text through `OutputCap`.
 - Non-zero exit appends/reports `Exit code N` while still returning output.
-- Timeout kills process through shared TERM -> grace -> KILL semantics and returns partial output plus timeout message.
-- Run cancellation while foreground bash is running kills the process promptly and returns structured `cancelled=true` details rather than a generic tool failure.
+- Timeout kills the registered foreground process through `ToolProcessTerminator` TERM -> grace -> KILL semantics and returns partial output plus timeout message.
+- Run cancellation while foreground bash is running kills the process promptly through the TOOLS-00 controller/registry/terminator path and returns structured `cancelled=true` details rather than a generic tool failure.
 - User-controlled backgrounding behavior:
   - At 30 seconds of runtime, proactively prompt the TUI/user: `Command still running after 30s. Move to background?`.
   - If timeout is less than 30 seconds and reached first, do normal timeout kill without a background prompt.
@@ -38,7 +38,7 @@ Out of scope:
 - Foreground successful command returns captured output.
 - Non-zero command returns output plus exit code information.
 - Timeout kills the process and returns partial output plus timeout notice.
-- Run cancellation kills foreground bash promptly, includes partial output where available, and marks the result as cancelled.
+- Run cancellation kills foreground bash promptly via the TOOLS-00 foreground process registry/terminator path, includes partial output where available, and marks the result as cancelled.
 - With fake prompt acceptance at the 30s threshold, command is registered in `BackgroundProcessManager` and tool returns PID/log path.
 - With fake prompt decline, command continues until completion/timeout.
 - Output is capped/persisted through `OutputCap`.
