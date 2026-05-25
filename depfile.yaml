@@ -377,6 +377,7 @@ parameters:
     AppExtension:
       - AppExtensionApi
       - AppConfig
+      - AppTool
 
     AppTool:
       - AgentCore
