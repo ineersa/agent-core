@@ -18,12 +18,12 @@ EXT-02 can run mostly in parallel with EXT-01 after EXT-00 and TOOLS-R00 land; f
 - Validation includes `castor deptrac` and targeted tests using a fake extension/tool registration.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/ext-02-tool-registry-bridge
 Worktree: /home/ineersa/projects/agent-core-worktrees/ext-02-tool-registry-bridge
 Fork run: krnppsz9uqev
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/50
+PR Status: open
 Started: 2026-05-25T22:56:48.576Z
 Completed:
 
@@ -40,3 +40,11 @@ Completed:
 ## Task workflow update - 2026-05-25T22:57:16.688Z
 - Recorded fork run: krnppsz9uqev
 - Launched implementation fork krnppsz9uqev in /home/ineersa/projects/agent-core-worktrees/ext-02-tool-registry-bridge.
+
+## Task workflow update - 2026-05-25T23:00:03.842Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/ext-02-tool-registry-bridge to origin.
+- branch 'task/ext-02-tool-registry-bridge' set up to track 'origin/task/ext-02-tool-registry-bridge'.
+- Created PR: https://github.com/ineersa/agent-core/pull/50
+- Validation: castor test: OK (869 tests, 0 failures); castor deptrac: OK (0 violations, 331 uncovered, 745 allowed); castor cs-fix + castor cs-check: OK after formatting; castor test --filter=ExtensionToolRegistryBridgeTest: covered 11 new tests (reported by fork); castor test --filter=ExtensionManagerTest and ToolRegistryTest paths covered by full castor test
+- Summary: Implemented EXT-02 in worktree /home/ineersa/projects/agent-core-worktrees/ext-02-tool-registry-bridge and committed 0e5b51cc on task/ext-02-tool-registry-bridge. Added ExtensionToolRegistryBridge implementing ExtensionApiInterface and mapping ToolRegistrationDTO registrations directly into ToolRegistryInterface::registerTool() as permanent tools. The bridge derives promptLine from promptSummary or fallback "{name}: {description}" and forwards parametersJsonSchema, handler, and promptGuidelines. Updated services so ExtensionApiInterface aliases to ExtensionToolRegistryBridge while retaining ExtensionApiBridge as a standalone/backward-compatible collector. Updated deptrac to allow AppExtension -> AppTool. Added focused bridge tests. No ExtensionApi contract changes, no PHAR packaging, no dynamic-tool bridge, no concrete tools.
