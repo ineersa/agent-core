@@ -32,7 +32,7 @@ Out of scope:
 Status: CODE-REVIEW
 Branch: task/tools-02-output-cap
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-02-output-cap
-Fork run: k2mqiwwnvqqs
+Fork run: iacc0j9g85c1
 PR URL: https://github.com/ineersa/agent-core/pull/56
 PR Status: open
 Started: 2026-05-26T16:08:52.732Z
@@ -68,3 +68,19 @@ Completed:
 - Recorded fork run: k2mqiwwnvqqs
 - Validation: castor test --filter=OutputCap: pass (29 tests, 54 assertions); castor deptrac: pass (0 violations, 0 errors); castor cs-check --path src/CodingAgent/: pass after cs-fix; castor test: pass (983 tests, 10037 assertions)
 - Summary: Follow-up fork completed despite signal_aborted notification and pushed PR #56 branch update. Commit 1c894c79 adds OutputCapConfig and settings-backed tools.output_cap config, uses AppConfig/settings for defaults instead of raw getcwd/hardcoded constructor defaults, resolves tools.output_cap.path via AppConfigLoader, uses 0750 mkdir with explicit failure handling, checks file_put_contents result, runs cleanup from persist(), adds session-prefix filename support, removes test leakage into project .hatfield, updates docs/settings.md, config/hatfield.defaults.yaml, .hatfield/settings.yaml, services.yaml, and deptrac AppTool dependencies.
+
+## Task workflow update - 2026-05-26T19:25:04.439Z
+- Validation: Reviewer comments to address: config/hatfield.defaults.yaml line 90: pull main, use PathResolver instead of manual resolution; src/CodingAgent/Config/OutputCapConfig.php line 53: rework AppConfig as DTO and use Symfony serializer instead of raw array guards; prior comments: OutputCap must use AppConfig/settings, defaults from settings, no 0777 permissions.
+- Summary: Preparing second PR #56 follow-up after new reviewer comments. Required direction: pull/merge main so TOOLS-01 PathResolver is available; replace manual config-array guard code in OutputCapConfig/AppConfig path with a typed AppConfig DTO hydrated through Symfony Serializer/Denormalizer; use AppConfig/settings and PathResolver/SettingsPathResolver path resolution rather than getcwd/manual fallback; keep storage perms restrictive and fail loudly on write/create errors.
+
+## Task workflow update - 2026-05-26T19:26:06.638Z
+- Summary: Reviewer/user clarification after fork launch: prefer config DTOs instead of raw. AppConfig::raw should not be the path for known configuration. OutputCap, LoggingConfig, ExtensionManager, HatfieldSessionStore, and other known config consumers should use typed DTO properties. If any raw compatibility remains, it must not be used for known app sections or TOOLS-02 behavior.
+
+## Task workflow update - 2026-05-26T19:36:36.040Z
+- Recorded fork run: iacc0j9g85c1
+- Validation: Fork reported: git fetch origin && git merge origin/main to pick up PathResolver; Fork reported: castor test --filter='OutputCap|AppConfigLoader|SettingsPathResolver|HatfieldSessionStore|ExtensionManager' => 80 tests, 185 assertions, 0 failures; Fork reported: castor test => 1018 tests, 10078 assertions, 0 failures; Fork reported: castor deptrac => 0 violations, 0 errors; Fork reported: castor cs-check => 0 failures; Parent spot-check: branch task/tools-02-output-cap HEAD/origin at 8a7cd85e; git status clean; source grep confirms known production consumers use typed config DTOs for OutputCap/session/extensions, with AppConfig::raw retained only in AppConfig and tests/AI helpers.
+- Summary: Follow-up fork completed and pushed commit 8a7cd85e to PR #56. Reworked OutputCap config through typed DTO hydration: added SessionsConfig, ExtensionsConfig, ToolsConfig; AppConfig::fromContainer now denormalizes known sections via Symfony Serializer; OutputCap requires OutputCapConfig and removes null/constructor override fallbacks; OutputCapConfig::fromAppConfig returns appConfig->tools->outputCap; LoggingConfig::fromAppConfig returns appConfig->logging; ExtensionManager and HatfieldSessionStore use typed DTO properties; SettingsPathResolver delegates final path normalization to PathResolver. AppConfig::raw remains only as forward-compat storage for unknown keys; known production consumers should not use it.
+
+## Task workflow update - 2026-05-26T22:49:44.864Z
+- Validation: castor test --filter=OutputCapTest: ok (tests=28, assertions=52, errors=0, failures=0, skipped=0); castor cs-check: ok (files_fixed=0); castor deptrac: ok (violations=0, errors=0, uncovered=357, allowed=760)
+- Summary: Addressed final PR #56 review comment by removing duplicated scalar config properties from OutputCap; OutputCap now reads storage path, caps, retention, and session prefix directly from the injected OutputCapConfig DTO.
