@@ -25,11 +25,6 @@ final class OutputCap
      */
     private const DOC_EXTENSIONS = ['md', 'txt', 'toon'];
 
-    private readonly string $storageDir;
-    private readonly int $defaultCap;
-    private readonly int $docCap;
-    private readonly int $retentionSeconds;
-    private readonly ?string $sessionPrefix;
     private bool $cleanedUp = false;
 
     /**
@@ -40,11 +35,6 @@ final class OutputCap
     public function __construct(
         private readonly OutputCapConfig $config,
     ) {
-        $this->storageDir = $config->storageDir;
-        $this->defaultCap = $config->defaultCap;
-        $this->docCap = $config->docCap;
-        $this->retentionSeconds = $config->retentionSeconds;
-        $this->sessionPrefix = $config->sessionPrefix;
     }
 
     /**
@@ -101,7 +91,7 @@ final class OutputCap
         $this->ensureStorageDirExists();
 
         $filename = $this->buildFilename();
-        $filePath = $this->storageDir.'/'.$filename;
+        $filePath = $this->config->storageDir.'/'.$filename;
 
         $written = @file_put_contents($filePath, $text, \LOCK_EX);
         if (false === $written) {
@@ -119,13 +109,13 @@ final class OutputCap
      */
     public function cleanup(): void
     {
-        $dir = $this->storageDir;
+        $dir = $this->config->storageDir;
 
         if (!is_dir($dir)) {
             return;
         }
 
-        $cutoff = time() - $this->retentionSeconds;
+        $cutoff = time() - $this->config->retentionSeconds;
 
         $handle = opendir($dir);
         if (false === $handle) {
@@ -170,12 +160,12 @@ final class OutputCap
      */
     private function ensureStorageDirExists(): void
     {
-        if (is_dir($this->storageDir)) {
+        if (is_dir($this->config->storageDir)) {
             return;
         }
 
-        if (!@mkdir($this->storageDir, 0750, true) && !is_dir($this->storageDir)) {
-            throw new \RuntimeException(\sprintf('Failed to create output cap storage directory: %s', $this->storageDir));
+        if (!@mkdir($this->config->storageDir, 0750, true) && !is_dir($this->config->storageDir)) {
+            throw new \RuntimeException(\sprintf('Failed to create output cap storage directory: %s', $this->config->storageDir));
         }
     }
 
@@ -186,7 +176,7 @@ final class OutputCap
      */
     private function buildFilename(): string
     {
-        $prefix = $this->sessionPrefix ?? date('Ymd');
+        $prefix = $this->config->sessionPrefix ?? date('Ymd');
 
         return $prefix.'-'.bin2hex(random_bytes(8)).'.txt';
     }
@@ -201,16 +191,16 @@ final class OutputCap
     private function resolveCap(?string $path): int
     {
         if (null === $path) {
-            return $this->defaultCap;
+            return $this->config->defaultCap;
         }
 
         foreach (self::DOC_EXTENSIONS as $ext) {
             if (str_ends_with(strtolower($path), '.'.$ext)) {
-                return $this->docCap;
+                return $this->config->docCap;
             }
         }
 
-        return $this->defaultCap;
+        return $this->config->defaultCap;
     }
 
     /**
