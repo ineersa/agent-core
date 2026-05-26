@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Skills;
 
+use Psr\Log\LoggerInterface;
+
 /**
  * Holds discovered skills and provides lookup, filtering, and body reading.
  *
@@ -23,8 +25,9 @@ final class SkillRegistry
      * @param list<array{winner: string, ignored: string, name: string}> $collisions
      */
     public function __construct(
-        array $skills = [],
+        array $skills,
         array $collisions = [],
+        private ?LoggerInterface $logger = null,
     ) {
         foreach ($skills as $skill) {
             $this->skills[$skill->name] = $skill;
@@ -71,9 +74,21 @@ final class SkillRegistry
      */
     public function readBody(SkillDefinition $skill): string
     {
-        $content = @file_get_contents($skill->skillFile);
+        if (!is_file($skill->skillFile)) {
+            if (null !== $this->logger) {
+                $this->logger->warning('Skill file not found: {path}', ['path' => $skill->skillFile]);
+            }
+
+            return '';
+        }
+
+        $content = file_get_contents($skill->skillFile);
 
         if (false === $content) {
+            if (null !== $this->logger) {
+                $this->logger->warning('Failed to read skill body: {path}', ['path' => $skill->skillFile]);
+            }
+
             return '';
         }
 

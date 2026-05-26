@@ -99,7 +99,7 @@ final class SkillsContextBuilderTest extends TestCase
         // Both skill blocks should appear
         $this->assertSame(2, substr_count($output, '<skill name='));
 
-        // first should appear before second (no specific order assertion, just that both exist)
+        // Verify ordering: first preload appears before second preload
         $posFirst = strpos($output, 'First body');
         $posSecond = strpos($output, 'Second body');
         $this->assertNotFalse($posFirst);
@@ -120,6 +120,31 @@ final class SkillsContextBuilderTest extends TestCase
 
         // Should be empty since no skills exist
         $this->assertSame('', $output);
+    }
+
+    public function testPreloadDisabledSkill(): void
+    {
+        // A skill with disable-model-invocation: true can still be explicitly preloaded.
+        $skillDir = $this->tmpDir.'/.hatfield/skills/noinvoke';
+        mkdir($skillDir, 0777, true);
+        file_put_contents($skillDir.'/SKILL.md', "---\nname: noinvoke\ndescription: A skill disabled for model invocation\ndisable-model-invocation: true\n---\n\n# Noinvoke body\n\nThis skill cannot be auto-invoked but can be preloaded.");
+
+        $config = new SkillsConfig(
+            noSkills: false,
+            skillsPaths: [],
+            preloadSkills: ['noinvoke'],
+        );
+
+        $builder = $this->createBuilder(cwd: $this->tmpDir, config: $config);
+        $output = $builder->build();
+
+        // Should NOT have <available_skills> (skill is model-invocation disabled)
+        $this->assertStringNotContainsString('<available_skills>', $output);
+
+        // Should have the preloaded <skill> block with body content
+        $this->assertStringContainsString('<skill name="noinvoke"', $output);
+        $this->assertStringContainsString('Noinvoke body', $output);
+        $this->assertStringContainsString('This skill cannot be auto-invoked', $output);
     }
 
     /* ───────── Private helpers ───────── */

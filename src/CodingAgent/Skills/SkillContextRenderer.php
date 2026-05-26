@@ -11,7 +11,7 @@ namespace Ineersa\CodingAgent\Skills;
  *   1. renderAvailableSkills — produces <skills_instructions> with <available_skills> listing
  *   2. renderPreloadedSkill — produces a single <skill> block with full body
  */
-final class SkillContextRenderer
+final readonly class SkillContextRenderer
 {
     /**
      * Render the <skills_instructions> + <available_skills> block.

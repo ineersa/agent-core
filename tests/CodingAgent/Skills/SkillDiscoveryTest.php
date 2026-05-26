@@ -242,6 +242,40 @@ final class SkillDiscoveryTest extends TestCase
         $this->assertStringContainsString('prio', $skills[0]->skillDirectory);
     }
 
+    public function testDiscoversFromHomeHatfieldSkills(): void
+    {
+        // Create a skill in a dedicated home directory
+        $homeDir = $this->tmpDir.'/home';
+        mkdir($homeDir.'/.hatfield/skills/homeskill', 0777, true);
+        file_put_contents($homeDir.'/.hatfield/skills/homeskill/SKILL.md', "---\nname: homeskill\ndescription: Home skill\n---\n\nHome body");
+
+        // cwd has no skills — home dir has them
+        $discovery = $this->createDiscovery(cwd: $this->tmpDir, homeDir: $homeDir);
+
+        $skills = $discovery->discover();
+
+        $this->assertCount(1, $skills);
+        $this->assertSame('homeskill', $skills[0]->name);
+        $this->assertStringContainsString('home', $skills[0]->skillDirectory);
+    }
+
+    public function testMalformedFrontmatterFallsBackToDefaults(): void
+    {
+        $skillDir = $this->tmpDir.'/.hatfield/skills/badfront';
+        mkdir($skillDir, 0777, true);
+        file_put_contents($skillDir.'/SKILL.md', "---\nname: badfront\ndescription: {{ invalid: yaml: [}
+---\n\nBody with bad frontmatter");
+
+        $discovery = $this->createDiscovery(cwd: $this->tmpDir);
+        $skills = $discovery->discover();
+
+        // Skill is still discovered; name defaults to directory name since YAML parsing fails
+        $this->assertCount(1, $skills);
+        $this->assertSame('badfront', $skills[0]->name);
+        $this->assertSame('', $skills[0]->description);
+        $this->assertTrue($skills[0]->modelInvocationEnabled);
+    }
+
     public function testEmptyCwdThrows(): void
     {
         $config = new SkillsConfig();

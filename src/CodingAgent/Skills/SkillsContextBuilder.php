@@ -10,7 +10,7 @@ use Psr\Log\LoggerInterface;
  * Orchestrates skill discovery, registry construction, and context rendering
  * for injection into the initial user-context message.
  */
-final class SkillsContextBuilder
+final readonly class SkillsContextBuilder
 {
     public function __construct(
         private readonly SkillDiscovery $discovery,
