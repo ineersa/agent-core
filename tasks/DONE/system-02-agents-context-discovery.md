@@ -20,14 +20,14 @@ The loaded context is injected only for new sessions as a synthetic first messag
 - Validation includes focused Castor tests and `castor deptrac`.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/system-02-agents-context-discovery
 Worktree: /home/ineersa/projects/agent-core-worktrees/system-02-agents-context-discovery
 Fork run: mbkjztwvhpx0
 PR URL: https://github.com/ineersa/agent-core/pull/52
-PR Status: open
+PR Status: merged
 Started: 2026-05-26T00:48:00.937Z
-Completed:
+Completed: 2026-05-26T01:13:28.840Z
 
 ## Work log
 - Created: 2026-05-25T17:16:43.526Z
@@ -57,3 +57,22 @@ Completed:
 
 ## Task workflow update - 2026-05-26T01:08:50.072Z
 - Summary: PR #52 review comments addressed: removed SYSTEM.md additions, added architecture comment clarifying single injection point, added .agents/ folder support (.hatfield/ takes precedence), replaced manual XML escaping with htmlspecialchars(ENT_XML1|ENT_QUOTES). 42/42 tests pass, deptrac/phpstan/cs-check clean.
+
+## Task workflow update - 2026-05-26T01:13:28.840Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/system-02-agents-context-discovery into integration checkout.
+- Merge made by the 'ort' strategy.
+ .../InProcess/InProcessAgentSessionClient.php      |  19 ++
+ .../SystemPrompt/AgentsContextDiscovery.php        | 174 +++++++++++
+ .../SystemPrompt/AgentsContextRenderer.php         |  65 ++++
+ .../InProcess/AgentsContextInjectionTest.php       | 263 ++++++++++++++++
+ .../SystemPrompt/AgentsContextDiscoveryTest.php    | 330 +++++++++++++++++++++
+ .../SystemPrompt/AgentsContextRendererTest.php     | 140 +++++++++
+ 6 files changed, 991 insertions(+)
+ create mode 100644 src/CodingAgent/SystemPrompt/AgentsContextDiscovery.php
+ create mode 100644 src/CodingAgent/SystemPrompt/AgentsContextRenderer.php
+ create mode 100644 tests/CodingAgent/Runtime/InProcess/AgentsContextInjectionTest.php
+ create mode 100644 tests/CodingAgent/SystemPrompt/AgentsContextDiscoveryTest.php
+ create mode 100644 tests/CodingAgent/SystemPrompt/AgentsContextRendererTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/system-02-agents-context-discovery.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
