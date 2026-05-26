@@ -10,6 +10,8 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Tool\ToolProcessRegistry;
 use Ineersa\CodingAgent\Tool\ToolProcessTerminator;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 
 /**
@@ -25,6 +27,7 @@ final readonly class CancelHandler
         private readonly InProcessAgentSessionClient $client,
         private readonly ?ToolProcessRegistry $processRegistry = null,
         private readonly ?ToolProcessTerminator $processTerminator = null,
+        private readonly LoggerInterface $logger = new NullLogger(),
     ) {
     }
 
@@ -40,21 +43,47 @@ final readonly class CancelHandler
             return;
         }
 
+        $this->logger->info('Handling cancel command', ['runId' => $runId]);
+
         // Request asynchronous cancellation through AgentCore.
         $this->client->cancel($runId);
 
         // Kill foreground tool processes for this run immediately.
-        // ToolProcessRegistry is cross-process (locked JSONL), so this works
-        // even though the tool consumer is a separate process.
         if (null !== $this->processRegistry && null !== $this->processTerminator) {
             try {
                 $foregroundRecords = $this->processRegistry->foregroundForRun($runId);
+
                 if ([] !== $foregroundRecords) {
-                    $this->processTerminator->terminateAll($foregroundRecords);
+                    $this->logger->info('Terminating foreground tool processes on cancel', [
+                        'runId' => $runId,
+                        'count' => \count($foregroundRecords),
+                        'pids' => array_map(
+                            static fn ($r) => ['pid' => $r->pid, 'command' => $r->commandPreview],
+                            $foregroundRecords,
+                        ),
+                    ]);
+
+                    $terminated = $this->processTerminator->terminateAll($foregroundRecords);
+
+                    $this->logger->info('Foreground process termination complete', [
+                        'runId' => $runId,
+                        'terminated' => $terminated,
+                        'total' => \count($foregroundRecords),
+                    ]);
+                } else {
+                    $this->logger->debug('No foreground tool processes to terminate', ['runId' => $runId]);
                 }
             } catch (\Throwable $e) {
-                // Best-effort — don't let registry/terminator errors block cancellation.
+                $this->logger->error('Error terminating foreground tool processes on cancel', [
+                    'runId' => $runId,
+                    'exception' => $e::class,
+                    'message' => $e->getMessage(),
+                ]);
             }
+        } else {
+            $this->logger->debug('Process registry/terminator not configured; skipping foreground process termination', [
+                'runId' => $runId,
+            ]);
         }
 
         $event->emit(new RuntimeEvent(
@@ -62,5 +91,7 @@ final readonly class CancelHandler
             runId: $runId,
             seq: 0,
         ));
+
+        $this->logger->info('Cancel event emitted', ['runId' => $runId]);
     }
 }

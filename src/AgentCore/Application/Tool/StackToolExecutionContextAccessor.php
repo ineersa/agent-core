@@ -23,7 +23,7 @@ final class StackToolExecutionContextAccessor implements ToolExecutionContextAcc
     {
         $key = array_key_last($this->stack);
 
-        return false !== $key ? $this->stack[$key] : null;
+        return null !== $key ? $this->stack[$key] : null;
     }
 
     public function requireCurrent(): ToolExecutionContextInterface

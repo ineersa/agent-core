@@ -58,13 +58,12 @@ final class ToolProcessRegistry
      */
     public function unregister(string $runId, string $toolCallId): void
     {
-        $records = $this->readRecords();
-        $remaining = array_values(array_filter(
-            $records,
-            static fn (array $r) => $r['run_id'] !== $runId || $r['tool_call_id'] !== $toolCallId,
-        ));
-
-        $this->writeRecords($remaining);
+        $this->modifyRecords(static function (array $records) use ($runId, $toolCallId): array {
+            return array_values(array_filter(
+                $records,
+                static fn (array $r) => $r['run_id'] !== $runId || $r['tool_call_id'] !== $toolCallId,
+            ));
+        });
     }
 
     /**
@@ -112,17 +111,19 @@ final class ToolProcessRegistry
      */
     public function pruneOlderThan(\DateTimeImmutable $threshold): int
     {
-        $records = $this->readRecords();
         $ts = $threshold->getTimestamp();
-        $remaining = array_values(array_filter(
-            $records,
-            static fn (array $r) => ($r['started_at'] ?? 0) >= $ts,
-        ));
+        $pruned = 0;
 
-        $pruned = \count($records) - \count($remaining);
-        if ($pruned > 0) {
-            $this->writeRecords($remaining);
-        }
+        $this->modifyRecords(static function (array $records) use ($ts, &$pruned): array {
+            $remaining = array_values(array_filter(
+                $records,
+                static fn (array $r) => ($r['started_at'] ?? 0) >= $ts,
+            ));
+
+            $pruned = \count($records) - \count($remaining);
+
+            return $remaining;
+        });
 
         return $pruned;
     }
@@ -132,16 +133,18 @@ final class ToolProcessRegistry
      */
     public function removeRun(string $runId): int
     {
-        $records = $this->readRecords();
-        $remaining = array_values(array_filter(
-            $records,
-            static fn (array $r) => $r['run_id'] !== $runId,
-        ));
+        $removed = 0;
 
-        $removed = \count($records) - \count($remaining);
-        if ($removed > 0) {
-            $this->writeRecords($remaining);
-        }
+        $this->modifyRecords(static function (array $records) use ($runId, &$removed): array {
+            $remaining = array_values(array_filter(
+                $records,
+                static fn (array $r) => $r['run_id'] !== $runId,
+            ));
+
+            $removed = \count($records) - \count($remaining);
+
+            return $remaining;
+        });
 
         return $removed;
     }
@@ -198,6 +201,61 @@ final class ToolProcessRegistry
             ftruncate($handle, 0);
 
             foreach ($records as $record) {
+                fwrite($handle, json_encode($record)."\n");
+            }
+
+            fflush($handle);
+            flock($handle, \LOCK_UN);
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    /**
+     * Atomically read, filter, and rewrite records under a single exclusive lock.
+     *
+     * Eliminates the TOCTOU race between separate readRecords() and writeRecords()
+     * calls used by unregister(), removeRun(), and pruneOlderThan().
+     *
+     * @param callable(list<array<string, mixed>>): list<array<string, mixed>> $callback
+     */
+    private function modifyRecords(callable $callback): void
+    {
+        $handle = @fopen($this->storagePath, 'c+');
+        if (false === $handle) {
+            if (!is_dir(\dirname($this->storagePath))) {
+                throw new \RuntimeException(\sprintf('Cannot open process registry: %s', $this->storagePath));
+            }
+
+            return;
+        }
+
+        try {
+            flock($handle, \LOCK_EX);
+            rewind($handle);
+
+            // Read all existing records under lock.
+            $records = [];
+            while (($line = fgets($handle)) !== false) {
+                $trimmed = trim($line);
+                if ('' === $trimmed) {
+                    continue;
+                }
+
+                $data = json_decode($trimmed, true);
+                if (\is_array($data) && isset($data['run_id'], $data['tool_call_id'])) {
+                    $records[] = $data;
+                }
+            }
+
+            // Apply the transformation.
+            $updated = $callback($records);
+
+            // Truncate and rewrite.
+            ftruncate($handle, 0);
+            rewind($handle);
+
+            foreach ($updated as $record) {
                 fwrite($handle, json_encode($record)."\n");
             }
 

@@ -47,12 +47,15 @@ final class ToolProcessTerminator
      */
     public function terminatePid(int $pid, ?int $processGroupId = null): bool
     {
-        // Prefer process-group termination on Unix.
-        if (null !== $processGroupId && $this->isAlive($processGroupId)) {
+        // Prefer process-group termination on Unix, but never signal our own
+        // process group. Some environments ignore create_new_console/setsid;
+        // sending SIGTERM/SIGKILL to the current group would kill the test
+        // runner or controller along with the tool process.
+        if (null !== $processGroupId && $this->canTerminateProcessGroup($processGroupId) && $this->isAlive(-$processGroupId)) {
             if ($this->sendSignal(-$processGroupId, \SIGTERM)) {
                 $this->waitForExit(-$processGroupId, $this->graceSeconds);
 
-                if ($this->isAlive($processGroupId)) {
+                if ($this->isAlive(-$processGroupId)) {
                     $this->sendSignal(-$processGroupId, \SIGKILL);
                 }
 
@@ -100,13 +103,34 @@ final class ToolProcessTerminator
     }
 
     /**
+     * Check whether a process group can be terminated safely.
+     *
+     * Negative PID = process group (posix_kill semantics), so only use it
+     * when the target group is not the current PHP/controller process group.
+     */
+    private function canTerminateProcessGroup(int $processGroupId): bool
+    {
+        if ($processGroupId <= 0) {
+            return false;
+        }
+
+        if (!\function_exists('posix_getpgrp')) {
+            return true;
+        }
+
+        return $processGroupId !== posix_getpgrp();
+    }
+
+    /**
      * Check whether a process ID is alive by sending signal 0.
+     *
+     * Negative PID = process group (posix_kill semantics).
+     * Unlike the previous abs() approach, we preserve the sign so that
+     * process-group liveness checks (posix_kill(-pgid, 0)) work correctly.
      */
     private function isAlive(int $pid): bool
     {
-        // Negative PID = process group (posix_kill semantics).
-        // We check with signal 0 to test existence.
-        return @posix_kill(abs($pid), 0);
+        return @posix_kill($pid, 0);
     }
 
     /**

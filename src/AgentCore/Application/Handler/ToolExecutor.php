@@ -135,14 +135,19 @@ final class ToolExecutor implements ToolExecutorInterface
         }
 
         if ($this->cancellationToken($toolCall)->isCancellationRequested()) {
-            $result = $this->errorResult(
-                toolCallId: $toolCall->toolCallId,
-                toolName: $toolCall->toolName,
-                message: \sprintf('Tool "%s" result marked stale due to run cancellation.', $toolCall->toolName),
-                details: [
-                    'stale_due_to_cancel' => true,
-                ],
-            );
+            // Don't overwrite a structured cancelled result from ToolCancelledException.
+            $alreadyCancelled = \is_array($result->details) && ($result->details['cancelled'] ?? false);
+
+            if (!$alreadyCancelled) {
+                $result = $this->errorResult(
+                    toolCallId: $toolCall->toolCallId,
+                    toolName: $toolCall->toolName,
+                    message: \sprintf('Tool "%s" result marked stale due to run cancellation.', $toolCall->toolName),
+                    details: [
+                        'stale_due_to_cancel' => true,
+                    ],
+                );
+            }
         }
 
         return $this->rememberAndReturn(

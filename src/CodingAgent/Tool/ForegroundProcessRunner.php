@@ -16,7 +16,7 @@ use Symfony\Component\Process\Process;
  * - Creating process groups for tree safety
  * - Registering ForegroundTool records in ToolProcessRegistry
  * - Timeout enforcement via ToolProcessTerminator
- * - Cancellation detection (token check after exit)
+ * - Cancellation detection (token check after exit, and signal exit codes)
  * - An observer/decision hook so future bash can request
  *   Continue|Terminate|DetachToBackground without duplicating lifecycle
  * - Unregistration in finally unless detach transfers ownership
@@ -43,7 +43,6 @@ final class ForegroundProcessRunner
     public function __construct(
         private readonly ToolProcessRegistry $registry,
         private readonly ToolProcessTerminator $terminator,
-        private readonly ?ToolExecutionContextInterface $fallbackContext = null,
         ?callable $decisionHook = null,
     ) {
         $this->decisionHook = $decisionHook;
@@ -86,8 +85,12 @@ final class ForegroundProcessRunner
             }
         }
 
-        $commandPreview = $spec->commandPreview
-            ?? mb_substr(implode(' ', $spec->command), 0, 120);
+        // Build a non-empty command preview for the process record.
+        $rawPreview = $spec->commandPreview
+            ?? \implode(' ', $spec->command);
+        $commandPreview = '' !== $rawPreview
+            ? \mb_substr($rawPreview, 0, 120)
+            : 'unknown command';
 
         $record = new ToolProcessRecordDTO(
             runId: $context->runId(),
@@ -105,17 +108,17 @@ final class ForegroundProcessRunner
         $this->registry->register($record);
 
         $startedAt = hrtime(true);
-        $timeoutSeconds = $spec->timeoutSeconds ?? $context->timeoutSeconds();
+        $timeoutSeconds = max(0, $spec->timeoutSeconds ?? $context->timeoutSeconds() ?? 0);
 
         $detached = false;
 
         try {
-            // Wait loop: poll process output and check for observer/decision hooks.
+            // Wait loop: poll process output and check for cancellation/timeout.
             $this->waitForProcess($process, $context, $timeoutSeconds);
 
             $durationMs = (int) ((hrtime(true) - $startedAt) / 1_000_000);
             $timedOut = $this->isTimedOut($process, $timeoutSeconds, $durationMs);
-            $cancelled = $this->isCancelled($process, $context, $durationMs, $timeoutSeconds);
+            $cancelled = $this->isCancelled($process, $context, $timeoutSeconds);
             $exitCode = $process->isRunning() ? null : $process->getExitCode();
 
             // If the process is still running but past timeout, terminate it.
@@ -192,29 +195,39 @@ final class ForegroundProcessRunner
 
     /**
      * Check if cancellation was requested during or after process execution.
+     *
+     * Two paths indicate cancellation:
+     * 1. The cancellation token was requested (cooperative cancellation via
+     *    run-level CancellationToken in ToolExecutionContext).
+     * 2. Symfony reports the process was terminated by a signal. This can
+     *    happen when the controller's cancellation hook kills the foreground
+     *    process group externally, or when a user sends a signal directly.
      */
-    private function isCancelled(Process $process, ToolExecutionContextInterface $context, int $durationMs, int $timeoutSeconds): bool
+    private function isCancelled(Process $process, ToolExecutionContextInterface $context, int $timeoutSeconds): bool
     {
         // Check the cancellation token.
         if ($context->cancellationToken()->isCancellationRequested()) {
             return true;
         }
 
-        // If the process was killed by SIGTERM/SIGKILL (exit code -1 on Unix),
-        // it may have been terminated by the controller's cancellation hook.
-        if (!$process->isRunning()) {
-            $exitCode = $process->getExitCode();
-            if (-1 === $exitCode || -9 === $exitCode || -15 === $exitCode) {
-                // Could be cancellation — check the token to be sure.
-                return $context->cancellationToken()->isCancellationRequested();
-            }
+        if ($process->isRunning()) {
+            return false;
         }
 
-        return false;
+        try {
+            return $process->hasBeenSignaled();
+        } catch (\LogicException|\RuntimeException) {
+            return false;
+        }
     }
 
     /**
      * Busy-wait for process completion, with periodic cancellation checks.
+     *
+     * When cancellation is detected, we stop waiting immediately. The caller
+     * will then see $process->isRunning() === true and terminate the process
+     * via ToolProcessTerminator (above). The controller's cancellation hook
+     * may also terminate the process group in parallel.
      */
     private function waitForProcess(Process $process, ToolExecutionContextInterface $context, int $timeoutSeconds): void
     {
@@ -222,14 +235,12 @@ final class ForegroundProcessRunner
 
         while ($process->isRunning()) {
             if ($context->cancellationToken()->isCancellationRequested()) {
-                // Mark cancelled — the caller's finally block will unregister.
-                // The process will be terminated by the controller's cancellation hook.
-                // We just stop waiting and return.
+                // Stop waiting — the caller will handle cancellation.
                 return;
             }
 
             if (null !== $deadline && microtime(true) >= $deadline) {
-                // Timeout reached — let the caller handle termination.
+                // Timeout reached — the caller will terminate the process.
                 return;
             }
 
