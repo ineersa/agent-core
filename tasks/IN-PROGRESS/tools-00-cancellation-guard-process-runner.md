@@ -43,15 +43,23 @@ Out of scope:
 - Validation includes focused Castor/PHPUnit tests, `castor deptrac`, and a controller-level Castor workflow (`castor test:controller`) if controller cancellation wiring is changed.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/tools-00-cancellation-guard-process-runner
+Worktree: /home/ineersa/projects/agent-core-worktrees/tools-00-cancellation-guard-process-runner
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-26T16:08:33.510Z
 Completed:
 
 ## Work log
 - Created: 2026-05-17T21:15:48.702Z
 - Updated: 2026-05-25 — replaced monolithic `CancellableProcessRunner` cancellation polling design with cross-process foreground process registry, shared terminator, `ForegroundProcessRunner`, and controller-owned cancellation termination.
+
+## Task workflow update - 2026-05-26T16:08:33.510Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/tools-00-cancellation-guard-process-runner.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/tools-00-cancellation-guard-process-runner.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/tools-00-cancellation-guard-process-runner.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/tools-00-cancellation-guard-process-runner.
+- Summary: Started as part of wave 1 tools foundation per toolbox design plan.
