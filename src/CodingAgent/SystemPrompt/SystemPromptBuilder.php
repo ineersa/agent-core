@@ -63,11 +63,15 @@ final readonly class SystemPromptBuilder
      *
      * @return string Fully rendered system prompt
      *
-     * @throws \RuntimeException When the built-in template is missing
+     * @throws \RuntimeException When the built-in template is missing or CWD is not configured
      */
     public function build(): string
     {
-        $cwd = '' !== $this->appConfig->cwd ? rtrim($this->appConfig->cwd, '/') : $this->projectDir;
+        if ('' === $this->appConfig->cwd) {
+            throw new \RuntimeException('CWD is not configured. Ensure AppConfig::$cwd is set.');
+        }
+
+        $cwd = rtrim($this->appConfig->cwd, '/');
 
         // Resolve and render the base template.
         $baseContent = $this->loadBaseTemplate($cwd);

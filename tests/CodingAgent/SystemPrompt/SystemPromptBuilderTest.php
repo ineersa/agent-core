@@ -359,22 +359,16 @@ final class SystemPromptBuilderTest extends TestCase
         $this->assertStringContainsString('CWD: '.$this->tmpDir, $result);
     }
 
-    public function testEmptyCwdFallsBackToProjectDir(): void
+    public function testEmptyCwdThrows(): void
     {
-        // Create builder with empty CWD in AppConfig, pointing at a bogus project dir.
+        // Create builder with empty CWD in AppConfig.
         $bogusDir = $this->tmpDir.'/bogus-project';
         $builder = $this->createBuilder(null, $bogusDir, '');
 
-        // Override SYSTEM.md in the bogus project dir to prove empty CWD
-        // uses projectDir, not getcwd().
-        $overrideDir = $bogusDir.'/config';
-        mkdir($overrideDir, 0777, true);
-        file_put_contents($overrideDir.'/SYSTEM.md', 'Project fallback: {date}');
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('CWD is not configured');
 
-        $result = $builder->build();
-
-        $this->assertStringContainsString('Project fallback:', $result);
-        $this->assertStringContainsString(date('Y-m-d'), $result);
+        $builder->build();
     }
 
     /* ───────── Error cases ───────── */
