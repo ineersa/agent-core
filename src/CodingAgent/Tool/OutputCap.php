@@ -4,15 +4,18 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
+use Ineersa\CodingAgent\Config\OutputCapConfig;
+
 /**
  * Reusable output capping and persistence for text-producing tools.
  *
  * Applies a configurable character limit to tool output. Oversized text is
- * persisted to disk under .hatfield/tmp/output-cap/ and replaced with a
- * model-facing notice containing the saved path and inspection hints.
+ * persisted to disk under a configurable storage directory and replaced with
+ * a model-facing notice containing the saved path and inspection hints.
  *
- * Settings defaults (20K code, 50K docs, 24h retention) can be wired from
- * Hatfield settings by TOOLS-R04.
+ * Settings (defaults, storage path, caps, retention) hydrate from Hatfield
+ * config via {@see OutputCapConfig}. Use the constructor parameters to
+ * override specific values for testing.
  *
  * @see .pi/plans/toolbox-design-plan.md § "Output capping (OutputCap)"
  */
@@ -27,41 +30,57 @@ final class OutputCap
     private readonly int $defaultCap;
     private readonly int $docCap;
     private readonly int $retentionSeconds;
+    private readonly ?string $sessionPrefix;
     private bool $cleanedUp = false;
 
     /**
-     * @param string|null $storageDir       Directory for persisted output files.
-     *                                      Defaults to <cwd>/.hatfield/tmp/output-cap/.
-     * @param int         $defaultCap       default char cap for non-doc paths (default 20,000)
-     * @param int         $docCap           char cap for doc-like paths (default 50,000)
-     * @param int         $retentionSeconds max age in seconds before stale files are
-     *                                      cleaned up (default 86,400 = 24h)
+     * @param OutputCapConfig|null $config           Resolved cap settings from Hatfield config.
+     *                                               When null, built-in defaults are used (primarily
+     *                                               for testing); production should always inject a
+     *                                               configured instance via DI.
+     * @param string|null          $storageDir       override storage directory (takes precedence
+     *                                               over config)
+     * @param int|null             $defaultCap       override default char cap (takes precedence
+     *                                               over config)
+     * @param int|null             $docCap           override doc-like char cap (takes precedence
+     *                                               over config)
+     * @param int|null             $retentionSeconds override retention (takes precedence over
+     *                                               config)
+     * @param string|null          $sessionPrefix    Override session prefix for filenames (takes
+     *                                               precedence over config). Use null for date-based
+     *                                               prefix.
      */
     public function __construct(
+        ?OutputCapConfig $config = null,
         ?string $storageDir = null,
-        int $defaultCap = 20000,
-        int $docCap = 50000,
-        int $retentionSeconds = 86400,
+        ?int $defaultCap = null,
+        ?int $docCap = null,
+        ?int $retentionSeconds = null,
+        ?string $sessionPrefix = null,
     ) {
-        $this->storageDir = $storageDir ?? getcwd().'/.hatfield/tmp/output-cap';
-        $this->defaultCap = $defaultCap;
-        $this->docCap = $docCap;
-        $this->retentionSeconds = $retentionSeconds;
+        $cfg = $config ?? new OutputCapConfig(
+            storageDir: self::resolveFallbackDir(),
+        );
+
+        $this->storageDir = $storageDir ?? $cfg->storageDir;
+        $this->defaultCap = $defaultCap ?? $cfg->defaultCap;
+        $this->docCap = $docCap ?? $cfg->docCap;
+        $this->retentionSeconds = $retentionSeconds ?? $cfg->retentionSeconds;
+        $this->sessionPrefix = $sessionPrefix ?? $cfg->sessionPrefix;
     }
 
     /**
      * Process text through output capping.
      *
      * If the text fits within the applicable cap (determined by $path
-     * extension), it is returned unchanged.  Otherwise the full text is
+     * extension), it is returned unchanged. Otherwise the full text is
      * persisted to disk and a model-facing capped notice is returned.
      *
-     * Cleanup of stale persisted files runs once on first call (see
-     * __construct docblock for rationale).
+     * Cleanup of stale persisted files runs once on first call.
      *
      * @param string      $text the raw tool output
      * @param string|null $path Optional file path used to determine doc vs.
-     *                          code cap.  Null paths use the default cap.
+     *                          code cap. Null paths use the default cap.
      *
      * @return string the original text, or a capped notice with saved path
      *                and inspection hints
@@ -87,26 +106,29 @@ final class OutputCap
      * Useful when a consumer (e.g. bash tool) always wants full output
      * saved regardless of whether it exceeds the cap.
      *
+     * Stale-file cleanup runs once on first call, matching process()
+     * behaviour.
+     *
      * @param string $text the text to persist
      *
      * @return string absolute path to the saved file
+     *
+     * @throws \RuntimeException when the storage directory cannot be
+     *                           created or the file cannot be written
      */
     public function persist(string $text): string
     {
-        $dir = $this->storageDir;
+        $this->maybeCleanup();
 
-        if (!is_dir($dir)) {
-            @mkdir($dir, 0777, true);
+        $this->ensureStorageDirExists();
+
+        $filename = $this->buildFilename();
+        $filePath = $this->storageDir.'/'.$filename;
+
+        $written = @file_put_contents($filePath, $text, \LOCK_EX);
+        if (false === $written) {
+            throw new \RuntimeException(\sprintf('Failed to write output cap file: %s', $filePath));
         }
-
-        $filename = \sprintf(
-            '%s-%s.txt',
-            date('Ymd'),
-            bin2hex(random_bytes(8)),
-        );
-        $filePath = $dir.'/'.$filename;
-
-        file_put_contents($filePath, $text, \LOCK_EX);
 
         return $filePath;
     }
@@ -114,8 +136,8 @@ final class OutputCap
     /**
      * Delete stored files older than the configured retention period.
      *
-     * Called automatically on first use (see maybeCleanup), but exposed
-     * publicly so session hooks or scheduled tasks can trigger it explicitly.
+     * Called automatically on first use, but exposed publicly so session
+     * hooks or scheduled tasks can trigger it explicitly.
      */
     public function cleanup(): void
     {
@@ -148,12 +170,10 @@ final class OutputCap
     }
 
     /**
-     * Run cleanup once on first process() call.
+     * Run cleanup once on first use (process() or persist()).
      *
      * Chose first-use invocation over constructor because cleanup is an
      * I/O operation that should not happen during container/DI wiring.
-     * TOOLS-R04 can wire session-start hooks to call cleanup() explicitly
-     * if eager cleanup is desired.
      */
     private function maybeCleanup(): void
     {
@@ -163,6 +183,39 @@ final class OutputCap
 
         $this->cleanedUp = true;
         $this->cleanup();
+    }
+
+    /**
+     * Ensure the storage directory exists with restrictive permissions.
+     *
+     * @throws \RuntimeException when the directory cannot be created
+     */
+    private function ensureStorageDirExists(): void
+    {
+        if (is_dir($this->storageDir)) {
+            return;
+        }
+
+        if (!@mkdir($this->storageDir, 0750, true) && !is_dir($this->storageDir)) {
+            throw new \RuntimeException(\sprintf('Failed to create output cap storage directory: %s', $this->storageDir));
+        }
+    }
+
+    /**
+     * Build a unique filename for a persisted output file.
+     *
+     * Format: <prefix>-<random-hex>.txt
+     * Prefix is the session prefix when set, otherwise today's date (Ymd).
+     */
+    private function buildFilename(): string
+    {
+        $prefix = $this->sessionPrefix ?? date('Ymd');
+
+        return \sprintf(
+            '%s-%s.txt',
+            $prefix,
+            bin2hex(random_bytes(8)),
+        );
     }
 
     /**
@@ -208,5 +261,28 @@ final class OutputCap
             $savedPath,
             $savedPath,
         );
+    }
+
+    /**
+     * Fallback storage dir when neither config nor explicit path is given.
+     *
+     * Avoids silent root-filesystem paths by raising an exception when
+     * getcwd() fails, matching AppConfig::resolveCurrentWorkingDirectory().
+     *
+     * This path is only reached in tests or edge cases where OutputCap is
+     * constructed without any configuration — production always injects
+     * OutputCapConfig via DI.
+     *
+     * @throws \RuntimeException when no current working directory is available
+     */
+    private static function resolveFallbackDir(): string
+    {
+        $cwd = getcwd();
+
+        if (false === $cwd) {
+            throw new \RuntimeException('No current working directory available.');
+        }
+
+        return $cwd.'/.hatfield/tmp/output-cap';
     }
 }

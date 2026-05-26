@@ -403,6 +403,7 @@ parameters:
 
     AppTool:
       - AgentCore
+      - AppConfig
       - SymfonyAiPlatform
 
     AppExtensionApi: ~

@@ -88,6 +88,12 @@ services:
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 
+  # OutputCapConfig is derived from AppConfig and autowireable.
+  Ineersa\CodingAgent\Config\OutputCapConfig:
+    factory: ['Ineersa\CodingAgent\Config\OutputCapConfig', 'fromAppConfig']
+    arguments:
+      - '@Ineersa\CodingAgent\Config\AppConfig'
+
   Ineersa\CodingAgent\Session\HatfieldSessionStore: ~
 
   Ineersa\AgentCore\Infrastructure\SymfonyAi\BeforeProviderRequestSubscriber:
