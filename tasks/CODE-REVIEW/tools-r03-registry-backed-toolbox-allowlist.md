@@ -87,3 +87,8 @@ Completed:
 ## Task workflow update - 2026-05-26T23:40:18.661Z
 - Recorded fork run: vo4138t69n04
 - Summary: Launched follow-up fork vo4138t69n04 for PR #58 design refinement: add reusable tool-author helper/runtime exposing simple run path and foreground cancellable process polling path, keep RegistryBackedToolbox thin, avoid central PID registry/ForegroundProcessRunner/ToolCancelledException, update docs and tests.
+
+## Task workflow update - 2026-05-26T23:43:36.142Z
+- Recorded fork run: vo4138t69n04
+- Validation: castor cache:clear: ok; castor test --filter="ToolRuntimeTest": ok (10 tests, 29 assertions); castor test --filter="RegistryBackedToolbox|ToolExecutor|ToolRuntime": ok (31 tests, 82 assertions); castor test: ok (1061 tests, 10195 assertions); castor deptrac: ok (0 violations, 0 errors, uncovered=376, allowed=761); castor cs-check: ok (0 files fixed after cs-fix); gh pr view 58: OPEN, mergeStateStatus CLEAN, head 2201b715
+- Summary: Completed ToolRuntime helper: added CancellableProcessResult DTO and ToolRuntime service with run(callable) cancellation checkpoint wrapper and runCancellableProcess(Process, ...) polling helper. ToolRuntime autowired via StackToolExecutionContextAccessor. RegistryBackedToolbox::execute() stays thin (lookup → invoke → wrap). docs/tool-execution.md updated with ToolRuntime section and cancellation contract. PR #58 head updated to 2201b715, merge state CLEAN.
