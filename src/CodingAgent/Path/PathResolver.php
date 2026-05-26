@@ -183,7 +183,9 @@ final class PathResolver
      *  1. $HOME environment variable
      *  2. $USERPROFILE environment variable (Windows)
      *  3. posix_getpwuid() system call
-     *  4. Fallback to /tmp
+     *
+     * Throws when no home directory can be resolved; tools should fail loudly
+     * instead of silently writing under a fallback directory.
      *
      * @see \Ineersa\CodingAgent\Config\SettingsPathResolver for details
      */
@@ -208,6 +210,6 @@ final class PathResolver
             }
         }
 
-        return '/tmp';
+        throw new \RuntimeException('Unable to resolve current user home directory.');
     }
 }
