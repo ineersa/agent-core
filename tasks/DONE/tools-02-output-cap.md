@@ -29,14 +29,14 @@ Out of scope:
 - Focused tests pass with Castor/PHPUnit.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/tools-02-output-cap
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-02-output-cap
 Fork run: iacc0j9g85c1
 PR URL: https://github.com/ineersa/agent-core/pull/56
-PR Status: open
+PR Status: merged
 Started: 2026-05-26T16:08:52.732Z
-Completed:
+Completed: 2026-05-26T22:50:33.556Z
 
 ## Work log
 - Created: 2026-05-17T04:42:04.932Z
@@ -84,3 +84,46 @@ Completed:
 ## Task workflow update - 2026-05-26T22:49:44.864Z
 - Validation: castor test --filter=OutputCapTest: ok (tests=28, assertions=52, errors=0, failures=0, skipped=0); castor cs-check: ok (files_fixed=0); castor deptrac: ok (violations=0, errors=0, uncovered=357, allowed=760)
 - Summary: Addressed final PR #56 review comment by removing duplicated scalar config properties from OutputCap; OutputCap now reads storage path, caps, retention, and session prefix directly from the injected OutputCapConfig DTO.
+
+## Task workflow update - 2026-05-26T22:50:33.557Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/tools-02-output-cap into integration checkout.
+- Merge made by the 'ort' strategy.
+ .hatfield/settings.yaml                            |  24 ++
+ config/hatfield.defaults.yaml                      |  36 ++
+ config/services.yaml                               |   7 +
+ depfile.yaml                                       |   1 +
+ docs/settings.md                                   |  44 +++
+ src/CodingAgent/Config/AppConfig.php               |  59 ++-
+ src/CodingAgent/Config/AppConfigLoader.php         |   7 +
+ src/CodingAgent/Config/ExtensionsConfig.php        |  23 ++
+ src/CodingAgent/Config/LoggingConfig.php           |  60 ++-
+ src/CodingAgent/Config/OutputCapConfig.php         |  48 +++
+ src/CodingAgent/Config/SessionsConfig.php          |  25 ++
+ src/CodingAgent/Config/SettingsPathResolver.php    |  38 +-
+ src/CodingAgent/Config/ToolsConfig.php             |  22 ++
+ src/CodingAgent/Config/TuiConfig.php               |  10 +-
+ src/CodingAgent/Extension/ExtensionManager.php     |   2 +-
+ src/CodingAgent/Session/HatfieldSessionStore.php   |   9 +-
+ src/CodingAgent/Tool/OutputCap.php                 | 226 ++++++++++++
+ .../Infrastructure/SymfonyAi/LlamaCppSmokeTest.php |   3 +-
+ .../Infrastructure/SymfonyAi/TraceReplayTest.php   |   3 +-
+ tests/CodingAgent/Config/Ai/AiConfigTest.php       | 221 ++++++------
+ .../Config/ModelSelectionServiceTest.php           |   3 +-
+ .../Config/SessionAwareModelResolverTest.php       |   3 +-
+ .../CodingAgent/Extension/ExtensionManagerTest.php |  22 +-
+ .../Session/HatfieldSessionStoreTest.php           |   3 +-
+ tests/CodingAgent/Tool/OutputCapTest.php           | 401 +++++++++++++++++++++
+ tests/Tui/Listener/ModelCommandHandlerTest.php     |   3 +-
+ tests/Tui/Picker/ModelPickerControllerTest.php     |   3 +-
+ 27 files changed, 1122 insertions(+), 184 deletions(-)
+ create mode 100644 src/CodingAgent/Config/ExtensionsConfig.php
+ create mode 100644 src/CodingAgent/Config/OutputCapConfig.php
+ create mode 100644 src/CodingAgent/Config/SessionsConfig.php
+ create mode 100644 src/CodingAgent/Config/ToolsConfig.php
+ create mode 100644 src/CodingAgent/Tool/OutputCap.php
+ create mode 100644 tests/CodingAgent/Tool/OutputCapTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/tools-02-output-cap.
+- Pulled integration checkout: Already up to date..
+- Validation: castor test --filter=OutputCapTest: ok (tests=28, assertions=52); castor cs-check: ok; castor deptrac: ok (violations=0, errors=0)
+- Summary: Merged TOOLS-02 after addressing final PR #56 comment. Final branch commit c824ae01 removes duplicated OutputCap scalar config properties and reads directly from OutputCapConfig.
