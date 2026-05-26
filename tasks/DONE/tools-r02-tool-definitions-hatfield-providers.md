@@ -41,14 +41,14 @@ Out of scope:
 - `castor deptrac` passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/tools-r02-tool-definitions-hatfield-providers
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-r02-tool-definitions-hatfield-providers
 Fork run: dcyj12i3moqi
 PR URL: https://github.com/ineersa/agent-core/pull/57
-PR Status: open
+PR Status: merged
 Started: 2026-05-26T16:07:55.221Z
-Completed:
+Completed: 2026-05-26T23:20:03.867Z
 
 ## Work log
 - Created: 2026-05-25T20:00:00.000Z — split from monolithic TOOLS-R02.
@@ -76,3 +76,27 @@ Completed:
 ## Task workflow update - 2026-05-26T23:18:42.719Z
 - Validation: castor cache:clear: ok; castor test --filter="ToolRegistry|ToolDefinition|ExtensionToolRegistryBridge": ok (41 tests, 94 assertions); castor test: ok (1037 tests, 10133 assertions); castor deptrac: ok (0 violations, 0 errors, uncovered=364, allowed=761); castor cs-check: ok; gh pr view 57 --json mergeStateStatus: CLEAN
 - Summary: Addressed review question about Kernel::boot() tool registration. Removed BuiltInToolRegistrar and Kernel tool-registration side effect. ToolRegistry now accepts tagged HatfieldToolProviderInterface providers in its constructor and seeds permanent tool definitions internally. services.yaml wires ToolRegistry::$providers with !tagged_iterator hatfield.tool_provider. PR #57 updated to head 5adf448f and merge state CLEAN.
+
+## Task workflow update - 2026-05-26T23:20:03.867Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/tools-r02-tool-definitions-hatfield-providers into integration checkout.
+- Merge made by the 'ort' strategy.
+ config/services.yaml                               |  10 ++
+ .../Extension/ExtensionToolRegistryBridge.php      |   9 +-
+ .../Tool/HatfieldToolProviderInterface.php         |  29 ++++
+ src/CodingAgent/Tool/ToolDefinitionDTO.php         |  38 +++++
+ src/CodingAgent/Tool/ToolHandlerInterface.php      |  33 +++++
+ src/CodingAgent/Tool/ToolRegistry.php              | 105 +++++++++++---
+ src/CodingAgent/Tool/ToolRegistryInterface.php     |  36 ++++-
+ .../Extension/ExtensionToolRegistryBridgeTest.php  |  71 ++++++---
+ .../SystemPrompt/SystemPromptBuilderTest.php       |   7 +-
+ tests/CodingAgent/Tool/ToolRegistryTest.php        | 161 ++++++++++++++++++++-
+ 10 files changed, 448 insertions(+), 51 deletions(-)
+ create mode 100644 src/CodingAgent/Tool/HatfieldToolProviderInterface.php
+ create mode 100644 src/CodingAgent/Tool/ToolDefinitionDTO.php
+ create mode 100644 src/CodingAgent/Tool/ToolHandlerInterface.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/tools-r02-tool-definitions-hatfield-providers.
+- Deleted branch task/tools-r02-tool-definitions-hatfield-providers.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR #57 merged on GitHub; Final PR head included review fix removing Kernel::boot() tool-registration side effect
+- Summary: PR #57 was merged on GitHub. Marking TOOLS-R02 complete after review fix: built-in providers are now seeded by ToolRegistry constructor via tagged iterator rather than Kernel::boot()/BuiltInToolRegistrar.
