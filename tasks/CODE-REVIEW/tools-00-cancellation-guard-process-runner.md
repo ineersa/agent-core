@@ -128,3 +128,8 @@ Completed:
 ## Task workflow update - 2026-05-26T22:42:14.120Z
 - Recorded fork run: dxm1z8gqhxl9
 - Summary: Launched follow-up fork dxm1z8gqhxl9 to address latest PR #55 comments on simplified TOOLS-00: remove CancellationGuard, remove unused ToolCancelledException, remove unnecessary ToolExecutionContextAccessorInterface/concrete-only if feasible, clarify ConsumerSupervisor shutdown as controller shutdown not run cancellation, and replace ToolSettings manual array walking with typed DTO denormalization via Symfony Serializer while keeping scope tight.
+
+## Task workflow update - 2026-05-26T22:51:17.407Z
+- Recorded fork run: dxm1z8gqhxl9
+- Validation: castor cache:clear: OK; castor test --filter="ToolExecutor|ToolContext|StackToolExecutionContextAccessor|ToolSettings|ConsumerSupervisor": OK (13 tests, 34 assertions); castor deptrac: OK (0 violations, 352 uncovered, 758 allowed); castor cs-check: OK after cs-fix; castor test: OK (998 tests, 10044 assertions)
+- Summary: Follow-up fork dxm1z8gqhxl9 completed and pushed commit 88e3fdfd to PR #55. It removed CancellationGuard, ToolCancelledException, and ToolExecutionContextAccessorInterface; refactored ToolSettings to denormalize tools.execution into typed ToolExecutionConfig DTO via Symfony DenormalizerInterface; clarified ConsumerSupervisor shutdown as controller/runtime shutdown rather than run cancellation; kept only minimal current ToolContext/StackToolExecutionContextAccessor cancellation-token access.
