@@ -96,50 +96,115 @@ class MyTool implements ToolHandlerInterface
 }
 ```
 
-### Long-running process tools (bash, patch, etc.)
+## ToolRuntime helper
 
-Tool handlers that own a foreground Symfony Process should NOT use `run()` or `mustRun()` because those methods block until the process finishes with no cancellation support. Instead, use `start()` with a polling loop:
+`ToolRuntime` (`Ineersa\CodingAgent\Tool\ToolRuntime`) is an injectable helper
+that provides two standard execution paths so tool authors do not need to
+reimplement cancellation polling logic:
+
+1. **`run(callable $callback): mixed`** — simple cancellation checkpoint wrapper.  
+2. **`runCancellableProcess(Process, ...): CancellableProcessResult`** — process
+   polling with cooperative cancellation and monotonic timeout.
+
+The helper is autowired via its `StackToolExecutionContextAccessor` dependency.
+All tool handlers may inject it, regardless of registration source (permanent,
+dynamic, extension).
+
+### Simple tools — `run()`
+
+For tools that have quick, non-blocking execution but want cancellation
+checkpoints before and after the main work:
 
 ```php
-public function __invoke(array $arguments): mixed
+class MyTool implements ToolHandlerInterface
 {
-    $context = $this->contextAccessor->requireCurrent();
-    $cancelToken = $context->cancellationToken();
-    $timeoutSeconds = $context->timeoutSeconds();
-
-    $process = new Process([...]);
-    $process->setTimeout(null);         // We manage timeout ourselves.
-    $process->setIdleTimeout(null);
-    $process->start();
-
-    $deadline = $timeoutSeconds > 0
-        ? hrtime(true) + $timeoutSeconds * 1_000_000_000
-        : null;
-
-    while ($process->isRunning()) {
-        // Cooperative cancellation check.
-        if ($cancelToken->isCancellationRequested()) {
-            $process->stop(5);   // SIGTERM → SIGKILL after 5s grace
-            return ['cancelled' => true, 'stdout' => $process->getOutput()];
-        }
-
-        // Monotonic timeout check.
-        if (null !== $deadline && hrtime(true) > $deadline) {
-            $process->stop(5);
-            return ['timed_out' => true, 'stdout' => $process->getOutput()];
-        }
-
-        // Small sleep to avoid busy-wait.
-        usleep(100_000); // 100ms
+    public function __construct(
+        private ToolRuntime $toolRuntime,
+    ) {
     }
 
-    return [
-        'stdout' => $process->getOutput(),
-        'stderr' => $process->getErrorOutput(),
-        'exit_code' => $process->getExitCode(),
-    ];
+    public function __invoke(array $arguments): mixed
+    {
+        return $this->toolRuntime->run(function () use ($arguments) {
+            // Fast synchronous work.
+            return doSomething($arguments['path']);
+        });
+    }
 }
 ```
+
+If cancellation is requested before the callback, `run()` throws a
+`\RuntimeException` which `ToolExecutor` catches and converts into a
+structured error result with `['cancelled' => true]`. If cancellation
+is detected after the callback returns, it throws with a stale-result
+message.
+
+### Long-running process tools — `runCancellableProcess()`
+
+For tools that own a foreground `Symfony\Component\Process\Process` (bash,
+patch, etc.), use `runCancellableProcess()` instead of writing a manual
+polling loop:
+
+```php
+use Ineersa\CodingAgent\Tool\ToolRuntime;
+use Symfony\Component\Process\Process;
+
+class BashTool implements ToolHandlerInterface
+{
+    public function __construct(
+        private ToolRuntime $toolRuntime,
+    ) {
+    }
+
+    public function __invoke(array $arguments): mixed
+    {
+        $process = new Process([...]);
+
+        $result = $this->toolRuntime->runCancellableProcess(
+            $process,
+            graceSeconds: 5,
+            timeoutSeconds: null,        // defaults to ToolContext timeout
+            pollIntervalMicros: 100_000, // 100ms
+        );
+
+        return $result->toArray();
+    }
+}
+```
+
+`runCancellableProcess()`:
+
+1. Disables Symfony's built-in timeout/idle-timeout (the helper manages
+   timing itself).
+2. Calls `$process->start()`. Never uses `run()`/`mustRun()`.
+3. Polls `$process->isRunning()` at `$pollIntervalMicros` intervals.
+4. On each iteration, checks the ambient `ToolContext` cancellation token
+   and a monotonic deadline computed from the effective timeout.
+5. On cancellation or timeout, calls `Process::stop($graceSeconds)` which
+   sends SIGTERM then SIGKILL after the grace period — the same reliable
+   pattern Symfony uses internally.
+6. Returns a `CancellableProcessResult` DTO with `stdout`, `stderr`,
+   `exitCode`, `cancelled`, and `timedOut` properties. The handler
+   calls `$result->toArray()` to produce a structured LLM response.
+
+**Timeout resolution order:** explicit `$timeoutSeconds` parameter >
+`ToolContext::timeoutSeconds()` > no timeout. Pass `null` to inherit
+from the ambient context.
+
+### Cancellation contract for tool authors
+
+- **Every tool handler** that may take non-trivial time should cooperate
+  with cancellation by using `ToolRuntime::run()` or polling the
+  `CancellationTokenInterface` directly from `StackToolExecutionContextAccessor`.
+- **Process-owning tools** must always use `Process::start()` + polling, not
+  `run()`/`mustRun()`, so they can respond to cancellation and timeout.
+- **Arbitrary blocking PHP code cannot be preemptively cancelled** from outside
+  without process isolation. If a handler blocks in pure PHP (no subprocess)
+  and never checks the cancellation token, `ToolExecutor` can only detect
+  cancellation before the handler starts or mark the result stale after it
+  returns.
+- **Do not throw `ToolCancelledException` or use `CancellationGuard`.** Return
+  structured results with `cancelled`/`timed_out` flags instead.`
 
 Key patterns:
 - **No `run()`/`mustRun()`** for cancellable commands.
