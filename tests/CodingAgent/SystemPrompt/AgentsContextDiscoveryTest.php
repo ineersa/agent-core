@@ -175,6 +175,34 @@ final class AgentsContextDiscoveryTest extends TestCase
         $this->assertCount(0, $results);
     }
 
+    /* ───────── Edge cases ───────── */
+
+    public function testDiscoversAgentsMdUppercaseWhenOnlyThatExists(): void
+    {
+        // Only AGENTS.MD (uppercase) exists — should still be discovered.
+        file_put_contents($this->tmpDir.'/AGENTS.MD', 'uppercase only');
+
+        $discovery = $this->createDiscovery($this->tmpDir);
+
+        $results = $discovery->discover();
+
+        $this->assertCount(1, $results);
+        $this->assertStringEndsWith('AGENTS.MD', $results[0]['path']);
+        $this->assertSame('uppercase only', $results[0]['content']);
+    }
+
+    public function testAncestorWalkTerminatesAtFilesystemRoot(): void
+    {
+        // CWD is a known shallow dir (/tmp). The walk upward should
+        // terminate at filesystem root without infinite looping.
+        $discovery = $this->createDiscovery(cwd: '/tmp');
+
+        $results = $discovery->discover();
+
+        // Should return without hanging or throwing.
+        $this->assertIsArray($results);
+    }
+
     /* ───────── Error cases ───────── */
 
     public function testEmptyCwdThrows(): void

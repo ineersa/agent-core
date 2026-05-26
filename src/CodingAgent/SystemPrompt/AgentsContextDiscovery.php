@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\SystemPrompt;
 
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Psr\Log\LoggerInterface;
 
 /**
  * Discovers AGENTS.md project context files for new-session injection.
@@ -34,6 +35,7 @@ final readonly class AgentsContextDiscovery
     public function __construct(
         private SettingsPathResolver $pathResolver,
         private AppConfig $appConfig,
+        private ?LoggerInterface $logger = null,
     ) {
     }
 
@@ -90,8 +92,9 @@ final readonly class AgentsContextDiscovery
             $current = $parent;
         }
 
-        // Read contents of ancestor files (lazy to avoid reading files that
-        // might be deduplicated).
+        // Read contents of ancestor files in a second pass.
+        // Content is read after collecting all paths to minimize I/O —
+        // only files that survive deduplication are read.
         foreach ($ancestorFiles as $item) {
             $content = $this->readFile($item['filePath']);
             if (null !== $content) {
@@ -132,12 +135,22 @@ final readonly class AgentsContextDiscovery
 
     /**
      * Read file contents, returning null on failure.
+     *
+     * Logs a warning via the injected PSR-3 logger when available.
      */
     private function readFile(string $path): ?string
     {
         $content = file_get_contents($path);
 
-        return false !== $content ? $content : null;
+        if (false === $content) {
+            if (null !== $this->logger) {
+                $this->logger->warning('Failed to read AGENTS.md file: {path}', ['path' => $path]);
+            }
+
+            return null;
+        }
+
+        return $content;
     }
 
     /**

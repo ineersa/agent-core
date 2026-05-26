@@ -107,6 +107,29 @@ final class AgentsContextInjectionTest extends TestCase
         $this->assertSame(['system', 'user'], $roles);
     }
 
+    public function testAgentsContextInjectedWithEmptyPrompt(): void
+    {
+        // Create AGENTS.md in the project temp dir
+        file_put_contents($this->tmpDir.'/AGENTS.md', 'Empty prompt instructions');
+
+        $client = $this->createClient();
+        $request = new StartRunRequest(prompt: '');
+        $client->start($request);
+
+        $this->assertNotNull($this->capturedInput);
+
+        $messages = $this->capturedInput->messages;
+        $roles = array_map(static fn (AgentMessage $m) => $m->role, $messages);
+
+        // Expected order: system, user-context (no user message since prompt is empty)
+        $this->assertSame(['system', 'user-context'], $roles);
+
+        // Verify user-context message has the AGENTS.md content
+        $contextMessage = $messages[1];
+        $this->assertSame('user-context', $contextMessage->role);
+        $this->assertStringContainsString('Empty prompt instructions', $contextMessage->content[0]['text']);
+    }
+
     public function testAgentsContextNotInjectedOnResume(): void
     {
         // Even with AGENTS.md present, resume should NOT inject context
