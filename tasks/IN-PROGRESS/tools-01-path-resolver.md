@@ -27,14 +27,22 @@ Out of scope:
 - Focused tests pass with Castor/PHPUnit.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/tools-01-path-resolver
+Worktree: /home/ineersa/projects/agent-core-worktrees/tools-01-path-resolver
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-26T16:08:47.690Z
 Completed:
 
 ## Work log
 - Created: 2026-05-17T04:42:04.933Z
+
+## Task workflow update - 2026-05-26T16:08:47.690Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/tools-01-path-resolver.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/tools-01-path-resolver.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/tools-01-path-resolver.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/tools-01-path-resolver.
+- Summary: Started as part of wave 1 tools foundation per toolbox design plan.
