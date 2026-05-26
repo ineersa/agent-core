@@ -23,14 +23,14 @@ Skills are exposed to the model through `<skills_instructions>` + `<available_sk
 - Validation includes focused Castor tests and `castor deptrac`.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/system-03-skills-registry-discovery-context
 Worktree: /home/ineersa/projects/agent-core-worktrees/system-03-skills-registry-discovery-context
 Fork run:
 PR URL: https://github.com/ineersa/agent-core/pull/53
-PR Status: open
+PR Status: merged
 Started: 2026-05-26T01:15:13.089Z
-Completed:
+Completed: 2026-05-26T03:06:30.689Z
 
 ## Work log
 - Created: 2026-05-25T17:58:35.921Z
@@ -53,3 +53,38 @@ Completed:
 
 ## Task workflow update - 2026-05-26T01:35:19.858Z
 - Summary: Review findings addressed: removed @ suppression in SkillRegistry::readBody(), added final readonly to renderer/builder, fixed misleading comment, 3 new edge-case tests (disabled preload, home discovery, malformed YAML). 47/47 tests pass, deptrac/phpstan/cs-check clean.
+
+## Task workflow update - 2026-05-26T03:06:30.689Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/system-03-skills-registry-discovery-context into integration checkout.
+- Merge made by the 'ort' strategy.
+ depfile.yaml                                       |  11 +
+ phpstan-baseline.neon                              |  68 +---
+ src/CodingAgent/CLI/AgentCommand.php               |  17 +
+ .../InProcess/InProcessAgentSessionClient.php      |  15 +
+ src/CodingAgent/Skills/SkillContextRenderer.php    |  71 ++++
+ src/CodingAgent/Skills/SkillDefinition.php         |  30 ++
+ src/CodingAgent/Skills/SkillDiscovery.php          | 289 ++++++++++++++++
+ src/CodingAgent/Skills/SkillRegistry.php           |  97 ++++++
+ src/CodingAgent/Skills/SkillsConfig.php            |  25 ++
+ src/CodingAgent/Skills/SkillsContextBuilder.php    |  62 ++++
+ .../InProcess/AgentsContextInjectionTest.php       |  24 +-
+ .../InProcess/SkillsContextInjectionTest.php       | 344 +++++++++++++++++++
+ .../Skills/SkillContextRendererTest.php            | 142 ++++++++
+ tests/CodingAgent/Skills/SkillDiscoveryTest.php    | 374 +++++++++++++++++++++
+ tests/CodingAgent/Skills/SkillRegistryTest.php     | 204 +++++++++++
+ .../Skills/SkillsContextBuilderTest.php            | 201 +++++++++++
+ 16 files changed, 1909 insertions(+), 65 deletions(-)
+ create mode 100644 src/CodingAgent/Skills/SkillContextRenderer.php
+ create mode 100644 src/CodingAgent/Skills/SkillDefinition.php
+ create mode 100644 src/CodingAgent/Skills/SkillDiscovery.php
+ create mode 100644 src/CodingAgent/Skills/SkillRegistry.php
+ create mode 100644 src/CodingAgent/Skills/SkillsConfig.php
+ create mode 100644 src/CodingAgent/Skills/SkillsContextBuilder.php
+ create mode 100644 tests/CodingAgent/Runtime/InProcess/SkillsContextInjectionTest.php
+ create mode 100644 tests/CodingAgent/Skills/SkillContextRendererTest.php
+ create mode 100644 tests/CodingAgent/Skills/SkillDiscoveryTest.php
+ create mode 100644 tests/CodingAgent/Skills/SkillRegistryTest.php
+ create mode 100644 tests/CodingAgent/Skills/SkillsContextBuilderTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/system-03-skills-registry-discovery-context.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
