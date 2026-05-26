@@ -677,13 +677,15 @@ Tasks are intentionally small and prefixed with `TOOLS-` so smaller models can i
   - Depends on: TOOLS-R00.
   - Can parallelize with: TOOLS-00, TOOLS-01, TOOLS-02 after TOOLS-R00 has landed. Concrete tool tasks can start registering definitions after this lands.
 
-- **TOOLS-R03** — Registry-backed Symfony Toolbox and execution allowlist enforcement.
-  - Depends on: TOOLS-R02.
-  - Can parallelize with: TOOLS-00, TOOLS-01, TOOLS-02, TOOLS-R04.
+- **TOOLS-R03** — Registry-backed Symfony Toolbox, execution allowlist enforcement, and initial tool execution documentation.
+  - Depends on: TOOLS-R02 and TOOLS-00.
+  - Documents the concrete handler/process contract: handlers execute synchronously in a tool worker; process-owning tools use local `Process::start()` + polling against `ToolContext` cancellation/timeout; no shared foreground process registry/runner.
+  - Can parallelize with: TOOLS-01, TOOLS-02, TOOLS-R04.
 
-- **TOOLS-R04** — Tool settings hydration from Hatfield settings/defaults.
-  - Depends on: TOOLS-R02 (so settings-derived registration defaults are available).
-  - Can parallelize with: TOOLS-R03, TOOLS-00, TOOLS-01, TOOLS-02.
+- **TOOLS-R04** — Remaining tool settings hydration from Hatfield settings/defaults.
+  - Depends on: TOOLS-00 and TOOLS-02 for existing typed execution/output-cap settings, and TOOLS-R02 for provider registration defaults.
+  - Consolidates/extends typed `AppConfig->tools` DTOs for concrete tool settings; no new production reads from `AppConfig::raw['tools']` for known sections.
+  - Can parallelize with: TOOLS-R03, TOOLS-01, TOOLS-02.
 
 - **TOOLS-R05** — Parallel tool execution orchestration.
   - Depends on: TOOLS-R03, TOOLS-R04, TOOLS-00.

@@ -8,6 +8,7 @@ Wire a registry-backed Symfony `ToolboxInterface` adapter and enforce execution 
 Dependencies:
 - Depends on TOOLS-R00 (`ToolRegistryInterface`, `ToolSetResolverInterface`, `ActiveToolSet`).
 - Depends on TOOLS-R02 (`ToolDefinitionDTO`, `HatfieldToolProviderInterface`, `activeToolDefinitions()`, `toolDefinition()`, typed handler).
+- Depends on TOOLS-00 for the final minimal tool execution context (`ToolContext`, `StackToolExecutionContextAccessor`) and settings-backed ToolExecutor baseline.
 - Should land before or alongside concrete tool tasks that need callable execution.
 
 Scope:
@@ -22,9 +23,17 @@ Scope:
   - Propagate `toolsRef` from `ExecuteLlmStep`/`LlmStepResult` into `ExecuteToolCall`/`ToolCall` context so execution checks the same turn snapshot. If a message shape change is needed, add migration-safe tests.
 - Ensure `ToolExecutor` no longer reports toolbox integration as unavailable when the registry-backed Toolbox is wired.
 - Registry-only tools (definition present but no execution handler) must not appear in provider schemas. If a definition has a null/missing handler, `RegistryBackedToolbox::getTools()` should skip it or throw during registration.
+- Start tool authoring documentation (for example `docs/tool-execution.md`) that explains the runtime contract for tool handlers:
+  - Handlers run synchronously inside a Messenger `tool` worker through `RegistryBackedToolbox::execute()`.
+  - Tools that need run/tool metadata, timeout, or cancellation inject `StackToolExecutionContextAccessor` and call `requireCurrent()`.
+  - Long-running process tools own their foreground `Symfony\Component\Process\Process` locally: use `start()`, poll with a small sleep/backoff, check `requireCurrent()->cancellationToken()->isCancellationRequested()`, check a monotonic timeout deadline, then call `Process::stop($graceSeconds)` and collect stdout/stderr. Do not use `run()`/`mustRun()` for cancellable long-running commands.
+  - Do not pass `SIGTERM` as the second argument to `Process::stop()` unless intentionally replacing Symfony's default final `SIGKILL`; the normal reliable pattern is `stop($graceSeconds)`.
+  - No central foreground PID registry/process runner exists after TOOLS-00; background tools will own durable background process tracking separately.
+  - Cancellation should return a normal structured tool result/status from the concrete tool; do not reintroduce `ToolCancelledException` or a generic cancellation guard until a real tool proves it is needed.
+  - Large text output should flow through `OutputCap` before returning to the model.
 
 Out of scope:
-- `ToolSettings` / settings hydration (TOOLS-R04).
+- Additional `ToolSettings` / settings hydration beyond consuming the TOOLS-00/TOOLS-02 typed config that already exists (remaining settings cleanup belongs to TOOLS-R04).
 - Concrete tool implementations.
 - Persistent per-turn toolset store.
 
@@ -36,6 +45,7 @@ Out of scope:
 - `toolsRef` propagates from LLM step into tool execution context for allowlist lookup.
 - Registry-only tools without handlers do not appear in provider schemas.
 - Focused tests cover: definition-to-Tool conversion, handler invocation for all three registration sources, allowlist denial, toolsRef propagation.
+- Tool execution documentation describes the concrete process polling/cancellation pattern for future `bash`/patch/read-like tools and explicitly avoids a shared foreground process registry/runner.
 - `castor deptrac` passes.
 
 ## Workflow metadata
@@ -50,3 +60,6 @@ Completed:
 
 ## Work log
 - Created: 2026-05-25T20:00:00.000Z — split from monolithic TOOLS-R02.
+
+## Task workflow update - 2026-05-26T23:03:15.280Z
+- Summary: Updated scope after TOOLS-00 merge: R03 now depends on the final minimal ToolContext/StackToolExecutionContextAccessor baseline and owns initial tool authoring docs for synchronous tool-handler execution, local Symfony Process start+poll loops, cancellation-token checks, monotonic timeout checks, Process::stop($graceSeconds), OutputCap use, and explicitly no shared foreground process registry/runner.
