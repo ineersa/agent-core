@@ -15,6 +15,8 @@ use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
+use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
+use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 
 /**
@@ -34,6 +36,8 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly EventStoreInterface $eventStore,
         private readonly RuntimeEventMapper $mapper,
         private readonly SystemPromptBuilder $systemPromptBuilder,
+        private readonly AgentsContextDiscovery $agentsContextDiscovery,
+        private readonly AgentsContextRenderer $agentsContextRenderer,
         private readonly ?RuntimeEventSinkInterface $transientSink = null,
     ) {
     }
@@ -54,6 +58,21 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             $messages[] = new AgentMessage(
                 role: 'system',
                 content: [['type' => 'text', 'text' => $systemPromptText]],
+            );
+        }
+
+        // Discover and inject AGENTS.md project context as a synthetic user-context
+        // message (between system prompt and real user message). Only on new sessions.
+        // Note: Both the InProcess and JsonlProcess (controller subprocess) session
+        // client paths flow through this method — the controller's StartRunHandler
+        // delegates directly to this client. So a single injection point covers both.
+        $agentsContext = $this->agentsContextDiscovery->discover();
+        if ([] !== $agentsContext) {
+            $contextText = $this->agentsContextRenderer->render($agentsContext);
+            $messages[] = new AgentMessage(
+                role: 'user-context',
+                content: [['type' => 'text', 'text' => $contextText]],
+                metadata: ['source' => 'agents_context', 'files' => array_column($agentsContext, 'path')],
             );
         }
 
