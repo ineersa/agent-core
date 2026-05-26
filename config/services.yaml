@@ -66,6 +66,7 @@ services:
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfigLoader'
       - '@Ineersa\CodingAgent\Config\AppResourceLocator'
+      - '@Symfony\Component\Serializer\SerializerInterface'
 
   # ─── Extension wiring ───
 
@@ -85,6 +86,12 @@ services:
   # LoggingConfig is derived from AppConfig and autowireable.
   Ineersa\CodingAgent\Config\LoggingConfig:
     factory: ['Ineersa\CodingAgent\Config\LoggingConfig', 'fromAppConfig']
+    arguments:
+      - '@Ineersa\CodingAgent\Config\AppConfig'
+
+  # OutputCapConfig is derived from AppConfig and autowireable.
+  Ineersa\CodingAgent\Config\OutputCapConfig:
+    factory: ['Ineersa\CodingAgent\Config\OutputCapConfig', 'fromAppConfig']
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 

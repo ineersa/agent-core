@@ -4,13 +4,18 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
+use Ineersa\CodingAgent\Path\PathResolver;
+
 /**
  * Resolves path patterns in Hatfield settings to absolute filesystem paths.
  *
  * Supported patterns:
  *  - %kernel.project_dir%  Replaced with the app installation directory
- *  - ~                     Replaced with $homeDir
- *  - relative paths        Resolved against $cwd (project directory)
+ *  - ~                     Replaced with home directory (via PathResolver)
+ *  - relative paths        Resolved against $baseDir (via PathResolver)
+ *
+ * After placeholder expansion, final resolution (tilde, relative, absolute,
+ * normalization) is delegated to {@see PathResolver::resolve()}.
  *
  * Design note:
  *  Relative paths in home settings resolve relative to $homeDir.
@@ -42,13 +47,22 @@ final class SettingsPathResolver
     /**
      * Resolve a single path, expanding known placeholders.
      *
-     * The $baseDir is used for relative paths and should typically
-     * be the directory of the settings file that contained this path.
+     * 1. Expands %kernel.project_dir% placeholder.
+     * 2. Delegates final resolution (tilde, relative, absolute, normalization)
+     *    to {@see PathResolver::resolve()}, which provides null-byte rejection,
+     *    strict absolute-path detection, tilde expansion, dot-dot normalization,
+     *    and correct relative-path joining.
+     *
+     * An empty string path is returned as-is (no resolution).
      *
      * @param string $baseDir Directory to resolve relative paths against
      */
     public function resolve(string $path, string $baseDir): string
     {
+        if ('' === $path) {
+            return '';
+        }
+
         // Expand known placeholders
         $resolved = str_replace(
             ['%kernel.project_dir%'],
@@ -56,17 +70,19 @@ final class SettingsPathResolver
             $path,
         );
 
-        // Expand tilde
+        // Expand tilde using our own home directory resolution.
+        // We keep this in SettingsPathResolver rather than delegating
+        // to PathResolver because tests control the homeDir explicitly.
         if (str_starts_with($resolved, '~')) {
             $resolved = $this->homeDir.substr($resolved, 1);
         }
 
-        // Resolve relative paths against the provided base dir
-        if ('' !== $resolved && !str_starts_with($resolved, '/')) {
-            $resolved = rtrim($baseDir, '/').'/'.$resolved;
-        }
-
-        return $resolved;
+        // Delegate final resolution and normalization to PathResolver.
+        // This handles relative-path joining, dot-segment normalization,
+        // null-byte rejection, and strict absolute-path detection.
+        // PathResolver's own tilde expansion is bypassed by the manual
+        // expansion above.
+        return PathResolver::resolve($resolved, $baseDir);
     }
 
     /**

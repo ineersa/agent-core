@@ -4,52 +4,22 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Config\Ai;
 
+use Ineersa\CodingAgent\Config\Ai\AiCompatibility;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiCost;
-use Ineersa\CodingAgent\Config\Ai\AiCompatibility;
-use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
-use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
-use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use PHPUnit\Framework\TestCase;
 
 class AiConfigTest extends TestCase
 {
-    private function minimalConfig(): array
-    {
-        return [
-            'tui' => ['theme' => 'cyberpunk'],
-            'sessions' => ['path' => '.hatfield/sessions'],
-        ];
-    }
-
-    /**
-     * Construct an AppConfig from a pre-built config array using the
-     * public value-object constructor — no Reflection or test-only
-     * production code.
-     */
-    private function createAppConfig(array $data): AppConfig
-    {
-        $ai = AiConfig::optionalFromArray($data);
-
-        return new AppConfig(
-            tui: TuiConfig::fromArray((array) ($data['tui'] ?? [])),
-            logging: new LoggingConfig(),
-            sessions: (array) ($data['sessions'] ?? []),
-            ai: $ai,
-            raw: $data,
-            catalog: null !== $ai ? new HatfieldModelCatalog($ai) : null,
-            cwd: getcwd() ?: '/',
-        );
-    }
-
     public function testAiSectionAbsentYieldsNull(): void
     {
         $config = $this->createAppConfig($this->minimalConfig());
-        self::assertNull($config->ai);
+        $this->assertNull($config->ai);
     }
 
     public function testAiSectionEmptyYieldsDefault(): void
@@ -58,10 +28,10 @@ class AiConfigTest extends TestCase
         $data['ai'] = [];
 
         $config = $this->createAppConfig($data);
-        self::assertNotNull($config->ai);
-        self::assertNull($config->ai->defaultModel);
-        self::assertNull($config->ai->defaultReasoning);
-        self::assertCount(0, $config->ai->providers);
+        $this->assertNotNull($config->ai);
+        $this->assertNull($config->ai->defaultModel);
+        $this->assertNull($config->ai->defaultReasoning);
+        $this->assertCount(0, $config->ai->providers);
     }
 
     public function testDefaultModelParsing(): void
@@ -73,8 +43,8 @@ class AiConfigTest extends TestCase
         ];
 
         $config = $this->createAppConfig($data);
-        self::assertSame('deepseek/deepseek-v4-pro', $config->ai->defaultModel);
-        self::assertSame('medium', $config->ai->defaultReasoning);
+        $this->assertSame('deepseek/deepseek-v4-pro', $config->ai->defaultModel);
+        $this->assertSame('medium', $config->ai->defaultReasoning);
     }
 
     public function testFullProviderParsingDeepseek(): void
@@ -122,38 +92,38 @@ class AiConfigTest extends TestCase
 
         $config = $this->createAppConfig($data);
         $ai = $config->ai;
-        self::assertNotNull($ai);
-        self::assertCount(1, $ai->providers);
+        $this->assertNotNull($ai);
+        $this->assertCount(1, $ai->providers);
 
         $provider = $ai->providers['deepseek'] ?? null;
-        self::assertNotNull($provider);
-        self::assertSame('deepseek', $provider->id);
-        self::assertSame('generic', $provider->type);
-        self::assertTrue($provider->enabled);
-        self::assertSame('https://api.deepseek.com', $provider->baseUrl);
-        self::assertSame('openai-completions', $provider->api);
-        self::assertSame('env:DEEPSEEK_API_KEY', $provider->apiKey);
-        self::assertSame('/chat/completions', $provider->completionsPath);
-        self::assertTrue($provider->supportsCompletions);
-        self::assertFalse($provider->supportsEmbeddings);
-        self::assertNull($provider->compatibility);
+        $this->assertNotNull($provider);
+        $this->assertSame('deepseek', $provider->id);
+        $this->assertSame('generic', $provider->type);
+        $this->assertTrue($provider->enabled);
+        $this->assertSame('https://api.deepseek.com', $provider->baseUrl);
+        $this->assertSame('openai-completions', $provider->api);
+        $this->assertSame('env:DEEPSEEK_API_KEY', $provider->apiKey);
+        $this->assertSame('/chat/completions', $provider->completionsPath);
+        $this->assertTrue($provider->supportsCompletions);
+        $this->assertFalse($provider->supportsEmbeddings);
+        $this->assertNull($provider->compatibility);
 
         $model = $provider->models['deepseek-v4-pro'] ?? null;
-        self::assertNotNull($model);
-        self::assertSame('deepseek-v4-pro', $model->id);
-        self::assertSame('DeepSeek V4 Pro', $model->name);
-        self::assertSame(1000000, $model->contextWindow);
-        self::assertSame(384000, $model->maxTokens);
-        self::assertSame(['text'], $model->input);
-        self::assertTrue($model->toolCalling);
-        self::assertTrue($model->reasoning);
-        self::assertSame(['minimal' => 'high', 'low' => 'high', 'medium' => 'high', 'high' => 'high', 'xhigh' => 'max'], $model->thinkingLevelMap);
-        self::assertNotNull($model->cost);
-        self::assertSame(0.435, $model->cost->input);
-        self::assertSame(0.87, $model->cost->output);
-        self::assertSame(0.003625, $model->cost->cacheRead);
-        self::assertSame(0.0, $model->cost->cacheWrite);
-        self::assertNull($model->compatibility);
+        $this->assertNotNull($model);
+        $this->assertSame('deepseek-v4-pro', $model->id);
+        $this->assertSame('DeepSeek V4 Pro', $model->name);
+        $this->assertSame(1000000, $model->contextWindow);
+        $this->assertSame(384000, $model->maxTokens);
+        $this->assertSame(['text'], $model->input);
+        $this->assertTrue($model->toolCalling);
+        $this->assertTrue($model->reasoning);
+        $this->assertSame(['minimal' => 'high', 'low' => 'high', 'medium' => 'high', 'high' => 'high', 'xhigh' => 'max'], $model->thinkingLevelMap);
+        $this->assertNotNull($model->cost);
+        $this->assertSame(0.435, $model->cost->input);
+        $this->assertSame(0.87, $model->cost->output);
+        $this->assertSame(0.003625, $model->cost->cacheRead);
+        $this->assertSame(0.0, $model->cost->cacheWrite);
+        $this->assertNull($model->compatibility);
     }
 
     public function testZaiProviderParsingWithCompatibility(): void
@@ -201,22 +171,22 @@ class AiConfigTest extends TestCase
 
         $config = $this->createAppConfig($data);
         $ai = $config->ai;
-        self::assertNotNull($ai);
+        $this->assertNotNull($ai);
 
         $provider = $ai->providers['zai'] ?? null;
-        self::assertNotNull($provider);
-        self::assertNotNull($provider->compatibility);
-        self::assertFalse($provider->compatibility->supportsDeveloperRole);
-        self::assertFalse($provider->compatibility->supportsReasoningEffort);
-        self::assertSame('zai', $provider->compatibility->thinkingFormat);
-        self::assertFalse($provider->compatibility->zaiToolStream);
+        $this->assertNotNull($provider);
+        $this->assertNotNull($provider->compatibility);
+        $this->assertFalse($provider->compatibility->supportsDeveloperRole);
+        $this->assertFalse($provider->compatibility->supportsReasoningEffort);
+        $this->assertSame('zai', $provider->compatibility->thinkingFormat);
+        $this->assertFalse($provider->compatibility->zaiToolStream);
 
         $model = $provider->models['glm-5.1'] ?? null;
-        self::assertNotNull($model);
-        self::assertNotNull($model->compatibility);
-        self::assertTrue($model->compatibility->zaiToolStream);
-        self::assertNull($model->compatibility->thinkingFormat, 'model-level compatibility does not repeat provider thinking_format');
-        self::assertSame(0.0, $model->cost->input);
+        $this->assertNotNull($model);
+        $this->assertNotNull($model->compatibility);
+        $this->assertTrue($model->compatibility->zaiToolStream);
+        $this->assertNull($model->compatibility->thinkingFormat, 'model-level compatibility does not repeat provider thinking_format');
+        $this->assertSame(0.0, $model->cost->input);
     }
 
     public function testLlamaCppProviderWithoutReasoning(): void
@@ -251,18 +221,18 @@ class AiConfigTest extends TestCase
 
         $config = $this->createAppConfig($data);
         $provider = $config->ai->providers['llama_cpp'] ?? null;
-        self::assertNotNull($provider);
-        self::assertSame('http://192.168.2.38:8052/v1', $provider->baseUrl);
-        self::assertSame('dummy', $provider->apiKey);
+        $this->assertNotNull($provider);
+        $this->assertSame('http://192.168.2.38:8052/v1', $provider->baseUrl);
+        $this->assertSame('dummy', $provider->apiKey);
 
         $model = $provider->models['flash'] ?? null;
-        self::assertNotNull($model);
-        self::assertFalse($model->reasoning);
-        self::assertSame([], $model->thinkingLevelMap);
-        self::assertSame(['text', 'image'], $model->input);
-        self::assertSame(200000, $model->contextWindow);
-        self::assertSame(65536, $model->maxTokens);
-        self::assertTrue($model->toolCalling);
+        $this->assertNotNull($model);
+        $this->assertFalse($model->reasoning);
+        $this->assertSame([], $model->thinkingLevelMap);
+        $this->assertSame(['text', 'image'], $model->input);
+        $this->assertSame(200000, $model->contextWindow);
+        $this->assertSame(65536, $model->maxTokens);
+        $this->assertTrue($model->toolCalling);
     }
 
     public function testDisabledProviderIsParsedButNotAvailable(): void
@@ -286,11 +256,11 @@ class AiConfigTest extends TestCase
 
         $config = $this->createAppConfig($data);
         $provider = $config->ai->providers['deepseek'] ?? null;
-        self::assertNotNull($provider);
-        self::assertFalse($provider->enabled);
+        $this->assertNotNull($provider);
+        $this->assertFalse($provider->enabled);
 
         $catalog = new HatfieldModelCatalog($config->ai);
-        self::assertFalse($catalog->isAvailable('deepseek/deepseek-v4-pro'));
+        $this->assertFalse($catalog->isAvailable('deepseek/deepseek-v4-pro'));
     }
 
     public function testProviderKeyMustBeNonEmptyString(): void
@@ -332,27 +302,28 @@ class AiConfigTest extends TestCase
     public function testBackwardsCompatibleConfigStillLoads(): void
     {
         $config = $this->createAppConfig(['tui' => ['theme' => 'cyberpunk']]);
-        self::assertSame('cyberpunk', $config->tui->theme);
-        self::assertNull($config->ai);
-        self::assertSame([], $config->sessions);
+        $this->assertSame('cyberpunk', $config->tui->theme);
+        $this->assertNull($config->ai);
+        $this->assertInstanceOf(SessionsConfig::class, $config->sessions);
+        $this->assertSame('.hatfield/sessions', $config->sessions->path);
     }
 
     public function testCostDefaultsToZero(): void
     {
         $cost = AiCost::fromArray([]);
-        self::assertSame(0.0, $cost->input);
-        self::assertSame(0.0, $cost->output);
-        self::assertSame(0.0, $cost->cacheRead);
-        self::assertSame(0.0, $cost->cacheWrite);
+        $this->assertSame(0.0, $cost->input);
+        $this->assertSame(0.0, $cost->output);
+        $this->assertSame(0.0, $cost->cacheRead);
+        $this->assertSame(0.0, $cost->cacheWrite);
     }
 
     public function testCompatibilityFromEmptyArray(): void
     {
         $compatibility = AiCompatibility::fromArray([]);
-        self::assertFalse($compatibility->supportsDeveloperRole);
-        self::assertTrue($compatibility->supportsReasoningEffort);
-        self::assertNull($compatibility->thinkingFormat);
-        self::assertFalse($compatibility->zaiToolStream);
+        $this->assertFalse($compatibility->supportsDeveloperRole);
+        $this->assertTrue($compatibility->supportsReasoningEffort);
+        $this->assertNull($compatibility->thinkingFormat);
+        $this->assertFalse($compatibility->zaiToolStream);
     }
 
     public function testCompatibilityFromNonBoolValuesFallsBackToDefault(): void
@@ -364,9 +335,9 @@ class AiConfigTest extends TestCase
         ]);
 
         // Non-boolean values fall back to constructor defaults (false, true)
-        self::assertFalse($compatibility->supportsDeveloperRole);
-        self::assertTrue($compatibility->supportsReasoningEffort);
-        self::assertSame('zai', $compatibility->thinkingFormat);
+        $this->assertFalse($compatibility->supportsDeveloperRole);
+        $this->assertTrue($compatibility->supportsReasoningEffort);
+        $this->assertSame('zai', $compatibility->thinkingFormat);
     }
 
     public function testRawSettingsPreservedInRaw(): void
@@ -378,8 +349,40 @@ class AiConfigTest extends TestCase
         ];
 
         $config = $this->createAppConfig($data);
-        self::assertNotNull($config->ai);
-        self::assertArrayHasKey('custom_future_key', $config->raw);
-        self::assertTrue($config->raw['custom_future_key']['nested']);
+        $this->assertNotNull($config->ai);
+        $this->assertArrayHasKey('custom_future_key', $config->raw);
+        $this->assertTrue($config->raw['custom_future_key']['nested']);
+    }
+
+    private function minimalConfig(): array
+    {
+        return [
+            'tui' => ['theme' => 'cyberpunk'],
+            'sessions' => ['path' => '.hatfield/sessions'],
+        ];
+    }
+
+    /**
+     * Construct an AppConfig from a pre-built config array using the
+     * public value-object constructor — no Reflection or test-only
+     * production code.
+     */
+    private function createAppConfig(array $data): AppConfig
+    {
+        $ai = AiConfig::optionalFromArray($data);
+
+        $sessionsData = (array) ($data['sessions'] ?? []);
+
+        return new AppConfig(
+            tui: TuiConfig::fromArray((array) ($data['tui'] ?? [])),
+            logging: new LoggingConfig(),
+            sessions: new SessionsConfig(
+                path: (string) ($sessionsData['path'] ?? '.hatfield/sessions'),
+            ),
+            ai: $ai,
+            raw: $data,
+            catalog: null !== $ai ? new HatfieldModelCatalog($ai) : null,
+            cwd: getcwd() ?: '/',
+        );
     }
 }

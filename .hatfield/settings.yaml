@@ -3,6 +3,30 @@
 #
 # When adding new settings keys, update this file and AGENTS.md.
 
+# ---------------------------------------------------------------------------
+# Tool output capping
+# ---------------------------------------------------------------------------
+#
+# Uncomment and adjust to override output cap settings:
+#
+# tools:
+#     output_cap:
+#         # Storage directory. Relative paths resolve against the project CWD.
+#         path: .hatfield/tmp/output-cap
+#
+#         # Default char cap for code-like paths (read, bash, edit).
+#         default_cap: 20000
+#
+#         # Char cap for doc-like paths (.md, .txt, .toon).
+#         doc_cap: 50000
+#
+#         # Stale file retention in seconds (24 hours).
+#         retention: 86400
+#
+#         # Optional session prefix for persisted filenames.
+#         # See OutputCapConfig::sessionPrefix.
+#         session_prefix: null
+
 tui:
     # Available built-in themes:
     #   cyberpunk, catppuccin-mocha, nord, gruvbox-dark, oh-p-dark, tokyo-night

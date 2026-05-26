@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Config;
 
 use Monolog\Level;
+use Symfony\Component\Serializer\Attribute\SerializedName;
 
 /**
  * Logging settings resolved from Hatfield config.
@@ -15,6 +16,9 @@ use Monolog\Level;
  * The logDir is always an absolute path resolved by {@see AppConfigLoader}
  * from the default {@see logging.path} setting (e.g. {@see .hatfield/logs}
  * resolves to {@see <CWD>/.hatfield/logs}).
+ *
+ * Hydrated from the logging section of Hatfield merged config via
+ * Symfony Serializer in {@see AppConfig::fromContainer()}.
  */
 final readonly class LoggingConfig
 {
@@ -25,33 +29,53 @@ final readonly class LoggingConfig
     public string $logDir;
 
     /**
-     * @param string|null $logDir   Absolute path to the log storage directory.
-     *                              Defaults to {@see <CWD>/.hatfield/logs}.
-     * @param Level       $level    Minimum log level (e.g. Level::Info, Level::Debug)
-     * @param int         $maxFiles Maximum rotated log files to keep (daily rotation)
+     * Minimum log level.
+     */
+    public Level $level;
+
+    /**
+     * Maximum rotated log files to keep (daily rotation).
+     */
+    public int $maxFiles;
+
+    /**
+     * @param string       $logDir   Absolute path to the log storage directory.
+     *                               Defaults to {@see <CWD>/.hatfield/logs}.
+     * @param string|Level $level    Minimum log level. Accepts a PSR-3 level
+     *                               name (e.g. 'info', 'debug') or a Monolog
+     *                               Level enum. Defaults to Level::Info.
+     * @param int          $maxFiles Maximum rotated log files to retain
      */
     public function __construct(
-        ?string $logDir = null,
-        public Level $level = Level::Info,
-        public int $maxFiles = 14,
+        #[SerializedName('path')]
+        string $logDir = '',
+        #[SerializedName('level')]
+        string|Level $level = Level::Info,
+        #[SerializedName('max_files')]
+        int $maxFiles = 14,
     ) {
-        $this->logDir = $logDir ?? self::resolveDefaultLogDir();
+        $this->logDir = '' !== $logDir ? $logDir : self::resolveDefaultLogDir();
+        $this->level = $level instanceof Level ? $level : self::resolveLevel($level);
+        $this->maxFiles = $maxFiles;
     }
 
     /**
-     * DI factory — extract logging settings from resolved AppConfig.
+     * DI factory — extract logging settings from AppConfig entity.
      *
-     * Used by the Symfony container via services.yaml factory definition.
+     * Used by the Symfony container via services.yaml factory definition
+     * so that autowired consumers receive the same instance that lives
+     * inside AppConfig.
      */
     public static function fromAppConfig(AppConfig $appConfig): self
     {
-        return self::fromArray($appConfig->raw);
+        return $appConfig->logging;
     }
 
     /**
      * Create from raw merged Hatfield config (from defaults/home/project).
      *
-     * Paths in the input are already resolved by {@see AppConfigLoader::resolveConfigPaths()}.
+     * @deprecated Use Symfony Serializer denormalization instead. Kept for
+     *             backward compat with existing test constructors.
      *
      * @param array<string, mixed> $data The resolved merged config array
      */
@@ -64,14 +88,14 @@ final readonly class LoggingConfig
 
         $logDir = $logging['path'] ?? null;
         if (!\is_string($logDir) || '' === $logDir) {
-            $logDir = self::resolveDefaultLogDir();
+            $logDir = '';
         }
 
-        $level = self::resolveLevel((string) ($logging['level'] ?? 'info'));
+        $level = $logging['level'] ?? 'info';
         $maxFiles = $logging['max_files'] ?? null;
         $maxFiles = \is_int($maxFiles) ? $maxFiles : 14;
 
-        return new self(logDir: $logDir, level: $level, maxFiles: $maxFiles);
+        return new self(logDir: $logDir, level: (string) $level, maxFiles: $maxFiles);
     }
 
     /**
@@ -95,7 +119,7 @@ final readonly class LoggingConfig
      */
     private static function resolveLevel(string $name): Level
     {
-        $mapped = match (strtolower($name)) {
+        return match (strtolower($name)) {
             'debug' => Level::Debug,
             'info' => Level::Info,
             'notice' => Level::Notice,
@@ -104,9 +128,7 @@ final readonly class LoggingConfig
             'critical' => Level::Critical,
             'alert' => Level::Alert,
             'emergency' => Level::Emergency,
-            default => null,
+            default => Level::Info,
         };
-
-        return $mapped ?? Level::Info;
     }
 }

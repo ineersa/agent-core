@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
+use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
@@ -76,7 +77,7 @@ YAML);
             $loader = new AppConfigLoader($pathResolver);
             $resources = new AppResourceLocator($projectDir);
 
-            return AppConfig::fromContainer($loader, $resources);
+            return AppConfig::fromContainer($loader, $resources, TestSerializerFactory::normalizer());
         } finally {
             if (false !== $prevCwd) {
                 chdir($prevCwd);

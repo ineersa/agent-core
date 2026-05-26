@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Extension;
 
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\ExtensionsConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionApiBridge;
@@ -296,25 +297,19 @@ PHP
         $this->assertGreaterThanOrEqual(1, $logger->errors);
     }
 
-    public function testLoadExtensionsHandlesNonArrayEnabledGracefully(): void
+    public function testLoadExtensionsEmptyListLoadsNothing(): void
     {
-        $tui = new TuiConfig(theme: 'cyberpunk', themePaths: []);
-        $logging = new LoggingConfig(logDir: $this->extensionsDir.'/var/tmp', level: Level::Info, maxFiles: 7);
-        $config = new AppConfig(
-            tui: $tui,
-            logging: $logging,
-            raw: ['extensions' => ['enabled' => 'not_an_array']],
+        $config = $this->createAppConfig(
             cwd: $this->extensionsDir,
+            extensions: [],
         );
         $bridge = new ExtensionApiBridge();
-        $logger = new LoggerSpy();
+        $logger = new NullLogger();
 
         $manager = new ExtensionManager($config, $bridge, $logger);
         $manager->loadExtensions();
 
         $this->assertCount(0, $bridge->getRegistrations());
-        $this->assertCount(1, $logger->warnings);
-        $this->assertStringContainsString('extensions.enabled is not a list', $logger->warnings[0]);
     }
 
     public function testLoadExtensionsWithoutAutoloadStillLoadsKnownClasses(): void
@@ -345,19 +340,14 @@ PHP
     private function createAppConfig(
         string $cwd,
         array $extensions = [],
-        array $rawOverrides = [],
     ): AppConfig {
         $tui = new TuiConfig(theme: 'cyberpunk', themePaths: []);
         $logging = new LoggingConfig(logDir: $cwd.'/var/tmp', level: Level::Info, maxFiles: 7);
 
-        $raw = array_merge([
-            'extensions' => ['enabled' => $extensions],
-        ], $rawOverrides);
-
         return new AppConfig(
             tui: $tui,
             logging: $logging,
-            raw: $raw,
+            extensions: new ExtensionsConfig(enabled: $extensions),
             cwd: $cwd,
         );
     }

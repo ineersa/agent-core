@@ -133,6 +133,50 @@ Files are stored under `logging.path`. The default of 14 keeps two weeks of logs
 
 **Default:** `14`
 
+### `tools.output_cap.path`
+
+Storage directory for persisted oversized tool output. Tool output that
+exceeds the configured character cap is written to this directory and
+replaced with a model-facing capped notice containing the saved path and
+inspection hints (`head -50` / `grep`).
+
+Relative paths resolve against the active project CWD.
+
+**Default:** `.hatfield/tmp/output-cap` (resolves to `<CWD>/.hatfield/tmp/output-cap`)
+
+### `tools.output_cap.default_cap`
+
+Maximum number of characters for non-doc-like tool output (code files,
+binary paths, unknown extensions). Output exceeding this limit is capped
+and persisted.
+
+**Default:** `20000`
+
+### `tools.output_cap.doc_cap`
+
+Maximum number of characters for doc-like tool output (`.md`, `.txt`,
+`.toon` extensions). Doc-like files get a higher cap because they
+are typically intended for human reading.
+
+**Default:** `50000`
+
+### `tools.output_cap.retention`
+
+Maximum age in seconds for persisted output cap files before they are
+deleted during cleanup. Cleanup runs automatically on first use of the
+output capping service.
+
+**Default:** `86400` (24 hours)
+
+### `tools.output_cap.session_prefix`
+
+Optional session/run prefix for persisted output filenames. When set,
+filenames use the format `<session_prefix>-<random_hex>.txt` instead of
+`<date>-<random_hex>.txt`. This enables session-scoped cleanup in
+downstream tasks (TOOLS-R04+).
+
+**Default:** `null` (falls back to `Ymd` date prefix)
+
 ### `extensions.enabled`
 
 List of enabled extension class names. Each class must implement
