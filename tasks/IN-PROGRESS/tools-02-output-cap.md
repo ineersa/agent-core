@@ -29,14 +29,22 @@ Out of scope:
 - Focused tests pass with Castor/PHPUnit.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/tools-02-output-cap
+Worktree: /home/ineersa/projects/agent-core-worktrees/tools-02-output-cap
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-26T16:08:52.732Z
 Completed:
 
 ## Work log
 - Created: 2026-05-17T04:42:04.932Z
+
+## Task workflow update - 2026-05-26T16:08:52.732Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/tools-02-output-cap.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/tools-02-output-cap.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/tools-02-output-cap.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/tools-02-output-cap.
+- Summary: Started as part of wave 1 tools foundation per toolbox design plan.
