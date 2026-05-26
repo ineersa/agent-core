@@ -23,14 +23,33 @@ Skills are exposed to the model through `<skills_instructions>` + `<available_sk
 - Validation includes focused Castor tests and `castor deptrac`.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: CODE-REVIEW
+Branch: task/system-03-skills-registry-discovery-context
+Worktree: /home/ineersa/projects/agent-core-worktrees/system-03-skills-registry-discovery-context
 Fork run:
-PR URL:
-PR Status:
-Started:
+PR URL: https://github.com/ineersa/agent-core/pull/53
+PR Status: open
+Started: 2026-05-26T01:15:13.089Z
 Completed:
 
 ## Work log
 - Created: 2026-05-25T17:58:35.921Z
+
+## Task workflow update - 2026-05-26T01:15:13.089Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/system-03-skills-registry-discovery-context.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/system-03-skills-registry-discovery-context.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/system-03-skills-registry-discovery-context.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/system-03-skills-registry-discovery-context.
+
+## Task workflow update - 2026-05-26T01:24:15.176Z
+- Summary: SYSTEM-03 implemented: 6 new classes (SkillDefinition, SkillsConfig, SkillDiscovery, SkillRegistry, SkillContextRenderer, SkillsContextBuilder), 3 CLI options (--no-skills, --skills-path, --skills), injection into InProcessAgentSessionClient. 87/87 tests pass, 0 deptrac violations, 0 phpstan errors, cs-check clean. Commit 034a741a pushed.
+
+## Task workflow update - 2026-05-26T01:24:32.203Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/system-03-skills-registry-discovery-context to origin.
+- branch 'task/system-03-skills-registry-discovery-context' set up to track 'origin/task/system-03-skills-registry-discovery-context'.
+- Created PR: https://github.com/ineersa/agent-core/pull/53
+
+## Task workflow update - 2026-05-26T01:35:19.858Z
+- Summary: Review findings addressed: removed @ suppression in SkillRegistry::readBody(), added final readonly to renderer/builder, fixed misleading comment, 3 new edge-case tests (disabled preload, home discovery, malformed YAML). 47/47 tests pass, deptrac/phpstan/cs-check clean.
