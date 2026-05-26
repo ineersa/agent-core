@@ -14,6 +14,10 @@ namespace Ineersa\CodingAgent\Tool;
  * Internal storage uses ToolDefinitionDTO for permanent tools, providing
  * type-safe handler access and structured definition lookup. Dynamic tools
  * also store a ToolDefinitionDTO (with empty prompt metadata).
+ *
+ * Built-in providers are injected by Symfony as a tagged iterator and seeded
+ * during registry construction so the tool subsystem owns registration instead
+ * of Kernel boot hooks.
  */
 final class ToolRegistry implements ToolRegistryInterface
 {
@@ -36,6 +40,25 @@ final class ToolRegistry implements ToolRegistryInterface
      * @var list<string> Registration-order tracking for dynamic tools
      */
     private array $dynamicOrder = [];
+
+    /**
+     * @param iterable<HatfieldToolProviderInterface> $providers Tagged built-in tool providers
+     */
+    public function __construct(iterable $providers = [])
+    {
+        foreach ($providers as $provider) {
+            $definition = $provider->definition();
+
+            $this->registerTool(
+                name: $definition->name,
+                description: $definition->description,
+                parametersJsonSchema: $definition->parametersJsonSchema,
+                handler: $definition->handler,
+                promptLine: $definition->promptLine,
+                promptGuidelines: $definition->promptGuidelines,
+            );
+        }
+    }
 
     public function registerTool(
         string $name,

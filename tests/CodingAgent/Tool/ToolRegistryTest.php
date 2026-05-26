@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Ineersa\CodingAgent\Tool\HatfieldToolProviderInterface;
 use Ineersa\CodingAgent\Tool\ToolDefinitionDTO;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
@@ -16,6 +17,44 @@ final class ToolRegistryTest extends TestCase
     protected function setUp(): void
     {
         $this->registry = new ToolRegistry();
+    }
+
+    /* ───────── Provider-seeded permanent tools ───────── */
+
+    public function testConstructorRegistersEmptyProviders(): void
+    {
+        $registry = new ToolRegistry([]);
+
+        self::assertSame([], $registry->activeToolNames());
+    }
+
+    public function testConstructorRegistersProviderDefinitionsAsPermanentTools(): void
+    {
+        $handler = $this->dummyHandler();
+        $registry = new ToolRegistry([
+            $this->createProvider('read', 'Read tool', $handler, 'read: Read', ['G1']),
+        ]);
+
+        self::assertSame(['read'], $registry->activeToolNames());
+        self::assertSame(['read: Read'], $registry->permanentToolLines());
+        self::assertSame(['G1'], $registry->permanentGuidelines());
+
+        $definition = $registry->toolDefinition('read');
+        self::assertNotNull($definition);
+        self::assertSame($handler, $definition->handler);
+        self::assertSame('Read tool', $definition->description);
+    }
+
+    public function testConstructorRegistersMultipleProvidersInOrder(): void
+    {
+        $registry = new ToolRegistry([
+            $this->createProvider('a', 'A', $this->dummyHandler(), 'a: A'),
+            $this->createProvider('b', 'B', $this->dummyHandler(), 'b: B'),
+            $this->createProvider('c', 'C', $this->dummyHandler(), 'c: C'),
+        ]);
+
+        self::assertSame(['a', 'b', 'c'], $registry->activeToolNames());
+        self::assertSame(['a: A', 'b: B', 'c: C'], $registry->permanentToolLines());
     }
 
     /* ───────── Permanent tool registration ───────── */
@@ -284,6 +323,35 @@ final class ToolRegistryTest extends TestCase
     }
 
     /* ───────── Private helpers ───────── */
+
+    private function createProvider(
+        string $name,
+        string $description,
+        ToolHandlerInterface $handler,
+        string $promptLine,
+        array $promptGuidelines = [],
+    ): HatfieldToolProviderInterface {
+        $definition = new ToolDefinitionDTO(
+            name: $name,
+            description: $description,
+            parametersJsonSchema: [],
+            handler: $handler,
+            promptLine: $promptLine,
+            promptGuidelines: $promptGuidelines,
+        );
+
+        return new class($definition) implements HatfieldToolProviderInterface {
+            public function __construct(
+                private readonly ToolDefinitionDTO $definition,
+            ) {
+            }
+
+            public function definition(): ToolDefinitionDTO
+            {
+                return $this->definition;
+            }
+        };
+    }
 
     private function dummyHandler(): ToolHandlerInterface
     {
