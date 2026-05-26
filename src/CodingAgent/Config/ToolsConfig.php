@@ -9,12 +9,13 @@ use Symfony\Component\Serializer\Attribute\SerializedName;
 /**
  * Tool settings resolved from Hatfield config.
  *
- * Immutable value object. Contains tool output capping configuration.
- * More tool subsections will be added as the tool taxonomy expands.
+ * Immutable value object containing typed tool configuration sections.
  */
 final readonly class ToolsConfig
 {
     public function __construct(
+        #[SerializedName('execution')]
+        public ToolExecutionConfig $execution = new ToolExecutionConfig(),
         #[SerializedName('output_cap')]
         public OutputCapConfig $outputCap = new OutputCapConfig(),
     ) {

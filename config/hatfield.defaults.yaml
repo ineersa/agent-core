@@ -23,6 +23,45 @@ sessions:
     path: '.hatfield/sessions'
 
 # ---------------------------------------------------------------------------
+# Tools
+# ---------------------------------------------------------------------------
+#
+# Tool execution defaults control scheduling policy and timeout metadata.
+# Output capping persists oversized text output under tools.output_cap.path and
+# replaces it with a model-facing capped notice containing inspection hints.
+#
+# Override any value here in your home or project settings.
+#
+tools:
+    execution:
+        # Default execution mode: sequential (one tool at a time) or parallel.
+        # Parallel mode requires TOOLS-R05 / multi-consumer tool dispatch.
+        default_mode: sequential
+
+        # Default timeout in seconds exposed to tool implementations.
+        timeout_seconds: 300
+
+        # Maximum parallelism: how many tool calls to run concurrently.
+        max_parallelism: 4
+
+    output_cap:
+        # Storage directory for persisted oversized output.
+        # Relative paths resolve against the active project CWD.
+        path: .hatfield/tmp/output-cap
+
+        # Default character cap for non-doc paths (code files).
+        default_cap: 20000
+
+        # Character cap for doc-like paths (.md, .txt, .toon).
+        doc_cap: 50000
+
+        # Stale file retention in seconds (default 24 hours).
+        retention: 86400
+
+        # Optional session prefix for filenames (wired by TOOLS-R04+).
+        # session_prefix: run-abc123
+
+# ---------------------------------------------------------------------------
 # Extensions
 # ---------------------------------------------------------------------------
 #
@@ -64,42 +103,6 @@ logging:
 
     # Number of daily rotated log files to retain before deletion.
     max_files: 14
-
-# ---------------------------------------------------------------------------
-# Tool output capping
-# ---------------------------------------------------------------------------
-#
-# Controls output capping for text-producing tools (read, bash, edit, etc.).
-# Oversized tool output is persisted to disk under the configured path and
-# replaced with a model-facing capped notice containing the saved path and
-# inspection hints (head -50 / grep).
-#
-# Two cap tiers: default_cap (code files) and doc_cap (markdown/text/toon).
-#
-# Stale persisted files older than the configured retention are cleaned up
-# automatically on first use.
-#
-# The session_prefix is optional; TOOLS-R04+ will wire it from the active
-# run/session context so filenames are scoped per session. Without it,
-# today's date (Ymd) is used as the prefix.
-#
-tools:
-    output_cap:
-        # Storage directory for persisted oversized output.
-        # Relative paths resolve against the active project CWD.
-        path: .hatfield/tmp/output-cap
-
-        # Default character cap for non-doc paths (code files).
-        default_cap: 20000
-
-        # Character cap for doc-like paths (.md, .txt, .toon).
-        doc_cap: 50000
-
-        # Stale file retention in seconds (default 24 hours).
-        retention: 86400
-
-        # Optional session prefix for filenames (wired by TOOLS-R04+).
-        # session_prefix: run-abc123
 
 # ---------------------------------------------------------------------------
 # AI provider and model configuration

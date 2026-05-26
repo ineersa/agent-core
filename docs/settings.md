@@ -133,6 +133,48 @@ Files are stored under `logging.path`. The default of 14 keeps two weeks of logs
 
 **Default:** `14`
 
+### `tools.execution.default_mode`
+
+Default execution mode for tool calls. Controls whether tools run
+sequentially (one at a time) or in parallel when multiple tool calls
+are dispatched in a single turn.
+
+- `sequential`: one tool at a time (default).
+- `parallel`: requires TOOLS-R05 / multi-consumer dispatch.
+
+**Default:** `sequential`
+
+**Example:**
+
+```yaml
+tools:
+    execution:
+        default_mode: sequential
+```
+
+---
+
+### `tools.execution.timeout_seconds`
+
+Default timeout in seconds exposed to tool implementations through the
+current tool execution context. Concrete tools that own long-running
+loops or subprocesses are responsible for checking this value together
+with the cancellation token.
+
+**Default:** `300` (5 minutes)
+
+---
+
+### `tools.execution.max_parallelism`
+
+Maximum number of tool calls to execute concurrently when
+`default_mode` is `parallel`. Ignored in `sequential` mode until
+TOOLS-R05 provides durable multi-consumer tool orchestration.
+
+**Default:** `4`
+
+---
+
 ### `tools.output_cap.path`
 
 Storage directory for persisted oversized tool output. Tool output that

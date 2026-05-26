@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Handler;
 
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
+use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolIdempotencyKeyResolverInterface;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
@@ -35,9 +38,30 @@ final class ToolExecutor implements ToolExecutorInterface
         array $overrides = [],
         ?ToolboxInterface $toolbox = null,
         private readonly ?ToolIdempotencyKeyResolverInterface $toolIdempotencyKeyResolver = null,
+        private readonly ?StackToolExecutionContextAccessor $contextAccessor = null,
     ) {
         $this->policyResolver = new ToolExecutionPolicyResolver($defaultMode, $defaultTimeoutSeconds, $maxParallelism, $overrides);
         $this->faultTolerantToolbox = null !== $toolbox ? new FaultTolerantToolbox($toolbox) : null;
+    }
+
+    public static function fromSettings(
+        ToolExecutionSettingsInterface $settings,
+        ToolExecutionResultStore $resultStore,
+        array $overrides = [],
+        ?ToolboxInterface $toolbox = null,
+        ?ToolIdempotencyKeyResolverInterface $toolIdempotencyKeyResolver = null,
+        ?StackToolExecutionContextAccessor $contextAccessor = null,
+    ): self {
+        return new self(
+            defaultMode: $settings->defaultMode(),
+            defaultTimeoutSeconds: $settings->defaultTimeoutSeconds(),
+            maxParallelism: $settings->maxParallelism(),
+            resultStore: $resultStore,
+            overrides: $overrides,
+            toolbox: $toolbox,
+            toolIdempotencyKeyResolver: $toolIdempotencyKeyResolver,
+            contextAccessor: $contextAccessor,
+        );
     }
 
     public function execute(ToolCall $toolCall): ToolResult
@@ -121,14 +145,19 @@ final class ToolExecutor implements ToolExecutorInterface
         }
 
         if ($this->cancellationToken($toolCall)->isCancellationRequested()) {
-            $result = $this->errorResult(
-                toolCallId: $toolCall->toolCallId,
-                toolName: $toolCall->toolName,
-                message: \sprintf('Tool "%s" result marked stale due to run cancellation.', $toolCall->toolName),
-                details: [
-                    'stale_due_to_cancel' => true,
-                ],
-            );
+            // Don't overwrite a structured cancelled result.
+            $alreadyCancelled = \is_array($result->details) && ($result->details['cancelled'] ?? false);
+
+            if (!$alreadyCancelled) {
+                $result = $this->errorResult(
+                    toolCallId: $toolCall->toolCallId,
+                    toolName: $toolCall->toolName,
+                    message: \sprintf('Tool "%s" result marked stale due to run cancellation.', $toolCall->toolName),
+                    details: [
+                        'stale_due_to_cancel' => true,
+                    ],
+                );
+            }
         }
 
         return $this->rememberAndReturn(
@@ -163,12 +192,36 @@ final class ToolExecutor implements ToolExecutorInterface
 
         return $this->toDomainResult(
             $toolCall,
-            $this->faultTolerantToolbox->execute(new SymfonyToolCall(
+            $this->executeWithContext($toolCall, $policy, fn () => $this->faultTolerantToolbox->execute(new SymfonyToolCall(
                 id: $toolCall->toolCallId,
                 name: $toolCall->toolName,
                 arguments: $toolCall->arguments,
-            )),
+            ))),
         );
+    }
+
+    private function executeWithContext(ToolCall $toolCall, ToolExecutionPolicy $policy, callable $callback): SymfonyToolResult
+    {
+        if (null === $this->contextAccessor) {
+            /** @var SymfonyToolResult $result */
+            $result = $callback();
+
+            return $result;
+        }
+
+        $context = new ToolContext(
+            runId: $this->runId($toolCall) ?? '',
+            turnNo: (int) ($toolCall->context['turn_no'] ?? 0),
+            toolCallId: $toolCall->toolCallId,
+            toolName: $toolCall->toolName,
+            cancellationToken: $this->cancellationToken($toolCall),
+            timeoutSeconds: $policy->timeoutSeconds,
+        );
+
+        /** @var SymfonyToolResult $result */
+        $result = $this->contextAccessor->with($context, $callback);
+
+        return $result;
     }
 
     private function resolvePolicy(ToolCall $toolCall): ToolExecutionPolicy

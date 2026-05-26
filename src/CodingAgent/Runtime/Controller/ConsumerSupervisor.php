@@ -25,7 +25,7 @@ use Symfony\Component\Process\Process;
  * Process management:
  * - Launch: creates a non-blocking Symfony Process with timeout(null)
  * - Supervision: polls isRunning() every 5s, restarts if crashed
- * - Shutdown: sends SIGTERM with 5s grace period, then SIGKILL
+ * - Shutdown: sends SIGTERM with configurable grace period, then SIGKILL
  * - stderr output is captured and logged on crash for diagnostics
  * - getProcess(): exposes the Process object so HeadlessController can
  *   read the LLM consumer's stdout for transient streaming deltas
@@ -49,6 +49,7 @@ final class ConsumerSupervisor
 
     public function __construct(
         private readonly LoggerInterface $logger,
+        private readonly int $shutdownGraceSeconds = 5,
     ) {
     }
 
@@ -142,7 +143,15 @@ final class ConsumerSupervisor
     }
 
     /**
-     * Gracefully stop all tracked consumer processes.
+     * Gracefully stop all tracked messenger consumer processes.
+     *
+     * This is for controller/runtime shutdown only (e.g. when the user
+     * exits the agent or the controller process is stopping). It is NOT
+     * part of run cancellation — individual tool workers self-terminate
+     * via their own cancellation token polling.
+     *
+     * Sends SIGTERM, waits up to shutdownGraceSeconds for graceful exit,
+     * then escalates to SIGKILL if still running.
      */
     public function shutdown(): void
     {
@@ -152,16 +161,19 @@ final class ConsumerSupervisor
             return;
         }
 
-        $this->logger->info('Stopping consumer processes', [
+        $this->logger->info('Shutting down messenger consumers (controller stopping)', [
             'count' => \count($this->consumers),
         ]);
 
         foreach ($this->consumers as $transportName => $process) {
             $pid = $process->getPid();
-            $process->stop(5, \SIGTERM);
+
+            // stop($timeout) sends SIGTERM, waits up to timeout seconds,
+            // then SIGKILL if still running. Default second signal is SIGKILL.
+            $process->stop($this->shutdownGraceSeconds);
 
             if ($process->isRunning()) {
-                $this->logger->warning('Consumer did not stop gracefully, sending SIGKILL', [
+                $this->logger->warning('Messenger consumer still running after grace period, may have been killed', [
                     'transport' => $transportName,
                     'pid' => $pid,
                 ]);
