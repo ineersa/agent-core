@@ -205,11 +205,6 @@ parameters:
         - type: directory
           value: src/CodingAgent/Tool/.*
 
-    - name: AppProcess
-      collectors:
-        - type: directory
-          value: src/CodingAgent/Process/.*
-
   ruleset:
     TuiApplication:
       - AppRuntimeContract
@@ -331,7 +326,6 @@ parameters:
       - AppExtensionApi
       - AppSystemPrompt
       - AppSkills
-      - AppProcess
       - AppTool
       - AgentCore
       - AppConfig
@@ -407,12 +401,8 @@ parameters:
       - AppConfig
       - SymfonyAiPlatform
 
-    AppProcess:
-      - AgentCore
-
     AppTool:
       - AgentCore
-      - AppProcess
       - SymfonyAiPlatform
 
     AppExtensionApi: ~

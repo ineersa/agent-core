@@ -19,6 +19,4 @@ interface ToolExecutionSettingsInterface
     public function defaultTimeoutSeconds(): int;
 
     public function maxParallelism(): int;
-
-    public function terminationGraceSeconds(): int;
 }

@@ -26,8 +26,8 @@ sessions:
 # Tools
 # ---------------------------------------------------------------------------
 #
-# Tool execution defaults. These control how tools are executed, how long
-# they may run before timing out, and how process termination is handled.
+# Tool execution defaults. These control how tools are executed and how long
+# they may run before timing out.
 #
 # Override any value here in your home or project settings.
 #
@@ -42,11 +42,6 @@ tools:
 
         # Maximum parallelism: how many tool calls to run concurrently.
         max_parallelism: 4
-
-    process:
-        # Grace period in seconds between SIGTERM and SIGKILL for tool
-        # process termination.
-        terminate_grace_seconds: 5
 
 # ---------------------------------------------------------------------------
 # Extensions

@@ -19,23 +19,19 @@ final readonly class ToolSettings implements ToolExecutionSettingsInterface
     public const string DEFAULT_MODE = 'sequential';
     public const int DEFAULT_TIMEOUT_SECONDS = 300;
     public const int DEFAULT_MAX_PARALLELISM = 4;
-    public const int DEFAULT_TERMINATION_GRACE_SECONDS = 5;
 
     public string $mode;
     public int $timeoutSeconds;
     public int $maxParallelism;
-    public int $terminationGraceSeconds;
 
     public function __construct(
         ?string $mode = null,
         ?int $timeoutSeconds = null,
         ?int $maxParallelism = null,
-        ?int $terminationGraceSeconds = null,
     ) {
         $this->mode = $mode ?? self::DEFAULT_MODE;
         $this->timeoutSeconds = $timeoutSeconds ?? self::DEFAULT_TIMEOUT_SECONDS;
         $this->maxParallelism = $maxParallelism ?? self::DEFAULT_MAX_PARALLELISM;
-        $this->terminationGraceSeconds = $terminationGraceSeconds ?? self::DEFAULT_TERMINATION_GRACE_SECONDS;
     }
 
     /**
@@ -52,16 +48,10 @@ final readonly class ToolSettings implements ToolExecutionSettingsInterface
             $execution = [];
         }
 
-        $process = $data['process'] ?? [];
-        if (!\is_array($process)) {
-            $process = [];
-        }
-
         return new self(
             mode: self::stringOrNull($execution, 'default_mode'),
             timeoutSeconds: self::intOrNull($execution, 'timeout_seconds'),
             maxParallelism: self::intOrNull($execution, 'max_parallelism'),
-            terminationGraceSeconds: self::intOrNull($process, 'terminate_grace_seconds'),
         );
     }
 
@@ -88,11 +78,6 @@ final readonly class ToolSettings implements ToolExecutionSettingsInterface
     public function maxParallelism(): int
     {
         return $this->maxParallelism;
-    }
-
-    public function terminationGraceSeconds(): int
-    {
-        return $this->terminationGraceSeconds;
     }
 
     private static function stringOrNull(array $data, string $key): ?string

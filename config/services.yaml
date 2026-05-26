@@ -180,7 +180,7 @@ services:
   Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface:
     alias: Ineersa\CodingAgent\Tool\CodingAgentToolSetResolver
 
-  # ─── TOOLS-00 Tool cancellation, context, and foreground process primitives ───
+  # ─── TOOLS-00 Tool cancellation context bridge ───
 
   Ineersa\AgentCore\Contract\Tool\ToolExecutionContextAccessorInterface:
     alias: Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor
@@ -189,9 +189,7 @@ services:
 
   Ineersa\CodingAgent\Tool\CancellationGuard: ~
 
-  # ─── Process namespace services ───
-
-  # ToolSettings is a DTO; factory method creates from merged Hatfield settings.
+  # ToolSettings resolves tools.execution defaults from merged Hatfield settings.
   Ineersa\CodingAgent\Config\ToolSettings:
     factory: ['Ineersa\CodingAgent\Config\ToolSettings', 'fromAppConfig']
     arguments:
@@ -199,17 +197,6 @@ services:
 
   Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface:
     alias: Ineersa\CodingAgent\Config\ToolSettings
-
-  Ineersa\CodingAgent\Process\ToolProcessRegistry:
-    arguments:
-      $connection: '@database_connection'
-
-  Ineersa\CodingAgent\Process\ProcessTerminator:
-    factory: ['Ineersa\CodingAgent\Process\ProcessTerminator', 'fromSettings']
-    arguments:
-      $settings: '@Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface'
-
-  Ineersa\CodingAgent\Process\ForegroundProcessRunner: ~
 
   # Tool executor wiring: read execution defaults from merged Hatfield settings.
   Ineersa\AgentCore\Application\Handler\ToolExecutor:
