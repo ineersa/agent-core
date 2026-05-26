@@ -15,6 +15,7 @@ use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
+use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
@@ -38,6 +39,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly SystemPromptBuilder $systemPromptBuilder,
         private readonly AgentsContextDiscovery $agentsContextDiscovery,
         private readonly AgentsContextRenderer $agentsContextRenderer,
+        private readonly SkillsContextBuilder $skillsContextBuilder,
         private readonly ?RuntimeEventSinkInterface $transientSink = null,
     ) {
     }
@@ -73,6 +75,19 @@ final class InProcessAgentSessionClient implements AgentSessionClient
                 role: 'user-context',
                 content: [['type' => 'text', 'text' => $contextText]],
                 metadata: ['source' => 'agents_context', 'files' => array_column($agentsContext, 'path')],
+            );
+        }
+
+        // Discover and inject skills context as a synthetic user-context message.
+        // Skills are discovered from configured paths, rendered into
+        // <skills_instructions> and <available_skills> blocks, and added
+        // between the AGENTS.md context and the user message. Only on new sessions.
+        $skillsContext = $this->skillsContextBuilder->build();
+        if ('' !== $skillsContext) {
+            $messages[] = new AgentMessage(
+                role: 'user-context',
+                content: [['type' => 'text', 'text' => $skillsContext]],
+                metadata: ['source' => 'skills_context'],
             );
         }
 

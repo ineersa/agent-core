@@ -195,6 +195,11 @@ parameters:
         - type: directory
           value: src/CodingAgent/SystemPrompt/.*
 
+    - name: AppSkills
+      collectors:
+        - type: directory
+          value: src/CodingAgent/Skills/.*
+
     - name: AppTool
       collectors:
         - type: directory
@@ -320,6 +325,7 @@ parameters:
       - AppRuntimeProjection
       - AppExtensionApi
       - AppSystemPrompt
+      - AppSkills
       - AppTool
       - AgentCore
       - AppConfig
@@ -360,6 +366,7 @@ parameters:
       - AppRuntimeProjection
       - AppRuntimeProjectionPipeline
       - AppRuntimeInternals
+      - AppSkills
       - AppSession
       - TuiApplication
       - TuiListener
@@ -384,6 +391,10 @@ parameters:
       - AppExtensionApi
       - AppConfig
       - AppTool
+
+    AppSkills:
+      - AppConfig
+      - SymfonyYaml
 
     AppSystemPrompt:
       - AppTool

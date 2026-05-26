@@ -16,6 +16,10 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
+use Ineersa\CodingAgent\Skills\SkillContextRenderer;
+use Ineersa\CodingAgent\Skills\SkillDiscovery;
+use Ineersa\CodingAgent\Skills\SkillsConfig;
+use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
@@ -157,6 +161,9 @@ final class AgentsContextInjectionTest extends TestCase
     private function createClient(): InProcessAgentSessionClient
     {
         // Use a mock runner that captures StartRunInput
+        $homeDir = $this->tmpDir.'/home';
+        mkdir($homeDir, 0777, true);
+
         $runner = new class($this) implements AgentRunnerInterface {
             public function __construct(private readonly AgentsContextInjectionTest $test)
             {
@@ -193,7 +200,7 @@ final class AgentsContextInjectionTest extends TestCase
 
         $toolRegistry = new ToolRegistry();
 
-        $pathResolver = new SettingsPathResolver($this->projectDir);
+        $pathResolver = new SettingsPathResolver($this->projectDir, $homeDir);
         $templateRenderer = new StringTemplateRenderer();
         $appConfig = new AppConfig(
             tui: new TuiConfig(theme: 'test'),
@@ -216,6 +223,20 @@ final class AgentsContextInjectionTest extends TestCase
 
         $renderer = new AgentsContextRenderer();
 
+        // Skills context builder (no-op for these tests)
+        $skillsConfig = new SkillsConfig();
+        $skillDiscovery = new SkillDiscovery(
+            config: $skillsConfig,
+            pathResolver: $pathResolver,
+            appConfig: $appConfig,
+        );
+        $skillContextRenderer = new SkillContextRenderer();
+        $skillsContextBuilder = new SkillsContextBuilder(
+            discovery: $skillDiscovery,
+            config: $skillsConfig,
+            renderer: $skillContextRenderer,
+        );
+
         return new InProcessAgentSessionClient(
             runner: $runner,
             eventStore: new class implements EventStoreInterface {
@@ -236,6 +257,7 @@ final class AgentsContextInjectionTest extends TestCase
             systemPromptBuilder: $systemPromptBuilder,
             agentsContextDiscovery: $discovery,
             agentsContextRenderer: $renderer,
+            skillsContextBuilder: $skillsContextBuilder,
         );
     }
 
