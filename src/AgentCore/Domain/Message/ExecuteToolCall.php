@@ -29,6 +29,7 @@ final readonly class ExecuteToolCall extends AbstractAgentBusMessage
         public ?int $maxParallelism = null,
         public ?array $assistantMessage = null,
         public ?array $argSchema = null,
+        public ?string $toolsRef = null,
     ) {
         parent::__construct($runId, $turnNo, $stepId, $attempt, $idempotencyKey);
     }

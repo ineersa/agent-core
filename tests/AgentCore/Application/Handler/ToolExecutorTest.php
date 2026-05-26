@@ -8,6 +8,8 @@ use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
+use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use PHPUnit\Framework\TestCase;
@@ -186,6 +188,151 @@ final class ToolExecutorTest extends TestCase
         // Context should be available during execution (CountingToolbox checks this).
         self::assertNull($accessor->current());
     }
+
+    /* ───────── Execution allowlist enforcement ───────── */
+
+    public function testAllowlistDeniesToolNotInList(): void
+    {
+        $denyResolver = new class implements ToolSetResolverInterface {
+            public function resolve(string $toolsRef, ?int $turnNo = null, ?string $runId = null): ActiveToolSet
+            {
+                return new ActiveToolSet(
+                    toolNames: ['allowed_tool'],
+                    allowListNames: ['allowed_tool'],
+                );
+            }
+        };
+
+        $toolbox = new CountingToolbox();
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel',
+            defaultTimeoutSeconds: 30,
+            maxParallelism: 4,
+            overrides: [],
+            toolbox: $toolbox,
+            resultStore: new ToolExecutionResultStore(),
+            toolSetResolver: $denyResolver,
+        );
+
+        $result = $executor->execute(new ToolCall(
+            toolCallId: 'call-deny',
+            toolName: 'evil_tool',
+            arguments: [],
+            orderIndex: 0,
+            context: ['tools_ref' => 'toolset:run:r1:turn:1'],
+        ));
+
+        self::assertTrue($result->isError);
+        self::assertSame(0, $toolbox->executions, 'Toolbox should not be called for denied tool.');
+        self::assertSame('evil_tool', $result->toolName);
+        self::assertIsArray($result->details);
+        self::assertTrue($result->details['denied']);
+        self::assertSame('not_in_active_allowlist', $result->details['reason']);
+        self::assertSame(['allowed_tool'], $result->details['available_tools']);
+        self::assertStringContainsString('is not in the active execution allowlist', $result->content[0]['text']);
+    }
+
+    public function testAllowlistAllowsToolInList(): void
+    {
+        $allowResolver = new class implements ToolSetResolverInterface {
+            public function resolve(string $toolsRef, ?int $turnNo = null, ?string $runId = null): ActiveToolSet
+            {
+                return new ActiveToolSet(
+                    toolNames: ['allowed_tool'],
+                    allowListNames: ['allowed_tool'],
+                );
+            }
+        };
+
+        $toolbox = new CountingToolbox();
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel',
+            defaultTimeoutSeconds: 30,
+            maxParallelism: 4,
+            overrides: [],
+            toolbox: $toolbox,
+            resultStore: new ToolExecutionResultStore(),
+            toolSetResolver: $allowResolver,
+        );
+
+        $result = $executor->execute(new ToolCall(
+            toolCallId: 'call-allow',
+            toolName: 'allowed_tool',
+            arguments: [],
+            orderIndex: 0,
+            context: ['tools_ref' => 'toolset:run:r1:turn:1'],
+        ));
+
+        self::assertFalse($result->isError);
+        self::assertSame(1, $toolbox->executions, 'Toolbox should be called for allowed tool.');
+    }
+
+    public function testAllowlistSkippedWhenNoToolsRef(): void
+    {
+        $spyResolver = new class implements ToolSetResolverInterface {
+            public bool $resolved = false;
+
+            public function resolve(string $toolsRef, ?int $turnNo = null, ?string $runId = null): ActiveToolSet
+            {
+                $this->resolved = true;
+
+                return new ActiveToolSet(
+                    toolNames: ['allowed_tool'],
+                    allowListNames: ['allowed_tool'],
+                );
+            }
+        };
+
+        $toolbox = new CountingToolbox();
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel',
+            defaultTimeoutSeconds: 30,
+            maxParallelism: 4,
+            overrides: [],
+            toolbox: $toolbox,
+            resultStore: new ToolExecutionResultStore(),
+            toolSetResolver: $spyResolver,
+        );
+
+        $result = $executor->execute(new ToolCall(
+            toolCallId: 'call-no-ref',
+            toolName: 'any_tool',
+            arguments: [],
+            orderIndex: 0,
+            // No context['tools_ref'] — should skip allowlist check
+        ));
+
+        self::assertFalse($spyResolver->resolved, 'Resolver should not be called when no tools_ref in context.');
+        self::assertFalse($result->isError);
+        self::assertSame(1, $toolbox->executions);
+    }
+
+    public function testAllowlistSkippedWhenNoResolver(): void
+    {
+        $toolbox = new CountingToolbox();
+        // No toolSetResolver passed.
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel',
+            defaultTimeoutSeconds: 30,
+            maxParallelism: 4,
+            overrides: [],
+            toolbox: $toolbox,
+            resultStore: new ToolExecutionResultStore(),
+        );
+
+        $result = $executor->execute(new ToolCall(
+            toolCallId: 'call-no-resolver',
+            toolName: 'some_tool',
+            arguments: [],
+            orderIndex: 0,
+            context: ['tools_ref' => 'toolset:run:r1:turn:1'],
+        ));
+
+        self::assertFalse($result->isError);
+        self::assertSame(1, $toolbox->executions);
+    }
+
+    /* ───────── Context accessor ───────── */
 
     public function testContextAccessorSetsCorrectValues(): void
     {

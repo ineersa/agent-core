@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolIdempotencyKeyResolverInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionPolicy;
@@ -39,6 +40,7 @@ final class ToolExecutor implements ToolExecutorInterface
         ?ToolboxInterface $toolbox = null,
         private readonly ?ToolIdempotencyKeyResolverInterface $toolIdempotencyKeyResolver = null,
         private readonly ?StackToolExecutionContextAccessor $contextAccessor = null,
+        private readonly ?ToolSetResolverInterface $toolSetResolver = null,
     ) {
         $this->policyResolver = new ToolExecutionPolicyResolver($defaultMode, $defaultTimeoutSeconds, $maxParallelism, $overrides);
         $this->faultTolerantToolbox = null !== $toolbox ? new FaultTolerantToolbox($toolbox) : null;
@@ -51,6 +53,7 @@ final class ToolExecutor implements ToolExecutorInterface
         ?ToolboxInterface $toolbox = null,
         ?ToolIdempotencyKeyResolverInterface $toolIdempotencyKeyResolver = null,
         ?StackToolExecutionContextAccessor $contextAccessor = null,
+        ?ToolSetResolverInterface $toolSetResolver = null,
     ): self {
         return new self(
             defaultMode: $settings->defaultMode(),
@@ -61,6 +64,7 @@ final class ToolExecutor implements ToolExecutorInterface
             toolbox: $toolbox,
             toolIdempotencyKeyResolver: $toolIdempotencyKeyResolver,
             contextAccessor: $contextAccessor,
+            toolSetResolver: $toolSetResolver,
         );
     }
 
@@ -188,6 +192,13 @@ final class ToolExecutor implements ToolExecutorInterface
                     'unavailable' => true,
                 ],
             );
+        }
+
+        // Enforce execution allowlist when a toolSetResolver and tools_ref are available.
+        // This ensures only tools in the same snapshot that was shown to the LLM are executed.
+        $allowlistCheck = $this->checkAllowlist($toolCall);
+        if (null !== $allowlistCheck) {
+            return $allowlistCheck;
         }
 
         return $this->toDomainResult(
@@ -355,6 +366,48 @@ final class ToolExecutor implements ToolExecutorInterface
         }
 
         return $normalized;
+    }
+
+    private function checkAllowlist(ToolCall $toolCall): ?ToolResult
+    {
+        if (null === $this->toolSetResolver) {
+            return null;
+        }
+
+        $toolsRef = $toolCall->context['tools_ref'] ?? null;
+        if (!\is_string($toolsRef) || '' === $toolsRef) {
+            return null;
+        }
+
+        $turnNo = isset($toolCall->context['turn_no']) && \is_int($toolCall->context['turn_no'])
+            ? $toolCall->context['turn_no']
+            : null;
+
+        $activeSet = $this->toolSetResolver->resolve($toolsRef, $turnNo, $toolCall->runId);
+
+        if (\in_array($toolCall->toolName, $activeSet->allowListNames, true)) {
+            return null;
+        }
+
+        $available = [] !== $activeSet->allowListNames
+            ? implode(', ', $activeSet->allowListNames)
+            : '(none)';
+
+        return $this->errorResult(
+            toolCallId: $toolCall->toolCallId,
+            toolName: $toolCall->toolName,
+            message: \sprintf(
+                'Tool "%s" is not in the active execution allowlist. Available tools: %s',
+                $toolCall->toolName,
+                $available,
+            ),
+            details: [
+                'denied' => true,
+                'reason' => 'not_in_active_allowlist',
+                'tools_ref' => $toolsRef,
+                'available_tools' => $activeSet->allowListNames,
+            ],
+        );
     }
 
     private function runId(ToolCall $toolCall): ?string
