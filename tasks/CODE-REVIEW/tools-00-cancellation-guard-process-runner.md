@@ -133,3 +133,7 @@ Completed:
 - Recorded fork run: dxm1z8gqhxl9
 - Validation: castor cache:clear: OK; castor test --filter="ToolExecutor|ToolContext|StackToolExecutionContextAccessor|ToolSettings|ConsumerSupervisor": OK (13 tests, 34 assertions); castor deptrac: OK (0 violations, 352 uncovered, 758 allowed); castor cs-check: OK after cs-fix; castor test: OK (998 tests, 10044 assertions)
 - Summary: Follow-up fork dxm1z8gqhxl9 completed and pushed commit 88e3fdfd to PR #55. It removed CancellationGuard, ToolCancelledException, and ToolExecutionContextAccessorInterface; refactored ToolSettings to denormalize tools.execution into typed ToolExecutionConfig DTO via Symfony DenormalizerInterface; clarified ConsumerSupervisor shutdown as controller/runtime shutdown rather than run cancellation; kept only minimal current ToolContext/StackToolExecutionContextAccessor cancellation-token access.
+
+## Task workflow update - 2026-05-26T22:56:25.845Z
+- Validation: castor test --filter="ToolExecutor|ToolContext|StackToolExecutionContextAccessor|ToolSettings|ConsumerSupervisor": ok (tests=13, assertions=34); castor deptrac: ok (violations=0, errors=0, uncovered=352, allowed=758); castor cs-check: ok (files_fixed=0); castor test: ok (tests=998, assertions=10044)
+- Summary: Addressed final simplification question by removing ToolExecutionContextInterface as well. ToolContext is now the concrete final context DTO, and StackToolExecutionContextAccessor types current()/requireCurrent()/with() directly to ToolContext.
