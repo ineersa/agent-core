@@ -5,12 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Tool;
 
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolExecutionContextInterface;
 
 /**
  * Concrete execution context populated by ToolExecutor for each invocation.
  */
-final readonly class ToolContext implements ToolExecutionContextInterface
+final readonly class ToolContext
 {
     public function __construct(
         private string $runId,
