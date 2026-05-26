@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Config;
 
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
  * Tool settings resolved from Hatfield config.
@@ -16,10 +17,6 @@ use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
  */
 final readonly class ToolSettings implements ToolExecutionSettingsInterface
 {
-    public const string DEFAULT_MODE = 'sequential';
-    public const int DEFAULT_TIMEOUT_SECONDS = 300;
-    public const int DEFAULT_MAX_PARALLELISM = 4;
-
     public string $mode;
     public int $timeoutSeconds;
     public int $maxParallelism;
@@ -29,40 +26,43 @@ final readonly class ToolSettings implements ToolExecutionSettingsInterface
         ?int $timeoutSeconds = null,
         ?int $maxParallelism = null,
     ) {
-        $this->mode = $mode ?? self::DEFAULT_MODE;
-        $this->timeoutSeconds = $timeoutSeconds ?? self::DEFAULT_TIMEOUT_SECONDS;
-        $this->maxParallelism = $maxParallelism ?? self::DEFAULT_MAX_PARALLELISM;
+        $this->mode = $mode ?? ToolExecutionConfig::DEFAULT_MODE;
+        $this->timeoutSeconds = $timeoutSeconds ?? ToolExecutionConfig::DEFAULT_TIMEOUT_SECONDS;
+        $this->maxParallelism = $maxParallelism ?? ToolExecutionConfig::DEFAULT_MAX_PARALLELISM;
     }
 
     /**
-     * Create from the `tools.*` section of the merged Hatfield config.
+     * Create from the `tools.*` section of the merged Hatfield config
+     * using Symfony Serializer denormalization.
      *
-     * Used by the Symfony DI container via AppConfig::raw['tools'].
-     *
-     * @param array<string, mixed> $data The resolved `tools` section array (may be empty)
+     * @param array<string, mixed>  $data         The resolved `tools` section array (may be empty)
+     * @param DenormalizerInterface $denormalizer Symfony denormalizer for typed DTO hydration
      */
-    public static function fromConfigData(array $data): self
+    public static function fromConfigData(array $data, DenormalizerInterface $denormalizer): self
     {
-        $execution = $data['execution'] ?? [];
-        if (!\is_array($execution)) {
-            $execution = [];
-        }
+        $executionData = \is_array($data['execution'] ?? null) ? $data['execution'] : [];
+
+        $execution = $denormalizer->denormalize(
+            $executionData,
+            ToolExecutionConfig::class,
+            'array',
+        );
 
         return new self(
-            mode: self::stringOrNull($execution, 'default_mode'),
-            timeoutSeconds: self::intOrNull($execution, 'timeout_seconds'),
-            maxParallelism: self::intOrNull($execution, 'max_parallelism'),
+            mode: $execution->defaultMode,
+            timeoutSeconds: $execution->timeoutSeconds,
+            maxParallelism: $execution->maxParallelism,
         );
     }
 
     /**
-     * Create from AppConfig::raw['tools'] for DI wiring.
+     * Create from AppConfig for DI wiring.
      */
-    public static function fromAppConfig(AppConfig $appConfig): self
+    public static function fromAppConfig(AppConfig $appConfig, DenormalizerInterface $denormalizer): self
     {
         $tools = $appConfig->raw['tools'] ?? [];
 
-        return self::fromConfigData(\is_array($tools) ? $tools : []);
+        return self::fromConfigData(\is_array($tools) ? $tools : [], $denormalizer);
     }
 
     public function defaultMode(): string
@@ -78,19 +78,5 @@ final readonly class ToolSettings implements ToolExecutionSettingsInterface
     public function maxParallelism(): int
     {
         return $this->maxParallelism;
-    }
-
-    private static function stringOrNull(array $data, string $key): ?string
-    {
-        $value = $data[$key] ?? null;
-
-        return \is_string($value) && '' !== $value ? $value : null;
-    }
-
-    private static function intOrNull(array $data, string $key): ?int
-    {
-        $value = $data[$key] ?? null;
-
-        return \is_int($value) ? $value : (\is_string($value) && ctype_digit($value) ? (int) $value : null);
     }
 }

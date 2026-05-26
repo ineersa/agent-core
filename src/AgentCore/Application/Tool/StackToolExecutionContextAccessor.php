@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Tool;
 
-use Ineersa\AgentCore\Contract\Tool\ToolExecutionContextAccessorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionContextInterface;
 
 /**
@@ -14,7 +13,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolExecutionContextInterface;
  * execution model. If in-process parallel/fiber execution is introduced,
  * replace with an operation-id or fiber-local strategy.
  */
-final class StackToolExecutionContextAccessor implements ToolExecutionContextAccessorInterface
+final class StackToolExecutionContextAccessor
 {
     /** @var list<ToolExecutionContextInterface> */
     private array $stack = [];

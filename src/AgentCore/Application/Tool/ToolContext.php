@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Tool;
 
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolCancelledException;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionContextInterface;
 
 /**
@@ -51,12 +50,5 @@ final readonly class ToolContext implements ToolExecutionContextInterface
     public function timeoutSeconds(): int
     {
         return $this->timeoutSeconds;
-    }
-
-    public function throwIfCancellationRequested(): void
-    {
-        if ($this->cancellationToken->isCancellationRequested()) {
-            throw new ToolCancelledException();
-        }
     }
 }

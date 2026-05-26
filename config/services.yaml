@@ -182,18 +182,15 @@ services:
 
   # ─── TOOLS-00 Tool cancellation context bridge ───
 
-  Ineersa\AgentCore\Contract\Tool\ToolExecutionContextAccessorInterface:
-    alias: Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor
-
   Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor: ~
 
-  Ineersa\CodingAgent\Tool\CancellationGuard: ~
-
-  # ToolSettings resolves tools.execution defaults from merged Hatfield settings.
+  # ToolSettings resolves tools.execution defaults from merged Hatfield settings
+  # via Symfony Serializer denormalization.
   Ineersa\CodingAgent\Config\ToolSettings:
     factory: ['Ineersa\CodingAgent\Config\ToolSettings', 'fromAppConfig']
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
+      - '@Symfony\Component\Serializer\Normalizer\DenormalizerInterface'
 
   Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface:
     alias: Ineersa\CodingAgent\Config\ToolSettings

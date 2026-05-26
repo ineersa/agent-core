@@ -6,7 +6,6 @@ namespace Ineersa\AgentCore\Tests\Application\Tool;
 
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolCancelledException;
 use PHPUnit\Framework\TestCase;
 
 final class ToolContextTest extends TestCase
@@ -34,28 +33,5 @@ final class ToolContextTest extends TestCase
         self::assertSame(60, $context->timeoutSeconds());
     }
 
-    public function testThrowIfCancellationRequestedDoesNotThrowWhenNotCancelled(): void
-    {
-        $token = new class implements CancellationTokenInterface {
-            public function isCancellationRequested(): bool { return false; }
-        };
 
-        $context = new ToolContext('run-1', 1, 'c-1', 't', $token, 30);
-
-        // Should not throw.
-        $context->throwIfCancellationRequested();
-        $this->expectNotToPerformAssertions();
-    }
-
-    public function testThrowIfCancellationRequestedThrowsWhenCancelled(): void
-    {
-        $token = new class implements CancellationTokenInterface {
-            public function isCancellationRequested(): bool { return true; }
-        };
-
-        $context = new ToolContext('run-1', 1, 'c-1', 't', $token, 30);
-
-        $this->expectException(ToolCancelledException::class);
-        $context->throwIfCancellationRequested();
-    }
 }

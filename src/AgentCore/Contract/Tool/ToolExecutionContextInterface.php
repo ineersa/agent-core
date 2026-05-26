@@ -26,12 +26,4 @@ interface ToolExecutionContextInterface
     public function cancellationToken(): CancellationTokenInterface;
 
     public function timeoutSeconds(): int;
-
-    /**
-     * Convenience shortcut — throws ToolCancelledException when the
-     * cancellation token signals cancellation.
-     *
-     * @throws ToolCancelledException
-     */
-    public function throwIfCancellationRequested(): void;
 }

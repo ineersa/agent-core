@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Handler;
 
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
-use Ineersa\AgentCore\Contract\Tool\ToolCancelledException;
-use Ineersa\AgentCore\Contract\Tool\ToolExecutionContextAccessorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolIdempotencyKeyResolverInterface;
@@ -39,7 +38,7 @@ final class ToolExecutor implements ToolExecutorInterface
         array $overrides = [],
         ?ToolboxInterface $toolbox = null,
         private readonly ?ToolIdempotencyKeyResolverInterface $toolIdempotencyKeyResolver = null,
-        private readonly ?ToolExecutionContextAccessorInterface $contextAccessor = null,
+        private readonly ?StackToolExecutionContextAccessor $contextAccessor = null,
     ) {
         $this->policyResolver = new ToolExecutionPolicyResolver($defaultMode, $defaultTimeoutSeconds, $maxParallelism, $overrides);
         $this->faultTolerantToolbox = null !== $toolbox ? new FaultTolerantToolbox($toolbox) : null;
@@ -51,7 +50,7 @@ final class ToolExecutor implements ToolExecutorInterface
         array $overrides = [],
         ?ToolboxInterface $toolbox = null,
         ?ToolIdempotencyKeyResolverInterface $toolIdempotencyKeyResolver = null,
-        ?ToolExecutionContextAccessorInterface $contextAccessor = null,
+        ?StackToolExecutionContextAccessor $contextAccessor = null,
     ): self {
         return new self(
             defaultMode: $settings->defaultMode(),
@@ -122,16 +121,6 @@ final class ToolExecutor implements ToolExecutorInterface
 
         try {
             $result = $this->executeToolCall($toolCall, $policy);
-        } catch (ToolCancelledException $exception) {
-            $result = $this->errorResult(
-                toolCallId: $toolCall->toolCallId,
-                toolName: $toolCall->toolName,
-                message: $exception->getMessage(),
-                details: [
-                    'cancelled' => true,
-                    'reason' => 'run_cancelled',
-                ],
-            );
         } catch (\Throwable $exception) {
             $result = $this->errorResult(
                 toolCallId: $toolCall->toolCallId,
@@ -156,7 +145,7 @@ final class ToolExecutor implements ToolExecutorInterface
         }
 
         if ($this->cancellationToken($toolCall)->isCancellationRequested()) {
-            // Don't overwrite a structured cancelled result from ToolCancelledException.
+            // Don't overwrite a structured cancelled result.
             $alreadyCancelled = \is_array($result->details) && ($result->details['cancelled'] ?? false);
 
             if (!$alreadyCancelled) {
