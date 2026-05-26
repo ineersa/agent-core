@@ -12,17 +12,20 @@ use Psr\Log\LoggerInterface;
  * Discovers AGENTS.md project context files for new-session injection.
  *
  * Discovery order:
- *   1. ~/.hatfield/AGENTS.md or AGENTS.MD (global, checked first)
+ *   1. Global directories (checked in order):
+ *        ~/.hatfield/AGENTS.md or AGENTS.MD
+ *        ~/.agents/AGENTS.md or AGENTS.MD
  *   2. Ancestor walk from {cwd} upward to filesystem root,
- *      checking each directory for AGENTS.md or AGENTS.MD.
+ *      checking each directory for AGENTS.md or AGENTS.MD
+ *      in .hatfield/ then .agents/ subdirectories.
  *      Nearest ancestor found first.
  *
  * Deduplication by resolved realpath() ensures the same file
  * is not returned twice even if reachable through multiple paths.
  *
- * Only AGENTS.md and AGENTS.MD are supported. Per directory,
+ * Only AGENTS.md and AGENTS.MD are supported. Per subdirectory,
  * AGENTS.md is checked first; if found, AGENTS.MD is not checked
- * in that directory.
+ * in that subdirectory.
  *
  * This class lives in CodingAgent because it depends on AppConfig
  * and SettingsPathResolver (CodingAgent-owned). AgentCore and TUI
@@ -31,6 +34,7 @@ use Psr\Log\LoggerInterface;
 final readonly class AgentsContextDiscovery
 {
     private const FILENAMES = ['AGENTS.md', 'AGENTS.MD'];
+    private const SUBDIRECTORIES = ['.hatfield', '.agents'];
 
     public function __construct(
         private SettingsPathResolver $pathResolver,
@@ -58,8 +62,8 @@ final readonly class AgentsContextDiscovery
         /** @var array<string, bool> $seenPaths */
         $seenPaths = [];
 
-        // Step 1: Check global ~/.hatfield/
-        $globalFile = $this->findInDirectory($this->pathResolver->getHomeDir().'/.hatfield');
+        // Step 1: Check global directories (~/.hatfield/, ~/.agents/)
+        $globalFile = $this->findInDirectory($this->pathResolver->getHomeDir());
         if (null !== $globalFile) {
             $realPath = $this->realpath($globalFile);
             if (!isset($seenPaths[$realPath])) {
@@ -106,17 +110,20 @@ final readonly class AgentsContextDiscovery
     }
 
     /**
-     * Find the first matching filename in a directory.
+     * Find the first matching AGENTS.md or AGENTS.MD in the given base directory.
      *
-     * Checks AGENTS.md first, then AGENTS.MD. Returns the path if found,
-     * null otherwise.
+     * Searches .hatfield/ then .agents/ subdirectories. Within each subdirectory,
+     * checks AGENTS.md first, then AGENTS.MD. Returns the resolved file path if
+     * found, null otherwise.
      */
-    private function findInDirectory(string $dir): ?string
+    private function findInDirectory(string $baseDir): ?string
     {
-        foreach (self::FILENAMES as $filename) {
-            $path = rtrim($dir, '/').'/'.$filename;
-            if (is_file($path)) {
-                return $path;
+        foreach (self::SUBDIRECTORIES as $subdir) {
+            foreach (self::FILENAMES as $filename) {
+                $path = rtrim($baseDir, '/').'/'.$subdir.'/'.$filename;
+                if (is_file($path)) {
+                    return $path;
+                }
             }
         }
 

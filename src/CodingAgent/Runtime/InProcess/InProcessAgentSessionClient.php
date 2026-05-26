@@ -63,6 +63,9 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
         // Discover and inject AGENTS.md project context as a synthetic user-context
         // message (between system prompt and real user message). Only on new sessions.
+        // Note: Both the InProcess and JsonlProcess (controller subprocess) session
+        // client paths flow through this method — the controller's StartRunHandler
+        // delegates directly to this client. So a single injection point covers both.
         $agentsContext = $this->agentsContextDiscovery->discover();
         if ([] !== $agentsContext) {
             $contextText = $this->agentsContextRenderer->render($agentsContext);

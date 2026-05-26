@@ -59,7 +59,7 @@ final class AgentsContextInjectionTest extends TestCase
     public function testAgentsContextInjectedOnStart(): void
     {
         // Create AGENTS.md in the project temp dir
-        file_put_contents($this->tmpDir.'/AGENTS.md', 'Test project instructions');
+        file_put_contents($this->tmpDir.'/.hatfield/AGENTS.md', 'Test project instructions');
 
         $client = $this->createClient();
         $request = new StartRunRequest(prompt: 'Hello');
@@ -110,7 +110,7 @@ final class AgentsContextInjectionTest extends TestCase
     public function testAgentsContextInjectedWithEmptyPrompt(): void
     {
         // Create AGENTS.md in the project temp dir
-        file_put_contents($this->tmpDir.'/AGENTS.md', 'Empty prompt instructions');
+        file_put_contents($this->tmpDir.'/.hatfield/AGENTS.md', 'Empty prompt instructions');
 
         $client = $this->createClient();
         $request = new StartRunRequest(prompt: '');
@@ -133,7 +133,7 @@ final class AgentsContextInjectionTest extends TestCase
     public function testAgentsContextNotInjectedOnResume(): void
     {
         // Even with AGENTS.md present, resume should NOT inject context
-        file_put_contents($this->tmpDir.'/AGENTS.md', 'Test project instructions');
+        file_put_contents($this->tmpDir.'/.hatfield/AGENTS.md', 'Test project instructions');
 
         $client = $this->createClient();
 

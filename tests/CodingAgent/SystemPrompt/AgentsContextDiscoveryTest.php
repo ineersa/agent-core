@@ -46,7 +46,7 @@ final class AgentsContextDiscoveryTest extends TestCase
 
     public function testDiscoversProjectAgentsMd(): void
     {
-        file_put_contents($this->tmpDir.'/AGENTS.md', 'project context');
+        file_put_contents($this->tmpDir.'/.hatfield/AGENTS.md', 'project context');
 
         $discovery = $this->createDiscovery($this->tmpDir);
 
@@ -59,9 +59,9 @@ final class AgentsContextDiscoveryTest extends TestCase
 
     public function testFilenamePrecedenceAgentsMdOverAgentsMdUpper(): void
     {
-        // Create both files — AGENTS.md should win.
-        file_put_contents($this->tmpDir.'/AGENTS.md', 'lowercase wins');
-        file_put_contents($this->tmpDir.'/AGENTS.MD', 'uppercase loses');
+        // Create both files in .hatfield/ — AGENTS.md should win.
+        file_put_contents($this->tmpDir.'/.hatfield/AGENTS.md', 'lowercase wins');
+        file_put_contents($this->tmpDir.'/.hatfield/AGENTS.MD', 'uppercase loses');
 
         $discovery = $this->createDiscovery($this->tmpDir);
 
@@ -95,7 +95,7 @@ final class AgentsContextDiscoveryTest extends TestCase
         mkdir($homeDir.'/.hatfield', 0777, true);
         file_put_contents($homeDir.'/.hatfield/AGENTS.md', 'global context');
 
-        file_put_contents($this->tmpDir.'/AGENTS.md', 'project context');
+        file_put_contents($this->tmpDir.'/.hatfield/AGENTS.md', 'project context');
 
         $discovery = $this->createDiscovery($this->tmpDir, $homeDir);
 
@@ -115,9 +115,10 @@ final class AgentsContextDiscoveryTest extends TestCase
         // Create nested dirs: tmpDir/parent/child
         mkdir($this->tmpDir.'/parent', 0777, true);
         mkdir($this->tmpDir.'/parent/child', 0777, true);
+        mkdir($this->tmpDir.'/parent/.hatfield', 0777, true);
 
-        file_put_contents($this->tmpDir.'/AGENTS.md', 'grandparent context');
-        file_put_contents($this->tmpDir.'/parent/AGENTS.md', 'parent context');
+        file_put_contents($this->tmpDir.'/.hatfield/AGENTS.md', 'grandparent context');
+        file_put_contents($this->tmpDir.'/parent/.hatfield/AGENTS.md', 'parent context');
 
         $discovery = $this->createDiscovery($this->tmpDir.'/parent/child');
 
@@ -137,12 +138,12 @@ final class AgentsContextDiscoveryTest extends TestCase
         $homeDir = $this->tmpDir.'/home';
         mkdir($homeDir.'/.hatfield', 0777, true);
 
-        // Create AGENTS.md and symlink it into .hatfield/
-        file_put_contents($this->tmpDir.'/AGENTS.md', 'shared context');
-        symlink($this->tmpDir.'/AGENTS.md', $homeDir.'/.hatfield/AGENTS.md');
+        // Create AGENTS.md and symlink it into home's .hatfield/
+        file_put_contents($this->tmpDir.'/.hatfield/AGENTS.md', 'shared context');
+        symlink($this->tmpDir.'/.hatfield/AGENTS.md', $homeDir.'/.hatfield/AGENTS.md');
 
-        // CWD is tmpDir so ancestor walk finds tmpDir/AGENTS.md first.
-        // Global check also finds the same file via symlink.
+        // CWD is tmpDir so ancestor walk finds tmpDir/.hatfield/AGENTS.md.
+        // Global check also finds the same file via symlink in home/.hatfield/.
         // After realpath resolution, they should be the same.
         $discovery = $this->createDiscovery($this->tmpDir, $homeDir);
 
@@ -157,7 +158,8 @@ final class AgentsContextDiscoveryTest extends TestCase
 
     public function testNoClaudeMd(): void
     {
-        file_put_contents($this->tmpDir.'/CLAUDE.md', 'claude context');
+        // CLAUDE.md in .hatfield/ or .agents/ should NOT be discovered.
+        file_put_contents($this->tmpDir.'/.hatfield/CLAUDE.md', 'claude context');
 
         $discovery = $this->createDiscovery($this->tmpDir);
 
@@ -175,12 +177,79 @@ final class AgentsContextDiscoveryTest extends TestCase
         $this->assertCount(0, $results);
     }
 
+    /* ───────── .agents/ folder support ───────── */
+
+    public function testGlobalAgentsFolderDiscovery(): void
+    {
+        $homeDir = $this->tmpDir.'/home';
+        mkdir($homeDir.'/.agents', 0777, true);
+        file_put_contents($homeDir.'/.agents/AGENTS.md', 'agents global context');
+
+        // No .hatfield/ AGENTS.md — should fall through to .agents/
+        $discovery = $this->createDiscovery($this->tmpDir, $homeDir);
+
+        $results = $discovery->discover();
+
+        $this->assertCount(1, $results);
+        $this->assertStringContainsString('agents global context', $results[0]['content']);
+        $this->assertStringContainsString('.agents/AGENTS.md', $results[0]['path']);
+    }
+
+    public function testGlobalHatfieldTakesPrecedenceOverAgentsFolder(): void
+    {
+        $homeDir = $this->tmpDir.'/home';
+        mkdir($homeDir.'/.hatfield', 0777, true);
+        mkdir($homeDir.'/.agents', 0777, true);
+        file_put_contents($homeDir.'/.hatfield/AGENTS.md', 'hatfield global');
+        file_put_contents($homeDir.'/.agents/AGENTS.md', 'agents global');
+
+        // .hatfield/ is checked first, so it should win
+        $discovery = $this->createDiscovery($this->tmpDir, $homeDir);
+
+        $results = $discovery->discover();
+
+        $this->assertCount(1, $results);
+        $this->assertStringContainsString('hatfield global', $results[0]['content']);
+        $this->assertStringContainsString('.hatfield/AGENTS.md', $results[0]['path']);
+    }
+
+    public function testProjectAgentsFolderDiscovery(): void
+    {
+        mkdir($this->tmpDir.'/.agents', 0777, true);
+        file_put_contents($this->tmpDir.'/.agents/AGENTS.md', 'project agents context');
+
+        // No .hatfield/ AGENTS.md — should fall through to .agents/
+        $discovery = $this->createDiscovery($this->tmpDir);
+
+        $results = $discovery->discover();
+
+        $this->assertCount(1, $results);
+        $this->assertStringContainsString('project agents context', $results[0]['content']);
+        $this->assertStringContainsString('.agents/AGENTS.md', $results[0]['path']);
+    }
+
+    public function testProjectHatfieldTakesPrecedenceOverAgentsFolder(): void
+    {
+        mkdir($this->tmpDir.'/.agents', 0777, true);
+        file_put_contents($this->tmpDir.'/.hatfield/AGENTS.md', 'hatfield project');
+        file_put_contents($this->tmpDir.'/.agents/AGENTS.md', 'agents project');
+
+        // .hatfield/ is checked first, so it should win
+        $discovery = $this->createDiscovery($this->tmpDir);
+
+        $results = $discovery->discover();
+
+        $this->assertCount(1, $results);
+        $this->assertStringContainsString('hatfield project', $results[0]['content']);
+        $this->assertStringContainsString('.hatfield/AGENTS.md', $results[0]['path']);
+    }
+
     /* ───────── Edge cases ───────── */
 
     public function testDiscoversAgentsMdUppercaseWhenOnlyThatExists(): void
     {
-        // Only AGENTS.MD (uppercase) exists — should still be discovered.
-        file_put_contents($this->tmpDir.'/AGENTS.MD', 'uppercase only');
+        // Only AGENTS.MD (uppercase) exists in .hatfield/ — should still be discovered.
+        file_put_contents($this->tmpDir.'/.hatfield/AGENTS.MD', 'uppercase only');
 
         $discovery = $this->createDiscovery($this->tmpDir);
 

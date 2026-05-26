@@ -56,14 +56,10 @@ final readonly class AgentsContextRenderer
     }
 
     /**
-     * Minimal XML-escaping for path attributes and content.
+     * XML-escape a string value using PHP's standard htmlspecialchars.
      */
     private function escapeXml(string $value): string
     {
-        return str_replace(
-            ['&', '<', '>', '"', "'"],
-            ['&amp;', '&lt;', '&gt;', '&quot;', '&apos;'],
-            $value,
-        );
+        return htmlspecialchars($value, \ENT_XML1 | \ENT_QUOTES, 'UTF-8');
     }
 }
