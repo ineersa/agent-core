@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Tool;
+namespace Ineersa\CodingAgent\Process;
 
 /**
  * Specification for starting a process via ForegroundProcessRunner.

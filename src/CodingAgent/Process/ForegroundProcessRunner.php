@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Tool;
+namespace Ineersa\CodingAgent\Process;
 
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionContextInterface;
 use Symfony\Component\Process\Process;
@@ -15,7 +15,7 @@ use Symfony\Component\Process\Process;
  * - Starting Symfony Process instances
  * - Creating process groups for tree safety
  * - Registering ForegroundTool records in ToolProcessRegistry
- * - Timeout enforcement via ToolProcessTerminator
+ * - Timeout enforcement via ProcessTerminator
  * - Cancellation detection (token check after exit, and signal exit codes)
  * - An observer/decision hook so future bash can request
  *   Continue|Terminate|DetachToBackground without duplicating lifecycle
@@ -25,6 +25,23 @@ use Symfony\Component\Process\Process;
  * - Cancellation signal emission (ownership: controller/runtime)
  * - Background process management (ownership: BackgroundProcessManager)
  * - Per-tool argument parsing or result formatting
+ *
+ * ╔══════════════════════════════════════════════════════════════════════╗
+ * ║  PARALLEL TOOL EXECUTION NOTE                                      ║
+ * ║                                                                    ║
+ * ║  ForegroundProcessRunner is synchronous within a single tool        ║
+ * ║  worker process. The run() method blocks until the subprocess      ║
+ * ║  completes, times out, or is cancelled. This is intentional —      ║
+ * ║  the runner manages one foreground tool lifecycle at a time.       ║
+ * ║                                                                    ║
+ * ║  True parallel tool execution requires multiple Messenger tool     ║
+ * ║  consumer processes running concurrently, coordinated by a         ║
+ * ║  persistent batch store and the ToolBatchCollector pattern.        ║
+ * ║  That orchestration is tracked separately as TOOLS-R05.           ║
+ * ║                                                                    ║
+ * ║  Do NOT add threading, fibers, or OS-level parallelism inside      ║
+ * ║  this class. The runner is a single-worker primitive.              ║
+ * ╚══════════════════════════════════════════════════════════════════════╝
  */
 final class ForegroundProcessRunner
 {
@@ -42,7 +59,7 @@ final class ForegroundProcessRunner
 
     public function __construct(
         private readonly ToolProcessRegistry $registry,
-        private readonly ToolProcessTerminator $terminator,
+        private readonly ProcessTerminator $terminator,
         ?callable $decisionHook = null,
     ) {
         $this->decisionHook = $decisionHook;
@@ -63,7 +80,7 @@ final class ForegroundProcessRunner
             command: $spec->command,
             cwd: $spec->cwd,
             env: $spec->env,
-            timeout: null, // We manage timeout ourselves via ToolProcessTerminator + wall-clock tracking
+            timeout: null, // We manage timeout ourselves via ProcessTerminator + wall-clock tracking
         );
 
         if ($spec->createProcessGroup && \function_exists('posix_setsid')) {
@@ -87,9 +104,9 @@ final class ForegroundProcessRunner
 
         // Build a non-empty command preview for the process record.
         $rawPreview = $spec->commandPreview
-            ?? \implode(' ', $spec->command);
+            ?? implode(' ', $spec->command);
         $commandPreview = '' !== $rawPreview
-            ? \mb_substr($rawPreview, 0, 120)
+            ? mb_substr($rawPreview, 0, 120)
             : 'unknown command';
 
         $record = new ToolProcessRecordDTO(
@@ -226,7 +243,7 @@ final class ForegroundProcessRunner
      *
      * When cancellation is detected, we stop waiting immediately. The caller
      * will then see $process->isRunning() === true and terminate the process
-     * via ToolProcessTerminator (above). The controller's cancellation hook
+     * via ProcessTerminator (above). The controller's cancellation hook
      * may also terminate the process group in parallel.
      */
     private function waitForProcess(Process $process, ToolExecutionContextInterface $context, int $timeoutSeconds): void

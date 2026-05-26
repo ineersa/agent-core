@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Tool;
+namespace Ineersa\CodingAgent\Process;
 
 /**
  * Classification for tool process records in the cross-process registry.

@@ -2,16 +2,26 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Tool;
+namespace Ineersa\CodingAgent\Process;
 
 /**
- * Terminates tool processes with TERM → grace → KILL semantics.
+ * Terminates processes with TERM → grace → KILL semantics.
+ *
+ * A shared utility used by:
+ *  - ForegroundProcessRunner: terminates timed-out or cancelled subprocesses
+ *  - CancelHandler: terminates foreground tool processes on run cancellation
+ *  - ConsumerSupervisor: replaces duplicated TERM→KILL shutdown logic
  *
  * Prefers Unix process-group termination (posix_kill(-$pgid, SIGTERM))
  * for tree safety, falling back to direct PID termination. Exited or
  * non-existent processes are treated as already stopped.
+ *
+ * The grace period for SIGTERM→SIGKILL escalation is configurable via
+ * the constructor graceSeconds parameter, which should be sourced from
+ * Hatfield tool settings (tools.process.termination_grace_seconds) in
+ * production wiring.
  */
-final class ToolProcessTerminator
+final class ProcessTerminator
 {
     public const int DEFAULT_GRACE_SECONDS = 5;
 
