@@ -1,73 +1,13 @@
 parameters:
 	ignoreErrors:
 		-
-			message: '#^Method Ineersa\\AgentCore\\Application\\RunReadService\:\:replayAfter\(\) never returns null so it can be removed from the return type\.$#'
-			identifier: return.unusedType
-			count: 1
-			path: src/AgentCore/Application/RunReadService.php
-
-		-
-			message: '#^Method Ineersa\\AgentCore\\Application\\RunReadService\:\:summary\(\) never returns null so it can be removed from the return type\.$#'
-			identifier: return.unusedType
-			count: 1
-			path: src/AgentCore/Application/RunReadService.php
-
-		-
-			message: '#^Method Ineersa\\AgentCore\\Application\\RunReadService\:\:transcriptPage\(\) never returns null so it can be removed from the return type\.$#'
-			identifier: return.unusedType
-			count: 1
-			path: src/AgentCore/Application/RunReadService.php
-
-		-
-			message: '#^Method Ineersa\\AgentCore\\Domain\\Run\\RunState\:\:__construct\(\) has parameter \$streamingMessage with no value type specified in iterable type array\.$#'
+			message: '#^Method Ineersa\\CodingAgent\\CLI\\AgentCommand\:\:__invoke\(\) has parameter \$skills with no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
-			path: src/AgentCore/Domain/Run/RunState.php
+			path: src/CodingAgent/CLI/AgentCommand.php
 
 		-
-			message: '#^Method Ineersa\\CodingAgent\\Config\\AppConfigLoader\:\:load\(\) return type has no value type specified in iterable type array\.$#'
+			message: '#^Method Ineersa\\CodingAgent\\CLI\\AgentCommand\:\:__invoke\(\) has parameter \$skillsPath with no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
-			path: src/CodingAgent/Config/AppConfigLoader.php
-
-		-
-			message: '#^Offset ''dir'' on array\{name\: string, passwd\: string, uid\: int, gid\: int, gecos\: string, dir\: string, shell\: string\} on left side of \?\? always exists and is not nullable\.$#'
-			identifier: nullCoalesce.offset
-			count: 1
-			path: src/CodingAgent/Config/SettingsPathResolver.php
-
-		-
-			message: '#^Method Ineersa\\CodingAgent\\Kernel\:\:registerBundles\(\) return type has no value type specified in iterable type iterable\.$#'
-			identifier: missingType.iterableValue
-			count: 1
-			path: src/CodingAgent/Kernel.php
-
-		-
-			message: '#^PHPDoc tag @return with type int is incompatible with native type string\.$#'
-			identifier: return.phpDocType
-			count: 1
-			path: src/CodingAgent/Runtime/Process/AgentProcessSupervisor.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Runtime\\Process\\AgentProcessSupervisor\:\:\$heartbeatInterval is never read, only written\.$#'
-			identifier: property.onlyWritten
-			count: 1
-			path: src/CodingAgent/Runtime/Process/AgentProcessSupervisor.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Runtime\\Process\\AgentProcessSupervisor\:\:\$maxRestarts is never read, only written\.$#'
-			identifier: property.onlyWritten
-			count: 1
-			path: src/CodingAgent/Runtime/Process/AgentProcessSupervisor.php
-
-		-
-			message: '#^Call to function array_filter\(\) requires parameter \#2 to be passed to avoid loose comparison semantics\.$#'
-			identifier: arrayFilter.strict
-			count: 1
-			path: src/CodingAgent/Runtime/Process/JsonlProcessAgentSessionClient.php
-
-		-
-			message: '#^Property Ineersa\\CodingAgent\\Runtime\\Process\\JsonlProcessAgentSessionClient\:\:\$runIdMap is never read, only written\.$#'
-			identifier: property.onlyWritten
-			count: 1
-			path: src/CodingAgent/Runtime/Process/JsonlProcessAgentSessionClient.php
+			path: src/CodingAgent/CLI/AgentCommand.php

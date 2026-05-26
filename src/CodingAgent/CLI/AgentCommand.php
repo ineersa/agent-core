@@ -15,6 +15,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Skills\SkillsConfig;
 use Ineersa\Tui\Application\InteractiveMode;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -45,6 +46,7 @@ final class AgentCommand
         private JsonlProcessAgentSessionClient $processClient,
         private InteractiveMode $interactiveMode,
         private HatfieldSessionStore $sessionStore,
+        private SkillsConfig $skillsConfig,
         private LoggerInterface $logger,
         private ExtensionManager $extensionManager,
         private ?HeadlessController $controller = null,
@@ -76,6 +78,15 @@ final class AgentCommand
         #[Option(description: 'Working directory for session/storage resolution (defaults to current CWD)')]
         string $cwd = '',
 
+        #[Option(description: 'Disable auto-discovery of skills (only --skills-path entries are used)')]
+        bool $noSkills = false,
+
+        #[Option(description: 'Additional skill search path')]
+        array $skillsPath = [],
+
+        #[Option(description: 'Preload a skill by name (repeatable)')]
+        array $skills = [],
+
         ?OutputInterface $output = null,
     ): int {
         if (null === $output) {
@@ -92,6 +103,12 @@ final class AgentCommand
                 }
                 chdir($cwd);
             }
+
+            // Populate skills config from CLI options before any session starts.
+            // SkillDiscovery reads this config lazily on first discover() call.
+            $this->skillsConfig->noSkills = $noSkills;
+            $this->skillsConfig->skillsPaths = $skillsPath;
+            $this->skillsConfig->preloadSkills = $skills;
 
             // Load extensions before agent mode selection.
             // This ensures enabled extensions register their tools and
