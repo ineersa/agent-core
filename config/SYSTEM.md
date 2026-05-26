@@ -16,6 +16,10 @@ Use all tools to achieve a goal.
 Project/repository instructions may appear in an initial user-context message with `<project_context>` and `<project_instructions path="...">` blocks.
 Available skills may appear in tagged reminder messages with `<available_skills>`; use them instead of guessing.
 Preloaded skill contents may appear in `<skill name="..." location="...">` blocks in the user-context message.
+
+Project AGENTS.md context is injected as a separate user-context message
+before the first user message on new sessions. It is NOT rendered into
+this system prompt template. See AgentsContextDiscovery.
 </context_channels>
 
 {appends_part}
