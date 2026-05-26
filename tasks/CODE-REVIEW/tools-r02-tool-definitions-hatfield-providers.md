@@ -41,12 +41,12 @@ Out of scope:
 - `castor deptrac` passes.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/tools-r02-tool-definitions-hatfield-providers
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-r02-tool-definitions-hatfield-providers
 Fork run: dcyj12i3moqi
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/57
+PR Status: open
 Started: 2026-05-26T16:07:55.221Z
 Completed:
 
@@ -64,3 +64,11 @@ Completed:
 ## Task workflow update - 2026-05-26T23:05:09.638Z
 - Recorded fork run: dcyj12i3moqi
 - Summary: Launched implementation fork dcyj12i3moqi. Instructions: merge current origin/main first, implement ToolDefinitionDTO/HatfieldToolProviderInterface/handler contract/registry definition lookups/BuiltInToolRegistrar/autoconfiguration tag, keep Symfony Toolbox wiring for R03, validate with Castor, commit and push branch.
+
+## Task workflow update - 2026-05-26T23:12:04.264Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/tools-r02-tool-definitions-hatfield-providers to origin.
+- branch 'task/tools-r02-tool-definitions-hatfield-providers' set up to track 'origin/task/tools-r02-tool-definitions-hatfield-providers'.
+- Created PR: https://github.com/ineersa/agent-core/pull/57
+- Validation: castor cache:clear: ok; castor test --filter="ToolRegistry|ToolDefinition|BuiltInToolRegistrar|ExtensionToolRegistryBridge": ok (44 tests, 97 assertions); castor test: ok (1040 tests, 10136 assertions); castor deptrac: ok (0 violations, 0 errors, uncovered=364, allowed=761); castor cs-check: ok
+- Summary: TOOLS-R02 implemented at 84960ddd. Added ToolHandlerInterface, ToolDefinitionDTO, HatfieldToolProviderInterface, BuiltInToolRegistrar, registry definition lookup APIs, and hatfield.tool_provider autoconfiguration. ToolRegistry now stores ToolDefinitionDTO internally while preserving dynamic-tool raw array compatibility. ExtensionToolRegistryBridge validates public ExtensionApi mixed handlers at the boundary and requires ToolHandlerInterface internally. Symfony Toolbox wiring and execution allowlist remain for TOOLS-R03.
