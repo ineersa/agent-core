@@ -49,13 +49,13 @@ Out of scope:
 - `castor deptrac` passes.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/tools-r03-registry-backed-toolbox-allowlist
+Worktree: /home/ineersa/projects/agent-core-worktrees/tools-r03-registry-backed-toolbox-allowlist
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-26T23:20:20.053Z
 Completed:
 
 ## Work log
@@ -63,3 +63,11 @@ Completed:
 
 ## Task workflow update - 2026-05-26T23:03:15.280Z
 - Summary: Updated scope after TOOLS-00 merge: R03 now depends on the final minimal ToolContext/StackToolExecutionContextAccessor baseline and owns initial tool authoring docs for synchronous tool-handler execution, local Symfony Process start+poll loops, cancellation-token checks, monotonic timeout checks, Process::stop($graceSeconds), OutputCap use, and explicitly no shared foreground process registry/runner.
+
+## Task workflow update - 2026-05-26T23:20:20.053Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/tools-r03-registry-backed-toolbox-allowlist.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/tools-r03-registry-backed-toolbox-allowlist.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/tools-r03-registry-backed-toolbox-allowlist.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/tools-r03-registry-backed-toolbox-allowlist.
+- Summary: Starting after TOOLS-R02 merged. Dependencies available: TOOLS-R00 ActiveToolSet/ToolSetResolverInterface, TOOLS-00 ToolContext/StackToolExecutionContextAccessor/settings-backed ToolExecutor, TOOLS-R02 ToolDefinitionDTO/HatfieldToolProviderInterface/ToolHandlerInterface. Scope: registry-backed Symfony Toolbox, execution allowlist enforcement, and process/polling tool authoring docs.
