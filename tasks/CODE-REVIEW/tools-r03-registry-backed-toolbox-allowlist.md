@@ -49,12 +49,12 @@ Out of scope:
 - `castor deptrac` passes.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/tools-r03-registry-backed-toolbox-allowlist
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-r03-registry-backed-toolbox-allowlist
 Fork run: vt4v5mwcyrdj
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/58
+PR Status: open
 Started: 2026-05-26T23:20:20.053Z
 Completed:
 
@@ -75,3 +75,11 @@ Completed:
 ## Task workflow update - 2026-05-26T23:20:42.832Z
 - Recorded fork run: vt4v5mwcyrdj
 - Summary: Launched implementation fork vt4v5mwcyrdj in worktree /home/ineersa/projects/agent-core-worktrees/tools-r03-registry-backed-toolbox-allowlist. Instructions cover RegistryBackedToolbox, ToolboxInterface wiring, execution allowlist enforcement, toolsRef propagation, handler invocation for permanent/dynamic/extension tools, tool execution docs, focused tests, deptrac, cs-check, commit/push.
+
+## Task workflow update - 2026-05-26T23:26:13.644Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/tools-r03-registry-backed-toolbox-allowlist to origin.
+- branch 'task/tools-r03-registry-backed-toolbox-allowlist' set up to track 'origin/task/tools-r03-registry-backed-toolbox-allowlist'.
+- Created PR: https://github.com/ineersa/agent-core/pull/58
+- Validation: castor cache:clear: ok; castor test --filter="RegistryBackedToolbox|ToolExecutor": ok (21 tests, 53 assertions); castor test: ok (1051 tests, 10166 assertions); castor deptrac: ok (0 violations, 0 errors, uncovered=373, allowed=761); castor cs-check: ok (0 files fixed); git push: ok
+- Summary: Implemented TOOLS-R03: RegistryBackedToolbox (ToolboxInterface adapter over ToolRegistryInterface), ToolboxInterface wired in services.yaml, execution allowlist enforcement in ToolExecutor with ToolSetResolverInterface + toolsRef propagation, LlmStepResult/ExecuteToolCall/ToolCall toolsRef propagation for snapshot matching, docs/tool-execution.md with handler/polling/cancellation contract, 23 new tests (9 RegistryBackedToolbox + 4 ToolExecutor allowlist + coverage via full suite), cs-check/deptrac clean.
