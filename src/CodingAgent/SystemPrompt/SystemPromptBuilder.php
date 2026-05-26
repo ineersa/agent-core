@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\SystemPrompt;
 
+use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
+use Symfony\AI\Platform\Message\Template;
+use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
 
 /**
  * Builds and renders the Hatfield system prompt from template files.
@@ -19,14 +22,20 @@ use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
  *   2. {cwd}/.hatfield/APPEND_SYSTEM.md
  *
  * Rendered with the same variables as the base template, except
- * {%appends_part%} is empty to avoid infinite recursion.
+ * {appends_part} is empty to avoid infinite recursion.
+ *
+ * Uses Symfony AI's StringTemplateRenderer for deterministic {variable}
+ * placeholder substitution.
  *
  * Supported placeholders:
- *   {%available_tools_list%} — deduped permanent tool prompt lines
- *   {%registered_guidelines%} — deduped permanent tool guidelines
- *   {%appends_part%} — rendered append template content
- *   {%date%} — current date (Y-m-d)
- *   {%cwd%} — current working directory
+ *   {available_tools_list} — deduped permanent tool prompt lines
+ *   {registered_guidelines} — deduped permanent tool guidelines
+ *   {appends_part} — rendered append template content
+ *   {date} — current date (Y-m-d)
+ *   {cwd} — current working directory
+ *
+ * Uses SettingsPathResolver for home-directory resolution (shared with
+ * other Hatfield config loading) instead of its own environment sniffing.
  *
  * This class lives in CodingAgent because it depends on ToolRegistryInterface
  * (CodingAgent-owned). AgentCore and TUI must not depend on it.
@@ -37,6 +46,8 @@ final readonly class SystemPromptBuilder
 
     public function __construct(
         private ToolRegistryInterface $toolRegistry,
+        private SettingsPathResolver $pathResolver,
+        private StringTemplateRenderer $templateRenderer,
         string $projectDir,
     ) {
         $this->projectDir = rtrim($projectDir, '/');
@@ -45,7 +56,7 @@ final readonly class SystemPromptBuilder
     /**
      * Build and render the system prompt.
      *
-     * @param string $cwd Current working directory (for {%cwd%} and template lookup)
+     * @param string $cwd Current working directory (for {cwd} and template lookup)
      *
      * @return string Fully rendered system prompt
      *
@@ -53,7 +64,7 @@ final readonly class SystemPromptBuilder
      */
     public function build(string $cwd = ''): string
     {
-        $cwd = '' !== $cwd ? $cwd : $this->resolveCwd();
+        $cwd = '' !== $cwd ? $cwd : $this->projectDir;
         $cwd = rtrim($cwd, '/');
 
         // Resolve and render the base template.
@@ -89,17 +100,15 @@ final readonly class SystemPromptBuilder
         }
 
         // Home override: ~/.hatfield/SYSTEM.md
-        $homeDir = $this->resolveHomeDir();
-        if ('' !== $homeDir) {
-            $homeSystem = $homeDir.'/.hatfield/SYSTEM.md';
-            if (is_file($homeSystem)) {
-                $content = file_get_contents($homeSystem);
-                if (false === $content) {
-                    throw new \RuntimeException(\sprintf('Failed to read home SYSTEM.md: %s', $homeSystem));
-                }
-
-                return $content;
+        $homeDir = $this->pathResolver->getHomeDir();
+        $homeSystem = $homeDir.'/.hatfield/SYSTEM.md';
+        if (is_file($homeSystem)) {
+            $content = file_get_contents($homeSystem);
+            if (false === $content) {
+                throw new \RuntimeException(\sprintf('Failed to read home SYSTEM.md: %s', $homeSystem));
             }
+
+            return $content;
         }
 
         // Built-in default: {projectDir}/config/SYSTEM.md
@@ -121,21 +130,19 @@ final readonly class SystemPromptBuilder
      *
      * Loads ~/.hatfield/APPEND_SYSTEM.md and {cwd}/.hatfield/APPEND_SYSTEM.md,
      * concatenates with blank-line separator, and renders with the same variable
-     * set except {%appends_part%} is empty.
+     * set except {appends_part} is empty.
      */
     private function buildAppendsContent(string $cwd): string
     {
         $parts = [];
 
         // Home append: ~/.hatfield/APPEND_SYSTEM.md
-        $homeDir = $this->resolveHomeDir();
-        if ('' !== $homeDir) {
-            $homeAppend = $homeDir.'/.hatfield/APPEND_SYSTEM.md';
-            if (is_file($homeAppend)) {
-                $content = file_get_contents($homeAppend);
-                if (false !== $content && '' !== $content) {
-                    $parts[] = $content;
-                }
+        $homeDir = $this->pathResolver->getHomeDir();
+        $homeAppend = $homeDir.'/.hatfield/APPEND_SYSTEM.md';
+        if (is_file($homeAppend)) {
+            $content = file_get_contents($homeAppend);
+            if (false !== $content && '' !== $content) {
+                $parts[] = $content;
             }
         }
 
@@ -155,7 +162,7 @@ final readonly class SystemPromptBuilder
         // Concatenate with blank-line separator.
         $concatenated = implode("\n\n", $parts);
 
-        // Render append content with empty {%appends_part%} to avoid recursion.
+        // Render append content with empty {appends_part} to avoid recursion.
         $appendVariables = $this->buildVariables($cwd, '');
 
         return $this->render($concatenated, $appendVariables);
@@ -201,58 +208,14 @@ final readonly class SystemPromptBuilder
     }
 
     /**
-     * Render a template by replacing {%key%} placeholders with variable values.
+     * Render a template using Symfony AI's StringTemplateRenderer.
+     *
+     * Placeholders use {variable} syntax (e.g. {date}, {cwd}).
      *
      * @param array<string, string> $variables
-     *
-     * This is a tiny deterministic renderer limited to the supported placeholders.
-     * No Twig, no Markdown, no Symfony Template dependency.
      */
     private function render(string $template, array $variables): string
     {
-        $result = $template;
-
-        foreach ($variables as $key => $value) {
-            $result = str_replace('{%'.$key.'%}', $value, $result);
-        }
-
-        return $result;
-    }
-
-    /**
-     * Resolve the user's home directory from OS environment.
-     */
-    private function resolveHomeDir(): string
-    {
-        // Linux/Unix
-        $home = getenv('HOME');
-        if (\is_string($home) && '' !== $home) {
-            return $home;
-        }
-
-        // Windows
-        $userProfile = getenv('USERPROFILE');
-        if (\is_string($userProfile) && '' !== $userProfile) {
-            return $userProfile;
-        }
-
-        // HOMEDRIVE + HOMEPATH (Windows fallback)
-        $drive = getenv('HOMEDRIVE');
-        $path = getenv('HOMEPATH');
-        if (\is_string($drive) && \is_string($path)) {
-            return $drive.$path;
-        }
-
-        return '';
-    }
-
-    /**
-     * Resolve the current working directory, falling back to project dir.
-     */
-    private function resolveCwd(): string
-    {
-        $cwd = getcwd();
-
-        return false !== $cwd ? $cwd : $this->projectDir;
+        return $this->templateRenderer->render(Template::string($template), $variables);
     }
 }

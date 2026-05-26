@@ -387,6 +387,8 @@ parameters:
 
     AppSystemPrompt:
       - AppTool
+      - AppConfig
+      - SymfonyAiPlatform
 
     AppTool:
       - AgentCore

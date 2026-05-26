@@ -163,6 +163,8 @@ services:
       $defaultModel: '%app.default_model%'
 
   # ─── System prompt builder ───
+  Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer: ~
+
   Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder:
     arguments:
       $projectDir: '%kernel.project_dir%'

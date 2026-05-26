@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\SystemPrompt;
 
+use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
 
 /**
  * Tests for SystemPromptBuilder.
@@ -29,12 +31,12 @@ final class SystemPromptBuilderTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->projectDir = \realpath(__DIR__ . '/../../..');
+        $this->projectDir = realpath(__DIR__.'/../../..');
         \assert(\is_string($this->projectDir), 'Cannot resolve project directory');
 
         // Create a temp directory for test templates without polluting real .hatfield/
-        $this->tmpDir = \sys_get_temp_dir() . '/system_prompt_test_' . \bin2hex(\random_bytes(8));
-        \mkdir($this->tmpDir . '/.hatfield', 0777, true);
+        $this->tmpDir = sys_get_temp_dir().'/system_prompt_test_'.bin2hex(random_bytes(8));
+        mkdir($this->tmpDir.'/.hatfield', 0777, true);
     }
 
     protected function tearDown(): void
@@ -46,48 +48,47 @@ final class SystemPromptBuilderTest extends TestCase
 
     public function testBuiltInTemplateRendersWithEmptyRegistry(): void
     {
-        $registry = $this->createEmptyRegistry();
-        $builder = new SystemPromptBuilder($registry, $this->projectDir);
+        $builder = $this->createBuilder();
 
         $result = $builder->build($this->tmpDir);
 
         // The built-in config/SYSTEM.md is used when no override exists.
         // Verify key structural elements are present.
-        self::assertStringContainsString('expert coding assistant', \strtolower($result));
-        self::assertStringContainsString('<available_tools>', $result);
-        self::assertStringContainsString('</available_tools>', $result);
-        self::assertStringContainsString('<guidelines>', $result);
-        self::assertStringContainsString('</guidelines>', $result);
-        self::assertStringContainsString('<context_channels>', $result);
+        $this->assertStringContainsString('expert coding assistant', strtolower($result));
+        $this->assertStringContainsString('<available_tools>', $result);
+        $this->assertStringContainsString('</available_tools>', $result);
+        $this->assertStringContainsString('<guidelines>', $result);
+        $this->assertStringContainsString('</guidelines>', $result);
+        $this->assertStringContainsString('<context_channels>', $result);
 
         // Verify placeholders are replaced (empty values from empty registry)
-        self::assertStringNotContainsString('{%available_tools_list%}', $result);
-        self::assertStringNotContainsString('{%registered_guidelines%}', $result);
-        self::assertStringNotContainsString('{%appends_part%}', $result);
-        self::assertStringNotContainsString('{%date%}', $result);
-        self::assertStringNotContainsString('{%cwd%}', $result);
+        $this->assertStringNotContainsString('{available_tools_list}', $result);
+        $this->assertStringNotContainsString('{registered_guidelines}', $result);
+        $this->assertStringNotContainsString('{appends_part}', $result);
+        $this->assertStringNotContainsString('{date}', $result);
+        $this->assertStringNotContainsString('{cwd}', $result);
 
         // Verify date is present (any date in Y-m-d format)
-        self::assertMatchesRegularExpression('/\d{4}-\d{2}-\d{2}/', $result);
+        $this->assertMatchesRegularExpression('/\d{4}-\d{2}-\d{2}/', $result);
 
         // Verify CWD is present
-        self::assertStringContainsString($this->tmpDir, $result);
+        $this->assertStringContainsString($this->tmpDir, $result);
     }
 
     public function testBuiltInTemplateWithRegisteredTools(): void
     {
         $registry = $this->createRegistryWithTools();
-        $builder = new SystemPromptBuilder($registry, $this->projectDir);
+        $builder = $this->createBuilder($registry);
 
         $result = $builder->build($this->tmpDir);
 
         // Tool lines should appear in <available_tools>
-        self::assertStringContainsString('- read: Read file contents', $result);
-        self::assertStringContainsString('- write: Write file contents', $result);
+        $this->assertStringContainsString('- read: Read file contents', $result);
+        $this->assertStringContainsString('- write: Write file contents', $result);
 
         // Guidelines should appear in <guidelines>
-        self::assertStringContainsString('Use read for files', $result);
-        self::assertStringContainsString('Use write for files', $result);
+        $this->assertStringContainsString('Use read for files', $result);
+        $this->assertStringContainsString('Use write for files', $result);
     }
 
     public function testToolsListAndGuidelinesDeduped(): void
@@ -110,91 +111,83 @@ final class SystemPromptBuilderTest extends TestCase
             promptGuidelines: ['Read files with cat -n', 'Use read for text files'],
         );
 
-        $builder = new SystemPromptBuilder($registry, $this->projectDir);
+        $builder = $this->createBuilder($registry);
         $result = $builder->build($this->tmpDir);
 
         // Deduped lines: '- read: Read file contents' appears only once
-        self::assertSame(1, \substr_count($result, '- read: Read file contents'));
+        $this->assertSame(1, substr_count($result, '- read: Read file contents'));
 
         // Deduped guidelines: 'Read files with cat -n' appears only once
-        self::assertSame(1, \substr_count($result, 'Read files with cat -n'));
+        $this->assertSame(1, substr_count($result, 'Read files with cat -n'));
         // 'Use read for text files' appears once
-        self::assertSame(1, \substr_count($result, 'Use read for text files'));
+        $this->assertSame(1, substr_count($result, 'Use read for text files'));
     }
 
     /* ───────── Template override precedence ───────── */
 
     public function testProjectOverrideReplacesBuiltIn(): void
     {
-        $projectSystemPath = $this->tmpDir . '/.hatfield/SYSTEM.md';
-        \file_put_contents($projectSystemPath, 'Custom project system prompt. Date: {%date%} CWD: {%cwd%}');
+        $projectSystemPath = $this->tmpDir.'/.hatfield/SYSTEM.md';
+        file_put_contents($projectSystemPath, 'Custom project system prompt. Date: {date} CWD: {cwd}');
 
-        $registry = $this->createEmptyRegistry();
-        $builder = new SystemPromptBuilder($registry, $this->projectDir);
+        $builder = $this->createBuilder();
 
         $result = $builder->build($this->tmpDir);
 
-        self::assertStringContainsString('Custom project system prompt.', $result);
-        self::assertStringNotContainsString('expert coding assistant', \strtolower($result));
-        self::assertStringContainsString(\date('Y-m-d'), $result);
-        self::assertStringContainsString($this->tmpDir, $result);
+        $this->assertStringContainsString('Custom project system prompt.', $result);
+        $this->assertStringNotContainsString('expert coding assistant', strtolower($result));
+        $this->assertStringContainsString(date('Y-m-d'), $result);
+        $this->assertStringContainsString($this->tmpDir, $result);
     }
 
     public function testHomeOverrideReplacesBuiltInWhenNoProjectOverride(): void
     {
-        // Create a home-directory-like SYSTEM.md (we mock HOME env in the builder
-        // by pointing to our temp dir via a custom approach — actually we can't
-        // easily mock getenv('HOME') without changing it globally.
-        //
-        // Instead, we test home override by manipulating a scenario where
-        // project override does not exist but home does. We use the fact that
-        // the builder checks HOME env variable. We set HOME temporarily.
+        // SettingsPathResolver reads HOME env at construction time.
+        // We set HOME temporarily to point at our test home dir.
+        $homeDir = $this->tmpDir.'/home';
+        mkdir($homeDir.'/.hatfield', 0777, true);
+        file_put_contents($homeDir.'/.hatfield/SYSTEM.md', 'Home system prompt. Date: {date}');
 
-        $homeDir = $this->tmpDir . '/home';
-        \mkdir($homeDir . '/.hatfield', 0777, true);
-        \file_put_contents($homeDir . '/.hatfield/SYSTEM.md', 'Home system prompt. Date: {%date%}');
-
-        $oldHome = \getenv('HOME');
-        \putenv('HOME=' . $homeDir);
+        $oldHome = getenv('HOME');
+        putenv('HOME='.$homeDir);
 
         try {
-            $registry = $this->createEmptyRegistry();
-            $builder = new SystemPromptBuilder($registry, $this->projectDir);
+            // Builder captures HOME at construction through SettingsPathResolver.
+            $builder = $this->createBuilder();
 
             // Use a different dir as cwd so project override isn't found
-            $otherDir = $this->tmpDir . '/other';
-            @\mkdir($otherDir);
+            $otherDir = $this->tmpDir.'/other';
+            @mkdir($otherDir);
             $result = $builder->build($otherDir);
 
-            self::assertStringContainsString('Home system prompt.', $result);
-            self::assertStringNotContainsString('expert coding assistant', \strtolower($result));
-            self::assertStringContainsString(\date('Y-m-d'), $result);
+            $this->assertStringContainsString('Home system prompt.', $result);
+            $this->assertStringNotContainsString('expert coding assistant', strtolower($result));
+            $this->assertStringContainsString(date('Y-m-d'), $result);
         } finally {
-            \putenv('HOME=' . ($oldHome ?: ''));
+            putenv('HOME='.($oldHome ?: ''));
         }
     }
 
     public function testProjectOverrideTakesPrecedenceOverHomeOverride(): void
     {
-        $homeDir = $this->tmpDir . '/home';
-        \mkdir($homeDir . '/.hatfield', 0777, true);
-        \file_put_contents($homeDir . '/.hatfield/SYSTEM.md', 'Home system prompt.');
+        $homeDir = $this->tmpDir.'/home';
+        mkdir($homeDir.'/.hatfield', 0777, true);
+        file_put_contents($homeDir.'/.hatfield/SYSTEM.md', 'Home system prompt.');
 
-        \file_put_contents($this->tmpDir . '/.hatfield/SYSTEM.md', 'Project system prompt.');
+        file_put_contents($this->tmpDir.'/.hatfield/SYSTEM.md', 'Project system prompt.');
 
-        $oldHome = \getenv('HOME');
-        \putenv('HOME=' . $homeDir);
+        $oldHome = getenv('HOME');
+        putenv('HOME='.$homeDir);
 
         try {
-            $registry = $this->createEmptyRegistry();
-            $builder = new SystemPromptBuilder($registry, $this->projectDir);
+            $builder = $this->createBuilder();
 
             $result = $builder->build($this->tmpDir);
 
-            self::assertStringContainsString('Project system prompt.', $result);
-            self::assertStringNotContainsString('Home system prompt.', $result);
+            $this->assertStringContainsString('Project system prompt.', $result);
+            $this->assertStringNotContainsString('Home system prompt.', $result);
         } finally {
-            \putenv('HOME=' . ($oldHome ?: ''));
+            putenv('HOME='.($oldHome ?: ''));
         }
     }
 
@@ -203,86 +196,82 @@ final class SystemPromptBuilderTest extends TestCase
     public function testAppendTemplatesRenderedAndInserted(): void
     {
         // Add project APPEND_SYSTEM.md
-        \file_put_contents(
-            $this->tmpDir . '/.hatfield/APPEND_SYSTEM.md',
-            'Append content. Date: {%date%} CWD: {%cwd%}',
+        file_put_contents(
+            $this->tmpDir.'/.hatfield/APPEND_SYSTEM.md',
+            'Append content. Date: {date} CWD: {cwd}',
         );
 
-        $registry = $this->createEmptyRegistry();
-        $builder = new SystemPromptBuilder($registry, $this->projectDir);
+        $builder = $this->createBuilder();
 
         $result = $builder->build($this->tmpDir);
 
         // Append content should be rendered
-        self::assertStringContainsString('Append content.', $result);
-        self::assertStringContainsString(\date('Y-m-d'), $result);
-        self::assertStringContainsString($this->tmpDir, $result);
+        $this->assertStringContainsString('Append content.', $result);
+        $this->assertStringContainsString(date('Y-m-d'), $result);
+        $this->assertStringContainsString($this->tmpDir, $result);
 
         // Built-in content should still be present
-        self::assertStringContainsString('expert coding assistant', \strtolower($result));
+        $this->assertStringContainsString('expert coding assistant', strtolower($result));
     }
 
     public function testBothHomeAndProjectAppendTemplatesMerged(): void
     {
-        $homeDir = $this->tmpDir . '/home';
-        \mkdir($homeDir . '/.hatfield', 0777, true);
-        \file_put_contents($homeDir . '/.hatfield/APPEND_SYSTEM.md', 'Home append: {%cwd%}');
+        $homeDir = $this->tmpDir.'/home';
+        mkdir($homeDir.'/.hatfield', 0777, true);
+        file_put_contents($homeDir.'/.hatfield/APPEND_SYSTEM.md', 'Home append: {cwd}');
 
-        \file_put_contents(
-            $this->tmpDir . '/.hatfield/APPEND_SYSTEM.md',
-            'Project append: {%cwd%}',
+        file_put_contents(
+            $this->tmpDir.'/.hatfield/APPEND_SYSTEM.md',
+            'Project append: {cwd}',
         );
 
-        $oldHome = \getenv('HOME');
-        \putenv('HOME=' . $homeDir);
+        $oldHome = getenv('HOME');
+        putenv('HOME='.$homeDir);
 
         try {
-            $registry = $this->createEmptyRegistry();
-            $builder = new SystemPromptBuilder($registry, $this->projectDir);
+            $builder = $this->createBuilder();
 
             $result = $builder->build($this->tmpDir);
 
             // Home append appears first, then project append
-            self::assertStringContainsString('Home append: ' . $this->tmpDir, $result);
-            self::assertStringContainsString('Project append: ' . $this->tmpDir, $result);
+            $this->assertStringContainsString('Home append: '.$this->tmpDir, $result);
+            $this->assertStringContainsString('Project append: '.$this->tmpDir, $result);
 
             // Home content appears before project content
-            $homePos = \strpos($result, 'Home append:');
-            $projectPos = \strpos($result, 'Project append:');
-            self::assertNotFalse($homePos);
-            self::assertNotFalse($projectPos);
-            self::assertLessThan($projectPos, $homePos);
+            $homePos = strpos($result, 'Home append:');
+            $projectPos = strpos($result, 'Project append:');
+            $this->assertNotFalse($homePos);
+            $this->assertNotFalse($projectPos);
+            $this->assertLessThan($projectPos, $homePos);
         } finally {
-            \putenv('HOME=' . ($oldHome ?: ''));
+            putenv('HOME='.($oldHome ?: ''));
         }
     }
 
     public function testAppendTemplateDoesNotRecurseIntoAppendsPart(): void
     {
-        // APPEND_SYSTEM.md that contains {%appends_part%}
-        \file_put_contents(
-            $this->tmpDir . '/.hatfield/APPEND_SYSTEM.md',
-            'Append with appends_part placeholder: [{%appends_part%}]',
+        // APPEND_SYSTEM.md that contains {appends_part}
+        file_put_contents(
+            $this->tmpDir.'/.hatfield/APPEND_SYSTEM.md',
+            'Append with appends_part placeholder: [{appends_part}]',
         );
 
-        $registry = $this->createEmptyRegistry();
-        $builder = new SystemPromptBuilder($registry, $this->projectDir);
+        $builder = $this->createBuilder();
 
         $result = $builder->build($this->tmpDir);
 
-        // {%appends_part%} in append content should be empty (no recursion)
-        self::assertStringContainsString('Append with appends_part placeholder: []', $result);
+        // {appends_part} in append content should be empty (no recursion)
+        $this->assertStringContainsString('Append with appends_part placeholder: []', $result);
     }
 
     public function testNoAppendTemplatesResultsInEmptyAppendsPart(): void
     {
-        $registry = $this->createEmptyRegistry();
-        $builder = new SystemPromptBuilder($registry, $this->projectDir);
+        $builder = $this->createBuilder();
 
         $result = $builder->build($this->tmpDir);
 
-        // {%appends_part%} in the built-in template should be replaced with empty string
-        self::assertStringNotContainsString('{%appends_part%}', $result);
+        // {appends_part} in the built-in template should be replaced with empty string
+        $this->assertStringNotContainsString('{appends_part}', $result);
     }
 
     /* ───────── Placeholder substitution ───────── */
@@ -290,100 +279,112 @@ final class SystemPromptBuilderTest extends TestCase
     public function testAllPlaceholdersAreSubstituted(): void
     {
         $registry = $this->createRegistryWithTools();
-        $builder = new SystemPromptBuilder($registry, $this->projectDir);
+        $builder = $this->createBuilder($registry);
 
         // Use a custom SYSTEM.md override that explicitly tests all placeholders
-        \file_put_contents($this->tmpDir . '/.hatfield/SYSTEM.md', \implode("\n", [
-            'Tools: [{%available_tools_list%}]',
-            'Guidelines: [{%registered_guidelines%}]',
-            'Appends: [{%appends_part%}]',
-            'Date: [{%date%}]',
-            'CWD: [{%cwd%}]',
+        file_put_contents($this->tmpDir.'/.hatfield/SYSTEM.md', implode("\n", [
+            'Tools: [{available_tools_list}]',
+            'Guidelines: [{registered_guidelines}]',
+            'Appends: [{appends_part}]',
+            'Date: [{date}]',
+            'CWD: [{cwd}]',
         ]));
 
-        \file_put_contents(
-            $this->tmpDir . '/.hatfield/APPEND_SYSTEM.md',
+        file_put_contents(
+            $this->tmpDir.'/.hatfield/APPEND_SYSTEM.md',
             'Extra guidelines: ignore',
         );
 
         $result = $builder->build($this->tmpDir);
 
-        self::assertStringContainsString('Tools: [- read: Read file contents' . "\n" . '- write: Write file contents]', $result);
-        self::assertStringContainsString('Guidelines: [Use read for files' . "\n" . 'Use write for files]', $result);
-        self::assertStringContainsString('Appends: [Extra guidelines: ignore]', $result);
-        self::assertStringContainsString('Date: [' . \date('Y-m-d') . ']', $result);
-        self::assertStringContainsString('CWD: [' . $this->tmpDir . ']', $result);
+        $this->assertStringContainsString('Tools: [- read: Read file contents'."\n".'- write: Write file contents]', $result);
+        $this->assertStringContainsString('Guidelines: [Use read for files'."\n".'Use write for files]', $result);
+        $this->assertStringContainsString('Appends: [Extra guidelines: ignore]', $result);
+        $this->assertStringContainsString('Date: ['.date('Y-m-d').']', $result);
+        $this->assertStringContainsString('CWD: ['.$this->tmpDir.']', $result);
     }
 
     public function testPlaceholdersAreSubstitutedInOverrideTemplate(): void
     {
-        \file_put_contents(
-            $this->tmpDir . '/.hatfield/SYSTEM.md',
-            '{%date%} at {%cwd%} with tools [{%available_tools_list%}]',
+        file_put_contents(
+            $this->tmpDir.'/.hatfield/SYSTEM.md',
+            '{date} at {cwd} with tools [{available_tools_list}]',
         );
 
-        $registry = $this->createEmptyRegistry();
-        $builder = new SystemPromptBuilder($registry, $this->projectDir);
+        $builder = $this->createBuilder();
 
         $result = $builder->build($this->tmpDir);
 
-        self::assertStringContainsString(\date('Y-m-d') . ' at ' . $this->tmpDir . ' with tools []', $result);
+        $this->assertStringContainsString(date('Y-m-d').' at '.$this->tmpDir.' with tools []', $result);
     }
 
     /* ───────── CWD handling ───────── */
 
     public function testCwdWithTrailingSlashDoesNotCauseDoubleSlash(): void
     {
-        $trailingCwd = $this->tmpDir . '/';
-        \file_put_contents(
-            $this->tmpDir . '/.hatfield/SYSTEM.md',
-            'CWD: {%cwd%}',
+        $trailingCwd = $this->tmpDir.'/';
+        file_put_contents(
+            $this->tmpDir.'/.hatfield/SYSTEM.md',
+            'CWD: {cwd}',
         );
 
-        $registry = $this->createEmptyRegistry();
-        $builder = new SystemPromptBuilder($registry, $this->projectDir);
+        $builder = $this->createBuilder();
 
         // Pass CWD with trailing slash; should not produce //.hatfield paths.
         $result = $builder->build($trailingCwd);
 
         // CWD in output should not have trailing slash
-        self::assertStringContainsString('CWD: ' . $this->tmpDir, $result);
-        self::assertStringNotContainsString('CWD: ' . $this->tmpDir . '/', $result);
-        self::assertStringNotContainsString('//.hatfield', $result);
+        $this->assertStringContainsString('CWD: '.$this->tmpDir, $result);
+        $this->assertStringNotContainsString('CWD: '.$this->tmpDir.'/', $result);
+        $this->assertStringNotContainsString('//.hatfield', $result);
     }
 
     public function testCustomCwdPassedToBuilder(): void
     {
-        \file_put_contents(
-            $this->tmpDir . '/.hatfield/SYSTEM.md',
-            'CWD: {%cwd%}',
+        file_put_contents(
+            $this->tmpDir.'/.hatfield/SYSTEM.md',
+            'CWD: {cwd}',
         );
 
-        $registry = $this->createEmptyRegistry();
-        $builder = new SystemPromptBuilder($registry, $this->projectDir);
+        $builder = $this->createBuilder();
 
         // Use the tmpDir as cwd so our project override is found, but verify
         // the rendered CWD value is the one passed in build()
         $result = $builder->build($this->tmpDir);
 
-        self::assertStringContainsString('CWD: ' . $this->tmpDir, $result);
+        $this->assertStringContainsString('CWD: '.$this->tmpDir, $result);
+    }
+
+    public function testEmptyCwdFallsBackToProjectDir(): void
+    {
+        // Create builder pointing at our tmpDir so built-in cannot be found.
+        $bogusDir = $this->tmpDir.'/bogus-project';
+        $builder = $this->createBuilder(null, $bogusDir);
+
+        // Override SYSTEM.md in the bogus project dir to prove empty CWD
+        // uses projectDir, not getcwd().
+        $overrideDir = $bogusDir.'/config';
+        mkdir($overrideDir, 0777, true);
+        file_put_contents($overrideDir.'/SYSTEM.md', 'Project fallback: {date}');
+
+        $result = $builder->build('');
+
+        $this->assertStringContainsString('Project fallback:', $result);
+        $this->assertStringContainsString(date('Y-m-d'), $result);
     }
 
     /* ───────── Error cases ───────── */
 
     public function testMissingBuiltInTemplateThrows(): void
     {
-        $registry = $this->createEmptyRegistry();
-
         // Create builder with a non-existent project dir so config/SYSTEM.md cannot be found.
-        $bogusDir = $this->tmpDir . '/nonexistent-project';
-
-        $builder = new SystemPromptBuilder($registry, $bogusDir);
+        $bogusDir = $this->tmpDir.'/nonexistent-project';
+        $builder = $this->createBuilder(null, $bogusDir);
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Built-in SYSTEM.md not found');
 
-        $builder->build($this->tmpDir . '/noprojectoverride');
+        $builder->build($this->tmpDir.'/noprojectoverride');
     }
 
     /* ───────── Integration-style: InProcessAgentSessionClient injection ───────── */
@@ -395,20 +396,31 @@ final class SystemPromptBuilderTest extends TestCase
         // Verifies the builder output is non-empty and contains valid system
         // prompt text from the built-in template.
 
-        $registry = $this->createEmptyRegistry();
-        $builder = new SystemPromptBuilder($registry, $this->projectDir);
+        $builder = $this->createBuilder();
 
         $systemPromptText = $builder->build($this->tmpDir);
 
         // The system prompt starts with the built-in content (no override).
         // It should be non-empty.
-        self::assertNotEmpty($systemPromptText);
+        $this->assertNotEmpty($systemPromptText);
 
         // Should begin with the SYSTEM.md content (role: 'system' message)
-        self::assertStringContainsString('expert coding assistant', \strtolower($systemPromptText));
+        $this->assertStringContainsString('expert coding assistant', strtolower($systemPromptText));
     }
 
     /* ───────── Private helpers ───────── */
+
+    private function createBuilder(
+        ?ToolRegistryInterface $registry = null,
+        ?string $projectDir = null,
+    ): SystemPromptBuilder {
+        return new SystemPromptBuilder(
+            toolRegistry: $registry ?? $this->createEmptyRegistry(),
+            pathResolver: new SettingsPathResolver($projectDir ?? $this->projectDir),
+            templateRenderer: new StringTemplateRenderer(),
+            projectDir: $projectDir ?? $this->projectDir,
+        );
+    }
 
     private function createEmptyRegistry(): ToolRegistryInterface
     {
@@ -464,12 +476,12 @@ final class SystemPromptBuilderTest extends TestCase
 
         foreach ($entries as $entry) {
             if ($entry->isDir()) {
-                @\rmdir((string) $entry);
+                @rmdir((string) $entry);
             } else {
-                @\unlink((string) $entry);
+                @unlink((string) $entry);
             }
         }
 
-        @\rmdir($path);
+        @rmdir($path);
     }
 }
