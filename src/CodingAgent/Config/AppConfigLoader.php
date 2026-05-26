@@ -161,6 +161,13 @@ final class AppConfigLoader
             );
         }
 
+        if (isset($data['tools']['output_cap']['path']) && \is_string($data['tools']['output_cap']['path'])) {
+            $data['tools']['output_cap']['path'] = $this->pathResolver->resolve(
+                $data['tools']['output_cap']['path'],
+                $cwd,
+            );
+        }
+
         return $data;
     }
 

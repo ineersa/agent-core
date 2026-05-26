@@ -67,6 +67,7 @@ services:
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfigLoader'
       - '@Ineersa\CodingAgent\Config\AppResourceLocator'
+      - '@Symfony\Component\Serializer\SerializerInterface'
 
   # ─── Extension wiring ───
 
@@ -86,6 +87,12 @@ services:
   # LoggingConfig is derived from AppConfig and autowireable.
   Ineersa\CodingAgent\Config\LoggingConfig:
     factory: ['Ineersa\CodingAgent\Config\LoggingConfig', 'fromAppConfig']
+    arguments:
+      - '@Ineersa\CodingAgent\Config\AppConfig'
+
+  # OutputCapConfig is derived from AppConfig and autowireable.
+  Ineersa\CodingAgent\Config\OutputCapConfig:
+    factory: ['Ineersa\CodingAgent\Config\OutputCapConfig', 'fromAppConfig']
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 
@@ -184,13 +191,11 @@ services:
 
   Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor: ~
 
-  # ToolSettings resolves tools.execution defaults from merged Hatfield settings
-  # via Symfony Serializer denormalization.
+  # ToolSettings resolves tools.execution defaults from typed AppConfig DTOs.
   Ineersa\CodingAgent\Config\ToolSettings:
     factory: ['Ineersa\CodingAgent\Config\ToolSettings', 'fromAppConfig']
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
-      - '@Symfony\Component\Serializer\Normalizer\DenormalizerInterface'
 
   Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface:
     alias: Ineersa\CodingAgent\Config\ToolSettings

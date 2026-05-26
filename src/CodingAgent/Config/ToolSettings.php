@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Config;
 
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
-use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
  * Tool settings resolved from Hatfield config.
@@ -32,37 +31,17 @@ final readonly class ToolSettings implements ToolExecutionSettingsInterface
     }
 
     /**
-     * Create from the `tools.*` section of the merged Hatfield config
-     * using Symfony Serializer denormalization.
-     *
-     * @param array<string, mixed>  $data         The resolved `tools` section array (may be empty)
-     * @param DenormalizerInterface $denormalizer Symfony denormalizer for typed DTO hydration
+     * Create from AppConfig for DI wiring.
      */
-    public static function fromConfigData(array $data, DenormalizerInterface $denormalizer): self
+    public static function fromAppConfig(AppConfig $appConfig): self
     {
-        $executionData = \is_array($data['execution'] ?? null) ? $data['execution'] : [];
-
-        $execution = $denormalizer->denormalize(
-            $executionData,
-            ToolExecutionConfig::class,
-            'array',
-        );
+        $execution = $appConfig->tools->execution;
 
         return new self(
             mode: $execution->defaultMode,
             timeoutSeconds: $execution->timeoutSeconds,
             maxParallelism: $execution->maxParallelism,
         );
-    }
-
-    /**
-     * Create from AppConfig for DI wiring.
-     */
-    public static function fromAppConfig(AppConfig $appConfig, DenormalizerInterface $denormalizer): self
-    {
-        $tools = $appConfig->raw['tools'] ?? [];
-
-        return self::fromConfigData(\is_array($tools) ? $tools : [], $denormalizer);
     }
 
     public function defaultMode(): string

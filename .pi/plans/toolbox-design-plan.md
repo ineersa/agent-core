@@ -685,7 +685,11 @@ Tasks are intentionally small and prefixed with `TOOLS-` so smaller models can i
   - Depends on: TOOLS-R02 (so settings-derived registration defaults are available).
   - Can parallelize with: TOOLS-R03, TOOLS-00, TOOLS-01, TOOLS-02.
 
-- **TOOLS-00** — Tool cancellation context, guard, foreground process registry, terminator, and runner.
+- **TOOLS-R05** — Parallel tool execution orchestration.
+  - Depends on: TOOLS-R03, TOOLS-R04, TOOLS-00.
+  - Owns true parallel tool-call scheduling above individual tool execution: durable batch state, multiple tool workers, ordered result collection, and cancellation visibility for all in-flight workers. Do not hide this inside an individual tool runner or rely on PHP Fibers for blocking subprocess parallelism.
+
+- **TOOLS-00** — Minimal tool execution context and cancellation-token access.
   - Depends on: none.
   - Can parallelize with: TOOLS-R00, TOOLS-R02, TOOLS-R03, TOOLS-01, TOOLS-02.
 
@@ -733,7 +737,7 @@ Tasks are intentionally small and prefixed with `TOOLS-` so smaller models can i
 
 1. **Registry and utility foundation:** TOOLS-R00, TOOLS-00, TOOLS-01, and TOOLS-02 can start immediately and in parallel.
 2. **Definition foundation:** TOOLS-R02 starts after TOOLS-R00. Concrete tool tasks can register definitions (HatfieldToolProviderInterface) after this lands, even before the Toolbox is wired.
-3. **Toolbox + settings foundation:** TOOLS-R03 (registry-backed Toolbox + allowlist) and TOOLS-R04 (settings hydration) can run in parallel after TOOLS-R02. Concrete tools need TOOLS-R03 for actual execution through the Symfony AI pipeline.
+3. **Toolbox + settings foundation:** TOOLS-R03 (registry-backed Toolbox + allowlist) and TOOLS-R04 (settings hydration) can run in parallel after TOOLS-R02. Concrete tools need TOOLS-R03 for actual execution through the Symfony AI pipeline. TOOLS-R05 starts after TOOLS-R03 + TOOLS-R04 + TOOLS-00 when the execution, settings, and cancellation primitives are stable.
 4. **Prompt/context foundation:** SYSTEM-01 starts after TOOLS-R00 snapshot APIs are stable. SYSTEM-02 can start independently because AGENTS.md context is a separate first-message channel, not a system prompt placeholder. SYSTEM-03 follows SYSTEM-02 so skills share the same first-message injection boundary.
 5. **Process/background foundation:** TOOLS-05 depends on TOOLS-00 and can run after it lands. TOOLS-08 depends on TOOLS-R02 + TOOLS-R03 + TOOLS-00.
 6. **Independent tools:** TOOLS-03 and TOOLS-04 depend on TOOLS-R02 + TOOLS-R03 + TOOLS-00 + TOOLS-01 and can run in parallel after those land.

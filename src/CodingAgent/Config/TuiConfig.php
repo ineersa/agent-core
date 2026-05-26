@@ -4,11 +4,16 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
+use Symfony\Component\Serializer\Attribute\SerializedName;
+
 /**
  * TUI settings resolved from Hatfield config.
  *
  * Immutable value object. Contains the selected theme name and
  * theme search paths ordered by priority (first wins for loading).
+ *
+ * Hydrated from the tui section of Hatfield merged config via
+ * Symfony Serializer in {@see AppConfig::fromContainer()}.
  */
 final readonly class TuiConfig
 {
@@ -18,6 +23,7 @@ final readonly class TuiConfig
      */
     public function __construct(
         public string $theme,
+        #[SerializedName('theme_paths')]
         public array $themePaths = [],
     ) {
     }
@@ -25,8 +31,8 @@ final readonly class TuiConfig
     /**
      * Create from a raw config array (from merged Hatfield YAML).
      *
-     * The theme must be present in the merged config — it always comes
-     * from {@see config/hatfield.defaults.yaml} (or a user override).
+     * @deprecated Use Symfony Serializer denormalization instead. Kept for
+     *             backward compat with existing test constructors.
      *
      * @param array<string, mixed> $data
      *

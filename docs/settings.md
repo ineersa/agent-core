@@ -156,10 +156,10 @@ tools:
 
 ### `tools.execution.timeout_seconds`
 
-Default timeout in seconds for tool execution. When a tool process
-exceeds this limit, it is terminated via SIGTERM → grace → SIGKILL.
-Individual tool calls can override this within safe bounds via the
-`timeout` parameter in the tool schema.
+Default timeout in seconds exposed to tool implementations through the
+current tool execution context. Concrete tools that own long-running
+loops or subprocesses are responsible for checking this value together
+with the cancellation token.
 
 **Default:** `300` (5 minutes)
 
@@ -168,31 +168,56 @@ Individual tool calls can override this within safe bounds via the
 ### `tools.execution.max_parallelism`
 
 Maximum number of tool calls to execute concurrently when
-`default_mode` is `parallel`. Ignored in `sequential` mode.
+`default_mode` is `parallel`. Ignored in `sequential` mode until
+TOOLS-R05 provides durable multi-consumer tool orchestration.
 
 **Default:** `4`
 
 ---
 
-### `tools.process.terminate_grace_seconds`
+### `tools.output_cap.path`
 
-Grace period in seconds between SIGTERM and SIGKILL for tool process
-termination. A shorter grace (e.g. 1–2 seconds) speeds up cancellation
-but may leave processes alive if SIGTERM is insufficient. A longer
-grace (e.g. 10 seconds) gives processes more time to clean up but
-delays forced termination.
+Storage directory for persisted oversized tool output. Tool output that
+exceeds the configured character cap is written to this directory and
+replaced with a model-facing capped notice containing the saved path and
+inspection hints (`head -50` / `grep`).
 
-**Default:** `5`
+Relative paths resolve against the active project CWD.
 
-**Example:**
+**Default:** `.hatfield/tmp/output-cap` (resolves to `<CWD>/.hatfield/tmp/output-cap`)
 
-```yaml
-tools:
-    process:
-        terminate_grace_seconds: 5
-```
+### `tools.output_cap.default_cap`
 
----
+Maximum number of characters for non-doc-like tool output (code files,
+binary paths, unknown extensions). Output exceeding this limit is capped
+and persisted.
+
+**Default:** `20000`
+
+### `tools.output_cap.doc_cap`
+
+Maximum number of characters for doc-like tool output (`.md`, `.txt`,
+`.toon` extensions). Doc-like files get a higher cap because they
+are typically intended for human reading.
+
+**Default:** `50000`
+
+### `tools.output_cap.retention`
+
+Maximum age in seconds for persisted output cap files before they are
+deleted during cleanup. Cleanup runs automatically on first use of the
+output capping service.
+
+**Default:** `86400` (24 hours)
+
+### `tools.output_cap.session_prefix`
+
+Optional session/run prefix for persisted output filenames. When set,
+filenames use the format `<session_prefix>-<random_hex>.txt` instead of
+`<date>-<random_hex>.txt`. This enables session-scoped cleanup in
+downstream tasks (TOOLS-R04+).
+
+**Default:** `null` (falls back to `Ymd` date prefix)
 
 ### `extensions.enabled`
 

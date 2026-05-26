@@ -26,8 +26,9 @@ sessions:
 # Tools
 # ---------------------------------------------------------------------------
 #
-# Tool execution defaults. These control how tools are executed and how long
-# they may run before timing out.
+# Tool execution defaults control scheduling policy and timeout metadata.
+# Output capping persists oversized text output under tools.output_cap.path and
+# replaces it with a model-facing capped notice containing inspection hints.
 #
 # Override any value here in your home or project settings.
 #
@@ -37,11 +38,28 @@ tools:
         # Parallel mode requires TOOLS-R05 / multi-consumer tool dispatch.
         default_mode: sequential
 
-        # Default timeout in seconds for tool execution.
+        # Default timeout in seconds exposed to tool implementations.
         timeout_seconds: 300
 
         # Maximum parallelism: how many tool calls to run concurrently.
         max_parallelism: 4
+
+    output_cap:
+        # Storage directory for persisted oversized output.
+        # Relative paths resolve against the active project CWD.
+        path: .hatfield/tmp/output-cap
+
+        # Default character cap for non-doc paths (code files).
+        default_cap: 20000
+
+        # Character cap for doc-like paths (.md, .txt, .toon).
+        doc_cap: 50000
+
+        # Stale file retention in seconds (default 24 hours).
+        retention: 86400
+
+        # Optional session prefix for filenames (wired by TOOLS-R04+).
+        # session_prefix: run-abc123
 
 # ---------------------------------------------------------------------------
 # Extensions
