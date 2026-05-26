@@ -6,6 +6,9 @@ namespace Ineersa\AgentCore\Tests\Application\Handler;
 
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolCancelledException;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use PHPUnit\Framework\TestCase;
@@ -155,6 +158,137 @@ final class ToolExecutorTest extends TestCase
         self::assertFalse($result->isError);
         self::assertSame('Blocked by policy listener.', $result->details['raw_result']);
         self::assertSame('Blocked by policy listener.', $result->content[0]['text']);
+    }
+    public function testToolCancelledExceptionReturnsStructuredCancellation(): void
+    {
+        $toolbox = new CancellingToolbox();
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel',
+            defaultTimeoutSeconds: 30,
+            maxParallelism: 4,
+            overrides: [],
+            toolbox: $toolbox,
+            resultStore: new ToolExecutionResultStore(),
+            contextAccessor: new StackToolExecutionContextAccessor(),
+        );
+
+        $result = $executor->execute(new ToolCall(
+            toolCallId: 'call-1',
+            toolName: 'cancelling_tool',
+            arguments: [],
+            orderIndex: 0,
+            runId: 'run-1',
+            context: ['turn_no' => 1, 'cancel_token' => new class implements CancellationTokenInterface {
+                public function isCancellationRequested(): bool { return false; }
+            }],
+        ));
+
+        self::assertTrue($result->isError);
+        self::assertIsArray($result->details);
+        self::assertTrue($result->details['cancelled']);
+        self::assertSame('run_cancelled', $result->details['reason']);
+    }
+
+    public function testContextAccessorWrapsToolboxExecution(): void
+    {
+        $accessor = new StackToolExecutionContextAccessor();
+        $toolbox = new CountingToolbox();
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel',
+            defaultTimeoutSeconds: 30,
+            maxParallelism: 4,
+            overrides: [],
+            toolbox: $toolbox,
+            resultStore: new ToolExecutionResultStore(),
+            contextAccessor: $accessor,
+        );
+
+        $executor->execute(new ToolCall(
+            toolCallId: 'call-1',
+            toolName: 'web_search',
+            arguments: ['query' => 'symfony'],
+            orderIndex: 0,
+            runId: 'run-1',
+            context: ['turn_no' => 1, 'cancel_token' => new class implements CancellationTokenInterface {
+                public function isCancellationRequested(): bool { return false; }
+            }],
+        ));
+
+        // Context should be available during execution (CountingToolbox checks this).
+        self::assertNull($accessor->current());
+    }
+
+    public function testContextAccessorSetsCorrectValues(): void
+    {
+        $accessor = new StackToolExecutionContextAccessor();
+        $toolbox = new ContextCheckingToolbox($accessor);
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel',
+            defaultTimeoutSeconds: 60,
+            maxParallelism: 4,
+            overrides: [],
+            toolbox: $toolbox,
+            resultStore: new ToolExecutionResultStore(),
+            contextAccessor: $accessor,
+        );
+
+        $result = $executor->execute(new ToolCall(
+            toolCallId: 'call-42',
+            toolName: 'read',
+            arguments: ['path' => 'file.txt'],
+            orderIndex: 1,
+            runId: 'run-context-test',
+            timeoutSeconds: 120,
+            context: ['turn_no' => 3, 'cancel_token' => new class implements CancellationTokenInterface {
+                public function isCancellationRequested(): bool { return false; }
+            }],
+        ));
+
+        self::assertFalse($result->isError);
+        self::assertNull($accessor->current());
+    }
+}
+
+final class CancellingToolbox implements ToolboxInterface
+{
+    public int $executions = 0;
+
+    public function getTools(): array
+    {
+        return [];
+    }
+
+    public function execute(SymfonyToolCall $toolCall): SymfonyToolResult
+    {
+        ++$this->executions;
+        throw new ToolCancelledException('Cancelled during execution');
+    }
+}
+
+final class ContextCheckingToolbox implements ToolboxInterface
+{
+    public function __construct(
+        private readonly StackToolExecutionContextAccessor $accessor,
+    ) {
+    }
+
+    public function getTools(): array
+    {
+        return [];
+    }
+
+    public function execute(SymfonyToolCall $toolCall): SymfonyToolResult
+    {
+        $context = $this->accessor->requireCurrent();
+
+        assert('call-42' === $context->toolCallId(), \sprintf('Expected call-42, got %s', $context->toolCallId()));
+        assert('read' === $context->toolName(), \sprintf('Expected read, got %s', $context->toolName()));
+        assert('run-context-test' === $context->runId(), \sprintf('Expected run-context-test, got %s', $context->runId()));
+        assert(3 === $context->turnNo(), \sprintf('Expected 3, got %d', $context->turnNo()));
+        assert(120 === $context->timeoutSeconds(), \sprintf('Expected 120, got %d', $context->timeoutSeconds()));
+        assert(false === $context->cancellationToken()->isCancellationRequested());
+
+        return new SymfonyToolResult($toolCall, ['status' => 'ok']);
     }
 }
 

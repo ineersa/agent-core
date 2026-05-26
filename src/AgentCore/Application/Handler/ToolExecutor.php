@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Handler;
 
+use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
+use Ineersa\AgentCore\Contract\Tool\ToolCancelledException;
+use Ineersa\AgentCore\Contract\Tool\ToolExecutionContextAccessorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolIdempotencyKeyResolverInterface;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
@@ -35,6 +38,7 @@ final class ToolExecutor implements ToolExecutorInterface
         array $overrides = [],
         ?ToolboxInterface $toolbox = null,
         private readonly ?ToolIdempotencyKeyResolverInterface $toolIdempotencyKeyResolver = null,
+        private readonly ?ToolExecutionContextAccessorInterface $contextAccessor = null,
     ) {
         $this->policyResolver = new ToolExecutionPolicyResolver($defaultMode, $defaultTimeoutSeconds, $maxParallelism, $overrides);
         $this->faultTolerantToolbox = null !== $toolbox ? new FaultTolerantToolbox($toolbox) : null;
@@ -97,6 +101,16 @@ final class ToolExecutor implements ToolExecutorInterface
 
         try {
             $result = $this->executeToolCall($toolCall, $policy);
+        } catch (ToolCancelledException $exception) {
+            $result = $this->errorResult(
+                toolCallId: $toolCall->toolCallId,
+                toolName: $toolCall->toolName,
+                message: $exception->getMessage(),
+                details: [
+                    'cancelled' => true,
+                    'reason' => 'run_cancelled',
+                ],
+            );
         } catch (\Throwable $exception) {
             $result = $this->errorResult(
                 toolCallId: $toolCall->toolCallId,
@@ -163,12 +177,36 @@ final class ToolExecutor implements ToolExecutorInterface
 
         return $this->toDomainResult(
             $toolCall,
-            $this->faultTolerantToolbox->execute(new SymfonyToolCall(
+            $this->executeWithContext($toolCall, $policy, fn () => $this->faultTolerantToolbox->execute(new SymfonyToolCall(
                 id: $toolCall->toolCallId,
                 name: $toolCall->toolName,
                 arguments: $toolCall->arguments,
-            )),
+            ))),
         );
+    }
+
+    private function executeWithContext(ToolCall $toolCall, ToolExecutionPolicy $policy, callable $callback): SymfonyToolResult
+    {
+        if (null === $this->contextAccessor) {
+            /** @var SymfonyToolResult $result */
+            $result = $callback();
+
+            return $result;
+        }
+
+        $context = new ToolContext(
+            runId: $this->runId($toolCall) ?? '',
+            turnNo: (int) ($toolCall->context['turn_no'] ?? 0),
+            toolCallId: $toolCall->toolCallId,
+            toolName: $toolCall->toolName,
+            cancellationToken: $this->cancellationToken($toolCall),
+            timeoutSeconds: $policy->timeoutSeconds,
+        );
+
+        /** @var SymfonyToolResult $result */
+        $result = $this->contextAccessor->with($context, $callback);
+
+        return $result;
     }
 
     private function resolvePolicy(ToolCall $toolCall): ToolExecutionPolicy

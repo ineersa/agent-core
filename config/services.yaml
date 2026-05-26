@@ -179,6 +179,23 @@ services:
   Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface:
     alias: Ineersa\CodingAgent\Tool\CodingAgentToolSetResolver
 
+  # ─── TOOLS-00 Tool cancellation, context, and foreground process primitives ───
+
+  Ineersa\AgentCore\Contract\Tool\ToolExecutionContextAccessorInterface:
+    alias: Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor
+
+  Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor: ~
+
+  Ineersa\CodingAgent\Tool\CancellationGuard: ~
+
+  Ineersa\CodingAgent\Tool\ToolProcessRegistry: ~
+
+  Ineersa\CodingAgent\Tool\ToolProcessTerminator:
+    arguments:
+      $graceSeconds: 5
+
+  Ineersa\CodingAgent\Tool\ForegroundProcessRunner: ~
+
   # Tool executor wiring (scalar args not autowireable).
   Ineersa\AgentCore\Application\Handler\ToolExecutor:
     arguments:
