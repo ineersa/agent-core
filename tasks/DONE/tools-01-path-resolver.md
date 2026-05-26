@@ -27,14 +27,14 @@ Out of scope:
 - Focused tests pass with Castor/PHPUnit.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/tools-01-path-resolver
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-01-path-resolver
 Fork run: 1xugt309ld1j
 PR URL: https://github.com/ineersa/agent-core/pull/54
-PR Status: open
+PR Status: merged
 Started: 2026-05-26T16:08:47.690Z
-Completed:
+Completed: 2026-05-26T19:19:55.302Z
 
 ## Work log
 - Created: 2026-05-17T04:42:04.933Z
@@ -70,3 +70,17 @@ Completed:
 ## Task workflow update - 2026-05-26T19:04:10.266Z
 - Validation: castor test --filter=PathResolver: pass (44 tests, 52 assertions); castor deptrac: pass (0 violations, 0 errors); castor cs-check --path src/CodingAgent/Path/PathResolver.php --path tests/CodingAgent/Path/PathResolverTest.php: pass
 - Summary: Addressed new PR #54 inline comment on PathResolver home-directory fallback ('No fallback, error.'). Commit 8cc40887 removes /tmp fallback from PathResolver::getHomeDirectory(), documents fail-loud behavior, and throws RuntimeException when HOME/USERPROFILE/posix_getpwuid cannot resolve a home directory. Pushed branch task/tools-01-path-resolver to update PR #54.
+
+## Task workflow update - 2026-05-26T19:19:55.302Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/tools-01-path-resolver into integration checkout.
+- Merge made by the 'ort' strategy.
+ src/CodingAgent/Path/PathResolver.php       | 215 +++++++++++++++++++++
+ tests/CodingAgent/Path/PathResolverTest.php | 278 ++++++++++++++++++++++++++++
+ 2 files changed, 493 insertions(+)
+ create mode 100644 src/CodingAgent/Path/PathResolver.php
+ create mode 100644 tests/CodingAgent/Path/PathResolverTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/tools-01-path-resolver.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR #54 merged: https://github.com/ineersa/agent-core/pull/54
+- Summary: PR #54 merged on GitHub. Marking TOOLS-01 PathResolver implementation done.
