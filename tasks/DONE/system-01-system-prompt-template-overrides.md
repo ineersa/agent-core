@@ -24,14 +24,14 @@ Scout notes:
 - Validation includes focused PHPUnit/Castor tests and `castor deptrac`.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/system-01-system-prompt-template-overrides
 Worktree: /home/ineersa/projects/agent-core-worktrees/system-01-system-prompt-template-overrides
 Fork run: r0zhc0h7jq00
 PR URL: https://github.com/ineersa/agent-core/pull/51
-PR Status: open
+PR Status: merged
 Started: 2026-05-25T23:32:12.519Z
-Completed:
+Completed: 2026-05-26T00:42:46.573Z
 
 ## Work log
 - Created: 2026-05-25T16:34:12.747Z
@@ -60,3 +60,10 @@ Completed:
 ## Task workflow update - 2026-05-26T00:09:11.974Z
 - Recorded fork run: r0zhc0h7jq00
 - Summary: Addressed all 4 PR review comments: (1) replaced custom render() with Symfony AI StringTemplateRenderer, changed config/SYSTEM.md from {%var%} to {var} syntax; (2-4) injected SettingsPathResolver instead of duplicating home-dir logic, removed Windows fallbacks and getcwd(). 17 tests pass, deptrac/phpstan/cs-check clean.
+
+## Task workflow update - 2026-05-26T00:42:46.573Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/system-01-system-prompt-template-overrides into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/system-01-system-prompt-template-overrides.
+- Pulled integration checkout: Already up to date..
