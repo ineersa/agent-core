@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
+use Ineersa\CodingAgent\Process\ProcessTerminator;
+use Ineersa\CodingAgent\Process\ToolProcessRegistry;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
-use Ineersa\CodingAgent\Tool\ToolProcessRegistry;
-use Ineersa\CodingAgent\Tool\ToolProcessTerminator;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
@@ -26,7 +26,7 @@ final readonly class CancelHandler
     public function __construct(
         private readonly InProcessAgentSessionClient $client,
         private readonly ?ToolProcessRegistry $processRegistry = null,
-        private readonly ?ToolProcessTerminator $processTerminator = null,
+        private readonly ?ProcessTerminator $processTerminator = null,
         private readonly LoggerInterface $logger = new NullLogger(),
     ) {
     }

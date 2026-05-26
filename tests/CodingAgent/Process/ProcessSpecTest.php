@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Tests\Tool;
+namespace Ineersa\CodingAgent\Tests\Process;
 
-use Ineersa\CodingAgent\Tool\ProcessSpec;
+use Ineersa\CodingAgent\Process\ProcessSpec;
 use PHPUnit\Framework\TestCase;
 
 final class ProcessSpecTest extends TestCase

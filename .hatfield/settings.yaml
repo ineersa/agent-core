@@ -30,6 +30,20 @@ tui:
 #     path: .hatfield/sessions
 
 # ---------------------------------------------------------------------------
+# Tools
+# ---------------------------------------------------------------------------
+#
+# Tool execution defaults. To override any of these, uncomment and set values here.
+#
+# tools:
+#     execution:
+#         default_mode: sequential
+#         timeout_seconds: 300
+#         max_parallelism: 4
+#     process:
+#         terminate_grace_seconds: 5
+
+# ---------------------------------------------------------------------------
 # Logging configuration
 # ---------------------------------------------------------------------------
 #

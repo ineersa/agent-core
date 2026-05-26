@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
+use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
+
 /**
  * Tool settings resolved from Hatfield config.
  *
@@ -12,7 +14,7 @@ namespace Ineersa\CodingAgent\Config;
  *
  * @immutable
  */
-final readonly class ToolSettings
+final readonly class ToolSettings implements ToolExecutionSettingsInterface
 {
     public const string DEFAULT_MODE = 'sequential';
     public const int DEFAULT_TIMEOUT_SECONDS = 300;
@@ -71,6 +73,26 @@ final readonly class ToolSettings
         $tools = $appConfig->raw['tools'] ?? [];
 
         return self::fromConfigData(\is_array($tools) ? $tools : []);
+    }
+
+    public function defaultMode(): string
+    {
+        return $this->mode;
+    }
+
+    public function defaultTimeoutSeconds(): int
+    {
+        return $this->timeoutSeconds;
+    }
+
+    public function maxParallelism(): int
+    {
+        return $this->maxParallelism;
+    }
+
+    public function terminationGraceSeconds(): int
+    {
+        return $this->terminationGraceSeconds;
     }
 
     private static function stringOrNull(array $data, string $key): ?string

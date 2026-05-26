@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Tests\Tool;
+namespace Ineersa\CodingAgent\Tests\Process;
 
-use Ineersa\CodingAgent\Tool\ToolProcessKindEnum;
-use Ineersa\CodingAgent\Tool\ToolProcessRecordDTO;
+use Ineersa\CodingAgent\Process\ToolProcessKindEnum;
+use Ineersa\CodingAgent\Process\ToolProcessRecordDTO;
 use PHPUnit\Framework\TestCase;
 
 final class ToolProcessKindEnumTest extends TestCase
@@ -47,34 +47,21 @@ final class ToolProcessRecordDTOTest extends TestCase
         self::assertSame($startedAt, $record->startedAt);
     }
 
-    public function testToArrayAndFromArray(): void
+    public function testDefaults(): void
     {
-        $startedAt = new \DateTimeImmutable('2026-05-26 12:00:00');
         $record = new ToolProcessRecordDTO(
             runId: 'run-1',
-            turnNo: 2,
-            toolCallId: 'call-42',
-            kind: ToolProcessKindEnum::BackgroundTool,
-            pid: 12346,
-            processGroupId: null,
-            commandPreview: 'sleep 100',
-            cwd: '/home/project',
-            logPath: '.hatfield/tmp/bg-12346.log',
-            startedAt: $startedAt,
+            turnNo: 1,
+            toolCallId: 'call-1',
+            kind: ToolProcessKindEnum::ForegroundTool,
+            pid: 9999,
         );
 
-        $data = $record->toArray();
-        $restored = ToolProcessRecordDTO::fromArray($data);
-
-        self::assertSame($record->runId, $restored->runId);
-        self::assertSame($record->turnNo, $restored->turnNo);
-        self::assertSame($record->toolCallId, $restored->toolCallId);
-        self::assertSame($record->kind, $restored->kind);
-        self::assertSame($record->pid, $restored->pid);
-        self::assertSame($record->processGroupId, $restored->processGroupId);
-        self::assertSame($record->commandPreview, $restored->commandPreview);
-        self::assertSame($record->cwd, $restored->cwd);
-        self::assertSame($record->logPath, $restored->logPath);
-        self::assertEquals($record->startedAt->getTimestamp(), $restored->startedAt->getTimestamp());
+        self::assertSame('', $record->commandPreview);
+        self::assertSame('', $record->cwd);
+        self::assertNull($record->processGroupId);
+        self::assertNull($record->logPath);
+        self::assertNull($record->startedAt);
+        self::assertNull($record->updatedAt);
     }
 }

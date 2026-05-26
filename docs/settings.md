@@ -133,6 +133,67 @@ Files are stored under `logging.path`. The default of 14 keeps two weeks of logs
 
 **Default:** `14`
 
+### `tools.execution.default_mode`
+
+Default execution mode for tool calls. Controls whether tools run
+sequentially (one at a time) or in parallel when multiple tool calls
+are dispatched in a single turn.
+
+- `sequential`: one tool at a time (default).
+- `parallel`: requires TOOLS-R05 / multi-consumer dispatch.
+
+**Default:** `sequential`
+
+**Example:**
+
+```yaml
+tools:
+    execution:
+        default_mode: sequential
+```
+
+---
+
+### `tools.execution.timeout_seconds`
+
+Default timeout in seconds for tool execution. When a tool process
+exceeds this limit, it is terminated via SIGTERM → grace → SIGKILL.
+Individual tool calls can override this within safe bounds via the
+`timeout` parameter in the tool schema.
+
+**Default:** `300` (5 minutes)
+
+---
+
+### `tools.execution.max_parallelism`
+
+Maximum number of tool calls to execute concurrently when
+`default_mode` is `parallel`. Ignored in `sequential` mode.
+
+**Default:** `4`
+
+---
+
+### `tools.process.terminate_grace_seconds`
+
+Grace period in seconds between SIGTERM and SIGKILL for tool process
+termination. A shorter grace (e.g. 1–2 seconds) speeds up cancellation
+but may leave processes alive if SIGTERM is insufficient. A longer
+grace (e.g. 10 seconds) gives processes more time to clean up but
+delays forced termination.
+
+**Default:** `5`
+
+**Example:**
+
+```yaml
+tools:
+    process:
+        terminate_grace_seconds: 5
+```
+
+---
+
 ### `extensions.enabled`
 
 List of enabled extension class names. Each class must implement

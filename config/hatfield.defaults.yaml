@@ -23,6 +23,32 @@ sessions:
     path: '.hatfield/sessions'
 
 # ---------------------------------------------------------------------------
+# Tools
+# ---------------------------------------------------------------------------
+#
+# Tool execution defaults. These control how tools are executed, how long
+# they may run before timing out, and how process termination is handled.
+#
+# Override any value here in your home or project settings.
+#
+tools:
+    execution:
+        # Default execution mode: sequential (one tool at a time) or parallel.
+        # Parallel mode requires TOOLS-R05 / multi-consumer tool dispatch.
+        default_mode: sequential
+
+        # Default timeout in seconds for tool execution.
+        timeout_seconds: 300
+
+        # Maximum parallelism: how many tool calls to run concurrently.
+        max_parallelism: 4
+
+    process:
+        # Grace period in seconds between SIGTERM and SIGKILL for tool
+        # process termination.
+        terminate_grace_seconds: 5
+
+# ---------------------------------------------------------------------------
 # Extensions
 # ---------------------------------------------------------------------------
 #

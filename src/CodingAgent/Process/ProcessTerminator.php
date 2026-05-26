@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Process;
 
+use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
+
 /**
  * Terminates processes with TERM → grace → KILL semantics.
  *
@@ -31,6 +33,11 @@ final class ProcessTerminator
         ?int $graceSeconds = null,
     ) {
         $this->graceSeconds = $graceSeconds ?? self::DEFAULT_GRACE_SECONDS;
+    }
+
+    public static function fromSettings(ToolExecutionSettingsInterface $settings): self
+    {
+        return new self($settings->terminationGraceSeconds());
     }
 
     /**

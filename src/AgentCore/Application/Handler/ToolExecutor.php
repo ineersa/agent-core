@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolCancelledException;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionContextAccessorInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolIdempotencyKeyResolverInterface;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
@@ -42,6 +43,26 @@ final class ToolExecutor implements ToolExecutorInterface
     ) {
         $this->policyResolver = new ToolExecutionPolicyResolver($defaultMode, $defaultTimeoutSeconds, $maxParallelism, $overrides);
         $this->faultTolerantToolbox = null !== $toolbox ? new FaultTolerantToolbox($toolbox) : null;
+    }
+
+    public static function fromSettings(
+        ToolExecutionSettingsInterface $settings,
+        ToolExecutionResultStore $resultStore,
+        array $overrides = [],
+        ?ToolboxInterface $toolbox = null,
+        ?ToolIdempotencyKeyResolverInterface $toolIdempotencyKeyResolver = null,
+        ?ToolExecutionContextAccessorInterface $contextAccessor = null,
+    ): self {
+        return new self(
+            defaultMode: $settings->defaultMode(),
+            defaultTimeoutSeconds: $settings->defaultTimeoutSeconds(),
+            maxParallelism: $settings->maxParallelism(),
+            resultStore: $resultStore,
+            overrides: $overrides,
+            toolbox: $toolbox,
+            toolIdempotencyKeyResolver: $toolIdempotencyKeyResolver,
+            contextAccessor: $contextAccessor,
+        );
     }
 
     public function execute(ToolCall $toolCall): ToolResult

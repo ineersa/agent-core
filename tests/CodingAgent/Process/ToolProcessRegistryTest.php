@@ -2,29 +2,27 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Tests\Tool;
+namespace Ineersa\CodingAgent\Tests\Process;
 
-use Ineersa\CodingAgent\Tool\ToolProcessKindEnum;
-use Ineersa\CodingAgent\Tool\ToolProcessRecordDTO;
-use Ineersa\CodingAgent\Tool\ToolProcessRegistry;
+use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\DriverManager;
+use Ineersa\CodingAgent\Process\ToolProcessKindEnum;
+use Ineersa\CodingAgent\Process\ToolProcessRecordDTO;
+use Ineersa\CodingAgent\Process\ToolProcessRegistry;
 use PHPUnit\Framework\TestCase;
 
 final class ToolProcessRegistryTest extends TestCase
 {
-    private string $tmpDir;
-
+    private Connection $connection;
     private ToolProcessRegistry $registry;
 
     protected function setUp(): void
     {
-        $this->tmpDir = sys_get_temp_dir() . '/hatfield-test-' . uniqid('reg', true);
-        @mkdir($this->tmpDir . '/.hatfield/tmp', 0o775, true);
-        $this->registry = new ToolProcessRegistry($this->tmpDir);
-    }
-
-    protected function tearDown(): void
-    {
-        $this->rmdir($this->tmpDir);
+        $this->connection = DriverManager::getConnection([
+            'driver' => 'pdo_sqlite',
+            'memory' => true,
+        ]);
+        $this->registry = new ToolProcessRegistry($this->connection);
     }
 
     public function testRegisterAndForegroundForRun(): void
@@ -119,15 +117,28 @@ final class ToolProcessRegistryTest extends TestCase
 
     public function testCrossProcessPersistence(): void
     {
-        $instance1 = new ToolProcessRegistry($this->tmpDir);
-        $instance2 = new ToolProcessRegistry($this->tmpDir);
+        // With an in-memory database, the same connection sees the data.
+        // This test verifies that a second registry instance (sharing the
+        // same SQLite file) can read records written by the first.
+        $dbPath = sys_get_temp_dir().'/hatfield-reg-test-'.bin2hex(random_bytes(6)).'.sqlite';
+        try {
+            $conn1 = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'path' => $dbPath]);
+            $conn2 = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'path' => $dbPath]);
 
-        $instance1->register($this->createRecord('run-1', 'call-1', ToolProcessKindEnum::ForegroundTool, 1001));
+            $registry1 = new ToolProcessRegistry($conn1);
+            $registry2 = new ToolProcessRegistry($conn2);
 
-        $foreground = $instance2->foregroundForRun('run-1');
-        self::assertCount(1, $foreground);
-        self::assertSame('call-1', $foreground[0]->toolCallId);
-        self::assertSame(1001, $foreground[0]->pid);
+            $registry1->register($this->createRecord('run-1', 'call-1', ToolProcessKindEnum::ForegroundTool, 1001));
+
+            $foreground = $registry2->foregroundForRun('run-1');
+            self::assertCount(1, $foreground);
+            self::assertSame('call-1', $foreground[0]->toolCallId);
+            self::assertSame(1001, $foreground[0]->pid);
+        } finally {
+            if (is_file($dbPath)) {
+                @unlink($dbPath);
+            }
+        }
     }
 
     private function createRecord(
@@ -158,21 +169,5 @@ final class ToolProcessRegistryTest extends TestCase
             logPath: null,
             startedAt: $startedAt,
         );
-    }
-
-    private function rmdir(string $path): void
-    {
-        if (!is_dir($path)) {
-            return;
-        }
-
-        $it = new \RecursiveDirectoryIterator($path, \RecursiveDirectoryIterator::SKIP_DOTS);
-        $files = new \RecursiveIteratorIterator($it, \RecursiveIteratorIterator::CHILD_FIRST);
-
-        foreach ($files as $file) {
-            $file->isDir() ? @rmdir($file->getRealPath()) : @unlink($file->getRealPath());
-        }
-
-        @rmdir($path);
     }
 }

@@ -3,6 +3,7 @@ parameters:
     # Temporary default model — AI-10 per-turn routing replaces this.
     app.default_model: 'deepseek/deepseek-v4-pro'
 
+
 services:
   _defaults:
     autowire: true
@@ -188,29 +189,40 @@ services:
 
   Ineersa\CodingAgent\Tool\CancellationGuard: ~
 
-  Ineersa\CodingAgent\Tool\ToolProcessRegistry: ~
+  # ─── Process namespace services ───
 
-  Ineersa\CodingAgent\Tool\ToolProcessTerminator:
+  # ToolSettings is a DTO; factory method creates from merged Hatfield settings.
+  Ineersa\CodingAgent\Config\ToolSettings:
+    factory: ['Ineersa\CodingAgent\Config\ToolSettings', 'fromAppConfig']
     arguments:
-      $graceSeconds: 5
+      - '@Ineersa\CodingAgent\Config\AppConfig'
 
-  Ineersa\CodingAgent\Tool\ForegroundProcessRunner: ~
+  Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface:
+    alias: Ineersa\CodingAgent\Config\ToolSettings
 
-  # Tool executor wiring (scalar args not autowireable).
+  Ineersa\CodingAgent\Process\ToolProcessRegistry:
+    arguments:
+      $connection: '@database_connection'
+
+  Ineersa\CodingAgent\Process\ProcessTerminator:
+    factory: ['Ineersa\CodingAgent\Process\ProcessTerminator', 'fromSettings']
+    arguments:
+      $settings: '@Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface'
+
+  Ineersa\CodingAgent\Process\ForegroundProcessRunner: ~
+
+  # Tool executor wiring: read execution defaults from merged Hatfield settings.
   Ineersa\AgentCore\Application\Handler\ToolExecutor:
+    factory: ['Ineersa\AgentCore\Application\Handler\ToolExecutor', 'fromSettings']
     arguments:
-      $defaultMode: 'sequential'
-      $defaultTimeoutSeconds: 300
-      $maxParallelism: 4
+      $settings: '@Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface'
 
   # ToolExecutionPolicyResolver is created inline by ToolExecutor,
   # but is also an optional dependency of LlmStepResultHandler.
-  # Wire scalars so the optional param resolves.
   Ineersa\AgentCore\Application\Handler\ToolExecutionPolicyResolver:
+    factory: ['Ineersa\AgentCore\Application\Handler\ToolExecutionPolicyResolver', 'fromSettings']
     arguments:
-      $defaultMode: 'sequential'
-      $defaultTimeoutSeconds: 300
-      $maxParallelism: 4
+      $settings: '@Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface'
 
   # ─── AI-10 Per-turn model/reasoning routing ───
 

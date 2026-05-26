@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Tests\Tool;
+namespace Ineersa\CodingAgent\Tests\Process;
 
-use Ineersa\CodingAgent\Tool\ToolProcessKindEnum;
-use Ineersa\CodingAgent\Tool\ToolProcessRecordDTO;
-use Ineersa\CodingAgent\Tool\ToolProcessTerminator;
+use Ineersa\CodingAgent\Process\ProcessTerminator;
+use Ineersa\CodingAgent\Process\ToolProcessKindEnum;
+use Ineersa\CodingAgent\Process\ToolProcessRecordDTO;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Process;
 
-final class ToolProcessTerminatorTest extends TestCase
+final class ProcessTerminatorTest extends TestCase
 {
     /** @var list<Process> */
     private array $processes = [];
@@ -26,7 +26,7 @@ final class ToolProcessTerminatorTest extends TestCase
 
     public function testTerminateRunningProcessByPid(): void
     {
-        $terminator = new ToolProcessTerminator(graceSeconds: 0);
+        $terminator = new ProcessTerminator(graceSeconds: 0);
         $process = $this->startProcess(['php', '-r', 'sleep(5);']);
         $pid = $this->requirePid($process);
 
@@ -36,7 +36,7 @@ final class ToolProcessTerminatorTest extends TestCase
 
     public function testTerminateNonExistentProcessReturnsFalse(): void
     {
-        $terminator = new ToolProcessTerminator(graceSeconds: 0);
+        $terminator = new ProcessTerminator(graceSeconds: 0);
 
         $this->assertFalse($terminator->terminatePid(999_999_999));
     }
@@ -47,7 +47,7 @@ final class ToolProcessTerminatorTest extends TestCase
             $this->markTestSkipped('Current process-group guard requires posix_getpgrp().');
         }
 
-        $terminator = new ToolProcessTerminator(graceSeconds: 0);
+        $terminator = new ProcessTerminator(graceSeconds: 0);
         $process = $this->startProcess(['php', '-r', 'sleep(5);']);
         $pid = $this->requirePid($process);
 
@@ -60,7 +60,7 @@ final class ToolProcessTerminatorTest extends TestCase
 
     public function testTerminateViaRecord(): void
     {
-        $terminator = new ToolProcessTerminator(graceSeconds: 0);
+        $terminator = new ProcessTerminator(graceSeconds: 0);
         $process = $this->startProcess(['php', '-r', 'sleep(5);']);
         $pid = $this->requirePid($process);
 
@@ -70,7 +70,7 @@ final class ToolProcessTerminatorTest extends TestCase
 
     public function testTerminateAllCountsTerminatedProcesses(): void
     {
-        $terminator = new ToolProcessTerminator(graceSeconds: 0);
+        $terminator = new ProcessTerminator(graceSeconds: 0);
         $first = $this->startProcess(['php', '-r', 'sleep(5);']);
         $second = $this->startProcess(['php', '-r', 'sleep(5);']);
 
@@ -86,7 +86,7 @@ final class ToolProcessTerminatorTest extends TestCase
 
     public function testTerminateAllSkipsNonExistentProcesses(): void
     {
-        $terminator = new ToolProcessTerminator(graceSeconds: 0);
+        $terminator = new ProcessTerminator(graceSeconds: 0);
 
         $this->assertSame(0, $terminator->terminateAll([
             $this->record('call-exited', 999_999_999),
@@ -99,7 +99,7 @@ final class ToolProcessTerminatorTest extends TestCase
             $this->markTestSkipped('SIGKILL escalation test requires pcntl.');
         }
 
-        $terminator = new ToolProcessTerminator(graceSeconds: 0);
+        $terminator = new ProcessTerminator(graceSeconds: 0);
         $process = $this->startProcess([
             'php',
             '-r',
