@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent;
 
+use Ineersa\CodingAgent\Tool\BuiltInToolRegistrar;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Kernel\AbstractKernel;
 use Symfony\Component\DependencyInjection\Kernel\KernelTrait;
@@ -57,6 +58,13 @@ class Kernel extends AbstractKernel
         }
 
         parent::boot();
+
+        // Register all built-in tool providers as permanent tools.
+        // The registrar collects all services tagged with hatfield.tool_provider
+        // and calls ToolRegistryInterface::registerTool() for each.
+        if ($this->container->has(BuiltInToolRegistrar::class)) {
+            $this->container->get(BuiltInToolRegistrar::class)->registerTools();
+        }
     }
 
     public function getConfigDir(): string

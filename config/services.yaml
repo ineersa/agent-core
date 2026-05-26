@@ -31,6 +31,11 @@ services:
     Ineersa\AgentCore\Contract\Hook\ConvertToLlmHookInterface:
       tags: ['agent_core.convert_to_llm_hook']
 
+    # Built-in tool providers are auto-collected by BuiltInToolRegistrar
+    # for permanent registration during kernel boot.
+    Ineersa\CodingAgent\Tool\HatfieldToolProviderInterface:
+      tags: ['hatfield.tool_provider']
+
   Ineersa\CodingAgent\:
     resource: '../src/CodingAgent/'
     exclude: '../src/CodingAgent/ExtensionApi/'
@@ -180,6 +185,13 @@ services:
   # ToolRegistry — concrete CodingAgent registry for permanent/dynamic tools.
   Ineersa\CodingAgent\Tool\ToolRegistryInterface:
     alias: Ineersa\CodingAgent\Tool\ToolRegistry
+
+  # BuiltInToolRegistrar — collects tagged HatfieldToolProviderInterface
+  # services and registers them as permanent tools.
+  # Triggered by Kernel::boot() during application startup.
+  Ineersa\CodingAgent\Tool\BuiltInToolRegistrar:
+    arguments:
+      $providers: !tagged_iterator hatfield.tool_provider
 
   # CodingAgent ToolSetResolver — bridges ToolRegistry to AgentCore resolver seam.
   Ineersa\CodingAgent\Tool\CodingAgentToolSetResolver: ~
