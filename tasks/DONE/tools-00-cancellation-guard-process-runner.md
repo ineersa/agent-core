@@ -43,14 +43,14 @@ Out of scope:
 - Validation includes focused Castor/PHPUnit tests, `castor deptrac`, and a controller-level Castor workflow (`castor test:controller`) if controller cancellation wiring is changed.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/tools-00-cancellation-guard-process-runner
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-00-cancellation-guard-process-runner
 Fork run: dxm1z8gqhxl9
 PR URL: https://github.com/ineersa/agent-core/pull/55
-PR Status: open
+PR Status: merged
 Started: 2026-05-26T16:08:33.510Z
-Completed:
+Completed: 2026-05-26T23:01:15.694Z
 
 ## Work log
 - Created: 2026-05-17T21:15:48.702Z
@@ -141,3 +141,37 @@ Completed:
 ## Task workflow update - 2026-05-26T22:59:11.133Z
 - Validation: castor cache:clear: ok; castor test --filter="ToolExecutor|ToolContext|StackToolExecutionContextAccessor|ToolSettings|OutputCap|AppConfig|SettingsPathResolver|HatfieldSessionStore|ExtensionManager": ok (tests=93, assertions=219); castor deptrac: ok (violations=0, errors=0, uncovered=364, allowed=760); castor cs-check: ok (files_fixed=0); castor test: ok (tests=1026, assertions=10095); gh pr view 55 --json mergeStateStatus: CLEAN
 - Summary: Addressed final question by removing ToolExecutionContextInterface. Pushed commit 9711d3bb making ToolContext the concrete final DTO and typing StackToolExecutionContextAccessor directly to ToolContext. Then merged current main into PR #55 as aa4a07db, resolving TOOLS-02/AppConfig conflicts by combining tools.execution and tools.output_cap into one typed ToolsConfig DTO and making ToolSettings read appConfig->tools->execution instead of AppConfig::raw['tools']. PR #55 merge state is CLEAN.
+
+## Task workflow update - 2026-05-26T23:01:15.695Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/tools-00-cancellation-guard-process-runner into integration checkout.
+- Merge made by the 'ort' strategy.
+ .hatfield/settings.yaml                            | 12 +++
+ config/hatfield.defaults.yaml                      | 75 ++++++++---------
+ config/services.yaml                               | 27 +++++--
+ docs/settings.md                                   | 42 ++++++++++
+ .../Handler/ToolExecutionPolicyResolver.php        | 14 ++++
+ src/AgentCore/Application/Handler/ToolExecutor.php | 73 ++++++++++++++---
+ .../Tool/StackToolExecutionContextAccessor.php     | 42 ++++++++++
+ src/AgentCore/Application/Tool/ToolContext.php     | 53 ++++++++++++
+ .../Tool/ToolExecutionSettingsInterface.php        | 22 +++++
+ src/CodingAgent/Config/ToolExecutionConfig.php     | 37 +++++++++
+ src/CodingAgent/Config/ToolSettings.php            | 61 ++++++++++++++
+ src/CodingAgent/Config/ToolsConfig.php             |  5 +-
+ .../Controller/CommandHandler/CancelHandler.php    | 13 +++
+ .../Runtime/Controller/ConsumerSupervisor.php      | 22 +++--
+ .../Application/Handler/ToolExecutorTest.php       | 88 ++++++++++++++++++++
+ .../Tool/StackToolExecutionContextAccessorTest.php | 93 ++++++++++++++++++++++
+ .../AgentCore/Application/Tool/ToolContextTest.php | 37 +++++++++
+ 17 files changed, 655 insertions(+), 61 deletions(-)
+ create mode 100644 src/AgentCore/Application/Tool/StackToolExecutionContextAccessor.php
+ create mode 100644 src/AgentCore/Application/Tool/ToolContext.php
+ create mode 100644 src/AgentCore/Contract/Tool/ToolExecutionSettingsInterface.php
+ create mode 100644 src/CodingAgent/Config/ToolExecutionConfig.php
+ create mode 100644 src/CodingAgent/Config/ToolSettings.php
+ create mode 100644 tests/AgentCore/Application/Tool/StackToolExecutionContextAccessorTest.php
+ create mode 100644 tests/AgentCore/Application/Tool/ToolContextTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/tools-00-cancellation-guard-process-runner.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR #55 merged: b2e44ca16bf491770231c75a470cf5918fa31f1d; Final branch validation before merge: castor test ok (1026 tests, 10095 assertions); castor deptrac ok (0 violations); castor cs-check ok
+- Summary: PR #55 merged. Final implementation is simplified TOOLS-00 cancellation context only: ToolContext concrete DTO, StackToolExecutionContextAccessor, ToolExecutionSettingsInterface/ToolSettings wiring, ConsumerSupervisor shutdown clarification, no CancellationGuard/ToolCancelledException/context accessor interface/process registry/foreground runner. Branch also merged current main and resolved TOOLS-02 typed ToolsConfig integration.
