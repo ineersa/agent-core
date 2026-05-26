@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Ineersa\CodingAgent\Tool\HatfieldToolProviderInterface;
+use Ineersa\CodingAgent\Tool\ToolDefinitionDTO;
+use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use PHPUnit\Framework\TestCase;
 
@@ -14,6 +17,44 @@ final class ToolRegistryTest extends TestCase
     protected function setUp(): void
     {
         $this->registry = new ToolRegistry();
+    }
+
+    /* ───────── Provider-seeded permanent tools ───────── */
+
+    public function testConstructorRegistersEmptyProviders(): void
+    {
+        $registry = new ToolRegistry([]);
+
+        self::assertSame([], $registry->activeToolNames());
+    }
+
+    public function testConstructorRegistersProviderDefinitionsAsPermanentTools(): void
+    {
+        $handler = $this->dummyHandler();
+        $registry = new ToolRegistry([
+            $this->createProvider('read', 'Read tool', $handler, 'read: Read', ['G1']),
+        ]);
+
+        self::assertSame(['read'], $registry->activeToolNames());
+        self::assertSame(['read: Read'], $registry->permanentToolLines());
+        self::assertSame(['G1'], $registry->permanentGuidelines());
+
+        $definition = $registry->toolDefinition('read');
+        self::assertNotNull($definition);
+        self::assertSame($handler, $definition->handler);
+        self::assertSame('Read tool', $definition->description);
+    }
+
+    public function testConstructorRegistersMultipleProvidersInOrder(): void
+    {
+        $registry = new ToolRegistry([
+            $this->createProvider('a', 'A', $this->dummyHandler(), 'a: A'),
+            $this->createProvider('b', 'B', $this->dummyHandler(), 'b: B'),
+            $this->createProvider('c', 'C', $this->dummyHandler(), 'c: C'),
+        ]);
+
+        self::assertSame(['a', 'b', 'c'], $registry->activeToolNames());
+        self::assertSame(['a: A', 'b: B', 'c: C'], $registry->permanentToolLines());
     }
 
     /* ───────── Permanent tool registration ───────── */
@@ -180,6 +221,91 @@ final class ToolRegistryTest extends TestCase
         self::assertSame(['Guideline'], $this->registry->permanentGuidelines());
     }
 
+    /* ───────── ToolDefinitionDTO lookup methods ───────── */
+
+    public function testActiveToolDefinitionsReturnsOrderedList(): void
+    {
+        $h1 = $this->dummyHandler();
+        $h2 = $this->dummyHandler();
+        $this->registry->registerTool(name: 'read', description: 'Read files', parametersJsonSchema: [], handler: $h1, promptLine: 'read: Read', promptGuidelines: ['G1']);
+        $this->registry->registerTool(name: 'write', description: 'Write files', parametersJsonSchema: [], handler: $h2, promptLine: 'write: Write', promptGuidelines: ['G2']);
+
+        $defs = $this->registry->activeToolDefinitions();
+
+        self::assertCount(2, $defs);
+        self::assertSame('read', $defs[0]->name);
+        self::assertSame('Read files', $defs[0]->description);
+        self::assertSame($h1, $defs[0]->handler);
+        self::assertSame('write', $defs[1]->name);
+        self::assertSame($h2, $defs[1]->handler);
+        self::assertSame('write: Write', $defs[1]->promptLine);
+        self::assertSame(['G2'], $defs[1]->promptGuidelines);
+    }
+
+    public function testActiveToolDefinitionsIncludesDynamicAfterPermanent(): void
+    {
+        $this->registry->registerTool(name: 'perm', description: 'Perm', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'perm: Perm');
+        $this->registry->addDynamicTool(name: 'dyn', description: 'Dyn', parametersJsonSchema: [], handler: $this->dummyHandler());
+
+        $defs = $this->registry->activeToolDefinitions();
+
+        self::assertCount(2, $defs);
+        self::assertSame('perm', $defs[0]->name);
+        self::assertSame('dyn', $defs[1]->name);
+    }
+
+    public function testActiveToolDefinitionsReturnsEmptyForEmptyRegistry(): void
+    {
+        self::assertSame([], $this->registry->activeToolDefinitions());
+    }
+
+    public function testToolDefinitionReturnsDtoForPermanentTool(): void
+    {
+        $handler = $this->dummyHandler();
+        $this->registry->registerTool(name: 'my_tool', description: 'My tool', parametersJsonSchema: ['type' => 'object'], handler: $handler, promptLine: 'my_tool: My tool', promptGuidelines: ['G1']);
+
+        $def = $this->registry->toolDefinition('my_tool');
+
+        self::assertNotNull($def);
+        self::assertSame('my_tool', $def->name);
+        self::assertSame('My tool', $def->description);
+        self::assertSame($handler, $def->handler);
+        self::assertSame(['type' => 'object'], $def->parametersJsonSchema);
+    }
+
+    public function testToolDefinitionReturnsDtoForDynamicTool(): void
+    {
+        $handler = $this->dummyHandler();
+        $this->registry->addDynamicTool(name: 'dyn_tool', description: 'Dynamic tool', parametersJsonSchema: ['type' => 'array'], handler: $handler);
+
+        $def = $this->registry->toolDefinition('dyn_tool');
+
+        self::assertNotNull($def);
+        self::assertSame('dyn_tool', $def->name);
+        self::assertSame('Dynamic tool', $def->description);
+        self::assertSame($handler, $def->handler);
+        self::assertSame(['type' => 'array'], $def->parametersJsonSchema);
+    }
+
+    public function testToolDefinitionReturnsNullForUnknownTool(): void
+    {
+        self::assertNull($this->registry->toolDefinition('nonexistent'));
+    }
+
+    public function testToolDefinitionReturnsPermanentBeforeDynamicOnNameCollision(): void
+    {
+        // This test validates that permanent takes priority; the collision
+        // is prevented by addDynamicTool throwing, so we verify the permanent
+        // logic directly.
+        $handler = $this->dummyHandler();
+        $this->registry->registerTool(name: 'shared', description: 'Permanent', parametersJsonSchema: [], handler: $handler, promptLine: 'shared: Permanent');
+
+        $def = $this->registry->toolDefinition('shared');
+
+        self::assertNotNull($def);
+        self::assertSame('Permanent', $def->description);
+    }
+
     /* ───────── Edge cases ───────── */
 
     public function testEmptyRegistryReturnsEmptyLists(): void
@@ -198,10 +324,39 @@ final class ToolRegistryTest extends TestCase
 
     /* ───────── Private helpers ───────── */
 
-    private function dummyHandler(): object
+    private function createProvider(
+        string $name,
+        string $description,
+        ToolHandlerInterface $handler,
+        string $promptLine,
+        array $promptGuidelines = [],
+    ): HatfieldToolProviderInterface {
+        $definition = new ToolDefinitionDTO(
+            name: $name,
+            description: $description,
+            parametersJsonSchema: [],
+            handler: $handler,
+            promptLine: $promptLine,
+            promptGuidelines: $promptGuidelines,
+        );
+
+        return new class($definition) implements HatfieldToolProviderInterface {
+            public function __construct(
+                private readonly ToolDefinitionDTO $definition,
+            ) {
+            }
+
+            public function definition(): ToolDefinitionDTO
+            {
+                return $this->definition;
+            }
+        };
+    }
+
+    private function dummyHandler(): ToolHandlerInterface
     {
-        return new class {
-            public function __invoke(): string
+        return new class implements ToolHandlerInterface {
+            public function __invoke(array $arguments = []): string
             {
                 return 'handler result';
             }
