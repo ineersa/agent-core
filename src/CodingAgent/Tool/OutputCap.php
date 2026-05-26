@@ -14,8 +14,7 @@ use Ineersa\CodingAgent\Config\OutputCapConfig;
  * a model-facing notice containing the saved path and inspection hints.
  *
  * Settings (defaults, storage path, caps, retention) hydrate from Hatfield
- * config via {@see OutputCapConfig}. Use the constructor parameters to
- * override specific values for testing.
+ * config via {@see OutputCapConfig} which is injected through DI.
  *
  * @see .pi/plans/toolbox-design-plan.md § "Output capping (OutputCap)"
  */
@@ -34,39 +33,18 @@ final class OutputCap
     private bool $cleanedUp = false;
 
     /**
-     * @param OutputCapConfig|null $config           Resolved cap settings from Hatfield config.
-     *                                               When null, built-in defaults are used (primarily
-     *                                               for testing); production should always inject a
-     *                                               configured instance via DI.
-     * @param string|null          $storageDir       override storage directory (takes precedence
-     *                                               over config)
-     * @param int|null             $defaultCap       override default char cap (takes precedence
-     *                                               over config)
-     * @param int|null             $docCap           override doc-like char cap (takes precedence
-     *                                               over config)
-     * @param int|null             $retentionSeconds override retention (takes precedence over
-     *                                               config)
-     * @param string|null          $sessionPrefix    Override session prefix for filenames (takes
-     *                                               precedence over config). Use null for date-based
-     *                                               prefix.
+     * @param OutputCapConfig $config Resolved cap settings from Hatfield config.
+     *                                Production code always receives this from
+     *                                DI. Tests construct OutputCapConfig directly.
      */
     public function __construct(
-        ?OutputCapConfig $config = null,
-        ?string $storageDir = null,
-        ?int $defaultCap = null,
-        ?int $docCap = null,
-        ?int $retentionSeconds = null,
-        ?string $sessionPrefix = null,
+        private readonly OutputCapConfig $config,
     ) {
-        $cfg = $config ?? new OutputCapConfig(
-            storageDir: self::resolveFallbackDir(),
-        );
-
-        $this->storageDir = $storageDir ?? $cfg->storageDir;
-        $this->defaultCap = $defaultCap ?? $cfg->defaultCap;
-        $this->docCap = $docCap ?? $cfg->docCap;
-        $this->retentionSeconds = $retentionSeconds ?? $cfg->retentionSeconds;
-        $this->sessionPrefix = $sessionPrefix ?? $cfg->sessionPrefix;
+        $this->storageDir = $config->storageDir;
+        $this->defaultCap = $config->defaultCap;
+        $this->docCap = $config->docCap;
+        $this->retentionSeconds = $config->retentionSeconds;
+        $this->sessionPrefix = $config->sessionPrefix;
     }
 
     /**
@@ -202,24 +180,23 @@ final class OutputCap
     }
 
     /**
-     * Build a unique filename for a persisted output file.
+     * Build a unique filename for persisted output.
      *
-     * Format: <prefix>-<random-hex>.txt
-     * Prefix is the session prefix when set, otherwise today's date (Ymd).
+     * Format: [session_prefix|Ymd]-[16-random-hex].txt
      */
     private function buildFilename(): string
     {
         $prefix = $this->sessionPrefix ?? date('Ymd');
 
-        return \sprintf(
-            '%s-%s.txt',
-            $prefix,
-            bin2hex(random_bytes(8)),
-        );
+        return $prefix.'-'.bin2hex(random_bytes(8)).'.txt';
     }
 
     /**
-     * Determine the character cap for a given file path.
+     * Determine which character cap applies based on file extension.
+     *
+     * Doc-like extensions (.md, .txt, .toon) use {@see docCap}.
+     * Everything else uses {@see defaultCap}.
+     * Null paths (no file context) use {@see defaultCap}.
      */
     private function resolveCap(?string $path): int
     {
@@ -227,62 +204,33 @@ final class OutputCap
             return $this->defaultCap;
         }
 
-        $ext = mb_strtolower(
-            pathinfo($path, \PATHINFO_EXTENSION),
-        );
-
-        if (\in_array($ext, self::DOC_EXTENSIONS, true)) {
-            return $this->docCap;
+        foreach (self::DOC_EXTENSIONS as $ext) {
+            if (str_ends_with(strtolower($path), '.'.$ext)) {
+                return $this->docCap;
+            }
         }
 
         return $this->defaultCap;
     }
 
     /**
-     * Build the model-facing capped notice.
-     *
-     * @param string $text      the original (oversized) text
-     * @param int    $cap       the cap that was exceeded
-     * @param string $savedPath absolute path to the persisted full output
-     *
-     * @return string human-readable (and model-readable) capped notice
+     * Build a model-facing notice about capped output.
      */
-    private function buildCappedNotice(string $text, int $cap, string $savedPath): string
+    private function buildCappedNotice(string $fullText, int $cap, string $savedPath): string
     {
-        $charCount = mb_strlen($text);
+        $charCount = mb_strlen($fullText);
         $tokenEstimate = (int) ceil($charCount / 4);
 
         return \sprintf(
-            "⛔ Output capped: %s chars (~%s tokens) exceeds %s char limit.\n\nFull output saved to: %s\nUse `head -50 %s` or `grep <pattern> %s` to inspect.",
-            number_format($charCount),
-            number_format($tokenEstimate),
-            number_format($cap),
+            "[Output capped to %d characters, full output saved to %s]\n\nFull output: %d characters (~%d tokens).\nSaved to: %s\n\nTo view: **%s**\nTo view first lines: `head -50 %s`\nTo search: `grep 'pattern' %s`\n",
+            $cap,
+            $savedPath,
+            $charCount,
+            $tokenEstimate,
+            $savedPath,
             $savedPath,
             $savedPath,
             $savedPath,
         );
-    }
-
-    /**
-     * Fallback storage dir when neither config nor explicit path is given.
-     *
-     * Avoids silent root-filesystem paths by raising an exception when
-     * getcwd() fails, matching AppConfig::resolveCurrentWorkingDirectory().
-     *
-     * This path is only reached in tests or edge cases where OutputCap is
-     * constructed without any configuration — production always injects
-     * OutputCapConfig via DI.
-     *
-     * @throws \RuntimeException when no current working directory is available
-     */
-    private static function resolveFallbackDir(): string
-    {
-        $cwd = getcwd();
-
-        if (false === $cwd) {
-            throw new \RuntimeException('No current working directory available.');
-        }
-
-        return $cwd.'/.hatfield/tmp/output-cap';
     }
 }

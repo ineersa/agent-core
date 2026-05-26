@@ -23,6 +23,7 @@ use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\HomeSettingsWriter;
+use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\SessionAwareModelResolver;
@@ -421,7 +422,7 @@ final class TraceReplayTest extends TestCase
         return new AppConfig(
             tui: TuiConfig::fromArray((array) ($raw['tui'] ?? [])),
             logging: new LoggingConfig(),
-            sessions: (array) ($raw['sessions'] ?? []),
+            sessions: new SessionsConfig(),
             ai: $ai,
             raw: $raw,
             catalog: null !== $ai ? new HatfieldModelCatalog($ai) : null,

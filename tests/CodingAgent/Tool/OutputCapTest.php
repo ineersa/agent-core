@@ -171,15 +171,15 @@ final class OutputCapTest extends TestCase
         $this->assertMatchesRegularExpression('/^\d{8}-[a-f0-9]{16}\.txt$/', $filename);
     }
 
-    public function testPersistWithConstructorOverrideSessionPrefixUsesOverride(): void
+    public function testConfigSessionPrefixUsedInFilename(): void
     {
-        $cfg = new OutputCapConfig(storageDir: $this->tmpDir, sessionPrefix: 'config-prefix');
-        $cap = new OutputCap($cfg, sessionPrefix: 'constructor-override');
+        $cfg = new OutputCapConfig(storageDir: $this->tmpDir, sessionPrefix: 'run-abc');
+        $cap = new OutputCap($cfg);
 
         $path = $cap->persist('content');
 
-        $this->assertStringContainsString('constructor-override-', $path);
-        $this->assertStringNotContainsString('config-prefix-', $path);
+        $this->assertStringContainsString('run-abc-', $path);
+        $this->assertStringContainsString($this->tmpDir, $path);
     }
 
     public function testPersistDirectoryPermissionsAreRestrictive(): void
@@ -262,29 +262,12 @@ final class OutputCapTest extends TestCase
 
     /* ───────── Config construction ───────── */
 
-    public function testNullConfigUsesFallbackDir(): void
+    public function testRequiresConfig(): void
     {
-        // Constructing without config and without explicit storageDir
-        // should throw because no CWD in this context — but actually
-        // there is one, so it should work by using the fallback.
-        // This test just verifies construction doesn't explode.
-        $cap = new OutputCap();
+        // OutputCap now requires an OutputCapConfig; no null-config fallback.
+        $cfg = new OutputCapConfig(storageDir: $this->tmpDir);
+        $cap = new OutputCap($cfg);
         $this->assertInstanceOf(OutputCap::class, $cap);
-    }
-
-    public function testConstructorExplicitParamsOverrideConfig(): void
-    {
-        $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 999, docCap: 9999);
-        $cap = new OutputCap($cfg, defaultCap: 100, docCap: 500);
-
-        // Check behavior: text of 200 chars should be capped at 100
-        // but not at 999
-        $result = $cap->process(str_repeat('x', 200));
-        $this->assertStringContainsString('Output capped', $result, 'Should cap at 100 (override)');
-
-        // Second check: use doc-like path with 500 override
-        $result2 = $cap->process(str_repeat('x', 600), 'test.md');
-        $this->assertStringContainsString('Output capped', $result2, 'Should cap at 500 (doc override)');
     }
 
     /* ───────── Cleanup ───────── */
@@ -386,8 +369,8 @@ final class OutputCapTest extends TestCase
      */
     private function extractPathFromNotice(string $notice): ?string
     {
-        // The notice contains "Full output saved to: <path>"
-        if (preg_match('/Full output saved to: (.+\.txt)/', $notice, $matches)) {
+        // The notice contains a "Saved to: <path>" line
+        if (preg_match('/Saved to: (.+\.txt)/', $notice, $matches)) {
             return $matches[1];
         }
 

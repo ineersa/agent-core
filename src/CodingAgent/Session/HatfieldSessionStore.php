@@ -222,13 +222,14 @@ final class HatfieldSessionStore
     /**
      * Build the base sessions directory path from resolved config.
      *
-     * Falls back to <cwd>/.hatfield/sessions when sessions.path is not
-     * explicitly configured. Relative paths resolve against the active
-     * project directory ({@see AppConfig::$cwd}).
+     * Reads the typed {@see SessionsConfig} from AppConfig. In production
+     * the path is absolute (resolved by {@see AppConfigLoader}). For tests
+     * that construct AppConfig directly with a relative path, we resolve
+     * against the active project directory.
      */
     private function getSessionsDir(): string
     {
-        $path = (string) ($this->appConfig->sessions['path'] ?? '');
+        $path = $this->appConfig->sessions->path;
         $cwd = $this->appConfig->cwd;
 
         if ('' === $path) {

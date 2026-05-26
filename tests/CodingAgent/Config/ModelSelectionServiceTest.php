@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Symfony\Component\Lock\LockFactory;
@@ -119,7 +120,7 @@ class ModelSelectionServiceTest extends TestCase
         return new AppConfig(
             tui: TuiConfig::fromArray((array) ($raw['tui'] ?? [])),
             logging: new LoggingConfig(),
-            sessions: (array) ($raw['sessions'] ?? []),
+            sessions: new SessionsConfig(),
             ai: $ai,
             raw: $raw,
             catalog: null !== $ai ? new HatfieldModelCatalog($ai) : null,
