@@ -190,6 +190,11 @@ parameters:
         - type: classNameRegex
           value: '#^Symfony\\Component\\HttpKernel\\#i'
 
+    - name: AppSystemPrompt
+      collectors:
+        - type: directory
+          value: src/CodingAgent/SystemPrompt/.*
+
     - name: AppTool
       collectors:
         - type: directory
@@ -314,6 +319,7 @@ parameters:
       - AppRuntimeContract
       - AppRuntimeProjection
       - AppExtensionApi
+      - AppSystemPrompt
       - AppTool
       - AgentCore
       - AppConfig
@@ -378,6 +384,11 @@ parameters:
       - AppExtensionApi
       - AppConfig
       - AppTool
+
+    AppSystemPrompt:
+      - AppTool
+      - AppConfig
+      - SymfonyAiPlatform
 
     AppTool:
       - AgentCore

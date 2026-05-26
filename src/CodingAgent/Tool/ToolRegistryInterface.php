@@ -56,11 +56,9 @@ interface ToolRegistryInterface
      * are included in active provider-schema and execution-allowlist
      * snapshots.
      *
-     * @param string               $name    Model-visible tool name (must not
-     *                                      conflict with a permanent tool name)
-     * @param string               $description
+     * @param string               $name                 Model-visible tool name (must not
+     *                                                   conflict with a permanent tool name)
      * @param array<string, mixed> $parametersJsonSchema
-     * @param mixed                $handler
      *
      * @throws \InvalidArgumentException on name conflict with permanent tool
      */
