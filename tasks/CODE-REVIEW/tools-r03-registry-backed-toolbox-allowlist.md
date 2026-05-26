@@ -52,7 +52,7 @@ Out of scope:
 Status: CODE-REVIEW
 Branch: task/tools-r03-registry-backed-toolbox-allowlist
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-r03-registry-backed-toolbox-allowlist
-Fork run: vt4v5mwcyrdj
+Fork run: vo4138t69n04
 PR URL: https://github.com/ineersa/agent-core/pull/58
 PR Status: open
 Started: 2026-05-26T23:20:20.053Z
@@ -83,3 +83,7 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/58
 - Validation: castor cache:clear: ok; castor test --filter="RegistryBackedToolbox|ToolExecutor": ok (21 tests, 53 assertions); castor test: ok (1051 tests, 10166 assertions); castor deptrac: ok (0 violations, 0 errors, uncovered=373, allowed=761); castor cs-check: ok (0 files fixed); git push: ok
 - Summary: Implemented TOOLS-R03: RegistryBackedToolbox (ToolboxInterface adapter over ToolRegistryInterface), ToolboxInterface wired in services.yaml, execution allowlist enforcement in ToolExecutor with ToolSetResolverInterface + toolsRef propagation, LlmStepResult/ExecuteToolCall/ToolCall toolsRef propagation for snapshot matching, docs/tool-execution.md with handler/polling/cancellation contract, 23 new tests (9 RegistryBackedToolbox + 4 ToolExecutor allowlist + coverage via full suite), cs-check/deptrac clean.
+
+## Task workflow update - 2026-05-26T23:40:18.661Z
+- Recorded fork run: vo4138t69n04
+- Summary: Launched follow-up fork vo4138t69n04 for PR #58 design refinement: add reusable tool-author helper/runtime exposing simple run path and foreground cancellable process polling path, keep RegistryBackedToolbox thin, avoid central PID registry/ForegroundProcessRunner/ToolCancelledException, update docs and tests.
