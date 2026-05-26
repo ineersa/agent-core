@@ -48,7 +48,8 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
         // Build and prepend the system prompt as the first message.
         // This ensures the model receives system instructions before user input.
-        $systemPromptText = $this->systemPromptBuilder->build($request->cwd);
+        // CWD is sourced from AppConfig (bootstrap-resolved working directory).
+        $systemPromptText = $this->systemPromptBuilder->build();
         if ('' !== $systemPromptText) {
             $messages[] = new AgentMessage(
                 role: 'system',

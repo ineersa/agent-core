@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\SystemPrompt;
 
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
@@ -80,7 +83,7 @@ final class SystemPromptBuilderTest extends TestCase
         $registry = $this->createRegistryWithTools();
         $builder = $this->createBuilder($registry);
 
-        $result = $builder->build($this->tmpDir);
+        $result = $builder->build();
 
         // Tool lines should appear in <available_tools>
         $this->assertStringContainsString('- read: Read file contents', $result);
@@ -112,7 +115,7 @@ final class SystemPromptBuilderTest extends TestCase
         );
 
         $builder = $this->createBuilder($registry);
-        $result = $builder->build($this->tmpDir);
+        $result = $builder->build();
 
         // Deduped lines: '- read: Read file contents' appears only once
         $this->assertSame(1, substr_count($result, '- read: Read file contents'));
@@ -132,7 +135,7 @@ final class SystemPromptBuilderTest extends TestCase
 
         $builder = $this->createBuilder();
 
-        $result = $builder->build($this->tmpDir);
+        $result = $builder->build();
 
         $this->assertStringContainsString('Custom project system prompt.', $result);
         $this->assertStringNotContainsString('expert coding assistant', strtolower($result));
@@ -152,13 +155,15 @@ final class SystemPromptBuilderTest extends TestCase
         putenv('HOME='.$homeDir);
 
         try {
-            // Builder captures HOME at construction through SettingsPathResolver.
-            $builder = $this->createBuilder();
-
             // Use a different dir as cwd so project override isn't found
             $otherDir = $this->tmpDir.'/other';
             @mkdir($otherDir);
-            $result = $builder->build($otherDir);
+
+            // Builder captures HOME at construction through SettingsPathResolver.
+            // CWD is sourced from AppConfig, so set it on the builder.
+            $builder = $this->createBuilder(cwd: $otherDir);
+
+            $result = $builder->build();
 
             $this->assertStringContainsString('Home system prompt.', $result);
             $this->assertStringNotContainsString('expert coding assistant', strtolower($result));
@@ -182,7 +187,7 @@ final class SystemPromptBuilderTest extends TestCase
         try {
             $builder = $this->createBuilder();
 
-            $result = $builder->build($this->tmpDir);
+            $result = $builder->build();
 
             $this->assertStringContainsString('Project system prompt.', $result);
             $this->assertStringNotContainsString('Home system prompt.', $result);
@@ -203,7 +208,7 @@ final class SystemPromptBuilderTest extends TestCase
 
         $builder = $this->createBuilder();
 
-        $result = $builder->build($this->tmpDir);
+        $result = $builder->build();
 
         // Append content should be rendered
         $this->assertStringContainsString('Append content.', $result);
@@ -231,7 +236,7 @@ final class SystemPromptBuilderTest extends TestCase
         try {
             $builder = $this->createBuilder();
 
-            $result = $builder->build($this->tmpDir);
+            $result = $builder->build();
 
             // Home append appears first, then project append
             $this->assertStringContainsString('Home append: '.$this->tmpDir, $result);
@@ -258,7 +263,7 @@ final class SystemPromptBuilderTest extends TestCase
 
         $builder = $this->createBuilder();
 
-        $result = $builder->build($this->tmpDir);
+        $result = $builder->build();
 
         // {appends_part} in append content should be empty (no recursion)
         $this->assertStringContainsString('Append with appends_part placeholder: []', $result);
@@ -268,7 +273,7 @@ final class SystemPromptBuilderTest extends TestCase
     {
         $builder = $this->createBuilder();
 
-        $result = $builder->build($this->tmpDir);
+        $result = $builder->build();
 
         // {appends_part} in the built-in template should be replaced with empty string
         $this->assertStringNotContainsString('{appends_part}', $result);
@@ -295,7 +300,7 @@ final class SystemPromptBuilderTest extends TestCase
             'Extra guidelines: ignore',
         );
 
-        $result = $builder->build($this->tmpDir);
+        $result = $builder->build();
 
         $this->assertStringContainsString('Tools: [- read: Read file contents'."\n".'- write: Write file contents]', $result);
         $this->assertStringContainsString('Guidelines: [Use read for files'."\n".'Use write for files]', $result);
@@ -313,7 +318,7 @@ final class SystemPromptBuilderTest extends TestCase
 
         $builder = $this->createBuilder();
 
-        $result = $builder->build($this->tmpDir);
+        $result = $builder->build();
 
         $this->assertStringContainsString(date('Y-m-d').' at '.$this->tmpDir.' with tools []', $result);
     }
@@ -328,10 +333,10 @@ final class SystemPromptBuilderTest extends TestCase
             'CWD: {cwd}',
         );
 
-        $builder = $this->createBuilder();
+        // CWD is sourced from AppConfig; set it with trailing slash.
+        $builder = $this->createBuilder(cwd: $trailingCwd);
 
-        // Pass CWD with trailing slash; should not produce //.hatfield paths.
-        $result = $builder->build($trailingCwd);
+        $result = $builder->build();
 
         // CWD in output should not have trailing slash
         $this->assertStringContainsString('CWD: '.$this->tmpDir, $result);
@@ -339,7 +344,7 @@ final class SystemPromptBuilderTest extends TestCase
         $this->assertStringNotContainsString('//.hatfield', $result);
     }
 
-    public function testCustomCwdPassedToBuilder(): void
+    public function testCwdFromConfigUsedForTemplateResolution(): void
     {
         file_put_contents(
             $this->tmpDir.'/.hatfield/SYSTEM.md',
@@ -348,18 +353,17 @@ final class SystemPromptBuilderTest extends TestCase
 
         $builder = $this->createBuilder();
 
-        // Use the tmpDir as cwd so our project override is found, but verify
-        // the rendered CWD value is the one passed in build()
-        $result = $builder->build($this->tmpDir);
+        // CWD comes from AppConfig (set to tmpDir in createBuilder).
+        $result = $builder->build();
 
         $this->assertStringContainsString('CWD: '.$this->tmpDir, $result);
     }
 
     public function testEmptyCwdFallsBackToProjectDir(): void
     {
-        // Create builder pointing at our tmpDir so built-in cannot be found.
+        // Create builder with empty CWD in AppConfig, pointing at a bogus project dir.
         $bogusDir = $this->tmpDir.'/bogus-project';
-        $builder = $this->createBuilder(null, $bogusDir);
+        $builder = $this->createBuilder(null, $bogusDir, '');
 
         // Override SYSTEM.md in the bogus project dir to prove empty CWD
         // uses projectDir, not getcwd().
@@ -367,7 +371,7 @@ final class SystemPromptBuilderTest extends TestCase
         mkdir($overrideDir, 0777, true);
         file_put_contents($overrideDir.'/SYSTEM.md', 'Project fallback: {date}');
 
-        $result = $builder->build('');
+        $result = $builder->build();
 
         $this->assertStringContainsString('Project fallback:', $result);
         $this->assertStringContainsString(date('Y-m-d'), $result);
@@ -378,13 +382,15 @@ final class SystemPromptBuilderTest extends TestCase
     public function testMissingBuiltInTemplateThrows(): void
     {
         // Create builder with a non-existent project dir so config/SYSTEM.md cannot be found.
+        // CWD is set to a dir with no SYSTEM.md override, so built-in is used
+        // (which also doesn't exist).
         $bogusDir = $this->tmpDir.'/nonexistent-project';
-        $builder = $this->createBuilder(null, $bogusDir);
+        $builder = $this->createBuilder(null, $bogusDir, $this->tmpDir.'/noprojectoverride');
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Built-in SYSTEM.md not found');
 
-        $builder->build($this->tmpDir.'/noprojectoverride');
+        $builder->build();
     }
 
     /* ───────── Integration-style: InProcessAgentSessionClient injection ───────── */
@@ -398,7 +404,7 @@ final class SystemPromptBuilderTest extends TestCase
 
         $builder = $this->createBuilder();
 
-        $systemPromptText = $builder->build($this->tmpDir);
+        $systemPromptText = $builder->build();
 
         // The system prompt starts with the built-in content (no override).
         // It should be non-empty.
@@ -413,11 +419,17 @@ final class SystemPromptBuilderTest extends TestCase
     private function createBuilder(
         ?ToolRegistryInterface $registry = null,
         ?string $projectDir = null,
+        ?string $cwd = null,
     ): SystemPromptBuilder {
         return new SystemPromptBuilder(
             toolRegistry: $registry ?? $this->createEmptyRegistry(),
             pathResolver: new SettingsPathResolver($projectDir ?? $this->projectDir),
             templateRenderer: new StringTemplateRenderer(),
+            appConfig: new AppConfig(
+                tui: new TuiConfig(theme: 'test'),
+                logging: new LoggingConfig(),
+                cwd: $cwd ?? $this->tmpDir,
+            ),
             projectDir: $projectDir ?? $this->projectDir,
         );
     }

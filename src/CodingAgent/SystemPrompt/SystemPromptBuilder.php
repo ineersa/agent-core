@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\SystemPrompt;
 
+use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Symfony\AI\Platform\Message\Template;
@@ -48,6 +49,7 @@ final readonly class SystemPromptBuilder
         private ToolRegistryInterface $toolRegistry,
         private SettingsPathResolver $pathResolver,
         private StringTemplateRenderer $templateRenderer,
+        private AppConfig $appConfig,
         string $projectDir,
     ) {
         $this->projectDir = rtrim($projectDir, '/');
@@ -56,16 +58,16 @@ final readonly class SystemPromptBuilder
     /**
      * Build and render the system prompt.
      *
-     * @param string $cwd Current working directory (for {cwd} and template lookup)
+     * CWD is sourced from AppConfig (bootstrap-resolved working directory).
+     * Falls back to projectDir when AppConfig.cwd is empty.
      *
      * @return string Fully rendered system prompt
      *
      * @throws \RuntimeException When the built-in template is missing
      */
-    public function build(string $cwd = ''): string
+    public function build(): string
     {
-        $cwd = '' !== $cwd ? $cwd : $this->projectDir;
-        $cwd = rtrim($cwd, '/');
+        $cwd = '' !== $this->appConfig->cwd ? rtrim($this->appConfig->cwd, '/') : $this->projectDir;
 
         // Resolve and render the base template.
         $baseContent = $this->loadBaseTemplate($cwd);
