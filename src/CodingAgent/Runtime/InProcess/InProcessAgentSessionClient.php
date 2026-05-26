@@ -15,6 +15,7 @@ use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
+use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 
 /**
  * In-process implementation of AgentSessionClient.
@@ -32,6 +33,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly AgentRunnerInterface $runner,
         private readonly EventStoreInterface $eventStore,
         private readonly RuntimeEventMapper $mapper,
+        private readonly SystemPromptBuilder $systemPromptBuilder,
         private readonly ?RuntimeEventSinkInterface $transientSink = null,
     ) {
     }
@@ -43,6 +45,18 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             : null;
 
         $messages = [];
+
+        // Build and prepend the system prompt as the first message.
+        // This ensures the model receives system instructions before user input.
+        // CWD is sourced from AppConfig (bootstrap-resolved working directory).
+        $systemPromptText = $this->systemPromptBuilder->build();
+        if ('' !== $systemPromptText) {
+            $messages[] = new AgentMessage(
+                role: 'system',
+                content: [['type' => 'text', 'text' => $systemPromptText]],
+            );
+        }
+
         if ('' !== $request->prompt) {
             $messages[] = new AgentMessage(
                 role: 'user',

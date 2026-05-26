@@ -24,7 +24,7 @@ final readonly class DynamicToolDescriptionProcessor implements InputProcessorIn
 
         // Resolve active toolset via ToolSetResolver when a tools_ref is present.
         // If the resolver short-circuits (empty active set), finalise options and return.
-        if ($this->toolSetResolver !== null && isset($options['tools_ref']) && \is_string($options['tools_ref'])) {
+        if (null !== $this->toolSetResolver && isset($options['tools_ref']) && \is_string($options['tools_ref'])) {
             if ($this->resolveToolset($options, $input)) {
                 return;
             }
@@ -88,7 +88,7 @@ final readonly class DynamicToolDescriptionProcessor implements InputProcessorIn
      *
      * @param array<string, mixed> $options (by reference)
      *
-     * @return bool True to short-circuit (no tools available); false to continue.
+     * @return bool true to short-circuit (no tools available); false to continue
      */
     private function resolveToolset(array &$options, Input $input): bool
     {
