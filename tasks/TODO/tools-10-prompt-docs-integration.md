@@ -6,10 +6,10 @@ Update prompts/docs to teach the model how to use the final toolbox.
 Plan source: `.pi/plans/toolbox-design-plan.md`.
 
 Dependencies:
-- Depends on TOOLS-R00 and SYSTEM-01 for registry-aware prompt assembly.
+- Depends on TOOLS-R00, TOOLS-R02, TOOLS-R03, TOOLS-R04, and SYSTEM-01 for registry-aware prompt assembly, registry-backed Toolbox metadata, settings-backed tool defaults, and final built-in tool definition conventions.
 - Depends on SYSTEM-02 for AGENTS.md project context discovery/injection behavior.
 - Depends on SYSTEM-03 for skills registry/discovery/preload context behavior.
-- Depends on final tool names/schemas from TOOLS-03 (`write`), TOOLS-04 (`view_image`), TOOLS-06 (`edit`), TOOLS-07 (`read`), and TOOLS-09 (`bash`).
+- Depends on final tool names/schemas from TOOLS-03 (`write`), TOOLS-04 (`view_image`), TOOLS-06 (`edit`), TOOLS-07 (`read`), TOOLS-08 (`bg_status`), and TOOLS-09 (`bash`).
 
 Scope:
 - Use the system prompt assembly code from SYSTEM-01 in `src/CodingAgent/`.
@@ -22,12 +22,12 @@ Scope:
   - Use `write` for new files or full rewrites.
   - Use `view_image` for images; `read` is text-only.
   - Use `bash` for commands; long-running commands may be moved to background by user prompt; use `bg_status` for list/log/stop.
-- Update docs/settings only if the task introduces user-facing settings. Otherwise keep docs minimal.
+- Verify docs/settings already documents the tool settings introduced by TOOLS-R04 and concrete tool tasks; update if final prompt/docs wording reveals gaps.
 - Add/adjust tests for prompt assembly if such tests exist.
 
 Out of scope:
 - No tool implementation changes unless needed to align names/descriptions.
-- No new settings unless already introduced by earlier tasks.
+- No new settings unless already introduced by TOOLS-R04 or concrete tool tasks.
 
 ## Acceptance criteria
 - Prompt/instructions mention the final tool names and intended usage accurately.

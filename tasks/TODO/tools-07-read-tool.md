@@ -6,14 +6,16 @@ Implement the text `read` tool with original line numbers.
 Plan source: `.pi/plans/toolbox-design-plan.md`.
 
 Dependencies:
+- Depends on TOOLS-R02 (Hatfield tool definition convention) and TOOLS-R03 (registry-backed Toolbox, settings, and allowlist wiring).
 - Depends on TOOLS-00 (`ForegroundProcessRunner`, `CancellationGuard`).
 - Depends on TOOLS-01 (`PathResolver`).
 - Depends on TOOLS-02 (`OutputCap`).
 
 Scope:
 - Replace/complete `src/CodingAgent/Tool/ReadFileTool.php`.
-- Register with `#[AsTool('read', description: 'Read file contents with cat -n line numbering')]`.
-- Schema should be derived from `__invoke(string $path, ?int $offset = null, ?int $limit = null)`.
+- Provide a Hatfield tool definition/provider for `read` instead of relying on `#[AsTool]` metadata.
+- Register `read` as a permanent tool through the TOOLS-R02 built-in tool registrar/`ToolRegistryInterface`, including provider description, explicit JSON schema, prompt line, and concise guidelines. Execution flows through the TOOLS-R03 registry-backed Toolbox.
+- Tool definition JSON schema should match `__invoke(string $path, ?int $offset = null, ?int $limit = null)`.
 - Resolve path with `PathResolver`.
 - Do not handle images here; image files belong to `view_image`.
 - Use Unix tools through `ForegroundProcessRunner` so output matches `cat -n` format, preserves original line numbers, and honors timeout plus controller-owned cancellation termination:
@@ -23,7 +25,7 @@ Scope:
 - Build commands safely. Prefer Process array with shell only where needed; quote paths with `escapeshellarg` if using `bash -lc`.
 - Check cancellation before starting shell commands and rely on the TOOLS-00 foreground process registry/terminator path while commands execute.
 - Reject obvious device paths (`/dev/*`, `/proc/*/fd/*`) and binary/non-UTF-8 content with clear errors.
-- Pass text through `OutputCap`.
+- Pass text through `OutputCap`, using Hatfield tool settings introduced by TOOLS-R04 for caps/retention.
 - Include continuation hint when output is truncated by line/limit.
 - Add focused tests.
 
@@ -33,7 +35,7 @@ Out of scope:
 - No dedup cache.
 
 ## Acceptance criteria
-- `read` tool is discoverable through Symfony AI toolbox metadata.
+- `read` tool is discoverable through registry-backed Symfony Toolbox metadata and present in `ToolRegistryInterface` permanent metadata.
 - Output uses `cat -n` style with original file line numbers, including offset reads.
 - Offset and limit are 1-indexed and validated.
 - Large output is capped/persisted through `OutputCap`.

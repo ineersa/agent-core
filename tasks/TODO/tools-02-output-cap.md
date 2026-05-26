@@ -7,7 +7,7 @@ Plan source: `.pi/plans/toolbox-design-plan.md`.
 
 Scope:
 - Create `src/CodingAgent/Tool/OutputCap.php`.
-- Follow the user's pi output-cap extension behavior:
+- Follow the user's pi output-cap extension behavior with constructor/configurable defaults so TOOLS-R04 can wire values from Hatfield settings:
   - code/default cap: 20,000 chars (~5k tokens)
   - docs cap: 50,000 chars for doc-like files (`.md`, `.txt`, `.toon` at minimum)
   - stale file max age: 24 hours
@@ -18,14 +18,14 @@ Scope:
 
 Out of scope:
 - Do not implement read/bash tools here.
-- Do not implement `.hatfield` settings; use constants/private defaults for this rollout unless an obvious config mechanism already exists.
+- Do not implement `.hatfield` settings here; expose constructor/configuration inputs with safe defaults. TOOLS-R04 owns hydrating these values from Hatfield settings.
 
 ## Acceptance criteria
 - `OutputCap` can cap/persist oversized text and return a model-facing notice with saved path and inspection hints.
 - Small output is returned unchanged.
-- Doc-like paths use the 50,000 char cap; other paths use 20,000 chars.
+- Doc-like paths use the configurable doc cap defaulting to 50,000 chars; other paths use the configurable default cap defaulting to 20,000 chars.
 - Saved files are written under `.hatfield/tmp/output-cap/` and parent directories are created as needed.
-- Cleanup deletes files older than 24 hours and leaves newer files intact.
+- Cleanup deletes files older than the configurable retention defaulting to 24 hours and leaves newer files intact.
 - Focused tests pass with Castor/PHPUnit.
 
 ## Workflow metadata

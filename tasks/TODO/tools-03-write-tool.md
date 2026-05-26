@@ -6,13 +6,15 @@ Implement the simple `write` tool.
 Plan source: `.pi/plans/toolbox-design-plan.md`.
 
 Dependencies:
-- Depends on TOOLS-00 (`ToolExecutionContext`, `CancellationGuard`).
+- Depends on TOOLS-R02 (Hatfield tool definition convention) and TOOLS-R03 (registry-backed Toolbox and allowlist wiring).
+- Depends on TOOLS-00 (`ToolExecutionContextInterface`, `CancellationGuard`).
 - Depends on TOOLS-01 (`PathResolver`).
 
 Scope:
 - Replace/complete `src/CodingAgent/Tool/WriteFileTool.php`.
-- Register with `#[AsTool('write', description: 'Create or overwrite a file')]` or equivalent project convention.
-- Schema should be derived from `__invoke(string $path, string $content)`.
+- Provide a Hatfield tool definition/provider for `write` instead of relying on `#[AsTool]` metadata.
+- Register `write` as a permanent tool through the TOOLS-R02 built-in tool registrar/`ToolRegistryInterface`, including provider description, explicit JSON schema, prompt line, and concise guidelines. Execution flows through the TOOLS-R03 registry-backed Toolbox.
+- Tool definition JSON schema should match `__invoke(string $path, string $content)`.
 - Resolve the path with `PathResolver`.
 - Check cancellation via `CancellationGuard` before filesystem mutation.
 - `mkdir(dirname($path), recursive: true)` before writing.
@@ -27,7 +29,7 @@ Out of scope:
 - No create/update discrimination.
 
 ## Acceptance criteria
-- `write` tool is discoverable through Symfony AI toolbox metadata.
+- `write` tool is discoverable through the registry-backed Symfony Toolbox metadata and present in `ToolRegistryInterface` permanent metadata.
 - Tool creates missing parent directories and writes exact content.
 - Tool overwrites existing files without requiring a prior read.
 - Tool checks cancellation before writing and returns/throws the standard cancellation path when cancellation is already requested.

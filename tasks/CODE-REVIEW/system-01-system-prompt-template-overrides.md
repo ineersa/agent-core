@@ -27,7 +27,7 @@ Scout notes:
 Status: CODE-REVIEW
 Branch: task/system-01-system-prompt-template-overrides
 Worktree: /home/ineersa/projects/agent-core-worktrees/system-01-system-prompt-template-overrides
-Fork run: g5drakp1bp8i
+Fork run: r0zhc0h7jq00
 PR URL: https://github.com/ineersa/agent-core/pull/51
 PR Status: open
 Started: 2026-05-25T23:32:12.519Z
@@ -52,3 +52,11 @@ Completed:
 - Pushed task/system-01-system-prompt-template-overrides to origin.
 - branch 'task/system-01-system-prompt-template-overrides' set up to track 'origin/task/system-01-system-prompt-template-overrides'.
 - Created PR: https://github.com/ineersa/agent-core/pull/51
+
+## Task workflow update - 2026-05-25T23:47:48.907Z
+- Validation: 16 tests pass, 0 deptrac violations, phpstan clean, cs-check clean
+- Summary: Addressed review findings: (1) added rtrim for CWD trailing slash bug, (2) removed dead variable in test, (3) fixed misleading docblock, (4) added AppSystemPrompt deptrac layer, (5) added trailing-slash regression test. All checks pass.
+
+## Task workflow update - 2026-05-26T00:09:11.974Z
+- Recorded fork run: r0zhc0h7jq00
+- Summary: Addressed all 4 PR review comments: (1) replaced custom render() with Symfony AI StringTemplateRenderer, changed config/SYSTEM.md from {%var%} to {var} syntax; (2-4) injected SettingsPathResolver instead of duplicating home-dir logic, removed Windows fallbacks and getcwd(). 17 tests pass, deptrac/phpstan/cs-check clean.

@@ -270,10 +270,9 @@ Use `ask_human`, not `ask_user`, as the model-visible tool name.
 
 Create `src/CodingAgent/Tool/AskHumanTool.php`.
 
-Register with Symfony AI toolbox:
+Register through the Hatfield tool definition/provider convention from TOOLS-R02, execute through the registry-backed Toolbox from TOOLS-R03, not by relying on Symfony `#[AsTool]` metadata:
 
 ```php
-#[AsTool('ask_human', description: 'Ask the human user for input or approval before continuing')]
 final readonly class AskHumanTool
 {
     /**
@@ -340,7 +339,7 @@ $result->result['kind'] === 'interrupt'
 
 Also update `ToolExecutor` special-case fallback from only `ask_user` to `ask_user|ask_human` or configure the tool policy for `ask_human` as interrupt mode. Preferred v1:
 
-1. implement real `AskHumanTool` for schema/discovery;
+1. implement real `AskHumanTool` plus a Hatfield tool definition/provider for schema/discovery;
 2. keep a defensive `ask_human` interrupt fallback in `ToolExecutor` for robustness.
 
 ### Suggested schema variants
@@ -625,7 +624,7 @@ Acceptance:
 
 Scope:
 
-- Add `src/CodingAgent/Tool/AskHumanTool.php` with `#[AsTool('ask_human', ...)]`.
+- Add `src/CodingAgent/Tool/AskHumanTool.php` plus a Hatfield tool definition/provider for `ask_human` using the TOOLS-R02 convention.
 - Return `kind=interrupt` payload immediately; do not block waiting for input.
 - Support prompt, header, kind, schema, choices, default, allow_other, secret, and optional question_id.
 - Normalize bare string choices to label/description objects.
@@ -633,7 +632,7 @@ Scope:
 
 Acceptance:
 
-- `ask_human` is discoverable through Symfony AI toolbox metadata.
+- `ask_human` is discoverable through registry-backed Symfony Toolbox metadata and present in ToolRegistry permanent metadata.
 - Tool result contains `kind=interrupt`, `question_id`, `prompt`, `schema`, normalized choices, and UI metadata.
 - Unit tests cover text, confirm, choice, approval, and fallback id behavior.
 

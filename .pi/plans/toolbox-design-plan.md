@@ -2,18 +2,20 @@
 
 ## 1. How tools are wired in agent-core
 
-The Symfony AI stack provides the wiring:
+Symfony AI still provides the integration contract, but Hatfield owns tool registration and execution policy.
 
 ```
-[Tool class with #[AsTool] attribute]
-    └── autoconfigured via config/services.yaml
-        └── injected into Toolbox(array $tools)
-            └── ReflectionToolFactory reads #[AsTool] → builds Tool metadata
-                └── Toolbox::getTools() → Tool[] (name, description, JSON Schema)
-                └── Toolbox::execute(ToolCall) → ToolResult
+[Built-in ToolProvider / Extension ToolRegistrationDTO / Dynamic tool source]
+    └── ToolRegistry (permanent + dynamic definitions)
+        └── RegistryBackedToolbox implements Symfony ToolboxInterface
+            └── getTools() converts registry definitions → Symfony Tool[]
+            └── DynamicToolDescriptionProcessor filters per-turn active names
+            └── execute(ToolCall) invokes registered handler/reference
+        └── ToolSetResolverInterface resolves toolsRef → ActiveToolSet
+            └── provider schema names and execution allowlist come from same snapshot
 ```
 
-**Key contract** (`ToolboxInterface`):
+**Key Symfony contract** (`ToolboxInterface`):
 
 ```php
 interface ToolboxInterface
@@ -24,34 +26,43 @@ interface ToolboxInterface
 }
 ```
 
-**Tool model** (`Tool` DTO from symfony/ai-platform):
+**Symfony provider-schema model** (`Tool` DTO from symfony/ai-platform):
 
 ```php
 new Tool(
-    ExecutionReference $ref,  // class + method
+    ExecutionReference $ref,  // class + method or adapter reference
     string $name,             // e.g. "read"
-    string $description,      // e.g. "Read the contents of a file..."
-    ?array $parameters,       // JSON Schema from PHP type hints
+    string $description,      // provider-schema description
+    ?array $parameters,       // JSON Schema supplied by Hatfield definition
 );
 ```
 
-**Tool classes are plain PHP** — each tool is an invokable class in `src/CodingAgent/Tool/`:
+**Hatfield tool definition model** (app-owned, introduced by TOOLS-R02, wired into Toolbox by TOOLS-R03):
 
 ```php
-#[AsTool('read', description: 'Read the contents of a file.')]
-final class ReadFileTool
+final readonly class ToolDefinitionDTO
 {
-    public function __invoke(
-        string $path,
-        ?int $offset = null,
-        ?int $limit = null,
-    ): ToolResult {
-        // ...
-    }
+    /**
+     * @param array<string, mixed> $parametersJsonSchema
+     * @param list<string> $promptGuidelines
+     */
+    public function __construct(
+        public string $name,
+        public string $description,          // provider-schema description
+        public array $parametersJsonSchema,  // explicit JSON schema
+        public mixed $handler,               // callable/object reference/adapter target
+        public string $promptLine,           // one-line <available_tools> text
+        public array $promptGuidelines = [], // <guidelines> bullets
+    ) {}
+}
+
+interface HatfieldToolProviderInterface
+{
+    public function definition(): ToolDefinitionDTO;
 }
 ```
 
-Parameters derive JSON Schema automatically from PHP type hints via `ReflectionToolFactory`. Return type `ToolResult` gives structured output.
+Production built-ins should register through Hatfield definitions, not Symfony `#[AsTool]`, so descriptions, prompt summaries, guidelines, and future settings-driven metadata can be dynamic. Symfony `#[AsTool]` may remain for experiments/backward compatibility, but it is not the primary registration path.
 
 ---
 
@@ -135,15 +146,16 @@ Implementation:
   - Use Symfony\Component\Process\Process
   - Command runs in configured shell (bash on Unix, fallback to sh)
   - cwd = project working directory
-  - Output goes through OutputCap (20K chars)
+  - Output goes through OutputCap using settings-backed caps (default 20K chars)
   - Full output persisted to .hatfield/tmp/output-cap/ when truncated
-  - Poll ToolExecutionContext cancellation token while process is running
-  - On cancellation or timeout, terminate the process tree/process group
+  - Register the foreground process in ToolProcessRegistry while running
+  - On timeout, ForegroundProcessRunner terminates the registered process tree/process group
+  - On run cancellation, the controller terminates registered foreground process groups and Bash observes cancelled state
   - Cancellation is a structured result, not a generic tool failure
 
 Background behavior (user-controlled, NOT model-controlled):
   - Model schema has NO run_in_background parameter
-  - At 30 seconds of runtime, TUI prompts user:
+  - At the settings-backed background prompt threshold (default 30 seconds), TUI prompts user:
     "Command still running after 30s. Move to background?"
   - If user says yes:
     - Process unrefs, continues running
@@ -152,7 +164,7 @@ Background behavior (user-controlled, NOT model-controlled):
     - On completion: user gets notification, model can read log
   - If user says no:
     - Process keeps running until timeout (if set) or completion
-  - If timeout < 30s and reached before prompt: normal timeout kill
+  - If timeout is lower than the background prompt threshold and reached first: normal timeout kill
 
 Companion tool:
   BgStatusTool — same as pi's bg_status
@@ -250,84 +262,64 @@ Why standard unified diff over Codex's custom DSL:
 
 ---
 
-## 3. Tool classes sketch
+## 3. Tool classes and definition sketch
+
+Tool classes remain plain PHP services, but metadata comes from Hatfield definitions rather than attributes.
 
 ```php
 // src/CodingAgent/Tool/ReadFileTool.php
-#[AsTool('read', description: 'Read file contents with cat -n line numbering')]
-final class ReadFileTool {
-    public function __invoke(
-        string $path,
-        ?int $offset = null,
-        ?int $limit = null,
-    ): ToolResult { /* ... */ }
+final class ReadFileTool
+{
+    public function __invoke(string $path, ?int $offset = null, ?int $limit = null): ToolResult
+    {
+        /* ... */
+    }
 }
 
-// src/CodingAgent/Tool/ViewImageTool.php
-#[AsTool('view_image', description: 'View an image file')]
-final class ViewImageTool {
-    public function __invoke(
-        string $path,
-    ): ToolResult { /* ... */ }
-}
+// src/CodingAgent/Tool/ReadFileToolProvider.php
+final readonly class ReadFileToolProvider implements HatfieldToolProviderInterface
+{
+    public function __construct(private ReadFileTool $tool) {}
 
-// src/CodingAgent/Tool/BashTool.php
-#[AsTool('bash', description: 'Execute a bash command')]
-final class BashTool {
-    public function __construct(
-        private readonly BackgroundProcessManager $bgManager,
-    ) {}
-
-    public function __invoke(
-        string $command,
-        ?int $timeout = null,
-    ): ToolResult { /* ... */ }
-}
-
-// src/CodingAgent/Tool/BgStatusTool.php
-#[AsTool('bg_status', description: 'Check status, view output, or stop background processes')]
-final class BgStatusTool {
-    public function __construct(
-        private readonly BackgroundProcessManager $bgManager,
-    ) {}
-
-    public function __invoke(
-        string $action,  // "list" | "log" | "stop"
-        ?int $pid = null,
-    ): ToolResult { /* ... */ }
-}
-
-// src/CodingAgent/Tool/WriteFileTool.php
-#[AsTool('write', description: 'Create or overwrite a file')]
-final class WriteFileTool {
-    public function __invoke(
-        string $path,
-        string $content,
-    ): ToolResult { /* ... */ }
-}
-
-// src/CodingAgent/Tool/EditFileTool.php
-#[AsTool('edit', description: 'Apply a unified diff patch to a file')]
-final class EditFileTool {
-    public function __invoke(
-        string $path,
-        string $patch,
-    ): ToolResult { /* ... */ }
+    public function definition(): ToolDefinitionDTO
+    {
+        return new ToolDefinitionDTO(
+            name: 'read',
+            description: 'Read file contents with cat -n line numbering',
+            parametersJsonSchema: [/* explicit JSON schema */],
+            handler: $this->tool,
+            promptLine: 'read: Read text files with line numbers.',
+            promptGuidelines: ['Use read before editing when you need exact file context.'],
+        );
+    }
 }
 ```
+
+Repeat the same pattern for `view_image`, `bash`, `bg_status`, `write`, and `edit`. A shared provider base/helper may be introduced if it keeps schemas concise, but avoid hiding model-visible names/descriptions in attributes.
 
 ---
 
 ## 4. Shared utilities
 
 ```
+src/AgentCore/Contract/Tool/
+  ToolExecutionContextInterface.php         # Generic current run/tool cancellation and timeout context
+  ToolExecutionContextAccessorInterface.php # Ambient context contract used by ToolExecutor and app-owned tools
+  ToolCancelledException.php                # Domain cancellation exception ToolExecutor can classify
+
+src/AgentCore/Application/Tool/
+  StackToolExecutionContextAccessor.php     # Stack-safe ambient context around Symfony Toolbox execution
+
 src/CodingAgent/Tool/
+  ToolDefinitionDTO.php       # Hatfield tool definition: schema, handler, prompt line, guidelines (TOOLS-R02)
+  HatfieldToolProviderInterface.php # Built-in tool definition provider contract (TOOLS-R02)
+  BuiltInToolRegistrar.php    # Registers tagged built-in definitions as permanent registry tools (TOOLS-R02)
+  RegistryBackedToolbox.php   # Symfony ToolboxInterface adapter backed by ToolRegistry definitions (TOOLS-R03)
+  ToolSettings.php            # Hydrated tool defaults/thresholds from Hatfield settings (TOOLS-R04)
   PathResolver.php            # Static helper: resolvePath(), expand ~, normalize, cwd-relative
   OutputCap.php              # Output capping + temp file persistence
   PatchRunner.php            # Wraps GNU patch subprocess via ForegroundProcessRunner
-  ToolExecutionContext.php    # Current run/tool cancellation and timeout context
-  ToolExecutionContextAccessor.php  # Ambient context around Symfony Toolbox execution
-  CancellationGuard.php       # Cooperative checkpoint helper for short tools
+  CancellationGuard.php       # Cooperative checkpoint helper for short tools, using AgentCore context contracts
   ToolProcessRegistry.php     # Cross-process foreground/background PID registry
   ToolProcessTerminator.php   # TERM -> grace -> KILL process/group termination helper
   ForegroundProcessRunner.php # Shared process starter/waiter with registry + timeout support
@@ -347,17 +339,17 @@ Based on the pi-mono `output-cap` extension. Applied to all tools that
 produce large text output (read, bash, grep, find).
 
 ```
-Config:
-  MAX_CHARS = 20_000       # ~5000 tokens (code files)
-  MAX_CHARS_DOCS = 50_000  # ~12500 tokens (docs: .md, .txt, etc.)
-  MAX_AGE_SECONDS = 86400  # 24 hours — stale file cleanup threshold
+Settings-backed defaults:
+  tools.output_cap.max_chars = 20_000       # ~5000 tokens (code files)
+  tools.output_cap.max_doc_chars = 50_000   # ~12500 tokens (docs: .md, .txt, etc.)
+  tools.output_cap.retention_seconds = 86400 # 24 hours — stale file cleanup threshold
 
 Storage:
   .hatfield/tmp/output-cap/<session-prefix>-<random-hex>.txt
 
 Flow:
   1. Tool produces text output
-  2. If output > MAX_CHARS (or MAX_CHARS_DOCS for doc files):
+  2. If output > settings max_chars (or max_doc_chars for doc files):
      a. Save full output to .hatfield/tmp/output-cap/
      b. Return capped notice to model:
         "⛔ Output capped: N chars (~M tokens) exceeds 20000 char limit.
@@ -408,9 +400,9 @@ Current code reality:
 - `StartRunInput::$systemPrompt` and `StartRunPayload::$systemPrompt` exist, but `InProcessAgentSessionClient` currently passes an empty system prompt.
 - `StartRunHandler` stores only the user/assistant/tool `messages` list in `RunState`; the payload `systemPrompt` is only visible in the normalized `run_started` event payload.
 - `AgentMessageConverter` already supports `role: system`, so the lowest-risk integration path is to prepend the assembled system prompt as an `AgentMessage(role: 'system', ...)` before the first user message.
-- `DynamicToolDescriptionProcessor` currently sends all Symfony Toolbox tools to the provider by default, with optional filtering when `Input` option `tools` is a string list.
-- `ToolExecutor` executes by tool name through `FaultTolerantToolbox`; the same active snapshot that feeds provider schemas must also feed execution allowlist checks.
-- `src/CodingAgent/Tool/ToolRegistry.php` is currently only a stub.
+- `DynamicToolDescriptionProcessor` currently sends all Symfony Toolbox tools to the provider by default, with optional filtering when `Input` option `tools` is a string list; TOOLS-R00 added a resolver path for `toolsRef` filtering.
+- `ToolExecutor` executes by tool name through `FaultTolerantToolbox`; TOOLS-R03 must wire a real `ToolboxInterface` service via `RegistryBackedToolbox` and enforce the same active snapshot's execution allowlist.
+- `ToolRegistry` now exists with permanent/dynamic buckets, but TOOLS-R02 must add tool definitions and `HatfieldToolProviderInterface`, and TOOLS-R03 must add registry-backed Symfony Toolbox execution so registry-only extension/dynamic tools are actually callable.
 
 Scout findings to reuse:
 
@@ -579,8 +571,10 @@ The registry has exactly two model-callable tool buckets:
 
 Registry responsibilities:
 
-- Keep Symfony Toolbox/`#[AsTool]` as the low-level PHP invocation adapter.
+- Be the source of truth for model-callable tool definitions. Symfony Toolbox is an adapter boundary, not the source of tool metadata.
 - Maintain deterministic permanent and dynamic tool maps keyed by model-visible tool name.
+- Store enough definition data for both provider schemas and execution: name, provider description, explicit JSON schema, handler/reference, prompt line, and prompt guidelines.
+- Expose read-only definition lookup/snapshot methods needed by `RegistryBackedToolbox` (for example `activeToolDefinitions()` and `toolDefinition($name)`), without exposing mutable registry internals.
 - Reject conflicting duplicate tool names deterministically; treat identical re-registration as idempotent.
 - Produce snapshots for:
   - permanent prompt lines;
@@ -588,6 +582,40 @@ Registry responsibilities:
   - active provider-schema tools = permanent active tools + current dynamic tools;
   - active execution allowlist using the same names as the provider schema snapshot.
 - Let extension tools register as permanent tools unless an explicit dynamic registration path is introduced later.
+- Ensure registry-only dynamic/extension tools never appear in provider schemas unless `RegistryBackedToolbox` can execute their handler.
+
+### Tool settings
+
+Tool defaults and thresholds should live in Hatfield settings rather than hard-coded service arguments, so users/projects can tune behavior without code changes.
+
+Proposed settings shape (exact names can be refined during implementation):
+
+```yaml
+tools:
+    execution:
+        default_timeout_seconds: 300
+        max_parallelism: 4
+    process:
+        termination_grace_seconds: 2
+    bash:
+        default_timeout_seconds: 300
+        background_prompt_after_seconds: 30
+    output_cap:
+        max_chars: 20000
+        max_doc_chars: 50000
+        retention_seconds: 86400
+    view_image:
+        max_bytes: 5242880
+        max_width: 2000
+        max_height: 2000
+```
+
+Implementation notes:
+
+- Hydrate these into an app-owned `ToolSettings`/`ToolSettingsDTO` from `AppConfig::raw['tools']` with safe defaults (TOOLS-R04).
+- Existing service arguments such as `ToolExecutor` timeout/max parallelism should be wired from settings-derived services/factories instead of fixed YAML literals (TOOLS-R04).
+- Tasks that introduce or consume a key must update `.hatfield/settings.yaml` comments and `docs/settings.md` together.
+- User-provided tool-call parameters (for example Bash `timeout`) may override settings within safe bounds, but schema should stay minimal and no policy-only knobs should be model-visible unless intentionally designed.
 
 ### AgentCore per-turn toolset resolution
 
@@ -603,20 +631,23 @@ Required design:
 1. Add an AgentCore-owned semantic interface such as `ToolSetResolverInterface` that resolves a per-turn tool reference into active toolset data. It must not depend on CodingAgent registry classes.
 2. The resolved data must include at least the provider-visible tool names and execution allowlist names. A small DTO/value object is preferred over raw arrays.
 3. `LlmPlatformAdapter` passes `ModelInvocationInput::$toolsRef`, `runId`, and `turnNo` into `Input` options before `DynamicToolDescriptionProcessor::processInput()` runs.
-4. `DynamicToolDescriptionProcessor` uses `ToolSetResolverInterface` when a `toolsRef` option is present, then filters/constructs `options['tools']` from that resolved active toolset. It can keep the current fallback to all Symfony Toolbox tools when no resolver/ref is available.
+4. `DynamicToolDescriptionProcessor` uses `ToolSetResolverInterface` when a `toolsRef` option is present, then filters/constructs `options['tools']` from that resolved active toolset. It can keep the current fallback to all registry-backed Toolbox tools when no resolver/ref is available.
 5. CodingAgent provides the concrete resolver implementation that maps AgentCore `toolsRef` to the CodingAgent `ToolRegistry` active snapshot, including current dynamic tools.
-6. Tool execution rejects any tool name not present in the same resolved snapshot's execution allowlist.
+6. Propagate the `toolsRef`/run/turn identity into tool execution messages so execution can validate against the same turn snapshot used for provider schema exposure.
+7. Tool execution rejects any tool name not present in the same resolved snapshot's execution allowlist.
 
 This keeps AgentCore generic: AgentCore owns `toolsRef`, `ToolSetResolverInterface`, and option propagation; CodingAgent owns registry policy and the concrete resolver.
 
 ### Registration/runtime flow
 
-1. Built-in tools are normal Symfony services, preferably tagged/attributed with `#[AsTool]` where useful.
-2. CodingAgent boot registers built-in permanent tools with explicit metadata: name, provider description/schema reference, handler/reference, small prompt line, guideline strings.
-3. Extension loader calls `ExtensionApiInterface::registerTool()`; EXT-02 maps public `ToolRegistrationDTO` into permanent registry entries.
-4. At run start, `SystemPromptService` resolves `SYSTEM.md`, resolves append templates, asks `ToolRegistry` for permanent prompt metadata, renders the final prompt, and prepends it as a system `AgentMessage` before the user prompt.
-5. Before each provider request, AgentCore passes the per-turn `toolsRef` through `LlmPlatformAdapter`; `ToolSetResolverInterface` resolves it to an active tool snapshot supplied by CodingAgent's concrete resolver.
-6. Provider tool schemas and execution allowlist are derived from that same resolved snapshot.
+1. Built-in tools are normal Symfony services, paired with Hatfield tool definition providers (tagged/autoconfigured) rather than relying on `#[AsTool]` metadata.
+2. CodingAgent boot registers built-in permanent tools through a `BuiltInToolRegistrar` with explicit metadata: name, provider description, JSON schema, handler/reference, small prompt line, guideline strings.
+3. Extension loader calls `ExtensionApiInterface::registerTool()`; EXT-02 maps public `ToolRegistrationDTO` into permanent registry entries with executable handlers.
+4. Dynamic tools use `ToolRegistry` dynamic APIs; they never affect the stable system prompt but must use the same executable definition shape.
+5. `RegistryBackedToolbox` is wired as `Symfony\AI\Agent\Toolbox\ToolboxInterface`; it converts registry definitions to Symfony `Tool` DTOs and executes registry handlers.
+6. At run start, `SystemPromptService` resolves `SYSTEM.md`, resolves append templates, asks `ToolRegistry` for permanent prompt metadata, renders the final prompt, and prepends it as a system `AgentMessage` before the user prompt.
+7. Before each provider request, AgentCore passes the per-turn `toolsRef` through `LlmPlatformAdapter`; `ToolSetResolverInterface` resolves it to an active tool snapshot supplied by CodingAgent's concrete resolver.
+8. Provider tool schemas and execution allowlist are derived from that same resolved snapshot; `ToolExecutor` rejects tool calls outside the allowlist before invoking the toolbox.
 
 ---
 
@@ -628,11 +659,11 @@ Tasks are intentionally small and prefixed with `TOOLS-` so smaller models can i
 
 - **SYSTEM-01** — System prompt template resolution, append prompts, rendering, and run-start injection.
   - Depends on: TOOLS-R00 for permanent tool prompt metadata.
-  - Can parallelize with: concrete tool implementation after TOOLS-R00 snapshot APIs are stable.
+  - Can parallelize with: concrete tool implementation after TOOLS-R02 definition/registry-backed toolbox conventions are stable.
 
 - **SYSTEM-02** — `AGENTS.md` project context discovery and new-session context message injection.
   - Depends on: none; can reuse SYSTEM-01 prompt/channel wording when available, but must not splice AGENTS content into the system prompt.
-  - Can parallelize with: SYSTEM-01, TOOLS-R00, and concrete tool implementation.
+  - Can parallelize with: SYSTEM-01, TOOLS-R00/TOOLS-R02 foundation work, and concrete tool implementation after TOOLS-R02 conventions are stable.
 
 - **SYSTEM-03** — Skills registry/discovery, `--skills-path`/`--skills`/`--no-skills`, and new-session skills context injection.
   - Depends on: SYSTEM-02 for the shared initial user-context message placement/order.
@@ -642,24 +673,36 @@ Tasks are intentionally small and prefixed with `TOOLS-` so smaller models can i
   - Depends on: none.
   - Can parallelize with: TOOLS-00, TOOLS-01, TOOLS-02, EXT-00.
 
+- **TOOLS-R02** — Tool definitions, `HatfieldToolProviderInterface`, `BuiltInToolRegistrar`, and registry definition lookups.
+  - Depends on: TOOLS-R00.
+  - Can parallelize with: TOOLS-00, TOOLS-01, TOOLS-02 after TOOLS-R00 has landed. Concrete tool tasks can start registering definitions after this lands.
+
+- **TOOLS-R03** — Registry-backed Symfony Toolbox and execution allowlist enforcement.
+  - Depends on: TOOLS-R02.
+  - Can parallelize with: TOOLS-00, TOOLS-01, TOOLS-02, TOOLS-R04.
+
+- **TOOLS-R04** — Tool settings hydration from Hatfield settings/defaults.
+  - Depends on: TOOLS-R02 (so settings-derived registration defaults are available).
+  - Can parallelize with: TOOLS-R03, TOOLS-00, TOOLS-01, TOOLS-02.
+
 - **TOOLS-00** — Tool cancellation context, guard, foreground process registry, terminator, and runner.
   - Depends on: none.
-  - Can parallelize with: TOOLS-R00, TOOLS-01, TOOLS-02.
+  - Can parallelize with: TOOLS-R00, TOOLS-R02, TOOLS-R03, TOOLS-01, TOOLS-02.
 
 - **TOOLS-01** — Static `PathResolver` helper for file tools.
   - Depends on: none.
-  - Can parallelize with: TOOLS-R00, TOOLS-00, TOOLS-02.
+  - Can parallelize with: TOOLS-R00, TOOLS-R02, TOOLS-R03, TOOLS-00, TOOLS-02.
 
 - **TOOLS-02** — `OutputCap` service for text output persistence and cleanup.
   - Depends on: none.
-  - Can parallelize with: TOOLS-R00, TOOLS-00, TOOLS-01.
+  - Can parallelize with: TOOLS-R00, TOOLS-R02, TOOLS-R03, TOOLS-00, TOOLS-01.
 
 - **TOOLS-03** — Simple `write` tool.
-  - Depends on: TOOLS-R00, TOOLS-00, TOOLS-01.
+  - Depends on: TOOLS-R02, TOOLS-R03, TOOLS-00, TOOLS-01.
   - Can parallelize with: TOOLS-04, TOOLS-05, TOOLS-07, TOOLS-08, SYSTEM-01.
 
 - **TOOLS-04** — `view_image` tool using `FinfoMimeTypeDetector`.
-  - Depends on: TOOLS-R00, TOOLS-00, TOOLS-01.
+  - Depends on: TOOLS-R02, TOOLS-R03, TOOLS-00, TOOLS-01.
   - Can parallelize with: TOOLS-03, TOOLS-05, TOOLS-07, TOOLS-08, SYSTEM-01.
 
 - **TOOLS-05** — `PatchRunner` utility wrapping GNU `patch` dry-run/apply.
@@ -667,41 +710,45 @@ Tasks are intentionally small and prefixed with `TOOLS-` so smaller models can i
   - Can parallelize with: TOOLS-03, TOOLS-04, TOOLS-08, SYSTEM-01.
 
 - **TOOLS-06** — `edit` tool using `PatchRunner`.
-  - Depends on: TOOLS-R00, TOOLS-00, TOOLS-01, TOOLS-05.
+  - Depends on: TOOLS-R02, TOOLS-R03, TOOLS-00, TOOLS-01, TOOLS-05.
   - Can parallelize with: TOOLS-07, TOOLS-08, SYSTEM-01.
 
 - **TOOLS-07** — `read` tool using `cat -n`, `sed`, `head`, and `OutputCap`.
-  - Depends on: TOOLS-R00, TOOLS-00, TOOLS-01, TOOLS-02.
+  - Depends on: TOOLS-R02, TOOLS-R03, TOOLS-00, TOOLS-01, TOOLS-02.
   - Can parallelize with: TOOLS-06, TOOLS-08, SYSTEM-01.
 
 - **TOOLS-08** — `BackgroundProcessManager` and `bg_status` companion tool.
-  - Depends on: TOOLS-R00, TOOLS-00.
+  - Depends on: TOOLS-R02, TOOLS-R03, TOOLS-00.
   - Can parallelize with: TOOLS-03, TOOLS-04, TOOLS-05, TOOLS-06, TOOLS-07, SYSTEM-01.
 
 - **TOOLS-09** — `bash` tool with OutputCap and user-controlled background prompt.
-  - Depends on: TOOLS-R00, TOOLS-00, TOOLS-02, TOOLS-08.
+  - Depends on: TOOLS-R02, TOOLS-R03, TOOLS-00, TOOLS-02, TOOLS-08.
   - Can parallelize with: SYSTEM-01 and early TOOLS-10 prep after schemas stabilize.
 
 - **TOOLS-10** — Prompt/docs integration for final toolset.
-  - Depends on: TOOLS-R00, SYSTEM-01, SYSTEM-02, SYSTEM-03, TOOLS-03, TOOLS-04, TOOLS-06, TOOLS-07, TOOLS-09.
+  - Depends on: TOOLS-R00, TOOLS-R02, TOOLS-R03, TOOLS-R04, SYSTEM-01, SYSTEM-02, SYSTEM-03, TOOLS-03, TOOLS-04, TOOLS-06, TOOLS-07, TOOLS-08, TOOLS-09.
   - Can parallelize with: none; it should close the loop after final names/schemas/context/skills behavior stabilize.
 
 ### Dependency waves
 
 1. **Registry and utility foundation:** TOOLS-R00, TOOLS-00, TOOLS-01, and TOOLS-02 can start immediately and in parallel.
-2. **Prompt/context foundation:** SYSTEM-01 starts after TOOLS-R00 snapshot APIs are stable. SYSTEM-02 can start independently because AGENTS.md context is a separate first-message channel, not a system prompt placeholder. SYSTEM-03 follows SYSTEM-02 so skills share the same first-message injection boundary.
-3. **Process/background foundation:** TOOLS-05 depends on TOOLS-00 and can run after it lands. TOOLS-08 depends on TOOLS-R00 + TOOLS-00.
-4. **Independent tools:** TOOLS-03 and TOOLS-04 depend on TOOLS-R00 + TOOLS-00 + TOOLS-01 and can run in parallel after those land.
-5. **Patch/read tools:** TOOLS-06 depends on TOOLS-R00 + TOOLS-00 + TOOLS-01 + TOOLS-05. TOOLS-07 depends on TOOLS-R00 + TOOLS-00 + TOOLS-01 + TOOLS-02. They can run in parallel with each other.
-6. **Bash:** TOOLS-09 depends on TOOLS-R00 + TOOLS-00 + TOOLS-02 + TOOLS-08.
-7. **Prompt/docs:** TOOLS-10 should be last so prompts match the final registered tool names, schemas, AGENTS.md context behavior, and skills behavior.
+2. **Definition foundation:** TOOLS-R02 starts after TOOLS-R00. Concrete tool tasks can register definitions (HatfieldToolProviderInterface) after this lands, even before the Toolbox is wired.
+3. **Toolbox + settings foundation:** TOOLS-R03 (registry-backed Toolbox + allowlist) and TOOLS-R04 (settings hydration) can run in parallel after TOOLS-R02. Concrete tools need TOOLS-R03 for actual execution through the Symfony AI pipeline.
+4. **Prompt/context foundation:** SYSTEM-01 starts after TOOLS-R00 snapshot APIs are stable. SYSTEM-02 can start independently because AGENTS.md context is a separate first-message channel, not a system prompt placeholder. SYSTEM-03 follows SYSTEM-02 so skills share the same first-message injection boundary.
+5. **Process/background foundation:** TOOLS-05 depends on TOOLS-00 and can run after it lands. TOOLS-08 depends on TOOLS-R02 + TOOLS-R03 + TOOLS-00.
+6. **Independent tools:** TOOLS-03 and TOOLS-04 depend on TOOLS-R02 + TOOLS-R03 + TOOLS-00 + TOOLS-01 and can run in parallel after those land.
+7. **Patch/read tools:** TOOLS-06 depends on TOOLS-R02 + TOOLS-R03 + TOOLS-00 + TOOLS-01 + TOOLS-05. TOOLS-07 depends on TOOLS-R02 + TOOLS-R03 + TOOLS-00 + TOOLS-01 + TOOLS-02. They can run in parallel with each other.
+8. **Bash:** TOOLS-09 depends on TOOLS-R02 + TOOLS-R03 + TOOLS-00 + TOOLS-02 + TOOLS-08.
+9. **Prompt/docs:** TOOLS-10 should be last so prompts match the final registered tool names, schemas, background tool behavior, AGENTS.md context behavior, and skills behavior.
 
 ### Notes for implementers
 
 - Do not implement `GrepTool` or `FindTool` in this rollout.
-- `ToolRegistry` is implemented by TOOLS-R00 and owns permanent/dynamic tool policy and metadata. Concrete tools should register permanent prompt metadata through it instead of inventing per-tool prompt/activation wiring.
+- `ToolRegistry` is implemented by TOOLS-R00 and owns permanent/dynamic tool policy and metadata. TOOLS-R02 owns tool definitions and the built-in registrar. TOOLS-R03 owns the registry-backed Toolbox adapter and execution allowlist. TOOLS-R04 owns settings hydration.
+- Concrete tools should provide Hatfield tool definitions through TOOLS-R02 conventions; do not add new production reliance on Symfony `#[AsTool]` metadata.
 - Do not add model-controlled `run_in_background`; backgrounding is controlled by the TUI/user prompt.
-- Prefer Symfony DI/autowiring and `#[AsTool]` on tool classes where useful, with registry metadata kept explicit.
+- Prefer Symfony DI/autowiring and tagged providers for built-in tool definitions.
+- Tool timeouts, process thresholds, output caps, and image limits should come from Hatfield settings/defaults, not hard-coded service arguments.
 - Runtime files belong under `.hatfield/tmp/` so they remain ignored by `.hatfield/.gitignore`.
 
 ---
@@ -732,10 +779,12 @@ Killing the Messenger `tool` consumer is a future hard-cancel fallback, not the 
 
 ### ToolExecutionContextAccessor
 
-Keep `#[AsTool]` and Symfony Toolbox for schema/discovery/execution, but add an app-owned ambient execution context around each toolbox invocation.
+Keep `ToolboxInterface` as the low-level provider/execution adapter, but make it registry-backed and add an ambient execution context around each toolbox invocation.
+
+Layering requirement: `ToolExecutor` lives in `AgentCore`, so the context contract/accessor it uses must be AgentCore-owned. CodingAgent tools may depend on AgentCore contracts, but AgentCore must not import `Ineersa\CodingAgent\Tool\*`.
 
 ```php
-interface ToolExecutionContext
+interface ToolExecutionContextInterface
 {
     public function runId(): string;
     public function turnNo(): int;
@@ -746,23 +795,30 @@ interface ToolExecutionContext
     public function throwIfCancellationRequested(): void;
 }
 
-final class ToolExecutionContextAccessor
+interface ToolExecutionContextAccessorInterface
 {
-    /** @var list<ToolExecutionContext> */
+    public function current(): ?ToolExecutionContextInterface;
+    public function requireCurrent(): ToolExecutionContextInterface;
+    public function with(ToolExecutionContextInterface $context, callable $callback): mixed;
+}
+
+final class StackToolExecutionContextAccessor implements ToolExecutionContextAccessorInterface
+{
+    /** @var list<ToolExecutionContextInterface> */
     private array $stack = [];
 
-    public function current(): ?ToolExecutionContext
+    public function current(): ?ToolExecutionContextInterface
     {
         return $this->stack[array_key_last($this->stack)] ?? null;
     }
 
-    public function requireCurrent(): ToolExecutionContext
+    public function requireCurrent(): ToolExecutionContextInterface
     {
         return $this->current()
             ?? throw new \LogicException('A tool execution context is required.');
     }
 
-    public function with(ToolExecutionContext $context, callable $callback): mixed
+    public function with(ToolExecutionContextInterface $context, callable $callback): mixed
     {
         $this->stack[] = $context;
 
@@ -784,7 +840,7 @@ return $this->contextAccessor->with(
 );
 ```
 
-Tool services that need run/tool metadata inject `ToolExecutionContextAccessor` and call `requireCurrent()`.
+Tool services that need run/tool metadata inject `ToolExecutionContextAccessorInterface` and call `requireCurrent()`.
 
 This keeps cancellation out of the model-facing schema while letting app-owned tools access run/tool metadata and the existing cancellation token.
 
@@ -799,7 +855,7 @@ Use `CancellationGuard` for cheap checkpoints in non-process tools.
 ```php
 final readonly class CancellationGuard
 {
-    public function checkpoint(ToolExecutionContext $context): void
+    public function checkpoint(ToolExecutionContextInterface $context): void
     {
         if ($context->cancellationToken()->isCancellationRequested()) {
             throw new ToolCancelledException();
@@ -808,7 +864,7 @@ final readonly class CancellationGuard
 }
 ```
 
-Short tools (`read` setup, `write`, `view_image`, `edit` validation steps) call checkpoints before starting and at safe boundaries. They should not each own custom cancellation loops.
+Short tools (`read` setup, `write`, `view_image`, `edit` validation steps) call checkpoints before starting and at safe boundaries. They should not each own custom cancellation loops. `ToolCancelledException` should be AgentCore-owned so `ToolExecutor` can classify it as a structured `cancelled=true` tool result instead of a generic tool failure.
 
 ### Foreground process tracking and termination
 
@@ -853,7 +909,7 @@ interface ToolProcessRegistry
 
 `ToolProcessTerminator` owns the termination ladder for a registered process:
 
-- prefer process-group termination on Unix (`posix_kill(-$pgid, SIGTERM)` then `SIGKILL` after a short grace period);
+- prefer process-group termination on Unix (`posix_kill(-$pgid, SIGTERM)` then `SIGKILL` after the settings-backed grace period);
 - fallback to direct process PID termination;
 - treat missing/exited processes as already stopped;
 - keep Windows support as a deferred/simple fallback unless already easy through Symfony Process/taskkill.
@@ -898,9 +954,10 @@ final readonly class ProcessRunResult
 - creating a process group/session where practical (for bash/process-tree safety);
 - registering `ToolProcessKindEnum::ForegroundTool` in `ToolProcessRegistry` once PID/PGID are known;
 - output capture hooks, with OutputCap/log persistence supplied by later tasks;
+- an observer/decision hook so Bash can ask the TUI/user at the settings-backed threshold and request `Continue`, `Terminate`, or `DetachToBackground` without duplicating process lifecycle code;
 - timeout enforcement by delegating termination to `ToolProcessTerminator`;
 - detecting cancellation after process exit by checking the context token/run state and returning `cancelled=true` rather than a generic failure;
-- unregistering in `finally`.
+- unregistering in `finally` unless ownership is explicitly transferred to `BackgroundProcessManager` via `DetachToBackground`.
 
 It should not be the primary cancellation signal loop. On user cancellation, the controller/runtime side terminates registered foreground processes; the runner merely observes that the process ended under a cancelled token.
 

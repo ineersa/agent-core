@@ -374,6 +374,7 @@ Use three implementation tasks for v1. They intentionally keep extension support
    - Depends on EXT-00 and TOOLS-R00 from `.pi/plans/toolbox-design-plan.md`.
    - Implement `ExtensionApiInterface::registerTool()` adapter into the CodingAgent `ToolRegistry`.
    - Ensure registered extension tools become permanent ToolRegistry entries and still flow through registry policy: active tool set, provider schema exposure, execution allowlist, prompt summary/guideline dedupe, and hooks.
+   - TOOLS-R02 introduces tool definitions and the built-in registrar. TOOLS-R03 is the follow-up that makes registry-only extension handlers executable through a registry-backed Symfony Toolbox.
 
 ### Parallelization
 
@@ -384,7 +385,7 @@ Use three implementation tasks for v1. They intentionally keep extension support
 - EXT-01 and EXT-02 can still proceed mostly in parallel once their prerequisites are met:
   - EXT-01 owns settings, project autoload loading, extension class instantiation, and lifecycle errors.
   - EXT-02 owns tool-registration mapping into the registry and execution policy integration.
-- Final integration requires EXT-01, EXT-02, and TOOLS-R00 together: load a test extension from `.hatfield/extensions`, call `registerTool()`, and verify the tool appears in the registry/active schema path according to registry policy.
+- Final callable-tool integration requires EXT-01, EXT-02, TOOLS-R00, TOOLS-R02, and TOOLS-R03 together: load a test extension from `.hatfield/extensions`, call `registerTool()`, and verify the tool appears in the registry/active schema path and can execute through the registry-backed Toolbox according to registry policy.
 
 ### Later backlog, not v1 tracked tasks
 

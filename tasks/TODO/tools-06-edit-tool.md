@@ -6,14 +6,16 @@ Implement the `edit` tool that applies standard unified diffs.
 Plan source: `.pi/plans/toolbox-design-plan.md`.
 
 Dependencies:
-- Depends on TOOLS-00 (`ToolExecutionContext`, `CancellationGuard`).
+- Depends on TOOLS-R02 (Hatfield tool definition convention) and TOOLS-R03 (registry-backed Toolbox and allowlist wiring).
+- Depends on TOOLS-00 (`ToolExecutionContextInterface`, `CancellationGuard`).
 - Depends on TOOLS-01 (`PathResolver`).
 - Depends on TOOLS-05 (`PatchRunner`).
 
 Scope:
 - Replace/complete `src/CodingAgent/Tool/EditFileTool.php`.
-- Register with `#[AsTool('edit', description: 'Apply a unified diff patch to a file')]`.
-- Schema should be derived from `__invoke(string $path, string $patch)`.
+- Provide a Hatfield tool definition/provider for `edit` instead of relying on `#[AsTool]` metadata.
+- Register `edit` as a permanent tool through the TOOLS-R02 built-in tool registrar/`ToolRegistryInterface`, including provider description, explicit JSON schema, prompt line, and concise guidelines. Execution flows through the TOOLS-R03 registry-backed Toolbox.
+- Tool definition JSON schema should match `__invoke(string $path, string $patch)`.
 - Resolve path with `PathResolver`.
 - Check cancellation via `CancellationGuard` before mutating the target file.
 - Require target file to exist; creation belongs to `write`.
@@ -30,7 +32,7 @@ Out of scope:
 - No file creation via patch.
 
 ## Acceptance criteria
-- `edit` tool is discoverable through Symfony AI toolbox metadata.
+- `edit` tool is discoverable through registry-backed Symfony Toolbox metadata and present in `ToolRegistryInterface` permanent metadata.
 - Bad patches leave the original file unchanged and return actionable patch output.
 - Good unified diff patches update the target file and report additions/deletions.
 - Cancellation before final file replacement uses the standard cancellation path and leaves the original file unchanged.

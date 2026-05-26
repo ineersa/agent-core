@@ -6,13 +6,17 @@ Implement background process state management and the `bg_status` companion tool
 Plan source: `.pi/plans/toolbox-design-plan.md`.
 
 Dependencies:
+- Depends on TOOLS-R02 (Hatfield tool definition convention) and TOOLS-R03 (registry-backed Toolbox, settings, and allowlist wiring).
 - Depends on TOOLS-00 (`ToolProcessRegistry` and `ToolProcessTerminator` process tracking/termination helpers).
 
 Scope:
 - Create `src/CodingAgent/Tool/BackgroundProcessManager.php` using the shared TOOLS-00 process registry/terminator primitives where practical.
 - Create/complete `src/CodingAgent/Tool/BgStatusTool.php`.
+- Provide a Hatfield tool definition/provider for `bg_status` instead of relying on `#[AsTool]` metadata.
+- Register `bg_status` as a permanent tool through the TOOLS-R02 built-in tool registrar/`ToolRegistryInterface`, including provider description, explicit JSON schema, prompt line, and concise guidelines. Execution flows through the TOOLS-R03 registry-backed Toolbox.
 - `BackgroundProcessManager` tracks backgrounded processes: pid, process group id when available, command, log file, startedAt, finished, exitCode, stoppedByUser.
 - Logs live under `.hatfield/tmp/bg/<session-prefix>-<pid>.log` or equivalent safe unique name.
+- Read cleanup retention and process termination grace from Hatfield tool settings introduced by TOOLS-R04.
 - Expose manager operations: register/start tracking, list, read log tail, stop PID with SIGTERM, cleanup stale log files older than 24h, shutdown cleanup for running processes.
 - Implement `bg_status` tool schema: `__invoke(string $action, ?int $pid = null)` where action is `list`, `log`, or `stop`.
 - `list`: show PID, status, log path, and command.
@@ -25,7 +29,7 @@ Out of scope:
 - Do not add model-controlled `run_in_background`.
 
 ## Acceptance criteria
-- `bg_status` tool is discoverable through Symfony AI toolbox metadata.
+- `bg_status` tool is discoverable through registry-backed Symfony Toolbox metadata and present in `ToolRegistryInterface` permanent metadata.
 - Manager can list, read log, and stop registered background processes.
 - Stop/shutdown cleanup does not leave child processes running where TOOLS-00 process-group termination is supported.
 - Log files are stored under `.hatfield/tmp/bg/` and parent directories are created as needed.
