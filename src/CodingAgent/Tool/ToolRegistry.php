@@ -10,11 +10,19 @@ namespace Ineersa\CodingAgent\Tool;
  * Manages permanent tools (registered at boot, contribute to system prompt)
  * and dynamic tools (per-request lifecycle, excluded from prompt metadata).
  * All snapshots use deterministic ordering.
+ *
+ * Internal storage uses ToolDefinitionDTO for permanent tools, providing
+ * type-safe handler access and structured definition lookup. Dynamic tools
+ * also store a ToolDefinitionDTO (with empty prompt metadata).
+ *
+ * Built-in providers are injected by Symfony as a tagged iterator and seeded
+ * during registry construction so the tool subsystem owns registration instead
+ * of Kernel boot hooks.
  */
 final class ToolRegistry implements ToolRegistryInterface
 {
     /**
-     * @var array<string, array{name: string, description: string, parametersJsonSchema: array, handler: mixed, promptLine: string, promptGuidelines: list<string>}>
+     * @var array<string, ToolDefinitionDTO>
      */
     private array $permanentTools = [];
 
@@ -24,7 +32,7 @@ final class ToolRegistry implements ToolRegistryInterface
     private array $permanentOrder = [];
 
     /**
-     * @var array<string, array{name: string, description: string, parametersJsonSchema: array, handler: mixed}>
+     * @var array<string, ToolDefinitionDTO>
      */
     private array $dynamicTools = [];
 
@@ -33,11 +41,30 @@ final class ToolRegistry implements ToolRegistryInterface
      */
     private array $dynamicOrder = [];
 
+    /**
+     * @param iterable<HatfieldToolProviderInterface> $providers Tagged built-in tool providers
+     */
+    public function __construct(iterable $providers = [])
+    {
+        foreach ($providers as $provider) {
+            $definition = $provider->definition();
+
+            $this->registerTool(
+                name: $definition->name,
+                description: $definition->description,
+                parametersJsonSchema: $definition->parametersJsonSchema,
+                handler: $definition->handler,
+                promptLine: $definition->promptLine,
+                promptGuidelines: $definition->promptGuidelines,
+            );
+        }
+    }
+
     public function registerTool(
         string $name,
         string $description,
         array $parametersJsonSchema,
-        mixed $handler,
+        ToolHandlerInterface $handler,
         string $promptLine,
         array $promptGuidelines = [],
     ): void {
@@ -50,14 +77,14 @@ final class ToolRegistry implements ToolRegistryInterface
             return;
         }
 
-        $this->permanentTools[$name] = [
-            'name' => $name,
-            'description' => $description,
-            'parametersJsonSchema' => $parametersJsonSchema,
-            'handler' => $handler,
-            'promptLine' => $promptLine,
-            'promptGuidelines' => $promptGuidelines,
-        ];
+        $this->permanentTools[$name] = new ToolDefinitionDTO(
+            name: $name,
+            description: $description,
+            parametersJsonSchema: $parametersJsonSchema,
+            handler: $handler,
+            promptLine: $promptLine,
+            promptGuidelines: $promptGuidelines,
+        );
         $this->permanentOrder[] = $name;
     }
 
@@ -65,7 +92,7 @@ final class ToolRegistry implements ToolRegistryInterface
         string $name,
         string $description,
         array $parametersJsonSchema,
-        mixed $handler,
+        ToolHandlerInterface $handler,
     ): void {
         if ('' === $name || '' === $description) {
             throw new \InvalidArgumentException(\sprintf('Dynamic tool name and description must be non-empty strings, got name="%s" description="%s".', $name, $description));
@@ -80,12 +107,14 @@ final class ToolRegistry implements ToolRegistryInterface
             $this->dynamicOrder[] = $name;
         }
 
-        $this->dynamicTools[$name] = [
-            'name' => $name,
-            'description' => $description,
-            'parametersJsonSchema' => $parametersJsonSchema,
-            'handler' => $handler,
-        ];
+        $this->dynamicTools[$name] = new ToolDefinitionDTO(
+            name: $name,
+            description: $description,
+            parametersJsonSchema: $parametersJsonSchema,
+            handler: $handler,
+            promptLine: '',  // dynamic tools have no prompt metadata
+            promptGuidelines: [],
+        );
     }
 
     public function removeDynamicTool(string $name): void
@@ -120,7 +149,13 @@ final class ToolRegistry implements ToolRegistryInterface
     {
         $result = [];
         foreach ($this->dynamicOrder as $name) {
-            $result[] = $this->dynamicTools[$name];
+            $dto = $this->dynamicTools[$name];
+            $result[] = [
+                'name' => $dto->name,
+                'description' => $dto->description,
+                'parametersJsonSchema' => $dto->parametersJsonSchema,
+                'handler' => $dto->handler,
+            ];
         }
 
         return $result;
@@ -132,7 +167,7 @@ final class ToolRegistry implements ToolRegistryInterface
         $seen = [];
 
         foreach ($this->permanentOrder as $name) {
-            $line = $this->permanentTools[$name]['promptLine'];
+            $line = $this->permanentTools[$name]->promptLine;
             if (!isset($seen[$line])) {
                 $seen[$line] = true;
                 $lines[] = $line;
@@ -148,7 +183,7 @@ final class ToolRegistry implements ToolRegistryInterface
         $seen = [];
 
         foreach ($this->permanentOrder as $name) {
-            foreach ($this->permanentTools[$name]['promptGuidelines'] as $guideline) {
+            foreach ($this->permanentTools[$name]->promptGuidelines as $guideline) {
                 if (!isset($seen[$guideline])) {
                     $seen[$guideline] = true;
                     $guidelines[] = $guideline;
@@ -166,5 +201,33 @@ final class ToolRegistry implements ToolRegistryInterface
             ...$this->permanentOrder,
             ...$this->dynamicOrder,
         ];
+    }
+
+    public function activeToolDefinitions(): array
+    {
+        $definitions = [];
+
+        foreach ($this->permanentOrder as $name) {
+            $definitions[] = $this->permanentTools[$name];
+        }
+
+        foreach ($this->dynamicOrder as $name) {
+            $definitions[] = $this->dynamicTools[$name];
+        }
+
+        return $definitions;
+    }
+
+    public function toolDefinition(string $name): ?ToolDefinitionDTO
+    {
+        if (isset($this->permanentTools[$name])) {
+            return $this->permanentTools[$name];
+        }
+
+        if (isset($this->dynamicTools[$name])) {
+            return $this->dynamicTools[$name];
+        }
+
+        return null;
     }
 }

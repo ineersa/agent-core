@@ -17,6 +17,10 @@ namespace Ineersa\CodingAgent\Tool;
  * idempotent (identical re-registration is a no-op); conflicting
  * permanent/dynamic name collisions are rejected with a documented
  * exception.
+ *
+ * Tool definitions are stored as ToolDefinitionDTO internally and
+ * exposed via activeToolDefinitions() / toolDefinition() for downstream
+ * adapters (e.g. RegistryBackedToolbox in TOOLS-R03).
  */
 interface ToolRegistryInterface
 {
@@ -34,7 +38,7 @@ interface ToolRegistryInterface
      * @param string               $name                 Model-visible tool name
      * @param string               $description          Provider-schema description
      * @param array<string, mixed> $parametersJsonSchema JSON Schema for tool parameters
-     * @param mixed                $handler              Execution handler (callable or Symfony Tool reference)
+     * @param ToolHandlerInterface $handler              Typed execution handler
      * @param string               $promptLine           Single-line description for <available_tools>
      * @param list<string>         $promptGuidelines     Zero or more guideline strings for <guidelines>
      *
@@ -44,7 +48,7 @@ interface ToolRegistryInterface
         string $name,
         string $description,
         array $parametersJsonSchema,
-        mixed $handler,
+        ToolHandlerInterface $handler,
         string $promptLine,
         array $promptGuidelines = [],
     ): void;
@@ -58,7 +62,9 @@ interface ToolRegistryInterface
      *
      * @param string               $name                 Model-visible tool name (must not
      *                                                   conflict with a permanent tool name)
-     * @param array<string, mixed> $parametersJsonSchema
+     * @param string               $description          Provider-schema description
+     * @param array<string, mixed> $parametersJsonSchema JSON Schema for tool parameters
+     * @param ToolHandlerInterface $handler              Typed execution handler
      *
      * @throws \InvalidArgumentException on name conflict with permanent tool
      */
@@ -66,7 +72,7 @@ interface ToolRegistryInterface
         string $name,
         string $description,
         array $parametersJsonSchema,
-        mixed $handler,
+        ToolHandlerInterface $handler,
     ): void;
 
     /**
@@ -112,4 +118,26 @@ interface ToolRegistryInterface
      * @return list<string>
      */
     public function activeToolNames(): array;
+
+    /**
+     * Return active tool definitions as immutable snapshots.
+     *
+     * Permanent tools first (registration order), then dynamic tools
+     * (insertion order). Returns copies of internal DTOs so callers
+     * cannot mutate registry state.
+     *
+     * @return list<ToolDefinitionDTO>
+     */
+    public function activeToolDefinitions(): array;
+
+    /**
+     * Look up a single tool definition by name.
+     *
+     * Searches permanent tools first, then dynamic tools. Returns an
+     * immutable snapshot copy, not an internal reference.
+     *
+     * @return ToolDefinitionDTO|null The definition, or null if no tool
+     *                                with the given name is registered
+     */
+    public function toolDefinition(string $name): ?ToolDefinitionDTO;
 }

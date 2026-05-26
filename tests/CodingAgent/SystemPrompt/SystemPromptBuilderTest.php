@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
+use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use PHPUnit\Framework\TestCase;
@@ -456,10 +457,10 @@ final class SystemPromptBuilderTest extends TestCase
         return $registry;
     }
 
-    private function dummyHandler(): object
+    private function dummyHandler(): ToolHandlerInterface
     {
-        return new class {
-            public function __invoke(): string
+        return new class implements ToolHandlerInterface {
+            public function __invoke(array $arguments = []): string
             {
                 return 'handler result';
             }
