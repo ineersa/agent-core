@@ -865,41 +865,71 @@ function report_excerpt(string $filename, int $maxLines = 80): string
     return "\n\n--- ".relative_report_path($filename)." ---\n".$excerpt;
 }
 
-function phpstan_failure_excerpt(string $jsonOutput, int $maxMessages = 25): string
+function phpstan_failure_excerpt(string $jsonOutput): string
 {
     $decoded = json_decode($jsonOutput, true);
     if (!is_array($decoded) || !is_array($decoded['files'] ?? null)) {
         return '';
     }
 
-    $lines = [];
-    $count = 0;
+    $totalErrors = is_array($decoded['totals'] ?? null) && is_int($decoded['totals']['file_errors'] ?? null)
+        ? $decoded['totals']['file_errors']
+        : 0;
+    $fileCount = count($decoded['files']);
+
+    $identifierCounts = [];
+    $fileSections = [];
+
     foreach ($decoded['files'] as $file => $fileReport) {
         if (!is_array($fileReport) || !is_array($fileReport['messages'] ?? null)) {
             continue;
         }
 
-        foreach ($fileReport['messages'] as $message) {
+        $messages = $fileReport['messages'];
+        $fileErrors = is_int($fileReport['errors'] ?? null) ? $fileReport['errors'] : count($messages);
+        $section = [sprintf('%s (%d)', phpstan_relative_path((string) $file), $fileErrors)];
+
+        foreach ($messages as $message) {
             if (!is_array($message)) {
                 continue;
             }
 
-            $line = isset($message['line']) ? ':'.$message['line'] : '';
-            $text = isset($message['message']) && is_string($message['message']) ? $message['message'] : 'unknown PHPStan error';
-            $lines[] = sprintf('%s%s - %s', (string) $file, $line, $text);
-            ++$count;
+            $identifier = isset($message['identifier']) && is_string($message['identifier']) ? $message['identifier'] : 'unknown';
+            $identifierCounts[$identifier] = ($identifierCounts[$identifier] ?? 0) + 1;
 
-            if ($count >= $maxMessages) {
-                break 2;
-            }
+            $line = isset($message['line']) && is_int($message['line']) ? 'L'.$message['line'] : 'L?';
+            $text = isset($message['message']) && is_string($message['message']) ? $message['message'] : 'unknown PHPStan error';
+            $section[] = sprintf('  %s [%s] %s', $line, $identifier, $text);
         }
+
+        $fileSections[] = implode("\n", $section);
     }
 
-    if ([] === $lines) {
+    if ([] === $fileSections) {
         return '';
     }
 
-    return "\n\n--- phpstan errors (first ".$count.") ---\n".implode("\n", $lines);
+    arsort($identifierCounts);
+    $identifierSummary = [];
+    foreach ($identifierCounts as $identifier => $count) {
+        $identifierSummary[] = $identifier.'='.$count;
+    }
+
+    return "\n\n".implode("\n", [
+        sprintf('--- phpstan errors by file (%d errors in %d files; full report %s) ---', $totalErrors, $fileCount, relative_report_path('phpstan.json')),
+        'by identifier: '.implode(', ', $identifierSummary),
+        implode("\n", $fileSections),
+    ]);
+}
+
+function phpstan_relative_path(string $file): string
+{
+    $root = realpath(__DIR__.'/..');
+    if (is_string($root) && str_starts_with($file, $root.'/')) {
+        return substr($file, strlen($root) + 1);
+    }
+
+    return $file;
 }
 
 // ─── Log tasks ────────────────────────────────────────────────────
