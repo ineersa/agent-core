@@ -38,14 +38,14 @@ Out of scope:
 - Focused tests pass with Castor/PHPUnit.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/tools-03-write-tool
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-03-write-tool
 Fork run: hli5eia0e4e6
 PR URL: https://github.com/ineersa/agent-core/pull/61
-PR Status: open
+PR Status: merged
 Started: 2026-05-27T16:16:17.419Z
-Completed:
+Completed: 2026-05-27T17:10:42.448Z
 
 ## Work log
 - Created: 2026-05-17T04:42:04.932Z
@@ -110,3 +110,38 @@ Completed:
 - Recorded fork run: hli5eia0e4e6
 - Validation: castor check in /home/ineersa/projects/agent-core-worktrees/tools-03-write-tool: deptrac ok (0 violations), test ok (1102 tests, 10303 assertions), phpstan ok (errors=0,file_errors=0), cs-check ok (files_fixed=0), quality ok
 - Summary: Follow-up fork fixed all 45 PHPStan file_errors on PR #61 without changing phpstan-baseline.neon. Branch head is 3986d262. Changes include typed iterable annotations/return types, LoggingConfig promotion cleanup, RunReadService non-null array returns, ToolExecutor boolean narrowing, PathResolver/SettingsPathResolver static-analysis fixes, removal of unused process/client properties, and test stub cleanups. PR #61 is OPEN with mergeStateStatus CLEAN after fetch.
+
+## Task workflow update - 2026-05-27T17:10:42.448Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/tools-03-write-tool into integration checkout.
+- Merge made by the 'ort' strategy.
+ .../Application/Handler/InMemoryToolBatchStore.php |   8 +-
+ .../Application/Handler/ToolBatchCollector.php     |  20 +-
+ src/AgentCore/Application/Handler/ToolExecutor.php |   7 +-
+ src/AgentCore/Application/RunReadService.php       |  18 +-
+ .../Contract/Tool/ToolBatchStoreInterface.php      |   4 +-
+ src/AgentCore/Domain/Run/RunState.php              |   5 +-
+ src/CodingAgent/Config/AppConfigLoader.php         |   2 +
+ src/CodingAgent/Config/LoggingConfig.php           |  86 +-----
+ src/CodingAgent/Config/SettingsPathResolver.php    |   2 +-
+ src/CodingAgent/Extension/ExtensionManager.php     |  12 +-
+ .../ExtensionApi/ToolRegistrationDTO.php           |  12 +-
+ src/CodingAgent/Kernel.php                         |   3 +
+ src/CodingAgent/Path/PathResolver.php              |  17 +-
+ .../Runtime/Process/AgentProcessSupervisor.php     |   5 +-
+ .../Process/JsonlProcessAgentSessionClient.php     |   6 +-
+ src/CodingAgent/Tool/Store/DbalToolBatchStore.php  |  16 +-
+ src/CodingAgent/Tool/ToolRegistry.php              |   6 +
+ src/CodingAgent/Tool/ToolRegistryInterface.php     |   4 +-
+ src/CodingAgent/Tool/WriteFileTool.php             |  99 +++++-
+ .../Extension/ExtensionToolRegistryBridgeTest.php  |   2 +-
+ .../ExtensionApi/ExtensionApiContractsTest.php     |   2 +-
+ tests/CodingAgent/Tool/ToolRuntimeTest.php         |   2 +-
+ tests/CodingAgent/Tool/WriteFileToolTest.php       | 344 +++++++++++++++++++++
+ 23 files changed, 532 insertions(+), 150 deletions(-)
+ create mode 100644 tests/CodingAgent/Tool/WriteFileToolTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/tools-03-write-tool.
+- Deleted branch task/tools-03-write-tool.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR #61 merged on GitHub; Previously validated on branch: castor test passed, castor phpstan errors=0 file_errors=0, castor deptrac 0 violations, castor cs-check clean
+- Summary: PR #61 was merged. Marking TOOLS-03 complete; WriteFileTool is available as a built-in registered tool with PathResolver normalization, ToolRuntime cancellation checkpoints, mkdir -p style parent creation, LOCK_EX writes, and focused tests. Follow-up branch also fixed PHPStan file_errors without expanding baseline.
