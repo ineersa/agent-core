@@ -10,6 +10,14 @@ use Symfony\AI\Platform\Result\ToolCall;
 
 final readonly class AgentMessageNormalizer
 {
+    /**
+     * Content part type for image references that AgentMessageConverter
+     * converts into real Symfony AI Image attachments.
+     *
+     * @see \Ineersa\CodingAgent\Tool\ViewImageTool::IMAGE_REF_TYPE
+     */
+    private const string IMAGE_REF_TYPE = 'image_ref';
+
     public function assistantMessage(AssistantMessage $assistantMessage): AgentMessage
     {
         $content = [];
@@ -110,14 +118,53 @@ final readonly class AgentMessageNormalizer
             $text = '{}';
         }
 
+        // Build content parts: start with the standard text part
+        $content = [[
+            'type' => 'text',
+            'text' => $text,
+        ]];
+
+        // Check if the tool result contains view_image metadata.
+        // If so, add an image_ref content part that AgentMessageConverter
+        // will use to attach a real Symfony AI Image to the next request.
+        // The raw_result['type'] === 'view_image' and the raw_result has
+        // path/media_type/bytes/width/height from ViewImageTool.
+        $rawResult = $result->result['details']['raw_result'] ?? null;
+        if (\is_array($rawResult) && 'view_image' === ($rawResult['type'] ?? null)) {
+            $path = $rawResult['path'] ?? null;
+            $mediaType = $rawResult['media_type'] ?? null;
+            $bytes = $rawResult['bytes'] ?? null;
+            $width = $rawResult['width'] ?? null;
+            $height = $rawResult['height'] ?? null;
+
+            if (\is_string($path) && '' !== $path) {
+                $imageRef = [
+                    'type' => self::IMAGE_REF_TYPE,
+                    'path' => $path,
+                ];
+
+                if (\is_string($mediaType)) {
+                    $imageRef['media_type'] = $mediaType;
+                }
+                if (null !== $bytes) {
+                    $imageRef['bytes'] = $bytes;
+                }
+                if (null !== $width) {
+                    $imageRef['width'] = $width;
+                }
+                if (null !== $height) {
+                    $imageRef['height'] = $height;
+                }
+
+                $content[] = $imageRef;
+            }
+        }
+
         $toolName = \is_string($result->result['tool_name'] ?? null) ? $result->result['tool_name'] : null;
 
         return new AgentMessage(
             role: 'tool',
-            content: [[
-                'type' => 'text',
-                'text' => $text,
-            ]],
+            content: $content,
             toolCallId: $result->toolCallId,
             toolName: $toolName,
             details: $result->result,

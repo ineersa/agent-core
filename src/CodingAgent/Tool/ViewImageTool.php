@@ -9,26 +9,37 @@ use Ineersa\CodingAgent\Path\PathResolver;
 use League\MimeTypeDetection\FinfoMimeTypeDetector;
 
 /**
- * View an image file and return its content as base64-encoded data.
+ * View an image file and return compact metadata (no base64/data_url).
  *
  * Implements both HatfieldToolProviderInterface for automatic registration
  * as a permanent tool and ToolHandlerInterface for execution.
+ *
+ * The tool returns only image metadata (path, media_type, bytes, width, height)
+ * as a JSON text result. The actual image data is NOT included in the tool
+ * result. Instead, AgentMessageConverter detects the image_ref metadata in
+ * the content parts and attaches a real Symfony AI Image content object
+ * as a synthetic follow-up user message for the next provider request.
  *
  * Detection and validation:
  * - MIME type is determined from magic bytes via finfo (not file extension).
  * - Only image/jpeg, image/png, image/gif, and image/webp are accepted.
  * - File size and image dimensions are checked against configurable limits.
- * - Cancellation is checked before reading the file.
+ * - Cancellation is checked via ToolRuntime::run() before reading the file.
  */
 final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerInterface
 {
+    /**
+     * @var string Content part type identifier consumed by AgentMessageConverter.
+     *             Marks a content part as an image reference that should be
+     *             converted into a real Symfony AI Image attachment.
+     */
+    public const string IMAGE_REF_TYPE = 'image_ref';
     /** @var list<string> */
     private const array SUPPORTED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
     public function __construct(
         private readonly ToolRuntime $toolRuntime,
         private readonly ImageToolConfig $imageConfig,
-        private readonly OutputCap $outputCap,
     ) {
     }
 
@@ -37,7 +48,8 @@ final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerI
      *
      * @param array<string, mixed> $arguments Must contain 'path' (non-empty string)
      *
-     * @return array<string, mixed> Structured result with image metadata and content
+     * @return array<string, mixed> Compact image metadata result.
+     *                              NEVER contains base64, data_url, or full image bytes.
      *
      * @throws \RuntimeException on validation failures, filesystem errors, or cancellation
      */
@@ -90,12 +102,6 @@ final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerI
                 throw new \RuntimeException(\sprintf('Unsupported image type "%s" for file "%s". Supported types: JPEG, PNG, GIF, WebP.', $displayType, $resolvedPath));
             }
 
-            // Read full file content
-            $binaryContent = @file_get_contents($resolvedPath);
-            if (false === $binaryContent) {
-                throw new \RuntimeException(\sprintf('Failed to read file "%s".', $resolvedPath));
-            }
-
             // Check image dimensions
             $imageInfo = @getimagesize($resolvedPath);
             if (false === $imageInfo) {
@@ -109,48 +115,17 @@ final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerI
                 throw new \RuntimeException(\sprintf('Image "%s" dimensions (%dx%d) exceed maximum allowed (%dx%d).', $resolvedPath, $width, $height, $this->imageConfig->maxWidth, $this->imageConfig->maxHeight));
             }
 
-            $base64 = base64_encode($binaryContent);
-            $dataUrl = \sprintf('data:%s;base64,%s', $mediaType, $base64);
-
-            $result = [
+            // Return compact metadata ONLY — no base64, no data_url, no full image bytes.
+            // The AgentMessageConverter will use metadata to create a real image attachment
+            // for the next provider request.
+            return [
                 'type' => 'view_image',
                 'path' => $resolvedPath,
                 'media_type' => $mediaType,
-                'base64' => $base64,
-                'data_url' => $dataUrl,
                 'bytes' => $fileSize,
                 'width' => $width,
                 'height' => $height,
             ];
-
-            // Cap oversized results via OutputCap to prevent runtime/LLM blowup.
-            // When the serialized result exceeds the default output cap limit,
-            // persist the full data to disk and return a compact result with
-            // a reference path. The LLM can retrieve the full data via shell
-            // tools if needed.
-            $resultJson = json_encode($result);
-            if (\is_string($resultJson) && mb_strlen($resultJson) > $this->outputCap->config()->defaultCap) {
-                $cappedPath = $this->outputCap->persist($resultJson);
-
-                return [
-                    'type' => 'view_image',
-                    'path' => $resolvedPath,
-                    'media_type' => $mediaType,
-                    'bytes' => $fileSize,
-                    'width' => $width,
-                    'height' => $height,
-                    'output_cap_path' => $cappedPath,
-                    'note' => \sprintf(
-                        'Image data capped. Full %d×%d (%s, %d bytes) saved to output cap. Use read tool or shell commands on output_cap_path to retrieve full data if needed.',
-                        $width,
-                        $height,
-                        $mediaType,
-                        $fileSize,
-                    ),
-                ];
-            }
-
-            return $result;
         });
     }
 
@@ -161,7 +136,7 @@ final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerI
     {
         return new ToolDefinitionDTO(
             name: 'view_image',
-            description: 'View an image file and return its content as base64-encoded data with metadata (media type, dimensions, file size). Only JPEG, PNG, GIF, and WebP formats are supported.',
+            description: 'View an image file and return its metadata (media type, dimensions, file size). Only JPEG, PNG, GIF, and WebP formats are supported.',
             parametersJsonSchema: [
                 'type' => 'object',
                 'properties' => [
@@ -174,14 +149,14 @@ final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerI
                 'additionalProperties' => false,
             ],
             handler: $this,
-            promptLine: 'view_image path — view an image file and return its base64-encoded content with metadata; supports JPEG, PNG, GIF, WebP',
+            promptLine: 'view_image path — view an image file and return its metadata (media type, dimensions, file size); supports JPEG, PNG, GIF, WebP',
             promptGuidelines: [
                 'Only JPEG, PNG, GIF, and WebP formats are supported — other file types are rejected.',
                 'Image type is determined from file content (magic bytes), not file extension.',
-                'Returns base64-encoded image data, MIME type, data URL, dimensions, and file size.',
+                'Returns image metadata: path, media type, file size, width, and height.',
                 'Large images may be rejected if they exceed configured size or dimension limits.',
-                'Very large images have their base64/data_url persisted to an output cap file and replaced with a compact metadata result containing an output_cap_path reference.',
-                'Use when you need to inspect image content, dimensions, or encode an image for downstream use.',
+                'The actual image data is attached to the next provider request as a real image attachment; the tool result contains only compact metadata.',
+                'Use when you need to inspect image dimensions, verify file type, or load an image for the model to see.',
             ],
         );
     }
