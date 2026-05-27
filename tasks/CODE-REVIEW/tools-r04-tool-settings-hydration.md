@@ -48,12 +48,12 @@ Out of scope:
 - `castor deptrac` passes.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/tools-r04-tool-settings-hydration
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-r04-tool-settings-hydration
 Fork run:
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/59
+PR Status: open
 Started: 2026-05-27T00:20:24.853Z
 Completed:
 
@@ -70,3 +70,11 @@ Completed:
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/tools-r04-tool-settings-hydration.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/tools-r04-tool-settings-hydration.
 - Summary: Starting verification/no-op closeout: TOOLS-00/TOOLS-02/TOOLS-R03 already delivered typed execution/output-cap settings hydration; remaining concrete tool-specific settings will be handled by concrete tool tasks when those inputs become real.
+
+## Task workflow update - 2026-05-27T00:26:11.522Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/tools-r04-tool-settings-hydration to origin.
+- branch 'task/tools-r04-tool-settings-hydration' set up to track 'origin/task/tools-r04-tool-settings-hydration'.
+- Created PR: https://github.com/ineersa/agent-core/pull/59
+- Validation: rg verification: no stale BuiltInToolRegistrar/TOOLS-R04+/foreground runner/cancellation guard references remain in updated R04/plan/settings docs except negative guidance; castor test --filter="AppConfigLoaderTest|OutputCapTest|ToolExecutorTest": ok (60 tests, 132 assertions); castor deptrac: ok (0 violations, 0 errors, uncovered=376, allowed=761); castor cs-check: ok (files_fixed=0)
+- Summary: TOOLS-R04 closeout completed as verification/docs cleanup. Confirmed common execution and output-cap settings are already typed under AppConfig->tools, no speculative concrete tool settings were introduced, stale BuiltInToolRegistrar/foreground runner/TOOLS-R04+ docs were removed, and future concrete-tool settings are deferred to their concrete tool tasks.
