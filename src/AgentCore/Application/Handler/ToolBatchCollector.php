@@ -4,10 +4,36 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Handler;
 
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 
+/**
+ * Per-run/per-turn/per-step tool batch execution coordinator.
+ *
+ * Registers expected tool calls from an LLM step, dispatches the initial
+ * batch, and collects results as they arrive. Uses an optional durable
+ * ToolBatchStoreInterface so batch state survives consumer process restarts
+ * and coordinates across llm/tool Messenger consumers.
+ *
+ * The dispatch pipeline (llm consumer → tool transport → tool consumer):
+ *   1. LlmStepResultHandler calls registerExpectedBatch() which persists
+ *      the batch and returns the initial dispatchable calls.
+ *   2. Each tool consumer executes a tool call and dispatches ToolCallResult.
+ *   3. ToolCallResultHandler calls collect() which loads batch state from
+ *      the durable store (allowing cross-process coordination), processes
+ *      the result, dispatches subsequent calls if applicable.
+ *
+ * Internal batch state shape (mirrored in ToolBatchStoreInterface):
+ *   expected_order  : array<string, int>        — toolCallId => orderIndex
+ *   calls           : array<string, ExecuteToolCall>
+ *   pending_queue   : list<string>              — ordered toolCallIds to dispatch
+ *   in_flight       : array<string, true>
+ *   results         : array<string, ToolCallResult>
+ *   finalized       : bool
+ *   max_parallelism : int
+ */
 final class ToolBatchCollector
 {
     /**
@@ -23,9 +49,13 @@ final class ToolBatchCollector
      */
     private array $batches = [];
 
+    private ?ToolBatchStoreInterface $store = null;
+
     public function __construct(
         private readonly int $defaultMaxParallelism = 4,
+        ?ToolBatchStoreInterface $store = null,
     ) {
+        $this->store = $store;
     }
 
     /**
@@ -33,7 +63,7 @@ final class ToolBatchCollector
      *
      * @param list<ExecuteToolCall> $toolCalls
      *
-     * @return list<ExecuteToolCall>
+     * @return list<ExecuteToolCall> The initial dispatchable subset of calls
      */
     public function registerExpectedBatch(string $runId, int $turnNo, string $stepId, array $toolCalls): array
     {
@@ -66,15 +96,14 @@ final class ToolBatchCollector
 
         $initialDispatch = $this->dispatchableCalls($batch);
 
-        $this->batches[$this->batchKey($runId, $turnNo, $stepId)] = $batch;
+        $this->saveBatch($runId, $turnNo, $stepId, $batch);
 
         return $initialDispatch;
     }
 
     public function collect(ToolCallResult $result): ToolBatchCollectOutcome
     {
-        $batchKey = $this->batchKey($result->runId(), $result->turnNo(), $result->stepId());
-        $batch = $this->batches[$batchKey] ?? null;
+        $batch = $this->loadBatch($result->runId(), $result->turnNo(), $result->stepId());
 
         if (null === $batch) {
             return ToolBatchCollectOutcome::rejected();
@@ -98,7 +127,7 @@ final class ToolBatchCollector
         $effectsToDispatch = $this->dispatchableCalls($batch);
 
         if (\count($batch['results']) !== \count($batch['expected_order'])) {
-            $this->batches[$batchKey] = $batch;
+            $this->saveBatch($result->runId(), $result->turnNo(), $result->stepId(), $batch);
 
             return ToolBatchCollectOutcome::acceptedPending($effectsToDispatch);
         }
@@ -110,7 +139,7 @@ final class ToolBatchCollector
         );
 
         $batch['finalized'] = true;
-        $this->batches[$batchKey] = $batch;
+        $this->saveBatch($result->runId(), $result->turnNo(), $result->stepId(), $batch);
 
         return ToolBatchCollectOutcome::acceptedComplete($orderedResults, $effectsToDispatch);
     }
@@ -119,13 +148,13 @@ final class ToolBatchCollector
      * Identifies and extracts tool calls from a batch that are ready for dispatch.
      *
      * @param array{
-     * expected_order: array<string, int>,
-     * calls: array<string, ExecuteToolCall>,
-     * pending_queue: list<string>,
-     * in_flight: array<string, true>,
-     * results: array<string, ToolCallResult>,
-     * finalized: bool,
-     * max_parallelism: int
+     *   expected_order: array<string, int>,
+     *   calls: array<string, ExecuteToolCall>,
+     *   pending_queue: list<string>,
+     *   in_flight: array<string, true>,
+     *   results: array<string, ToolCallResult>,
+     *   finalized: bool,
+     *   max_parallelism: int
      * } $batch
      *
      * @return list<ExecuteToolCall>
@@ -150,7 +179,8 @@ final class ToolBatchCollector
                 continue;
             }
 
-            $mode = ToolExecutionMode::tryFrom((string) ($nextCall->mode ?? ToolExecutionMode::Sequential->value)) ?? ToolExecutionMode::Sequential;
+            $mode = ToolExecutionMode::tryFrom((string) ($nextCall->mode ?? ToolExecutionMode::Sequential->value))
+                ?? ToolExecutionMode::Sequential;
 
             if (ToolExecutionMode::Sequential === $mode || ToolExecutionMode::Interrupt === $mode) {
                 if ([] !== $batch['in_flight']) {
@@ -174,6 +204,182 @@ final class ToolBatchCollector
         }
 
         return $dispatch;
+    }
+
+    // ---------------------------------------------------------------
+    // Durable store integration
+    // ---------------------------------------------------------------
+
+    /**
+     * Load batch state, checking in-memory cache first then durable store.
+     *
+     * @return array|null The batch state array
+     */
+    private function loadBatch(string $runId, int $turnNo, string $stepId): ?array
+    {
+        $batchKey = $this->batchKey($runId, $turnNo, $stepId);
+
+        if (isset($this->batches[$batchKey])) {
+            return $this->batches[$batchKey];
+        }
+
+        $stored = $this->store?->load($runId, $turnNo, $stepId);
+        if (null !== $stored) {
+            $reconstructed = $this->reconstructBatch($runId, $turnNo, $stepId, $stored);
+            $this->batches[$batchKey] = $reconstructed;
+
+            return $reconstructed;
+        }
+
+        return null;
+    }
+
+    /**
+     * Save batch state to in-memory cache and durable store.
+     */
+    private function saveBatch(string $runId, int $turnNo, string $stepId, array $batch): void
+    {
+        $batchKey = $this->batchKey($runId, $turnNo, $stepId);
+        $this->batches[$batchKey] = $batch;
+        $this->store?->save($runId, $turnNo, $stepId, $this->serializeBatch($batch));
+    }
+
+    /**
+     * @return array{
+     *   expected_order: array<string, int>,
+     *   call_data: array<string, array>,
+     *   pending_queue: list<string>,
+     *   in_flight: array<string, true>,
+     *   result_data: array<string, array>,
+     *   finalized: bool,
+     *   max_parallelism: int
+     * }
+     */
+    private function serializeBatch(array $batch): array
+    {
+        $callData = [];
+        foreach ($batch['calls'] as $callId => $call) {
+            \assert($call instanceof ExecuteToolCall);
+            $callData[$callId] = [
+                'toolCallId' => $call->toolCallId,
+                'toolName' => $call->toolName,
+                'args' => $call->args,
+                'orderIndex' => $call->orderIndex,
+                'mode' => $call->mode,
+                'timeoutSeconds' => $call->timeoutSeconds,
+                'maxParallelism' => $call->maxParallelism,
+                'toolsRef' => $call->toolsRef,
+                'toolIdempotencyKey' => $call->toolIdempotencyKey,
+                'assistantMessage' => $call->assistantMessage,
+                'argSchema' => $call->argSchema,
+            ];
+        }
+
+        $resultData = [];
+        foreach ($batch['results'] as $toolCallId => $result) {
+            \assert($result instanceof ToolCallResult);
+            $resultData[$toolCallId] = [
+                'toolCallId' => $result->toolCallId,
+                'orderIndex' => $result->orderIndex,
+                'result' => $result->result,
+                'isError' => $result->isError,
+                'error' => $result->error,
+            ];
+        }
+
+        return [
+            'expected_order' => $batch['expected_order'],
+            'call_data' => $callData,
+            'pending_queue' => $batch['pending_queue'],
+            'in_flight' => $batch['in_flight'],
+            'result_data' => $resultData,
+            'finalized' => $batch['finalized'],
+            'max_parallelism' => $batch['max_parallelism'],
+        ];
+    }
+
+    /**
+     * Reconstruct a full batch state array from stored serialized data.
+     *
+     * @return array{
+     *   expected_order: array<string, int>,
+     *   calls: array<string, ExecuteToolCall>,
+     *   pending_queue: list<string>,
+     *   in_flight: array<string, true>,
+     *   results: array<string, ToolCallResult>,
+     *   finalized: bool,
+     *   max_parallelism: int
+     * }
+     */
+    private function reconstructBatch(string $runId, int $turnNo, string $stepId, array $stored): array
+    {
+        $calls = [];
+        foreach ($stored['call_data'] as $data) {
+            $calls[$data['toolCallId']] = $this->reconstructCall($runId, $turnNo, $stepId, $data);
+        }
+
+        $results = [];
+        foreach ($stored['result_data'] as $data) {
+            $results[$data['toolCallId']] = new ToolCallResult(
+                runId: $runId,
+                turnNo: $turnNo,
+                stepId: $stepId,
+                attempt: 1,
+                idempotencyKey: hash('sha256', \sprintf('%s|%s|%s', $runId, $stepId, $data['toolCallId'])),
+                toolCallId: $data['toolCallId'],
+                orderIndex: $data['orderIndex'],
+                result: $data['result'],
+                isError: $data['isError'],
+                error: $data['error'],
+            );
+        }
+
+        return [
+            'expected_order' => $stored['expected_order'],
+            'calls' => $calls,
+            'pending_queue' => $stored['pending_queue'],
+            'in_flight' => $stored['in_flight'],
+            'results' => $results,
+            'finalized' => $stored['finalized'],
+            'max_parallelism' => $stored['max_parallelism'],
+        ];
+    }
+
+    /**
+     * @param array{
+     *   toolCallId: string,
+     *   toolName: string,
+     *   args: array,
+     *   orderIndex: int,
+     *   mode: string|null,
+     *   timeoutSeconds: int|null,
+     *   maxParallelism: int|null,
+     *   toolsRef: string|null,
+     *   toolIdempotencyKey: string|null,
+     *   assistantMessage: array|null,
+     *   argSchema: array|null,
+     * } $data
+     */
+    private function reconstructCall(string $runId, int $turnNo, string $stepId, array $data): ExecuteToolCall
+    {
+        return new ExecuteToolCall(
+            runId: $runId,
+            turnNo: $turnNo,
+            stepId: $stepId,
+            attempt: 1,
+            idempotencyKey: hash('sha256', \sprintf('%s|%s|%s', $runId, $stepId, $data['toolCallId'])),
+            toolCallId: $data['toolCallId'],
+            toolName: $data['toolName'],
+            args: $data['args'],
+            orderIndex: $data['orderIndex'],
+            toolIdempotencyKey: $data['toolIdempotencyKey'] ?? null,
+            mode: $data['mode'] ?? null,
+            timeoutSeconds: $data['timeoutSeconds'] ?? null,
+            maxParallelism: $data['maxParallelism'] ?? null,
+            assistantMessage: $data['assistantMessage'] ?? null,
+            argSchema: $data['argSchema'] ?? null,
+            toolsRef: $data['toolsRef'] ?? null,
+        );
     }
 
     private function batchKey(string $runId, int $turnNo, string $stepId): string

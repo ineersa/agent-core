@@ -221,6 +221,65 @@ $output = $this->outputCap->cap($process->getOutput(), 'tool_output');
 return ['output' => $output];
 ```
 
+## Durable batch state and parallel dispatch (TOOLS-R05)
+
+Tool execution across multiple tool calls from one LLM step is coordinated
+by `ToolBatchCollector`, which persists batch state to a shared SQLite
+database (`tool_batch_state` table in the messenger database).
+
+### How it works
+
+1. **LlmStepResultHandler** creates `ExecuteToolCall` messages for each tool
+   call and registers them via `ToolBatchCollector::registerExpectedBatch()`.
+   This persists all calls with their order, mode, and parallelism settings.
+
+2. **Initial dispatch:** `ToolBatchCollector` returns the first subset of
+   calls to dispatch immediately (respecting sequential barriers and
+   `max_parallelism`). These are sent to the `tool` transport.
+
+3. **Multiple tool workers:** The controller launches N `messenger:consume tool`
+   workers matching `max_parallelism` (default 4). Each worker picks up an
+   `ExecuteToolCall` from the transport queue, executes it via
+   `ToolExecutor`, and dispatches a `ToolCallResult` on `agent.command.bus`.
+
+4. **Result collection:** `ToolCallResultHandler` calls
+   `ToolBatchCollector::collect()` which:
+   - Loads batch state from the durable store (finds it even in a different
+     consumer process)
+   - Records the completed result
+   - Unblocks subsequent calls (sequential barriers, parallelism slots)
+   - Returns new `ExecuteToolCall` effects to dispatch
+
+5. **Out-of-order completion:** Results are stored in the `tool_batch_state`
+   table. When the batch is complete, results are sorted by `orderIndex`
+   before being committed to the run state, preserving model-visible order.
+
+### Durable store architecture
+
+```
+ToolBatchStoreInterface          ← AgentCore contract (no infrastructure deps)
+  ├── InMemoryToolBatchStore     ← Default/fallback, used in tests
+  └── DbalToolBatchStore         ← Doctrine DBAL/SQLite production impl
+        └── tool_batch_state table in messenger DB
+```
+
+- `DbalToolBatchStore` creates its table lazily (`CREATE TABLE IF NOT EXISTS`)
+- Batch state is stored as a single JSON blob per run/turn/step (primary key:
+  `run_id + turn_no + step_id`)
+- On cache miss (different consumer process), batch is loaded from store and
+  `ExecuteToolCall`/`ToolCallResult` objects are reconstructed from stored
+  serialized call data
+- Run-level locking through `RunLockManager` serializes concurrent batch
+  state updates per run ID
+
+### Worker count configuration
+
+The number of tool consumer workers launched by `HeadlessController` defaults
+to `max_parallelism` from `tools.execution` settings. This can be overridden
+with the `$toolWorkerCount` constructor parameter if needed.
+
+See `docs/settings.md` → `tools.execution.max_parallelism`.
+
 ## No shared foreground process management
 
 After TOOLS-00, there is no central foreground PID registry, process runner, or cross-process cancellation routing. Each tool handler manages its own process lifecycle. Background tools (future) will own durable background process tracking separately.

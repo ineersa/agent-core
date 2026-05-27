@@ -89,6 +89,12 @@ final class HeadlessController
         private readonly EventDispatcherInterface $dispatcher,
         private readonly LoggerInterface $logger,
         private readonly ?InProcessAgentSessionClient $eventClient = null,
+        /**
+         * Number of parallel tool messenger consumers.
+         * Matches tools.execution.max_parallelism for optimal throughput.
+         * Set to -1 to use max_parallelism from settings at runtime.
+         */
+        private readonly int $toolWorkerCount = 4,
     ) {
         $this->sessionId = $_SERVER['HATFIELD_SESSION_ID'] ?? $_ENV['HATFIELD_SESSION_ID'] ?? 'unknown';
     }
@@ -116,7 +122,10 @@ final class HeadlessController
         // Launch messenger consumers for async execution and command transports.
         $this->consumerSupervisor->launch('run_control');
         $this->consumerSupervisor->launch('llm');
-        $this->consumerSupervisor->launch('tool');
+        // tool consumers: N parallel workers for concurrent tool execution.
+        // N defaults to tools.execution.max_parallelism (4).
+        $effectiveWorkerCount = $this->toolWorkerCount > 0 ? $this->toolWorkerCount : 4;
+        $this->consumerSupervisor->launchMultiple('tool', $effectiveWorkerCount);
         // - run_control consumes StartRun, ApplyCommand, AdvanceRun (ASYNC-05)
         // - llm consumes ExecuteLlmStep (ASYNC-04)
         // - tool consumes ExecuteToolCall (ASYNC-04)

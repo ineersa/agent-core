@@ -689,7 +689,12 @@ Tasks are intentionally small and prefixed with `TOOLS-` so smaller models can i
 
 - **TOOLS-R05** — Parallel tool execution orchestration.
   - Depends on: TOOLS-R03, TOOLS-R04, TOOLS-00.
-  - Owns true parallel tool-call scheduling above individual tool execution: durable batch state, multiple tool workers, ordered result collection, and cancellation visibility for all in-flight workers. Do not hide this inside an individual tool runner or rely on PHP Fibers for blocking subprocess parallelism.
+  - Implements durable per-run/per-turn/per-step batch state via Doctrine DBAL/SQLite (`tool_batch_state` table) shared across consumer processes. Serializes batch state (expected order, call data, pending queue, in-flight set, results) as JSON. Reconstructs `ExecuteToolCall`/`ToolCallResult` objects on cache miss from durable store.
+  - `ToolBatchCollector` accepts optional `ToolBatchStoreInterface`. When provided, every mutation is persisted to the store; on cache miss (different process), batch state is loaded from store and reconstructed.
+  - `ConsumerSupervisor` supports multiple tool workers via composite keys (`tool:0`, `tool:1`, ...). `HeadlessController` launches N tool consumers matching `max_parallelism`.
+  - `DbalToolBatchStore` creates its table lazily (`CREATE TABLE IF NOT EXISTS`), uses JSON serialization, and shares the existing messenger SQLite connection.
+  - Cancellation: pending calls are tracked in store; results still go through existing cancellation token/context path. No central PID registry.
+  - Do not hide parallelism inside a single tool runner or rely on PHP Fibers for blocking subprocess parallelism.
 
 - **TOOLS-00** — Minimal tool execution context and cancellation-token access.
   - Depends on: none.
@@ -739,7 +744,7 @@ Tasks are intentionally small and prefixed with `TOOLS-` so smaller models can i
 
 1. **Registry and utility foundation:** TOOLS-R00, TOOLS-00, TOOLS-01, and TOOLS-02 can start immediately and in parallel.
 2. **Definition foundation:** TOOLS-R02 starts after TOOLS-R00. Concrete tool tasks can register definitions (HatfieldToolProviderInterface) after this lands, even before the Toolbox is wired.
-3. **Toolbox + settings foundation:** TOOLS-R03 (registry-backed Toolbox + allowlist) and TOOLS-R04 (settings hydration) can run in parallel after TOOLS-R02. Concrete tools need TOOLS-R03 for actual execution through the Symfony AI pipeline. TOOLS-R05 starts after TOOLS-R03 + TOOLS-R04 + TOOLS-00 when the execution, settings, and cancellation primitives are stable.
+3. **Toolbox + settings + parallel foundation:** TOOLS-R03 (registry-backed Toolbox + allowlist + ToolRuntime docs) runs after TOOLS-R02. TOOLS-R04 closeout verification. TOOLS-R05 (parallel orchestration) adds durable batch state (DBAL/SQLite), multi-worker ConsumerSupervisor, and store-backed dispatch coordination after TOOLS-R03 + TOOLS-R04 + TOOLS-00. Concrete tools need TOOLS-R03 for actual execution through the Symfony AI pipeline.
 4. **Prompt/context foundation:** SYSTEM-01 starts after TOOLS-R00 snapshot APIs are stable. SYSTEM-02 can start independently because AGENTS.md context is a separate first-message channel, not a system prompt placeholder. SYSTEM-03 follows SYSTEM-02 so skills share the same first-message injection boundary.
 5. **Process/background foundation:** TOOLS-05 depends on TOOLS-00 and can run after it lands. TOOLS-08 depends on TOOLS-R02 + TOOLS-R03 + TOOLS-00.
 6. **Independent tools:** TOOLS-03 and TOOLS-04 depend on TOOLS-R02 + TOOLS-R03 + TOOLS-00 + TOOLS-01 and can run in parallel after those land.
