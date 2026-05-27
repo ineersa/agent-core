@@ -156,6 +156,93 @@ final class ImageAttachmentProcessorTest extends TestCase
         self::assertSame($path, $result['path']);
     }
 
+    /* ── Config-driven quality candidates ── */
+
+    public function testEncodingCandidatesUseConfiguredQuality(): void
+    {
+        $config = new ImageToolConfig(
+            maxBytes: 10_485_760,
+            maxWidth: 4096,
+            maxHeight: 2000,
+            maxDimension: 2000,
+            encodedMaxBytes: 4_718_592,
+            jpegQuality: 70,
+            jpegMinQuality: 30,
+        );
+
+        $processor = new ImageAttachmentProcessor($config);
+
+        if (!\extension_loaded('imagick') && !\extension_loaded('gd')) {
+            $this->markTestSkipped('No image processing library available');
+        }
+
+        $path = $this->tmpDir.'/quality.png';
+        $this->createPng(3000, 2000, $path);
+
+        $result = $processor->process($path, 'image/png', 3000, 2000);
+
+        self::assertTrue($result['processed'], 'Image should be processed with custom quality config');
+        self::assertNotSame($path, $result['path']);
+        self::assertLessThanOrEqual(2000, $result['width']);
+        self::assertLessThanOrEqual(2000, $result['height']);
+    }
+
+    public function testExceedsEncodedLimitWarningPresentWhenLimitTiny(): void
+    {
+        if (!\extension_loaded('imagick') && !\extension_loaded('gd')) {
+            $this->markTestSkipped('No image processing library available');
+        }
+
+        // Create a processor with a tiny encodedMaxBytes so even a resized
+        // image will exceed the limit and trigger the warning.
+        $config = new ImageToolConfig(
+            maxBytes: 10_485_760,
+            maxWidth: 4096,
+            maxHeight: 2000,
+            maxDimension: 2000,
+            encodedMaxBytes: 100, // Tiny — any real image exceeds this
+            jpegQuality: 80,
+            jpegMinQuality: 40,
+        );
+
+        $processor = new ImageAttachmentProcessor($config);
+
+        $path = $this->tmpDir.'/oversize_limit.png';
+        $this->createPng(3000, 2000, $path);
+
+        $result = $processor->process($path, 'image/png', 3000, 2000);
+
+        self::assertTrue($result['processed']);
+        self::assertArrayHasKey('exceeds_encoded_limit', $result);
+        self::assertTrue($result['exceeds_encoded_limit']);
+        self::assertArrayHasKey('warning', $result);
+        self::assertStringContainsString('may exceed provider size limits', $result['warning']);
+    }
+
+    /* ── Cache cleanup ── */
+
+    public function testCleanCacheRemovesExpiredFiles(): void
+    {
+        if (!\extension_loaded('imagick') && !\extension_loaded('gd')) {
+            $this->markTestSkipped('No image processing library available');
+        }
+
+        // Process a large image to trigger cache write
+        $path = $this->tmpDir.'/cache_clean.png';
+        $this->createPng(3000, 2000, $path);
+
+        $result = $this->processor->process($path, 'image/png', 3000, 2000);
+
+        self::assertTrue($result['processed']);
+        self::assertFileExists($result['path']);
+
+        // Clean with null (delete all) — should remove the cached file
+        $deleted = $this->processor->cleanCache(null);
+
+        self::assertGreaterThanOrEqual(1, $deleted, 'Should delete at least one cached file');
+        self::assertFileDoesNotExist($result['path']);
+    }
+
     // ─── helpers ───
 
     private function rmDir(string $path): void

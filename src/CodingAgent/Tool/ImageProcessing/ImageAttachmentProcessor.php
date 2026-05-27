@@ -24,49 +24,6 @@ final class ImageAttachmentProcessor
     /** @var string Subdirectory under sys_get_temp_dir() for cached processed images */
     private const string CACHE_DIR = 'hatfield/view_image';
 
-    /**
-     * Encoding candidates per input format.
-     * Format => list of {format: string, quality?: int}.
-     * Quality descending; first match wins.
-     *
-     * @var array<string, list<array{format: string, quality?: int}>>
-     */
-    private const array ENCODING_CANDIDATES = [
-        'image/jpeg' => [
-            ['format' => 'jpeg', 'quality' => 80],
-            ['format' => 'jpeg', 'quality' => 70],
-            ['format' => 'jpeg', 'quality' => 55],
-            ['format' => 'jpeg', 'quality' => 40],
-            ['format' => 'png'],
-            ['format' => 'jpeg', 'quality' => 40],
-        ],
-        'image/png' => [
-            ['format' => 'png'],
-            ['format' => 'jpeg', 'quality' => 80],
-            ['format' => 'jpeg', 'quality' => 70],
-            ['format' => 'jpeg', 'quality' => 55],
-            ['format' => 'jpeg', 'quality' => 40],
-        ],
-        'image/gif' => [
-            ['format' => 'gif'],
-            ['format' => 'png'],
-            ['format' => 'jpeg', 'quality' => 80],
-            ['format' => 'jpeg', 'quality' => 70],
-            ['format' => 'jpeg', 'quality' => 55],
-            ['format' => 'jpeg', 'quality' => 40],
-        ],
-        'image/webp' => [
-            ['format' => 'webp', 'quality' => 80],
-            ['format' => 'webp', 'quality' => 70],
-            ['format' => 'webp', 'quality' => 55],
-            ['format' => 'webp', 'quality' => 40],
-            ['format' => 'jpeg', 'quality' => 80],
-            ['format' => 'jpeg', 'quality' => 70],
-            ['format' => 'jpeg', 'quality' => 55],
-            ['format' => 'jpeg', 'quality' => 40],
-        ],
-    ];
-
     public function __construct(
         private readonly ImageToolConfig $config,
     ) {
@@ -80,10 +37,13 @@ final class ImageAttachmentProcessor
      * @param int    $width     Image width in pixels
      * @param int    $height    Image height in pixels
      *
-     * @return array{path: string, media_type: string, width: int, height: int, bytes: int, processed: bool}
-     *                                                                                                       Processed image metadata. 'path' points to either the original
-     *                                                                                                       file (no processing needed) or a cached processed artifact.
-     *                                                                                                       'processed' is true when processing changed the file.
+     * @return array{path: string, media_type: string, width: int, height: int, bytes: int, processed: bool, exceeds_encoded_limit?: bool, warning?: string}
+     *                                                                                                                                                       Processed image metadata. 'path' points to either the original
+     *                                                                                                                                                       file (no processing needed) or a cached processed artifact.
+     *                                                                                                                                                       'processed' is true when processing changed the file.
+     *                                                                                                                                                       'exceeds_encoded_limit' is true when the image is too large for
+     *                                                                                                                                                       provider-safe delivery and could not be resized to fit.
+     *                                                                                                                                                       'warning' carries a human-readable note when applicable.
      */
     public function process(string $filePath, string $mediaType, int $width, int $height): array
     {
@@ -115,13 +75,59 @@ final class ImageAttachmentProcessor
     }
 
     /**
-     * @return array{path: string, media_type: string, width: int, height: int, bytes: int, processed: bool}
+     * Remove expired cached processed image files.
+     *
+     * @param int|null $olderThanSeconds Delete files older than this many seconds.
+     *                                   Defaults to 86400 (24 hours). Null means all.
+     *
+     * @return int Number of deleted cache files
+     */
+    public function cleanCache(?int $olderThanSeconds = 86400): int
+    {
+        $cacheDir = $this->tempDir().'/'.self::CACHE_DIR;
+
+        if (!is_dir($cacheDir)) {
+            return 0;
+        }
+
+        $deleted = 0;
+        $cutoff = null !== $olderThanSeconds ? time() - $olderThanSeconds : null;
+
+        $files = @glob($cacheDir.'/*');
+        if (false === $files) {
+            return 0;
+        }
+
+        foreach ($files as $file) {
+            if (!is_file($file)) {
+                continue;
+            }
+
+            if (null !== $cutoff) {
+                $mtime = @filemtime($file);
+                if (false === $mtime || $mtime >= $cutoff) {
+                    continue;
+                }
+            }
+
+            if (@unlink($file)) {
+                ++$deleted;
+            }
+        }
+
+        return $deleted;
+    }
+
+    /**
+     * @return array{path: string, media_type: string, width: int, height: int, bytes: int, processed: bool, exceeds_encoded_limit?: bool, warning?: string}
      */
     private function processWithImagick(string $filePath, string $mediaType, int $width, int $height, int $fileSize): array
     {
         try {
             $img = new \Imagick($filePath);
-            $img->autoOrientate(); // @phpstan-ignore method.notFound
+
+            // Apply automatic EXIF orientation
+            $img->autoOrient();
 
             // Animated images — pass through when already within limits
             if ($this->isAnimated($img)) {
@@ -135,11 +141,24 @@ final class ImageAttachmentProcessor
                     }
                 }
                 // Animated but too large — cannot safely resize without frame loss.
-                // Return original with a dimension note (the provider will receive
-                // the large image or reject it; no silent corruption).
+                // Return original with a warning so the tool/model can decide how
+                // to handle it rather than silently corrupting the animation.
+                $encodedBytes = \strlen(base64_encode($img->getImageBlob()));
                 $img->destroy();
 
-                return self::original($filePath, $mediaType, $width, $height, $fileSize);
+                return self::original(
+                    $filePath,
+                    $mediaType,
+                    $width,
+                    $height,
+                    $fileSize,
+                    exceedsEncodedLimit: true,
+                    warning: \sprintf(
+                        'Animated image may exceed provider size limits (%d bytes encoded, limit %d).',
+                        $encodedBytes,
+                        $this->config->encodedMaxBytes,
+                    ),
+                );
             }
 
             // Non-animated: resize and encode
@@ -155,7 +174,8 @@ final class ImageAttachmentProcessor
                 return $result;
             }
 
-            // All encoding attempts failed — write resized original as fallback
+            // All encoding attempts failed — write resized original as fallback.
+            // The result may still exceed provider limits, so flag it.
             $fallbackImg = new \Imagick($filePath);
             if ($newW !== $width || $newH !== $height) {
                 $fallbackImg->resizeImage($newW, $newH, \Imagick::FILTER_LANCZOS, 1);
@@ -163,9 +183,11 @@ final class ImageAttachmentProcessor
             $blob = $fallbackImg->getImageBlob();
             $fallbackImg->destroy();
 
+            $b64Len = \strlen(base64_encode($blob));
+            $exceedsLimit = $b64Len > $this->config->encodedMaxBytes;
             $outPath = $this->writeCache($blob, $this->formatExtension($mediaType));
 
-            return [
+            $result = [
                 'path' => $outPath,
                 'media_type' => $mediaType,
                 'width' => $newW,
@@ -173,6 +195,17 @@ final class ImageAttachmentProcessor
                 'bytes' => \strlen($blob),
                 'processed' => true,
             ];
+
+            if ($exceedsLimit) {
+                $result['exceeds_encoded_limit'] = true;
+                $result['warning'] = \sprintf(
+                    'Image may exceed provider size limits (%d bytes encoded, limit %d).',
+                    $b64Len,
+                    $this->config->encodedMaxBytes,
+                );
+            }
+
+            return $result;
         } catch (\Throwable) {
             return self::original($filePath, $mediaType, $width, $height, $fileSize);
         }
@@ -181,11 +214,11 @@ final class ImageAttachmentProcessor
     /**
      * Try encoding candidates with Imagick, reducing dimensions progressively.
      *
-     * @return array{path: string, media_type: string, width: int, height: int, bytes: int, processed: bool}|null
+     * @return array{path: string, media_type: string, width: int, height: int, bytes: int, processed: bool, exceeds_encoded_limit?: bool, warning?: string}|null
      */
     private function tryImagickEncoding(\Imagick $img, string $mediaType, int $origW, int $origH): ?array
     {
-        $candidates = self::ENCODING_CANDIDATES[$mediaType] ?? self::ENCODING_CANDIDATES['image/jpeg'];
+        $candidates = $this->encodingCandidates($mediaType);
 
         $currentW = $origW;
         $currentH = $origH;
@@ -231,7 +264,7 @@ final class ImageAttachmentProcessor
     }
 
     /**
-     * @return array{path: string, media_type: string, width: int, height: int, bytes: int, processed: bool}
+     * @return array{path: string, media_type: string, width: int, height: int, bytes: int, processed: bool, exceeds_encoded_limit?: bool, warning?: string}
      */
     private function processWithGd(string $filePath, string $mediaType, int $width, int $height, int $fileSize): array
     {
@@ -272,11 +305,11 @@ final class ImageAttachmentProcessor
     /**
      * Try encoding with GD, falling back through format/quality candidates.
      *
-     * @return array{path: string, media_type: string, width: int, height: int, bytes: int, processed: bool}|null
+     * @return array{path: string, media_type: string, width: int, height: int, bytes: int, processed: bool, exceeds_encoded_limit?: bool, warning?: string}|null
      */
     private function tryGdEncoding(\GdImage $gd, string $mediaType, int $width, int $height): ?array
     {
-        $candidates = self::ENCODING_CANDIDATES[$mediaType] ?? self::ENCODING_CANDIDATES['image/jpeg'];
+        $candidates = $this->encodingCandidates($mediaType);
 
         $currentW = $width;
         $currentH = $height;
@@ -459,6 +492,72 @@ final class ImageAttachmentProcessor
         return $flipped;
     }
 
+    // ─── Encoding candidates (dynamically generated from config) ───
+
+    /**
+     * Generate encoding candidates for a given input media type, using
+     * the configured jpegQuality as starting quality and stepping down
+     * to jpegMinQuality.
+     *
+     * First candidate for the native format is tried at full quality,
+     * then progressively lower qualities, then alternative formats.
+     *
+     * @return list<array{format: string, quality?: int}>
+     */
+    private function encodingCandidates(string $mediaType): array
+    {
+        $startQuality = $this->config->jpegQuality;
+        $minQuality = $this->config->jpegMinQuality;
+
+        // Build quality steps: start, start-10, start-25, start-40
+        $qualitySteps = [];
+        foreach ([0, -10, -25, -40] as $step) {
+            $q = $startQuality + $step;
+            if ($q >= $minQuality) {
+                $qualitySteps[] = $q;
+            }
+        }
+
+        // Ensure minQuality is always included
+        if (!\in_array($minQuality, $qualitySteps, true)) {
+            $qualitySteps[] = $minQuality;
+        }
+
+        // Deduplicate and sort descending
+        $qualitySteps = array_unique($qualitySteps);
+        rsort($qualitySteps);
+
+        // Build JPEG candidates from quality steps
+        $jpegCandidates = [];
+        foreach ($qualitySteps as $q) {
+            $jpegCandidates[] = ['format' => 'jpeg', 'quality' => $q];
+        }
+
+        // Build WebP candidates from quality steps
+        $webpCandidates = [];
+        foreach ($qualitySteps as $q) {
+            $webpCandidates[] = ['format' => 'webp', 'quality' => $q];
+        }
+
+        return match ($mediaType) {
+            'image/jpeg' => $jpegCandidates,
+            'image/png' => array_merge(
+                [['format' => 'png']],
+                $jpegCandidates,
+            ),
+            'image/gif' => array_merge(
+                [['format' => 'gif']],
+                [['format' => 'png']],
+                $jpegCandidates,
+            ),
+            'image/webp' => array_merge(
+                $webpCandidates,
+                $jpegCandidates,
+            ),
+            default => $jpegCandidates,
+        };
+    }
+
     // ─── Helpers ───
 
     /**
@@ -510,6 +609,7 @@ final class ImageAttachmentProcessor
 
         if (!is_file($outPath)) {
             @file_put_contents($outPath, $blob);
+            @chmod($outPath, 0640);
         }
 
         return $outPath;
@@ -521,7 +621,7 @@ final class ImageAttachmentProcessor
     private function formatExtension(string $mediaType): string
     {
         return match ($mediaType) {
-            'image/jpeg' => 'jpeg',
+            'image/jpeg' => 'jpg',
             'image/png' => 'png',
             'image/gif' => 'gif',
             'image/webp' => 'webp',
@@ -537,11 +637,11 @@ final class ImageAttachmentProcessor
     /**
      * Build an "original" metadata response (no processing applied).
      *
-     * @return array{path: string, media_type: string, width: int, height: int, bytes: int, processed: bool}
+     * @return array{path: string, media_type: string, width: int, height: int, bytes: int, processed: bool, exceeds_encoded_limit?: bool, warning?: string}
      */
-    private static function original(string $path, string $mediaType, int $width, int $height, int $bytes): array
+    private static function original(string $path, string $mediaType, int $width, int $height, int $bytes, bool $exceedsEncodedLimit = false, ?string $warning = null): array
     {
-        return [
+        $result = [
             'path' => $path,
             'media_type' => $mediaType,
             'width' => $width,
@@ -549,5 +649,15 @@ final class ImageAttachmentProcessor
             'bytes' => $bytes,
             'processed' => false,
         ];
+
+        if ($exceedsEncodedLimit) {
+            $result['exceeds_encoded_limit'] = true;
+        }
+
+        if (null !== $warning) {
+            $result['warning'] = $warning;
+        }
+
+        return $result;
     }
 }

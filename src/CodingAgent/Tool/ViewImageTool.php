@@ -126,6 +126,8 @@ final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerI
             $effectiveWidth = $width;
             $effectiveHeight = $height;
 
+            // If no processor configured, return original metadata as-is.
+            $processed = null;
             if (null !== $this->processor) {
                 $processed = $this->processor->process($resolvedPath, $mediaType, $width, $height);
                 $effectivePath = $processed['path'];
@@ -135,10 +137,10 @@ final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerI
                 $effectiveHeight = $processed['height'];
             }
 
-            // Return compact metadata ONLY — no base64, no data_url, no full image bytes.
-            // The AgentMessageConverter will use metadata to create a real image attachment
-            // for the next provider request.
-            return [
+            // Build compact metadata result — no base64, no data_url, no full image bytes.
+            // AgentMessageConverter will use image_ref content parts to attach a real
+            // Symfony AI Image in a synthetic UserMessage for the provider request.
+            $result = [
                 'type' => 'view_image',
                 'path' => $effectivePath,
                 'media_type' => $effectiveMediaType,
@@ -147,6 +149,21 @@ final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerI
                 'height' => $effectiveHeight,
                 'processed_dimensions' => $effectiveWidth !== $width || $effectiveHeight !== $height,
             ];
+
+            // Report processing details to the model so it can reason about size changes
+            if (null !== $processed && $fileSize !== $effectiveBytes) {
+                $result['processed_bytes'] = $effectiveBytes;
+            }
+
+            // Forward processor warnings (e.g. animated image exceeds provider limits)
+            if (null !== $processed && isset($processed['exceeds_encoded_limit']) && $processed['exceeds_encoded_limit']) {
+                $result['exceeds_encoded_limit'] = true;
+                if (isset($processed['warning']) && \is_string($processed['warning'])) {
+                    $result['warning'] = $processed['warning'];
+                }
+            }
+
+            return $result;
         });
     }
 

@@ -56,6 +56,14 @@ final class AgentMessageConverter
     {
         $messages = [];
         $pendingSyntheticToolMessages = [];
+        // @todo: gating race — $modelName comes from the request default model,
+        //        but ModelResolverRoutingSubscriber can switch to a different model
+        //        at runtime during platform->invoke(), AFTER this gating decision.
+        //        If the resolver switches vision→non-vision, image attachments are
+        //        sent to a model that cannot process them. Fix: move gating to a
+        //        ConvertToLlmHookInterface implementation that runs after model
+        //        resolution when the resolved model name is available, or modify
+        //        the hook contract to receive the resolved model name.
         $imagesSupported = $this->isImageSupported($modelName);
 
         foreach ($agentMessages as $agentMessage) {
