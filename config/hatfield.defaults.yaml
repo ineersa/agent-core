@@ -46,6 +46,36 @@ tools:
         # worker processes launched by the controller.
         max_parallelism: 4
 
+    image:
+        # Maximum image file size in bytes (default: 10 MB).
+        max_bytes: 10485760
+
+        # Maximum image width in pixels (rejection limit).
+        max_width: 4096
+
+        # Maximum image height in pixels (rejection limit).
+        max_height: 2000
+
+        # Maximum pixel dimension for resize-to-fit (default: 2000).
+        # Images exceeding this are scaled down to fit within a
+        # max_dimension × max_dimension bounding box, preserving aspect
+        # ratio. This is the resize target, not a rejection limit.
+        max_dimension: 2000
+
+        # Maximum allowed base64-encoded payload length in bytes.
+        # Default 4.5 MiB — safe below Anthropic and OpenAI 5 MiB limits.
+        # The processor reduces quality and/or dimensions to stay under
+        # this limit.
+        encoded_max_bytes: 4718592
+
+        # Starting JPEG/WebP compression quality (1–100).
+        jpeg_quality: 80
+
+        # Minimum JPEG/WebP quality the processor may attempt (1–100).
+        # The processor descends from jpeg_quality down to this minimum
+        # in steps of ~15 before reducing dimensions.
+        jpeg_min_quality: 40
+
     output_cap:
         # Storage directory for persisted oversized output.
         # Relative paths resolve against the active project CWD.

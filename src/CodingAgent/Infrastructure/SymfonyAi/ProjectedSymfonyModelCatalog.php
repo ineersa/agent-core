@@ -90,6 +90,10 @@ final class ProjectedSymfonyModelCatalog extends AbstractModelCatalog
             $capabilities[] = Capability::THINKING;
         }
 
+        if (\in_array('image', $modelDef->input, true)) {
+            $capabilities[] = Capability::INPUT_IMAGE;
+        }
+
         return $capabilities;
     }
 }

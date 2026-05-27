@@ -27,6 +27,35 @@
 #         # See OutputCapConfig::sessionPrefix.
 #         session_prefix: null
 
+# ---------------------------------------------------------------------------
+# Image tool (view_image) settings
+# ---------------------------------------------------------------------------
+#
+# Uncomment and adjust to override image tool limits:
+#
+# tools:
+#     image:
+#         # Maximum file size in bytes (10 MB).
+#         max_bytes: 10485760
+#
+#         # Maximum image width in pixels (rejection limit).
+#         max_width: 4096
+#
+#         # Maximum image height in pixels (rejection limit).
+#         max_height: 2000
+#
+#         # Resize-to-fit target dimension (default 2000px).
+#         max_dimension: 2000
+#
+#         # Max base64-encoded payload length (default 4.5 MiB).
+#         encoded_max_bytes: 4718592
+#
+#         # Starting JPEG/WebP compression quality.
+#         jpeg_quality: 80
+#
+#         # Minimum JPEG/WebP quality for size reduction steps.
+#         jpeg_min_quality: 40
+
 tui:
     # Available built-in themes:
     #   cyberpunk, catppuccin-mocha, nord, gruvbox-dark, oh-p-dark, tokyo-night
@@ -187,8 +216,8 @@ ai:
                     name: test
                     context_window: 32768
                     max_tokens: 32768
-                    input: [text]
-                    tool_calling: false
+                    input: [text, image]
+                    tool_calling: true
                     reasoning: false
                     cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
 

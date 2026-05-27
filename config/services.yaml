@@ -101,6 +101,25 @@ services:
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 
+  # ImageToolConfig is derived from AppConfig and autowireable.
+  Ineersa\CodingAgent\Config\ImageToolConfig:
+    factory: ['Ineersa\CodingAgent\Config\ImageToolConfig', 'fromAppConfig']
+    arguments:
+      - '@Ineersa\CodingAgent\Config\AppConfig'
+
+  # CodingAgentImageCapabilityChecker — wraps HatfieldModelCatalog from AppConfig.
+  Ineersa\CodingAgent\Tool\ImageProcessing\CodingAgentImageCapabilityChecker:
+    factory: ['Ineersa\CodingAgent\Tool\ImageProcessing\CodingAgentImageCapabilityChecker', 'fromAppConfig']
+    arguments:
+      - '@Ineersa\CodingAgent\Config\AppConfig'
+
+  Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface:
+    alias: Ineersa\CodingAgent\Tool\ImageProcessing\CodingAgentImageCapabilityChecker
+
+  # Image gating is handled by ImageGatingConvertHook (a ConvertToLlmHook),
+  # not by AgentMessageConverter. The hook checks model capabilities upstream
+  # and strips image_ref content parts before the converter runs.
+
   Ineersa\CodingAgent\Session\HatfieldSessionStore: ~
 
   Ineersa\AgentCore\Infrastructure\SymfonyAi\BeforeProviderRequestSubscriber:
@@ -278,7 +297,7 @@ services:
     arguments:
       $subscribers: !tagged_iterator agent_core.hook_subscriber
 
-  # LlmPlatformAdapter hooks — currently no implementations exist.
+  # LlmPlatformAdapter hooks — ImageGatingConvertHook registers as a convert_to_llm hook.
   Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter:
     arguments:
       $transformContextHooks: !tagged_iterator agent_core.transform_context_hook

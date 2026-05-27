@@ -7,9 +7,12 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Domain\Event\CoreLifecycleEventType;
+use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Symfony\Component\Messenger\Exception\ExceptionInterface;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 final readonly class ToolCallResultHandler implements RunMessageHandler
 {
@@ -17,6 +20,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
         private ToolBatchCollector $toolBatchCollector,
         private RunMessageStateTools $stateTools,
         private ?RunMetrics $metrics = null,
+        private ?MessageBusInterface $commandBus = null,
     ) {
     }
 
@@ -197,6 +201,13 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             }
 
             $postCommit = $this->turnCompletedCallbacks($runId, $state->turnNo);
+
+            if (null === $interruptPayload) {
+                $followUpAdvance = $this->followUpAdvanceCallback($runId);
+                if (null !== $followUpAdvance) {
+                    $postCommit[] = $followUpAdvance;
+                }
+            }
         }
 
         $events = $this->stateTools->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
@@ -222,6 +233,29 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             postCommitEffects: $effects,
             postCommit: $postCommit,
         );
+    }
+
+    private function followUpAdvanceCallback(string $runId): ?callable
+    {
+        if (null === $this->commandBus) {
+            return null;
+        }
+
+        return function () use ($runId): void {
+            $stepId = \sprintf('advance-after-tools-%d', hrtime(true));
+
+            try {
+                $this->commandBus->dispatch(new AdvanceRun(
+                    runId: $runId,
+                    turnNo: 0,
+                    stepId: $stepId,
+                    attempt: 1,
+                    idempotencyKey: hash('sha256', \sprintf('%s|%s', $runId, $stepId)),
+                ));
+            } catch (ExceptionInterface $exception) {
+                throw new \RuntimeException('Failed to dispatch AdvanceRun after tool batch completion.', previous: $exception);
+            }
+        };
     }
 
     /**

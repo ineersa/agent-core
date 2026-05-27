@@ -225,6 +225,61 @@ filenames use the format `<session_prefix>-<random_hex>.txt` instead of
 
 **Default:** `null` (falls back to `Ymd` date prefix)
 
+### `tools.image.max_bytes`
+
+Maximum file size in bytes for the `view_image` tool. Images larger
+than this are rejected with a clear error message before reading the
+full file content, avoiding unnecessary I/O.
+
+**Default:** `10485760` (10 MB)
+
+### `tools.image.max_width`
+
+Maximum image width in pixels for the `view_image` tool. Images wider
+than this are rejected after dimension detection.
+
+**Default:** `4096`
+
+### `tools.image.max_height`
+
+Maximum image height in pixels for the `view_image` tool. Images taller
+than this are rejected after dimension detection.
+
+**Default:** `2000`
+
+### `tools.image.max_dimension`
+
+Maximum pixel dimension for the resize-to-fit pipeline. Images exceeding
+this in either dimension are scaled down to fit within a
+`max_dimension × max_dimension` bounding box while preserving aspect ratio.
+This is the **resize target**, not a rejection limit.
+
+**Default:** `2000`
+
+### `tools.image.encoded_max_bytes`
+
+Maximum allowed base64-encoded payload length in bytes for provider-safe
+image delivery. If the encoded image exceeds this limit after resizing,
+the processor tries quality reduction, format conversion (JPEG/WebP), and
+progressive dimension reduction (0.75× steps) to stay under the limit.
+
+**Default:** `4718592` (4.5 MiB — safe below Anthropic/OpenAI 5 MiB limits)
+
+### `tools.image.jpeg_quality`
+
+Starting JPEG/WebP compression quality (1–100) for encoded image output.
+Higher values produce larger files.
+
+**Default:** `80`
+
+### `tools.image.jpeg_min_quality`
+
+Minimum JPEG/WebP compression quality the processor may attempt during
+size-reduction fallback. The processor descends from `jpeg_quality` down
+to this minimum in steps before reducing image dimensions.
+
+**Default:** `40`
+
 ### `extensions.enabled`
 
 List of enabled extension class names. Each class must implement

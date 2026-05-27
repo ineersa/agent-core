@@ -16,8 +16,12 @@ final readonly class ToolsConfig
     public function __construct(
         #[SerializedName('execution')]
         public ToolExecutionConfig $execution = new ToolExecutionConfig(),
+
         #[SerializedName('output_cap')]
         public OutputCapConfig $outputCap = new OutputCapConfig(),
+
+        #[SerializedName('image')]
+        public ImageToolConfig $image = new ImageToolConfig(),
     ) {
     }
 }

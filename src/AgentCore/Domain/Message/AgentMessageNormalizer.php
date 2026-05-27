@@ -110,14 +110,66 @@ final readonly class AgentMessageNormalizer
             $text = '{}';
         }
 
+        // Build content parts: start with the standard text part
+        $content = [[
+            'type' => 'text',
+            'text' => $text,
+        ]];
+
+        // Copy attachment references declared by the tool into content parts.
+        // Tools populate `raw_result.attachment_refs` to signal that content
+        // parts (e.g., image_ref) should be attached to the tool message.
+        // This convention avoids the normalizer needing to sniff tool-type strings.
+        $rawResult = $result->result['details']['raw_result'] ?? null;
+        $attachmentRefs = \is_array($rawResult['attachment_refs'] ?? null) ? $rawResult['attachment_refs'] : null;
+
+        if (null !== $attachmentRefs) {
+            foreach ($attachmentRefs as $ref) {
+                if (!\is_array($ref)) {
+                    continue;
+                }
+
+                $refType = $ref['type'] ?? null;
+                $refPath = $ref['path'] ?? null;
+
+                if (!\is_string($refType) || !\is_string($refPath) || '' === $refPath) {
+                    continue;
+                }
+
+                $contentPart = [
+                    'type' => $refType,
+                    'path' => $refPath,
+                ];
+
+                $refMediaType = $ref['media_type'] ?? null;
+                if (\is_string($refMediaType)) {
+                    $contentPart['media_type'] = $refMediaType;
+                }
+
+                $refBytes = $ref['bytes'] ?? null;
+                if (null !== $refBytes) {
+                    $contentPart['bytes'] = $refBytes;
+                }
+
+                $refWidth = $ref['width'] ?? null;
+                if (null !== $refWidth) {
+                    $contentPart['width'] = $refWidth;
+                }
+
+                $refHeight = $ref['height'] ?? null;
+                if (null !== $refHeight) {
+                    $contentPart['height'] = $refHeight;
+                }
+
+                $content[] = $contentPart;
+            }
+        }
+
         $toolName = \is_string($result->result['tool_name'] ?? null) ? $result->result['tool_name'] : null;
 
         return new AgentMessage(
             role: 'tool',
-            content: [[
-                'type' => 'text',
-                'text' => $text,
-            ]],
+            content: $content,
             toolCallId: $result->toolCallId,
             toolName: $toolName,
             details: $result->result,

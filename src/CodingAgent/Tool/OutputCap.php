@@ -107,6 +107,15 @@ final class OutputCap
      * Called automatically on first use, but exposed publicly so session
      * hooks or scheduled tasks can trigger it explicitly.
      */
+    /**
+     * Expose the config for consumers that need to check the default cap
+     * threshold before capping, or access config values for custom capping.
+     */
+    public function config(): OutputCapConfig
+    {
+        return $this->config;
+    }
+
     public function cleanup(): void
     {
         $dir = $this->config->storageDir;
