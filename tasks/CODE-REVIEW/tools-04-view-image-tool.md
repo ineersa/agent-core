@@ -52,7 +52,7 @@ Out of scope:
 Status: CODE-REVIEW
 Branch: task/tools-04-view-image-tool
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-04-view-image-tool
-Fork run: cxpj3c7qnoyl
+Fork run: hwh1i5p5zqcy
 PR URL: https://github.com/ineersa/agent-core/pull/62
 PR Status: open
 Started: 2026-05-27T18:57:52.472Z
@@ -173,3 +173,7 @@ Completed:
 - Recorded fork run: cxpj3c7qnoyl
 - Validation: 1152 tests pass, 10482 assertions; phpstan 0 errors 0 file_errors; deptrac 0 violations; cs-check clean; New test: testProcessHandlesWriteCacheFailureGracefully
 - Summary: Review bug-fix fork cxpj3c7qnoyl completed at commit 80cb304e. Fixed 2 bugs: (1) no-library fallback now sets exceeds_encoded_limit + warning when image exceeds limits, (2) writeCache returns null on mkdir/file_put_contents failure with all 3 callers handling null gracefully. 1152 tests pass, all QA gates clean.
+
+## Task workflow update - 2026-05-27T22:38:06.906Z
+- Recorded fork run: hwh1i5p5zqcy
+- Summary: Launched architectural-fix fork hwh1i5p5zqcy (deepseek/deepseek-v4-pro) for 3 architect concerns: (1) consolidate IMAGE_REF_TYPE constant to AgentCore domain, (2) replace normalizer tool-type sniffing with attachment_refs convention, (3) add model name to ConvertToLlmHookInterface and create ImageGatingConvertHook.
