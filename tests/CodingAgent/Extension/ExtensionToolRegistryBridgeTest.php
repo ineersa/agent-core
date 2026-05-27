@@ -226,7 +226,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
 
     public function testAcceptsAnyToolRegistryImplementation(): void
     {
-        $mockHandler = $this->createMock(ToolHandlerInterface::class);
+        $mockHandler = $this->createStub(ToolHandlerInterface::class);
 
         $mock = $this->createMock(ToolRegistryInterface::class);
         $mock->expects($this->once())

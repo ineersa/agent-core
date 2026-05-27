@@ -130,6 +130,9 @@ final class ToolRegistry implements ToolRegistryInterface
         ));
     }
 
+    /**
+     * @param list<array{name: string, description: string, parametersJsonSchema: array<string, mixed>, handler: mixed}> $tools
+     */
     public function setDynamicTools(array $tools): void
     {
         $this->dynamicTools = [];
@@ -145,6 +148,9 @@ final class ToolRegistry implements ToolRegistryInterface
         }
     }
 
+    /**
+     * @return list<array{name: string, description: string, parametersJsonSchema: array<string, mixed>, handler: mixed}>
+     */
     public function getDynamicTools(): array
     {
         $result = [];

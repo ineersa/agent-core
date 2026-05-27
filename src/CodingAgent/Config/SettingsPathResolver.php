@@ -36,7 +36,7 @@ final class SettingsPathResolver
         $pwHome = null;
         if (\function_exists('posix_getpwuid')) {
             $pwInfo = posix_getpwuid(posix_getuid());
-            $pwHome = \is_array($pwInfo) ? ($pwInfo['dir'] ?? null) : null;
+            $pwHome = \is_array($pwInfo) ? $pwInfo['dir'] : null;
         }
         $this->homeDir = $homeDir
             ?? (false !== $envHome && '' !== $envHome ? $envHome : null)

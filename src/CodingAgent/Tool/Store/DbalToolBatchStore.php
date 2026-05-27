@@ -39,6 +39,9 @@ final class DbalToolBatchStore implements ToolBatchStoreInterface
     ) {
     }
 
+    /**
+     * @return array<string, mixed>|null
+     */
     public function load(string $runId, int $turnNo, string $stepId): ?array
     {
         $this->ensureTable();
@@ -52,19 +55,22 @@ final class DbalToolBatchStore implements ToolBatchStoreInterface
             throw new \RuntimeException('Failed to load tool batch state from DBAL store.', 0, $e);
         }
 
-        if (false === $row || !\is_array($row) || !\is_string($row['batch_data'] ?? null)) {
+        if (false === $row || !\is_string($row['batch_data'] ?? null)) {
             return null;
         }
 
-        $decoded = json_decode($row['batch_data'], true);
+        /** @var string $batchData */
+        $batchData = $row['batch_data'];
 
-        if (!\is_array($decoded)) {
-            return null;
-        }
+        /** @var array<string, mixed> $decoded */
+        $decoded = json_decode($batchData, true);
 
         return $decoded;
     }
 
+    /**
+     * @param array<string, mixed> $batchState
+     */
     public function save(string $runId, int $turnNo, string $stepId, array $batchState): void
     {
         $this->ensureTable();

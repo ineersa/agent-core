@@ -29,15 +29,17 @@ final readonly class RunReadService
      * updated_at: string,
      * latest_summary: ?string,
      * waiting_flags: array{waiting_human: bool, cancelling: bool, retryable_failure: bool}
-     * }|null
+     * }
      */
-    public function summary(string $runId): ?array
+    public function summary(string $runId): array
     {
         $state = $this->runStore->get($runId);
         $events = $this->sortBySequence($this->eventStore->allFor($runId));
 
-        $createdAt = $events[0]->createdAt ?? new \DateTimeImmutable();
-        $updatedAt = $events[array_key_last($events)]->createdAt ?? $createdAt;
+        $lastEventIndex = array_key_last($events);
+        $lastEvent = null !== $lastEventIndex ? $events[$lastEventIndex] : null;
+        $createdAt = isset($events[0]) ? $events[0]->createdAt : new \DateTimeImmutable();
+        $updatedAt = null !== $lastEvent ? $lastEvent->createdAt : $createdAt;
 
         return [
             'run_id' => $runId,
@@ -64,9 +66,9 @@ final readonly class RunReadService
      * has_more: bool,
      * total: int,
      * items: list<array{cursor: string, role: string, summary: ?string, message: array<string, mixed>}>
-     * }|null
+     * }
      */
-    public function transcriptPage(string $runId, int $cursor, int $limit): ?array
+    public function transcriptPage(string $runId, int $cursor, int $limit): array
     {
         $state = $this->runStore->get($runId);
         $messages = $state->messages ?? [];
@@ -111,9 +113,9 @@ final readonly class RunReadService
      * resync_required: bool,
      * missing_sequences: list<int>,
      * events: list<RunEvent>
-     * }|null
+     * }
      */
-    public function replayAfter(string $runId, int $afterSeq): ?array
+    public function replayAfter(string $runId, int $afterSeq): array
     {
         $events = $this->eventStore->allFor($runId);
         $sorted = $this->sortBySequence($events);

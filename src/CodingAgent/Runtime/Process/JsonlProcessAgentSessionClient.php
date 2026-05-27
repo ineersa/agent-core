@@ -49,9 +49,6 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     private string $projectDir;
 
-    /** @var array<string, string> */
-    private array $runIdMap = [];
-
     /**
      * The most recently active run ID tracked across start/resume/send/cancel.
      * Used to auto-resume a run after the controller process is restarted.
@@ -164,7 +161,6 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             /** @var RuntimeEvent $event */
             foreach ($this->readEvents() as $event) {
                 if ('run.started' === $event->type || 'run_started' === $event->type) {
-                    $this->runIdMap[$cmd->id] = $event->runId;
                     $this->activeRunId = $event->runId;
 
                     return new RunHandle(runId: $event->runId, status: 'running');
@@ -237,7 +233,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                 'text' => $command->text,
                 'question_id' => $command->payload['question_id'] ?? null,
                 'answer' => $command->payload['answer'] ?? null,
-            ]),
+            ], static fn (mixed $v): bool => null !== $v),
         );
 
         try {

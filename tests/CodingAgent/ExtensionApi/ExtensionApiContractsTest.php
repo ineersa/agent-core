@@ -69,7 +69,7 @@ final class ExtensionApiContractsTest extends TestCase
 
     public function testHatfieldExtensionInterfaceAcceptsExtensionApi(): void
     {
-        $extensionApi = $this->createMock(ExtensionApiInterface::class);
+        $extensionApi = $this->createStub(ExtensionApiInterface::class);
         $extension = $this->createMock(HatfieldExtensionInterface::class);
 
         $extension->expects($this->once())
