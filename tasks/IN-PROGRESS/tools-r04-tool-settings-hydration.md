@@ -48,13 +48,13 @@ Out of scope:
 - `castor deptrac` passes.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/tools-r04-tool-settings-hydration
+Worktree: /home/ineersa/projects/agent-core-worktrees/tools-r04-tool-settings-hydration
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-27T00:20:24.853Z
 Completed:
 
 ## Work log
@@ -62,3 +62,11 @@ Completed:
 
 ## Task workflow update - 2026-05-26T23:03:15.283Z
 - Summary: Updated scope after TOOLS-00/TOOLS-02 merge: base execution settings and output-cap settings are already typed under AppConfig->tools, so R04 is now remaining settings consolidation/extension for concrete tool settings only, with no new production AppConfig::raw['tools'] reads.
+
+## Task workflow update - 2026-05-27T00:20:24.853Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/tools-r04-tool-settings-hydration.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/tools-r04-tool-settings-hydration.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/tools-r04-tool-settings-hydration.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/tools-r04-tool-settings-hydration.
+- Summary: Starting verification/no-op closeout: TOOLS-00/TOOLS-02/TOOLS-R03 already delivered typed execution/output-cap settings hydration; remaining concrete tool-specific settings will be handled by concrete tool tasks when those inputs become real.
