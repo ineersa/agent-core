@@ -109,7 +109,7 @@ final class ToolBatchCollector
             return ToolBatchCollectOutcome::rejected();
         }
 
-        if ($batch['finalized']) {
+        if (true === ($batch['finalized'] ?? false)) {
             return ToolBatchCollectOutcome::duplicate();
         }
 
@@ -213,7 +213,7 @@ final class ToolBatchCollector
     /**
      * Load batch state, checking in-memory cache first then durable store.
      *
-     * @return array|null The batch state array
+     * @return array<string, mixed>|null The batch state array
      */
     private function loadBatch(string $runId, int $turnNo, string $stepId): ?array
     {
@@ -239,6 +239,8 @@ final class ToolBatchCollector
      *
      * If the durable write fails, the current Messenger message must be retried
      * against the last persisted state rather than a dirty in-process cache.
+     *
+     * @param array<string, mixed> $batch
      */
     private function saveBatch(string $runId, int $turnNo, string $stepId, array $batch): void
     {
@@ -248,12 +250,14 @@ final class ToolBatchCollector
     }
 
     /**
+     * @param array<string, mixed> $batch
+     *
      * @return array{
      *   expected_order: array<string, int>,
-     *   call_data: array<string, array>,
+     *   call_data: array<string, array<string, mixed>>,
      *   pending_queue: list<string>,
      *   in_flight: array<string, true>,
-     *   result_data: array<string, array>,
+     *   result_data: array<string, array<string, mixed>>,
      *   finalized: bool,
      *   max_parallelism: int
      * }
@@ -304,6 +308,8 @@ final class ToolBatchCollector
     /**
      * Reconstruct a full batch state array from stored serialized data.
      *
+     * @param array<string, mixed> $stored
+     *
      * @return array{
      *   expected_order: array<string, int>,
      *   calls: array<string, ExecuteToolCall>,
@@ -352,15 +358,15 @@ final class ToolBatchCollector
      * @param array{
      *   toolCallId: string,
      *   toolName: string,
-     *   args: array,
+     *   args: array<string, mixed>,
      *   orderIndex: int,
      *   mode: string|null,
      *   timeoutSeconds: int|null,
      *   maxParallelism: int|null,
      *   toolsRef: string|null,
      *   toolIdempotencyKey: string|null,
-     *   assistantMessage: array|null,
-     *   argSchema: array|null,
+     *   assistantMessage: array<string, mixed>|null,
+     *   argSchema: array<string, mixed>|null,
      * } $data
      */
     private function reconstructCall(string $runId, int $turnNo, string $stepId, array $data): ExecuteToolCall

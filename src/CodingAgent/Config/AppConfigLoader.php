@@ -50,6 +50,8 @@ final class AppConfigLoader
      * Load and merge all settings layers into a single resolved config.
      *
      * @param string $defaultsPath Path to built-in defaults YAML
+     *
+     * @return array<string, mixed>
      */
     public function load(string $defaultsPath): array
     {

@@ -83,7 +83,7 @@ interface ToolRegistryInterface
     /**
      * Replace all dynamic tools with the given set.
      *
-     * @param list<array{name: string, description: string, parametersJsonSchema: array, handler: mixed}> $tools
+     * @param list<array{name: string, description: string, parametersJsonSchema: array<string, mixed>, handler: mixed}> $tools
      *
      * @throws \InvalidArgumentException on name conflict with permanent tools
      */
@@ -92,7 +92,7 @@ interface ToolRegistryInterface
     /**
      * Return all currently registered dynamic tools.
      *
-     * @return list<array{name: string, description: string, parametersJsonSchema: array, handler: mixed}>
+     * @return list<array{name: string, description: string, parametersJsonSchema: array<string, mixed>, handler: mixed}>
      */
     public function getDynamicTools(): array;
 

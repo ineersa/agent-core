@@ -12,6 +12,9 @@ class Kernel extends AbstractKernel
 {
     use KernelTrait;
 
+    /**
+     * @return iterable<\Symfony\Component\HttpKernel\Bundle\BundleInterface>
+     */
     public function registerBundles(): iterable
     {
         $bundles = require $this->getConfigDir().'/bundles.php';

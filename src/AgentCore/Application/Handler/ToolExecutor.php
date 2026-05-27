@@ -46,6 +46,9 @@ final class ToolExecutor implements ToolExecutorInterface
         $this->faultTolerantToolbox = null !== $toolbox ? new FaultTolerantToolbox($toolbox) : null;
     }
 
+    /**
+     * @param array<string, mixed> $overrides
+     */
     public static function fromSettings(
         ToolExecutionSettingsInterface $settings,
         ToolExecutionResultStore $resultStore,
@@ -150,7 +153,9 @@ final class ToolExecutor implements ToolExecutorInterface
 
         if ($this->cancellationToken($toolCall)->isCancellationRequested()) {
             // Don't overwrite a structured cancelled result.
-            $alreadyCancelled = \is_array($result->details) && ($result->details['cancelled'] ?? false);
+            $details = $result->details;
+            $cancelled = \is_array($details) ? ($details['cancelled'] ?? false) : false;
+            $alreadyCancelled = true === $cancelled;
 
             if (!$alreadyCancelled) {
                 $result = $this->errorResult(

@@ -20,11 +20,8 @@ final class AgentProcessSupervisor
 
     private int $restartCount = 0;
 
-    private int $maxRestarts = 3;
-
     public function __construct(
         private readonly string $consolePath,
-        private readonly int $heartbeatInterval = 5,
     ) {
     }
 
@@ -68,7 +65,7 @@ final class AgentProcessSupervisor
     }
 
     /**
-     * @return int stderr lines from the process
+     * @return string stderr output from the process
      */
     public function getErrorOutput(): string
     {

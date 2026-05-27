@@ -25,14 +25,14 @@ interface ToolBatchStoreInterface
     /**
      * Load batch state for a specific run/turn/step.
      *
-     * @return array|null The batch state array, or null if not found
+     * @return array<string, mixed>|null The batch state array, or null if not found
      */
     public function load(string $runId, int $turnNo, string $stepId): ?array;
 
     /**
      * Save/update batch state for a specific run/turn/step.
      *
-     * @param array $batchState The batch state array
+     * @param array<string, mixed> $batchState The batch state array
      */
     public function save(string $runId, int $turnNo, string $stepId, array $batchState): void;
 
