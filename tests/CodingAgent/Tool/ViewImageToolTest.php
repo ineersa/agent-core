@@ -880,17 +880,17 @@ final class ViewImageToolTest extends TestCase
         return implode('/', $relative);
     }
 
-    /* ── Non-vision model gating tests ── */
+    /* ── ImageGatingConvertHook tests ── */
 
-    public function testWithCheckerReturningFalseEmitsTextPlaceholder(): void
+    public function testImageGatingHookStripsImageRefForNonVisionModel(): void
     {
         $checker = $this->createStub(\Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface::class);
         $checker->method('supportsImages')->willReturn(false);
 
         $converter = new AgentMessageConverter();
-        $converter->setImageCapabilityChecker($checker);
+        $hook = new \Ineersa\CodingAgent\Tool\ImageProcessing\ImageGatingConvertHook($checker, $converter);
 
-        $imagePath = $this->tmpDir.'/gated_nonvision.png';
+        $imagePath = $this->tmpDir.'/gating_nonvision.png';
         $this->createPng1x1($imagePath);
 
         $agentMessage = new AgentMessage(
@@ -911,30 +911,29 @@ final class ViewImageToolTest extends TestCase
             details: [],
         );
 
-        $messageBag = $converter->toMessageBag([$agentMessage], 'some/non-vision-model');
+        $messageBag = $hook->convertToLlm([$agentMessage], null, 'some/non-vision-model');
         $messages = $messageBag->getMessages();
 
-        // Should have 2 messages: tool call + text placeholder
-        self::assertCount(2, $messages);
+        // Should have 1 message: the ToolCallMessage with text placeholder
+        // (no synthetic UserMessage since image_ref was stripped by the hook)
+        self::assertCount(1, $messages);
 
-        $secondMsg = $messages[1];
-        self::assertSame('user', $secondMsg->getRole()->value);
-        self::assertInstanceOf(UserMessage::class, $secondMsg);
-        self::assertFalse($secondMsg->hasImageContent(), 'Non-vision model must not receive Image content');
+        $msg = $messages[0];
+        self::assertSame('tool', $msg->getRole()->value);
 
-        $secondText = $secondMsg->asText() ?? '';
-        self::assertStringContainsString('does not support images', $secondText);
+        $msgText = $msg->getContent();
+        self::assertStringContainsString('does not support images', $msgText);
     }
 
-    public function testWithCheckerReturningTrueEmitsImageContent(): void
+    public function testImageGatingHookPassesThroughForVisionModel(): void
     {
         $checker = $this->createStub(\Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface::class);
         $checker->method('supportsImages')->willReturn(true);
 
         $converter = new AgentMessageConverter();
-        $converter->setImageCapabilityChecker($checker);
+        $hook = new \Ineersa\CodingAgent\Tool\ImageProcessing\ImageGatingConvertHook($checker, $converter);
 
-        $imagePath = $this->tmpDir.'/gated_vision.png';
+        $imagePath = $this->tmpDir.'/gating_vision.png';
         $this->createPng1x1($imagePath);
 
         $agentMessage = new AgentMessage(
@@ -955,7 +954,7 @@ final class ViewImageToolTest extends TestCase
             details: [],
         );
 
-        $messageBag = $converter->toMessageBag([$agentMessage], 'some/vision-model');
+        $messageBag = $hook->convertToLlm([$agentMessage], null, 'some/vision-model');
         $messages = $messageBag->getMessages();
 
         self::assertCount(2, $messages);
@@ -965,53 +964,16 @@ final class ViewImageToolTest extends TestCase
         self::assertTrue($secondMsg->hasImageContent(), 'Vision model must receive Image content');
     }
 
-    public function testWithoutCheckerEmitsImageContentByDefault(): void
-    {
-        $converter = new AgentMessageConverter();
-
-        $imagePath = $this->tmpDir.'/gated_default.png';
-        $this->createPng1x1($imagePath);
-
-        $agentMessage = new AgentMessage(
-            role: 'tool',
-            content: [
-                ['type' => 'text', 'text' => '{"type":"view_image"}'],
-                [
-                    'type' => 'image_ref',
-                    'path' => $imagePath,
-                    'media_type' => 'image/png',
-                    'bytes' => 100,
-                    'width' => 1,
-                    'height' => 1,
-                ],
-            ],
-            toolCallId: 'call_default',
-            toolName: 'view_image',
-            details: [],
-        );
-
-        // No model name — backward compat: images are attached
-        $messageBag = $converter->toMessageBag([$agentMessage]);
-        $messages = $messageBag->getMessages();
-
-        self::assertCount(2, $messages);
-
-        $secondMsg = $messages[1];
-        self::assertInstanceOf(UserMessage::class, $secondMsg);
-        self::assertTrue($secondMsg->hasImageContent(), 'Without checker, images must be attached (backward compat)');
-    }
-
-    public function testWithCheckerAndEmptyModelNameEmitsTextPlaceholder(): void
+    public function testImageGatingHookStripsImageRefForEmptyModelName(): void
     {
         $checker = $this->createStub(\Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface::class);
-        // The exact return value doesn't matter because empty model name
-        // short-circuits to false before the checker is called.
+        // Empty model name short-circuits to false before checker is called.
         $checker->method('supportsImages')->willReturn(true);
 
         $converter = new AgentMessageConverter();
-        $converter->setImageCapabilityChecker($checker);
+        $hook = new \Ineersa\CodingAgent\Tool\ImageProcessing\ImageGatingConvertHook($checker, $converter);
 
-        $imagePath = $this->tmpDir.'/gated_empty_model.png';
+        $imagePath = $this->tmpDir.'/gating_empty_model.png';
         $this->createPng1x1($imagePath);
 
         $agentMessage = new AgentMessage(
@@ -1032,15 +994,42 @@ final class ViewImageToolTest extends TestCase
             details: [],
         );
 
-        // Empty model name — with checker configured, images are NOT attached
-        $messageBag = $converter->toMessageBag([$agentMessage], '');
+        $messageBag = $hook->convertToLlm([$agentMessage], null, '');
         $messages = $messageBag->getMessages();
 
-        self::assertCount(2, $messages);
+        // Should have 1 message: the ToolCallMessage with text placeholder
+        self::assertCount(1, $messages);
 
-        $secondMsg = $messages[1];
-        self::assertInstanceOf(UserMessage::class, $secondMsg);
-        self::assertFalse($secondMsg->hasImageContent(), 'With checker and empty model, images must not be attached');
+        $msg = $messages[0];
+        self::assertSame('tool', $msg->getRole()->value);
+    }
+
+    public function testImageGatingHookPreservesTextContentParts(): void
+    {
+        // Verify the hook doesn't strip text-only content parts from messages
+        // that have no image_ref.
+        $checker = $this->createStub(\Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface::class);
+        $checker->method('supportsImages')->willReturn(false);
+
+        $converter = new AgentMessageConverter();
+        $hook = new \Ineersa\CodingAgent\Tool\ImageProcessing\ImageGatingConvertHook($checker, $converter);
+
+        $agentMessage = new AgentMessage(
+            role: 'tool',
+            content: [
+                ['type' => 'text', 'text' => 'File written successfully (42 bytes)'],
+            ],
+            toolCallId: 'call_write',
+            toolName: 'write_file',
+            details: [],
+        );
+
+        $messageBag = $hook->convertToLlm([$agentMessage], null, 'some/non-vision-model');
+        $messages = $messageBag->getMessages();
+
+        // Should have exactly 1 message (just the tool call, no synthetic image message)
+        self::assertCount(1, $messages);
+        self::assertSame('tool', $messages[0]->getRole()->value);
     }
 
     /* ── Vision capability check throws clear error ── */

@@ -10,14 +10,6 @@ use Symfony\AI\Platform\Result\ToolCall;
 
 final readonly class AgentMessageNormalizer
 {
-    /**
-     * Content part type for image references that AgentMessageConverter
-     * converts into real Symfony AI Image attachments.
-     *
-     * @see \Ineersa\CodingAgent\Tool\ViewImageTool::IMAGE_REF_TYPE
-     */
-    private const string IMAGE_REF_TYPE = 'image_ref';
-
     public function assistantMessage(AssistantMessage $assistantMessage): AgentMessage
     {
         $content = [];
@@ -124,39 +116,52 @@ final readonly class AgentMessageNormalizer
             'text' => $text,
         ]];
 
-        // Check if the tool result contains view_image metadata.
-        // If so, add an image_ref content part that AgentMessageConverter
-        // will use to attach a real Symfony AI Image to the next request.
-        // The raw_result['type'] === 'view_image' and the raw_result has
-        // path/media_type/bytes/width/height from ViewImageTool.
+        // Copy attachment references declared by the tool into content parts.
+        // Tools populate `raw_result.attachment_refs` to signal that content
+        // parts (e.g., image_ref) should be attached to the tool message.
+        // This convention avoids the normalizer needing to sniff tool-type strings.
         $rawResult = $result->result['details']['raw_result'] ?? null;
-        if (\is_array($rawResult) && 'view_image' === ($rawResult['type'] ?? null)) {
-            $path = $rawResult['path'] ?? null;
-            $mediaType = $rawResult['media_type'] ?? null;
-            $bytes = $rawResult['bytes'] ?? null;
-            $width = $rawResult['width'] ?? null;
-            $height = $rawResult['height'] ?? null;
+        $attachmentRefs = \is_array($rawResult['attachment_refs'] ?? null) ? $rawResult['attachment_refs'] : null;
 
-            if (\is_string($path) && '' !== $path) {
-                $imageRef = [
-                    'type' => self::IMAGE_REF_TYPE,
-                    'path' => $path,
+        if (null !== $attachmentRefs) {
+            foreach ($attachmentRefs as $ref) {
+                if (!\is_array($ref)) {
+                    continue;
+                }
+
+                $refType = $ref['type'] ?? null;
+                $refPath = $ref['path'] ?? null;
+
+                if (!\is_string($refType) || !\is_string($refPath) || '' === $refPath) {
+                    continue;
+                }
+
+                $contentPart = [
+                    'type' => $refType,
+                    'path' => $refPath,
                 ];
 
-                if (\is_string($mediaType)) {
-                    $imageRef['media_type'] = $mediaType;
-                }
-                if (null !== $bytes) {
-                    $imageRef['bytes'] = $bytes;
-                }
-                if (null !== $width) {
-                    $imageRef['width'] = $width;
-                }
-                if (null !== $height) {
-                    $imageRef['height'] = $height;
+                $refMediaType = $ref['media_type'] ?? null;
+                if (\is_string($refMediaType)) {
+                    $contentPart['media_type'] = $refMediaType;
                 }
 
-                $content[] = $imageRef;
+                $refBytes = $ref['bytes'] ?? null;
+                if (null !== $refBytes) {
+                    $contentPart['bytes'] = $refBytes;
+                }
+
+                $refWidth = $ref['width'] ?? null;
+                if (null !== $refWidth) {
+                    $contentPart['width'] = $refWidth;
+                }
+
+                $refHeight = $ref['height'] ?? null;
+                if (null !== $refHeight) {
+                    $contentPart['height'] = $refHeight;
+                }
+
+                $content[] = $contentPart;
             }
         }
 

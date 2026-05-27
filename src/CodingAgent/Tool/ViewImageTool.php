@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Domain\Message\ToolResultType;
 use Ineersa\CodingAgent\Config\ImageToolConfig;
 use Ineersa\CodingAgent\Path\PathResolver;
 use Ineersa\CodingAgent\Tool\ImageProcessing\ImageAttachmentProcessor;
@@ -31,12 +32,6 @@ use League\MimeTypeDetection\FinfoMimeTypeDetector;
  */
 final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerInterface
 {
-    /**
-     * @var string Content part type identifier consumed by AgentMessageConverter.
-     *             Marks a content part as an image reference that should be
-     *             converted into a real Symfony AI Image attachment.
-     */
-    public const string IMAGE_REF_TYPE = 'image_ref';
     /** @var list<string> */
     private const array SUPPORTED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
@@ -154,6 +149,9 @@ final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerI
             // Build compact metadata result — no base64, no data_url, no full image bytes.
             // AgentMessageConverter will use image_ref content parts to attach a real
             // Symfony AI Image in a synthetic UserMessage for the provider request.
+            //
+            // The attachment_refs array declares content-part attachments so the
+            // AgentMessageNormalizer can copy them without sniffing the tool type.
             $result = [
                 'type' => 'view_image',
                 'path' => $effectivePath,
@@ -162,6 +160,16 @@ final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerI
                 'width' => $effectiveWidth,
                 'height' => $effectiveHeight,
                 'processed_dimensions' => $effectiveWidth !== $width || $effectiveHeight !== $height,
+                'attachment_refs' => [
+                    [
+                        'type' => ToolResultType::IMAGE_REF,
+                        'path' => $effectivePath,
+                        'media_type' => $effectiveMediaType,
+                        'bytes' => $effectiveBytes,
+                        'width' => $effectiveWidth,
+                        'height' => $effectiveHeight,
+                    ],
+                ],
             ];
 
             // Report processing details to the model so it can reason about size changes

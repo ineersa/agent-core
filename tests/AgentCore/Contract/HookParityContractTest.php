@@ -39,7 +39,7 @@ final class HookParityContractTest extends TestCase
             {
             }
 
-            public function convertToLlm(array $messages, ?CancellationTokenInterface $cancelToken = null): MessageBag
+            public function convertToLlm(array $messages, ?CancellationTokenInterface $cancelToken = null, string $modelName = ''): MessageBag
             {
                 $this->recorder->record('convert_to_llm');
 

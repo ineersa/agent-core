@@ -116,11 +116,9 @@ services:
   Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface:
     alias: Ineersa\CodingAgent\Tool\ImageProcessing\CodingAgentImageCapabilityChecker
 
-  # Wire the image capability checker into AgentMessageConverter so synthetic
-  # image attachments are gated by the active model's capabilities.
-  Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter:
-    calls:
-      - setImageCapabilityChecker: ['@Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface']
+  # Image gating is handled by ImageGatingConvertHook (a ConvertToLlmHook),
+  # not by AgentMessageConverter. The hook checks model capabilities upstream
+  # and strips image_ref content parts before the converter runs.
 
   Ineersa\CodingAgent\Session\HatfieldSessionStore: ~
 
@@ -299,12 +297,11 @@ services:
     arguments:
       $subscribers: !tagged_iterator agent_core.hook_subscriber
 
-  # LlmPlatformAdapter hooks — currently no implementations exist.
+  # LlmPlatformAdapter hooks — ImageGatingConvertHook registers as a convert_to_llm hook.
   Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter:
     arguments:
       $transformContextHooks: !tagged_iterator agent_core.transform_context_hook
       $convertToLlmHooks: !tagged_iterator agent_core.convert_to_llm_hook
-      $modelResolver: '@Ineersa\AgentCore\Contract\Model\ModelResolverInterface'
 
   Ineersa\AgentCore\Contract\Model\PlatformInterface:
     alias: Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter

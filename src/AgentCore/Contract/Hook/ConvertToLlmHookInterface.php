@@ -13,6 +13,9 @@ interface ConvertToLlmHookInterface
      * Transforms an array of messages into a Symfony AI MessageBag with optional cancellation support.
      *
      * @param list<AgentMessage> $messages
+     * @param string             $modelName Resolved target model identifier for
+     *                                      capability-aware hooks (e.g. image gating).
+     *                                      Empty string means the model is unknown.
      */
-    public function convertToLlm(array $messages, ?CancellationTokenInterface $cancelToken = null): MessageBag;
+    public function convertToLlm(array $messages, ?CancellationTokenInterface $cancelToken = null, string $modelName = ''): MessageBag;
 }

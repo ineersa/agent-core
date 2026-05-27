@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 
-use Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Message\ToolResultType;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\ContentInterface;
 use Symfony\AI\Platform\Message\Content\Image;
@@ -26,45 +26,30 @@ use Symfony\AI\Platform\Result\ToolCall;
  * call message. This provides the Pi-style fallback for multimodal tool
  * results where the Symfony AI ToolCallMessage string-only content
  * cannot directly carry image data.
+ *
+ * Image capability gating is handled upstream by ImageGatingConvertHook
+ * (a ConvertToLlmHookInterface implementation). This converter always
+ * attaches images when image_ref content parts are present — it trusts
+ * that upstream hooks have already stripped image_ref from messages for
+ * non-vision models before calling toMessageBag().
  */
 final class AgentMessageConverter
 {
     /**
-     * Content part type for image references that should be converted
-     * into real Symfony AI Image attachments.
-     */
-    private const string IMAGE_REF_TYPE = 'image_ref';
-    /**
-     * Optional checker to determine whether the active target model
-     * supports image inputs. When null or when the checker reports
-     * no support, synthetic image attachments are replaced with
-     * text placeholders.
-     */
-    private ?ImageCapabilityCheckerInterface $imageCapabilityChecker = null;
-
-    /**
+     * Convert a list of AgentMessages into a Symfony AI MessageBag.
+     *
+     * Image capability gating is handled upstream by
+     * ImageGatingConvertHook (a ConvertToLlmHookInterface implementation).
+     * This converter always attaches images when image_ref content parts
+     * are present — it trusts that upstream hooks have already stripped
+     * them for non-vision models.
+     *
      * @param list<AgentMessage> $agentMessages
-     * @param string             $modelName     Target model identifier for
-     *                                          capability gating. Empty string
-     *                                          means "unknown" — images are
-     *                                          attached when the checker is
-     *                                          unavailable (backward compat)
-     *                                          or gated when the checker returns
-     *                                          false.
      */
-    public function toMessageBag(array $agentMessages, string $modelName = ''): MessageBag
+    public function toMessageBag(array $agentMessages): MessageBag
     {
         $messages = [];
         $pendingSyntheticToolMessages = [];
-        // @todo: gating race — $modelName comes from the request default model,
-        //        but ModelResolverRoutingSubscriber can switch to a different model
-        //        at runtime during platform->invoke(), AFTER this gating decision.
-        //        If the resolver switches vision→non-vision, image attachments are
-        //        sent to a model that cannot process them. Fix: move gating to a
-        //        ConvertToLlmHookInterface implementation that runs after model
-        //        resolution when the resolved model name is available, or modify
-        //        the hook contract to receive the resolved model name.
-        $imagesSupported = $this->isImageSupported($modelName);
 
         foreach ($agentMessages as $agentMessage) {
             if ('tool' !== $agentMessage->role && [] !== $pendingSyntheticToolMessages) {
@@ -72,7 +57,7 @@ final class AgentMessageConverter
                 $pendingSyntheticToolMessages = [];
             }
 
-            $convertedMessages = $this->convertAgentMessage($agentMessage, $imagesSupported);
+            $convertedMessages = $this->convertAgentMessage($agentMessage);
 
             if ('tool' === $agentMessage->role) {
                 $primaryMessage = array_shift($convertedMessages);
@@ -96,19 +81,6 @@ final class AgentMessageConverter
     }
 
     /**
-     * Set the optional image capability checker.
-     *
-     * When set, the converter will check whether the target model
-     * supports images before emitting synthetic Image attachments.
-     * Without a checker, images are always attached (backward-compatible
-     * default).
-     */
-    public function setImageCapabilityChecker(?ImageCapabilityCheckerInterface $checker): void
-    {
-        $this->imageCapabilityChecker = $checker;
-    }
-
-    /**
      * Convert an AgentMessage into one or more Symfony MessageInterface instances.
      *
      * Most messages produce exactly one Symfony message. Tool messages that
@@ -123,28 +95,24 @@ final class AgentMessageConverter
      *
      * @return list<MessageInterface>
      */
-    private function convertAgentMessage(AgentMessage $message, bool $imagesSupported = true): array
+    private function convertAgentMessage(AgentMessage $message): array
     {
-        $result = [];
-
         $textContent = $this->contentToText($message->content);
         $imageRefParts = $this->extractImageRefParts($message->content);
 
         $converted = match ($message->role) {
             'system' => [Message::forSystem($textContent)],
             'assistant' => [$this->buildAssistantMessage($textContent, $message)],
-            'tool' => $this->buildToolMessages($textContent, $message, $imageRefParts, $imagesSupported),
+            'tool' => $this->buildToolMessages($textContent, $message, $imageRefParts),
             default => [Message::ofUser($this->userText($message, $textContent))],
         };
 
-        $result = $converted;
-
         // Apply metadata to the first message (typically the primary message)
-        if ([] !== $message->metadata && isset($result[0])) {
-            $result[0]->getMetadata()->set($message->metadata);
+        if ([] !== $message->metadata && isset($converted[0])) {
+            $converted[0]->getMetadata()->set($message->metadata);
         }
 
-        return $result;
+        return $converted;
     }
 
     /**
@@ -152,7 +120,7 @@ final class AgentMessageConverter
      *
      * @return list<MessageInterface>
      */
-    private function buildToolMessages(string $textContent, AgentMessage $message, array $imageRefParts, bool $imagesSupported): array
+    private function buildToolMessages(string $textContent, AgentMessage $message, array $imageRefParts): array
     {
         $messages = [];
 
@@ -180,10 +148,9 @@ final class AgentMessageConverter
         //    a follow-up user message that the provider normalizers
         //    will serialize as proper image content.
         //
-        //    When the target model does not support image inputs
-        //    ($imagesSupported = false), emit a text placeholder
-        //    instead of a real Image attachment to avoid sending
-        //    image bytes to a non-vision model.
+        //    Image capability gating is handled upstream by
+        //    ImageGatingConvertHook; this converter always attaches
+        //    images when the file is available.
         foreach ($imageRefParts as $imageRef) {
             $path = $imageRef['path'] ?? null;
             $mediaType = $imageRef['media_type'] ?? 'unknown';
@@ -197,21 +164,6 @@ final class AgentMessageConverter
                     '[Tool result image for view_image: %s (%s)]',
                     $path ?? '(deleted)',
                     $mediaType,
-                ));
-
-                continue;
-            }
-
-            if (!$imagesSupported) {
-                // Model does not support image inputs — emit text placeholder
-                $messages[] = Message::ofUser(\sprintf(
-                    '[Tool result image: %s (%s, %sx%s, %d bytes). '
-                    .'Actual image omitted — the active model does not support images.]',
-                    $path,
-                    $mediaType,
-                    $width,
-                    $height,
-                    $bytes,
                 ));
 
                 continue;
@@ -351,33 +303,12 @@ final class AgentMessageConverter
                 continue;
             }
 
-            if (self::IMAGE_REF_TYPE === ($contentPart['type'] ?? null)) {
+            if (ToolResultType::IMAGE_REF === ($contentPart['type'] ?? null)) {
                 $imageRefs[] = $contentPart;
             }
         }
 
         return $imageRefs;
-    }
-
-    /**
-     * Determine whether the named model supports image inputs.
-     *
-     * - No checker configured: attach images by default (backward compat).
-     * - Checker configured, empty model name: images are NOT attached
-     *   because we cannot confirm the target model's capability.
-     * - Checker configured, non-empty model name: delegate to checker.
-     */
-    private function isImageSupported(string $modelName): bool
-    {
-        if (null === $this->imageCapabilityChecker) {
-            return true;
-        }
-
-        if ('' === $modelName) {
-            return false;
-        }
-
-        return $this->imageCapabilityChecker->supportsImages($modelName);
     }
 
     private function stringify(mixed $value): string

@@ -91,7 +91,7 @@ final class PlatformIntegrationTest extends TestCase
             {
             }
 
-            public function convertToLlm(array $messages, ?CancellationTokenInterface $cancelToken = null): \Symfony\AI\Platform\Message\MessageBag
+            public function convertToLlm(array $messages, ?CancellationTokenInterface $cancelToken = null, string $modelName = ''): \Symfony\AI\Platform\Message\MessageBag
             {
                 $this->calls[] = 'convert_to_llm';
 
