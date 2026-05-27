@@ -103,26 +103,44 @@ full file before sed slices. No LineFormatter.php needed.
 
 ### View Image (`view_image`)
 
-**Approach**: Separate tool, Codex-style. Reads image, returns as attachment.
+**Approach**: Separate tool, Codex/Pi-style multimodal attachment. The current JSON/base64-as-text implementation is a no-go: it bloats `state.json`, pollutes transcript/context, can hang the next LLM step, and does not let the model see pixels as an image.
 
 ```
 Schema:
   path: string
+  detail?: "auto" | "low" | "high" | "original"  # original only when model/provider supports it
 
-Output: ToolResult with content type "image"
-  Success: image block with base64 + mimeType
-  Error: not a recognized image format, file too large
+Model-visible output:
+  - a small text tool acknowledgement tied to the tool_call_id
+  - a first-class image attachment/content block for the next provider request
+  - no base64/data_url stuffed into JSON text content
+
+Persistent session output:
+  - path/reference + metadata only:
+      {type: "image_ref", path, media_type, bytes, width, height, detail, resized?}
+  - never persist full base64 in `state.json`, `events.jsonl`, or `transcript.jsonl`
+  - re-read/re-process the local file when rebuilding provider messages
 
 Implementation:
   - Resolve path (same as read)
   - Detect MIME type via magic bytes (not extension)
     Supported: jpeg, png, gif, webp
-  - Read binary buffer
-  - Max dimensions/configurable size limit (TBD: 2000×2000? 5MB?)
-  - Return as Symfony AI image content block
-  - Symfony AI Content: [['type' => 'image', 'source' => ['type' => 'base64', 'data' => ..., 'media_type' => ...]]]
+  - Validate readable file, max bytes, dimensions, and model image capability before execution
+  - Resize/encode before provider request, not before persistence:
+      - Pi reference: max 2000×2000, max 4.5MB base64, try PNG/JPEG, quality stepping, shrink ×0.75, EXIF orientation
+      - Codex reference: max 2048px, JPEG quality 85, WebP lossless, PNG lossless, 32-entry LRU cache keyed by file digest + mode
+  - Use Symfony AI image content primitives for provider payloads where possible:
+      - `Symfony\AI\Platform\Message\Content\Image::fromFile($path)` / `ImageUrl`
+      - beware: Symfony AI 0.9 `ToolCallMessage` only accepts string content, so tool-result images likely need either:
+          1. a provider-aware converter that emits function-call-output image content for APIs that support it, or
+          2. a Pi-style fallback: normal tool text response followed by a synthetic user message containing the image attachment
+  - Non-vision model fallback: reject `view_image` or replace image attachment with explicit text placeholder; do not silently return base64 text.
 
-Note: Symfony AI handles image attachments — verify how content blocks map to provider-specific formats.
+Reference findings:
+  - Pi read tool (`packages/coding-agent/src/core/tools/read.ts`) returns content blocks `[text, image]`; provider adapters serialize image blocks differently for OpenAI/Anthropic/Gemini and replace images with placeholders for non-vision models.
+  - Pi resize pipeline (`image-resize-core.ts`) enforces 2000×2000 and 4.5MB base64 cap, fixes EXIF, tries PNG/JPEG, degrades quality/dimensions.
+  - Codex `view_image` persists history as path-only `TurnItem::ImageView {id, path}` and sends provider `InputImage {image_url, detail}` only at request time.
+  - Codex image processing (`codex-rs/utils/image/src/lib.rs`) resizes to 2048px, supports `detail: original` only when model permits it, and caches processed images.
 ```
 
 ### Bash (`bash`)
