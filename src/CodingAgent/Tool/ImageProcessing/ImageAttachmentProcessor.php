@@ -187,6 +187,19 @@ final class ImageAttachmentProcessor
             $exceedsLimit = $b64Len > $this->config->encodedMaxBytes;
             $outPath = $this->writeCache($blob, $this->formatExtension($mediaType));
 
+            // Cache write failed — fall back to the original file
+            if (null === $outPath) {
+                return self::original(
+                    $filePath,
+                    $mediaType,
+                    $width,
+                    $height,
+                    $fileSize,
+                    exceedsEncodedLimit: $exceedsLimit,
+                    warning: 'Could not write processed image to temp cache.',
+                );
+            }
+
             $result = [
                 'path' => $outPath,
                 'media_type' => $mediaType,
@@ -243,6 +256,9 @@ final class ImageAttachmentProcessor
                 $b64Len = \strlen(base64_encode($blob));
                 if ($b64Len <= $this->config->encodedMaxBytes) {
                     $outPath = $this->writeCache($blob, $format);
+                    if (null === $outPath) {
+                        continue;
+                    }
 
                     return [
                         'path' => $outPath,
@@ -342,6 +358,9 @@ final class ImageAttachmentProcessor
                 $b64Len = \strlen(base64_encode($blob));
                 if ($b64Len <= $this->config->encodedMaxBytes) {
                     $outPath = $this->writeCache($blob, $format);
+                    if (null === $outPath) {
+                        continue;
+                    }
 
                     return [
                         'path' => $outPath,
@@ -597,18 +616,24 @@ final class ImageAttachmentProcessor
      * @param non-empty-string $blob Binary image data
      * @param string           $ext  File extension (no dot, e.g. "jpeg")
      *
-     * @return non-empty-string Absolute path to the cache file
+     * @return non-empty-string|null Absolute path to the cache file, or null
+     *                               when mkdir or file_put_contents fails
      */
-    private function writeCache(string $blob, string $ext): string
+    private function writeCache(string $blob, string $ext): ?string
     {
         $cacheDir = $this->tempDir().'/'.self::CACHE_DIR;
-        @mkdir($cacheDir, 0750, recursive: true);
+
+        if (!@mkdir($cacheDir, 0750, recursive: true) && !is_dir($cacheDir)) {
+            return null;
+        }
 
         $hash = md5($blob);
         $outPath = $cacheDir.'/'.$hash.'.'.$ext;
 
         if (!is_file($outPath)) {
-            @file_put_contents($outPath, $blob);
+            if (false === @file_put_contents($outPath, $blob) || !is_file($outPath)) {
+                return null;
+            }
             @chmod($outPath, 0640);
         }
 
