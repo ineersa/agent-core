@@ -52,7 +52,7 @@ Out of scope:
 Status: IN-PROGRESS
 Branch: task/tools-04-view-image-tool
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-04-view-image-tool
-Fork run: 8nl4z9oar94s
+Fork run: 14p5n6p6nt53
 PR URL: https://github.com/ineersa/agent-core/pull/62
 PR Status: open
 Started: 2026-05-27T18:57:52.472Z
@@ -145,3 +145,7 @@ Completed:
 ## Task workflow update - 2026-05-27T20:35:55.826Z
 - Recorded fork run: 8nl4z9oar94s
 - Summary: Launched runtime-debug fork 8nl4z9oar94s to investigate and fix view_image hang at "Running…" after tool execution. User smoke-tested with llama_cpp (vision-enabled) and tool executes but run never progresses past tool_batch_committed. Fork will: trace ToolCallResultHandler→AdvanceRun flow, reproduce with castor test:controller, inspect session artifacts, fix root cause, add WriteFileToolE2eTest and ViewImageToolE2eTest with real LLM.
+
+## Task workflow update - 2026-05-27T20:51:07.285Z
+- Recorded fork run: 14p5n6p6nt53
+- Summary: Launched followup fork 14p5n6p6nt53 with deepseek/deepseek-v4-pro to simplify bloated E2E tests (600→~100 lines each) and validate ToolCallResultHandler fix. Tests use llama_cpp_test/test on port 9052.
