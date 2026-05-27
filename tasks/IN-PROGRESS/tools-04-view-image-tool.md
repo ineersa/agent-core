@@ -52,7 +52,7 @@ Out of scope:
 Status: IN-PROGRESS
 Branch: task/tools-04-view-image-tool
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-04-view-image-tool
-Fork run: 14p5n6p6nt53
+Fork run: b462lzvzynie
 PR URL: https://github.com/ineersa/agent-core/pull/62
 PR Status: open
 Started: 2026-05-27T18:57:52.472Z
@@ -149,3 +149,7 @@ Completed:
 ## Task workflow update - 2026-05-27T20:51:07.285Z
 - Recorded fork run: 14p5n6p6nt53
 - Summary: Launched followup fork 14p5n6p6nt53 with deepseek/deepseek-v4-pro to simplify bloated E2E tests (600→~100 lines each) and validate ToolCallResultHandler fix. Tests use llama_cpp_test/test on port 9052.
+
+## Task workflow update - 2026-05-27T21:00:13.354Z
+- Recorded fork run: b462lzvzynie
+- Summary: Launched fork b462lzvzynie (deepseek/deepseek-v4-pro) to fix image gating bug: llama_cpp/flash has vision but gating says "model does not support images". Will trace model name flow through AgentMessageConverter→CodingAgentImageCapabilityChecker→HatfieldModelCatalog, fix root cause, run real agent test to verify model describes image, add snapshot E2E test.
