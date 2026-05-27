@@ -73,15 +73,27 @@ Implementation notes:
 5. Table created lazily (CREATE TABLE IF NOT EXISTS) — no explicit migration needed
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/tools-r05-parallel-tool-execution-orchestration
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-r05-parallel-tool-execution-orchestration
 Fork run:
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/60
+PR Status: open
 Started: 2026-05-26T21:00:00
 Completed:
 
 ## Work log
 - Created: 2026-05-26T20:20:59.767Z
 - Implemented: 2026-05-26T21:00:00 — durable batch store, multi-worker support, cross-process coordination, 20 new tests
+
+## Task workflow update - 2026-05-27T01:49:30.182Z
+- Validation: Fork reported: phpunit filter ToolBatchCollector|InMemoryToolBatchStore|DbalToolBatchStore = 20 tests / 71 assertions OK; Fork reported: phpunit --exclude-group=tui-e2e,llm-real = 1086 tests / 10266 assertions, 1 pre-existing TUI snapshot failure; Fork reported: castor deptrac = 0 violations; Fork reported: castor cs-check clean
+- Summary: Implementation fork kb5vxlxrovhf completed with commit d2cfec7e on task/tools-r05-parallel-tool-execution-orchestration. Handoff reports durable DBAL/SQLite tool batch store, multi-worker ConsumerSupervisor/HeadlessController, docs/settings updates, 20 focused tests, deptrac/cs clean; controller E2E not run due llama.cpp dependency. Launching reviewer before promotion to code review.
+
+## Task workflow update - 2026-05-27T02:06:55.727Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/tools-r05-parallel-tool-execution-orchestration to origin.
+- branch 'task/tools-r05-parallel-tool-execution-orchestration' set up to track 'origin/task/tools-r05-parallel-tool-execution-orchestration'.
+- Created PR: https://github.com/ineersa/agent-core/pull/60
+- Validation: castor test --filter="ToolBatchCollector|InMemoryToolBatchStore|DbalToolBatchStore": ok (21 tests, 75 assertions); castor test: ok (1080 tests, 10252 assertions); castor deptrac: ok (0 violations, 0 errors); castor cs-check: ok after cs-fix (files_fixed=0 on final check); castor check: ok (deptrac ok; test ok; phpstan ok with 45 existing file_errors in baseline/output; cs-check ok); castor test:controller: FAILED twice with run completed but missing transcript.jsonl; main checkout also fails controller smoke before runtime.ready due pre-existing ExtensionApiBridge autoload/container issue. Product-level validation was attempted and failure is reported for follow-up investigation.
+- Summary: TOOLS-R05 implementation completed and reviewed. Implemented durable ToolBatchStoreInterface with DBAL/SQLite production store and in-memory fallback, store-backed ToolBatchCollector recovery/serialization, multi-worker ConsumerSupervisor/HeadlessController launching tool workers from tools.execution.max_parallelism, docs/settings updates, and focused tests. Reviewer initially requested changes; follow-up commit 0846e1f3 fixed durable-save dirty-cache ordering, settings-backed worker count, and composite consumer keys. Focused follow-up reviewer approved with no blockers.
