@@ -49,7 +49,7 @@ Out of scope:
 - Product-level validation exercises the real flow (`castor run:agent-test`, `castor test:tui`, `castor test:llm-real`, or `castor test:controller`) and demonstrates the model receives an image without hanging.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/tools-04-view-image-tool
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-04-view-image-tool
 Fork run: b462lzvzynie
@@ -158,3 +158,9 @@ Completed:
 - Recorded fork run: b462lzvzynie
 - Validation: 1151 tests pass; phpstan 0 errors 0 file_errors; deptrac 0 violations; cs-check clean; E2E: ViewImageToolE2eTest passes - model describes image, no 'does not support images'; E2E: ControllerSmokeTest passes; E2E: WriteFileToolE2eTest passes; User smoke test: llama_cpp/flash describes image content correctly
 - Summary: Gating fix fork b462lzvzynie completed at commit 6dc87263. Root cause: ExecuteLlmStepWorker passed hardcoded default model (deepseek/deepseek-v4-pro, text-only) to LlmPlatformAdapter for image gating instead of resolved model (llama_cpp/flash, has vision). Fix: inject ModelResolverInterface into LlmPlatformAdapter, pre-resolve model before gating. Also added RunVisionCheckService for tool-level vision check with clear error message, and added vision input to llama_cpp_test/test settings. User smoke test confirmed: model described image content correctly. 1151 tests pass, all E2E tests pass with real llama_cpp.
+
+## Task workflow update - 2026-05-27T21:33:14.359Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/tools-04-view-image-tool to origin.
+- branch 'task/tools-04-view-image-tool' set up to track 'origin/task/tools-04-view-image-tool'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/62
