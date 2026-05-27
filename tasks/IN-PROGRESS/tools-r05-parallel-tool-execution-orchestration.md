@@ -46,26 +46,14 @@ Implementation notes:
 - A product-level Castor workflow (`castor test:controller` or equivalent) validates the real async runtime path.
 
 ## Workflow metadata
-Status: IN-PROGRESS
-Branch: task/tools-r05-parallel-tool-execution-orchestration
-Worktree: /home/ineersa/projects/agent-core-worktrees/tools-r05-parallel-tool-execution-orchestration
-Fork run: kb5vxlxrovhf
+Status: TODO
+Branch:
+Worktree:
+Fork run:
 PR URL:
 PR Status:
-Started: 2026-05-27T00:28:45.565Z
+Started:
 Completed:
 
 ## Work log
 - Created: 2026-05-26T20:20:59.767Z
-
-## Task workflow update - 2026-05-27T00:28:45.565Z
-- Moved TODO → IN-PROGRESS.
-- Created branch task/tools-r05-parallel-tool-execution-orchestration.
-- Created worktree /home/ineersa/projects/agent-core-worktrees/tools-r05-parallel-tool-execution-orchestration.
-- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/tools-r05-parallel-tool-execution-orchestration.
-- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/tools-r05-parallel-tool-execution-orchestration.
-- Summary: Starting TOOLS-R05 per user request. Note: TOOLS-R04 is currently in CODE-REVIEW as verification/docs cleanup only; R05 implementation will proceed from current main because the code dependencies from TOOLS-00/TOOLS-R03 are already merged.
-
-## Task workflow update - 2026-05-27T00:29:12.124Z
-- Recorded fork run: kb5vxlxrovhf
-- Summary: Launched implementation fork kb5vxlxrovhf in the TOOLS-R05 worktree. Scope: durable multi-worker parallel tool batch orchestration, ordering/cancellation semantics, settings/docs, tests, and Castor validation.
