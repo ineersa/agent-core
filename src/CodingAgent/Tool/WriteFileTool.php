@@ -55,20 +55,10 @@ final class WriteFileTool implements HatfieldToolProviderInterface, ToolHandlerI
             // Resolve the path to an absolute normalized form
             $resolvedPath = PathResolver::resolve($path);
 
-            // Create parent directory if it does not exist.
-            // Must check for existing file BEFORE the !is_dir check because
-            // is_dir() returns false for a file path, which would incorrectly
-            // trigger a mkdir() attempt on an existing file.
-            $parentDir = \dirname($resolvedPath);
-            if (is_file($parentDir)) {
-                throw new \RuntimeException(\sprintf('Cannot create file "%s": parent path "%s" is an existing file, not a directory.', $resolvedPath, $parentDir));
-            }
-            if (!is_dir($parentDir)) {
-                $mkdirResult = @mkdir($parentDir, self::DEFAULT_DIR_PERMISSIONS, recursive: true);
-                if (!$mkdirResult && !is_dir($parentDir)) {
-                    throw new \RuntimeException(\sprintf('Failed to create parent directory "%s" for path "%s".', $parentDir, $resolvedPath));
-                }
-            }
+            // Create parent directories if they do not exist.
+            // If the parent path is an existing file, mkdir will fail silently
+            // and file_put_contents below will produce the error.
+            @mkdir(\dirname($resolvedPath), self::DEFAULT_DIR_PERMISSIONS, recursive: true);
 
             // Write content with exclusive lock
             $bytesWritten = @file_put_contents($resolvedPath, $content, \LOCK_EX);

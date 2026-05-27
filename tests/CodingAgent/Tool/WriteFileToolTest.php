@@ -245,7 +245,7 @@ final class WriteFileToolTest extends TestCase
         file_put_contents($existingFile, 'I am a file, not a directory.');
 
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('existing file, not a directory');
+        $this->expectExceptionMessage('Failed to write file');
 
         ($this->writeFileTool)(['path' => $existingFile.'/child.txt', 'content' => 'cannot create']);
     }
