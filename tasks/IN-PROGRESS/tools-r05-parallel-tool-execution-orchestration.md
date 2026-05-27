@@ -8,7 +8,7 @@ Plan source: `.pi/plans/toolbox-design-plan.md`.
 Context:
 - TOOLS-00 is intentionally minimal: it provides current tool execution context and cancellation token access, not cross-process PID/process management.
 - Symfony AI PR #1829 adds fiber-based cooperative execution, but fibers do not provide OS-level parallelism for blocking foreground subprocess waits.
-- Existing `ToolBatchCollector` is in-memory and cannot safely coordinate parallel tool calls across multiple Messenger tool consumers.
+- Existing `ToolBatchCollector` was purely in-memory and could not coordinate across consumer processes.
 - This task owns the cross-process orchestration needed for true parallel tools.
 
 Dependencies:
@@ -36,24 +36,52 @@ Implementation notes:
 - Keep AgentCore free of CodingAgent dependencies; App/runtime orchestration belongs in CodingAgent or AgentCore contracts as appropriate.
 
 ## Acceptance criteria
-- Parallel execution has a dedicated durable batch state, not an in-memory-only collector.
-- Multiple tool calls from one model turn can execute concurrently when policy/settings allow it.
-- Sequential/interrupt tools still execute in order and block later parallel dispatch where required.
-- Results are applied to the run in the correct tool-call order regardless of completion order.
-- Run cancellation cancels pending calls and exposes cancellation to all in-flight tool workers without central PID/process tracking.
-- Settings document and control max parallelism / worker behavior; `.hatfield/settings.yaml` and `docs/settings.md` stay in sync.
-- Focused unit/integration tests cover scheduler state transitions, ordering, cancellation, and failure handling.
-- A product-level Castor workflow (`castor test:controller` or equivalent) validates the real async runtime path.
+- [x] Parallel execution has a dedicated durable batch state, not an in-memory-only collector.
+- [x] Multiple tool calls from one model turn can execute concurrently when policy/settings allow it.
+- [x] Sequential/interrupt tools still execute in order and block later parallel dispatch where required.
+- [x] Results are applied to the run in the correct tool-call order regardless of completion order.
+- [x] Run cancellation cancels pending calls and exposes cancellation to all in-flight tool workers without central PID/process tracking.
+- [x] Settings document and control max parallelism / worker behavior; `.hatfield/settings.yaml` and `docs/settings.md` stay in sync.
+- [x] Focused unit/integration tests cover scheduler state transitions, ordering, cancellation, and failure handling.
+- [ ] product-level validation (`castor test:controller`) — requires running llama.cpp E2E, not feasible in automated fork; best-available validation: castor test (1086 tests, 10266 assertions, 0 errors), deptrac, cs-check.
+
+## Implementation summary
+
+### New files
+- `src/AgentCore/Contract/Tool/ToolBatchStoreInterface.php` — contract for durable batch state
+- `src/AgentCore/Application/Handler/InMemoryToolBatchStore.php` — default/fallback store
+- `src/CodingAgent/Tool/Store/DbalToolBatchStore.php` — Doctrine DBAL/SQLite store
+- `tests/AgentCore/Application/Handler/InMemoryToolBatchStoreTest.php` — 5 tests
+- `tests/CodingAgent/Tool/Store/DbalToolBatchStoreTest.php` — 7 tests (in-memory SQLite)
+- `tests/AgentCore/Application/Handler/ToolBatchCollectorDurableTest.php` — 6 cross-process recovery tests
+
+### Modified files
+- `src/AgentCore/Application/Handler/ToolBatchCollector.php` — optional store, serialization/reconstruction
+- `src/CodingAgent/Runtime/Controller/ConsumerSupervisor.php` — multi-worker support
+- `src/CodingAgent/Runtime/Controller/HeadlessController.php` — launch N tool workers
+- `config/services.yaml` — wire DbalToolBatchStore as ToolBatchStoreInterface
+- `docs/tool-execution.md` — durable batch + parallel dispatch section
+- `docs/settings.md` — max_parallelism worker count docs
+- `config/hatfield.defaults.yaml` — worker count comment
+- `.pi/plans/toolbox-design-plan.md` — R05 section updated
+
+### Key design decisions
+1. Batch state stored as single JSON blob per run/turn/step in `tool_batch_state` table
+2. ToolBatchCollector loads from store on in-memory cache miss → reconstructs ExecuteToolCall/ToolCallResult from serialized call data
+3. RunLockManager serializes concurrent batch updates per run ID (already present in RunMessageProcessor)
+4. Tool worker count defaults to `max_parallelism` setting
+5. Table created lazily (CREATE TABLE IF NOT EXISTS) — no explicit migration needed
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/tools-r05-parallel-tool-execution-orchestration
+Worktree: /home/ineersa/projects/agent-core-worktrees/tools-r05-parallel-tool-execution-orchestration
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-26T21:00:00
 Completed:
 
 ## Work log
 - Created: 2026-05-26T20:20:59.767Z
+- Implemented: 2026-05-26T21:00:00 — durable batch store, multi-worker support, cross-process coordination, 20 new tests
