@@ -81,3 +81,7 @@ Completed:
 ## Task workflow update - 2026-05-27T16:31:06.299Z
 - Validation: castor test --filter=WriteFileTool: ok (22 tests, 51 assertions); castor cs-check: ok (files_fixed=0); castor phpstan: ok (errors=0, file_errors=46)
 - Summary: Addressed follow-up question/comment about explicit mkdir permissions. Removed DEFAULT_DIR_PERMISSIONS and changed WriteFileTool to PHP mkdir-p equivalent: `@mkdir(\dirname($resolvedPath), recursive: true);`, relying on PHP/default mkdir semantics and process umask exactly like shell `mkdir -p`. Pushed commit 081930ca to PR #61.
+
+## Task workflow update - 2026-05-27T16:32:27.427Z
+- Validation: castor test --filter=WriteFileTool: ok (22 tests, 51 assertions); castor cs-check: ok (files_fixed=0)
+- Summary: Corrected mkdir permission handling after follow-up discussion: PHP mkdir without mode uses default 0777 masked by umask, matching shell mkdir -p behavior and not inheriting parent mode bits. Restored explicit 0750 directory permissions in WriteFileTool while keeping the simplified mkdir-p style single call. Pushed commit 7ef8422e to PR #61.
