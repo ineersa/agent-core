@@ -137,3 +137,7 @@ Completed:
 ## Task workflow update - 2026-05-27T20:20:27.729Z
 - Recorded fork run: vq9pox8wwuhr
 - Summary: Launched fix fork vq9pox8wwuhr to address all reviewer findings: (1) wire jpegMinQuality/jpegQuality into dynamic encoding candidates, (2) document model-name gating race with @todo, (3) add warning for oversized animated images, (4) Imagick autoOrient/autoOrientate version guard, (5) cache file permissions 0640, (6) cache cleanup method, (7) processed_bytes in result, (8) .jpg extension for cache files.
+
+## Task workflow update - 2026-05-27T20:31:54.540Z
+- Validation: 1146 tests pass, 10459 assertions; phpstan 0 errors 0 file_errors; deptrac 0 violations; cs-check clean; 3 new tests: encodingCandidates config, exceeds_encoded_limit warning, cleanCache
+- Summary: Review-fix fork vq9pox8wwuhr completed at commit 1f7e2d2d. All reviewer findings addressed: (1) dynamic encoding candidates from jpegQuality/jpegMinQuality config replacing hardcoded static table, (2) gating race documented with @todo, (3) exceeds_encoded_limit warning for oversized animated images, (4) autoOrient replaces deprecated autoOrientate, (5) chmod 0640 on cache files, (6) cleanCache() method, (7) processed_bytes in result, (8) .jpg cache extension. 1146 tests pass, phpstan 0, deptrac 0, cs-check clean.
