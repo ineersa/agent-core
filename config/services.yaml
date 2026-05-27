@@ -229,6 +229,13 @@ services:
       $toolbox: '@Symfony\AI\Agent\Toolbox\ToolboxInterface'
       $toolSetResolver: '@Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface'
 
+  # Durable tool batch store — persists batch state across consumer restarts.
+  # Uses the shared messenger SQLite via Doctrine DBAL.
+  Ineersa\CodingAgent\Tool\Store\DbalToolBatchStore: ~
+
+  Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface:
+    alias: Ineersa\CodingAgent\Tool\Store\DbalToolBatchStore
+
   # ToolExecutionPolicyResolver is created inline by ToolExecutor,
   # but is also an optional dependency of LlmStepResultHandler.
   Ineersa\AgentCore\Application\Handler\ToolExecutionPolicyResolver:

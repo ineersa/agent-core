@@ -42,6 +42,8 @@ tools:
         timeout_seconds: 300
 
         # Maximum parallelism: how many tool calls to run concurrently.
+        # Also controls the number of parallel messenger:consume tool
+        # worker processes launched by the controller.
         max_parallelism: 4
 
     output_cap:

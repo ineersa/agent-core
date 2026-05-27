@@ -15,8 +15,12 @@ use Symfony\Component\Process\Process;
  * supervises their health via isRunning(), restarts crashed consumers
  * with exponential backoff, and gracefully stops them on shutdown.
  *
+ * Supports multiple consumer instances per transport (e.g. multiple
+ * "tool" workers for parallel tool execution). Each instance is tracked
+ * by a composite key: transportName#instanceId.
+ *
  * Restart policy:
- * - Up to 3 restarts within a 60-second window per transport.
+ * - Up to 3 restarts within a 60-second window per consumer key.
  * - After exhausting retries, the consumer is not restarted and
  *   a critical warning is logged.
  * - The restart window is sliding: if 60 seconds pass without a
@@ -27,21 +31,22 @@ use Symfony\Component\Process\Process;
  * - Supervision: polls isRunning() every 5s, restarts if crashed
  * - Shutdown: sends SIGTERM with configurable grace period, then SIGKILL
  * - stderr output is captured and logged on crash for diagnostics
- * - getProcess(): exposes the Process object so HeadlessController can
- *   read the LLM consumer's stdout for transient streaming deltas
+ * - getProcess(): exposes the first Process for a transport name so
+ *   HeadlessController can read the LLM consumer's stdout
  */
 final class ConsumerSupervisor
 {
     private const int MAX_RESTARTS = 3;
     private const int RESTART_WINDOW_SECONDS = 60;
     private const int INITIAL_RESTART_DELAY_MS = 1000;
-    /** @var array<string, Process> transportName => process */
+
+    /** @var array<string, Process> compositeKey => process */
     private array $consumers = [];
 
-    /** @var array<string, int> transportName => restart count */
+    /** @var array<string, int> compositeKey => restart count */
     private array $restartCounts = [];
 
-    /** @var array<string, float> transportName => start of restart window (microtime) */
+    /** @var array<string, float> compositeKey => start of restart window (microtime) */
     private array $restartWindows = [];
 
     /** Set by shutdown() to prevent pending delay callbacks from launching new consumers. */
@@ -55,8 +60,11 @@ final class ConsumerSupervisor
 
     /**
      * Launch a messenger:consume child process for the given transport.
+     *
+     * Multiple instances of the same transport can be launched with
+     * different $instanceId values (e.g. 0, 1, 2 for tool workers).
      */
-    public function launch(string $transportName): void
+    public function launch(string $transportName, int $instanceId = 0): void
     {
         $entrypoint = (string) ($_SERVER['argv'][0] ?? '');
         $cwd = getcwd();
@@ -64,6 +72,7 @@ final class ConsumerSupervisor
         if ('' === $entrypoint || false === $cwd) {
             $this->logger->error('Cannot launch messenger consumer: invalid entrypoint or CWD', [
                 'transport' => $transportName,
+                'instance' => $instanceId,
                 'entrypoint' => $entrypoint,
                 'cwd' => false === $cwd ? null : $cwd,
             ]);
@@ -89,6 +98,7 @@ final class ConsumerSupervisor
         } catch (\Throwable $e) {
             $this->logger->error('Failed to launch messenger consumer', [
                 'transport' => $transportName,
+                'instance' => $instanceId,
                 'entrypoint' => $entrypoint,
                 'cwd' => $cwd,
                 'exception' => $e,
@@ -97,23 +107,72 @@ final class ConsumerSupervisor
             return;
         }
 
-        $this->consumers[$transportName] = $process;
+        $key = $this->consumerKey($transportName, $instanceId);
+        $this->consumers[$key] = $process;
 
         $this->logger->info('Launched messenger consumer', [
             'transport' => $transportName,
+            'instance' => $instanceId,
+            'key' => $key,
             'pid' => $process->getPid(),
         ]);
     }
 
     /**
-     * Get the Symfony Process for a transport, if launched.
+     * Launch multiple consumer instances for the same transport.
+     *
+     * Used to scale tool workers for parallel execution.
+     */
+    public function launchMultiple(string $transportName, int $count): void
+    {
+        for ($i = 0; $i < $count; ++$i) {
+            $this->launch($transportName, $i);
+        }
+    }
+
+    /**
+     * Get the Symfony Process for a transport, returning the first instance.
      *
      * The controller uses this to read the LLM consumer's stdout pipe
      * for transient streaming deltas (thinking, text, tool-call args).
+     * Returns null when there are no instances or when there are multiple
+     * instances (caller should use getProcesses() instead).
      */
     public function getProcess(string $transportName): ?Process
     {
-        return $this->consumers[$transportName] ?? null;
+        // Prefer the single-instance key first.
+        $singleKey = $this->consumerKey($transportName, 0);
+
+        if (isset($this->consumers[$singleKey])) {
+            return $this->consumers[$singleKey];
+        }
+
+        // Fallback: find first matching any instance.
+        foreach ($this->consumers as $key => $process) {
+            if ($this->extractTransportName($key) === $transportName) {
+                return $process;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Get all running consumer processes for a transport.
+     *
+     * @return list<Process>
+     */
+    public function getProcesses(string $transportName): array
+    {
+        $processes = [];
+
+        foreach ($this->consumers as $key => $process) {
+            if ($this->extractTransportName($key) === $transportName) {
+                $processes[] = $process;
+            }
+        }
+
+        return $processes;
     }
 
     /**
@@ -121,7 +180,7 @@ final class ConsumerSupervisor
      */
     public function supervise(): void
     {
-        foreach ($this->consumers as $transportName => $process) {
+        foreach ($this->consumers as $key => $process) {
             if ($process->isRunning()) {
                 continue;
             }
@@ -130,15 +189,16 @@ final class ConsumerSupervisor
             $stderr = $process->getErrorOutput();
 
             $this->logger->warning('Consumer process exited unexpectedly', [
-                'transport' => $transportName,
+                'key' => $key,
+                'transport' => $this->extractTransportName($key),
                 'pid' => $process->getPid(),
                 'exit_code' => $exitCode,
                 'stderr' => '' !== $stderr ? $stderr : null,
             ]);
 
-            unset($this->consumers[$transportName]);
+            unset($this->consumers[$key]);
 
-            $this->attemptRestart($transportName);
+            $this->attemptRestart($key);
         }
     }
 
@@ -165,16 +225,13 @@ final class ConsumerSupervisor
             'count' => \count($this->consumers),
         ]);
 
-        foreach ($this->consumers as $transportName => $process) {
+        foreach ($this->consumers as $key => $process) {
             $pid = $process->getPid();
-
-            // stop($timeout) sends SIGTERM, waits up to timeout seconds,
-            // then SIGKILL if still running. Default second signal is SIGKILL.
             $process->stop($this->shutdownGraceSeconds);
 
             if ($process->isRunning()) {
                 $this->logger->warning('Messenger consumer still running after grace period, may have been killed', [
-                    'transport' => $transportName,
+                    'key' => $key,
                     'pid' => $pid,
                 ]);
             }
@@ -190,23 +247,27 @@ final class ConsumerSupervisor
      * remains responsive during backoff (stdin commands, LLM stdout polling,
      * event drain, and signal handling continue to work).
      */
-    private function attemptRestart(string $transportName): void
+    private function attemptRestart(string $key): void
     {
+        $transportName = $this->extractTransportName($key);
+        $instanceId = $this->extractInstanceId($key);
+
         $now = microtime(true);
 
         // Check if restart window has expired — reset counter.
-        if (isset($this->restartWindows[$transportName])) {
-            $elapsed = $now - $this->restartWindows[$transportName];
+        if (isset($this->restartWindows[$key])) {
+            $elapsed = $now - $this->restartWindows[$key];
             if ($elapsed > self::RESTART_WINDOW_SECONDS) {
-                $this->restartCounts[$transportName] = 0;
-                unset($this->restartWindows[$transportName]);
+                $this->restartCounts[$key] = 0;
+                unset($this->restartWindows[$key]);
             }
         }
 
-        $count = $this->restartCounts[$transportName] ?? 0;
+        $count = $this->restartCounts[$key] ?? 0;
 
         if ($count >= self::MAX_RESTARTS) {
             $this->logger->critical('Consumer restart limit reached, not restarting', [
+                'key' => $key,
                 'transport' => $transportName,
                 'max_restarts' => self::MAX_RESTARTS,
                 'window_seconds' => self::RESTART_WINDOW_SECONDS,
@@ -216,17 +277,19 @@ final class ConsumerSupervisor
         }
 
         // Start restart window on first restart.
-        if (!isset($this->restartWindows[$transportName])) {
-            $this->restartWindows[$transportName] = $now;
+        if (!isset($this->restartWindows[$key])) {
+            $this->restartWindows[$key] = $now;
         }
 
-        $this->restartCounts[$transportName] = $count + 1;
+        $this->restartCounts[$key] = $count + 1;
 
         // Exponential backoff: 1s, 2s, 4s
         $delayMs = self::INITIAL_RESTART_DELAY_MS * (2 ** $count);
 
         $this->logger->info('Restarting consumer with backoff', [
+            'key' => $key,
             'transport' => $transportName,
+            'instance' => $instanceId,
             'restart_attempt' => $count + 1,
             'max_restarts' => self::MAX_RESTARTS,
             'delay_ms' => $delayMs,
@@ -234,15 +297,55 @@ final class ConsumerSupervisor
 
         // Non-blocking delay: schedule the launch after backoff without
         // blocking the event loop.
-        EventLoop::delay($delayMs / 1000, function () use ($transportName): void {
+        EventLoop::delay($delayMs / 1000, function () use ($transportName, $instanceId): void {
             if ($this->shuttingDown) {
                 return;
             }
 
             // Re-check restart window hasn't expired while waiting.
-            if (isset($this->restartWindows[$transportName])) {
-                $this->launch($transportName);
+            if (isset($this->restartWindows[$this->consumerKey($transportName, $instanceId)])) {
+                $this->launch($transportName, $instanceId);
             }
         });
+    }
+
+    /**
+     * Build a composite key for a consumer instance.
+     */
+    private function consumerKey(string $transportName, int $instanceId): string
+    {
+        if (str_contains($transportName, '#')) {
+            throw new \InvalidArgumentException('Messenger transport names used by ConsumerSupervisor may not contain "#".');
+        }
+
+        return \sprintf('%s#%d', $transportName, $instanceId);
+    }
+
+    /**
+     * Extract the transport name from a composite key.
+     */
+    private function extractTransportName(string $key): string
+    {
+        $separatorPos = strrpos($key, '#');
+
+        if (false === $separatorPos) {
+            return $key;
+        }
+
+        return substr($key, 0, $separatorPos);
+    }
+
+    /**
+     * Extract the instance ID from a composite key.
+     */
+    private function extractInstanceId(string $key): int
+    {
+        $separatorPos = strrpos($key, '#');
+
+        if (false === $separatorPos) {
+            return 0;
+        }
+
+        return (int) substr($key, $separatorPos + 1);
     }
 }

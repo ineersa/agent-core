@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
+use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
@@ -88,7 +89,13 @@ final class HeadlessController
         private readonly ConsumerSupervisor $consumerSupervisor,
         private readonly EventDispatcherInterface $dispatcher,
         private readonly LoggerInterface $logger,
+        private readonly ToolExecutionSettingsInterface $toolExecutionSettings,
         private readonly ?InProcessAgentSessionClient $eventClient = null,
+        /**
+         * Optional override for parallel tool messenger consumers.
+         * Values <= 0 use tools.execution.max_parallelism from settings.
+         */
+        private readonly int $toolWorkerCount = 0,
     ) {
         $this->sessionId = $_SERVER['HATFIELD_SESSION_ID'] ?? $_ENV['HATFIELD_SESSION_ID'] ?? 'unknown';
     }
@@ -116,7 +123,12 @@ final class HeadlessController
         // Launch messenger consumers for async execution and command transports.
         $this->consumerSupervisor->launch('run_control');
         $this->consumerSupervisor->launch('llm');
-        $this->consumerSupervisor->launch('tool');
+        // tool consumers: N parallel workers for concurrent tool execution.
+        // N defaults to tools.execution.max_parallelism.
+        $effectiveWorkerCount = $this->toolWorkerCount > 0
+            ? $this->toolWorkerCount
+            : max(1, $this->toolExecutionSettings->maxParallelism());
+        $this->consumerSupervisor->launchMultiple('tool', $effectiveWorkerCount);
         // - run_control consumes StartRun, ApplyCommand, AdvanceRun (ASYNC-05)
         // - llm consumes ExecuteLlmStep (ASYNC-04)
         // - tool consumes ExecuteToolCall (ASYNC-04)
