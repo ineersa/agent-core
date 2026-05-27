@@ -22,6 +22,7 @@ final readonly class LlmStepResult extends AbstractAgentBusMessage
         public array $usage = [],
         public ?string $stopReason = null,
         public ?array $error = null,
+        public ?string $toolsRef = null,
     ) {
         parent::__construct($runId, $turnNo, $stepId, $attempt, $idempotencyKey);
     }
