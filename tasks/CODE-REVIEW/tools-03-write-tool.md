@@ -105,3 +105,8 @@ Completed:
 ## Task workflow update - 2026-05-27T16:49:43.141Z
 - Recorded fork run: hli5eia0e4e6
 - Summary: Previous PHPStan cleanup fork 2a0cpz42btdh aborted before handoff. Reproduced the issue directly: `LLM_MODE=true ... castor phpstan` reports `phpstan: ok (errors=0,file_errors=45)` with exit 0, and var/reports/phpstan.json lists 45 file_errors across batch store/collector/tool executor/config/path/runtime/tool registry classes. Launched retry fork hli5eia0e4e6 with exact per-file error list and fix guidance. Required goal: file_errors=0 without adding/regenerating baseline, preserve WriteFileTool mkdir default-permission behavior, validate, commit, and push.
+
+## Task workflow update - 2026-05-27T16:59:34.241Z
+- Recorded fork run: hli5eia0e4e6
+- Validation: castor check in /home/ineersa/projects/agent-core-worktrees/tools-03-write-tool: deptrac ok (0 violations), test ok (1102 tests, 10303 assertions), phpstan ok (errors=0,file_errors=0), cs-check ok (files_fixed=0), quality ok
+- Summary: Follow-up fork fixed all 45 PHPStan file_errors on PR #61 without changing phpstan-baseline.neon. Branch head is 3986d262. Changes include typed iterable annotations/return types, LoggingConfig promotion cleanup, RunReadService non-null array returns, ToolExecutor boolean narrowing, PathResolver/SettingsPathResolver static-analysis fixes, removal of unused process/client properties, and test stub cleanups. PR #61 is OPEN with mergeStateStatus CLEAN after fetch.
