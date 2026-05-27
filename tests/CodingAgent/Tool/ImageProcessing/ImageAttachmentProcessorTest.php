@@ -160,6 +160,13 @@ final class ImageAttachmentProcessorTest extends TestCase
 
     public function testEncodingCandidatesUseConfiguredQuality(): void
     {
+        if (!\extension_loaded('imagick') && !\extension_loaded('gd')) {
+            $this->markTestSkipped('No image processing library available');
+        }
+
+        // Use a moderate size image that needs resize but doesn't need massive
+        // encoding loop iterations. 2500 wide → resize to 2000 → PNG candidate
+        // should fit under default 4.7 MB limit in one pass.
         $config = new ImageToolConfig(
             maxBytes: 10_485_760,
             maxWidth: 4096,
@@ -172,14 +179,10 @@ final class ImageAttachmentProcessorTest extends TestCase
 
         $processor = new ImageAttachmentProcessor($config);
 
-        if (!\extension_loaded('imagick') && !\extension_loaded('gd')) {
-            $this->markTestSkipped('No image processing library available');
-        }
-
         $path = $this->tmpDir.'/quality.png';
-        $this->createPng(3000, 2000, $path);
+        $this->createPng(2500, 2000, $path);
 
-        $result = $processor->process($path, 'image/png', 3000, 2000);
+        $result = $processor->process($path, 'image/png', 2500, 2000);
 
         self::assertTrue($result['processed'], 'Image should be processed with custom quality config');
         self::assertNotSame($path, $result['path']);
@@ -193,14 +196,15 @@ final class ImageAttachmentProcessorTest extends TestCase
             $this->markTestSkipped('No image processing library available');
         }
 
-        // Create a processor with a tiny encodedMaxBytes so even a resized
-        // image will exceed the limit and trigger the warning.
+        // Use a tiny encodedMaxBytes (1 byte) so the image will always exceed.
+        // With a tiny image (20x20) the dimension loop exits immediately
+        // (20 < 100), so this completes in one fallback pass — very fast.
         $config = new ImageToolConfig(
             maxBytes: 10_485_760,
             maxWidth: 4096,
             maxHeight: 2000,
             maxDimension: 2000,
-            encodedMaxBytes: 100, // Tiny — any real image exceeds this
+            encodedMaxBytes: 1, // Any real image exceeds this
             jpegQuality: 80,
             jpegMinQuality: 40,
         );
@@ -208,9 +212,9 @@ final class ImageAttachmentProcessorTest extends TestCase
         $processor = new ImageAttachmentProcessor($config);
 
         $path = $this->tmpDir.'/oversize_limit.png';
-        $this->createPng(3000, 2000, $path);
+        $this->createPng(20, 20, $path);
 
-        $result = $processor->process($path, 'image/png', 3000, 2000);
+        $result = $processor->process($path, 'image/png', 20, 20);
 
         self::assertTrue($result['processed']);
         self::assertArrayHasKey('exceeds_encoded_limit', $result);
@@ -227,11 +231,11 @@ final class ImageAttachmentProcessorTest extends TestCase
             $this->markTestSkipped('No image processing library available');
         }
 
-        // Process a large image to trigger cache write
+        // Use a moderate size image to trigger cache write
         $path = $this->tmpDir.'/cache_clean.png';
-        $this->createPng(3000, 2000, $path);
+        $this->createPng(2500, 2000, $path);
 
-        $result = $this->processor->process($path, 'image/png', 3000, 2000);
+        $result = $this->processor->process($path, 'image/png', 2500, 2000);
 
         self::assertTrue($result['processed']);
         self::assertFileExists($result['path']);
