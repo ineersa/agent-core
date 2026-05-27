@@ -177,3 +177,8 @@ Completed:
 ## Task workflow update - 2026-05-27T22:38:06.906Z
 - Recorded fork run: hwh1i5p5zqcy
 - Summary: Launched architectural-fix fork hwh1i5p5zqcy (deepseek/deepseek-v4-pro) for 3 architect concerns: (1) consolidate IMAGE_REF_TYPE constant to AgentCore domain, (2) replace normalizer tool-type sniffing with attachment_refs convention, (3) add model name to ConvertToLlmHookInterface and create ImageGatingConvertHook.
+
+## Task workflow update - 2026-05-27T22:49:08.107Z
+- Recorded fork run: hwh1i5p5zqcy
+- Validation: 1152 tests pass, 10478 assertions; phpstan 0 errors 0 file_errors; deptrac 0 violations; cs-check clean; ToolResultType::IMAGE_REF constant in AgentCore domain; attachment_refs convention in ViewImageTool result; ImageGatingConvertHook autoconfigured via agent_core.convert_to_llm_hook
+- Summary: Architectural-fix fork hwh1i5p5zqcy completed at commit d36f0ed2. Fixed 3 concerns: (1) ToolResultType::IMAGE_REF canonical constant in AgentCore domain replacing 3 duplicates, (2) attachment_refs convention replacing tool-type string sniffing in normalizer, (3) ImageGatingConvertHook implementing extended ConvertToLlmHookInterface with $modelName param, gating moved out of AgentMessageConverter, ModelResolverInterface removed from LlmPlatformAdapter. 11 files changed (+293/-220), 1152 tests pass, all QA clean.
