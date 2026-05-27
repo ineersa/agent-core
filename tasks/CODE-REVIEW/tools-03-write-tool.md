@@ -41,7 +41,7 @@ Out of scope:
 Status: CODE-REVIEW
 Branch: task/tools-03-write-tool
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-03-write-tool
-Fork run: 2a0cpz42btdh
+Fork run: hli5eia0e4e6
 PR URL: https://github.com/ineersa/agent-core/pull/61
 PR Status: open
 Started: 2026-05-27T16:16:17.419Z
@@ -101,3 +101,7 @@ Completed:
 ## Task workflow update - 2026-05-27T16:47:55.495Z
 - Recorded fork run: 2a0cpz42btdh
 - Summary: User clarified PR/worktree is not clean because PHPStan still has 45 file_errors despite Castor printing ok. Launched fork 2a0cpz42btdh in /home/ineersa/projects/agent-core-worktrees/tools-03-write-tool to fix all PHPStan file_errors on the TOOLS-03 branch without regenerating/expanding phpstan-baseline.neon, preserve mkdir default-permission behavior, validate, commit, and push.
+
+## Task workflow update - 2026-05-27T16:49:43.141Z
+- Recorded fork run: hli5eia0e4e6
+- Summary: Previous PHPStan cleanup fork 2a0cpz42btdh aborted before handoff. Reproduced the issue directly: `LLM_MODE=true ... castor phpstan` reports `phpstan: ok (errors=0,file_errors=45)` with exit 0, and var/reports/phpstan.json lists 45 file_errors across batch store/collector/tool executor/config/path/runtime/tool registry classes. Launched retry fork hli5eia0e4e6 with exact per-file error list and fix guidance. Required goal: file_errors=0 without adding/regenerating baseline, preserve WriteFileTool mkdir default-permission behavior, validate, commit, and push.
