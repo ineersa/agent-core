@@ -52,7 +52,7 @@ Out of scope:
 Status: IN-PROGRESS
 Branch: task/tools-04-view-image-tool
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-04-view-image-tool
-Fork run: 7f6qg8ydcsfp
+Fork run: z3gz0jsdan77
 PR URL: https://github.com/ineersa/agent-core/pull/62
 PR Status: open
 Started: 2026-05-27T18:57:52.472Z
@@ -129,3 +129,7 @@ Completed:
 ## Task workflow update - 2026-05-27T19:58:34.904Z
 - Validation: castor test --filter=ViewImageTool: ok (34 tests, 115 assertions); castor test: ok (1136 tests, 10418 assertions); castor phpstan: ok (errors=0, file_errors=0); castor deptrac: ok (violations=0, errors=0); castor cs-check: ok (files_fixed=0); castor test:controller: attempted; real run completed but command fails on pre-existing missing transcript.jsonl artifact assertion (same ControllerSmokeTest issue previously observed), so it did not provide image-flow product validation
 - Summary: Redo fork 7f6qg8ydcsfp completed at 6f23f4e9 and parent follow-up commit 5d0b94a6 pushed. ViewImageTool now returns compact metadata only (no base64/data_url, no OutputCap delivery); AgentMessageNormalizer adds image_ref content parts from view_image raw_result; AgentMessageConverter converts image_ref into Pi-style synthetic UserMessage with Symfony AI Image::fromFile() attachment. Parent fixed multi-tool ordering so synthetic image messages are deferred until after a consecutive tool-message batch, preserving provider tool-call protocol ordering. PR #62 head is 5d0b94a6 with mergeStateStatus CLEAN. Known remaining gaps: no resize/quality pipeline and no model vision-capability gating yet.
+
+## Task workflow update - 2026-05-27T20:01:27.009Z
+- Recorded fork run: z3gz0jsdan77
+- Summary: Launched fork z3gz0jsdan77 to add remaining TOOLS-04 pieces on PR #62: Pi-style resize/quality pipeline and explicit non-vision model gating/fallback. Fork instructed to preserve path-only persistence/no base64 state, use real Symfony AI Image attachments, add typed image settings/docs, place model gating near LLM conversion/invocation after model resolution, add focused tests plus Castor validation, commit and push to task/tools-04-view-image-tool.
