@@ -9,11 +9,13 @@ use Ineersa\AgentCore\Contract\Hook\ConvertToLlmHookInterface;
 use Ineersa\AgentCore\Contract\Hook\LlmStreamObserverInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface;
+use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
 use Ineersa\AgentCore\Contract\Model\PlatformInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
+use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Symfony\AI\Agent\Input;
 use Symfony\AI\Platform\Message\AssistantMessage;
@@ -49,6 +51,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         private iterable $transformContextHooks,
         private iterable $convertToLlmHooks,
         private ?LlmStreamObserverInterface $streamObserver = null,
+        private ?ModelResolverInterface $modelResolver = null,
     ) {
     }
 
@@ -57,7 +60,24 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         $cancelToken = $this->cancellationToken($request);
         $messages = $this->resolveContextMessages($request->input);
         $messages = $this->applyTransformHooks($messages, $cancelToken);
-        $messageBag = $this->applyConvertHooks($messages, $cancelToken, $request->model);
+
+        // Resolve the effective model for image capability gating.
+        // $request->model is the hardcoded container default (e.g. deepseek/deepseek-v4-pro)
+        // but the user may have selected a different model via /model. The model resolver
+        // reads session metadata to find the real model. Without this, image gating checks
+        // the default model's capabilities instead of the user-selected model's.
+        $gatingModelName = $request->model;
+        if (null !== $this->modelResolver && null !== $request->input->runId) {
+            $resolved = $this->modelResolver->resolve(
+                $request->model,
+                new MessageBag(),
+                $request->input,
+                new ModelResolutionOptions(),
+            );
+            $gatingModelName = $resolved->model;
+        }
+
+        $messageBag = $this->applyConvertHooks($messages, $cancelToken, $gatingModelName);
 
         $options = $this->buildInputOptions($request);
         $input = new Input($request->model, $messageBag, $options);

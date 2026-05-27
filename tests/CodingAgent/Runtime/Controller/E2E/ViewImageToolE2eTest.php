@@ -7,11 +7,11 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
- * Smoke test: view_image tool executes via controller process and the
- * run advances past tool completion (exercises AdvanceRun-after-tools).
+ * E2E test: view_image tool with real photo, verifying:
+ * 1. Run completes (exercises AdvanceRun-after-tools fix)
+ * 2. Gating does NOT produce "does not support images" placeholder
  *
- * Creates a small PNG, prompts the model to describe it, and asserts
- * the controller event stream reaches run.completed without hanging.
+ * Uses a 450x450 JPEG photo fixture from this test directory.
  */
 #[Group('llm-real')]
 final class ViewImageToolE2eTest extends ControllerE2eTestCase
@@ -40,25 +40,12 @@ final class ViewImageToolE2eTest extends ControllerE2eTestCase
     {
         parent::setUp();
 
-        if (!extension_loaded('gd')) {
-            self::markTestSkipped('GD extension required to create test PNG images.');
-        }
-
-        // 32x32 red square
-        $this->imagePath = $this->tempDir.'/test-image.png';
-        $im = \imagecreatetruecolor(32, 32);
-        if (false === $im) {
-            throw new \RuntimeException('Failed to create test image.');
-        }
-        $red = imagecolorallocate($im, 255, 0, 0);
-        imagefill($im, 0, 0, $red);
-        imagepng($im, $this->imagePath);
-        imagedestroy($im);
-
-        self::assertFileExists($this->imagePath, 'Test PNG image was not created.');
+        $this->imagePath = $this->tempDir.'/test-photo.jpeg';
+        copy(__DIR__.'/test-photo.jpeg', $this->imagePath);
+        self::assertFileExists($this->imagePath, 'Test photo was not copied.');
     }
 
-    public function testViewImageToolExecutesAndRunAdvancesAfterCommit(): void
+    public function testViewImageToolCompletesWithoutGatingFailure(): void
     {
         $this->spawnController();
         $this->waitForEvent('runtime.ready', 5.0);
@@ -69,9 +56,8 @@ final class ViewImageToolE2eTest extends ControllerE2eTestCase
             'id' => $startCmdId,
             'type' => 'start_run',
             'payload' => [
-                'prompt' => 'You MUST call the view_image tool to inspect '
-                    .$this->imagePath.', then describe what you see. '
-                    .'Do NOT respond without calling view_image first.',
+                'prompt' => 'Describe the image at '.$this->imagePath
+                    .'. Call view_image first.',
             ],
         ]);
 
@@ -83,6 +69,7 @@ final class ViewImageToolE2eTest extends ControllerE2eTestCase
             $byType[$type][] = $e;
         }
 
+        // Verify command acknowledged
         $acks = $byType['command.ack'] ?? [];
         $foundStartAck = false;
         foreach ($acks as $ack) {
@@ -102,16 +89,31 @@ final class ViewImageToolE2eTest extends ControllerE2eTestCase
         $this->runId = (string) ($runStarted['runId'] ?? $runStarted['payload']['runId'] ?? '');
         self::assertNotEmpty($this->runId);
 
-        // Primary assertion: run must complete (no hang)
+        // Primary: run must complete (no hang)
         self::assertTrue(
             isset($byType['run.completed']) || isset($byType['run.failed']),
             'Run must complete. Event types: '.implode(', ', array_keys($byType))."\n"
             .$this->collectDiagnostics($events),
         );
 
-        // Informational: was the tool path exercised?
+        // Critical: gating must NOT produce the failure placeholder
+        $allText = '';
+        foreach ($events as $event) {
+            $text = $event['payload']['text'] ?? '';
+            if (\is_string($text)) {
+                $allText .= $text;
+            }
+        }
+        self::assertStringNotContainsString(
+            'does not support images',
+            strtolower($allText),
+            'Image gating must not report unsupported model. '
+            .'Text collected: '.substr($allText, 0, 500)."\n"
+            .$this->collectDiagnostics($events),
+        );
+
         if (isset($byType['tool_batch_committed'])) {
-            fwrite(\STDERR, "[INFO] Tool batch committed — AdvanceRun-after-tools path exercised.\n");
+            fwrite(\STDERR, "[INFO] view_image tool executed and batch committed.\n");
         }
 
         $sessionDir = $this->tempDir.'/.hatfield/sessions/'.$this->runId;

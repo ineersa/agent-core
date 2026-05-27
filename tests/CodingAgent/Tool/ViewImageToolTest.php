@@ -14,10 +14,12 @@ use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
+use Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface;
 use Ineersa\CodingAgent\Config\ImageToolConfig;
 use Ineersa\CodingAgent\Config\ToolSettings;
 use Ineersa\CodingAgent\Tool\HatfieldToolProviderInterface;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
+use Ineersa\CodingAgent\Tool\ImageProcessing\RunVisionCheckService;
 use Ineersa\CodingAgent\Tool\ToolDefinitionDTO;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
@@ -58,7 +60,7 @@ final class ViewImageToolTest extends TestCase
         $this->tmpDir = sys_get_temp_dir().'/hatfield_view_image_test_'.\bin2hex(random_bytes(8));
         mkdir($this->tmpDir, 0750, recursive: true);
 
-        $this->viewImageTool = new ViewImageTool($this->toolRuntime, $this->imageConfig);
+        $this->viewImageTool = new ViewImageTool($this->toolRuntime, $this->imageConfig, $this->contextAccessor);
     }
 
     protected function tearDown(): void
@@ -345,7 +347,7 @@ final class ViewImageToolTest extends TestCase
     public function testRejectsFileExceedingMaxBytes(): void
     {
         $smallConfig = new ImageToolConfig(maxBytes: 50, maxWidth: 4096, maxHeight: 2000);
-        $tool = new ViewImageTool($this->toolRuntime, $smallConfig);
+        $tool = new ViewImageTool($this->toolRuntime, $smallConfig, $this->contextAccessor);
 
         $img = \imagecreatetruecolor(1, 1);
         $imagePath = $this->tmpDir.'/large.png';
@@ -361,7 +363,7 @@ final class ViewImageToolTest extends TestCase
     public function testAcceptsFileWithinMaxBytes(): void
     {
         $largeConfig = new ImageToolConfig(maxBytes: 50_000_000, maxWidth: 4096, maxHeight: 2000);
-        $tool = new ViewImageTool($this->toolRuntime, $largeConfig);
+        $tool = new ViewImageTool($this->toolRuntime, $largeConfig, $this->contextAccessor);
 
         $imagePath = $this->tmpDir.'/ok.png';
         $this->createPng1x1($imagePath);
@@ -376,7 +378,7 @@ final class ViewImageToolTest extends TestCase
     public function testRejectsImageExceedingMaxWidth(): void
     {
         $smallConfig = new ImageToolConfig(maxBytes: 10_485_760, maxWidth: 2, maxHeight: 2000);
-        $tool = new ViewImageTool($this->toolRuntime, $smallConfig);
+        $tool = new ViewImageTool($this->toolRuntime, $smallConfig, $this->contextAccessor);
 
         $imagePath = $this->tmpDir.'/wide.png';
         $img = \imagecreatetruecolor(10, 1);
@@ -392,7 +394,7 @@ final class ViewImageToolTest extends TestCase
     public function testRejectsImageExceedingMaxHeight(): void
     {
         $smallConfig = new ImageToolConfig(maxBytes: 10_485_760, maxWidth: 4096, maxHeight: 2);
-        $tool = new ViewImageTool($this->toolRuntime, $smallConfig);
+        $tool = new ViewImageTool($this->toolRuntime, $smallConfig, $this->contextAccessor);
 
         $imagePath = $this->tmpDir.'/tall.png';
         $img = \imagecreatetruecolor(1, 10);
@@ -498,7 +500,7 @@ final class ViewImageToolTest extends TestCase
         $resultStore = new ToolExecutionResultStore();
         $contextAccessor = new StackToolExecutionContextAccessor();
         $toolRuntime = new ToolRuntime($contextAccessor);
-        $tool = new ViewImageTool($toolRuntime, $this->imageConfig);
+        $tool = new ViewImageTool($toolRuntime, $this->imageConfig, $contextAccessor);
         $registry = new ToolRegistry([$tool]);
         $toolbox = new RegistryBackedToolbox($registry);
 
@@ -1039,5 +1041,51 @@ final class ViewImageToolTest extends TestCase
         $secondMsg = $messages[1];
         self::assertInstanceOf(UserMessage::class, $secondMsg);
         self::assertFalse($secondMsg->hasImageContent(), 'With checker and empty model, images must not be attached');
+    }
+
+    /* ── Vision capability check throws clear error ── */
+
+    public function testThrowsWhenActiveModelHasNoVisionCapability(): void
+    {
+        $visionCheck = $this->createStub(RunVisionCheckService::class);
+        $visionCheck->method('isModelVisionCapable')->willReturn(false);
+
+        $tool = new ViewImageTool(
+            toolRuntime: $this->toolRuntime,
+            imageConfig: $this->imageConfig,
+            contextAccessor: $this->contextAccessor,
+            visionCheck: $visionCheck,
+        );
+
+        // Create a valid test image
+        $imagePath = $this->tmpDir.'/test-vision.png';
+        $this->createPng1x1($imagePath);
+
+        $context = $this->contextWithToken($this->createStub(CancellationTokenInterface::class));
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('does not support image input');
+
+        $this->contextAccessor->with($context, function () use ($tool, $imagePath): void {
+            $tool(['path' => $imagePath]);
+        });
+    }
+
+    public function testVisionCheckSkippedWhenNoVisionCheckService(): void
+    {
+        $tool = new ViewImageTool(
+            toolRuntime: $this->toolRuntime,
+            imageConfig: $this->imageConfig,
+            contextAccessor: $this->contextAccessor,
+        );
+
+        $imagePath = $this->tmpDir.'/test-no-checker.png';
+        $this->createPng1x1($imagePath);
+
+        $context = $this->contextWithToken($this->createStub(CancellationTokenInterface::class));
+        $this->contextAccessor->with($context, function () use ($tool, $imagePath): void {
+            $result = $tool(['path' => $imagePath]);
+            self::assertSame('image/png', $result['media_type'], 'Tool should succeed when vision check is skipped');
+        });
     }
 }

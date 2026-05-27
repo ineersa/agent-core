@@ -304,6 +304,7 @@ services:
     arguments:
       $transformContextHooks: !tagged_iterator agent_core.transform_context_hook
       $convertToLlmHooks: !tagged_iterator agent_core.convert_to_llm_hook
+      $modelResolver: '@Ineersa\AgentCore\Contract\Model\ModelResolverInterface'
 
   Ineersa\AgentCore\Contract\Model\PlatformInterface:
     alias: Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter

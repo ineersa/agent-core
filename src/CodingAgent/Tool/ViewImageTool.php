@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\CodingAgent\Config\ImageToolConfig;
 use Ineersa\CodingAgent\Path\PathResolver;
 use Ineersa\CodingAgent\Tool\ImageProcessing\ImageAttachmentProcessor;
+use Ineersa\CodingAgent\Tool\ImageProcessing\RunVisionCheckService;
 use League\MimeTypeDetection\FinfoMimeTypeDetector;
 
 /**
@@ -41,6 +43,8 @@ final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerI
     public function __construct(
         private readonly ToolRuntime $toolRuntime,
         private readonly ImageToolConfig $imageConfig,
+        private readonly StackToolExecutionContextAccessor $contextAccessor,
+        private readonly ?RunVisionCheckService $visionCheck = null,
         private readonly ?ImageAttachmentProcessor $processor = null,
     ) {
     }
@@ -58,6 +62,16 @@ final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerI
     public function __invoke(array $arguments): array
     {
         return $this->toolRuntime->run(function () use ($arguments): array {
+            // Check if the active model supports image viewing.
+            // When the model lacks vision capabilities, fail fast with a clear
+            // error that the user can see in the TUI tool result.
+            $context = $this->contextAccessor->current();
+            if (null !== $context && null !== $this->visionCheck) {
+                if (!$this->visionCheck->isModelVisionCapable($context->runId())) {
+                    throw new \RuntimeException('The active model does not support image input. Switch to a vision-capable model to use view_image.');
+                }
+            }
+
             // Validate required argument
             $path = $arguments['path'] ?? null;
             if (!\is_string($path) || '' === $path) {
