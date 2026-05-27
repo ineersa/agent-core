@@ -132,7 +132,7 @@ function test(string $filter = ''): void
             $summary,
             relative_report_path('phpunit.junit.xml'),
             relative_report_path('phpunit.log'),
-            report_excerpt('phpunit.log'),
+            phpunit_failure_excerpt($junitPath, 'phpunit.log'),
         ));
     }
 
@@ -847,9 +847,96 @@ function fail_quality(string $message): never
     throw new RuntimeException($message);
 }
 
-function report_excerpt(string $filename, int $maxLines = 80): string
+function phpunit_failure_excerpt(string $junitPath, string $logFilename): string
 {
-    $path = report_path($filename);
+    $sections = [];
+
+    $junitFailures = phpunit_junit_failure_excerpt($junitPath);
+    if ('' !== $junitFailures) {
+        $sections[] = $junitFailures;
+    }
+
+    $runtimeIssues = phpunit_log_issue_excerpt($logFilename);
+    if ('' !== $runtimeIssues) {
+        $sections[] = $runtimeIssues;
+    }
+
+    if ([] === $sections) {
+        return '';
+    }
+
+    return "\n\n".implode("\n\n", $sections);
+}
+
+function phpunit_junit_failure_excerpt(string $junitPath): string
+{
+    if (!is_file($junitPath)) {
+        return '';
+    }
+
+    $xml = @simplexml_load_file($junitPath);
+    if (false === $xml) {
+        return '';
+    }
+
+    $testcases = $xml->xpath('//testcase[failure or error]');
+    if (false === $testcases || [] === $testcases) {
+        return '';
+    }
+
+    $files = [];
+    foreach ($testcases as $testcase) {
+        if (!$testcase instanceof SimpleXMLElement) {
+            continue;
+        }
+
+        $attributes = $testcase->attributes();
+        $file = isset($attributes['file']) ? project_relative_path((string) $attributes['file']) : 'unknown file';
+        $line = isset($attributes['line']) ? ':'.(string) $attributes['line'] : '';
+        $class = isset($attributes['class']) ? (string) $attributes['class'] : '';
+        $name = isset($attributes['name']) ? (string) $attributes['name'] : 'unknown test';
+        $testName = '' !== $class ? $class.'::'.$name : $name;
+
+        $files[$file] ??= [];
+        $files[$file][] = sprintf('  %s%s', $testName, $line);
+
+        foreach (['failure', 'error'] as $nodeName) {
+            foreach ($testcase->{$nodeName} as $node) {
+                if (!$node instanceof SimpleXMLElement) {
+                    continue;
+                }
+
+                $nodeAttributes = $node->attributes();
+                $type = isset($nodeAttributes['type']) ? (string) $nodeAttributes['type'] : $nodeName;
+                $message = isset($nodeAttributes['message']) ? trim((string) $nodeAttributes['message']) : '';
+                $files[$file][] = sprintf('    [%s] %s%s', $nodeName, $type, '' !== $message ? ': '.$message : '');
+
+                $body = phpunit_compact_text((string) $node);
+                if ('' !== $body) {
+                    foreach (explode("\n", $body) as $bodyLine) {
+                        $files[$file][] = '      '.$bodyLine;
+                    }
+                }
+            }
+        }
+    }
+
+    if ([] === $files) {
+        return '';
+    }
+
+    $lines = [sprintf('--- phpunit failures/errors by file (full report %s) ---', relative_report_path('phpunit.junit.xml'))];
+    foreach ($files as $file => $fileLines) {
+        $lines[] = $file;
+        array_push($lines, ...$fileLines);
+    }
+
+    return implode("\n", $lines);
+}
+
+function phpunit_log_issue_excerpt(string $logFilename): string
+{
+    $path = report_path($logFilename);
     if (!is_file($path)) {
         return '';
     }
@@ -859,10 +946,112 @@ function report_excerpt(string $filename, int $maxLines = 80): string
         return '';
     }
 
-    $lines = explode("\n", $contents);
-    $excerpt = implode("\n", array_slice($lines, -$maxLines));
+    $lines = preg_split('/\R/', $contents);
+    if (false === $lines) {
+        return '';
+    }
 
-    return "\n\n--- ".relative_report_path($filename)." ---\n".$excerpt;
+    $issues = [];
+    $type = null;
+    $header = null;
+    $body = [];
+
+    foreach ($lines as $line) {
+        if (1 === preg_match('/^\d+\s+tests?\s+triggered\s+\d+\s+(.+):$/i', $line, $matches)) {
+            $issues = phpunit_append_log_issue($issues, $type, $header, $body);
+            $type = strtolower(trim($matches[1]));
+            $header = null;
+            $body = [];
+
+            continue;
+        }
+
+        if (null !== $type && 1 === preg_match('/^\d+\)\s+(.+)$/', $line, $matches)) {
+            $issues = phpunit_append_log_issue($issues, $type, $header, $body);
+            $header = trim($matches[1]);
+            $body = [];
+
+            continue;
+        }
+
+        if (null !== $header && 1 === preg_match('/^(OK,|FAILURES!|ERRORS!|Tests:)/', $line)) {
+            $issues = phpunit_append_log_issue($issues, $type, $header, $body);
+            $type = null;
+            $header = null;
+            $body = [];
+
+            continue;
+        }
+
+        if (null !== $header) {
+            $body[] = $line;
+        }
+    }
+
+    $issues = phpunit_append_log_issue($issues, $type, $header, $body);
+
+    if ([] === $issues) {
+        return '';
+    }
+
+    $lines = [sprintf('--- phpunit notices/warnings/deprecations by file (full log %s) ---', relative_report_path($logFilename))];
+    foreach ($issues as $file => $issueLines) {
+        $lines[] = $file;
+        array_push($lines, ...$issueLines);
+    }
+
+    return implode("\n", $lines);
+}
+
+/**
+ * @param array<string, list<string>> $issues
+ * @param list<string>                $body
+ *
+ * @return array<string, list<string>>
+ */
+function phpunit_append_log_issue(array $issues, ?string $type, ?string $header, array $body): array
+{
+    if (null === $type || null === $header) {
+        return $issues;
+    }
+
+    $bodyText = phpunit_compact_text(implode("\n", $body));
+    $issueFile = 'unknown file';
+    $issueLine = '';
+    $messageLines = [];
+
+    foreach (explode("\n", $bodyText) as $bodyLine) {
+        if (1 === preg_match('/^(?<file>\/?\S+?\.php):(?<line>\d+)$/', $bodyLine, $matches)) {
+            $issueFile = project_relative_path($matches['file']);
+            $issueLine = ':'.$matches['line'];
+
+            continue;
+        }
+
+        if ('' !== trim($bodyLine)) {
+            $messageLines[] = $bodyLine;
+        }
+    }
+
+    $issues[$issueFile] ??= [];
+    $issues[$issueFile][] = sprintf('  %s%s [%s]', $header, $issueLine, $type);
+    foreach ($messageLines as $messageLine) {
+        $issues[$issueFile][] = '    '.$messageLine;
+    }
+
+    return $issues;
+}
+
+function phpunit_compact_text(string $text): string
+{
+    $text = str_replace("\r\n", "\n", trim($text));
+    $text = preg_replace('/\n{3,}/', "\n\n", $text) ?? $text;
+    $root = realpath(__DIR__.'/..');
+    if (!is_string($root)) {
+        return $text;
+    }
+
+    return str_replace($root.'/', '', $text);
 }
 
 function phpstan_failure_excerpt(string $jsonOutput): string
@@ -887,7 +1076,7 @@ function phpstan_failure_excerpt(string $jsonOutput): string
 
         $messages = $fileReport['messages'];
         $fileErrors = is_int($fileReport['errors'] ?? null) ? $fileReport['errors'] : count($messages);
-        $section = [sprintf('%s (%d)', phpstan_relative_path((string) $file), $fileErrors)];
+        $section = [sprintf('%s (%d)', project_relative_path((string) $file), $fileErrors)];
 
         foreach ($messages as $message) {
             if (!is_array($message)) {
@@ -922,7 +1111,7 @@ function phpstan_failure_excerpt(string $jsonOutput): string
     ]);
 }
 
-function phpstan_relative_path(string $file): string
+function project_relative_path(string $file): string
 {
     $root = realpath(__DIR__.'/..');
     if (is_string($root) && str_starts_with($file, $root.'/')) {
