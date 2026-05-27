@@ -77,3 +77,7 @@ Completed:
 ## Task workflow update - 2026-05-27T16:29:39.268Z
 - Validation: castor test --filter=WriteFileTool: ok (22 tests, 51 assertions); castor deptrac: ok (0 violations, 385 uncovered, 761 allowed); castor cs-check: ok (files_fixed=0); castor phpstan: ok (errors=0, file_errors=46); phpstan-baseline.neon unchanged
 - Summary: PR #61 review follow-up complete. Fork d0dn7edgoxs6 pushed commit c60d8121 simplifying WriteFileTool parent-directory creation to mkdir -p style (`@mkdir(dirname(...), 0750, recursive: true)`) followed by checked `file_put_contents(..., LOCK_EX)`. Updated parent-as-file test to expect generic write failure. PR #61 head is c60d8121; GitHub merge state currently UNSTABLE (likely checks pending).
+
+## Task workflow update - 2026-05-27T16:31:06.299Z
+- Validation: castor test --filter=WriteFileTool: ok (22 tests, 51 assertions); castor cs-check: ok (files_fixed=0); castor phpstan: ok (errors=0, file_errors=46)
+- Summary: Addressed follow-up question/comment about explicit mkdir permissions. Removed DEFAULT_DIR_PERMISSIONS and changed WriteFileTool to PHP mkdir-p equivalent: `@mkdir(\dirname($resolvedPath), recursive: true);`, relying on PHP/default mkdir semantics and process umask exactly like shell `mkdir -p`. Pushed commit 081930ca to PR #61.
