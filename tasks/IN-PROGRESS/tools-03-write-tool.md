@@ -38,14 +38,22 @@ Out of scope:
 - Focused tests pass with Castor/PHPUnit.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/tools-03-write-tool
+Worktree: /home/ineersa/projects/agent-core-worktrees/tools-03-write-tool
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-27T16:16:17.419Z
 Completed:
 
 ## Work log
 - Created: 2026-05-17T04:42:04.932Z
+
+## Task workflow update - 2026-05-27T16:16:17.419Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/tools-03-write-tool.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/tools-03-write-tool.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/tools-03-write-tool.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/tools-03-write-tool.
+- Summary: Starting TOOLS-03. Note: task text is partially stale after TOOLS-00/R03 simplification: use ToolRuntime::run() / ambient ToolContext for cancellation checkpoints, not removed CancellationGuard or ToolExecutionContextInterface; use HatfieldToolProviderInterface provider/autoconfiguration through ToolRegistry constructor, not BuiltInToolRegistrar.
