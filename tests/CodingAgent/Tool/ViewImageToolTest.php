@@ -718,6 +718,50 @@ final class ViewImageToolTest extends TestCase
         self::assertCount(0, $imageRefParts, 'Non-image tool should not have image_ref content parts');
     }
 
+    public function testSyntheticImageMessagesAreDeferredUntilAfterConsecutiveToolBatch(): void
+    {
+        $converter = new AgentMessageConverter();
+        $imagePath = $this->tmpDir.'/batch.png';
+        $this->createPng1x1($imagePath);
+
+        $viewImageMessage = new AgentMessage(
+            role: 'tool',
+            content: [
+                ['type' => 'text', 'text' => '{"type":"view_image"}'],
+                [
+                    'type' => 'image_ref',
+                    'path' => $imagePath,
+                    'media_type' => 'image/png',
+                    'bytes' => 100,
+                    'width' => 1,
+                    'height' => 1,
+                ],
+            ],
+            toolCallId: 'view_call_1',
+            toolName: 'view_image',
+            details: [],
+        );
+
+        $writeMessage = new AgentMessage(
+            role: 'tool',
+            content: [
+                ['type' => 'text', 'text' => '{"type":"write_file"}'],
+            ],
+            toolCallId: 'write_call_1',
+            toolName: 'write_file',
+            details: [],
+        );
+
+        $messages = $converter->toMessageBag([$viewImageMessage, $writeMessage])->getMessages();
+
+        self::assertCount(3, $messages);
+        self::assertSame('tool', $messages[0]->getRole()->value);
+        self::assertSame('tool', $messages[1]->getRole()->value);
+        self::assertSame('user', $messages[2]->getRole()->value);
+        self::assertInstanceOf(UserMessage::class, $messages[2]);
+        self::assertTrue($messages[2]->hasImageContent());
+    }
+
     public function testImageRefWithMissingFileProducesTextPlaceholder(): void
     {
         // If the image file referenced by image_ref is deleted between

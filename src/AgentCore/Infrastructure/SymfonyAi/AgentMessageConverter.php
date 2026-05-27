@@ -40,10 +40,32 @@ final class AgentMessageConverter
     public function toMessageBag(array $agentMessages): MessageBag
     {
         $messages = [];
+        $pendingSyntheticToolMessages = [];
 
         foreach ($agentMessages as $agentMessage) {
+            if ('tool' !== $agentMessage->role && [] !== $pendingSyntheticToolMessages) {
+                array_push($messages, ...$pendingSyntheticToolMessages);
+                $pendingSyntheticToolMessages = [];
+            }
+
             $convertedMessages = $this->convertAgentMessage($agentMessage);
+
+            if ('tool' === $agentMessage->role) {
+                $primaryMessage = array_shift($convertedMessages);
+                if (null !== $primaryMessage) {
+                    $messages[] = $primaryMessage;
+                }
+
+                array_push($pendingSyntheticToolMessages, ...$convertedMessages);
+
+                continue;
+            }
+
             array_push($messages, ...$convertedMessages);
+        }
+
+        if ([] !== $pendingSyntheticToolMessages) {
+            array_push($messages, ...$pendingSyntheticToolMessages);
         }
 
         return new MessageBag(...$messages);
@@ -56,6 +78,11 @@ final class AgentMessageConverter
      * carry image_ref content parts produce two:
      * 1. ToolCallMessage with the text content (normal tool result)
      * 2. UserMessage with Image attachment (synthetic follow-up)
+     *
+     * The top-level toMessageBag() method defers synthetic image messages
+     * until the end of a consecutive tool-message batch so providers that
+     * require all tool responses to immediately follow an assistant tool-call
+     * message still receive a valid sequence.
      *
      * @return list<MessageInterface>
      */
