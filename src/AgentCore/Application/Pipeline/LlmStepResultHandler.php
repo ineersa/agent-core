@@ -192,6 +192,7 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
                 maxParallelism: $policy['max_parallelism'],
                 assistantMessage: $assistantMessagePayload,
                 argSchema: $toolSchemas[$toolCall['name']] ?? null,
+                toolsRef: $message->toolsRef,
             );
         }
 

@@ -103,6 +103,7 @@ final readonly class ExecuteLlmStepWorker
                 usage: $response->usage,
                 stopReason: $response->stopReason,
                 error: $response->error,
+                toolsRef: $message->toolsRef,
             );
         } catch (\Throwable $exception) {
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
@@ -121,6 +122,7 @@ final readonly class ExecuteLlmStepWorker
                     'type' => $exception::class,
                     'message' => $exception->getMessage(),
                 ],
+                toolsRef: $message->toolsRef,
             );
         }
     }

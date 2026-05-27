@@ -81,6 +81,7 @@ final readonly class ExecuteToolCallWorker
                 'arg_schema' => $message->argSchema,
                 'max_parallelism' => $message->maxParallelism,
                 'cancel_token' => $cancelToken,
+                'tools_ref' => $message->toolsRef,
             ],
         );
 
