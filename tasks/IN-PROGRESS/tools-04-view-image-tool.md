@@ -52,7 +52,7 @@ Out of scope:
 Status: IN-PROGRESS
 Branch: task/tools-04-view-image-tool
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-04-view-image-tool
-Fork run: vq9pox8wwuhr
+Fork run: 8nl4z9oar94s
 PR URL: https://github.com/ineersa/agent-core/pull/62
 PR Status: open
 Started: 2026-05-27T18:57:52.472Z
@@ -141,3 +141,7 @@ Completed:
 ## Task workflow update - 2026-05-27T20:31:54.540Z
 - Validation: 1146 tests pass, 10459 assertions; phpstan 0 errors 0 file_errors; deptrac 0 violations; cs-check clean; 3 new tests: encodingCandidates config, exceeds_encoded_limit warning, cleanCache
 - Summary: Review-fix fork vq9pox8wwuhr completed at commit 1f7e2d2d. All reviewer findings addressed: (1) dynamic encoding candidates from jpegQuality/jpegMinQuality config replacing hardcoded static table, (2) gating race documented with @todo, (3) exceeds_encoded_limit warning for oversized animated images, (4) autoOrient replaces deprecated autoOrientate, (5) chmod 0640 on cache files, (6) cleanCache() method, (7) processed_bytes in result, (8) .jpg cache extension. 1146 tests pass, phpstan 0, deptrac 0, cs-check clean.
+
+## Task workflow update - 2026-05-27T20:35:55.826Z
+- Recorded fork run: 8nl4z9oar94s
+- Summary: Launched runtime-debug fork 8nl4z9oar94s to investigate and fix view_image hang at "Running…" after tool execution. User smoke-tested with llama_cpp (vision-enabled) and tool executes but run never progresses past tool_batch_committed. Fork will: trace ToolCallResultHandler→AdvanceRun flow, reproduce with castor test:controller, inspect session artifacts, fix root cause, add WriteFileToolE2eTest and ViewImageToolE2eTest with real LLM.
