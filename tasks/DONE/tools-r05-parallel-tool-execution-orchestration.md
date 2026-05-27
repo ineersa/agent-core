@@ -73,14 +73,14 @@ Implementation notes:
 5. Table created lazily (CREATE TABLE IF NOT EXISTS) — no explicit migration needed
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/tools-r05-parallel-tool-execution-orchestration
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-r05-parallel-tool-execution-orchestration
 Fork run:
 PR URL: https://github.com/ineersa/agent-core/pull/60
-PR Status: open
+PR Status: merged
 Started: 2026-05-26T21:00:00
-Completed:
+Completed: 2026-05-27T16:10:48.312Z
 
 ## Work log
 - Created: 2026-05-26T20:20:59.767Z
@@ -97,3 +97,33 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/60
 - Validation: castor test --filter="ToolBatchCollector|InMemoryToolBatchStore|DbalToolBatchStore": ok (21 tests, 75 assertions); castor test: ok (1080 tests, 10252 assertions); castor deptrac: ok (0 violations, 0 errors); castor cs-check: ok after cs-fix (files_fixed=0 on final check); castor check: ok (deptrac ok; test ok; phpstan ok with 45 existing file_errors in baseline/output; cs-check ok); castor test:controller: FAILED twice with run completed but missing transcript.jsonl; main checkout also fails controller smoke before runtime.ready due pre-existing ExtensionApiBridge autoload/container issue. Product-level validation was attempted and failure is reported for follow-up investigation.
 - Summary: TOOLS-R05 implementation completed and reviewed. Implemented durable ToolBatchStoreInterface with DBAL/SQLite production store and in-memory fallback, store-backed ToolBatchCollector recovery/serialization, multi-worker ConsumerSupervisor/HeadlessController launching tool workers from tools.execution.max_parallelism, docs/settings updates, and focused tests. Reviewer initially requested changes; follow-up commit 0846e1f3 fixed durable-save dirty-cache ordering, settings-backed worker count, and composite consumer keys. Focused follow-up reviewer approved with no blockers.
+
+## Task workflow update - 2026-05-27T16:10:48.312Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/tools-r05-parallel-tool-execution-orchestration into integration checkout.
+- Merge made by the 'ort' strategy.
+ .pi/plans/toolbox-design-plan.md                   |   9 +-
+ config/hatfield.defaults.yaml                      |   2 +
+ config/services.yaml                               |   7 +
+ docs/settings.md                                   |  10 +-
+ docs/tool-execution.md                             |  67 +++++
+ .../Application/Handler/InMemoryToolBatchStore.php |  39 +++
+ .../Application/Handler/ToolBatchCollector.php     | 237 ++++++++++++++++--
+ .../Contract/Tool/ToolBatchStoreInterface.php      |  43 ++++
+ .../Runtime/Controller/ConsumerSupervisor.php      | 165 ++++++++++---
+ .../Runtime/Controller/HeadlessController.php      |  14 +-
+ src/CodingAgent/Tool/Store/DbalToolBatchStore.php  | 134 ++++++++++
+ .../Handler/InMemoryToolBatchStoreTest.php         |  79 ++++++
+ .../Handler/ToolBatchCollectorDurableTest.php      | 275 +++++++++++++++++++++
+ .../Tool/Store/DbalToolBatchStoreTest.php          | 108 ++++++++
+ 14 files changed, 1139 insertions(+), 50 deletions(-)
+ create mode 100644 src/AgentCore/Application/Handler/InMemoryToolBatchStore.php
+ create mode 100644 src/AgentCore/Contract/Tool/ToolBatchStoreInterface.php
+ create mode 100644 src/CodingAgent/Tool/Store/DbalToolBatchStore.php
+ create mode 100644 tests/AgentCore/Application/Handler/InMemoryToolBatchStoreTest.php
+ create mode 100644 tests/AgentCore/Application/Handler/ToolBatchCollectorDurableTest.php
+ create mode 100644 tests/CodingAgent/Tool/Store/DbalToolBatchStoreTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/tools-r05-parallel-tool-execution-orchestration.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR #60 merged by user: https://github.com/ineersa/agent-core/pull/60; Previous validation: castor check ok; castor test ok (1080 tests); deptrac 0 violations; cs-check clean.
+- Summary: PR #60 merged by user. TOOLS-R05 completed: durable parallel tool batch orchestration, DBAL-backed batch state, multi-worker tool consumers wired to tools.execution.max_parallelism, and docs/tests updated. Follow-up architecture analysis found no blockers; suggested incremental follow-ups only.
