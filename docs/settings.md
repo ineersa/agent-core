@@ -214,8 +214,8 @@ output capping service.
 
 Optional session/run prefix for persisted output filenames. When set,
 filenames use the format `<session_prefix>-<random_hex>.txt` instead of
-`<date>-<random_hex>.txt`. This enables session-scoped cleanup in
-downstream tasks (TOOLS-R04+).
+`<date>-<random_hex>.txt`. When unset, persisted output files use a
+`Ymd` date prefix.
 
 **Default:** `null` (falls back to `Ymd` date prefix)
 

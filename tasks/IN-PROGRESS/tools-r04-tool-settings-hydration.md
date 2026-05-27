@@ -3,13 +3,13 @@
 ## Goal
 Plan source: `.pi/plans/toolbox-design-plan.md`.
 
-Consolidate the remaining tool settings work after TOOLS-00 and TOOLS-02 moved the common execution/output-cap settings into typed Hatfield config DTOs.
+Verify and close the remaining tool settings work after TOOLS-00, TOOLS-02, and TOOLS-R03 moved the common execution/output-cap settings into typed Hatfield config DTOs and documented tool authoring conventions.
 
 Dependencies:
 - Depends on TOOLS-00 for `ToolExecutionConfig`, `ToolSettings`, `ToolExecutionSettingsInterface`, and ToolExecutor settings wiring.
 - Depends on TOOLS-02 for `OutputCapConfig` and `ToolsConfig::outputCap`.
-- Depends on TOOLS-R02 (`HatfieldToolProviderInterface`, `ToolDefinitionDTO`, `BuiltInToolRegistrar`) so concrete tool providers can read settings-derived defaults during registration if needed.
-- Can land in parallel with TOOLS-R03 (registry-backed Toolbox) since settings are consumed by service factories and concrete tools, not by the Toolbox adapter itself.
+- Depends on TOOLS-R02 (`HatfieldToolProviderInterface`, `ToolDefinitionDTO`, `ToolHandlerInterface`) so concrete tool providers can read settings-derived defaults during registration if needed.
+- Depends on TOOLS-R03 for `ToolRuntime`/cancellable process authoring documentation and final toolbox execution wiring.
 
 Scope:
 - Treat the following as already landed and verify they remain correct rather than reimplementing them:
@@ -17,34 +17,24 @@ Scope:
   - `ToolSettings::fromAppConfig()` reads typed `AppConfig->tools->execution`, not `AppConfig::raw['tools']`.
   - `ToolExecutor` and `ToolExecutionPolicyResolver` consume `ToolExecutionSettingsInterface`.
   - `tools.output_cap.*` hydrates through typed `ToolsConfig::outputCap` / `OutputCapConfig` and is consumed by `OutputCap`.
-- Add only remaining typed settings DTOs needed by concrete tool tasks as those settings become real production inputs, for example:
-  ```yaml
-  tools:
-    bash:
-      background_prompt_threshold_seconds: 30
-      termination_grace_seconds: 5
-    image:
-      max_bytes: 10485760
-      max_width: 4096
-      max_height: 2000
-  ```
+- Do not introduce speculative concrete-tool settings yet. Bash/image/background settings belong in their concrete tool tasks when those values become real production inputs.
 - Keep all known tool settings under typed DTOs reachable from `AppConfig->tools`; do not add new production reads from `AppConfig::raw` for known sections.
-- Register any new settings DTO/service wiring through Symfony Serializer denormalization, following the `ToolsConfig`/`OutputCapConfig`/`ToolExecutionConfig` pattern.
+- Register any future settings DTO/service wiring through Symfony Serializer denormalization, following the `ToolsConfig`/`OutputCapConfig`/`ToolExecutionConfig` pattern.
 - Update `.hatfield/settings.yaml` comments with only settings that are actually implemented.
 - Update `docs/settings.md` documenting each implemented key, its default, and what it controls.
 - Settings precedence remains: built-in defaults < `~/.hatfield/settings.yaml` < project `.hatfield/settings.yaml` (already handled by `AppConfig`).
 
 Out of scope:
-- Concrete tool behavior beyond consuming typed settings from this task.
-- Reintroducing `ToolProcessTerminator`, a foreground process registry, or hardcoded process-grace settings outside concrete process-owning tools.
+- Concrete tool behavior or speculative settings before those tools exist.
+- Reintroducing a foreground process registry/runner or hardcoded process-grace settings outside concrete process-owning tools.
 - Changing the settings merge/override mechanism itself (owned by `AppConfig`).
 
 ## Acceptance criteria
 - Existing execution/output-cap settings are verified to use typed `AppConfig->tools` DTOs, not `AppConfig::raw`.
-- Any newly introduced concrete tool settings are represented by typed readonly DTOs with Symfony Serializer `SerializedName` mappings where needed.
+- No speculative concrete tool settings are introduced; future settings are deferred to concrete tool tasks.
 - `config/hatfield.defaults.yaml`, `.hatfield/settings.yaml`, and `docs/settings.md` document only implemented keys and remain in sync.
-- Project-level settings override home-level settings and built-in defaults.
-- Focused tests cover DTO hydration, override precedence, missing-key defaults, and any new settings consumers.
+- Project-level settings override home-level settings and built-in defaults through the already-landed `AppConfig` loader.
+- Existing DTO hydration/consumer tests cover the landed settings; no new tests are needed for a no-op verification closeout.
 - `castor deptrac` passes.
 
 ## Workflow metadata

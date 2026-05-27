@@ -12,7 +12,7 @@ use Symfony\Component\Serializer\Attribute\SerializedName;
  * Immutable value object. Contains the storage directory for persisted
  * oversized tool output, character caps for code vs doc-like paths,
  * retention duration for stale-file cleanup, and an optional session
- * prefix for filename generation (wired by TOOLS-R04+).
+ * prefix for filename generation.
  *
  * Hydrated from the tools.output_cap section of Hatfield merged config
  * via Symfony Serializer. The storageDir is made absolute by
