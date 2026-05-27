@@ -52,7 +52,7 @@ Out of scope:
 Status: IN-PROGRESS
 Branch: task/tools-04-view-image-tool
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-04-view-image-tool
-Fork run: z3gz0jsdan77
+Fork run: vq9pox8wwuhr
 PR URL: https://github.com/ineersa/agent-core/pull/62
 PR Status: open
 Started: 2026-05-27T18:57:52.472Z
@@ -133,3 +133,7 @@ Completed:
 ## Task workflow update - 2026-05-27T20:01:27.009Z
 - Recorded fork run: z3gz0jsdan77
 - Summary: Launched fork z3gz0jsdan77 to add remaining TOOLS-04 pieces on PR #62: Pi-style resize/quality pipeline and explicit non-vision model gating/fallback. Fork instructed to preserve path-only persistence/no base64 state, use real Symfony AI Image attachments, add typed image settings/docs, place model gating near LLM conversion/invocation after model resolution, add focused tests plus Castor validation, commit and push to task/tools-04-view-image-tool.
+
+## Task workflow update - 2026-05-27T20:20:27.729Z
+- Recorded fork run: vq9pox8wwuhr
+- Summary: Launched fix fork vq9pox8wwuhr to address all reviewer findings: (1) wire jpegMinQuality/jpegQuality into dynamic encoding candidates, (2) document model-name gating race with @todo, (3) add warning for oversized animated images, (4) Imagick autoOrient/autoOrientate version guard, (5) cache file permissions 0640, (6) cache cleanup method, (7) processed_bytes in result, (8) .jpg extension for cache files.
