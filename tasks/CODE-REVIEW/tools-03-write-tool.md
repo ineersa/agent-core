@@ -41,7 +41,7 @@ Out of scope:
 Status: CODE-REVIEW
 Branch: task/tools-03-write-tool
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-03-write-tool
-Fork run: janekzu8pslf
+Fork run: 2a0cpz42btdh
 PR URL: https://github.com/ineersa/agent-core/pull/61
 PR Status: open
 Started: 2026-05-27T16:16:17.419Z
@@ -97,3 +97,7 @@ Completed:
 ## Task workflow update - 2026-05-27T16:46:33.674Z
 - Validation: castor check in TOOLS-03 worktree: ok (deptrac, test 1102 tests/10303 assertions, phpstan errors=0/file_errors=45, cs-check, quality); castor test in TOOLS-03 worktree: ok, PHPUnit notices now 0; castor phpstan in TOOLS-03 worktree: ok, file_errors back to main baseline count 45; phpstan-baseline.neon unchanged
 - Summary: Follow-up fork janekzu8pslf completed and pushed commit 9852228e to PR #61. It fixed branch-local Castor/PHPUnit/PHPStan issues without changing WriteFileTool behavior: replaced createMock() with createStub() in tests without expectations and removed untraceable `@throws InvalidArgumentException` docblock from WriteFileTool. PR #61 head is now 9852228e with GitHub merge state CLEAN. Note: user later identified the broader root issue as LLM-mode Castor swallowing PHPUnit notices/PHPStan file_errors; separate fork svl2uxpkwqgr is addressing Castor signaling on main.
+
+## Task workflow update - 2026-05-27T16:47:55.495Z
+- Recorded fork run: 2a0cpz42btdh
+- Summary: User clarified PR/worktree is not clean because PHPStan still has 45 file_errors despite Castor printing ok. Launched fork 2a0cpz42btdh in /home/ineersa/projects/agent-core-worktrees/tools-03-write-tool to fix all PHPStan file_errors on the TOOLS-03 branch without regenerating/expanding phpstan-baseline.neon, preserve mkdir default-permission behavior, validate, commit, and push.
