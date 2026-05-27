@@ -225,6 +225,28 @@ filenames use the format `<session_prefix>-<random_hex>.txt` instead of
 
 **Default:** `null` (falls back to `Ymd` date prefix)
 
+### `tools.image.max_bytes`
+
+Maximum file size in bytes for the `view_image` tool. Images larger
+than this are rejected with a clear error message before reading the
+full file content, avoiding unnecessary I/O.
+
+**Default:** `10485760` (10 MB)
+
+### `tools.image.max_width`
+
+Maximum image width in pixels for the `view_image` tool. Images wider
+than this are rejected after dimension detection.
+
+**Default:** `4096`
+
+### `tools.image.max_height`
+
+Maximum image height in pixels for the `view_image` tool. Images taller
+than this are rejected after dimension detection.
+
+**Default:** `2000`
+
 ### `extensions.enabled`
 
 List of enabled extension class names. Each class must implement

@@ -508,7 +508,7 @@ final class ToolExecutor implements ToolExecutorInterface
             return (string) $result;
         }
 
-        $encoded = json_encode($result);
+        $encoded = json_encode($result, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
 
         return false === $encoded ? '{}' : $encoded;
     }

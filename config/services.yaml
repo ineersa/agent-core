@@ -101,6 +101,12 @@ services:
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 
+  # ImageToolConfig is derived from AppConfig and autowireable.
+  Ineersa\CodingAgent\Config\ImageToolConfig:
+    factory: ['Ineersa\CodingAgent\Config\ImageToolConfig', 'fromAppConfig']
+    arguments:
+      - '@Ineersa\CodingAgent\Config\AppConfig'
+
   Ineersa\CodingAgent\Session\HatfieldSessionStore: ~
 
   Ineersa\AgentCore\Infrastructure\SymfonyAi\BeforeProviderRequestSubscriber:

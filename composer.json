@@ -26,7 +26,8 @@
         "symfony/framework-bundle": "^8.1",
         "symfony/monolog-bundle": "^4.0",
         "symfony/doctrine-messenger": "^8.0",
-        "doctrine/doctrine-bundle": "^3.2"
+        "doctrine/doctrine-bundle": "^3.2",
+        "league/mime-type-detection": "^1.15"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.94",

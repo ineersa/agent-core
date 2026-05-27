@@ -27,6 +27,23 @@
 #         # See OutputCapConfig::sessionPrefix.
 #         session_prefix: null
 
+# ---------------------------------------------------------------------------
+# Image tool (view_image) settings
+# ---------------------------------------------------------------------------
+#
+# Uncomment and adjust to override image tool limits:
+#
+# tools:
+#     image:
+#         # Maximum file size in bytes (10 MB).
+#         max_bytes: 10485760
+#
+#         # Maximum image width in pixels.
+#         max_width: 4096
+#
+#         # Maximum image height in pixels.
+#         max_height: 2000
+
 tui:
     # Available built-in themes:
     #   cyberpunk, catppuccin-mocha, nord, gruvbox-dark, oh-p-dark, tokyo-night

@@ -46,6 +46,16 @@ tools:
         # worker processes launched by the controller.
         max_parallelism: 4
 
+    image:
+        # Maximum image file size in bytes (default: 10 MB).
+        max_bytes: 10485760
+
+        # Maximum image width in pixels.
+        max_width: 4096
+
+        # Maximum image height in pixels.
+        max_height: 2000
+
     output_cap:
         # Storage directory for persisted oversized output.
         # Relative paths resolve against the active project CWD.
