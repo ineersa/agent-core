@@ -116,7 +116,7 @@ function test(string $filter = ''): void
     }
 
     $junitPath = report_path('phpunit.junit.xml');
-    $process = run_quiet_command($cmd.' --colors=never --no-progress --no-results --log-junit '.$junitPath);
+    $process = run_quiet_command($cmd.' --colors=never --no-progress --fail-on-phpunit-notice --display-phpunit-notices --display-warnings --log-junit '.$junitPath);
     persist_process_output($process, 'phpunit.log');
 
     $summary = summarize_junit_xml($junitPath);
@@ -235,11 +235,12 @@ function phpstan(string $path = ''): void
 
     /*
      * PHPStan exits 1 when there are any file errors, including pre-existing baseline
-     * errors. We only throw when there are genuine new errors (totals.errors > 0).
+     * errors. Throw when errors or file_errors are present so the agent sees failures.
      */
     $decoded = json_decode($stdout, true);
-    $newErrors = $decoded['totals']['errors'] ?? 0;
-    if (0 !== $process->getExitCode() && 0 !== $newErrors) {
+    $hasErrors = ($decoded['totals']['errors'] ?? 0) > 0;
+    $hasFileErrors = ($decoded['totals']['file_errors'] ?? 0) > 0;
+    if (0 !== $process->getExitCode() && ($hasErrors || $hasFileErrors)) {
         throw new RuntimeException(sprintf('phpstan failed (%s); report=%s; log=%s', $summary, relative_report_path('phpstan.json'), relative_report_path('phpstan.log')));
     }
 
