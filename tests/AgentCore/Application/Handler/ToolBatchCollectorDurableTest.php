@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Tests\Application\Handler;
 
 use Ineersa\AgentCore\Application\Handler\InMemoryToolBatchStore;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
+use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use PHPUnit\Framework\TestCase;
@@ -176,6 +177,61 @@ final class ToolBatchCollectorDurableTest extends TestCase
         self::assertCount(2, $firstOutcome->effectsToDispatch);
         self::assertSame('call-2', $firstOutcome->effectsToDispatch[0]->toolCallId);
         self::assertSame('call-3', $firstOutcome->effectsToDispatch[1]->toolCallId);
+    }
+
+    public function testFailedDurableSaveDoesNotDirtyInMemoryCache(): void
+    {
+        $store = new class implements ToolBatchStoreInterface {
+            /** @var array<string, array> */
+            public array $states = [];
+            public bool $failNextSave = false;
+
+            public function load(string $runId, int $turnNo, string $stepId): ?array
+            {
+                return $this->states[$this->key($runId, $turnNo, $stepId)] ?? null;
+            }
+
+            public function save(string $runId, int $turnNo, string $stepId, array $batchState): void
+            {
+                if ($this->failNextSave) {
+                    $this->failNextSave = false;
+
+                    throw new \RuntimeException('Simulated durable write failure.');
+                }
+
+                $this->states[$this->key($runId, $turnNo, $stepId)] = $batchState;
+            }
+
+            public function delete(string $runId, int $turnNo, string $stepId): void
+            {
+                unset($this->states[$this->key($runId, $turnNo, $stepId)]);
+            }
+
+            private function key(string $runId, int $turnNo, string $stepId): string
+            {
+                return \sprintf('%s|%d|%s', $runId, $turnNo, $stepId);
+            }
+        };
+
+        $collector = new ToolBatchCollector(defaultMaxParallelism: 4, store: $store);
+        $collector->registerExpectedBatch('run-6', 1, 'step-1', [
+            $this->executeToolCall('run-6', 'step-1', 'call-1', 0, 'sequential'),
+        ]);
+
+        $store->failNextSave = true;
+
+        try {
+            $collector->collect($this->toolResult('run-6', 'step-1', 'call-1', 0));
+            self::fail('Expected simulated durable write failure.');
+        } catch (\RuntimeException $e) {
+            self::assertSame('Simulated durable write failure.', $e->getMessage());
+        }
+
+        $retryOutcome = $collector->collect($this->toolResult('run-6', 'step-1', 'call-1', 0));
+
+        self::assertTrue($retryOutcome->accepted);
+        self::assertFalse($retryOutcome->duplicate);
+        self::assertTrue($retryOutcome->complete);
     }
 
     private function executeToolCall(

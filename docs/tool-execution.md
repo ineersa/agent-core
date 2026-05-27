@@ -269,8 +269,16 @@ ToolBatchStoreInterface          ← AgentCore contract (no infrastructure deps)
 - On cache miss (different consumer process), batch is loaded from store and
   `ExecuteToolCall`/`ToolCallResult` objects are reconstructed from stored
   serialized call data
-- Run-level locking through `RunLockManager` serializes concurrent batch
-  state updates per run ID
+- Run-level locking through `RunLockManager` wraps result handling, so the
+  collector/store read-modify-write sequence is serialized per run ID
+
+If a tool worker permanently dies after claiming an `ExecuteToolCall` but
+before producing a `ToolCallResult`, that call remains `in_flight` until the
+transport retries or failure handling produces a terminal result. TOOLS-R05
+does not add a foreground process registry or heartbeat; process-owning tools
+still expose cancellation through `ToolContext`/`ToolRuntime`, and stuck-worker
+diagnostics/cleanup should be handled with Messenger retry/failure tooling or a
+future store GC/diagnostic command.
 
 ### Worker count configuration
 

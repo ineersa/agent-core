@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
+use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
@@ -88,13 +89,13 @@ final class HeadlessController
         private readonly ConsumerSupervisor $consumerSupervisor,
         private readonly EventDispatcherInterface $dispatcher,
         private readonly LoggerInterface $logger,
+        private readonly ToolExecutionSettingsInterface $toolExecutionSettings,
         private readonly ?InProcessAgentSessionClient $eventClient = null,
         /**
-         * Number of parallel tool messenger consumers.
-         * Matches tools.execution.max_parallelism for optimal throughput.
-         * Set to -1 to use max_parallelism from settings at runtime.
+         * Optional override for parallel tool messenger consumers.
+         * Values <= 0 use tools.execution.max_parallelism from settings.
          */
-        private readonly int $toolWorkerCount = 4,
+        private readonly int $toolWorkerCount = 0,
     ) {
         $this->sessionId = $_SERVER['HATFIELD_SESSION_ID'] ?? $_ENV['HATFIELD_SESSION_ID'] ?? 'unknown';
     }
@@ -123,8 +124,10 @@ final class HeadlessController
         $this->consumerSupervisor->launch('run_control');
         $this->consumerSupervisor->launch('llm');
         // tool consumers: N parallel workers for concurrent tool execution.
-        // N defaults to tools.execution.max_parallelism (4).
-        $effectiveWorkerCount = $this->toolWorkerCount > 0 ? $this->toolWorkerCount : 4;
+        // N defaults to tools.execution.max_parallelism.
+        $effectiveWorkerCount = $this->toolWorkerCount > 0
+            ? $this->toolWorkerCount
+            : max(1, $this->toolExecutionSettings->maxParallelism());
         $this->consumerSupervisor->launchMultiple('tool', $effectiveWorkerCount);
         // - run_control consumes StartRun, ApplyCommand, AdvanceRun (ASYNC-05)
         // - llm consumes ExecuteLlmStep (ASYNC-04)

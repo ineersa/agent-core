@@ -17,7 +17,7 @@ use Symfony\Component\Process\Process;
  *
  * Supports multiple consumer instances per transport (e.g. multiple
  * "tool" workers for parallel tool execution). Each instance is tracked
- * by a composite key: transportName:instanceId.
+ * by a composite key: transportName#instanceId.
  *
  * Restart policy:
  * - Up to 3 restarts within a 60-second window per consumer key.
@@ -314,9 +314,11 @@ final class ConsumerSupervisor
      */
     private function consumerKey(string $transportName, int $instanceId): string
     {
-        return 0 === $instanceId
-            ? $transportName
-            : \sprintf('%s:%d', $transportName, $instanceId);
+        if (str_contains($transportName, '#')) {
+            throw new \InvalidArgumentException('Messenger transport names used by ConsumerSupervisor may not contain "#".');
+        }
+
+        return \sprintf('%s#%d', $transportName, $instanceId);
     }
 
     /**
@@ -324,13 +326,13 @@ final class ConsumerSupervisor
      */
     private function extractTransportName(string $key): string
     {
-        $colonPos = strrpos($key, ':');
+        $separatorPos = strrpos($key, '#');
 
-        if (false === $colonPos) {
+        if (false === $separatorPos) {
             return $key;
         }
 
-        return substr($key, 0, $colonPos);
+        return substr($key, 0, $separatorPos);
     }
 
     /**
@@ -338,12 +340,12 @@ final class ConsumerSupervisor
      */
     private function extractInstanceId(string $key): int
     {
-        $colonPos = strrpos($key, ':');
+        $separatorPos = strrpos($key, '#');
 
-        if (false === $colonPos) {
+        if (false === $separatorPos) {
             return 0;
         }
 
-        return (int) substr($key, $colonPos + 1);
+        return (int) substr($key, $separatorPos + 1);
     }
 }

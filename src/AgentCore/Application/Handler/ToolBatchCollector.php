@@ -235,13 +235,16 @@ final class ToolBatchCollector
     }
 
     /**
-     * Save batch state to in-memory cache and durable store.
+     * Save batch state to durable store first, then update in-memory cache.
+     *
+     * If the durable write fails, the current Messenger message must be retried
+     * against the last persisted state rather than a dirty in-process cache.
      */
     private function saveBatch(string $runId, int $turnNo, string $stepId, array $batch): void
     {
         $batchKey = $this->batchKey($runId, $turnNo, $stepId);
-        $this->batches[$batchKey] = $batch;
         $this->store?->save($runId, $turnNo, $stepId, $this->serializeBatch($batch));
+        $this->batches[$batchKey] = $batch;
     }
 
     /**

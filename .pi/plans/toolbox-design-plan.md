@@ -691,7 +691,7 @@ Tasks are intentionally small and prefixed with `TOOLS-` so smaller models can i
   - Depends on: TOOLS-R03, TOOLS-R04, TOOLS-00.
   - Implements durable per-run/per-turn/per-step batch state via Doctrine DBAL/SQLite (`tool_batch_state` table) shared across consumer processes. Serializes batch state (expected order, call data, pending queue, in-flight set, results) as JSON. Reconstructs `ExecuteToolCall`/`ToolCallResult` objects on cache miss from durable store.
   - `ToolBatchCollector` accepts optional `ToolBatchStoreInterface`. When provided, every mutation is persisted to the store; on cache miss (different process), batch state is loaded from store and reconstructed.
-  - `ConsumerSupervisor` supports multiple tool workers via composite keys (`tool:0`, `tool:1`, ...). `HeadlessController` launches N tool consumers matching `max_parallelism`.
+  - `ConsumerSupervisor` supports multiple tool workers via composite keys (`tool#0`, `tool#1`, ...). `HeadlessController` launches N tool consumers matching `max_parallelism`.
   - `DbalToolBatchStore` creates its table lazily (`CREATE TABLE IF NOT EXISTS`), uses JSON serialization, and shares the existing messenger SQLite connection.
   - Cancellation: pending calls are tracked in store; results still go through existing cancellation token/context path. No central PID registry.
   - Do not hide parallelism inside a single tool runner or rely on PHP Fibers for blocking subprocess parallelism.
