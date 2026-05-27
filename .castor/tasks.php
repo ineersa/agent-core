@@ -27,21 +27,26 @@ function check(): void
 {
     $failures = [];
 
-    foreach ([
-        'deptrac' => static fn () => deptrac(),
-        'test' => static fn () => test(),
-        'phpstan' => static fn () => phpstan(),
-        'cs-check' => static fn () => cs_check(),
-    ] as $step => $runner) {
-        try {
-            $runner();
-        } catch (Throwable $exception) {
-            $failures[] = sprintf('%s: %s', $step, $exception->getMessage());
+    $GLOBALS['CASTOR_CHECK_AGGREGATING'] = true;
+    try {
+        foreach ([
+            'deptrac' => static fn () => deptrac(),
+            'test' => static fn () => test(),
+            'phpstan' => static fn () => phpstan(),
+            'cs-check' => static fn () => cs_check(),
+        ] as $step => $runner) {
+            try {
+                $runner();
+            } catch (Throwable $exception) {
+                $failures[$step] = $exception->getMessage();
+            }
         }
+    } finally {
+        unset($GLOBALS['CASTOR_CHECK_AGGREGATING']);
     }
 
     if ([] !== $failures) {
-        throw new RuntimeException("quality failed:\n - ".implode("\n - ", $failures));
+        fail_quality('quality failed:'.\PHP_EOL.format_step_failures($failures));
     }
 
     echo 'quality: ok'.\PHP_EOL;
@@ -85,7 +90,7 @@ function deptrac(): void
      * crashed for unrelated reasons.
      */
     if (0 !== $process->getExitCode()) {
-        throw new RuntimeException(sprintf('deptrac failed (%s); report=%s; log=%s', $summary, relative_report_path('deptrac.json'), relative_report_path('deptrac.log')));
+        fail_quality(sprintf('deptrac failed (%s); report=%s; log=%s', $summary, relative_report_path('deptrac.json'), relative_report_path('deptrac.log')));
     }
 
     echo sprintf(
@@ -122,7 +127,13 @@ function test(string $filter = ''): void
     $summary = summarize_junit_xml($junitPath);
 
     if (0 !== $process->getExitCode()) {
-        throw new RuntimeException(sprintf('test failed (%s); junit=%s; log=%s', $summary, relative_report_path('phpunit.junit.xml'), relative_report_path('phpunit.log')));
+        fail_quality(sprintf(
+            'test failed (%s); junit=%s; log=%s%s',
+            $summary,
+            relative_report_path('phpunit.junit.xml'),
+            relative_report_path('phpunit.log'),
+            report_excerpt('phpunit.log'),
+        ));
     }
 
     echo sprintf(
@@ -160,7 +171,7 @@ function cs_fix(string $path = ''): void
     $summary = summarize_php_cs_fixer_json($stdout);
 
     if (0 !== $process->getExitCode()) {
-        throw new RuntimeException(sprintf('cs-fix failed (%s); report=%s; log=%s', $summary, relative_report_path('php-cs-fixer.json'), relative_report_path('php-cs-fixer.log')));
+        fail_quality(sprintf('cs-fix failed (%s); report=%s; log=%s', $summary, relative_report_path('php-cs-fixer.json'), relative_report_path('php-cs-fixer.log')));
     }
 
     echo sprintf(
@@ -197,7 +208,7 @@ function cs_check(string $path = ''): void
     $summary = summarize_php_cs_fixer_json($stdout);
 
     if (0 !== $process->getExitCode()) {
-        throw new RuntimeException(sprintf('cs-check failed (%s); report=%s; log=%s', $summary, relative_report_path('php-cs-fixer-check.json'), relative_report_path('php-cs-fixer-check.log')));
+        fail_quality(sprintf('cs-check failed (%s); report=%s; log=%s', $summary, relative_report_path('php-cs-fixer-check.json'), relative_report_path('php-cs-fixer-check.log')));
     }
 
     echo sprintf(
@@ -240,8 +251,14 @@ function phpstan(string $path = ''): void
     $decoded = json_decode($stdout, true);
     $hasErrors = ($decoded['totals']['errors'] ?? 0) > 0;
     $hasFileErrors = ($decoded['totals']['file_errors'] ?? 0) > 0;
-    if (0 !== $process->getExitCode() && ($hasErrors || $hasFileErrors)) {
-        throw new RuntimeException(sprintf('phpstan failed (%s); report=%s; log=%s', $summary, relative_report_path('phpstan.json'), relative_report_path('phpstan.log')));
+    if ($hasErrors || $hasFileErrors) {
+        fail_quality(sprintf(
+            'phpstan failed (%s); report=%s; log=%s%s',
+            $summary,
+            relative_report_path('phpstan.json'),
+            relative_report_path('phpstan.log'),
+            phpstan_failure_excerpt($stdout),
+        ));
     }
 
     echo sprintf(
@@ -804,6 +821,85 @@ function agent_test_diagnostics(string $testDir, string $snapshot): string
     }
 
     return $out;
+}
+
+/**
+ * @param array<string, string> $failures
+ */
+function format_step_failures(array $failures): string
+{
+    $lines = [];
+    foreach ($failures as $step => $message) {
+        $lines[] = '- '.$step.': '.str_replace("\n", "\n  ", $message);
+    }
+
+    return implode("\n", $lines);
+}
+
+function fail_quality(string $message): never
+{
+    $isAggregating = isset($GLOBALS['CASTOR_CHECK_AGGREGATING']) && true === $GLOBALS['CASTOR_CHECK_AGGREGATING'];
+    if (is_llm_mode() && !$isAggregating) {
+        fwrite(\STDERR, $message.\PHP_EOL);
+        exit(1);
+    }
+
+    throw new RuntimeException($message);
+}
+
+function report_excerpt(string $filename, int $maxLines = 80): string
+{
+    $path = report_path($filename);
+    if (!is_file($path)) {
+        return '';
+    }
+
+    $contents = trim((string) file_get_contents($path));
+    if ('' === $contents) {
+        return '';
+    }
+
+    $lines = explode("\n", $contents);
+    $excerpt = implode("\n", array_slice($lines, -$maxLines));
+
+    return "\n\n--- ".relative_report_path($filename)." ---\n".$excerpt;
+}
+
+function phpstan_failure_excerpt(string $jsonOutput, int $maxMessages = 25): string
+{
+    $decoded = json_decode($jsonOutput, true);
+    if (!is_array($decoded) || !is_array($decoded['files'] ?? null)) {
+        return '';
+    }
+
+    $lines = [];
+    $count = 0;
+    foreach ($decoded['files'] as $file => $fileReport) {
+        if (!is_array($fileReport) || !is_array($fileReport['messages'] ?? null)) {
+            continue;
+        }
+
+        foreach ($fileReport['messages'] as $message) {
+            if (!is_array($message)) {
+                continue;
+            }
+
+            $line = isset($message['line']) ? ':'.$message['line'] : '';
+            $text = isset($message['message']) && is_string($message['message']) ? $message['message'] : 'unknown PHPStan error';
+            $lines[] = sprintf('%s%s - %s', (string) $file, $line, $text);
+            ++$count;
+
+            if ($count >= $maxMessages) {
+                break 2;
+            }
+        }
+    }
+
+    if ([] === $lines) {
+        return '';
+    }
+
+    return "\n\n--- phpstan errors (first ".$count.") ---\n".implode("\n", $lines);
 }
 
 // ─── Log tasks ────────────────────────────────────────────────────
