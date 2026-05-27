@@ -20,6 +20,8 @@ use Ineersa\CodingAgent\Path\PathResolver;
  */
 final class WriteFileTool implements HatfieldToolProviderInterface, ToolHandlerInterface
 {
+    private const int DEFAULT_DIR_PERMISSIONS = 0750;
+
     public function __construct(
         private readonly ToolRuntime $toolRuntime,
     ) {
@@ -56,7 +58,7 @@ final class WriteFileTool implements HatfieldToolProviderInterface, ToolHandlerI
             // Create parent directories if they do not exist.
             // If the parent path is an existing file, mkdir will fail silently
             // and file_put_contents below will produce the error.
-            @mkdir(\dirname($resolvedPath), recursive: true);
+            @mkdir(\dirname($resolvedPath), self::DEFAULT_DIR_PERMISSIONS, recursive: true);
 
             // Write content with exclusive lock
             $bytesWritten = @file_put_contents($resolvedPath, $content, \LOCK_EX);
