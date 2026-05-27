@@ -107,6 +107,21 @@ services:
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 
+  # CodingAgentImageCapabilityChecker — wraps HatfieldModelCatalog from AppConfig.
+  Ineersa\CodingAgent\Tool\ImageProcessing\CodingAgentImageCapabilityChecker:
+    factory: ['Ineersa\CodingAgent\Tool\ImageProcessing\CodingAgentImageCapabilityChecker', 'fromAppConfig']
+    arguments:
+      - '@Ineersa\CodingAgent\Config\AppConfig'
+
+  Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface:
+    alias: Ineersa\CodingAgent\Tool\ImageProcessing\CodingAgentImageCapabilityChecker
+
+  # Wire the image capability checker into AgentMessageConverter so synthetic
+  # image attachments are gated by the active model's capabilities.
+  Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter:
+    calls:
+      - setImageCapabilityChecker: ['@Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface']
+
   Ineersa\CodingAgent\Session\HatfieldSessionStore: ~
 
   Ineersa\AgentCore\Infrastructure\SymfonyAi\BeforeProviderRequestSubscriber:

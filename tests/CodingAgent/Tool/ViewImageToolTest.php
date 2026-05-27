@@ -877,4 +877,167 @@ final class ViewImageToolTest extends TestCase
 
         return implode('/', $relative);
     }
+
+    /* ── Non-vision model gating tests ── */
+
+    public function testWithCheckerReturningFalseEmitsTextPlaceholder(): void
+    {
+        $checker = $this->createStub(\Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface::class);
+        $checker->method('supportsImages')->willReturn(false);
+
+        $converter = new AgentMessageConverter();
+        $converter->setImageCapabilityChecker($checker);
+
+        $imagePath = $this->tmpDir.'/gated_nonvision.png';
+        $this->createPng1x1($imagePath);
+
+        $agentMessage = new AgentMessage(
+            role: 'tool',
+            content: [
+                ['type' => 'text', 'text' => '{"type":"view_image"}'],
+                [
+                    'type' => 'image_ref',
+                    'path' => $imagePath,
+                    'media_type' => 'image/png',
+                    'bytes' => 100,
+                    'width' => 1,
+                    'height' => 1,
+                ],
+            ],
+            toolCallId: 'call_nonvision',
+            toolName: 'view_image',
+            details: [],
+        );
+
+        $messageBag = $converter->toMessageBag([$agentMessage], 'some/non-vision-model');
+        $messages = $messageBag->getMessages();
+
+        // Should have 2 messages: tool call + text placeholder
+        self::assertCount(2, $messages);
+
+        $secondMsg = $messages[1];
+        self::assertSame('user', $secondMsg->getRole()->value);
+        self::assertInstanceOf(UserMessage::class, $secondMsg);
+        self::assertFalse($secondMsg->hasImageContent(), 'Non-vision model must not receive Image content');
+
+        $secondText = $secondMsg->asText() ?? '';
+        self::assertStringContainsString('does not support images', $secondText);
+    }
+
+    public function testWithCheckerReturningTrueEmitsImageContent(): void
+    {
+        $checker = $this->createStub(\Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface::class);
+        $checker->method('supportsImages')->willReturn(true);
+
+        $converter = new AgentMessageConverter();
+        $converter->setImageCapabilityChecker($checker);
+
+        $imagePath = $this->tmpDir.'/gated_vision.png';
+        $this->createPng1x1($imagePath);
+
+        $agentMessage = new AgentMessage(
+            role: 'tool',
+            content: [
+                ['type' => 'text', 'text' => '{"type":"view_image"}'],
+                [
+                    'type' => 'image_ref',
+                    'path' => $imagePath,
+                    'media_type' => 'image/png',
+                    'bytes' => 100,
+                    'width' => 1,
+                    'height' => 1,
+                ],
+            ],
+            toolCallId: 'call_vision',
+            toolName: 'view_image',
+            details: [],
+        );
+
+        $messageBag = $converter->toMessageBag([$agentMessage], 'some/vision-model');
+        $messages = $messageBag->getMessages();
+
+        self::assertCount(2, $messages);
+
+        $secondMsg = $messages[1];
+        self::assertInstanceOf(UserMessage::class, $secondMsg);
+        self::assertTrue($secondMsg->hasImageContent(), 'Vision model must receive Image content');
+    }
+
+    public function testWithoutCheckerEmitsImageContentByDefault(): void
+    {
+        $converter = new AgentMessageConverter();
+
+        $imagePath = $this->tmpDir.'/gated_default.png';
+        $this->createPng1x1($imagePath);
+
+        $agentMessage = new AgentMessage(
+            role: 'tool',
+            content: [
+                ['type' => 'text', 'text' => '{"type":"view_image"}'],
+                [
+                    'type' => 'image_ref',
+                    'path' => $imagePath,
+                    'media_type' => 'image/png',
+                    'bytes' => 100,
+                    'width' => 1,
+                    'height' => 1,
+                ],
+            ],
+            toolCallId: 'call_default',
+            toolName: 'view_image',
+            details: [],
+        );
+
+        // No model name — backward compat: images are attached
+        $messageBag = $converter->toMessageBag([$agentMessage]);
+        $messages = $messageBag->getMessages();
+
+        self::assertCount(2, $messages);
+
+        $secondMsg = $messages[1];
+        self::assertInstanceOf(UserMessage::class, $secondMsg);
+        self::assertTrue($secondMsg->hasImageContent(), 'Without checker, images must be attached (backward compat)');
+    }
+
+    public function testWithCheckerAndEmptyModelNameEmitsTextPlaceholder(): void
+    {
+        $checker = $this->createStub(\Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface::class);
+        // The exact return value doesn't matter because empty model name
+        // short-circuits to false before the checker is called.
+        $checker->method('supportsImages')->willReturn(true);
+
+        $converter = new AgentMessageConverter();
+        $converter->setImageCapabilityChecker($checker);
+
+        $imagePath = $this->tmpDir.'/gated_empty_model.png';
+        $this->createPng1x1($imagePath);
+
+        $agentMessage = new AgentMessage(
+            role: 'tool',
+            content: [
+                ['type' => 'text', 'text' => '{"type":"view_image"}'],
+                [
+                    'type' => 'image_ref',
+                    'path' => $imagePath,
+                    'media_type' => 'image/png',
+                    'bytes' => 100,
+                    'width' => 1,
+                    'height' => 1,
+                ],
+            ],
+            toolCallId: 'call_empty_model',
+            toolName: 'view_image',
+            details: [],
+        );
+
+        // Empty model name — with checker configured, images are NOT attached
+        $messageBag = $converter->toMessageBag([$agentMessage], '');
+        $messages = $messageBag->getMessages();
+
+        self::assertCount(2, $messages);
+
+        $secondMsg = $messages[1];
+        self::assertInstanceOf(UserMessage::class, $secondMsg);
+        self::assertFalse($secondMsg->hasImageContent(), 'With checker and empty model, images must not be attached');
+    }
 }

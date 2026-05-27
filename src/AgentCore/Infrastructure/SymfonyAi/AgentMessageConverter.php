@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Infrastructure\SymfonyAi;
 
+use Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\ContentInterface;
@@ -33,14 +34,29 @@ final class AgentMessageConverter
      * into real Symfony AI Image attachments.
      */
     private const string IMAGE_REF_TYPE = 'image_ref';
+    /**
+     * Optional checker to determine whether the active target model
+     * supports image inputs. When null or when the checker reports
+     * no support, synthetic image attachments are replaced with
+     * text placeholders.
+     */
+    private ?ImageCapabilityCheckerInterface $imageCapabilityChecker = null;
 
     /**
      * @param list<AgentMessage> $agentMessages
+     * @param string             $modelName     Target model identifier for
+     *                                          capability gating. Empty string
+     *                                          means "unknown" — images are
+     *                                          attached when the checker is
+     *                                          unavailable (backward compat)
+     *                                          or gated when the checker returns
+     *                                          false.
      */
-    public function toMessageBag(array $agentMessages): MessageBag
+    public function toMessageBag(array $agentMessages, string $modelName = ''): MessageBag
     {
         $messages = [];
         $pendingSyntheticToolMessages = [];
+        $imagesSupported = $this->isImageSupported($modelName);
 
         foreach ($agentMessages as $agentMessage) {
             if ('tool' !== $agentMessage->role && [] !== $pendingSyntheticToolMessages) {
@@ -48,7 +64,7 @@ final class AgentMessageConverter
                 $pendingSyntheticToolMessages = [];
             }
 
-            $convertedMessages = $this->convertAgentMessage($agentMessage);
+            $convertedMessages = $this->convertAgentMessage($agentMessage, $imagesSupported);
 
             if ('tool' === $agentMessage->role) {
                 $primaryMessage = array_shift($convertedMessages);
@@ -72,6 +88,19 @@ final class AgentMessageConverter
     }
 
     /**
+     * Set the optional image capability checker.
+     *
+     * When set, the converter will check whether the target model
+     * supports images before emitting synthetic Image attachments.
+     * Without a checker, images are always attached (backward-compatible
+     * default).
+     */
+    public function setImageCapabilityChecker(?ImageCapabilityCheckerInterface $checker): void
+    {
+        $this->imageCapabilityChecker = $checker;
+    }
+
+    /**
      * Convert an AgentMessage into one or more Symfony MessageInterface instances.
      *
      * Most messages produce exactly one Symfony message. Tool messages that
@@ -86,7 +115,7 @@ final class AgentMessageConverter
      *
      * @return list<MessageInterface>
      */
-    private function convertAgentMessage(AgentMessage $message): array
+    private function convertAgentMessage(AgentMessage $message, bool $imagesSupported = true): array
     {
         $result = [];
 
@@ -96,7 +125,7 @@ final class AgentMessageConverter
         $converted = match ($message->role) {
             'system' => [Message::forSystem($textContent)],
             'assistant' => [$this->buildAssistantMessage($textContent, $message)],
-            'tool' => $this->buildToolMessages($textContent, $message, $imageRefParts),
+            'tool' => $this->buildToolMessages($textContent, $message, $imageRefParts, $imagesSupported),
             default => [Message::ofUser($this->userText($message, $textContent))],
         };
 
@@ -115,7 +144,7 @@ final class AgentMessageConverter
      *
      * @return list<MessageInterface>
      */
-    private function buildToolMessages(string $textContent, AgentMessage $message, array $imageRefParts): array
+    private function buildToolMessages(string $textContent, AgentMessage $message, array $imageRefParts, bool $imagesSupported): array
     {
         $messages = [];
 
@@ -137,22 +166,44 @@ final class AgentMessageConverter
             $messages[] = Message::ofToolCall(new ToolCall($toolCallId, $toolName, $arguments), $content);
         }
 
-        // 2. For each image_ref part, add a synthetic UserMessage with
-        //    a real Symfony AI Image attachment (Pi-style fallback).
+        // 2. For each image_ref part, add a synthetic UserMessage.
         //    Symfony AI ToolCallMessage is string-only, so we cannot
         //    embed images in the tool result itself. Instead we emit
         //    a follow-up user message that the provider normalizers
         //    will serialize as proper image content.
+        //
+        //    When the target model does not support image inputs
+        //    ($imagesSupported = false), emit a text placeholder
+        //    instead of a real Image attachment to avoid sending
+        //    image bytes to a non-vision model.
         foreach ($imageRefParts as $imageRef) {
             $path = $imageRef['path'] ?? null;
+            $mediaType = $imageRef['media_type'] ?? 'unknown';
+            $width = $imageRef['width'] ?? '?';
+            $height = $imageRef['height'] ?? '?';
+            $bytes = $imageRef['bytes'] ?? 0;
+
             if (!\is_string($path) || '' === $path || !is_file($path) || !is_readable($path)) {
-                // Image file is missing or unreadable — skip the attachment
-                // but add a text placeholder so the model knows what happened.
-                $mediaType = $imageRef['media_type'] ?? 'unknown';
+                // Image file is missing or unreadable — emit text placeholder
                 $messages[] = Message::ofUser(\sprintf(
                     '[Tool result image for view_image: %s (%s)]',
                     $path ?? '(deleted)',
                     $mediaType,
+                ));
+
+                continue;
+            }
+
+            if (!$imagesSupported) {
+                // Model does not support image inputs — emit text placeholder
+                $messages[] = Message::ofUser(\sprintf(
+                    '[Tool result image: %s (%s, %sx%s, %d bytes). '
+                    .'Actual image omitted — the active model does not support images.]',
+                    $path,
+                    $mediaType,
+                    $width,
+                    $height,
+                    $bytes,
                 ));
 
                 continue;
@@ -163,12 +214,12 @@ final class AgentMessageConverter
             // at provider normalization time, so no image bytes are in memory
             // during session persistence.
             $introText = new Text(\sprintf(
-                'Tool result image for view_image: %s (%s, %dx%d, %d bytes)',
+                'Tool result image for view_image: %s (%s, %sx%s, %d bytes)',
                 $path,
-                $imageRef['media_type'] ?? 'unknown',
-                $imageRef['width'] ?? '?',
-                $imageRef['height'] ?? '?',
-                $imageRef['bytes'] ?? 0,
+                $mediaType,
+                $width,
+                $height,
+                $bytes,
             ));
 
             $messages[] = Message::ofUser($introText, Image::fromFile($path));
@@ -298,6 +349,27 @@ final class AgentMessageConverter
         }
 
         return $imageRefs;
+    }
+
+    /**
+     * Determine whether the named model supports image inputs.
+     *
+     * - No checker configured: attach images by default (backward compat).
+     * - Checker configured, empty model name: images are NOT attached
+     *   because we cannot confirm the target model's capability.
+     * - Checker configured, non-empty model name: delegate to checker.
+     */
+    private function isImageSupported(string $modelName): bool
+    {
+        if (null === $this->imageCapabilityChecker) {
+            return true;
+        }
+
+        if ('' === $modelName) {
+            return false;
+        }
+
+        return $this->imageCapabilityChecker->supportsImages($modelName);
     }
 
     private function stringify(mixed $value): string

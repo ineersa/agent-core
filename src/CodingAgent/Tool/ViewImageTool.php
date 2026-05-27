@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\CodingAgent\Config\ImageToolConfig;
 use Ineersa\CodingAgent\Path\PathResolver;
+use Ineersa\CodingAgent\Tool\ImageProcessing\ImageAttachmentProcessor;
 use League\MimeTypeDetection\FinfoMimeTypeDetector;
 
 /**
@@ -40,6 +41,7 @@ final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerI
     public function __construct(
         private readonly ToolRuntime $toolRuntime,
         private readonly ImageToolConfig $imageConfig,
+        private readonly ?ImageAttachmentProcessor $processor = null,
     ) {
     }
 
@@ -115,16 +117,35 @@ final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerI
                 throw new \RuntimeException(\sprintf('Image "%s" dimensions (%dx%d) exceed maximum allowed (%dx%d).', $resolvedPath, $width, $height, $this->imageConfig->maxWidth, $this->imageConfig->maxHeight));
             }
 
+            // Process image for provider-safe delivery (resize, quality reduction).
+            // The processor writes a cached artifact when processing is needed;
+            // otherwise returns the original file unchanged.
+            $effectivePath = $resolvedPath;
+            $effectiveMediaType = $mediaType;
+            $effectiveBytes = $fileSize;
+            $effectiveWidth = $width;
+            $effectiveHeight = $height;
+
+            if (null !== $this->processor) {
+                $processed = $this->processor->process($resolvedPath, $mediaType, $width, $height);
+                $effectivePath = $processed['path'];
+                $effectiveMediaType = $processed['media_type'];
+                $effectiveBytes = $processed['bytes'];
+                $effectiveWidth = $processed['width'];
+                $effectiveHeight = $processed['height'];
+            }
+
             // Return compact metadata ONLY — no base64, no data_url, no full image bytes.
             // The AgentMessageConverter will use metadata to create a real image attachment
             // for the next provider request.
             return [
                 'type' => 'view_image',
-                'path' => $resolvedPath,
-                'media_type' => $mediaType,
-                'bytes' => $fileSize,
-                'width' => $width,
-                'height' => $height,
+                'path' => $effectivePath,
+                'media_type' => $effectiveMediaType,
+                'bytes' => $effectiveBytes,
+                'width' => $effectiveWidth,
+                'height' => $effectiveHeight,
+                'processed_dimensions' => $effectiveWidth !== $width || $effectiveHeight !== $height,
             ];
         });
     }
@@ -155,6 +176,7 @@ final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerI
                 'Image type is determined from file content (magic bytes), not file extension.',
                 'Returns image metadata: path, media type, file size, width, and height.',
                 'Large images may be rejected if they exceed configured size or dimension limits.',
+                'Images are automatically resized and optimized for safe provider delivery before attachment.',
                 'The actual image data is attached to the next provider request as a real image attachment; the tool result contains only compact metadata.',
                 'Use when you need to inspect image dimensions, verify file type, or load an image for the model to see.',
             ],

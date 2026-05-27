@@ -57,7 +57,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         $cancelToken = $this->cancellationToken($request);
         $messages = $this->resolveContextMessages($request->input);
         $messages = $this->applyTransformHooks($messages, $cancelToken);
-        $messageBag = $this->applyConvertHooks($messages, $cancelToken);
+        $messageBag = $this->applyConvertHooks($messages, $cancelToken, $request->model);
 
         $options = $this->buildInputOptions($request);
         $input = new Input($request->model, $messageBag, $options);
@@ -143,8 +143,9 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
     /**
      * @param list<AgentMessage> $messages
+     * @param string             $modelName Model identifier for capability gating
      */
-    private function applyConvertHooks(array $messages, CancellationTokenInterface $cancelToken): MessageBag
+    private function applyConvertHooks(array $messages, CancellationTokenInterface $cancelToken, string $modelName = ''): MessageBag
     {
         $resolvedMessageBag = null;
 
@@ -152,7 +153,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             $resolvedMessageBag = $hook->convertToLlm($messages, $cancelToken);
         }
 
-        return $resolvedMessageBag ?? $this->messageConverter->toMessageBag($messages);
+        return $resolvedMessageBag ?? $this->messageConverter->toMessageBag($messages, $modelName);
     }
 
     /**

@@ -38,11 +38,23 @@
 #         # Maximum file size in bytes (10 MB).
 #         max_bytes: 10485760
 #
-#         # Maximum image width in pixels.
+#         # Maximum image width in pixels (rejection limit).
 #         max_width: 4096
 #
-#         # Maximum image height in pixels.
+#         # Maximum image height in pixels (rejection limit).
 #         max_height: 2000
+#
+#         # Resize-to-fit target dimension (default 2000px).
+#         max_dimension: 2000
+#
+#         # Max base64-encoded payload length (default 4.5 MiB).
+#         encoded_max_bytes: 4718592
+#
+#         # Starting JPEG/WebP compression quality.
+#         jpeg_quality: 80
+#
+#         # Minimum JPEG/WebP quality for size reduction steps.
+#         jpeg_min_quality: 40
 
 tui:
     # Available built-in themes:
