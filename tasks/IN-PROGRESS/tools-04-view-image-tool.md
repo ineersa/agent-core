@@ -52,7 +52,7 @@ Out of scope:
 Status: IN-PROGRESS
 Branch: task/tools-04-view-image-tool
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-04-view-image-tool
-Fork run: fcl21xrx9kqm
+Fork run: 7f6qg8ydcsfp
 PR URL: https://github.com/ineersa/agent-core/pull/62
 PR Status: open
 Started: 2026-05-27T18:57:52.472Z
@@ -115,3 +115,10 @@ Completed:
 ## Task workflow update - 2026-05-27T19:43:25.421Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: Moved back from code review because current PR architecture is not mergeable: image bytes must not be returned as JSON/base64 text or merely capped by OutputCap. TOOLS-04 now requires first-class multimodal image attachment handling with path-only persistence and provider-request rehydration.
+
+## Task workflow update - 2026-05-27T19:50:03.472Z
+- Summary: Added implementation reference files to PR branch at .pi/reference/view-image/: pi-image-flow-reference.md captures Pi content block, resize, and provider serialization patterns; agent-core-redo-implementation-notes.md defines the Agent Core Pi-style fallback architecture (text tool result + synthetic user image message), hard requirements, likely code seams, and validation target.
+
+## Task workflow update - 2026-05-27T19:50:26.515Z
+- Recorded fork run: 7f6qg8ydcsfp
+- Summary: Launched redo fork 7f6qg8ydcsfp to replace rejected JSON/base64 view_image architecture with Pi-style fallback: compact text tool result plus synthetic follow-up user message carrying Symfony AI Image content, with path-only persistence and no OutputCap image delivery.
