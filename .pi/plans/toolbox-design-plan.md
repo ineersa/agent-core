@@ -148,9 +148,8 @@ Implementation:
   - cwd = project working directory
   - Output goes through OutputCap using settings-backed caps (default 20K chars)
   - Full output persisted to .hatfield/tmp/output-cap/ when truncated
-  - Register the foreground process in ToolProcessRegistry while running
-  - On timeout, ForegroundProcessRunner terminates the registered process tree/process group
-  - On run cancellation, the controller terminates registered foreground process groups and Bash observes cancelled state
+  - Use ToolRuntime::runCancellableProcess() / Process::start() + polling
+  - On timeout or run cancellation, Bash stops its own foreground process with Process::stop($graceSeconds)
   - Cancellation is a structured result, not a generic tool failure
 
 Background behavior (user-controlled, NOT model-controlled):
@@ -303,29 +302,31 @@ Repeat the same pattern for `view_image`, `bash`, `bg_status`, `write`, and `edi
 
 ```
 src/AgentCore/Contract/Tool/
-  ToolExecutionContextInterface.php         # Generic current run/tool cancellation and timeout context
-  ToolExecutionContextAccessorInterface.php # Ambient context contract used by ToolExecutor and app-owned tools
-  ToolCancelledException.php                # Domain cancellation exception ToolExecutor can classify
+  ToolExecutionSettingsInterface.php        # AgentCore bridge for settings-backed execution defaults
 
 src/AgentCore/Application/Tool/
+  ToolContext.php                           # Current run/tool cancellation token and timeout context
   StackToolExecutionContextAccessor.php     # Stack-safe ambient context around Symfony Toolbox execution
 
 src/CodingAgent/Tool/
   ToolDefinitionDTO.php       # Hatfield tool definition: schema, handler, prompt line, guidelines (TOOLS-R02)
+  ToolHandlerInterface.php    # Internal executable handler contract for registered tools (TOOLS-R02)
   HatfieldToolProviderInterface.php # Built-in tool definition provider contract (TOOLS-R02)
-  BuiltInToolRegistrar.php    # Registers tagged built-in definitions as permanent registry tools (TOOLS-R02)
   RegistryBackedToolbox.php   # Symfony ToolboxInterface adapter backed by ToolRegistry definitions (TOOLS-R03)
-  ToolSettings.php            # Hydrated tool defaults/thresholds from Hatfield settings (TOOLS-R04)
-  PathResolver.php            # Static helper: resolvePath(), expand ~, normalize, cwd-relative
-  OutputCap.php              # Output capping + temp file persistence
-  PatchRunner.php            # Wraps GNU patch subprocess via ForegroundProcessRunner
-  CancellationGuard.php       # Cooperative checkpoint helper for short tools, using AgentCore context contracts
-  ToolProcessRegistry.php     # Cross-process foreground/background PID registry
-  ToolProcessTerminator.php   # TERM -> grace -> KILL process/group termination helper
-  ForegroundProcessRunner.php # Shared process starter/waiter with registry + timeout support
-  ProcessSpec.php             # Command/cwd/env/timeout/process-group process request DTO
-  ProcessRunResult.php        # stdout/stderr/exit/cancel/timeout/duration result DTO
-  BackgroundProcessManager.php  # Holds bg process map, log paths, cleanup
+  ToolRuntime.php             # Tool-author helper: cancellation checkpoints and cancellable Process polling (TOOLS-R03)
+  CancellableProcessResult.php # DTO returned by ToolRuntime::runCancellableProcess()
+  OutputCap.php               # Output capping + temp file persistence
+  PatchRunner.php             # Wraps GNU patch subprocess using ToolRuntime process polling
+  BackgroundProcessManager.php  # Holds bg process map, log paths, cleanup (TOOLS-08)
+
+src/CodingAgent/Config/
+  ToolExecutionConfig.php     # Typed tools.execution.* DTO
+  OutputCapConfig.php         # Typed tools.output_cap.* DTO
+  ToolsConfig.php             # Aggregates typed tool config sections
+  ToolSettings.php            # Adapter from ToolsConfig::execution to AgentCore settings interface
+
+src/CodingAgent/Path/
+  PathResolver.php            # resolvePath(), expand ~, normalize, cwd-relative
 ```
 
 Image MIME detection:
@@ -340,9 +341,9 @@ produce large text output (read, bash, grep, find).
 
 ```
 Settings-backed defaults:
-  tools.output_cap.max_chars = 20_000       # ~5000 tokens (code files)
-  tools.output_cap.max_doc_chars = 50_000   # ~12500 tokens (docs: .md, .txt, etc.)
-  tools.output_cap.retention_seconds = 86400 # 24 hours — stale file cleanup threshold
+  tools.output_cap.default_cap = 20_000     # ~5000 tokens (code files)
+  tools.output_cap.doc_cap = 50_000         # ~12500 tokens (docs: .md, .txt, etc.)
+  tools.output_cap.retention = 86400        # 24 hours — stale file cleanup threshold
 
 Storage:
   .hatfield/tmp/output-cap/<session-prefix>-<random-hex>.txt
@@ -593,28 +594,30 @@ Proposed settings shape (exact names can be refined during implementation):
 ```yaml
 tools:
     execution:
-        default_timeout_seconds: 300
+        default_mode: sequential
+        timeout_seconds: 300
         max_parallelism: 4
-    process:
-        termination_grace_seconds: 2
-    bash:
-        default_timeout_seconds: 300
-        background_prompt_after_seconds: 30
     output_cap:
-        max_chars: 20000
-        max_doc_chars: 50000
-        retention_seconds: 86400
-    view_image:
-        max_bytes: 5242880
-        max_width: 2000
-        max_height: 2000
+        path: .hatfield/tmp/output-cap
+        default_cap: 20000
+        doc_cap: 50000
+        retention: 86400
+        session_prefix: null
+    # Future concrete-tool sections should be added by the tasks that implement them.
+    # bash:
+    #     background_prompt_threshold_seconds: 30
+    #     termination_grace_seconds: 5
+    # image:
+    #     max_bytes: 10485760
+    #     max_width: 4096
+    #     max_height: 2000
 ```
 
 Implementation notes:
 
-- Hydrate these into an app-owned `ToolSettings`/`ToolSettingsDTO` from `AppConfig::raw['tools']` with safe defaults (TOOLS-R04).
-- Existing service arguments such as `ToolExecutor` timeout/max parallelism should be wired from settings-derived services/factories instead of fixed YAML literals (TOOLS-R04).
-- Tasks that introduce or consume a key must update `.hatfield/settings.yaml` comments and `docs/settings.md` together.
+- Common execution/output-cap settings are already hydrated into typed `AppConfig->tools` DTOs (`ToolExecutionConfig`, `OutputCapConfig`, `ToolsConfig`) and consumed through settings-derived services.
+- Do not add production reads from `AppConfig::raw['tools']` for known tool settings.
+- Tasks that introduce or consume a new concrete-tool key must add a typed DTO section under `ToolsConfig` and update `.hatfield/settings.yaml` comments and `docs/settings.md` together.
 - User-provided tool-call parameters (for example Bash `timeout`) may override settings within safe bounds, but schema should stay minimal and no policy-only knobs should be model-visible unless intentionally designed.
 
 ### AgentCore per-turn toolset resolution
@@ -641,7 +644,7 @@ This keeps AgentCore generic: AgentCore owns `toolsRef`, `ToolSetResolverInterfa
 ### Registration/runtime flow
 
 1. Built-in tools are normal Symfony services, paired with Hatfield tool definition providers (tagged/autoconfigured) rather than relying on `#[AsTool]` metadata.
-2. CodingAgent boot registers built-in permanent tools through a `BuiltInToolRegistrar` with explicit metadata: name, provider description, JSON schema, handler/reference, small prompt line, guideline strings.
+2. `ToolRegistry` receives tagged `HatfieldToolProviderInterface` providers in its constructor and seeds permanent tool definitions with explicit metadata: name, provider description, JSON schema, handler/reference, small prompt line, guideline strings.
 3. Extension loader calls `ExtensionApiInterface::registerTool()`; EXT-02 maps public `ToolRegistrationDTO` into permanent registry entries with executable handlers.
 4. Dynamic tools use `ToolRegistry` dynamic APIs; they never affect the stable system prompt but must use the same executable definition shape.
 5. `RegistryBackedToolbox` is wired as `Symfony\AI\Agent\Toolbox\ToolboxInterface`; it converts registry definitions to Symfony `Tool` DTOs and executes registry handlers.
@@ -673,19 +676,19 @@ Tasks are intentionally small and prefixed with `TOOLS-` so smaller models can i
   - Depends on: none.
   - Can parallelize with: TOOLS-00, TOOLS-01, TOOLS-02, EXT-00.
 
-- **TOOLS-R02** — Tool definitions, `HatfieldToolProviderInterface`, `BuiltInToolRegistrar`, and registry definition lookups.
+- **TOOLS-R02** — Tool definitions, `HatfieldToolProviderInterface`, `ToolHandlerInterface`, and registry definition lookups.
   - Depends on: TOOLS-R00.
   - Can parallelize with: TOOLS-00, TOOLS-01, TOOLS-02 after TOOLS-R00 has landed. Concrete tool tasks can start registering definitions after this lands.
 
 - **TOOLS-R03** — Registry-backed Symfony Toolbox, execution allowlist enforcement, and initial tool execution documentation.
   - Depends on: TOOLS-R02 and TOOLS-00.
-  - Documents the concrete handler/process contract: handlers execute synchronously in a tool worker; process-owning tools use local `Process::start()` + polling against `ToolContext` cancellation/timeout; no shared foreground process registry/runner.
-  - Can parallelize with: TOOLS-01, TOOLS-02, TOOLS-R04.
+  - Documents the concrete handler/process contract: handlers execute synchronously in a tool worker; simple handlers can use `ToolRuntime::run()` for cancellation checkpoints; process-owning tools use `ToolRuntime::runCancellableProcess()` / local `Process::start()` + polling against `ToolContext` cancellation/timeout; no shared foreground process registry/runner.
+  - Can parallelize with: TOOLS-01, TOOLS-02.
 
-- **TOOLS-R04** — Remaining tool settings hydration from Hatfield settings/defaults.
-  - Depends on: TOOLS-00 and TOOLS-02 for existing typed execution/output-cap settings, and TOOLS-R02 for provider registration defaults.
-  - Consolidates/extends typed `AppConfig->tools` DTOs for concrete tool settings; no new production reads from `AppConfig::raw['tools']` for known sections.
-  - Can parallelize with: TOOLS-R03, TOOLS-01, TOOLS-02.
+- **TOOLS-R04** — Tool settings hydration verification closeout.
+  - Depends on: TOOLS-00, TOOLS-02, TOOLS-R02, and TOOLS-R03.
+  - Common execution/output-cap settings are already typed under `AppConfig->tools`; R04 verifies there are no remaining `AppConfig::raw['tools']` reads or stale docs and defers concrete-tool-specific settings to the concrete tool tasks that need them.
+  - Can parallelize with: TOOLS-01, TOOLS-02.
 
 - **TOOLS-R05** — Parallel tool execution orchestration.
   - Depends on: TOOLS-R03, TOOLS-R04, TOOLS-00.
@@ -744,7 +747,7 @@ Tasks are intentionally small and prefixed with `TOOLS-` so smaller models can i
 
 1. **Registry and utility foundation:** TOOLS-R00, TOOLS-00, TOOLS-01, and TOOLS-02 can start immediately and in parallel.
 2. **Definition foundation:** TOOLS-R02 starts after TOOLS-R00. Concrete tool tasks can register definitions (HatfieldToolProviderInterface) after this lands, even before the Toolbox is wired.
-3. **Toolbox + settings + parallel foundation:** TOOLS-R03 (registry-backed Toolbox + allowlist + ToolRuntime docs) runs after TOOLS-R02. TOOLS-R04 closeout verification. TOOLS-R05 (parallel orchestration) adds durable batch state (DBAL/SQLite), multi-worker ConsumerSupervisor, and store-backed dispatch coordination after TOOLS-R03 + TOOLS-R04 + TOOLS-00. Concrete tools need TOOLS-R03 for actual execution through the Symfony AI pipeline.
+3. **Toolbox + settings + parallel foundation:** TOOLS-R03 (registry-backed Toolbox + allowlist + ToolRuntime docs) runs after TOOLS-R02. TOOLS-R04 closeout verification confirms common execution/output-cap settings are already typed and future concrete-tool settings are deferred to concrete tool tasks. TOOLS-R05 (parallel orchestration) adds durable batch state (DBAL/SQLite), multi-worker ConsumerSupervisor, and store-backed dispatch coordination after TOOLS-R03 + TOOLS-R04 + TOOLS-00. Concrete tools need TOOLS-R03 for actual execution through the Symfony AI pipeline.
 4. **Prompt/context foundation:** SYSTEM-01 starts after TOOLS-R00 snapshot APIs are stable. SYSTEM-02 can start independently because AGENTS.md context is a separate first-message channel, not a system prompt placeholder. SYSTEM-03 follows SYSTEM-02 so skills share the same first-message injection boundary.
 5. **Process/background foundation:** TOOLS-05 depends on TOOLS-00 and can run after it lands. TOOLS-08 depends on TOOLS-R02 + TOOLS-R03 + TOOLS-00.
 6. **Independent tools:** TOOLS-03 and TOOLS-04 depend on TOOLS-R02 + TOOLS-R03 + TOOLS-00 + TOOLS-01 and can run in parallel after those land.
@@ -755,7 +758,7 @@ Tasks are intentionally small and prefixed with `TOOLS-` so smaller models can i
 ### Notes for implementers
 
 - Do not implement `GrepTool` or `FindTool` in this rollout.
-- `ToolRegistry` is implemented by TOOLS-R00 and owns permanent/dynamic tool policy and metadata. TOOLS-R02 owns tool definitions and the built-in registrar. TOOLS-R03 owns the registry-backed Toolbox adapter and execution allowlist. TOOLS-R04 owns settings hydration.
+- `ToolRegistry` is implemented by TOOLS-R00 and owns permanent/dynamic tool policy and metadata. TOOLS-R02 owns tool definitions and tagged provider seeding through the registry constructor. TOOLS-R03 owns the registry-backed Toolbox adapter, execution allowlist, and ToolRuntime authoring helper. TOOLS-R04 verifies settings hydration is complete for common execution/output-cap settings.
 - Concrete tools should provide Hatfield tool definitions through TOOLS-R02 conventions; do not add new production reliance on Symfony `#[AsTool]` metadata.
 - Do not add model-controlled `run_in_background`; backgrounding is controlled by the TUI/user prompt.
 - Prefer Symfony DI/autowiring and tagged providers for built-in tool definitions.
@@ -784,61 +787,34 @@ Tools owned by CodingAgent can remain Symfony AI toolbox tools and still be canc
 There are two cancellation paths:
 
 1. **Cooperative PHP checkpoints** for short app-owned tools.
-2. **Runtime-owned process termination** for foreground shell/subprocess tools. The controller reacts to accepted cancellation and kills registered foreground tool process groups; individual tools do not own their own cancellation polling loops.
+2. **Tool-owned process polling** for foreground shell/subprocess tools. A tool that starts a `Process` owns that process lifecycle, polls the current `ToolContext` cancellation token/timeout, and calls `Process::stop($graceSeconds)` itself.
 
-Killing the Messenger `tool` consumer is a future hard-cancel fallback, not the primary foreground-tool cancellation mechanism. It is coarser, may interact with message retry semantics, and may not kill grandchildren spawned by bash.
+The controller does not maintain a shared foreground PID registry. Killing the Messenger `tool` consumer is a controller lifecycle/shutdown concern, not the normal run-cancellation mechanism.
 
-### ToolExecutionContextAccessor
+### ToolContext and ambient accessor
 
 Keep `ToolboxInterface` as the low-level provider/execution adapter, but make it registry-backed and add an ambient execution context around each toolbox invocation.
 
-Layering requirement: `ToolExecutor` lives in `AgentCore`, so the context contract/accessor it uses must be AgentCore-owned. CodingAgent tools may depend on AgentCore contracts, but AgentCore must not import `Ineersa\CodingAgent\Tool\*`.
+`ToolExecutor` lives in `AgentCore`, so the context object/accessor it uses are AgentCore-owned. CodingAgent tools may depend on AgentCore context classes, but AgentCore must not import `Ineersa\CodingAgent\Tool\*`.
 
 ```php
-interface ToolExecutionContextInterface
+final readonly class ToolContext
 {
-    public function runId(): string;
-    public function turnNo(): int;
-    public function toolCallId(): string;
-    public function toolName(): string;
-    public function cancellationToken(): CancellationTokenInterface;
-    public function timeoutSeconds(): int;
-    public function throwIfCancellationRequested(): void;
+    public function __construct(
+        public string $runId,
+        public int $turnNo,
+        public string $toolCallId,
+        public string $toolName,
+        public CancellationTokenInterface $cancellationToken,
+        public int $timeoutSeconds,
+    ) {}
 }
 
-interface ToolExecutionContextAccessorInterface
+final class StackToolExecutionContextAccessor
 {
-    public function current(): ?ToolExecutionContextInterface;
-    public function requireCurrent(): ToolExecutionContextInterface;
-    public function with(ToolExecutionContextInterface $context, callable $callback): mixed;
-}
-
-final class StackToolExecutionContextAccessor implements ToolExecutionContextAccessorInterface
-{
-    /** @var list<ToolExecutionContextInterface> */
-    private array $stack = [];
-
-    public function current(): ?ToolExecutionContextInterface
-    {
-        return $this->stack[array_key_last($this->stack)] ?? null;
-    }
-
-    public function requireCurrent(): ToolExecutionContextInterface
-    {
-        return $this->current()
-            ?? throw new \LogicException('A tool execution context is required.');
-    }
-
-    public function with(ToolExecutionContextInterface $context, callable $callback): mixed
-    {
-        $this->stack[] = $context;
-
-        try {
-            return $callback();
-        } finally {
-            array_pop($this->stack);
-        }
-    }
+    public function current(): ?ToolContext;
+    public function requireCurrent(): ToolContext;
+    public function with(ToolContext $context, callable $callback): mixed;
 }
 ```
 
@@ -851,146 +827,36 @@ return $this->contextAccessor->with(
 );
 ```
 
-Tool services that need run/tool metadata inject `ToolExecutionContextAccessorInterface` and call `requireCurrent()`.
+Tool services that need run/tool metadata inject `StackToolExecutionContextAccessor` and call `requireCurrent()`.
 
 This keeps cancellation out of the model-facing schema while letting app-owned tools access run/tool metadata and the existing cancellation token.
 
 ### Concurrency note
 
-The accessor stack is acceptable for synchronous CLI/Messenger tool execution. If future in-process parallel/fiber execution is introduced, replace the simple stack with an operation-id/fiber-local context strategy or use a native execution registry that passes context explicitly.
+The accessor stack is acceptable for synchronous CLI/Messenger tool execution. True parallel tool execution is handled above individual tool calls by multiple tool workers and durable batch orchestration (TOOLS-R05), not by sharing one in-process stack across concurrent fibers.
 
-### Cooperative cancellation helpers
+### ToolRuntime helper
 
-Use `CancellationGuard` for cheap checkpoints in non-process tools.
+TOOLS-R03 provides `ToolRuntime` so tool authors do not invent cancellation loops repeatedly.
 
-```php
-final readonly class CancellationGuard
-{
-    public function checkpoint(ToolExecutionContextInterface $context): void
-    {
-        if ($context->cancellationToken()->isCancellationRequested()) {
-            throw new ToolCancelledException();
-        }
-    }
-}
-```
-
-Short tools (`read` setup, `write`, `view_image`, `edit` validation steps) call checkpoints before starting and at safe boundaries. They should not each own custom cancellation loops. `ToolCancelledException` should be AgentCore-owned so `ToolExecutor` can classify it as a structured `cancelled=true` tool result instead of a generic tool failure.
-
-### Foreground process tracking and termination
-
-TOOLS-00 should introduce shared process primitives that foreground tools and future background tooling can reuse.
-
-Core services/value objects:
+Simple tools can wrap work in cancellation checkpoints:
 
 ```php
-enum ToolProcessKindEnum: string
-{
-    case ForegroundTool = 'foreground_tool';
-    case BackgroundTool = 'background_tool';
-}
-
-final readonly class ToolProcessRecordDTO
-{
-    public function __construct(
-        public string $runId,
-        public int $turnNo,
-        public string $toolCallId,
-        public ToolProcessKindEnum $kind,
-        public int $pid,
-        public ?int $processGroupId,
-        public string $commandPreview,
-        public string $cwd,
-        public ?string $logPath,
-        public \DateTimeImmutable $startedAt,
-    ) {}
-}
-
-interface ToolProcessRegistry
-{
-    public function register(ToolProcessRecordDTO $record): void;
-    public function unregister(string $runId, string $toolCallId): void;
-
-    /** @return list<ToolProcessRecordDTO> */
-    public function foregroundForRun(string $runId): array;
-}
+return $this->toolRuntime->run(fn () => $this->reader->read($path));
 ```
 
-`ToolProcessRegistry` must be cross-process, because the controller process must be able to see PIDs registered by the Messenger `tool` consumer. Use a locked JSON/JSONL store under `.hatfield/tmp/` or another project-local ignored runtime location; do not rely on in-memory state only.
-
-`ToolProcessTerminator` owns the termination ladder for a registered process:
-
-- prefer process-group termination on Unix (`posix_kill(-$pgid, SIGTERM)` then `SIGKILL` after the settings-backed grace period);
-- fallback to direct process PID termination;
-- treat missing/exited processes as already stopped;
-- keep Windows support as a deferred/simple fallback unless already easy through Symfony Process/taskkill.
-
-### ForegroundProcessRunner
-
-`ForegroundProcessRunner` replaces the previous monolithic `CancellableProcessRunner` idea. It should start a subprocess, register its PID/process group, wait for completion, and unregister in `finally`.
-
-Example contracts:
+Process-owning tools use foreground process polling:
 
 ```php
-final readonly class ProcessSpec
-{
-    /** @param list<string> $command */
-    public function __construct(
-        public array $command,
-        public string $cwd,
-        public array $env = [],
-        public ?int $timeoutSeconds = null,
-        public bool $createProcessGroup = true,
-        public ?string $commandPreview = null,
-    ) {}
-}
-
-final readonly class ProcessRunResult
-{
-    public function __construct(
-        public string $stdout,
-        public string $stderr,
-        public ?int $exitCode,
-        public bool $cancelled,
-        public bool $timedOut,
-        public ?string $outputPath,
-        public int $durationMs,
-    ) {}
-}
+$process = new Process([...], $cwd);
+$result = $this->toolRuntime->runCancellableProcess($process, timeoutSeconds: $timeout);
 ```
 
-`ForegroundProcessRunner` owns:
-
-- starting `Symfony\Component\Process\Process`;
-- creating a process group/session where practical (for bash/process-tree safety);
-- registering `ToolProcessKindEnum::ForegroundTool` in `ToolProcessRegistry` once PID/PGID are known;
-- output capture hooks, with OutputCap/log persistence supplied by later tasks;
-- an observer/decision hook so Bash can ask the TUI/user at the settings-backed threshold and request `Continue`, `Terminate`, or `DetachToBackground` without duplicating process lifecycle code;
-- timeout enforcement by delegating termination to `ToolProcessTerminator`;
-- detecting cancellation after process exit by checking the context token/run state and returning `cancelled=true` rather than a generic failure;
-- unregistering in `finally` unless ownership is explicitly transferred to `BackgroundProcessManager` via `DetachToBackground`.
-
-It should not be the primary cancellation signal loop. On user cancellation, the controller/runtime side terminates registered foreground processes; the runner merely observes that the process ended under a cancelled token.
+`runCancellableProcess()` starts the process, disables Symfony's built-in timeout/idle timeout, polls until completion, checks the ambient `ToolContext` cancellation token and timeout deadline, calls `Process::stop($graceSeconds)` on cancellation/timeout, and returns `CancellableProcessResult` with stdout/stderr/exit/cancelled/timedOut metadata.
 
 ### Bash cancellation contract
 
-Bash is the first tool that must support true mid-execution interruption, but it should not own low-level cancellation polling or process-tree kill logic. Bash should build a `ProcessSpec`, call `ForegroundProcessRunner`, and format the `ProcessRunResult` into a `ToolResult`.
-
-Sketch:
-
-```php
-public function __invoke(string $command, ?int $timeout = null): ToolResult
-{
-    $context = $this->contexts->requireCurrent();
-
-    $result = $this->processRunner->run(
-        ProcessSpec::shell($command, $this->cwd, timeoutSeconds: $timeout),
-        $context,
-    );
-
-    return $this->formatter->toToolResult($result);
-}
-```
+Bash is the first tool that must support true mid-execution interruption. It should use `ToolRuntime::runCancellableProcess()` for foreground execution, then format `CancellableProcessResult` into the model-facing tool result.
 
 Structured cancellation details from bash should include:
 
@@ -998,31 +864,24 @@ Structured cancellation details from bash should include:
 [
     'cancelled' => true,
     'reason' => 'run_cancelled',
-    'tool_call_id' => $context->toolCallId(),
-    'duration_ms' => $result->durationMs,
-    'partial_output_path' => $result->outputPath,
+    'tool_call_id' => $context->toolCallId,
+    'partial_stdout' => $result->stdout,
+    'partial_stderr' => $result->stderr,
 ]
 ```
 
-### Controller cancellation hook
+### Background processes
 
-When a cancel command is accepted and projected as `cancellation.requested`, the controller/runtime process should:
-
-1. query `ToolProcessRegistry::foregroundForRun($runId)`;
-2. call `ToolProcessTerminator` for each foreground record;
-3. leave background processes alone unless explicitly stopped through `bg_status` or future policy;
-4. let the existing `ToolCallResultHandler`/`LlmStepResultHandler` transition `RunStatus::Cancelling` to terminal `Cancelled`.
-
-This matches the async runtime ladder: cooperative checks are level 1; registered foreground PID/process-group termination is level 2. Consumer SIGTERM/SIGKILL remains a future last-resort layer.
+Background process management remains a separate concern owned by TOOLS-08. Foreground tool cancellation does not require a shared foreground process registry. Background bash commands are not implicitly cancelled by turn cancellation; users stop them explicitly through `bg_status` unless a later policy says otherwise.
 
 ### Generic toolbox tools
 
 Not every Symfony Toolbox callable is automatically interruptible. For app-owned tools:
 
-- short pure-PHP tools check cancellation before starting and at safe boundaries;
-- foreground subprocess tools register their PIDs/process groups and rely on controller/runtime termination on cancellation;
-- background processes use the same registry/terminator primitives but are not killed by ordinary run cancellation;
-- unknown third-party tools remain pre/post cancellable only unless they opt into the context accessor or process registry.
+- short pure-PHP tools use `ToolRuntime::run()` or direct checks before starting and at safe boundaries;
+- foreground subprocess tools use `ToolRuntime::runCancellableProcess()` / `Process::start()` + polling;
+- background processes use `BackgroundProcessManager` and are not killed by ordinary run cancellation;
+- unknown third-party tools remain pre/post cancellable only unless they opt into `ToolRuntime` or `StackToolExecutionContextAccessor`.
 
 ### Pipeline semantics
 

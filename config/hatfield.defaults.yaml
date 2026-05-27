@@ -60,7 +60,7 @@ tools:
         # Stale file retention in seconds (default 24 hours).
         retention: 86400
 
-        # Optional session prefix for filenames (wired by TOOLS-R04+).
+        # Optional session prefix for persisted output filenames.
         # session_prefix: run-abc123
 
 # ---------------------------------------------------------------------------
