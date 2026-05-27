@@ -49,14 +49,14 @@ Out of scope:
 - `castor deptrac` passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/tools-r03-registry-backed-toolbox-allowlist
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-r03-registry-backed-toolbox-allowlist
 Fork run: vo4138t69n04
 PR URL: https://github.com/ineersa/agent-core/pull/58
-PR Status: open
+PR Status: merged
 Started: 2026-05-26T23:20:20.053Z
-Completed:
+Completed: 2026-05-27T00:07:24.241Z
 
 ## Work log
 - Created: 2026-05-25T20:00:00.000Z — split from monolithic TOOLS-R02.
@@ -97,3 +97,34 @@ Completed:
 - Recorded fork run: vo4138t69n04
 - Validation: castor cache:clear: ok; castor test --filter="ToolRuntimeTest": ok (10 tests, 29 assertions); castor test --filter="RegistryBackedToolbox|ToolExecutor|ToolRuntime": ok (31 tests, 82 assertions); castor test: ok (1061 tests, 10195 assertions); castor deptrac: ok (0 violations, 0 errors, uncovered=376, allowed=761); castor cs-check: ok; gh pr view 58: OPEN, CLEAN, head 2201b715
 - Summary: Follow-up fork vo4138t69n04 completed and pushed PR #58 head 2201b715. Added ToolRuntime helper with run() cancellation checkpoints and runCancellableProcess() foreground process polling, CancellableProcessResult DTO, 10 ToolRuntime tests, and docs/tool-execution.md updates. RegistryBackedToolbox remains thin; no central PID registry/ForegroundProcessRunner/ToolCancelledException reintroduced. PR #58 merge state CLEAN.
+
+## Task workflow update - 2026-05-27T00:07:24.241Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/tools-r03-registry-backed-toolbox-allowlist into integration checkout.
+- Merge made by the 'ort' strategy.
+ config/services.yaml                               |  13 ++
+ docs/tool-execution.md                             | 226 +++++++++++++++++++++
+ .../Application/Handler/ExecuteLlmStepWorker.php   |   2 +
+ .../Application/Handler/ExecuteToolCallWorker.php  |   1 +
+ src/AgentCore/Application/Handler/ToolExecutor.php |  53 +++++
+ .../Application/Pipeline/LlmStepResultHandler.php  |   1 +
+ src/AgentCore/Domain/Message/ExecuteToolCall.php   |   1 +
+ src/AgentCore/Domain/Message/LlmStepResult.php     |   1 +
+ src/CodingAgent/Tool/CancellableProcessResult.php  |  37 ++++
+ src/CodingAgent/Tool/RegistryBackedToolbox.php     |  88 ++++++++
+ src/CodingAgent/Tool/ToolRuntime.php               | 154 ++++++++++++++
+ .../Application/Handler/ToolExecutorTest.php       | 147 ++++++++++++++
+ .../CodingAgent/Tool/RegistryBackedToolboxTest.php | 214 +++++++++++++++++++
+ tests/CodingAgent/Tool/ToolRuntimeTest.php         | 214 +++++++++++++++++++
+ 14 files changed, 1152 insertions(+)
+ create mode 100644 docs/tool-execution.md
+ create mode 100644 src/CodingAgent/Tool/CancellableProcessResult.php
+ create mode 100644 src/CodingAgent/Tool/RegistryBackedToolbox.php
+ create mode 100644 src/CodingAgent/Tool/ToolRuntime.php
+ create mode 100644 tests/CodingAgent/Tool/RegistryBackedToolboxTest.php
+ create mode 100644 tests/CodingAgent/Tool/ToolRuntimeTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/tools-r03-registry-backed-toolbox-allowlist.
+- Deleted branch task/tools-r03-registry-backed-toolbox-allowlist.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR #58 merged on GitHub at 2026-05-27T00:07:02Z; PR head 2201b715 included validation: 1061 tests pass, deptrac 0 violations, cs-check clean
+- Summary: PR #58 merged on GitHub. TOOLS-R03 complete: RegistryBackedToolbox wired as ToolboxInterface, toolsRef propagation and ToolExecutor allowlist enforcement implemented, docs/tool-execution.md added, and follow-up ToolRuntime/CancellableProcessResult helper added for simple/cancellable process tool authoring.
