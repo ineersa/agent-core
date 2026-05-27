@@ -168,8 +168,14 @@ with the cancellation token.
 ### `tools.execution.max_parallelism`
 
 Maximum number of tool calls to execute concurrently when
-`default_mode` is `parallel`. Ignored in `sequential` mode until
-TOOLS-R05 provides durable multi-consumer tool orchestration.
+`default_mode` is `parallel`. Also controls the default number of
+parallel `messenger:consume tool` worker processes launched by the
+controller — each worker picks up one `ExecuteToolCall` message from
+the tool transport queue, enabling up to `max_parallelism` concurrent
+tool executions.
+
+See `docs/tool-execution.md` for the durable batch store and
+dispatch pipeline.
 
 **Default:** `4`
 
