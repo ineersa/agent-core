@@ -41,7 +41,7 @@ Out of scope:
 Status: CODE-REVIEW
 Branch: task/tools-03-write-tool
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-03-write-tool
-Fork run: d0dn7edgoxs6
+Fork run: janekzu8pslf
 PR URL: https://github.com/ineersa/agent-core/pull/61
 PR Status: open
 Started: 2026-05-27T16:16:17.419Z
@@ -89,3 +89,7 @@ Completed:
 ## Task workflow update - 2026-05-27T16:34:32.352Z
 - Validation: castor test --filter=WriteFileTool: ok (22 tests, 51 assertions); castor cs-check: ok (files_fixed=0)
 - Summary: Aligned WriteFileTool directory creation with shell `mkdir -p` semantics rather than inventing tool-specific 0750 policy. Removed DEFAULT_DIR_PERMISSIONS again and now call `@mkdir(\dirname($resolvedPath), recursive: true);`, letting the process umask/default ACLs determine directory mode. Pushed commit 9089a31b to PR #61.
+
+## Task workflow update - 2026-05-27T16:37:43.070Z
+- Recorded fork run: janekzu8pslf
+- Summary: Launched follow-up fork janekzu8pslf in /home/ineersa/projects/agent-core-worktrees/tools-03-write-tool to run `castor check`, fix all reported PHPUnit notices/PHPStan/errors properly without regenerating phpstan-baseline unless unavoidable, preserve mkdir-p default-permission decision, validate with Castor, commit, and push PR #61 branch.
