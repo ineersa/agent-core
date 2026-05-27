@@ -49,14 +49,14 @@ Out of scope:
 - Product-level validation exercises the real flow (`castor run:agent-test`, `castor test:tui`, `castor test:llm-real`, or `castor test:controller`) and demonstrates the model receives an image without hanging.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/tools-04-view-image-tool
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-04-view-image-tool
 Fork run: hwh1i5p5zqcy
 PR URL: https://github.com/ineersa/agent-core/pull/62
-PR Status: open
+PR Status: merged
 Started: 2026-05-27T18:57:52.472Z
-Completed:
+Completed: 2026-05-27T22:57:47.248Z
 
 ## Work log
 - Created: 2026-05-17T04:42:04.933Z
@@ -182,3 +182,61 @@ Completed:
 - Recorded fork run: hwh1i5p5zqcy
 - Validation: 1152 tests pass, 10478 assertions; phpstan 0 errors 0 file_errors; deptrac 0 violations; cs-check clean; ToolResultType::IMAGE_REF constant in AgentCore domain; attachment_refs convention in ViewImageTool result; ImageGatingConvertHook autoconfigured via agent_core.convert_to_llm_hook
 - Summary: Architectural-fix fork hwh1i5p5zqcy completed at commit d36f0ed2. Fixed 3 concerns: (1) ToolResultType::IMAGE_REF canonical constant in AgentCore domain replacing 3 duplicates, (2) attachment_refs convention replacing tool-type string sniffing in normalizer, (3) ImageGatingConvertHook implementing extended ConvertToLlmHookInterface with $modelName param, gating moved out of AgentMessageConverter, ModelResolverInterface removed from LlmPlatformAdapter. 11 files changed (+293/-220), 1152 tests pass, all QA clean.
+
+## Task workflow update - 2026-05-27T22:57:47.249Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/tools-04-view-image-tool into integration checkout.
+- Merge made by the 'ort' strategy.
+ .hatfield/settings.yaml                            |   33 +-
+ .../agent-core-redo-implementation-notes.md        |  106 ++
+ .../view-image/pi-image-flow-reference.md          |  217 ++++
+ composer.json                                      |    3 +-
+ composer.lock                                      |   58 +-
+ config/hatfield.defaults.yaml                      |   30 +
+ config/services.yaml                               |   21 +-
+ docs/settings.md                                   |   55 +
+ src/AgentCore/Application/Handler/ToolExecutor.php |    2 +-
+ .../Application/Pipeline/ToolCallResultHandler.php |   34 +
+ .../Contract/Hook/ConvertToLlmHookInterface.php    |    5 +-
+ .../Model/ImageCapabilityCheckerInterface.php      |   32 +
+ .../Domain/Message/AgentMessageNormalizer.php      |   60 +-
+ src/AgentCore/Domain/Message/ToolResultType.php    |   23 +
+ .../SymfonyAi/AgentMessageConverter.php            |  182 +++-
+ .../SymfonyAi/LlmPlatformAdapter.php               |   10 +-
+ src/CodingAgent/Config/ImageToolConfig.php         |   84 ++
+ src/CodingAgent/Config/ToolsConfig.php             |    4 +
+ .../SymfonyAi/ProjectedSymfonyModelCatalog.php     |    4 +
+ .../CodingAgentImageCapabilityChecker.php          |   50 +
+ .../ImageProcessing/ImageAttachmentProcessor.php   |  688 +++++++++++++
+ .../ImageProcessing/ImageGatingConvertHook.php     |  134 +++
+ .../Tool/ImageProcessing/RunVisionCheckService.php |   43 +
+ src/CodingAgent/Tool/OutputCap.php                 |    9 +
+ src/CodingAgent/Tool/ViewImageTool.php             |  224 ++++
+ .../AgentCore/Contract/HookParityContractTest.php  |    2 +-
+ .../SymfonyAi/PlatformIntegrationTest.php          |    2 +-
+ .../Controller/E2E/ControllerE2eTestCase.php       |  510 +++++++++
+ .../Runtime/Controller/E2E/ControllerSmokeTest.php |  516 +---------
+ .../Controller/E2E/ViewImageToolE2eTest.php        |  122 +++
+ .../Controller/E2E/WriteFileToolE2eTest.php        |   97 ++
+ .../Runtime/Controller/E2E/test-photo.jpeg         |  Bin 0 -> 62008 bytes
+ .../ImageAttachmentProcessorTest.php               |  299 ++++++
+ tests/CodingAgent/Tool/ViewImageToolTest.php       | 1080 ++++++++++++++++++++
+ 34 files changed, 4197 insertions(+), 542 deletions(-)
+ create mode 100644 .pi/reference/view-image/agent-core-redo-implementation-notes.md
+ create mode 100644 .pi/reference/view-image/pi-image-flow-reference.md
+ create mode 100644 src/AgentCore/Contract/Model/ImageCapabilityCheckerInterface.php
+ create mode 100644 src/AgentCore/Domain/Message/ToolResultType.php
+ create mode 100644 src/CodingAgent/Config/ImageToolConfig.php
+ create mode 100644 src/CodingAgent/Tool/ImageProcessing/CodingAgentImageCapabilityChecker.php
+ create mode 100644 src/CodingAgent/Tool/ImageProcessing/ImageAttachmentProcessor.php
+ create mode 100644 src/CodingAgent/Tool/ImageProcessing/ImageGatingConvertHook.php
+ create mode 100644 src/CodingAgent/Tool/ImageProcessing/RunVisionCheckService.php
+ create mode 100644 src/CodingAgent/Tool/ViewImageTool.php
+ create mode 100644 tests/CodingAgent/Runtime/Controller/E2E/ControllerE2eTestCase.php
+ create mode 100644 tests/CodingAgent/Runtime/Controller/E2E/ViewImageToolE2eTest.php
+ create mode 100644 tests/CodingAgent/Runtime/Controller/E2E/WriteFileToolE2eTest.php
+ create mode 100644 tests/CodingAgent/Runtime/Controller/E2E/test-photo.jpeg
+ create mode 100644 tests/CodingAgent/Tool/ImageProcessing/ImageAttachmentProcessorTest.php
+ create mode 100644 tests/CodingAgent/Tool/ViewImageToolTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/tools-04-view-image-tool.
+- Pulled integration checkout: Already up to date..
