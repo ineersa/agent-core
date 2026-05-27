@@ -11,8 +11,9 @@ final readonly class RunState
     /**
      * Initializes run state with identifier, status, and progression counters.
      *
-     * @param list<AgentMessage>  $messages
-     * @param array<string, bool> $pendingToolCalls
+     * @param list<AgentMessage>        $messages
+     * @param array<string, bool>       $pendingToolCalls
+     * @param array<string, mixed>|null $streamingMessage
      */
     public function __construct(
         public string $runId,

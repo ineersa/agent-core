@@ -14,14 +14,20 @@ use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
  */
 final class InMemoryToolBatchStore implements ToolBatchStoreInterface
 {
-    /** @var array<string, array> */
+    /** @var array<string, array<string, mixed>> */
     private array $batches = [];
 
+    /**
+     * @return array<string, mixed>|null
+     */
     public function load(string $runId, int $turnNo, string $stepId): ?array
     {
         return $this->batches[$this->key($runId, $turnNo, $stepId)] ?? null;
     }
 
+    /**
+     * @param array<string, mixed> $batchState
+     */
     public function save(string $runId, int $turnNo, string $stepId, array $batchState): void
     {
         $this->batches[$this->key($runId, $turnNo, $stepId)] = $batchState;

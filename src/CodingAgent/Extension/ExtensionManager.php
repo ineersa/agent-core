@@ -58,18 +58,8 @@ final readonly class ExtensionManager
      */
     private function getEnabledClasses(): array
     {
-        $classes = $this->config->extensions->enabled;
-
-        if (!\is_array($classes)) {
-            $this->logger->warning('extensions.enabled is not a list; ignoring', [
-                'value' => $classes,
-            ]);
-
-            return [];
-        }
-
         /* @var list<class-string> */
-        return array_values(array_filter($classes, \is_string(...)));
+        return array_values(array_filter($this->config->extensions->enabled, \is_string(...)));
     }
 
     /**

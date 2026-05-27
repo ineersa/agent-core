@@ -49,11 +49,15 @@ final class PathResolver
             throw new \InvalidArgumentException('Path must not contain null bytes.');
         }
 
-        $cwd ??= (getcwd() ?: '/');
+        if (null === $cwd) {
+            $cwdFromProcess = getcwd();
+            $cwd = false !== $cwdFromProcess ? $cwdFromProcess : '/';
+        }
 
         // Treat empty-string cwd the same as null — use the runtime cwd
         if ('' === $cwd) {
-            $cwd = getcwd() ?: '/';
+            $cwdFromProcess = getcwd();
+            $cwd = false !== $cwdFromProcess ? $cwdFromProcess : '/';
         }
 
         if (str_contains($cwd, "\0")) {
@@ -61,7 +65,7 @@ final class PathResolver
         }
 
         // cwd must be absolute when provided
-        if ('' !== $cwd && '/' !== $cwd[0]) {
+        if ('/' !== $cwd[0]) {
             throw new \InvalidArgumentException(\sprintf('Working directory must be absolute, got "%s".', $cwd));
         }
 
@@ -85,7 +89,7 @@ final class PathResolver
 
             // Reject ~user syntax (letter/digit after ~), but allow
             // tilde-starting filenames like ~~ or ~.foo as relative paths.
-            if ('' !== $path[1] && '/' !== $path[1]) {
+            if ('/' !== $path[1]) {
                 // Check only the first path segment after ~ (up to / or EOS)
                 $segment = str_contains($path, '/')
                     ? substr($path, 1, strpos($path, '/') - 1)
@@ -204,9 +208,8 @@ final class PathResolver
         // System-level fallback: query the user database
         if (\function_exists('posix_getpwuid')) {
             $pwInfo = posix_getpwuid(posix_getuid());
-            $pwDir = \is_array($pwInfo) ? ($pwInfo['dir'] ?? null) : null;
-            if (\is_string($pwDir) && '' !== $pwDir) {
-                return $pwDir;
+            if (\is_array($pwInfo)) {
+                return $pwInfo['dir'];
             }
         }
 
