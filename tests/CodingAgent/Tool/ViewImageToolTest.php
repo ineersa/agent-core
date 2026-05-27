@@ -13,7 +13,9 @@ use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\CodingAgent\Config\ImageToolConfig;
+use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tool\HatfieldToolProviderInterface;
+use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolDefinitionDTO;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
@@ -36,7 +38,9 @@ final class ViewImageToolTest extends TestCase
     private ToolRuntime $toolRuntime;
     private ViewImageTool $viewImageTool;
     private ImageToolConfig $imageConfig;
+    private OutputCap $outputCap;
     private string $tmpDir;
+    private string $outputCapDir;
 
     protected function setUp(): void
     {
@@ -52,12 +56,37 @@ final class ViewImageToolTest extends TestCase
         $this->tmpDir = sys_get_temp_dir().'/hatfield_view_image_test_'.\bin2hex(random_bytes(8));
         mkdir($this->tmpDir, 0750, recursive: true);
 
-        $this->viewImageTool = new ViewImageTool($this->toolRuntime, $this->imageConfig);
+        $this->outputCapDir = $this->tmpDir.'/output-cap';
+        mkdir($this->outputCapDir, 0750, recursive: true);
+        $outputCapConfig = new OutputCapConfig(
+            storageDir: $this->outputCapDir,
+            defaultCap: 20000,
+            docCap: 50000,
+            retentionSeconds: 86400,
+            sessionPrefix: 'test',
+        );
+        $this->outputCap = new OutputCap($outputCapConfig);
+
+        $this->viewImageTool = new ViewImageTool($this->toolRuntime, $this->imageConfig, $this->outputCap);
     }
 
     protected function tearDown(): void
     {
         $this->rmDir($this->tmpDir);
+    }
+
+    private function createOutputCap(int $defaultCap = 20000): OutputCap
+    {
+        $dir = $this->tmpDir.'/output-cap-'.bin2hex(random_bytes(4));
+        mkdir($dir, 0750, true);
+
+        return new OutputCap(new OutputCapConfig(
+            storageDir: $dir,
+            defaultCap: $defaultCap,
+            docCap: $defaultCap,
+            retentionSeconds: 3600,
+            sessionPrefix: 'test',
+        ));
     }
 
     /* ── helper: create tiny test images ── */
@@ -341,7 +370,7 @@ final class ViewImageToolTest extends TestCase
     public function testRejectsFileExceedingMaxBytes(): void
     {
         $smallConfig = new ImageToolConfig(maxBytes: 50, maxWidth: 4096, maxHeight: 2000);
-        $tool = new ViewImageTool($this->toolRuntime, $smallConfig);
+        $tool = new ViewImageTool($this->toolRuntime, $smallConfig, $this->createOutputCap());
 
         // Create a 1x1 PNG (~110-175 bytes depending on palette) larger than 50 bytes
         $img = \imagecreatetruecolor(1, 1);
@@ -358,7 +387,7 @@ final class ViewImageToolTest extends TestCase
     public function testAcceptsFileWithinMaxBytes(): void
     {
         $largeConfig = new ImageToolConfig(maxBytes: 50_000_000, maxWidth: 4096, maxHeight: 2000);
-        $tool = new ViewImageTool($this->toolRuntime, $largeConfig);
+        $tool = new ViewImageTool($this->toolRuntime, $largeConfig, $this->createOutputCap());
 
         $imagePath = $this->tmpDir.'/ok.png';
         $this->createPng1x1($imagePath);
@@ -373,7 +402,7 @@ final class ViewImageToolTest extends TestCase
     public function testRejectsImageExceedingMaxWidth(): void
     {
         $smallConfig = new ImageToolConfig(maxBytes: 10_485_760, maxWidth: 2, maxHeight: 2000);
-        $tool = new ViewImageTool($this->toolRuntime, $smallConfig);
+        $tool = new ViewImageTool($this->toolRuntime, $smallConfig, $this->createOutputCap());
 
         $imagePath = $this->tmpDir.'/wide.png';
         $img = \imagecreatetruecolor(10, 1);
@@ -389,7 +418,7 @@ final class ViewImageToolTest extends TestCase
     public function testRejectsImageExceedingMaxHeight(): void
     {
         $smallConfig = new ImageToolConfig(maxBytes: 10_485_760, maxWidth: 4096, maxHeight: 2);
-        $tool = new ViewImageTool($this->toolRuntime, $smallConfig);
+        $tool = new ViewImageTool($this->toolRuntime, $smallConfig, $this->createOutputCap());
 
         $imagePath = $this->tmpDir.'/tall.png';
         $img = \imagecreatetruecolor(1, 10);
@@ -491,7 +520,7 @@ final class ViewImageToolTest extends TestCase
 
         $contextAccessor = new StackToolExecutionContextAccessor();
         $toolRuntime = new ToolRuntime($contextAccessor);
-        $tool = new ViewImageTool($toolRuntime, $this->imageConfig);
+        $tool = new ViewImageTool($toolRuntime, $this->imageConfig, $this->createOutputCap(100_000));
 
         $registry = new ToolRegistry([$tool]);
         $toolbox = new RegistryBackedToolbox($registry);
@@ -573,6 +602,45 @@ final class ViewImageToolTest extends TestCase
         self::assertStringContainsString('base64', $messageStr);
         self::assertStringContainsString('data_url', $messageStr);
         self::assertStringContainsString('data:image/png;base64,', $messageStr);
+    }
+
+    /* ── OutputCap capping test ── */
+
+    public function testLargeResultCappedViaOutputCap(): void
+    {
+        // Create an OutputCap with a tiny cap so even a 1x1 PNG gets capped
+        $tinyCap = $this->createOutputCap(10);
+
+        $tool = new ViewImageTool($this->toolRuntime, $this->imageConfig, $tinyCap);
+
+        $imagePath = $this->tmpDir.'/capped.png';
+        $this->createPng1x1($imagePath);
+
+        $result = $tool(['path' => $imagePath]);
+
+        // Should return compact result without base64/data_url
+        self::assertArrayNotHasKey('base64', $result, 'Capped result should not contain base64');
+        self::assertArrayNotHasKey('data_url', $result, 'Capped result should not contain data_url');
+        self::assertArrayHasKey('output_cap_path', $result, 'Capped result should contain output_cap_path');
+        self::assertArrayHasKey('note', $result, 'Capped result should contain note');
+
+        // Verify the output cap file exists and contains the full data
+        self::assertFileExists($result['output_cap_path']);
+        $savedJson = file_get_contents($result['output_cap_path']);
+        $savedData = json_decode($savedJson, true);
+        self::assertIsArray($savedData);
+        self::assertSame('view_image', $savedData['type']);
+        self::assertSame('image/png', $savedData['media_type']);
+        self::assertNotEmpty($savedData['base64']);
+        self::assertStringContainsString('data:image/png;base64,', $savedData['data_url']);
+        self::assertSame(1, $savedData['width']);
+        self::assertSame(1, $savedData['height']);
+
+        // Compact result retains key metadata
+        self::assertSame('image/png', $result['media_type']);
+        self::assertSame(1, $result['width']);
+        self::assertSame(1, $result['height']);
+        self::assertGreaterThan(0, $result['bytes']);
     }
 
     /* ── helpers ── */

@@ -28,6 +28,7 @@ final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerI
     public function __construct(
         private readonly ToolRuntime $toolRuntime,
         private readonly ImageToolConfig $imageConfig,
+        private readonly OutputCap $outputCap,
     ) {
     }
 
@@ -111,7 +112,7 @@ final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerI
             $base64 = base64_encode($binaryContent);
             $dataUrl = \sprintf('data:%s;base64,%s', $mediaType, $base64);
 
-            return [
+            $result = [
                 'type' => 'view_image',
                 'path' => $resolvedPath,
                 'media_type' => $mediaType,
@@ -121,6 +122,35 @@ final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerI
                 'width' => $width,
                 'height' => $height,
             ];
+
+            // Cap oversized results via OutputCap to prevent runtime/LLM blowup.
+            // When the serialized result exceeds the default output cap limit,
+            // persist the full data to disk and return a compact result with
+            // a reference path. The LLM can retrieve the full data via shell
+            // tools if needed.
+            $resultJson = json_encode($result);
+            if (\is_string($resultJson) && mb_strlen($resultJson) > $this->outputCap->config()->defaultCap) {
+                $cappedPath = $this->outputCap->persist($resultJson);
+
+                return [
+                    'type' => 'view_image',
+                    'path' => $resolvedPath,
+                    'media_type' => $mediaType,
+                    'bytes' => $fileSize,
+                    'width' => $width,
+                    'height' => $height,
+                    'output_cap_path' => $cappedPath,
+                    'note' => \sprintf(
+                        'Image data capped. Full %d×%d (%s, %d bytes) saved to output cap. Use read tool or shell commands on output_cap_path to retrieve full data if needed.',
+                        $width,
+                        $height,
+                        $mediaType,
+                        $fileSize,
+                    ),
+                ];
+            }
+
+            return $result;
         });
     }
 
@@ -150,6 +180,7 @@ final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerI
                 'Image type is determined from file content (magic bytes), not file extension.',
                 'Returns base64-encoded image data, MIME type, data URL, dimensions, and file size.',
                 'Large images may be rejected if they exceed configured size or dimension limits.',
+                'Very large images have their base64/data_url persisted to an output cap file and replaced with a compact metadata result containing an output_cap_path reference.',
                 'Use when you need to inspect image content, dimensions, or encode an image for downstream use.',
             ],
         );
