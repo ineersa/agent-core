@@ -304,7 +304,7 @@ final class WriteFileToolTest extends TestCase
 
     private function createToken(bool $cancelled): CancellationTokenInterface
     {
-        $token = $this->createMock(CancellationTokenInterface::class);
+        $token = $this->createStub(CancellationTokenInterface::class);
         $token->method('isCancellationRequested')->willReturn($cancelled);
 
         return $token;

@@ -32,8 +32,7 @@ final class WriteFileTool implements HatfieldToolProviderInterface, ToolHandlerI
      *
      * @return string Success message with byte count
      *
-     * @throws \InvalidArgumentException on missing or invalid arguments
-     * @throws \RuntimeException         on filesystem errors or cancellation
+     * @throws \RuntimeException on filesystem errors or cancellation
      */
     public function __invoke(array $arguments): string
     {
