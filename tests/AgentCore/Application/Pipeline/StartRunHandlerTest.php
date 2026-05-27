@@ -58,29 +58,29 @@ final class StartRunHandlerTest extends TestCase
 
         $result = $handler->handle($message, $state);
 
-        self::assertNotNull($result->nextState);
-        self::assertSame(RunStatus::Running, $result->nextState->status);
-        self::assertSame(5, $result->nextState->version);
-        self::assertSame(0, $result->nextState->turnNo);
-        self::assertSame(10, $result->nextState->lastSeq);
-        self::assertSame('start-step-1', $result->nextState->activeStepId);
-        self::assertFalse($result->nextState->isStreaming);
-        self::assertNull($result->nextState->streamingMessage);
-        self::assertSame([], $result->nextState->pendingToolCalls);
-        self::assertNull($result->nextState->errorMessage);
-        self::assertFalse($result->nextState->retryableFailure);
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Running, $result->nextState->status);
+        $this->assertSame(5, $result->nextState->version);
+        $this->assertSame(0, $result->nextState->turnNo);
+        $this->assertSame(10, $result->nextState->lastSeq);
+        $this->assertSame('start-step-1', $result->nextState->activeStepId);
+        $this->assertFalse($result->nextState->isStreaming);
+        $this->assertNull($result->nextState->streamingMessage);
+        $this->assertSame([], $result->nextState->pendingToolCalls);
+        $this->assertNull($result->nextState->errorMessage);
+        $this->assertFalse($result->nextState->retryableFailure);
 
-        self::assertCount(1, $result->nextState->messages);
-        self::assertSame('user', $result->nextState->messages[0]->role);
+        $this->assertCount(1, $result->nextState->messages);
+        $this->assertSame('user', $result->nextState->messages[0]->role);
 
-        self::assertCount(1, $result->events);
-        self::assertSame('run_started', $result->events[0]->type);
-        self::assertSame('start-step-1', $result->events[0]->payload['step_id']);
+        $this->assertCount(1, $result->events);
+        $this->assertSame('run_started', $result->events[0]->type);
+        $this->assertSame('start-step-1', $result->events[0]->payload['step_id']);
 
-        self::assertSame([], $result->effects);
-        self::assertSame([], $result->postCommitEffects);
-        self::assertSame([], $result->postCommit);
-        self::assertTrue($result->markHandled);
+        $this->assertSame([], $result->effects);
+        $this->assertSame([], $result->postCommitEffects);
+        $this->assertSame([], $result->postCommit);
+        $this->assertTrue($result->markHandled);
     }
 
     public function testHandleSchedulesInitialAdvanceAfterCommitWhenBusIsProvided(): void
@@ -113,18 +113,18 @@ final class StartRunHandlerTest extends TestCase
 
         $result = $handler->handle($message, $state);
 
-        self::assertCount(1, $result->postCommit);
+        $this->assertCount(1, $result->postCommit);
         ($result->postCommit[0])();
 
-        self::assertCount(1, $commandBus->messages);
-        self::assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
+        $this->assertCount(1, $commandBus->messages);
+        $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
 
         /** @var AdvanceRun $advance */
         $advance = $commandBus->messages[0];
-        self::assertSame('run-start-handler-2', $advance->runId());
-        self::assertSame(0, $advance->turnNo());
-        self::assertStringStartsWith('start-follow-up-', $advance->stepId());
-        self::assertSame(hash('sha256', sprintf('%s|%s', $advance->runId(), $advance->stepId())), $advance->idempotencyKey());
+        $this->assertSame('run-start-handler-2', $advance->runId());
+        $this->assertSame(0, $advance->turnNo());
+        $this->assertStringStartsWith('start-follow-up-', $advance->stepId());
+        $this->assertSame(hash('sha256', \sprintf('%s|%s', $advance->runId(), $advance->stepId())), $advance->idempotencyKey());
     }
 }
 

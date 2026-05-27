@@ -7,7 +7,6 @@ namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 use Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\MessageIdempotencyService;
-use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
 use Ineersa\AgentCore\Application\Handler\ReplayService;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
@@ -29,14 +28,12 @@ use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-
 use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
-
+use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
-
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
@@ -78,16 +75,16 @@ final class CommandMailboxPolicyTest extends TestCase
         ));
 
         $state = $fixture->runStore->get($runId);
-        self::assertNotNull($state);
+        $this->assertNotNull($state);
 
         $userMessages = array_values(array_filter(
             $state->messages,
-            static fn (object $message): bool => $message instanceof \Ineersa\AgentCore\Domain\Message\AgentMessage
+            static fn (object $message): bool => $message instanceof AgentMessage
                 && 'user' === $message->role,
         ));
 
-        self::assertCount(2, $userMessages);
-        self::assertSame('latest steer', $userMessages[1]->content[0]['text']);
+        $this->assertCount(2, $userMessages);
+        $this->assertSame('latest steer', $userMessages[1]->content[0]['text']);
 
         $events = $fixture->eventStore->allFor($runId);
 
@@ -102,8 +99,8 @@ final class CommandMailboxPolicyTest extends TestCase
                 && 'steer-2' === ($event->payload['idempotency_key'] ?? null),
         ));
 
-        self::assertCount(1, $superseded);
-        self::assertCount(1, $applied);
+        $this->assertCount(1, $superseded);
+        $this->assertCount(1, $applied);
     }
 
     public function testQueueCapRejectsNonCancelCommands(): void
@@ -133,8 +130,8 @@ final class CommandMailboxPolicyTest extends TestCase
                 && 'cap-follow-up-1' === ($event->payload['idempotency_key'] ?? null),
         ));
 
-        self::assertCount(1, $rejections);
-        self::assertStringContainsString('mailbox cap', (string) $rejections[0]->payload['reason']);
+        $this->assertCount(1, $rejections);
+        $this->assertStringContainsString('mailbox cap', (string) $rejections[0]->payload['reason']);
     }
 
     public function testContinueIsRejectedWhenCancellationAlreadyInProgress(): void
@@ -189,11 +186,11 @@ final class CommandMailboxPolicyTest extends TestCase
                 && 'continue-1' === ($event->payload['idempotency_key'] ?? null),
         ));
 
-        self::assertCount(1, $continueRejections);
+        $this->assertCount(1, $continueRejections);
 
         $state = $fixture->runStore->get($runId);
-        self::assertNotNull($state);
-        self::assertSame(RunStatus::Cancelling, $state->status);
+        $this->assertNotNull($state);
+        $this->assertSame(RunStatus::Cancelling, $state->status);
     }
 
     public function testContinueSchedulesAdvanceForRetryableFailureWithValidLastRole(): void
@@ -233,15 +230,15 @@ final class CommandMailboxPolicyTest extends TestCase
         ));
 
         $state = $fixture->runStore->get($runId);
-        self::assertNotNull($state);
-        self::assertSame(RunStatus::Running, $state->status);
+        $this->assertNotNull($state);
+        $this->assertSame(RunStatus::Running, $state->status);
 
         $advanceCommands = array_values(array_filter(
             $fixture->commandBus->messages,
             static fn (object $message): bool => $message instanceof AdvanceRun,
         ));
 
-        self::assertCount(1, $advanceCommands);
+        $this->assertCount(1, $advanceCommands);
     }
 
     private function createFixture(int $maxPendingCommands = 100, string $steerDrainMode = 'one_at_a_time'): CommandMailboxFixture
@@ -281,7 +278,7 @@ final class CommandMailboxPolicyTest extends TestCase
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: $runCommit,
             stepDispatcher: $stepDispatcher,
-            logger: new \Psr\Log\NullLogger(),
+            logger: new NullLogger(),
             handlers: [
                 new StartRunHandler(
                     stateTools: $stateTools,

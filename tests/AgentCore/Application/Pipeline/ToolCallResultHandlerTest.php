@@ -87,24 +87,24 @@ final class ToolCallResultHandlerTest extends TestCase
 
         $result = $handler->handle($message, $state);
 
-        self::assertNotNull($result->nextState);
-        self::assertSame(RunStatus::Running, $result->nextState->status);
-        self::assertSame(6, $result->nextState->version);
-        self::assertSame(8, $result->nextState->lastSeq);
-        self::assertSame([
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Running, $result->nextState->status);
+        $this->assertSame(6, $result->nextState->version);
+        $this->assertSame(8, $result->nextState->lastSeq);
+        $this->assertSame([
             'tool-a' => true,
             'tool-b' => false,
         ], $result->nextState->pendingToolCalls);
 
-        self::assertCount(2, $result->events);
-        self::assertSame('tool_call_result_received', $result->events[0]->type);
-        self::assertSame('tool_execution_end', $result->events[1]->type);
+        $this->assertCount(2, $result->events);
+        $this->assertSame('tool_call_result_received', $result->events[0]->type);
+        $this->assertSame('tool_execution_end', $result->events[1]->type);
 
-        self::assertSame([], $result->effects);
-        self::assertCount(1, $result->postCommitEffects);
-        self::assertInstanceOf(ExecuteToolCall::class, $result->postCommitEffects[0]);
-        self::assertSame('tool-b', $result->postCommitEffects[0]->toolCallId);
-        self::assertSame([], $result->postCommit);
-        self::assertTrue($result->markHandled);
+        $this->assertSame([], $result->effects);
+        $this->assertCount(1, $result->postCommitEffects);
+        $this->assertInstanceOf(ExecuteToolCall::class, $result->postCommitEffects[0]);
+        $this->assertSame('tool-b', $result->postCommitEffects[0]->toolCallId);
+        $this->assertSame([], $result->postCommit);
+        $this->assertTrue($result->markHandled);
     }
 }

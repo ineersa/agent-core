@@ -68,26 +68,26 @@ final class LlmStepResultHandlerTest extends TestCase
 
         $result = $handler->handle($message, $state);
 
-        self::assertNotNull($result->nextState);
-        self::assertSame(RunStatus::Running, $result->nextState->status);
-        self::assertSame(4, $result->nextState->version);
-        self::assertSame(6, $result->nextState->lastSeq);
-        self::assertSame(['tool-call-1' => false], $result->nextState->pendingToolCalls);
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Running, $result->nextState->status);
+        $this->assertSame(4, $result->nextState->version);
+        $this->assertSame(6, $result->nextState->lastSeq);
+        $this->assertSame(['tool-call-1' => false], $result->nextState->pendingToolCalls);
 
-        self::assertCount(2, $result->events);
-        self::assertSame('llm_step_completed', $result->events[0]->type);
-        self::assertSame('tool_execution_start', $result->events[1]->type);
+        $this->assertCount(2, $result->events);
+        $this->assertSame('llm_step_completed', $result->events[0]->type);
+        $this->assertSame('tool_execution_start', $result->events[1]->type);
 
-        self::assertSame([], $result->effects);
-        self::assertSame([], $result->postCommitEffects);
-        self::assertCount(1, $result->postCommit);
-        self::assertTrue($result->markHandled);
+        $this->assertSame([], $result->effects);
+        $this->assertSame([], $result->postCommitEffects);
+        $this->assertCount(1, $result->postCommit);
+        $this->assertTrue($result->markHandled);
 
         ($result->postCommit[0])();
 
-        self::assertCount(1, $executionBus->messages);
-        self::assertInstanceOf(ExecuteToolCall::class, $executionBus->messages[0]);
-        self::assertSame('tool-call-1', $executionBus->messages[0]->toolCallId);
+        $this->assertCount(1, $executionBus->messages);
+        $this->assertInstanceOf(ExecuteToolCall::class, $executionBus->messages[0]);
+        $this->assertSame('tool-call-1', $executionBus->messages[0]->toolCallId);
     }
 }
 

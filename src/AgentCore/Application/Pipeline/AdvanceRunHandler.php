@@ -82,7 +82,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             // If pending commands produced boundary events (messages were
             // added), the run is no longer terminal — continue to the
             // turn-advance path below.
-            if ([] !== $boundaryEventSpecs && \in_array($preparedState->status, [RunStatus::Completed, RunStatus::Failed], true)) {
+            if ([] !== $boundaryEventSpecs && \in_array($preparedState->status, [RunStatus::Completed, RunStatus::Failed, RunStatus::Cancelled], true)) {
                 $preparedState = new RunState(
                     runId: $preparedState->runId,
                     status: RunStatus::Running,

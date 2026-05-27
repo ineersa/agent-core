@@ -7,7 +7,6 @@ namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 use Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\MessageIdempotencyService;
-use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
 use Ineersa\AgentCore\Application\Handler\ReplayService;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\RunMetrics;
@@ -28,18 +27,15 @@ use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\StartRunPayload;
-
 use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
-
+use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
 use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
-
 use PHPUnit\Framework\TestCase;
 use Psr\Log\AbstractLogger;
-use Stringable;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\InMemoryStore;
 use Symfony\Component\Messenger\Envelope;
@@ -65,7 +61,6 @@ final class RunOrchestratorObservabilityTest extends TestCase
         $runStore = new InMemoryRunStore();
         $eventStore = new RunEventStore();
         $commandStore = new InMemoryCommandStore();
-
 
         $metrics = new RunMetrics();
         $traceLogger = new ObservabilityTraceLogger();
@@ -180,9 +175,9 @@ final class RunOrchestratorObservabilityTest extends TestCase
 
         $snapshot = $metrics->snapshot();
 
-        self::assertSame(1, $snapshot['stale_result_count']);
-        self::assertSame(1, $snapshot['turn_duration_ms']['count']);
-        self::assertSame(1, $snapshot['active_runs_by_status']['completed']);
+        $this->assertSame(1, $snapshot['stale_result_count']);
+        $this->assertSame(1, $snapshot['turn_duration_ms']['count']);
+        $this->assertSame(1, $snapshot['active_runs_by_status']['completed']);
 
         $commitTraceFinishes = array_values(array_filter(
             $traceLogger->records,
@@ -190,7 +185,7 @@ final class RunOrchestratorObservabilityTest extends TestCase
                 && 'persistence.commit' === ($record['context']['span_name'] ?? null),
         ));
 
-        self::assertNotEmpty($commitTraceFinishes);
+        $this->assertNotEmpty($commitTraceFinishes);
     }
 
     private function deleteDirectory(string $path): void
@@ -231,7 +226,7 @@ final class ObservabilityTraceLogger extends AbstractLogger
     /** @var list<array{message: string, context: array<string, mixed>}> */
     public array $records = [];
 
-    public function log($level, Stringable|string $message, array $context = []): void
+    public function log($level, \Stringable|string $message, array $context = []): void
     {
         unset($level);
 

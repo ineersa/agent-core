@@ -61,7 +61,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             );
         }
 
-        if (RunStatus::Cancelled === $state->status) {
+        if (RunStatus::Cancelled === $state->status && CoreCommandKind::FollowUp !== $message->kind) {
             return $this->rejectCommand($state, $message, 'Run is already cancelled.');
         }
 

@@ -45,7 +45,8 @@ InteractiveMode::run(client, request, theme, sessionId)
               │    └─ start run / send follow-up → AgentSessionClient
               │
               ├─ CancelEvent → CancelListener
-              │    └─ ChatScreen::clearEditor()
+              │    └─ active run → AgentSessionClient::cancel() + Cancelling state
+              │    └─ idle/terminal → ChatScreen::clearEditor()
               │
               ├─ QuitEvent → QuitListener
               │    └─ $tui->stop() → unblock run()
@@ -128,7 +129,7 @@ Each event has a dedicated listener class in `src/Tui/Listener/`: each implement
 |-------|----------|------|--------|
 | `InputEvent` (priority 100) | `CtrlCInputInterceptor` | `src/Tui/Listener/CtrlCInputInterceptor.php` | Ctrl+D → stop TUI; Ctrl+C → cancel/double-press quit |
 | `SubmitEvent` | `SubmitListener` | `src/Tui/Listener/SubmitListener.php` | Append user message, start run or send follow-up, show processing indicator |
-| `CancelEvent` | `CancelListener` | `src/Tui/Listener/CancelListener.php` | Clear editor text |
+| `CancelEvent` | `CancelListener` | `src/Tui/Listener/CancelListener.php` | ESC → cancel active run or clear editor when idle |
 | `QuitEvent` | `QuitListener` | `src/Tui/Listener/QuitListener.php` | Call `$tui->stop()` |
 | `TickEvent` | `TuiTickDispatcher` | `src/Tui/Runtime/TuiTickDispatcher.php` | Multiplex the single Symfony TUI `onTick()` callback to registered handlers |
 | `TickEvent` | `TickPollListener` | `src/Tui/Listener/TickPollListener.php` | Delegate to `RuntimeEventPoller`, refresh transcript via `ChatScreen` |

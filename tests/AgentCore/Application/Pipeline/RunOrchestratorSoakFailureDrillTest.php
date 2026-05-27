@@ -7,7 +7,6 @@ namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 use Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\MessageIdempotencyService;
-use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
 use Ineersa\AgentCore\Application\Handler\ReplayService;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
@@ -27,18 +26,16 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\StartRun;
-use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-
 use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
-
+use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
+use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
-
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
@@ -66,15 +63,15 @@ final class RunOrchestratorSoakFailureDrillTest extends TestCase
         $fixture = $this->createFixture();
 
         for ($index = 1; $index <= 1000; ++$index) {
-            $runId = sprintf('run-soak-%04d', $index);
-            $stepId = sprintf('turn-1-llm-%04d', $index);
+            $runId = \sprintf('run-soak-%04d', $index);
+            $stepId = \sprintf('turn-1-llm-%04d', $index);
 
             $fixture->orchestrator->onStartRun(new StartRun(
                 runId: $runId,
                 turnNo: 0,
                 stepId: 'start-1',
                 attempt: 1,
-                idempotencyKey: sprintf('start-%04d', $index),
+                idempotencyKey: \sprintf('start-%04d', $index),
                 payload: new StartRunPayload(messages: []),
             ));
 
@@ -83,7 +80,7 @@ final class RunOrchestratorSoakFailureDrillTest extends TestCase
                 turnNo: 0,
                 stepId: $stepId,
                 attempt: 1,
-                idempotencyKey: sprintf('advance-%04d', $index),
+                idempotencyKey: \sprintf('advance-%04d', $index),
             ));
 
             $fixture->orchestrator->onLlmStepResult(new LlmStepResult(
@@ -91,8 +88,8 @@ final class RunOrchestratorSoakFailureDrillTest extends TestCase
                 turnNo: 1,
                 stepId: $stepId,
                 attempt: 1,
-                idempotencyKey: sprintf('llm-%04d', $index),
-                assistantMessage: SymfonyAiTestMessages::assistantText(sprintf('synthetic-run-%04d', $index)),
+                idempotencyKey: \sprintf('llm-%04d', $index),
+                assistantMessage: SymfonyAiTestMessages::assistantText(\sprintf('synthetic-run-%04d', $index)),
                 usage: ['total_tokens' => 5],
                 stopReason: 'stop',
                 error: null,
@@ -100,18 +97,18 @@ final class RunOrchestratorSoakFailureDrillTest extends TestCase
         }
 
         for ($index = 1; $index <= 1000; ++$index) {
-            $runId = sprintf('run-soak-%04d', $index);
+            $runId = \sprintf('run-soak-%04d', $index);
 
             $state = $fixture->runStore->get($runId);
-            self::assertNotNull($state);
-            self::assertSame(RunStatus::Completed, $state->status);
+            $this->assertNotNull($state);
+            $this->assertSame(RunStatus::Completed, $state->status);
 
             $events = $fixture->eventStore->allFor($runId);
-            self::assertNotEmpty($events);
+            $this->assertNotEmpty($events);
 
             $expectedSequence = 1;
             foreach ($events as $event) {
-                self::assertSame($expectedSequence, $event->seq);
+                $this->assertSame($expectedSequence, $event->seq);
                 ++$expectedSequence;
             }
         }
@@ -162,7 +159,7 @@ final class RunOrchestratorSoakFailureDrillTest extends TestCase
             error: null,
         ));
 
-        $toolResultA = fn (string $idempotencyKey): ToolCallResult => new ToolCallResult(
+        $toolResultA = static fn (string $idempotencyKey): ToolCallResult => new ToolCallResult(
             runId: $runId,
             turnNo: 1,
             stepId: 'turn-1-llm-1',
@@ -175,7 +172,7 @@ final class RunOrchestratorSoakFailureDrillTest extends TestCase
             error: null,
         );
 
-        $toolResultB = fn (string $idempotencyKey): ToolCallResult => new ToolCallResult(
+        $toolResultB = static fn (string $idempotencyKey): ToolCallResult => new ToolCallResult(
             runId: $runId,
             turnNo: 1,
             stepId: 'turn-1-llm-1',
@@ -192,8 +189,8 @@ final class RunOrchestratorSoakFailureDrillTest extends TestCase
         $fixture->orchestrator->onToolCallResult($toolResultA('tool-a-0'));
 
         for ($index = 1; $index <= 50; ++$index) {
-            $fixture->orchestrator->onToolCallResult($toolResultA(sprintf('tool-a-dup-%d', $index)));
-            $fixture->orchestrator->onToolCallResult($toolResultB(sprintf('tool-b-dup-%d', $index)));
+            $fixture->orchestrator->onToolCallResult($toolResultA(\sprintf('tool-a-dup-%d', $index)));
+            $fixture->orchestrator->onToolCallResult($toolResultB(\sprintf('tool-b-dup-%d', $index)));
         }
 
         $events = $fixture->eventStore->allFor($runId);
@@ -202,25 +199,25 @@ final class RunOrchestratorSoakFailureDrillTest extends TestCase
             $events,
             static fn (RunEvent $event): bool => 'tool_call_result_received' === $event->type,
         ));
-        self::assertCount(2, $receivedEvents);
+        $this->assertCount(2, $receivedEvents);
 
         $batchEvents = array_values(array_filter(
             $events,
             static fn (RunEvent $event): bool => 'tool_batch_committed' === $event->type,
         ));
-        self::assertCount(1, $batchEvents);
+        $this->assertCount(1, $batchEvents);
 
         $state = $fixture->runStore->get($runId);
-        self::assertNotNull($state);
+        $this->assertNotNull($state);
 
         $toolMessages = array_values(array_filter(
             $state->messages,
             static fn (object $message): bool => $message instanceof \Ineersa\AgentCore\Domain\Message\AgentMessage && 'tool' === $message->role,
         ));
 
-        self::assertCount(2, $toolMessages);
-        self::assertSame('call-a', $toolMessages[0]->toolCallId);
-        self::assertSame('call-b', $toolMessages[1]->toolCallId);
+        $this->assertCount(2, $toolMessages);
+        $this->assertSame('call-a', $toolMessages[0]->toolCallId);
+        $this->assertSame('call-b', $toolMessages[1]->toolCallId);
     }
 
     public function testTransientEventStoreFailureDuringCommitRollsBackStateAndIsRecoveredByRetryLoop(): void
@@ -245,23 +242,23 @@ final class RunOrchestratorSoakFailureDrillTest extends TestCase
 
         // After the automatic retry recovery, state is committed.
         $state = $fixture->runStore->get('run-failure-drill-1');
-        self::assertNotNull($state);
-        self::assertSame(RunStatus::Running, $state->status);
-        self::assertSame(1, $state->version);
-        self::assertSame(1, $state->lastSeq);
+        $this->assertNotNull($state);
+        $this->assertSame(RunStatus::Running, $state->status);
+        $this->assertSame(1, $state->version);
+        $this->assertSame(1, $state->lastSeq);
 
         $events = $eventStore->allFor('run-failure-drill-1');
-        self::assertCount(1, $events);
-        self::assertSame(1, $events[0]->seq);
-        self::assertSame('run_started', $events[0]->type);
+        $this->assertCount(1, $events);
+        $this->assertSame(1, $events[0]->seq);
+        $this->assertSame('run_started', $events[0]->type);
 
         // Second dispatch of the same message is idempotency-skipped.
         $fixture->orchestrator->onStartRun($start);
 
         $stateAfterIdempotency = $fixture->runStore->get('run-failure-drill-1');
-        self::assertNotNull($stateAfterIdempotency);
-        self::assertSame(1, $stateAfterIdempotency->version);
-        self::assertSame(1, $stateAfterIdempotency->lastSeq);
+        $this->assertNotNull($stateAfterIdempotency);
+        $this->assertSame(1, $stateAfterIdempotency->version);
+        $this->assertSame(1, $stateAfterIdempotency->lastSeq);
     }
 
     private function createFixture(?EventStoreInterface $eventStore = null): SoakFailureDrillFixture
@@ -297,7 +294,7 @@ final class RunOrchestratorSoakFailureDrillTest extends TestCase
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: $runCommit,
             stepDispatcher: $stepDispatcher,
-            logger: new \Psr\Log\NullLogger(),
+            logger: new NullLogger(),
             handlers: [
                 new StartRunHandler(
                     stateTools: $stateTools,

@@ -7,7 +7,6 @@ namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 use Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\MessageIdempotencyService;
-use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
 use Ineersa\AgentCore\Application\Handler\ReplayService;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
@@ -24,14 +23,12 @@ use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\StartRunPayload;
-
 use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
-
+use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
-
 use PHPUnit\Framework\TestCase;
 use Psr\Log\AbstractLogger;
 use Symfony\Component\Lock\LockFactory;
@@ -131,23 +128,23 @@ final class RunOrchestratorStructuredLoggingTest extends TestCase
             payload: new StartRunPayload(messages: []),
         ));
 
-        self::assertNotEmpty($logger->records);
+        $this->assertNotEmpty($logger->records);
 
         $record = $logger->records[0];
 
-        self::assertSame('agent_loop.event', $record['message']);
-        self::assertArrayHasKey('run_id', $record['context']);
-        self::assertArrayHasKey('turn_no', $record['context']);
-        self::assertArrayHasKey('step_id', $record['context']);
-        self::assertArrayHasKey('seq', $record['context']);
-        self::assertArrayHasKey('status', $record['context']);
-        self::assertArrayHasKey('worker_id', $record['context']);
-        self::assertArrayHasKey('attempt', $record['context']);
+        $this->assertSame('agent_loop.event', $record['message']);
+        $this->assertArrayHasKey('run_id', $record['context']);
+        $this->assertArrayHasKey('turn_no', $record['context']);
+        $this->assertArrayHasKey('step_id', $record['context']);
+        $this->assertArrayHasKey('seq', $record['context']);
+        $this->assertArrayHasKey('status', $record['context']);
+        $this->assertArrayHasKey('worker_id', $record['context']);
+        $this->assertArrayHasKey('attempt', $record['context']);
 
-        self::assertSame('run-log-1', $record['context']['run_id']);
-        self::assertSame('start-step-1', $record['context']['step_id']);
-        self::assertSame('running', $record['context']['status']);
-        self::assertSame('orchestrator', $record['context']['worker_id']);
+        $this->assertSame('run-log-1', $record['context']['run_id']);
+        $this->assertSame('start-step-1', $record['context']['step_id']);
+        $this->assertSame('running', $record['context']['status']);
+        $this->assertSame('orchestrator', $record['context']['worker_id']);
     }
 
     private function deleteDirectory(string $path): void

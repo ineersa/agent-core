@@ -7,7 +7,6 @@ namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 use Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\MessageIdempotencyService;
-use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
 use Ineersa\AgentCore\Application\Handler\ReplayService;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
@@ -30,15 +29,13 @@ use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-
 use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
-
+use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
 use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
-
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
@@ -149,31 +146,31 @@ final class RunOrchestratorTopologyTest extends TestCase
         ));
 
         $eventsAfterDuplicate = $fixture->eventStore->allFor($runId);
-        self::assertCount(count($eventsBeforeDuplicate), $eventsAfterDuplicate);
+        $this->assertCount(\count($eventsBeforeDuplicate), $eventsAfterDuplicate);
 
         $state = $fixture->runStore->get($runId);
-        self::assertNotNull($state);
+        $this->assertNotNull($state);
 
         $toolMessages = array_values(array_filter(
             $state->messages,
             static fn (object $message): bool => $message instanceof \Ineersa\AgentCore\Domain\Message\AgentMessage && 'tool' === $message->role,
         ));
 
-        self::assertCount(2, $toolMessages);
-        self::assertSame('call-a', $toolMessages[0]->toolCallId);
-        self::assertSame('call-b', $toolMessages[1]->toolCallId);
+        $this->assertCount(2, $toolMessages);
+        $this->assertSame('call-a', $toolMessages[0]->toolCallId);
+        $this->assertSame('call-b', $toolMessages[1]->toolCallId);
 
         $receivedEvents = array_values(array_filter(
             $eventsAfterDuplicate,
             static fn (RunEvent $event): bool => 'tool_call_result_received' === $event->type,
         ));
-        self::assertCount(2, $receivedEvents);
+        $this->assertCount(2, $receivedEvents);
 
         $batchEvents = array_values(array_filter(
             $eventsAfterDuplicate,
             static fn (RunEvent $event): bool => 'tool_batch_committed' === $event->type,
         ));
-        self::assertCount(1, $batchEvents);
+        $this->assertCount(1, $batchEvents);
     }
 
     public function testStaleToolResultWritesAuditEvent(): void
@@ -216,8 +213,8 @@ final class RunOrchestratorTopologyTest extends TestCase
             static fn (RunEvent $event): bool => 'stale_result_ignored' === $event->type,
         ));
 
-        self::assertCount(1, $staleEvents);
-        self::assertSame('tool_call_result', $staleEvents[0]->payload['result']);
+        $this->assertCount(1, $staleEvents);
+        $this->assertSame('tool_call_result', $staleEvents[0]->payload['result']);
     }
 
     public function testAbortedLlmResultTransitionsRunToCancelled(): void
@@ -265,16 +262,16 @@ final class RunOrchestratorTopologyTest extends TestCase
         ));
 
         $state = $fixture->runStore->get($runId);
-        self::assertNotNull($state);
-        self::assertSame(RunStatus::Cancelled, $state->status);
+        $this->assertNotNull($state);
+        $this->assertSame(RunStatus::Cancelled, $state->status);
 
         $abortedEvents = array_values(array_filter(
             $fixture->eventStore->allFor($runId),
             static fn (RunEvent $event): bool => 'llm_step_aborted' === $event->type,
         ));
 
-        self::assertCount(1, $abortedEvents);
-        self::assertSame('aborted', $abortedEvents[0]->payload['stop_reason']);
+        $this->assertCount(1, $abortedEvents);
+        $this->assertSame('aborted', $abortedEvents[0]->payload['stop_reason']);
     }
 
     public function testInterruptToolResultTransitionsRunToWaitingHuman(): void
@@ -343,16 +340,16 @@ final class RunOrchestratorTopologyTest extends TestCase
         ));
 
         $state = $fixture->runStore->get($runId);
-        self::assertNotNull($state);
-        self::assertSame(RunStatus::WaitingHuman, $state->status);
+        $this->assertNotNull($state);
+        $this->assertSame(RunStatus::WaitingHuman, $state->status);
 
         $waitingEvents = array_values(array_filter(
             $fixture->eventStore->allFor($runId),
             static fn (RunEvent $event): bool => 'waiting_human' === $event->type,
         ));
 
-        self::assertCount(1, $waitingEvents);
-        self::assertSame('q-1', $waitingEvents[0]->payload['question_id']);
+        $this->assertCount(1, $waitingEvents);
+        $this->assertSame('q-1', $waitingEvents[0]->payload['question_id']);
     }
 
     public function testCancellingRunIgnoresLateToolResults(): void
@@ -419,15 +416,15 @@ final class RunOrchestratorTopologyTest extends TestCase
         ));
 
         $state = $fixture->runStore->get($runId);
-        self::assertNotNull($state);
-        self::assertSame(RunStatus::Cancelled, $state->status);
+        $this->assertNotNull($state);
+        $this->assertSame(RunStatus::Cancelled, $state->status);
 
         $toolMessages = array_values(array_filter(
             $state->messages,
             static fn (object $message): bool => $message instanceof \Ineersa\AgentCore\Domain\Message\AgentMessage && 'tool' === $message->role,
         ));
 
-        self::assertCount(0, $toolMessages);
+        $this->assertCount(0, $toolMessages);
 
         $ignored = array_values(array_filter(
             $fixture->eventStore->allFor($runId),
@@ -436,15 +433,15 @@ final class RunOrchestratorTopologyTest extends TestCase
                 && 'cancelling' === ($event->payload['status'] ?? null),
         ));
 
-        self::assertCount(1, $ignored);
+        $this->assertCount(1, $ignored);
 
         $agentEndEvents = array_values(array_filter(
             $fixture->eventStore->allFor($runId),
             static fn (RunEvent $event): bool => 'agent_end' === $event->type,
         ));
 
-        self::assertCount(1, $agentEndEvents);
-        self::assertSame('cancelled', $agentEndEvents[0]->payload['reason']);
+        $this->assertCount(1, $agentEndEvents);
+        $this->assertSame('cancelled', $agentEndEvents[0]->payload['reason']);
     }
 
     private function createFixture(int $maxPendingCommands = 100, string $steerDrainMode = 'one_at_a_time'): RunOrchestratorFixture
@@ -484,7 +481,7 @@ final class RunOrchestratorTopologyTest extends TestCase
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: $runCommit,
             stepDispatcher: $stepDispatcher,
-            logger: new \Psr\Log\NullLogger(),
+            logger: new NullLogger(),
             handlers: [
                 new StartRunHandler(
                     stateTools: $stateTools,
