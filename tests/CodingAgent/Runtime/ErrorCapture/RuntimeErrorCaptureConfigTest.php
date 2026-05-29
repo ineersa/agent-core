@@ -11,10 +11,11 @@ use PHPUnit\Framework\TestCase;
 class RuntimeErrorCaptureConfigTest extends TestCase
 {
     #[Test]
-    public function defaultsToEnabledWhenNoEnvVarSet(): void
+    public function defaultConstructorEnablesCapture(): void
     {
-        // Simulate no env var by constructing with null.
-        $config = new RuntimeErrorCaptureConfig(envValue: null);
+        // DI provides the env value; default '1' is a safe fallback
+        // for direct instantiation.
+        $config = new RuntimeErrorCaptureConfig();
         $this->assertTrue($config->captureErrors, 'captureErrors should be true by default');
     }
 

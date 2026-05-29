@@ -64,6 +64,11 @@ final readonly class RunCommit
                     $rollbackRestored = $this->runStore->compareAndSwap($state, $nextState->version);
                 } catch (\Throwable $rollbackException) {
                     $rollbackError = $rollbackException->getMessage();
+                    $this->logger->warning('Rollback CAS failed after event persistence failure', [
+                        'run_id' => $nextState->runId,
+                        'turn_no' => $nextState->turnNo,
+                        'exception' => $rollbackException,
+                    ]);
                 }
 
                 // Mark the run as failed so the TUI shows a terminal error.

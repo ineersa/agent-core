@@ -320,7 +320,11 @@ final class HeadlessController
 
             if (!\is_array($data) || !isset($data['v'], $data['type'])) {
                 // Not a valid RuntimeEvent — likely messenger:consume
-                // informational output. Silently skip.
+                // informational output (worker name, status). Skip at
+                // debug level since this is normal protocol noise.
+                $this->logger->debug('Skipped non-RuntimeEvent LLM consumer stdout line', [
+                    'preview' => mb_substr($trimmed, 0, 120),
+                ]);
                 continue;
             }
 
@@ -384,6 +388,14 @@ final class HeadlessController
             $event = new ControllerCommandEvent($command, $emit);
             $this->dispatcher->dispatch($event);
         } catch (\Throwable $e) {
+            // Respect HATFIELD_CAPTURE_ERRORS policy: when disabled,
+            // crash/rethrow so CI harnesses see hard failures.
+            if (!$this->errorCaptureConfig->captureErrors) {
+                throw $e;
+            }
+
+            // Capture mode: log and emit a command_rejected event so
+            // the TUI shows the user what happened.
             $this->logger->error('Controller command dispatch failed', [
                 'command_type' => $command->type,
                 'command_id' => $command->id,

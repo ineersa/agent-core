@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
-use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
@@ -61,7 +61,7 @@ final class SessionRunEventStoreTest extends TestCase
     public function testAllForReturnsEmptyForMissingRun(): void
     {
         $events = $this->store->allFor('nonexistent');
-        self::assertCount(0, $events);
+        $this->assertCount(0, $events);
     }
 
     public function testAppendAndRetrieveSingleEvent(): void
@@ -78,15 +78,15 @@ final class SessionRunEventStoreTest extends TestCase
         $this->store->append($event);
 
         $events = $this->store->allFor($runId);
-        self::assertCount(1, $events);
-        self::assertSame($runId, $events[0]->runId);
-        self::assertSame(1, $events[0]->seq);
-        self::assertSame('run_started', $events[0]->type);
-        self::assertSame('hello', $events[0]->payload['prompt']);
+        $this->assertCount(1, $events);
+        $this->assertSame($runId, $events[0]->runId);
+        $this->assertSame(1, $events[0]->seq);
+        $this->assertSame('run_started', $events[0]->type);
+        $this->assertSame('hello', $events[0]->payload['prompt']);
 
         // Verify events.jsonl exists on disk
         $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
-        self::assertFileExists($eventsPath);
+        $this->assertFileExists($eventsPath);
     }
 
     public function testAppendManyAndRetrieveSorted(): void
@@ -99,15 +99,15 @@ final class SessionRunEventStoreTest extends TestCase
         $this->store->appendMany([$event1, $event2, $event3]);
 
         $events = $this->store->allFor($runId);
-        self::assertCount(3, $events);
+        $this->assertCount(3, $events);
 
         // Must be sorted by seq
-        self::assertSame(1, $events[0]->seq);
-        self::assertSame(2, $events[1]->seq);
-        self::assertSame(3, $events[2]->seq);
-        self::assertSame('run_started', $events[0]->type);
-        self::assertSame('tool_execution_start', $events[1]->type);
-        self::assertSame('tool_execution_end', $events[2]->type);
+        $this->assertSame(1, $events[0]->seq);
+        $this->assertSame(2, $events[1]->seq);
+        $this->assertSame(3, $events[2]->seq);
+        $this->assertSame('run_started', $events[0]->type);
+        $this->assertSame('tool_execution_start', $events[1]->type);
+        $this->assertSame('tool_execution_end', $events[2]->type);
     }
 
     public function testEventsSurviveStoreRecreation(): void
@@ -141,8 +141,8 @@ final class SessionRunEventStoreTest extends TestCase
         );
 
         $events = $newStore->allFor($runId);
-        self::assertCount(1, $events, 'Events must survive store recreation');
-        self::assertSame('agent_start', $events[0]->type);
+        $this->assertCount(1, $events, 'Events must survive store recreation');
+        $this->assertSame('agent_start', $events[0]->type);
     }
 
     public function testEmbeddedRunIdMustMatchDirectory(): void
@@ -173,13 +173,57 @@ final class SessionRunEventStoreTest extends TestCase
         $eventsA = $this->store->allFor($runA);
         $eventsB = $this->store->allFor($runB);
 
-        self::assertCount(1, $eventsA);
-        self::assertSame('run_started', $eventsA[0]->type);
-        self::assertSame($runA, $eventsA[0]->runId);
+        $this->assertCount(1, $eventsA);
+        $this->assertSame('run_started', $eventsA[0]->type);
+        $this->assertSame($runA, $eventsA[0]->runId);
 
-        self::assertCount(1, $eventsB);
-        self::assertSame('agent_start', $eventsB[0]->type);
-        self::assertSame($runB, $eventsB[0]->runId);
+        $this->assertCount(1, $eventsB);
+        $this->assertSame('agent_start', $eventsB[0]->type);
+        $this->assertSame($runB, $eventsB[0]->runId);
+    }
+
+    public function testCorruptJsonLineWithMissingRequiredFieldsThrows(): void
+    {
+        // Write a valid event then inject a corrupt line with no schema_version
+        // and missing required fields — should throw, not silently skip.
+        $runId = 'run-'.bin2hex(random_bytes(4));
+        $this->store->append(new RunEvent(
+            runId: $runId,
+            seq: 1,
+            turnNo: 0,
+            type: 'run_started',
+            payload: [],
+        ));
+
+        $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
+        // Append a corrupt line (missing required fields, no schema_version)
+        file_put_contents($eventsPath, '{"run_id":"'.$runId.'","seq":null}'."\n", \FILE_APPEND);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Corrupt event JSONL for run');
+        $this->store->allFor($runId);
+    }
+
+    public function testIncompatibleSchemaVersionIsSkippedSilently(): void
+    {
+        $runId = 'run-'.bin2hex(random_bytes(4));
+        $this->store->append(new RunEvent(
+            runId: $runId,
+            seq: 1,
+            turnNo: 0,
+            type: 'run_started',
+            payload: [],
+        ));
+
+        $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
+        // Append an old-format event with incompatible schema version
+        file_put_contents($eventsPath, '{"schema_version":"0.1","run_id":"'.$runId.'","seq":2,"turn_no":1,"type":"old_event","payload":[]}'."\n", \FILE_APPEND);
+
+        // Should succeed — incompatible schema is skipped, original event is returned.
+        $events = $this->store->allFor($runId);
+        $this->assertCount(1, $events);
+        $this->assertSame(1, $events[0]->seq);
+        $this->assertSame('run_started', $events[0]->type);
     }
 
     private function rmDir(string $dir): void

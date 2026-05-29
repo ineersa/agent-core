@@ -3,6 +3,9 @@ parameters:
     # Temporary default model — AI-10 per-turn routing replaces this.
     app.default_model: 'deepseek/deepseek-v4-pro'
 
+    # Default HATFIELD_CAPTURE_ERRORS to enabled; overridable via env var.
+    env(HATFIELD_CAPTURE_ERRORS): '1'
+
 
 services:
   _defaults:
@@ -53,7 +56,9 @@ services:
 
   # ─── Error capture (env-driven config, not a per-catch delegation service) ───
 
-  Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureConfig: ~
+  Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureConfig:
+    arguments:
+      $envValue: '%env(string:HATFIELD_CAPTURE_ERRORS)%'
 
   # ─── Hatfield config services ───
 
