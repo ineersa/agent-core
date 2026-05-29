@@ -333,9 +333,10 @@ final class LlamaCppSmokeTest extends TestCase
         }
 
         // Determine which provider key to use.
-        // Priority: 1) env override, 2) default_model prefix, 3) fall back to llama_cpp
+        // Priority: 1) env override, 2) llama_cpp_test if configured, 3) fall back to llama_cpp
         $defaultModel = (string) ($settings['ai']['default_model'] ?? '');
-        $providerKey = getenv('LLAMA_CPP_TEST_PROVIDER') ?: 'llama_cpp';
+        $providerKey = getenv('LLAMA_CPP_TEST_PROVIDER')
+            ?: (isset($settings['ai']['providers']['llama_cpp_test']) ? 'llama_cpp_test' : 'llama_cpp');
 
         // If default_model points to llama_cpp_test/, honour that
         if (str_starts_with($defaultModel, 'llama_cpp_test/')) {
