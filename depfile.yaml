@@ -391,6 +391,9 @@ parameters:
       - AppExtensionApi
       - AppConfig
       - AppTool
+      - AgentCore
+      - SymfonyAiPlatform
+      - SymfonyEventDispatcher
 
     AppSkills:
       - AppConfig

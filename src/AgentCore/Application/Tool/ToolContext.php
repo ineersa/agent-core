@@ -18,6 +18,7 @@ final readonly class ToolContext
         private string $toolName,
         private CancellationTokenInterface $cancellationToken,
         private int $timeoutSeconds,
+        private int $orderIndex = 0,
     ) {
     }
 
@@ -49,5 +50,10 @@ final readonly class ToolContext
     public function timeoutSeconds(): int
     {
         return $this->timeoutSeconds;
+    }
+
+    public function orderIndex(): int
+    {
+        return $this->orderIndex;
     }
 }
