@@ -575,7 +575,7 @@ function test_llm_real(): void
  * async runtime pipeline (controller event loop -> messenger consumers
  * -> LLM invocation -> event delivery).
  *
- * Uses the fast llama_cpp_test/lfm2.5 model on port 9052.
+ * Uses the fast llama_cpp_test/test model on port 9052.
  * Same fast test model as test:llm-real and TUI E2E tests.
  */
 #[AsTask(name: 'test:controller', description: 'Run controller E2E smoke test (spawns --controller, sends JSONL)')]
@@ -688,7 +688,7 @@ function run_agent_test(): void
         $settings = (string) file_get_contents($projectSettings);
         $settings = preg_replace(
             '/^ai:\n/m',
-            "ai:\n    default_model: llama_cpp_test/lfm2.5\n    default_reasoning: off\n",
+            "ai:\n    default_model: llama_cpp_test/test\n    default_reasoning: off\n",
             $settings,
             1,
         ) ?? $settings;
@@ -708,7 +708,7 @@ function run_agent_test(): void
     shell_exec(sprintf('tmux kill-session -t %s 2>/dev/null', escapeshellarg($session)));
 
     $innerCmd = sprintf(
-        'cd %s && APP_ENV=dev HOME=%s %s %s agent --prompt=%s --model=llama_cpp_test/lfm2.5 --reasoning=off 2>&1',
+        'cd %s && APP_ENV=dev HOME=%s %s %s agent --prompt=%s --model=llama_cpp_test/test --reasoning=off 2>&1',
         escapeshellarg($testDir),
         escapeshellarg($homeDir),
         escapeshellarg(\PHP_BINARY),

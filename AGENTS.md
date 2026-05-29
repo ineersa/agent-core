@@ -50,7 +50,7 @@ castor idea:run-configs
 
 ### Test LLM
 
-All E2E tests use `llama_cpp_test/lfm2.5` (port 9052). This is a fast local
+All E2E tests use `llama_cpp_test/test` (port 9052). This is a fast local
 model for deterministic smoke testing. Never use production LLM providers
 in E2E tests.
 
@@ -115,18 +115,26 @@ Messenger wiring, `TranscriptProjector`, `RuntimeEventPoller`, transcript
 rendering, or LLM-visible execution flow, unit/container/mocked tests are not
 enough.
 
-You MUST run and report a product-level Castor workflow:
+You MUST run and report a product-level Castor workflow. `castor test:controller`
+alone is insufficient for runtime/TUI/error-propagation changes — it exercises the
+controller process but not the interactive TUI or actual user-visible error blocks.
 
-- `castor run:agent-test` to drive the agent in tmux and capture snapshots, or
+At minimum, you must run at least ONE of these in addition to `castor test:controller`:
+
 - `castor test:tui` for tmux snapshot/e2e assertions, or
 - `castor test:llm-real` for real-model paths (LlamaCppSmokeTest), or
-- `castor test:controller` for controller process E2E.
+- `castor run:agent-test` to drive the agent in tmux and capture snapshots.
 
 Validation must exercise the real user flow: start agent, type prompt, submit,
 wait for visible assistant response or visible error block, and capture TUI
 snapshot plus session artifacts (`events.jsonl`, `transcript.jsonl`) on failure.
 Do not claim runtime/TUI work is done based only on DTO tests, mocked pollers,
 container compilation, or isolated service tests.
+
+If the required product-level validation cannot run because of missing prerequisites
+(tmux not installed, llama.cpp not reachable on port 9052), the task MUST remain
+IN-PROGRESS with exact environmental blocker output — never mark CODE-REVIEW or
+DONE without it.
 
 ## Development rules
 

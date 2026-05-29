@@ -84,12 +84,19 @@ final class RuntimeEventMapperTest extends TestCase
 
     public function testNormalizesAgentEndFailedToRunFailed(): void
     {
-        $event = $this->runEvent('agent_end', ['reason' => 'failed']);
+        $event = $this->runEvent('agent_end', [
+            'reason' => 'failed',
+            'error' => 'CAS conflict exhausted',
+            'message_type' => 'StartRun',
+        ]);
 
         $result = $this->mapper->toRuntimeEvent($event);
 
         self::assertNotNull($result);
         self::assertSame(RuntimeEventTypeEnum::RunFailed->value, $result->type);
+        self::assertSame('failed', $result->payload['reason']);
+        self::assertSame('CAS conflict exhausted', $result->payload['error']);
+        self::assertSame('StartRun', $result->payload['message_type']);
     }
 
     public function testNormalizesAgentEndUnknownReasonToRunCompleted(): void

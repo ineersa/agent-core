@@ -182,6 +182,7 @@ final class LlamaCppSmokeTest extends TestCase
             platform: $platform,
             transformContextHooks: [],
             convertToLlmHooks: [],
+            streamObserver: null,
             logger: new NullLogger(),
         );
 

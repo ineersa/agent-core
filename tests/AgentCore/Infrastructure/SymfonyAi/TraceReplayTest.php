@@ -141,6 +141,7 @@ final class TraceReplayTest extends TestCase
             platform: $platform,
             transformContextHooks: [],
             convertToLlmHooks: [],
+            streamObserver: null,
             logger: new NullLogger(),
         );
 
@@ -346,6 +347,7 @@ final class TraceReplayTest extends TestCase
             platform: $platform,
             transformContextHooks: [],
             convertToLlmHooks: [],
+            streamObserver: null,
             logger: new NullLogger(),
         );
 

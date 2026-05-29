@@ -53,7 +53,7 @@ final class TuiStartupSnapshotTest extends TestCase
     public function testStartupLayoutMatchesGoldenSnapshot(): void
     {
         $pane = $this->tmux->startDetached(
-            command: 'php bin/console agent --prompt="hello from tmux e2e"; echo; echo "── TUI exited ──"; exec sleep 3600',
+            command: 'php bin/console agent --model=llama_cpp_test/test --prompt="hello from tmux e2e"; echo; echo "── TUI exited ──"; exec sleep 3600',
             prefix: 'hatfield-startup',
         );
 
@@ -114,7 +114,7 @@ final class TuiStartupSnapshotTest extends TestCase
     public function testStartupContainsExpectedElements(): void
     {
         $pane = $this->tmux->startDetached(
-            command: 'php bin/console agent --prompt="hello from tmux e2e"; echo; echo "── TUI exited ──"; exec sleep 3600',
+            command: 'php bin/console agent --model=llama_cpp_test/test --prompt="hello from tmux e2e"; echo; echo "── TUI exited ──"; exec sleep 3600',
             prefix: 'hatfield-startup-elements',
         );
 
