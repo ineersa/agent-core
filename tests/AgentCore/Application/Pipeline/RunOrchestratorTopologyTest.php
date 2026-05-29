@@ -465,14 +465,20 @@ final class RunOrchestratorTopologyTest extends TestCase
         $stateTools = new RunMessageStateTools(new \Ineersa\AgentCore\Domain\Event\EventFactory(), new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor());
         $toolBatchCollector = new ToolBatchCollector();
 
+        $errorCaptureService = new \Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureService(
+            new \Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureConfig(envValue: '1'),
+        );
+        $errorCaptureService->setLogger(new NullLogger());
+
         $runCommit = new RunCommit(
             runStore: $runStore,
             eventStore: $eventStore,
             commandStore: $commandStore,
             replayService: $replayService,
             stepDispatcher: $stepDispatcher,
-            hookDispatcher: null,
             logger: new NullLogger(),
+            errorCapture: $errorCaptureService,
+            hookDispatcher: null,
         );
 
         $runMessageProcessor = new RunMessageProcessor(

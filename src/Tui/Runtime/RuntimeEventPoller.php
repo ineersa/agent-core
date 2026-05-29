@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
+use Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureService;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -29,6 +30,7 @@ final class RuntimeEventPoller
     public function __construct(
         private readonly TranscriptProjectorInterface $projector,
         private readonly LoggerInterface $logger,
+        private readonly RuntimeErrorCaptureService $errorCapture,
     ) {
     }
 
@@ -105,9 +107,23 @@ final class RuntimeEventPoller
             ]);
 
             if (!$this->isFatalPollingError($e) && $state->runtimePollErrorCount < 3) {
+                // Show transient status on the first non-fatal error
+                // so the user sees something instead of silence.
+                // The poller will retry; if the issue persists, the
+                // error block below kicks in at count=3.
+                if (1 === $state->runtimePollErrorCount) {
+                    $state->lastRuntimePollError = 'Polling issue (' . $e->getMessage() . ') — retrying...';
+                }
+
                 return null;
             }
 
+            $this->errorCapture->handleError($e, 'runtime_event_poller.polling_failed', [
+                'run_id' => $state->handle->runId,
+                'consecutive_errors' => $state->runtimePollErrorCount,
+            ]);
+
+            // If capture is enabled, show the error and transition to Failed.
             $state->activity = RunActivityStateEnum::Failed;
 
             $block = new TranscriptBlock(

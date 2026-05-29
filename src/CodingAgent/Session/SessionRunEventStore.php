@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Session;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
 
 /**
@@ -32,6 +33,7 @@ final class SessionRunEventStore implements EventStoreInterface
         HatfieldSessionStore $hatfieldSessionStore,
         private readonly EventPayloadNormalizer $eventPayloadNormalizer,
         private readonly LockFactory $lockFactory,
+        private readonly LoggerInterface $logger,
     ) {
         $this->sessionsBasePath = $hatfieldSessionStore->resolveSessionsBasePath();
     }
@@ -91,10 +93,20 @@ final class SessionRunEventStore implements EventStoreInterface
             try {
                 $payload = json_decode($trimmedLine, true, 512, \JSON_THROW_ON_ERROR);
             } catch (\JsonException) {
+                $this->logger->warning('SessionRunEventStore skipped corrupt JSONL line', [
+                    'run_id' => $runId,
+                    'line' => mb_substr($trimmedLine, 0, 200),
+                ]);
+
                 continue;
             }
 
             if (!\is_array($payload)) {
+                $this->logger->warning('SessionRunEventStore skipped non-associative JSONL line', [
+                    'run_id' => $runId,
+                    'line' => mb_substr($trimmedLine, 0, 200),
+                ]);
+
                 continue;
             }
 

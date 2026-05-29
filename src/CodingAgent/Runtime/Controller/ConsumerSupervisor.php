@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
+use Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureService;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
 use Symfony\Component\Process\Process;
@@ -54,6 +55,7 @@ final class ConsumerSupervisor
 
     public function __construct(
         private readonly LoggerInterface $logger,
+        private readonly RuntimeErrorCaptureService $errorCapture,
         private readonly int $shutdownGraceSeconds = 5,
     ) {
     }
@@ -96,15 +98,25 @@ final class ConsumerSupervisor
 
             $process->start();
         } catch (\Throwable $e) {
-            $this->logger->error('Failed to launch messenger consumer', [
+            $this->errorCapture->handleError($e, 'consumer_supervisor.launch_failed', [
                 'transport' => $transportName,
                 'instance' => $instanceId,
                 'entrypoint' => $entrypoint,
                 'cwd' => $cwd,
-                'exception' => $e,
             ]);
 
-            return;
+            // If we reach here, capture is enabled — throw so the
+            // controller stops launching and reports the error. This
+            // prevents the "controller ready but nothing works" hang.
+            throw new \RuntimeException(
+                \sprintf(
+                    'Failed to launch messenger consumer for transport "%s" instance %d: %s',
+                    $transportName,
+                    $instanceId,
+                    $e->getMessage(),
+                ),
+                previous: $e,
+            );
         }
 
         $key = $this->consumerKey($transportName, $instanceId);

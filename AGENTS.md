@@ -135,6 +135,11 @@ container compilation, or isolated service tests.
 - Never add production APIs or code paths solely for tests. Use production constructors/factories or test-local fixtures/builders.
 - Never use `ReflectionClass::newInstanceWithoutConstructor()`, `Closure::bind()`, or constructor/property bypass tricks in production code.
 - Test helpers belong in tests, not production.
+- **Every caught exception or error MUST be propagated forward to the user/runtime/TUI, or explicitly documented as intentional local degradation.**
+  - Critical infrastructure errors (data persistence, process launch, transport): emit a user-visible runtime event (e.g. `run.failed`, `protocol.error`) or error TranscriptBlock via the centralized `RuntimeErrorCaptureService`. Must not silently log/ignore/return null.
+  - Intentional local degradation (image EXIF, log line parsing, optional observer hooks): document with a comment in the catch block explaining why it is safe and use `RuntimeErrorCaptureService::handleDegradation()` for consistent diagnostics. Never leave an empty catch body.
+  - Centralized error capture respects `HATFIELD_CAPTURE_ERRORS=1` (default, user-facing mode — captures and converts to user-visible failure) and `HATFIELD_CAPTURE_ERRORS=0` (test mode — rethrows/crashes loudly so test harnesses see real exceptions).
+  - **Static enforcement**: A future Rector/PHPStan custom rule should flag empty catch blocks, log-only catch blocks without `throw`/structured error return/centralized handler call. Until then, review catch blocks during code review for this rule. See `src/CodingAgent/Runtime/ErrorCapture/` for the centralized handler.
 
 ## Symfony setup
 

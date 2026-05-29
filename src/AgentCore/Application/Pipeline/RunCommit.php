@@ -15,6 +15,8 @@ use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureService;
 use Psr\Log\LoggerInterface;
 
 final readonly class RunCommit
@@ -26,6 +28,7 @@ final readonly class RunCommit
         private ReplayService $replayService,
         private StepDispatcher $stepDispatcher,
         private LoggerInterface $logger,
+        private RuntimeErrorCaptureService $errorCapture,
         private ?HookDispatcher $hookDispatcher = null,
         private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
@@ -65,28 +68,61 @@ final readonly class RunCommit
                     $rollbackError = $rollbackException->getMessage();
                 }
 
-                $this->logger->warning('agent_loop.commit.event_persist_failed', [
+                // Mark the run as failed so the TUI shows a terminal error.
+                // Use the original $state values because the rollback
+                // already restored it (or failed — in either case $state
+                // is our best reference).
+                try {
+                    $failedState = new RunState(
+                        runId: $state->runId,
+                        status: RunStatus::Failed,
+                        version: $state->version + 1,
+                        turnNo: $state->turnNo,
+                        lastSeq: $state->lastSeq,
+                        isStreaming: $state->isStreaming,
+                        streamingMessage: $state->streamingMessage,
+                        pendingToolCalls: $state->pendingToolCalls,
+                        errorMessage: 'Event persistence failed: ' . $exception->getMessage(),
+                        messages: $state->messages,
+                        activeStepId: $state->activeStepId,
+                        retryableFailure: false,
+                    );
+                    $this->runStore->compareAndSwap($failedState, $state->version);
+                } catch (\Throwable) {
+                    // Best effort — cannot mark failed in store.
+                }
+
+                $this->errorCapture->handleError($exception, 'agent_loop.commit.event_persist_failed', [
                     'run_id' => $nextState->runId,
                     'turn_no' => $nextState->turnNo,
                     'step_id' => $nextState->activeStepId,
                     'event_count' => \count($events),
-                    'error' => $exception->getMessage(),
                     'rollback_restored' => $rollbackRestored,
                     'rollback_error' => $rollbackError,
                 ]);
 
-                return false;
+                // If we reach here, capture is enabled — throw a
+                // terminal exception so the message processor does
+                // NOT retry (this is not a CAS conflict).
+                throw new \RuntimeException(
+                    \sprintf(
+                        'Event persistence failed for run %s turn %d: %s',
+                        $nextState->runId,
+                        $nextState->turnNo,
+                        $exception->getMessage(),
+                    ),
+                    previous: $exception,
+                );
             }
 
             if ($eventsPersisted) {
                 try {
                     $this->replayService->rebuildHotPromptState($nextState->runId);
                 } catch (\Throwable $exception) {
-                    $this->logger->warning('agent_loop.commit.hot_state_rebuild_failed', [
+                    $this->errorCapture->handleDegradation($exception, 'agent_loop.commit.hot_state_rebuild_failed', [
                         'run_id' => $nextState->runId,
                         'turn_no' => $nextState->turnNo,
                         'step_id' => $nextState->activeStepId,
-                        'error' => $exception->getMessage(),
                     ]);
                 }
             }
@@ -97,12 +133,11 @@ final readonly class RunCommit
                 try {
                     $this->stepDispatcher->dispatchEffects($effects);
                 } catch (\Throwable $exception) {
-                    $this->logger->warning('agent_loop.commit.effect_dispatch_failed', [
+                    $this->errorCapture->handleDegradation($exception, 'agent_loop.commit.effect_dispatch_failed', [
                         'run_id' => $nextState->runId,
                         'turn_no' => $nextState->turnNo,
                         'step_id' => $nextState->activeStepId,
                         'effects_count' => \count($effects),
-                        'error' => $exception->getMessage(),
                     ]);
                 }
             }
@@ -112,11 +147,10 @@ final readonly class RunCommit
                     AfterTurnCommitHookContext::fromRunState($nextState, $events, \count($effects)),
                 );
             } catch (\Throwable $exception) {
-                $this->logger->warning('agent_loop.commit.after_turn_commit_hook_failed', [
+                $this->errorCapture->handleDegradation($exception, 'agent_loop.commit.after_turn_commit_hook_failed', [
                     'run_id' => $nextState->runId,
                     'turn_no' => $nextState->turnNo,
                     'step_id' => $nextState->activeStepId,
-                    'error' => $exception->getMessage(),
                 ]);
             }
 

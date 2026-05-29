@@ -9,6 +9,8 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
+use Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureConfig;
+use Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureService;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\CancelListener;
@@ -72,7 +74,7 @@ class CancelListenerTest extends TestCase
      * then invoke it (without needing a real CancelEvent — the closure
      * doesn't use the $event parameter).
      */
-    private function dispatchCancelEvent(): ChatScreen
+    private function dispatchCancelEvent(?string $captureErrorEnv = '1'): ChatScreen
     {
         $tui = new Tui();
         $theme = $this->createMock(TuiTheme::class);
@@ -94,7 +96,15 @@ class CancelListenerTest extends TestCase
             sessionStore: $sessionStore,
         );
 
-        $listener = new CancelListener($this->logger);
+        $errorCaptureService = new RuntimeErrorCaptureService(
+            new RuntimeErrorCaptureConfig(envValue: $captureErrorEnv),
+        );
+        $errorCaptureService->setLogger($this->logger);
+
+        $listener = new CancelListener(
+            $this->logger,
+            $errorCaptureService,
+        );
         $listener->register($context);
 
         // Extract and invoke the CancelEvent handler
@@ -236,10 +246,10 @@ class CancelListenerTest extends TestCase
         $this->dispatchCancelEvent();
     }
 
-    // ── Cancel exception is caught ──────────────────────────────
+    // ── Cancel exception transitions to Failed ──────────────────
 
     #[Test]
-    public function cancelExceptionIsCaughtAndLogged(): void
+    public function cancelExceptionTransitionsToFailed(): void
     {
         $this->state->activity = RunActivityStateEnum::Running;
         $this->state->handle = new RunHandle('run-err');
@@ -247,16 +257,45 @@ class CancelListenerTest extends TestCase
         $this->client->method('cancel')
             ->willThrowException(new \RuntimeException('Connection lost'));
 
+        // The error is routed through the error capture service,
+        // which logs at error level with a structured context.
+        // The CancelListener also calls logger->info() before attempting
+        // cancel, so we allow any number of info calls.
+        $this->logger->method('info');
         $this->logger->expects($this->once())
-            ->method('warning')
+            ->method('error')
             ->with(
-                $this->equalTo('Cancel command failed'),
-                $this->callback(fn (array $ctx) => 'run-err' === $ctx['run_id']),
+                $this->equalTo('Runtime error captured'),
+                $this->callback(fn (array $ctx) => 'cancel_listener.cancel_command_failed' === ($ctx['capture_context'] ?? null)),
             );
 
         $this->dispatchCancelEvent();
 
-        // Activity still transitions to Cancelling despite exception
-        $this->assertSame(RunActivityStateEnum::Cancelling, $this->state->activity);
+        // Activity transitions to Failed (not Cancelling) on cancel failure.
+        $this->assertSame(RunActivityStateEnum::Failed, $this->state->activity);
+    }
+
+    #[Test]
+    public function cancelExceptionWithCaptureDisabledRethrows(): void
+    {
+        $this->state->activity = RunActivityStateEnum::Running;
+        $this->state->handle = new RunHandle('run-crash');
+
+        $this->client->method('cancel')
+            ->willThrowException(new \RuntimeException('Connection lost'));
+
+        // The CancelListener calls logger->info() before attempting cancel.
+        $this->logger->method('info');
+        $this->logger->expects($this->once())
+            ->method('notice')
+            ->with(
+                $this->equalTo('Error capture disabled — rethrowing exception'),
+                $this->callback(fn (array $ctx) => 'cancel_listener.cancel_command_failed' === ($ctx['capture_context'] ?? null)),
+            );
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Connection lost');
+
+        $this->dispatchCancelEvent(captureErrorEnv: '0');
     }
 }

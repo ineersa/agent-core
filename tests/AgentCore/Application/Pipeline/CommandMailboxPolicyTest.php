@@ -34,6 +34,8 @@ use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
 use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
+use Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureConfig;
+use Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureService;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
@@ -262,14 +264,18 @@ final class CommandMailboxPolicyTest extends TestCase
         $stateTools = new RunMessageStateTools(new \Ineersa\AgentCore\Domain\Event\EventFactory(), new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor());
         $toolBatchCollector = new ToolBatchCollector();
 
+        $errorCaptureService = new RuntimeErrorCaptureService(new RuntimeErrorCaptureConfig(envValue: '1'));
+        $errorCaptureService->setLogger(new NullLogger());
+
         $runCommit = new RunCommit(
             runStore: $runStore,
             eventStore: $eventStore,
             commandStore: $commandStore,
             replayService: $replayService,
             stepDispatcher: $stepDispatcher,
-            hookDispatcher: null,
             logger: new NullLogger(),
+            errorCapture: $errorCaptureService,
+            hookDispatcher: null,
         );
 
         $runMessageProcessor = new RunMessageProcessor(

@@ -45,6 +45,7 @@ final class SessionRunEventStoreTest extends TestCase
             hatfieldSessionStore: $hatfieldSessionStore,
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
+            logger: new \Psr\Log\NullLogger(),
         );
     }
 
@@ -136,6 +137,7 @@ final class SessionRunEventStoreTest extends TestCase
             hatfieldSessionStore: $hatfieldSessionStore,
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
+            logger: new \Psr\Log\NullLogger(),
         );
 
         $events = $newStore->allFor($runId);

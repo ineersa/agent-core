@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Runtime\Controller;
 
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
+use Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureService;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
@@ -67,6 +68,10 @@ final class HeadlessController
     /** @var array<string, int> runId => lastForwardedSeq */
     private array $runEventCursors = [];
 
+    /** Consecutive unparseable LLM stdout lines for error threshold. */
+    private int $consecutiveBadLlmLines = 0;
+    private const int MAX_CONSECUTIVE_BAD_LLM_LINES = 10;
+
     /**
      * Session identifier from HATFIELD_SESSION_ID env var.
      * Used to scope orphan cleanup to only this session's consumers.
@@ -90,6 +95,7 @@ final class HeadlessController
         private readonly EventDispatcherInterface $dispatcher,
         private readonly LoggerInterface $logger,
         private readonly ToolExecutionSettingsInterface $toolExecutionSettings,
+        private readonly RuntimeErrorCaptureService $errorCapture,
         private readonly ?InProcessAgentSessionClient $eventClient = null,
         /**
          * Optional override for parallel tool messenger consumers.
@@ -202,10 +208,35 @@ final class HeadlessController
                         }
                     }
                 } catch (\Throwable $e) {
-                    $this->logger->warning('Controller event drain error', [
+                    // Event drain failures can stall the TUI silently.
+                    // Emit a runtime_error so the TUI shows an error block.
+                    $this->emitInternal(new RuntimeEvent(
+                        type: RuntimeEventTypeEnum::RuntimeReady->value, // not ideal but broadcast
+                        runId: $runId,
+                        seq: 0,
+                        payload: [],
+                    ));
+
+                    // Use dedicated protocol.error for user-visible signal.
+                    $this->emitInternal(new RuntimeEvent(
+                        type: RuntimeEventTypeEnum::ProtocolError->value,
+                        runId: $runId,
+                        seq: 0,
+                        payload: [
+                            'error' => 'Event drain failed: ' . $e->getMessage(),
+                            'run_id' => $runId,
+                        ],
+                    ));
+
+                    // Release cursor so subsequent polls start fresh.
+                    unset($this->runEventCursors[$runId]);
+
+                    $this->errorCapture->handleError($e, 'controller.event_drain_error', [
                         'run_id' => $runId,
-                        'exception' => $e,
                     ]);
+
+                    // If capture is enabled, don't bubble further.
+                    // Let event drain try again next tick.
                 }
             }
         });
@@ -292,11 +323,34 @@ final class HeadlessController
             try {
                 $event = RuntimeEvent::fromArray($data);
                 $this->emit($event);
+                $this->consecutiveBadLlmLines = 0;
             } catch (\Throwable $e) {
+                ++$this->consecutiveBadLlmLines;
                 $this->logger->debug('Skipping unparseable JSONL from LLM consumer stdout', [
                     'line' => mb_substr($trimmed, 0, 200),
                     'exception' => $e,
+                    'consecutive_bad' => $this->consecutiveBadLlmLines,
                 ]);
+
+                if ($this->consecutiveBadLlmLines >= self::MAX_CONSECUTIVE_BAD_LLM_LINES) {
+                    $this->errorCapture->handleError($e, 'controller.llm_stdout_persistent_malformed', [
+                        'consecutive_bad' => $this->consecutiveBadLlmLines,
+                        'sample' => mb_substr($trimmed, 0, 200),
+                    ]);
+                    // If capture is enabled, emit a protocol error and
+                    // reset counter. This prevents infinite error looping
+                    // while still making the issue visible.
+                    $this->emitInternal(new RuntimeEvent(
+                        type: RuntimeEventTypeEnum::ProtocolError->value,
+                        runId: '',
+                        seq: 0,
+                        payload: [
+                            'error' => 'Persistent malformed LLM consumer output — streaming may be incomplete.',
+                            'consecutive_bad' => $this->consecutiveBadLlmLines,
+                        ],
+                    ));
+                    $this->consecutiveBadLlmLines = 0;
+                }
             }
         }
     }

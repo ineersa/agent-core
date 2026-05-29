@@ -59,6 +59,10 @@ final readonly class AgentMessage
             try {
                 $timestamp = new \DateTimeImmutable($payload['timestamp']);
             } catch (\Throwable) {
+                // Invalid timestamp — message created without one.
+                // This is intentional local degradation: messages from
+                // older/corrupt payloads should still load without a
+                // timestamp rather than failing the entire event.
             }
         }
 

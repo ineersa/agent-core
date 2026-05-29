@@ -51,6 +51,12 @@ services:
   Ineersa\AgentCore\Contract\IdempotencyStoreInterface:
     alias: Ineersa\CodingAgent\Session\JsonlIdempotencyStore
 
+  # ─── Error capture ───
+
+  Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureConfig: ~
+
+  Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureService: ~
+
   # ─── Hatfield config services ───
 
   Ineersa\CodingAgent\Config\AppResourceLocator:

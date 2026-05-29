@@ -55,6 +55,7 @@ final class SessionRunStoreTest extends TestCase
             hatfieldSessionStore: $hatfieldSessionStore,
             serializer: $serializer,
             lockFactory: new LockFactory(new FlockStore()),
+            logger: new \Psr\Log\NullLogger(),
         );
     }
 
@@ -142,6 +143,7 @@ final class SessionRunStoreTest extends TestCase
             hatfieldSessionStore: $hatfieldSessionStore,
             serializer: $serializer,
             lockFactory: new LockFactory(new FlockStore()),
+            logger: new \Psr\Log\NullLogger(),
         );
 
         $loaded = $newStore->get($runId);
