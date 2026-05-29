@@ -76,6 +76,8 @@ services:
 
   # ─── Extension wiring ───
 
+  Ineersa\CodingAgent\Extension\ExtensionHookRegistry: ~
+
   Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge: ~
 
   Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface:

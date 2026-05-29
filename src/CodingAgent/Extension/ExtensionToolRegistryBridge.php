@@ -30,6 +30,7 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
 {
     public function __construct(
         private ToolRegistryInterface $toolRegistry,
+        private ExtensionHookRegistry $hookRegistry,
     ) {
     }
 
@@ -66,20 +67,22 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
     /**
      * Register a tool call hook.
      *
-     * Full hook storage and dispatch will be implemented by EXT-HOOK-02.
+     * Hooks are stored in registration order on the shared ExtensionHookRegistry
+     * so they can be iterated and dispatched during tool execution.
      */
     public function registerToolCallHook(ToolCallHookInterface $hook): void
     {
-        // Reserved for EXT-HOOK-02: extension hook registry.
+        $this->hookRegistry->addToolCallHook($hook);
     }
 
     /**
      * Register a tool result hook.
      *
-     * Full hook storage and dispatch will be implemented by EXT-HOOK-02.
+     * Hooks are stored in registration order on the shared ExtensionHookRegistry
+     * so they can be iterated and dispatched after tool execution.
      */
     public function registerToolResultHook(ToolResultHookInterface $hook): void
     {
-        // Reserved for EXT-HOOK-02: extension hook registry.
+        $this->hookRegistry->addToolResultHook($hook);
     }
 }
