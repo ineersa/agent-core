@@ -23,12 +23,12 @@ Scope:
 - Validation with Castor: `castor test --filter ToolHookDispatcher`; `castor test --filter ToolExecutor`; `castor deptrac`.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/ext-hook-04-extension-hook-dispatcher-wiring
 Worktree: /home/ineersa/projects/agent-core-worktrees/ext-hook-04-extension-hook-dispatcher-wiring
-Fork run:
-PR URL:
-PR Status:
+Fork run: a0iyc35feygf
+PR URL: https://github.com/ineersa/agent-core/pull/67
+PR Status: open
 Started: 2026-05-29T22:15:46.425Z
 Completed:
 
@@ -42,3 +42,15 @@ Completed:
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/ext-hook-04-extension-hook-dispatcher-wiring.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/ext-hook-04-extension-hook-dispatcher-wiring.
 - Summary: Starting EXT-HOOK-04 after EXT-HOOK-03 merged. Note: EXT-HOOK-03 final design reuses Symfony AI toolbox lifecycle events from RegistryBackedToolbox; EXT-HOOK-04 should adapt ExtensionHookRegistry hooks to Symfony AI ToolCallRequested and observational result events, not to a custom AgentCore ToolExecutor interceptor.
+
+## Task workflow update - 2026-05-29T22:20:29.314Z
+- Recorded fork run: a0iyc35feygf
+- Summary: Fork launched to finish EXT-HOOK-04 from the worktree. Note: parent had started WIP directly by mistake; fork is instructed to verify worktree/branch, review/refine existing uncommitted WIP, keep design based on Symfony AI ToolCallRequested/ToolCallSucceeded/ToolCallFailed events, avoid custom AgentCore interceptors/events, run Castor validations, and commit final work.
+
+## Task workflow update - 2026-05-29T22:23:31.575Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/ext-hook-04-extension-hook-dispatcher-wiring to origin.
+- branch 'task/ext-hook-04-extension-hook-dispatcher-wiring' set up to track 'origin/task/ext-hook-04-extension-hook-dispatcher-wiring'.
+- Created PR: https://github.com/ineersa/agent-core/pull/67
+- Validation: castor test --filter ExtensionToolHookEventSubscriber: passed (17 tests, 63 assertions); castor test --filter ToolExecutor: passed (11 tests, 35 assertions); castor test: passed (1204 tests, 10668 assertions, 0 errors/failures; command exit 1 due pre-existing PHPUnit notices in CancelListenerTest); castor deptrac: passed (0 violations); castor cs-check on changed files: passed
+- Summary: EXT-HOOK-04 completed in fork run a0iyc35feygf at commit 7c0cfdf2. Added CodingAgent ExtensionToolHookEventSubscriber adapting public ExtensionApi ToolCallHookInterface hooks to Symfony AI ToolCallRequested events; first non-allow decision wins, Block/ReplaceResult skip handlers via setResult. ToolResultHookInterface hooks run on ToolCallSucceeded/ToolCallFailed in registration order with latest local state, but remain observational because Symfony AI result events are readonly. ToolContext now carries orderIndex and ToolExecutor passes the shared context accessor for hook context enrichment. No custom AgentCore ToolExecutor interceptor/events introduced.
