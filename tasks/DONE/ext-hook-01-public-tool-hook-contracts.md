@@ -19,14 +19,14 @@ Scope:
 - Validation with Castor: `castor deptrac`; `castor test --filter ExtensionApi`.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/ext-hook-01-public-tool-hook-contracts
 Worktree: /home/ineersa/projects/agent-core-worktrees/ext-hook-01-public-tool-hook-contracts
 Fork run: nrsr9n918pbc
 PR URL: https://github.com/ineersa/agent-core/pull/64
-PR Status: open
+PR Status: merged
 Started: 2026-05-29T21:05:44.445Z
-Completed:
+Completed: 2026-05-29T21:19:08.188Z
 
 ## Work log
 - Created: 2026-05-29T20:49:34.363Z
@@ -59,3 +59,32 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/64
 - Validation: castor test --filter ExtensionApi: OK (24 tests, 83 assertions); castor deptrac: OK (0 violations); castor cs-check --path src/CodingAgent/ExtensionApi/: OK; castor cs-check --path src/CodingAgent/Extension/: OK
 - Summary: EXT-HOOK-01 is implemented and committed on task branch at 939c5bcc. Adds public ExtensionApi tool call/result hook contracts and minimal bridge stubs pending EXT-HOOK-02.
+
+## Task workflow update - 2026-05-29T21:19:08.188Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/ext-hook-01-public-tool-hook-contracts into integration checkout.
+- Merge made by the 'ort' strategy.
+ .../Extension/ExtensionToolRegistryBridge.php      |  22 +++
+ .../ExtensionApi/ExtensionApiInterface.php         |  26 ++-
+ .../ExtensionApi/ToolCallContextDTO.php            |  34 ++++
+ .../ExtensionApi/ToolCallDecisionDTO.php           |  58 ++++++
+ .../ExtensionApi/ToolCallDecisionKindEnum.php      |  21 ++
+ .../ExtensionApi/ToolCallHookInterface.php         |  23 +++
+ .../ExtensionApi/ToolResultContextDTO.php          |  37 ++++
+ .../ExtensionApi/ToolResultDecisionDTO.php         |  52 +++++
+ .../ExtensionApi/ToolResultDecisionKindEnum.php    |  19 ++
+ .../ExtensionApi/ToolResultHookInterface.php       |  20 ++
+ .../ExtensionApi/ExtensionApiContractsTest.php     | 212 +++++++++++++++++++++
+ 11 files changed, 521 insertions(+), 3 deletions(-)
+ create mode 100644 src/CodingAgent/ExtensionApi/ToolCallContextDTO.php
+ create mode 100644 src/CodingAgent/ExtensionApi/ToolCallDecisionDTO.php
+ create mode 100644 src/CodingAgent/ExtensionApi/ToolCallDecisionKindEnum.php
+ create mode 100644 src/CodingAgent/ExtensionApi/ToolCallHookInterface.php
+ create mode 100644 src/CodingAgent/ExtensionApi/ToolResultContextDTO.php
+ create mode 100644 src/CodingAgent/ExtensionApi/ToolResultDecisionDTO.php
+ create mode 100644 src/CodingAgent/ExtensionApi/ToolResultDecisionKindEnum.php
+ create mode 100644 src/CodingAgent/ExtensionApi/ToolResultHookInterface.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/ext-hook-01-public-tool-hook-contracts.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR #64 merged on GitHub; castor test --filter ExtensionApi: OK (24 tests, 83 assertions); castor deptrac: OK (0 violations)
+- Summary: PR #64 was merged; moving EXT-HOOK-01 to DONE and syncing integration checkout.
