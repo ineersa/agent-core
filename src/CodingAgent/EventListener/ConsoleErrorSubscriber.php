@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\EventListener;
 
-use Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureConfig;
+use Ineersa\CodingAgent\Runtime\Contract\RuntimeErrorCaptureConfig;
+use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\ConsoleEvents;
 use Symfony\Component\Console\Event\ConsoleErrorEvent;
@@ -36,43 +38,35 @@ final class ConsoleErrorSubscriber implements EventSubscriberInterface
     public function onConsoleError(ConsoleErrorEvent $event): void
     {
         $exception = $event->getError();
+        $command = $event->getCommand();
+        $commandName = $command?->getName();
+
+        // In controller/headless mode, emit a protocol.error JSONL to
+        // stdout so the TUI/controller client sees the unhandled error
+        // before the process exits. This is the last-resort TUI-visible
+        // error path when the Revolt event-loop boundaries have been
+        // exhausted.
+        if ('agent' === $commandName) {
+            $input = $event->getInput();
+            if ($input->hasParameterOption('--controller') || $input->hasParameterOption('--headless')) {
+                $this->emitControllerError($exception);
+            }
+        }
 
         if ($this->config->captureErrors) {
-            // Capture mode: log the exception and let Symfony console
-            // handle rendering the error to stderr with exit code 1.
             $this->logger->error('Unhandled console exception', [
                 'exception' => $exception,
-                'command' => $event->getCommand()?->getName(),
+                'command' => $commandName,
             ]);
 
             return;
         }
 
-        // Crash mode: log and rethrow so the process exits with
-        // the original exception, not a sanitized console error.
         $this->logger->notice(
             'Error capture disabled — rethrowing console exception',
             ['exception' => $exception],
         );
 
-        // Let the exception propagate naturally beyond the console.
-        // Calling $event->setError() alone does NOT rethrow —
-        // Symfony console catches the exception and renders it.
-        // To get a real crash, we throw from here... but
-        // ConsoleEvents::ERROR is dispatched inside a try/catch
-        // in Symfony\Console\Application::doRunCommand().
-        //
-        // However, when `setError()` is called and we then throw,
-        // the outer doRun() catch will handle it. Since Symfony
-        // console always renders and exits with non-zero, the
-        // meaningful difference for tests is whether we log + exit
-        // cleanly vs let the raw exception bubble as an uncaught
-        // fatal. For CLI tests that check exit codes, both paths
-        // produce exit code 1.
-        //
-        // We rethrow anyway because the user's stated intent is
-        // "crash/rethrow" in test mode — tests can detect the
-        // difference via the notice-level log entry.
         throw $exception;
     }
 
@@ -84,5 +78,30 @@ final class ConsoleErrorSubscriber implements EventSubscriberInterface
         return [
             ConsoleEvents::ERROR => ['onConsoleError', 0],
         ];
+    }
+
+    private function emitControllerError(\Throwable $exception): void
+    {
+        try {
+            $event = new RuntimeEvent(
+                type: 'protocol.error',
+                runId: '',
+                seq: 0,
+                payload: [
+                    'error' => 'Unhandled exception in controller mode: '.$exception->getMessage(),
+                    'exception_class' => $exception::class,
+                ],
+            );
+
+            fwrite(\STDOUT, JsonlCodec::encodeEvent($event)."\n");
+            fflush(\STDOUT);
+        } catch (\Throwable $emitError) {
+            // Avoid recursive failure — if emitting the protocol error
+            // itself fails (e.g. stdout closed), silently fall through
+            // to the existing console error rendering.
+            $this->logger->error('Failed to emit protocol.error in controller mode', [
+                'exception' => $emitError,
+            ]);
+        }
     }
 }

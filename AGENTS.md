@@ -135,13 +135,7 @@ container compilation, or isolated service tests.
 - Never add production APIs or code paths solely for tests. Use production constructors/factories or test-local fixtures/builders.
 - Never use `ReflectionClass::newInstanceWithoutConstructor()`, `Closure::bind()`, or constructor/property bypass tricks in production code.
 - Test helpers belong in tests, not production.
-- **Every caught exception or error MUST be propagated forward to the user/runtime/TUI, or explicitly documented as intentional local degradation with diagnostic logging. Empty catch blocks are forbidden.**
-  - **Terminal infrastructure errors** (data persistence, process launch, transport, event replay): throw. Let the exception bubble to a centralized Symfony listener or top-level callback boundary. The boundary decides capture/show (`HATFIELD_CAPTURE_ERRORS=1`) vs crash/rethrow (`HATFIELD_CAPTURE_ERRORS=0`).
-  - **Structured domain errors** (invalid message payload, corrupt session data): throw a typed exception or return an explicit error result. Do not silently return null/false/empty-array on parse/decode failures — callers must see and handle corruption explicitly.
-  - **Intentional local degradation** (image EXIF, log line parsing, optional observer hooks): log at warning/debug level with exception context and a comment explaining why the degradation is safe. Use `$this->logger->warning(...)` — never leave a catch body empty.
-  - **User-visible TUI picker/command failures** (model selection, favorite toggle): show a visible status/error message, not just a log entry. Users must know their action failed.
-  - **Centralized boundary**: Symfony `ConsoleEvents::ERROR` subscriber handles uncaught command exceptions. Top-level callback wrappers in `HeadlessController`, `CancelListener`, and `RuntimeEventPoller` inline the capture/rethrow guard using `RuntimeErrorCaptureConfig`.
-  - **Static enforcement**: A future Rector/PHPStan custom rule should flag empty catch blocks, log-only catch blocks without `throw`/structured error return/visible status. Until then, review catch blocks during code review for this rule.
+- **Every caught exception/error must be propagated forward or explicitly documented as intentional local degradation with diagnostic logging. Empty catch blocks are forbidden.**
 
 ## Symfony setup
 

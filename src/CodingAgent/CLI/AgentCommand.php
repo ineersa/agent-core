@@ -113,9 +113,14 @@ final class AgentCommand
             // Load extensions before agent mode selection.
             // This ensures enabled extensions register their tools and
             // resources before any interactive or controller session starts.
+            // Diagnostics are logged as a single structured entry to avoid
+            // noisy per-diagnostic log lines in the foreach loop.
             $extensionDiagnostics = $this->extensionManager->loadExtensions();
-            foreach ($extensionDiagnostics as $diag) {
-                $this->logger->warning('Extension startup diagnostic: '.$diag);
+            if ([] !== $extensionDiagnostics) {
+                $this->logger->warning('Extension startup diagnostics', [
+                    'count' => \count($extensionDiagnostics),
+                    'diagnostics' => $extensionDiagnostics,
+                ]);
             }
 
             if ($controller) {

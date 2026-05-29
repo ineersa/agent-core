@@ -49,8 +49,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         private SymfonyPlatformInterface $platform,
         private iterable $transformContextHooks,
         private iterable $convertToLlmHooks,
-        private ?LlmStreamObserverInterface $streamObserver = null,
-        private ?LoggerInterface $logger = null,
+        private ?LlmStreamObserverInterface $streamObserver,
+        private LoggerInterface $logger,
     ) {
     }
 
@@ -268,9 +268,10 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 $rawResult->getObject()->cancel();
             }
         } catch (\Throwable $e) {
-            // Ignore already-closed or not-yet-established connections.
-            // Log at debug so silent cleanup failures don't go unnoticed.
-            $this->logger?->debug('HTTP connection abort threw (expected for already-closed connections)', [
+            // Connection cleanup failures following stream abort are
+            // expected for already-closed or unestablished connections.
+            // Log at debug level since this is normal cleanup noise.
+            $this->logger->debug('HTTP connection abort threw (expected for already-closed connections)', [
                 'exception' => $e,
             ]);
         }
@@ -423,9 +424,10 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             $this->streamObserver->onStreamStart($runId, $stepId);
         } catch (\Throwable $e) {
             // Observer failures must not break model invocation.
-            // They are isolated intentionally. Log at debug level so
-            // operator diagnostics can surface silent observer bugs.
-            $this->logger?->debug('LlmStreamObserver::onStreamStart threw', [
+            // This is intentional diagnostic local degradation:
+            // the observer is an optional side-channel and its
+            // failure should not abort the LLM request.
+            $this->logger->warning('LlmStreamObserver::onStreamStart threw', [
                 'run_id' => $runId,
                 'step_id' => $stepId,
                 'exception' => $e,
@@ -443,7 +445,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             $this->streamObserver->onDelta($runId, $stepId, $delta);
         } catch (\Throwable $e) {
             // Observer failures must not break model invocation.
-            $this->logger?->debug('LlmStreamObserver::onDelta threw', [
+            // Intentional diagnostic local degradation — optional side-channel.
+            $this->logger->warning('LlmStreamObserver::onDelta threw', [
                 'run_id' => $runId,
                 'step_id' => $stepId,
                 'delta_class' => $delta::class,
@@ -462,7 +465,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             $this->streamObserver->onStreamEnd($runId, $stepId);
         } catch (\Throwable $e) {
             // Observer failures must not break model invocation.
-            $this->logger?->debug('LlmStreamObserver::onStreamEnd threw', [
+            // Intentional diagnostic local degradation — optional side-channel.
+            $this->logger->warning('LlmStreamObserver::onStreamEnd threw', [
                 'run_id' => $runId,
                 'step_id' => $stepId,
                 'exception' => $e,
@@ -480,7 +484,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             $this->streamObserver->onStreamError($runId, $stepId, $error);
         } catch (\Throwable $e) {
             // Observer failures must not break model invocation.
-            $this->logger?->debug('LlmStreamObserver::onStreamError threw', [
+            // Intentional diagnostic local degradation — optional side-channel.
+            $this->logger->warning('LlmStreamObserver::onStreamError threw', [
                 'run_id' => $runId,
                 'step_id' => $stepId,
                 'observer_exception' => $e,

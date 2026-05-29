@@ -29,6 +29,7 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\PlatformInvocationMetadata;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolResult;
 use Symfony\AI\Platform\Model;
@@ -171,6 +172,7 @@ final class PlatformIntegrationTest extends TestCase
             platform: $platform,
             transformContextHooks: [$transformHook],
             convertToLlmHooks: [$convertHook],
+            logger: new NullLogger(),
         );
 
         $response = $adapter->invoke(new ModelInvocationRequest(
@@ -238,7 +240,7 @@ final class PlatformIntegrationTest extends TestCase
                 static fn (): iterable => [new TextDelta('response')],
             )],
             modelCatalog: new ProjectedSymfonyModelCatalog([
-                'flash' => new \Ineersa\CodingAgent\Config\Ai\AiModelDefinition(
+                'flash' => new AiModelDefinition(
                     id: 'flash',
                     name: 'flash',
                     contextWindow: 8000,
@@ -314,6 +316,7 @@ final class PlatformIntegrationTest extends TestCase
             platform: $platform,
             transformContextHooks: [],
             convertToLlmHooks: [],
+            logger: new NullLogger(),
         );
 
         $response = $adapter->invoke(new ModelInvocationRequest(

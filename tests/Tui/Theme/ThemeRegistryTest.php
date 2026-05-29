@@ -13,6 +13,7 @@ use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Theme\ThemeRegistry;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 
 #[CoversClass(ThemeRegistry::class)]
 final class ThemeRegistryTest extends TestCase
@@ -42,13 +43,13 @@ final class ThemeRegistryTest extends TestCase
     {
         $registry = $this->createRegistry();
 
-        self::assertTrue($registry->has('cyberpunk'));
+        $this->assertTrue($registry->has('cyberpunk'));
 
         $palette = $registry->getOrThrow('cyberpunk');
-        self::assertSame('cyberpunk', $palette->name);
-        self::assertSame('#00ffff', $palette->get(ThemeColorEnum::Accent));
-        self::assertSame('#ff3366', $palette->get(ThemeColorEnum::Error));
-        self::assertSame('#718096', $palette->get(ThemeColorEnum::Muted));
+        $this->assertSame('cyberpunk', $palette->name);
+        $this->assertSame('#00ffff', $palette->get(ThemeColorEnum::Accent));
+        $this->assertSame('#ff3366', $palette->get(ThemeColorEnum::Error));
+        $this->assertSame('#718096', $palette->get(ThemeColorEnum::Muted));
     }
 
     public function testLoadDirectoryFindsThemes(): void
@@ -56,8 +57,8 @@ final class ThemeRegistryTest extends TestCase
         $registry = $this->createRegistry();
 
         $names = $registry->getNames();
-        self::assertContains('cyberpunk', $names);
-        self::assertContains('nord', $names);
+        $this->assertContains('cyberpunk', $names);
+        $this->assertContains('nord', $names);
     }
 
     public function testGetOrThrowReturnsThemeWhenFound(): void
@@ -65,8 +66,8 @@ final class ThemeRegistryTest extends TestCase
         $registry = $this->createRegistry();
         $theme = $registry->getOrThrow('cyberpunk');
 
-        self::assertSame('cyberpunk', $theme->name);
-        self::assertSame('#00ffff', $theme->get(ThemeColorEnum::Accent));
+        $this->assertSame('cyberpunk', $theme->name);
+        $this->assertSame('#00ffff', $theme->get(ThemeColorEnum::Accent));
     }
 
     public function testGetOrThrowThrowsWhenMissing(): void
@@ -84,16 +85,16 @@ final class ThemeRegistryTest extends TestCase
         $registry = $this->createRegistry();
         $theme = $registry->getOrThrow('nord');
 
-        self::assertSame('nord', $theme->name);
-        self::assertSame('#88c0d0', $theme->get(ThemeColorEnum::Accent));
+        $this->assertSame('nord', $theme->name);
+        $this->assertSame('#88c0d0', $theme->get(ThemeColorEnum::Accent));
     }
 
     public function testHas(): void
     {
         $registry = $this->createRegistry();
 
-        self::assertTrue($registry->has('cyberpunk'));
-        self::assertFalse($registry->has('nonexistent'));
+        $this->assertTrue($registry->has('cyberpunk'));
+        $this->assertFalse($registry->has('nonexistent'));
     }
 
     public function testGetNames(): void
@@ -101,9 +102,9 @@ final class ThemeRegistryTest extends TestCase
         $registry = $this->createRegistry();
         $names = $registry->getNames();
 
-        self::assertContains('cyberpunk', $names);
-        self::assertContains('nord', $names);
-        self::assertContains('tokyo-night', $names);
+        $this->assertContains('cyberpunk', $names);
+        $this->assertContains('nord', $names);
+        $this->assertContains('tokyo-night', $names);
     }
 
     public function testRegisterAddsNewTheme(): void
@@ -111,24 +112,24 @@ final class ThemeRegistryTest extends TestCase
         $registry = $this->createEmptyRegistry();
         $registry->register(new ThemePalette('custom', ['accent' => '#abc']));
 
-        self::assertTrue($registry->has('custom'));
-        self::assertSame('#abc', $registry->get('custom')?->get(ThemeColorEnum::Accent));
+        $this->assertTrue($registry->has('custom'));
+        $this->assertSame('#abc', $registry->get('custom')?->get(ThemeColorEnum::Accent));
     }
 
     public function testGetReturnsNullForMissing(): void
     {
         $registry = $this->createEmptyRegistry();
 
-        self::assertNull($registry->get('nope'));
+        $this->assertNull($registry->get('nope'));
     }
 
     public function testDefaultName(): void
     {
         $registry = $this->createRegistry();
 
-        self::assertTrue($registry->has('tokyo-night'));
+        $this->assertTrue($registry->has('tokyo-night'));
         $theme = $registry->getOrThrow('tokyo-night');
-        self::assertSame('tokyo-night', $theme->name);
+        $this->assertSame('tokyo-night', $theme->name);
     }
 
     private function createRegistry(): ThemeRegistry
@@ -136,7 +137,7 @@ final class ThemeRegistryTest extends TestCase
         $resources = new AppResourceLocator($this->projectRoot);
         $appConfig = new AppConfig(tui: new TuiConfig('cyberpunk', []), logging: new LoggingConfig());
 
-        return new ThemeRegistry($appConfig, $resources);
+        return new ThemeRegistry($appConfig, $resources, new NullLogger());
     }
 
     private function createEmptyRegistry(): ThemeRegistry
@@ -147,7 +148,7 @@ final class ThemeRegistryTest extends TestCase
         $resources = new AppResourceLocator($this->tempDir);
         $appConfig = new AppConfig(tui: new TuiConfig('cyberpunk', []), logging: new LoggingConfig());
 
-        return new ThemeRegistry($appConfig, $resources);
+        return new ThemeRegistry($appConfig, $resources, new NullLogger());
     }
 
     private function rmDir(string $dir): void

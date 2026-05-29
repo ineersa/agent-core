@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Runtime\ErrorCapture;
+namespace Ineersa\CodingAgent\Runtime\Contract;
 
 /**
  * Configuration for HATFIELD_CAPTURE_ERRORS env-driven error policy.
@@ -14,10 +14,10 @@ namespace Ineersa\CodingAgent\Runtime\ErrorCapture;
  * When disabled (HATFIELD_CAPTURE_ERRORS=0), exceptions propagate
  * normally so test/CI harnesses see hard failures.
  *
- * The env value is supplied by Symfony DI via services.yaml
- * (%env(string:HATFIELD_CAPTURE_ERRORS)%, defaulted to '1' in
- * container parameters). The object never reads $_SERVER/$_ENV
- * directly — that is the container's responsibility.
+ * The bool value is supplied by Symfony DI via services.yaml
+ * (%%app.capture_errors%%, resolved from env(bool:HATFIELD_CAPTURE_ERRORS)
+ * with a default of true in container parameters). The object never reads
+ * $_SERVER/$_ENV directly — that is the container's responsibility.
  *
  * Usage: inject this config at the few top-level callback boundaries
  * (HeadlessController Revolt callbacks, CancelListener, RuntimeEventPoller).
@@ -29,13 +29,9 @@ final class RuntimeErrorCaptureConfig
 {
     public readonly bool $captureErrors;
 
-    /**
-     * @param string $envValue Container-provided value from %env(string:HATFIELD_CAPTURE_ERRORS)%.
-     *                         Defaults to '1' as a safe fallback for direct instantiation (tests).
-     */
     public function __construct(
-        string $envValue = '1',
+        bool $captureErrors = true,
     ) {
-        $this->captureErrors = '1' === $envValue;
+        $this->captureErrors = $captureErrors;
     }
 }

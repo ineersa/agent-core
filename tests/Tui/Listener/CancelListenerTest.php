@@ -9,7 +9,7 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
-use Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureConfig;
+use Ineersa\CodingAgent\Runtime\Contract\RuntimeErrorCaptureConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\CancelListener;
@@ -51,65 +51,6 @@ class CancelListenerTest extends TestCase
     {
         $this->removeDir($this->tmpDir);
         parent::tearDown();
-    }
-
-    private function removeDir(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-        $iter = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-        foreach ($iter as $file) {
-            $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
-        }
-        rmdir($dir);
-    }
-
-    /**
-     * Register the CancelListener and extract its CancelEvent handler,
-     * then invoke it (without needing a real CancelEvent — the closure
-     * doesn't use the $event parameter).
-     */
-    private function dispatchCancelEvent(?string $captureErrorEnv = '1'): ChatScreen
-    {
-        $tui = new Tui();
-        $theme = $this->createMock(TuiTheme::class);
-        $promptEditor = new PromptEditor();
-        $screen = new ChatScreen($theme, 'test-session', $promptEditor);
-
-        $appConfig = new AppConfig(
-            tui: new TuiConfig(theme: 'default'),
-            logging: new LoggingConfig(),
-            cwd: $this->tmpDir,
-        );
-        $sessionStore = new HatfieldSessionStore($appConfig, new LockFactory(new FlockStore()));
-
-        $context = new TuiRuntimeContext(
-            tui: $tui,
-            client: $this->client,
-            state: $this->state,
-            screen: $screen,
-            sessionStore: $sessionStore,
-        );
-
-        $errorCaptureConfig = new RuntimeErrorCaptureConfig(envValue: $captureErrorEnv);
-
-        $listener = new CancelListener(
-            $this->logger,
-            $errorCaptureConfig,
-        );
-        $listener->register($context);
-
-        // Extract and invoke the CancelEvent handler
-        $dispatcher = $tui->getEventDispatcher();
-        $listeners = $dispatcher->getListeners(\Symfony\Component\Tui\Event\CancelEvent::class);
-        self::assertNotEmpty($listeners, 'CancelEvent listener was not registered');
-        ($listeners[0])(new CancelEvent(new TextWidget()));
-
-        return $screen;
     }
 
     // ── Active run cancellation ──────────────────────────────────
@@ -260,7 +201,7 @@ class CancelListenerTest extends TestCase
             ->method('error')
             ->with(
                 $this->equalTo('Cancel command failed'),
-                $this->callback(fn (array $ctx) => 'run-err' === ($ctx['run_id'] ?? null)
+                $this->callback(static fn (array $ctx) => 'run-err' === ($ctx['run_id'] ?? null)
                     && $ctx['exception'] instanceof \RuntimeException),
             );
 
@@ -292,5 +233,64 @@ class CancelListenerTest extends TestCase
         $this->expectExceptionMessage('Connection lost');
 
         $this->dispatchCancelEvent(captureErrorEnv: '0');
+    }
+
+    private function removeDir(string $dir): void
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+        $iter = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST,
+        );
+        foreach ($iter as $file) {
+            $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
+        }
+        rmdir($dir);
+    }
+
+    /**
+     * Register the CancelListener and extract its CancelEvent handler,
+     * then invoke it (without needing a real CancelEvent — the closure
+     * doesn't use the $event parameter).
+     */
+    private function dispatchCancelEvent(?string $captureErrorEnv = '1'): ChatScreen
+    {
+        $tui = new Tui();
+        $theme = $this->createMock(TuiTheme::class);
+        $promptEditor = new PromptEditor();
+        $screen = new ChatScreen($theme, 'test-session', $promptEditor);
+
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'default'),
+            logging: new LoggingConfig(),
+            cwd: $this->tmpDir,
+        );
+        $sessionStore = new HatfieldSessionStore($appConfig, new LockFactory(new FlockStore()));
+
+        $context = new TuiRuntimeContext(
+            tui: $tui,
+            client: $this->client,
+            state: $this->state,
+            screen: $screen,
+            sessionStore: $sessionStore,
+        );
+
+        $errorCaptureConfig = new RuntimeErrorCaptureConfig(captureErrors: '0' !== $captureErrorEnv);
+
+        $listener = new CancelListener(
+            $this->logger,
+            $errorCaptureConfig,
+        );
+        $listener->register($context);
+
+        // Extract and invoke the CancelEvent handler
+        $dispatcher = $tui->getEventDispatcher();
+        $listeners = $dispatcher->getListeners(CancelEvent::class);
+        $this->assertNotEmpty($listeners, 'CancelEvent listener was not registered');
+        ($listeners[0])(new CancelEvent(new TextWidget()));
+
+        return $screen;
     }
 }

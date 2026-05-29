@@ -27,7 +27,7 @@ final class ThemeRegistry
     public function __construct(
         AppConfig $appConfig,
         AppResourceLocator $resources,
-        private readonly ?LoggerInterface $logger = null,
+        private readonly LoggerInterface $logger,
     ) {
         $tuiConfig = $appConfig->tui;
 
@@ -167,7 +167,7 @@ final class ThemeRegistry
                 // misconfigured theme does not break the entire TUI.
                 // The theme name embedded in the YAML may not match
                 // the filename, so surface the path for diagnostics.
-                $this->logger?->warning('Skipping unparseable theme file', [
+                $this->logger->warning('Skipping unparseable theme file', [
                     'file' => $file,
                     'exception' => $e,
                 ]);

@@ -6,6 +6,10 @@ parameters:
     # Default HATFIELD_CAPTURE_ERRORS to enabled; overridable via env var.
     env(HATFIELD_CAPTURE_ERRORS): '1'
 
+    # app.capture_errors resolves the env var as a boolean.
+    # Services read this parameter — not the raw env directly.
+    app.capture_errors: '%env(bool:HATFIELD_CAPTURE_ERRORS)%'
+
 
 services:
   _defaults:
@@ -56,9 +60,9 @@ services:
 
   # ─── Error capture (env-driven config, not a per-catch delegation service) ───
 
-  Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureConfig:
+  Ineersa\CodingAgent\Runtime\Contract\RuntimeErrorCaptureConfig:
     arguments:
-      $envValue: '%env(string:HATFIELD_CAPTURE_ERRORS)%'
+      $captureErrors: '%app.capture_errors%'
 
   # ─── Hatfield config services ───
 
