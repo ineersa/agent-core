@@ -23,14 +23,14 @@ Scope:
 - Validation with Castor: `castor test --filter ToolExecutor`; `castor deptrac`.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/ext-hook-03-agentcore-tool-interception-seam
 Worktree: /home/ineersa/projects/agent-core-worktrees/ext-hook-03-agentcore-tool-interception-seam
 Fork run: tgxxbwlli6b2
 PR URL: https://github.com/ineersa/agent-core/pull/66
-PR Status: open
+PR Status: merged
 Started: 2026-05-29T21:36:51.169Z
-Completed:
+Completed: 2026-05-29T22:15:22.268Z
 
 ## Work log
 - Created: 2026-05-29T20:49:48.713Z
@@ -65,3 +65,17 @@ Completed:
 - Updated PR Status: open
 - Validation: castor test --filter RegistryBackedToolbox: OK (14 tests, 31 assertions); castor test --filter ToolExecutor: OK (11 tests, 35 assertions); castor deptrac: OK (0 violations); castor cs-check on changed files: OK
 - Summary: PR #66 was revised after review feedback to avoid inventing a custom AgentCore interceptor/event surface. The branch was reset from the earlier ToolExecutor interceptor implementation and force-pushed at 93c01de0. Current implementation reuses Symfony AI toolbox lifecycle events by making RegistryBackedToolbox dispatch ToolCallRequested, ToolCallArgumentsResolved, ToolCallSucceeded, and ToolCallFailed through the shared Symfony event dispatcher. ToolCallRequested::deny() and ::setResult() can now block or replace execution before the handler runs. ToolExecutor is no longer modified, and no custom ToolCallInterceptorInterface or AgentCore tool execution events are added.
+
+## Task workflow update - 2026-05-29T22:15:22.268Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/ext-hook-03-agentcore-tool-interception-seam into integration checkout.
+- Merge made by the 'ort' strategy.
+ config/services.yaml                               |   1 +
+ depfile.yaml                                       |   1 +
+ src/CodingAgent/Tool/RegistryBackedToolbox.php     |  60 +++++++--
+ .../CodingAgent/Tool/RegistryBackedToolboxTest.php | 135 +++++++++++++++++++++
+ 4 files changed, 186 insertions(+), 11 deletions(-)
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/ext-hook-03-agentcore-tool-interception-seam.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR #66 merged by user confirmation; castor test --filter RegistryBackedToolbox: OK (14 tests, 31 assertions); castor test --filter ToolExecutor: OK (11 tests, 35 assertions); castor deptrac: OK (0 violations); castor cs-check on changed files: OK
+- Summary: PR #66 merged. Final EXT-HOOK-03 implementation reuses Symfony AI toolbox lifecycle events from RegistryBackedToolbox instead of adding custom AgentCore ToolExecutor interceptors/events. ToolCallRequested supports deny/setResult for before-execution SafeGuard use cases; ToolCallSucceeded/Failed remain observational.
