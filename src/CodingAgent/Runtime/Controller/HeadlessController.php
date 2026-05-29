@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Runtime\Session\TranscriptPersistenceService;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
 use Symfony\Component\Console\Command\Command;
@@ -102,6 +103,7 @@ final class HeadlessController
          * Values <= 0 use tools.execution.max_parallelism from settings.
          */
         private readonly int $toolWorkerCount = 0,
+        private readonly ?TranscriptPersistenceService $transcriptPersistence = null,
     ) {
         $this->sessionId = $_SERVER['HATFIELD_SESSION_ID'] ?? $_ENV['HATFIELD_SESSION_ID'] ?? 'unknown';
     }
@@ -207,6 +209,9 @@ final class HeadlessController
                             $cursor = $this->runEventCursors[$runId];
                         }
                     }
+
+                    // Persist finalized transcript blocks after draining events.
+                    $this->persistTranscripts($runId);
                 } catch (\Throwable $e) {
                     // Event drain failures can stall the TUI silently.
                     // Delegate capture=0 rethrow to boundary.
@@ -582,8 +587,33 @@ final class HeadlessController
         $this->emitInternal($event);
     }
 
+    private function feedPersister(RuntimeEvent $event): void
+    {
+        if (null === $this->transcriptPersistence) {
+            return;
+        }
+        try {
+            $this->transcriptPersistence->feed($event);
+        } catch (\Throwable) {
+            // Best-effort: persister failures must not break the event loop.
+        }
+    }
+
+    private function persistTranscripts(string $runId): void
+    {
+        if (null === $this->transcriptPersistence) {
+            return;
+        }
+        try {
+            $this->transcriptPersistence->persist($runId);
+        } catch (\Throwable) {
+            // Best-effort: persistence failures must not break the event loop.
+        }
+    }
+
     private function emitInternal(RuntimeEvent $event): void
     {
+        $this->feedPersister($event);
         if (null === $this->stdout) {
             return;
         }

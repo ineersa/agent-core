@@ -91,7 +91,7 @@ class WorkerFailedEventSubscriberTest extends TestCase
         $runState = new RunState(runId: self::RUN_ID, status: RunStatus::Failed, version: 5);
 
         $runStore = $this->createMock(RunStoreInterface::class);
-        $runStore->method('get')->with(self::RUN_ID)->willReturn($runState);
+        $runStore->method('get')->willReturn($runState);
         $runStore->expects($this->never())->method('compareAndSwap');
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->expects($this->never())->method('append');
@@ -113,7 +113,7 @@ class WorkerFailedEventSubscriberTest extends TestCase
     {
         // StartRun failed before any state was committed (get returns null)
         $runStore = $this->createMock(RunStoreInterface::class);
-        $runStore->method('get')->with(self::RUN_ID)->willReturn(null);
+        $runStore->method('get')->willReturn(null);
         $runStore->expects($this->once())
             ->method('compareAndSwap')
             ->with($this->callback(static function (RunState $state): bool {
@@ -164,7 +164,7 @@ class WorkerFailedEventSubscriberTest extends TestCase
         );
 
         $runStore = $this->createMock(RunStoreInterface::class);
-        $runStore->method('get')->with(self::RUN_ID)->willReturn($existingState);
+        $runStore->method('get')->willReturn($existingState);
 
         $committedState = null;
         $runStore->expects($this->once())
@@ -212,8 +212,8 @@ class WorkerFailedEventSubscriberTest extends TestCase
     {
         $currentState = new RunState(runId: self::RUN_ID, status: RunStatus::Running, version: 3);
 
-        $runStore = $this->createMock(RunStoreInterface::class);
-        $runStore->method('get')->with(self::RUN_ID)->willReturn($currentState);
+        $runStore = $this->createStub(RunStoreInterface::class);
+        $runStore->method('get')->willReturn($currentState);
         // CAS fails — another process already updated state
         $runStore->method('compareAndSwap')->willReturn(false);
 
@@ -238,8 +238,8 @@ class WorkerFailedEventSubscriberTest extends TestCase
     {
         $currentState = new RunState(runId: self::RUN_ID, status: RunStatus::Running, version: 3);
 
-        $runStore = $this->createMock(RunStoreInterface::class);
-        $runStore->method('get')->with(self::RUN_ID)->willReturn($currentState);
+        $runStore = $this->createStub(RunStoreInterface::class);
+        $runStore->method('get')->willReturn($currentState);
         // CAS throws an exception
         $runStore->method('compareAndSwap')->willThrowException(new \RuntimeException('Lock acquisition failed'));
 

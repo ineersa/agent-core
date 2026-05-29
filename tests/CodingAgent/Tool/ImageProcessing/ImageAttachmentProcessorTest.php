@@ -44,14 +44,14 @@ final class ImageAttachmentProcessorTest extends TestCase
     {
         $img = \imagecreatetruecolor($width, $height);
         \imagepng($img, $path);
-        \imagedestroy($img);
+        // imagedestroy is no-op since PHP 8.0, removed
     }
 
     private function createJpeg(int $width, int $height, string $path): void
     {
         $img = \imagecreatetruecolor($width, $height);
         \imagejpeg($img, $path, 90);
-        \imagedestroy($img);
+        // imagedestroy is no-op since PHP 8.0, removed
     }
 
     /* ── Small images pass through unchanged ── */

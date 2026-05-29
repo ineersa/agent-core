@@ -177,6 +177,7 @@ services:
   Ineersa\CodingAgent\Runtime\Controller\HeadlessController:
     arguments:
       $dispatcher: '@event_dispatcher'
+      $transcriptPersistence: '@Ineersa\CodingAgent\Runtime\Session\TranscriptPersistenceService'
 
   # Stream observer delegates to Symfony EventDispatcher with per-delta subscribers.
   Ineersa\CodingAgent\Runtime\Stream\LlmStreamDispatchObserver:
@@ -194,6 +195,10 @@ services:
 
   Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface:
     alias: Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector
+
+  Ineersa\CodingAgent\Runtime\Session\TranscriptPersistenceService:
+    arguments:
+      $projector: '@Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface'
 
   # ─── Symfony AI Platform wiring ───
   # PlatformInterface reads Hatfield config from autowired AppConfig,
