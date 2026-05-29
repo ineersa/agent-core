@@ -4,18 +4,19 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Contract;
 
+use Ineersa\CodingAgent\EventListener\RuntimeExceptionPolicySubscriber;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeErrorCaptureConfig;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionEvent;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
-use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 class RuntimeExceptionBoundaryTest extends TestCase
 {
     #[Test]
-    public function captureDisabledRethrowsOriginalException(): void
+    public function captureDisabledRethrowsOriginalExceptionThroughPolicySubscriber(): void
     {
         $boundary = $this->createBoundary(captureErrors: false);
 
@@ -43,15 +44,12 @@ class RuntimeExceptionBoundaryTest extends TestCase
     public function captureEnabledDispatchesEvent(): void
     {
         $dispatched = [];
-        $dispatcher = new EventDispatcher();
+        $dispatcher = $this->createDispatcher(captureErrors: true);
         $dispatcher->addListener(RuntimeExceptionEvent::class, static function (RuntimeExceptionEvent $event) use (&$dispatched): void {
             $dispatched[] = $event;
         });
 
-        $boundary = new RuntimeExceptionBoundary(
-            $dispatcher,
-            new RuntimeErrorCaptureConfig(captureErrors: true),
-        );
+        $boundary = new RuntimeExceptionBoundary($dispatcher);
 
         $exception = new \RuntimeException('dispatch test');
         $boundary->catch($exception, 'test.operation', ['key' => 'value']);
@@ -67,15 +65,12 @@ class RuntimeExceptionBoundaryTest extends TestCase
     public function captureEnabledExtractsRunIdFromContext(): void
     {
         $dispatched = [];
-        $dispatcher = new EventDispatcher();
+        $dispatcher = $this->createDispatcher(captureErrors: true);
         $dispatcher->addListener(RuntimeExceptionEvent::class, static function (RuntimeExceptionEvent $event) use (&$dispatched): void {
             $dispatched[] = $event;
         });
 
-        $boundary = new RuntimeExceptionBoundary(
-            $dispatcher,
-            new RuntimeErrorCaptureConfig(captureErrors: true),
-        );
+        $boundary = new RuntimeExceptionBoundary($dispatcher);
 
         $boundary->catch(new \RuntimeException('run error'), 'test.run_failed', ['run_id' => 'run-123']);
 
@@ -85,9 +80,18 @@ class RuntimeExceptionBoundaryTest extends TestCase
 
     private function createBoundary(bool $captureErrors): RuntimeExceptionBoundary
     {
-        return new RuntimeExceptionBoundary(
-            $this->createMock(EventDispatcherInterface::class),
+        return new RuntimeExceptionBoundary($this->createDispatcher($captureErrors));
+    }
+
+    private function createDispatcher(bool $captureErrors): EventDispatcher
+    {
+        $dispatcher = new EventDispatcher();
+        $subscriber = new RuntimeExceptionPolicySubscriber(
             new RuntimeErrorCaptureConfig(captureErrors: $captureErrors),
+            new NullLogger(),
         );
+        $dispatcher->addSubscriber($subscriber);
+
+        return $dispatcher;
     }
 }

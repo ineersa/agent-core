@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Tests\Listener;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\EventListener\RuntimeExceptionPolicySubscriber;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeErrorCaptureConfig;
@@ -23,6 +24,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Tui\Event\CancelEvent;
@@ -278,10 +280,12 @@ class CancelListenerTest extends TestCase
             sessionStore: $sessionStore,
         );
 
-        $boundary = new RuntimeExceptionBoundary(
-            new \Symfony\Component\EventDispatcher\EventDispatcher(),
+        $eventDispatcher = new \Symfony\Component\EventDispatcher\EventDispatcher();
+        $eventDispatcher->addSubscriber(new RuntimeExceptionPolicySubscriber(
             new RuntimeErrorCaptureConfig(captureErrors: '0' !== $captureErrorEnv),
-        );
+            new NullLogger(),
+        ));
+        $boundary = new RuntimeExceptionBoundary($eventDispatcher);
 
         $listener = new CancelListener(
             $this->logger,
