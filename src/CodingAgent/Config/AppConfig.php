@@ -83,6 +83,7 @@ final class AppConfig
                 (array) ($data['tools'] ?? []),
                 ToolsConfig::class,
             ),
+
             ai: $ai,
             raw: $data,
             catalog: null !== $ai ? new HatfieldModelCatalog($ai) : null,

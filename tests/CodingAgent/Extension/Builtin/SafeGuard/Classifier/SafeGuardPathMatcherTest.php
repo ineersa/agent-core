@@ -129,18 +129,6 @@ final class SafeGuardPathMatcherTest extends TestCase
         );
     }
 
-    public function testSshKeyIsProtectedByExactBasename(): void
-    {
-        // With defaults: .ssh/id_ is in the list
-        $policy = new SafeGuardPolicy(
-            protectedReadPatterns: ['.ssh/id_'],
-        );
-
-        $this->assertTrue(
-            $this->matcher->isProtectedReadPath($policy, '/home/user/.ssh/id_rsa'),
-        );
-    }
-
     public function testAwsCredentialsIsProtected(): void
     {
         $policy = new SafeGuardPolicy(

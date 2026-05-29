@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Classifier;
 
+use Ineersa\CodingAgent\Config\SafeGuardConfig;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardDecision;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardDecisionKind;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardPolicy;
@@ -12,6 +13,9 @@ use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardPolicy;
  * Main SafeGuard classifier — decides whether a tool call should be
  * allowed, blocked, or flagged for confirmation.
  *
+ * Tool names are configurable from SafeGuardConfig (defaults: bash, write,
+ * edit, read). This avoids hardcoded tool name strings.
+ *
  * Delegates to SafeGuardCommandMatcher for bash commands and
  * SafeGuardPathMatcher for file path checks.
  *
@@ -19,19 +23,42 @@ use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardPolicy;
  */
 final class SafeGuardClassifier
 {
+    /**
+     * @param string $bashToolName  Tool name that triggers bash classification (from config)
+     * @param string $writeToolName Tool name that triggers write classification (from config)
+     * @param string $editToolName  Tool name that triggers write classification (from config)
+     * @param string $readToolName  Tool name that triggers read classification (from config)
+     */
     public function __construct(
+        private readonly string $bashToolName,
+        private readonly string $writeToolName,
+        private readonly string $editToolName,
+        private readonly string $readToolName,
         private readonly SafeGuardCommandMatcher $commandMatcher = new SafeGuardCommandMatcher(),
         private readonly SafeGuardPathMatcher $pathMatcher = new SafeGuardPathMatcher(),
     ) {
     }
 
     /**
+     * Build a classifier from SafeGuardConfig.
+     */
+    public static function fromConfig(SafeGuardConfig $config): self
+    {
+        return new self(
+            bashToolName: $config->bashToolName,
+            writeToolName: $config->writeToolName,
+            editToolName: $config->editToolName,
+            readToolName: $config->readToolName,
+        );
+    }
+
+    /**
      * Classify a tool call against the active policy.
      *
-     * @param string         $toolName  e.g., "bash", "write", "edit", "read"
+     * @param string           $toolName  e.g., "bash", "write", "edit", "read"
      * @param array<string, mixed> $arguments Tool-specific decoded arguments
-     * @param string         $cwd       Current working directory
-     * @param SafeGuardPolicy $policy   Loaded policy for this invocation
+     * @param string           $cwd       Current working directory
+     * @param SafeGuardPolicy  $policy    Loaded policy for this invocation
      */
     public function classify(
         string $toolName,
@@ -39,12 +66,19 @@ final class SafeGuardClassifier
         string $cwd,
         SafeGuardPolicy $policy,
     ): SafeGuardDecision {
-        return match ($toolName) {
-            'bash' => $this->classifyBash($arguments, $policy),
-            'write', 'edit' => $this->classifyWrite($arguments, $cwd, $policy),
-            'read' => $this->classifyRead($arguments, $cwd, $policy),
-            default => SafeGuardDecision::allow($toolName),
-        };
+        if ($toolName === $this->bashToolName) {
+            return $this->classifyBash($arguments, $policy);
+        }
+
+        if ($toolName === $this->writeToolName || $toolName === $this->editToolName) {
+            return $this->classifyWrite($arguments, $cwd, $policy);
+        }
+
+        if ($toolName === $this->readToolName) {
+            return $this->classifyRead($arguments, $cwd, $policy);
+        }
+
+        return SafeGuardDecision::allow($toolName);
     }
 
     /**
@@ -64,27 +98,28 @@ final class SafeGuardClassifier
         $command = (string) ($arguments['command'] ?? '');
 
         if ('' === $command) {
-            return SafeGuardDecision::allow('bash');
+            return SafeGuardDecision::allow($this->bashToolName);
         }
 
         // Check allowlist first
         if ($this->commandMatcher->isCommandAllowed($policy->allowCommandPatterns, $command)) {
-            return SafeGuardDecision::allow('bash');
+            return SafeGuardDecision::allow($this->bashToolName);
         }
 
-        $classification = $this->commandMatcher->classify(
+        $decision = $this->commandMatcher->classify(
             command: $command,
             dangerousCommandPatterns: $policy->dangerousCommandPatterns,
         );
 
-        if (SafeGuardDecisionKind::Allow === $classification->kind) {
-            return SafeGuardDecision::allow('bash');
+        if ($decision->isAllowed()) {
+            return SafeGuardDecision::allow($this->bashToolName);
         }
 
+        // Carry forward the command matcher's decision, but ensure toolName is set
         return SafeGuardDecision::block(
-            kind: $classification->kind,
-            reason: $classification->reason,
-            toolName: 'bash',
+            kind: $decision->kind,
+            reason: $decision->reason,
+            toolName: $this->bashToolName,
         );
     }
 
@@ -112,23 +147,23 @@ final class SafeGuardClassifier
         }
 
         if ('' === $rawPath) {
-            return SafeGuardDecision::allow('write');
+            return SafeGuardDecision::allow($this->writeToolName);
         }
 
         // Inside CWD → always allowed
         if ($this->pathMatcher->isInsideCwd($cwd, $rawPath)) {
-            return SafeGuardDecision::allow('write');
+            return SafeGuardDecision::allow($this->writeToolName);
         }
 
         // Check path allowlist
         if ($this->pathMatcher->isPathInList($policy->allowWriteOutsideCwd, $rawPath)) {
-            return SafeGuardDecision::allow('write');
+            return SafeGuardDecision::allow($this->writeToolName);
         }
 
         return SafeGuardDecision::block(
             kind: SafeGuardDecisionKind::WriteOutsideCwd,
             reason: \sprintf('Write outside working directory: %s', $rawPath),
-            toolName: 'write',
+            toolName: $this->writeToolName,
         );
     }
 
@@ -155,17 +190,17 @@ final class SafeGuardClassifier
         }
 
         if ('' === $rawPath) {
-            return SafeGuardDecision::allow('read');
+            return SafeGuardDecision::allow($this->readToolName);
         }
 
         if (!$this->pathMatcher->isProtectedReadPath($policy, $rawPath)) {
-            return SafeGuardDecision::allow('read');
+            return SafeGuardDecision::allow($this->readToolName);
         }
 
         return SafeGuardDecision::block(
             kind: SafeGuardDecisionKind::ProtectedRead,
             reason: \sprintf('Protected file — may contain secrets: %s', $rawPath),
-            toolName: 'read',
+            toolName: $this->readToolName,
         );
     }
 }

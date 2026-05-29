@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Classifier;
 
+use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardDecision;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardDecisionKind;
 
 /**
  * Faithful PHP port of Pi's classify.ts bash command classification.
+ *
+ * Returns SafeGuardDecision directly (BashClassification is eliminated).
  *
  * Classification order (mirrors Pi):
  *   1. Hard block: sudo (never allowlisted)
@@ -72,22 +75,24 @@ final class SafeGuardCommandMatcher
      *
      * @param list<string> $dangerousCommandPatterns User-defined dangerous substrings from policy
      */
-    public function classify(string $command, array $dangerousCommandPatterns = []): BashClassification
+    public function classify(string $command, array $dangerousCommandPatterns = []): SafeGuardDecision
     {
         // 1. Hard block: sudo — never allowlisted, never asked
         if (1 === \preg_match(self::SUDO_PATTERN, $command)) {
-            return new BashClassification(
+            return SafeGuardDecision::block(
                 kind: SafeGuardDecisionKind::HardBlock,
                 reason: 'sudo commands are not allowed',
+                toolName: '',
             );
         }
 
         // 2. Built-in destructive patterns
         foreach (self::DESTRUCTIVE_PATTERNS as $pattern) {
             if (1 === \preg_match($pattern, $command)) {
-                return new BashClassification(
+                return SafeGuardDecision::block(
                     kind: SafeGuardDecisionKind::Destructive,
                     reason: 'Destructive command',
+                    toolName: '',
                 );
             }
         }
@@ -95,9 +100,10 @@ final class SafeGuardCommandMatcher
         // 3. Built-in dangerous git patterns
         foreach (self::DANGEROUS_GIT_PATTERNS as $pattern) {
             if (1 === \preg_match($pattern, $command)) {
-                return new BashClassification(
+                return SafeGuardDecision::block(
                     kind: SafeGuardDecisionKind::DangerousGit,
                     reason: 'Dangerous git operation',
+                    toolName: '',
                 );
             }
         }
@@ -105,9 +111,10 @@ final class SafeGuardCommandMatcher
         // 4. Sensitive info exposure (env, printenv)
         foreach (self::SENSITIVE_INFO_PATTERNS as $pattern) {
             if (1 === \preg_match($pattern, $command)) {
-                return new BashClassification(
+                return SafeGuardDecision::block(
                     kind: SafeGuardDecisionKind::SensitiveInfo,
                     reason: 'Exposes environment variables',
+                    toolName: '',
                 );
             }
         }
@@ -117,17 +124,15 @@ final class SafeGuardCommandMatcher
         foreach ($dangerousCommandPatterns as $pattern) {
             $normalizedPattern = $this->normalizeCommand($pattern);
             if (\str_contains($normalized, $normalizedPattern)) {
-                return new BashClassification(
+                return SafeGuardDecision::block(
                     kind: SafeGuardDecisionKind::CustomDangerous,
                     reason: 'Matched custom dangerous pattern',
+                    toolName: '',
                 );
             }
         }
 
-        return new BashClassification(
-            kind: SafeGuardDecisionKind::Allow,
-            reason: '',
-        );
+        return SafeGuardDecision::allow('');
     }
 
     /**

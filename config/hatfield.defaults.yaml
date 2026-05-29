@@ -123,6 +123,57 @@ tools:
 extensions:
     enabled: []
 
+    # Generic extension settings exposed via the Extension API.
+    # Each extension reads its own section by key.
+    #
+    # SafeGuard settings (key: 'safe_guard'):
+    #
+    # Hard-blocked operations (never negotiable):
+    #   - sudo / privilege escalation
+    #
+    # Dangerous commands (can be allowlisted via allow_command_patterns):
+    #   rm, rmdir, git clean, git reset --hard, git checkout -- .,
+    #   mkfs, dd if=, chmod 777, chown -R, mv ... /dev/null
+    #
+    # Dangerous git (can be allowlisted):
+    #   git push --force/-f, git branch -d/-D, git tag -d,
+    #   git rebase, git reflog expire
+    #
+    # Sensitive info exposure (can be allowlisted):
+    #   env, printenv (and piped variants)
+    #
+    # Protected read patterns are additive on top of built-in defaults:
+    #   .env.local, auth.json, .ssh/id_*, .aws/credentials,
+    #   .kube/config, *.pem, *.key, service-account files
+    #
+    # Writes/edits outside the current working directory (can be allowlisted).
+    #
+    settings:
+        safe_guard:
+            # Tool names used for matching (configurable to support custom tool aliases).
+            tool_names:
+                bash: bash
+                write: write
+                edit: edit
+                read: read
+
+            # Command substrings that bypass destructive/dangerous checks.
+            allow_command_patterns: []
+
+            # Absolute paths where writes outside CWD are always allowed.
+            allow_write_outside_cwd: []
+
+            # Destructive-in-paths list (reserved for serialization compatibility.
+            # Currently not wired to any classification logic).
+            allow_destructive_in_paths: []
+
+            # Additional filename/path patterns that require confirmation to read.
+            # These are added on top of the built-in defaults (which cannot be removed).
+            protected_read_patterns: []
+
+            # Extra command substrings to treat as dangerous (added to built-in regexes).
+            dangerous_command_patterns: []
+
 # ---------------------------------------------------------------------------
 # Logging configuration
 # ---------------------------------------------------------------------------

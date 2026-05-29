@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Extension\Builtin\SafeGuard\Classifier;
 
+use Ineersa\CodingAgent\Config\SafeGuardConfig;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Classifier\SafeGuardClassifier;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardDecision;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardDecisionKind;
@@ -14,7 +15,8 @@ use PHPUnit\Framework\TestCase;
  * Integration/end-to-end tests for SafeGuardClassifier.
  *
  * Tests the orchestration of CommandMatcher + PathMatcher through the
- * single classify() entry point.
+ * single classify() entry point. Uses configurable tool names from
+ * SafeGuardConfig.
  */
 final class SafeGuardClassifierTest extends TestCase
 {
@@ -23,7 +25,7 @@ final class SafeGuardClassifierTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->classifier = new SafeGuardClassifier();
+        $this->classifier = SafeGuardClassifier::fromConfig(new SafeGuardConfig());
         $this->cwd = getcwd() ?: '.';
     }
 
@@ -65,9 +67,6 @@ final class SafeGuardClassifierTest extends TestCase
 
         $decision = $this->classifier->classify('bash', ['command' => 'rm -rf /tmp/cached'], $this->cwd, $policy);
 
-        // Allowlist is substring match — "rm -rf /tmp" contains "rm -rf /tmp/cached"?
-        // Actually the normalized check is: normalized command contains normalized pattern
-        // "rm -rf /tmp" as pattern, "rm -rf /tmp/cached" as command → "rm -rf /tmp/cached" contains "rm -rf /tmp"? Yes!
         $this->assertSame(SafeGuardDecisionKind::Allow, $decision->kind);
     }
 
@@ -220,6 +219,30 @@ final class SafeGuardClassifierTest extends TestCase
 
         $decision = $this->classifier->classify('view_image', ['path' => '/secret/file.png'], $this->cwd, $policy);
 
+        $this->assertSame(SafeGuardDecisionKind::Allow, $decision->kind);
+    }
+
+    // ── Configurable tool names ──
+
+    public function testCustomBashToolNameIsRespected(): void
+    {
+        $config = SafeGuardConfig::fromArray([
+            'tool_names' => ['bash' => 'execute'],
+        ]);
+        $classifier = SafeGuardClassifier::fromConfig($config);
+        $policy = new SafeGuardPolicy();
+
+        // Default classifier still matches 'bash'
+        $decision = $this->classifier->classify('bash', ['command' => 'rm -rf /'], $this->cwd, $policy);
+        $this->assertSame(SafeGuardDecisionKind::Destructive, $decision->kind);
+
+        // Custom classifier matches 'execute' as the bash tool
+        $decision = $classifier->classify('execute', ['command' => 'rm -rf /'], $this->cwd, $policy);
+        $this->assertSame(SafeGuardDecisionKind::Destructive, $decision->kind);
+        $this->assertSame('execute', $decision->toolName);
+
+        // Custom classifier does NOT match 'bash' anymore (it uses 'execute')
+        $decision = $classifier->classify('bash', ['command' => 'rm -rf /'], $this->cwd, $policy);
         $this->assertSame(SafeGuardDecisionKind::Allow, $decision->kind);
     }
 

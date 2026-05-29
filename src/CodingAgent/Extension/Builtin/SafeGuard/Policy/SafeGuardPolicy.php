@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy;
 
+use Ineersa\CodingAgent\Config\SafeGuardConfig;
+
 /**
- * Immutable policy snapshot loaded from a SafeGuard policy file.
+ * Immutable policy snapshot loaded from SafeGuardConfig.
  *
  * Fields correspond 1:1 to Pi's SafeGuardPolicy interface.
  *
@@ -29,5 +31,22 @@ final readonly class SafeGuardPolicy
         public array $protectedReadPatterns = [],
         public array $dangerousCommandPatterns = [],
     ) {
+    }
+
+    /**
+     * Create a SafeGuardPolicy from SafeGuardConfig settings.
+     *
+     * protectedReadPatterns are always populated from the config's effective
+     * list (which includes built-in defaults merged with YAML additions).
+     */
+    public static function fromConfig(SafeGuardConfig $config): self
+    {
+        return new self(
+            allowCommandPatterns: $config->allowCommandPatterns,
+            allowWriteOutsideCwd: $config->allowWriteOutsideCwd,
+            allowDestructiveInPaths: $config->allowDestructiveInPaths,
+            protectedReadPatterns: $config->protectedReadPatterns,
+            dangerousCommandPatterns: $config->dangerousCommandPatterns,
+        );
     }
 }
