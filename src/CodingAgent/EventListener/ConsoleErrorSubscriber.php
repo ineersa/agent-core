@@ -41,6 +41,15 @@ final class ConsoleErrorSubscriber implements EventSubscriberInterface
         $command = $event->getCommand();
         $commandName = $command?->getName();
 
+        if (!$this->config->captureErrors) {
+            $this->logger->notice(
+                'Error capture disabled — rethrowing console exception',
+                ['exception' => $exception],
+            );
+
+            throw $exception;
+        }
+
         // In controller/headless mode, emit a protocol.error JSONL to
         // stdout so the TUI/controller client sees the unhandled error
         // before the process exits. This is the last-resort TUI-visible
@@ -53,21 +62,10 @@ final class ConsoleErrorSubscriber implements EventSubscriberInterface
             }
         }
 
-        if ($this->config->captureErrors) {
-            $this->logger->error('Unhandled console exception', [
-                'exception' => $exception,
-                'command' => $commandName,
-            ]);
-
-            return;
-        }
-
-        $this->logger->notice(
-            'Error capture disabled — rethrowing console exception',
-            ['exception' => $exception],
-        );
-
-        throw $exception;
+        $this->logger->error('Unhandled console exception', [
+            'exception' => $exception,
+            'command' => $commandName,
+        ]);
     }
 
     /**
@@ -97,7 +95,7 @@ final class ConsoleErrorSubscriber implements EventSubscriberInterface
             fflush(\STDOUT);
         } catch (\Throwable $emitError) {
             // Avoid recursive failure — if emitting the protocol error
-            // itself fails (e.g. stdout closed), silently fall through
+            // itself fails (e.g. stdout closed), log it and fall through
             // to the existing console error rendering.
             $this->logger->error('Failed to emit protocol.error in controller mode', [
                 'exception' => $emitError,
