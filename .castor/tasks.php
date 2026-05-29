@@ -20,9 +20,10 @@ require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
 
 /**
- * Run full QA: deptrac, phpunit, phpstan, cs-fixer check.
+ * Run full QA: deptrac, phpunit, controller E2E, real LLM E2E,
+ * TUI snapshot E2E, phpstan, cs-fixer check.
  */
-#[AsTask(description: 'Run full QA (deptrac, phpunit, phpstan, cs-fixer)')]
+#[AsTask(description: 'Run full QA (deptrac, phpunit, controller E2E, real LLM E2E, TUI E2E, phpstan, cs-fixer)')]
 function check(): void
 {
     $failures = [];
@@ -32,6 +33,9 @@ function check(): void
         foreach ([
             'deptrac' => static fn () => deptrac(),
             'test' => static fn () => test(),
+            'test:controller' => static fn () => test_controller(),
+            'test:llm-real' => static fn () => test_llm_real(),
+            'test:tui' => static fn () => test_tui(),
             'phpstan' => static fn () => phpstan(),
             'cs-check' => static fn () => cs_check(),
         ] as $step => $runner) {
@@ -102,9 +106,8 @@ function deptrac(): void
 /**
  * Run PHPUnit tests (excludes tmux e2e and real LLM smoke tests).
  *
- * TUI e2e tests require tmux and are environment-sensitive.
- * Run them explicitly with "castor test:tui".
- * LLM smoke tests hit real providers; use "castor test:llm-real".
+ * TUI e2e and real LLM smoke tests run as separate steps in
+ * "castor check" so their failures are reported independently.
  */
 #[AsTask(description: 'Run PHPUnit tests (excludes tmux e2e and real LLM smoke tests)')]
 function test(string $filter = ''): void
@@ -331,7 +334,7 @@ function install(): void
 function idea_run_configs(): void
 {
     $configs = [
-        'check' => 'Run full QA (deptrac, phpunit, phpstan, cs-fixer).',
+        'check' => 'Run full QA (deptrac, phpunit, controller E2E, real LLM E2E, TUI E2E, phpstan, cs-fixer).',
         'quality' => 'Alias for check.',
         'install' => 'Install Composer dependencies.',
         'deptrac' => 'Run Deptrac architecture boundary validation.',
@@ -534,8 +537,8 @@ function resolve_worktree_target(string $root, array $worktrees, string $target)
  *
  * These tests launch the agent in detached tmux sessions
  * and compare snapshots against golden fixtures.  They are
- * NOT included in "castor check" because they require tmux
- * and are environment-sensitive.
+ * included in "castor check" because TUI/runtime behavior must
+ * be validated with real user-visible workflows.
  */
 #[AsTask(name: 'test:tui', description: 'Run TUI e2e snapshot tests (requires tmux)')]
 function test_tui(): void
@@ -575,7 +578,7 @@ function test_llm_real(): void
  * async runtime pipeline (controller event loop -> messenger consumers
  * -> LLM invocation -> event delivery).
  *
- * Uses the fast llama_cpp_test/lfm2.5 model on port 9052.
+ * Uses the fast llama_cpp_test/test model on port 9052.
  * Same fast test model as test:llm-real and TUI E2E tests.
  */
 #[AsTask(name: 'test:controller', description: 'Run controller E2E smoke test (spawns --controller, sends JSONL)')]
@@ -688,7 +691,7 @@ function run_agent_test(): void
         $settings = (string) file_get_contents($projectSettings);
         $settings = preg_replace(
             '/^ai:\n/m',
-            "ai:\n    default_model: llama_cpp_test/lfm2.5\n    default_reasoning: off\n",
+            "ai:\n    default_model: llama_cpp_test/test\n    default_reasoning: off\n",
             $settings,
             1,
         ) ?? $settings;
@@ -708,7 +711,7 @@ function run_agent_test(): void
     shell_exec(sprintf('tmux kill-session -t %s 2>/dev/null', escapeshellarg($session)));
 
     $innerCmd = sprintf(
-        'cd %s && APP_ENV=dev HOME=%s %s %s agent --prompt=%s --model=llama_cpp_test/lfm2.5 --reasoning=off 2>&1',
+        'cd %s && APP_ENV=dev HOME=%s %s %s agent --prompt=%s --model=llama_cpp_test/test --reasoning=off 2>&1',
         escapeshellarg($testDir),
         escapeshellarg($homeDir),
         escapeshellarg(\PHP_BINARY),

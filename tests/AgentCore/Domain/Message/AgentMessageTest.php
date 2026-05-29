@@ -67,16 +67,16 @@ final class AgentMessageTest extends TestCase
         self::assertSame(['trace' => 'abc'], $message->metadata);
     }
 
-    public function testFromPayloadSetsTimestampToNullWhenInvalid(): void
+    public function testFromPayloadThrowsOnInvalidTimestamp(): void
     {
-        $message = AgentMessage::fromPayload([
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid timestamp');
+
+        AgentMessage::fromPayload([
             'role' => 'assistant',
             'content' => [],
             'timestamp' => 'invalid-timestamp',
         ]);
-
-        self::assertInstanceOf(AgentMessage::class, $message);
-        self::assertNull($message->timestamp);
     }
 
     public function testFromPayloadSetsNameToNullWhenNotString(): void

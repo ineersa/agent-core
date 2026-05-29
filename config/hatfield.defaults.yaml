@@ -7,6 +7,12 @@
 #
 # Precedence: defaults < home < project
 #
+# Environment variables (read at process startup, not from YAML):
+#   HATFIELD_CAPTURE_ERRORS=1  (default)  Convert caught exceptions to
+#                               user-visible runtime/TUI errors.
+#   HATFIELD_CAPTURE_ERRORS=0             Crash/rethrow on errors —
+#                               for test harnesses that need loud failures.
+#
 # Path placeholders supported:
 #   %kernel.project_dir%  App installation directory
 #   ~                     Home directory

@@ -268,8 +268,8 @@ final class CommandMailboxPolicyTest extends TestCase
             commandStore: $commandStore,
             replayService: $replayService,
             stepDispatcher: $stepDispatcher,
-            hookDispatcher: null,
             logger: new NullLogger(),
+            hookDispatcher: null,
         );
 
         $runMessageProcessor = new RunMessageProcessor(

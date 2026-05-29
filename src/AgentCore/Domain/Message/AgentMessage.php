@@ -58,7 +58,8 @@ final readonly class AgentMessage
         if (\is_string($payload['timestamp'] ?? null)) {
             try {
                 $timestamp = new \DateTimeImmutable($payload['timestamp']);
-            } catch (\Throwable) {
+            } catch (\Throwable $e) {
+                throw new \InvalidArgumentException(\sprintf('Invalid timestamp in AgentMessage payload: "%s"', $payload['timestamp']), previous: $e);
             }
         }
 

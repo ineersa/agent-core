@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
+use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Runtime\Session\TranscriptPersistenceService;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
 use Symfony\Component\Console\Command\Command;
@@ -58,6 +60,7 @@ final class HeadlessController
 
     /** 5s consumer supervision interval. */
     private const float SUPERVISE_INTERVAL = 5.0;
+    private const int MAX_CONSECUTIVE_BAD_LLM_LINES = 10;
 
     /** @var resource|null */
     private $stdout;
@@ -66,6 +69,9 @@ final class HeadlessController
 
     /** @var array<string, int> runId => lastForwardedSeq */
     private array $runEventCursors = [];
+
+    /** Consecutive unparseable LLM stdout lines for error threshold. */
+    private int $consecutiveBadLlmLines = 0;
 
     /**
      * Session identifier from HATFIELD_SESSION_ID env var.
@@ -90,12 +96,14 @@ final class HeadlessController
         private readonly EventDispatcherInterface $dispatcher,
         private readonly LoggerInterface $logger,
         private readonly ToolExecutionSettingsInterface $toolExecutionSettings,
+        private readonly RuntimeExceptionBoundary $boundary,
         private readonly ?InProcessAgentSessionClient $eventClient = null,
         /**
          * Optional override for parallel tool messenger consumers.
          * Values <= 0 use tools.execution.max_parallelism from settings.
          */
         private readonly int $toolWorkerCount = 0,
+        private readonly ?TranscriptPersistenceService $transcriptPersistence = null,
     ) {
         $this->sessionId = $_SERVER['HATFIELD_SESSION_ID'] ?? $_ENV['HATFIELD_SESSION_ID'] ?? 'unknown';
     }
@@ -201,11 +209,44 @@ final class HeadlessController
                             $cursor = $this->runEventCursors[$runId];
                         }
                     }
+
+                    // Persist finalized transcript blocks after draining events.
+                    $this->persistTranscripts($runId);
                 } catch (\Throwable $e) {
-                    $this->logger->warning('Controller event drain error', [
+                    // Event drain failures can stall the TUI silently.
+                    // Delegate capture=0 rethrow to boundary.
+                    // If we reach here, capture mode is enabled.
+                    $this->boundary->catch($e, 'headless_controller.event_drain_failed', [
+                        'run_id' => $runId,
+                    ]);
+
+                    // Capture mode: emit protocol error for TUI visibility
+                    // and release cursor so subsequent polls start fresh.
+                    $this->emitInternal(new RuntimeEvent(
+                        type: RuntimeEventTypeEnum::RuntimeReady->value, // broadcast to unstick
+                        runId: $runId,
+                        seq: 0,
+                        payload: [],
+                    ));
+
+                    $this->emitInternal(new RuntimeEvent(
+                        type: RuntimeEventTypeEnum::ProtocolError->value,
+                        runId: $runId,
+                        seq: 0,
+                        payload: [
+                            'error' => 'Event drain failed: '.$e->getMessage(),
+                            'run_id' => $runId,
+                        ],
+                    ));
+
+                    unset($this->runEventCursors[$runId]);
+
+                    $this->logger->error('Event drain failed', [
                         'run_id' => $runId,
                         'exception' => $e,
                     ]);
+
+                    // Event drain will retry next tick.
                 }
             }
         });
@@ -244,7 +285,8 @@ final class HeadlessController
      * pipe, accumulates partial lines across polls, parses valid RuntimeEvent
      * JSONL, and forwards to the TUI.
      *
-     * Non-JSONL lines (e.g. messenger:consume output) are silently skipped.
+     * Non-JSONL lines (e.g. messenger:consume output) are treated as
+     * expected protocol noise and logged at debug level.
      * Incomplete lines (no trailing \n) are buffered and completed on the
      * next poll cycle.
      *
@@ -285,18 +327,50 @@ final class HeadlessController
 
             if (!\is_array($data) || !isset($data['v'], $data['type'])) {
                 // Not a valid RuntimeEvent — likely messenger:consume
-                // informational output. Silently skip.
+                // informational output (worker name, status). Skip at
+                // debug level since this is normal protocol noise.
+                $this->logger->debug('Skipped non-RuntimeEvent LLM consumer stdout line', [
+                    'preview' => mb_substr($trimmed, 0, 120),
+                ]);
                 continue;
             }
 
             try {
                 $event = RuntimeEvent::fromArray($data);
                 $this->emit($event);
+                $this->consecutiveBadLlmLines = 0;
             } catch (\Throwable $e) {
+                ++$this->consecutiveBadLlmLines;
                 $this->logger->debug('Skipping unparseable JSONL from LLM consumer stdout', [
                     'line' => mb_substr($trimmed, 0, 200),
                     'exception' => $e,
+                    'consecutive_bad' => $this->consecutiveBadLlmLines,
                 ]);
+
+                if ($this->consecutiveBadLlmLines >= self::MAX_CONSECUTIVE_BAD_LLM_LINES) {
+                    // Persistent malformed LLM output: delegate capture=0
+                    // rethrow to boundary. If we reach here, capture mode.
+                    $this->boundary->catch($e, 'headless_controller.llm_stdout_protocol_error', [
+                        'consecutive_bad' => $this->consecutiveBadLlmLines,
+                    ]);
+
+                    $this->logger->error('Persistent malformed LLM consumer output — streaming may be incomplete', [
+                        'consecutive_bad' => $this->consecutiveBadLlmLines,
+                        'sample' => mb_substr($trimmed, 0, 200),
+                        'exception' => $e,
+                    ]);
+
+                    $this->emitInternal(new RuntimeEvent(
+                        type: RuntimeEventTypeEnum::ProtocolError->value,
+                        runId: '',
+                        seq: 0,
+                        payload: [
+                            'error' => 'Persistent malformed LLM consumer output — streaming may be incomplete.',
+                            'consecutive_bad' => $this->consecutiveBadLlmLines,
+                        ],
+                    ));
+                    $this->consecutiveBadLlmLines = 0;
+                }
             }
         }
     }
@@ -321,6 +395,15 @@ final class HeadlessController
             $event = new ControllerCommandEvent($command, $emit);
             $this->dispatcher->dispatch($event);
         } catch (\Throwable $e) {
+            // Delegate capture=0 rethrow to boundary.
+            // If we reach here, capture mode is enabled.
+            $this->boundary->catch($e, 'headless_controller.command_dispatch_failed', [
+                'command_type' => $command->type,
+                'command_id' => $command->id,
+            ]);
+
+            // Capture mode: log and emit a command_rejected event so
+            // the TUI shows the user what happened.
             $this->logger->error('Controller command dispatch failed', [
                 'command_type' => $command->type,
                 'command_id' => $command->id,
@@ -504,8 +587,33 @@ final class HeadlessController
         $this->emitInternal($event);
     }
 
+    private function feedPersister(RuntimeEvent $event): void
+    {
+        if (null === $this->transcriptPersistence) {
+            return;
+        }
+        try {
+            $this->transcriptPersistence->feed($event);
+        } catch (\Throwable) {
+            // Best-effort: persister failures must not break the event loop.
+        }
+    }
+
+    private function persistTranscripts(string $runId): void
+    {
+        if (null === $this->transcriptPersistence) {
+            return;
+        }
+        try {
+            $this->transcriptPersistence->persist($runId);
+        } catch (\Throwable) {
+            // Best-effort: persistence failures must not break the event loop.
+        }
+    }
+
     private function emitInternal(RuntimeEvent $event): void
     {
+        $this->feedPersister($event);
         if (null === $this->stdout) {
             return;
         }

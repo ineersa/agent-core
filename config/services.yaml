@@ -3,6 +3,13 @@ parameters:
     # Temporary default model — AI-10 per-turn routing replaces this.
     app.default_model: 'deepseek/deepseek-v4-pro'
 
+    # Default HATFIELD_CAPTURE_ERRORS to enabled; overridable via env var.
+    env(HATFIELD_CAPTURE_ERRORS): '1'
+
+    # app.capture_errors resolves the env var as a boolean.
+    # Services read this parameter — not the raw env directly.
+    app.capture_errors: '%env(bool:HATFIELD_CAPTURE_ERRORS)%'
+
 
 services:
   _defaults:
@@ -50,6 +57,12 @@ services:
 
   Ineersa\AgentCore\Contract\IdempotencyStoreInterface:
     alias: Ineersa\CodingAgent\Session\JsonlIdempotencyStore
+
+  # ─── Error capture (env-driven config, not a per-catch delegation service) ───
+
+  Ineersa\CodingAgent\Runtime\Contract\RuntimeErrorCaptureConfig:
+    arguments:
+      $captureErrors: '%app.capture_errors%'
 
   # ─── Hatfield config services ───
 
@@ -166,6 +179,7 @@ services:
   Ineersa\CodingAgent\Runtime\Controller\HeadlessController:
     arguments:
       $dispatcher: '@event_dispatcher'
+      $transcriptPersistence: '@Ineersa\CodingAgent\Runtime\Session\TranscriptPersistenceService'
 
   # Stream observer delegates to Symfony EventDispatcher with per-delta subscribers.
   Ineersa\CodingAgent\Runtime\Stream\LlmStreamDispatchObserver:
@@ -183,6 +197,10 @@ services:
 
   Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface:
     alias: Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector
+
+  Ineersa\CodingAgent\Runtime\Session\TranscriptPersistenceService:
+    arguments:
+      $projector: '@Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface'
 
   # ─── Symfony AI Platform wiring ───
   # PlatformInterface reads Hatfield config from autowired AppConfig,

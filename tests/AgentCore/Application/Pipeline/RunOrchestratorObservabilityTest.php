@@ -36,6 +36,7 @@ use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\AbstractLogger;
+use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\InMemoryStore;
 use Symfony\Component\Messenger\Envelope;
@@ -81,8 +82,8 @@ final class RunOrchestratorObservabilityTest extends TestCase
             commandStore: $commandStore,
             replayService: new ReplayService($eventStore, new HotPromptStateStore(), $metrics, $tracer),
             stepDispatcher: $stepDispatcher,
-            hookDispatcher: null,
             logger: $traceLogger,
+            hookDispatcher: null,
             metrics: $metrics,
             tracer: $tracer,
         );

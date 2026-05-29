@@ -127,6 +127,9 @@ final class FavoritePickerController
                     'model' => $ref->toString(),
                 ]);
 
+                $screen->setStatus('error', 'Error: '.$e->getMessage());
+                $screen->refresh();
+
                 return true;
             }
 

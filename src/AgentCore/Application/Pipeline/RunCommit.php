@@ -15,6 +15,7 @@ use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Psr\Log\LoggerInterface;
 
 final readonly class RunCommit
@@ -63,30 +64,59 @@ final readonly class RunCommit
                     $rollbackRestored = $this->runStore->compareAndSwap($state, $nextState->version);
                 } catch (\Throwable $rollbackException) {
                     $rollbackError = $rollbackException->getMessage();
+                    $this->logger->warning('Rollback CAS failed after event persistence failure', [
+                        'run_id' => $nextState->runId,
+                        'turn_no' => $nextState->turnNo,
+                        'exception' => $rollbackException,
+                    ]);
                 }
 
-                $this->logger->warning('agent_loop.commit.event_persist_failed', [
-                    'run_id' => $nextState->runId,
-                    'turn_no' => $nextState->turnNo,
-                    'step_id' => $nextState->activeStepId,
-                    'event_count' => \count($events),
-                    'error' => $exception->getMessage(),
-                    'rollback_restored' => $rollbackRestored,
-                    'rollback_error' => $rollbackError,
-                ]);
+                // Mark the run as failed so the TUI shows a terminal error.
+                // Use the original $state values because the rollback
+                // already restored it (or failed — in either case $state
+                // is our best reference).
+                try {
+                    $failedState = new RunState(
+                        runId: $state->runId,
+                        status: RunStatus::Failed,
+                        version: $state->version + 1,
+                        turnNo: $state->turnNo,
+                        lastSeq: $state->lastSeq,
+                        isStreaming: $state->isStreaming,
+                        streamingMessage: $state->streamingMessage,
+                        pendingToolCalls: $state->pendingToolCalls,
+                        errorMessage: 'Event persistence failed: '.$exception->getMessage(),
+                        messages: $state->messages,
+                        activeStepId: $state->activeStepId,
+                        retryableFailure: false,
+                    );
+                    $this->runStore->compareAndSwap($failedState, $state->version);
+                } catch (\Throwable $markFailedException) {
+                    // Best effort — cannot mark failed in store.
+                    $this->logger->warning('Could not mark run as failed after event persistence failure', [
+                        'run_id' => $nextState->runId,
+                        'exception' => $markFailedException,
+                    ]);
+                }
 
-                return false;
+                // Throw a terminal exception so the message processor
+                // does NOT retry (this is not a CAS conflict). The
+                // app-layer exception boundary decides capture vs crash.
+                throw new \RuntimeException(\sprintf('Event persistence failed for run %s turn %d: %s', $nextState->runId, $nextState->turnNo, $exception->getMessage()), previous: $exception);
             }
 
             if ($eventsPersisted) {
                 try {
                     $this->replayService->rebuildHotPromptState($nextState->runId);
                 } catch (\Throwable $exception) {
-                    $this->logger->warning('agent_loop.commit.hot_state_rebuild_failed', [
+                    // Hot prompt rebuild is best-effort — the previous
+                    // hot state is still valid. Log the failure so
+                    // operators can diagnose persistent rebuild issues.
+                    $this->logger->warning('Hot prompt state rebuild failed (best-effort)', [
                         'run_id' => $nextState->runId,
                         'turn_no' => $nextState->turnNo,
                         'step_id' => $nextState->activeStepId,
-                        'error' => $exception->getMessage(),
+                        'exception' => $exception,
                     ]);
                 }
             }
@@ -97,12 +127,14 @@ final readonly class RunCommit
                 try {
                     $this->stepDispatcher->dispatchEffects($effects);
                 } catch (\Throwable $exception) {
-                    $this->logger->warning('agent_loop.commit.effect_dispatch_failed', [
+                    // Effect dispatch is best-effort side work.
+                    // The primary commit (state + events) succeeded.
+                    $this->logger->warning('Effect dispatch failed after successful commit (best-effort)', [
                         'run_id' => $nextState->runId,
                         'turn_no' => $nextState->turnNo,
                         'step_id' => $nextState->activeStepId,
                         'effects_count' => \count($effects),
-                        'error' => $exception->getMessage(),
+                        'exception' => $exception,
                     ]);
                 }
             }
@@ -112,11 +144,13 @@ final readonly class RunCommit
                     AfterTurnCommitHookContext::fromRunState($nextState, $events, \count($effects)),
                 );
             } catch (\Throwable $exception) {
-                $this->logger->warning('agent_loop.commit.after_turn_commit_hook_failed', [
+                // After-turn commit hooks are optional extension points.
+                // A failing hook must not roll back the commit.
+                $this->logger->warning('After-turn commit hook failed (best-effort)', [
                     'run_id' => $nextState->runId,
                     'turn_no' => $nextState->turnNo,
                     'step_id' => $nextState->activeStepId,
-                    'error' => $exception->getMessage(),
+                    'exception' => $exception,
                 ]);
             }
 

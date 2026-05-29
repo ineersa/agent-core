@@ -4,46 +4,37 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi;
 
-use Ineersa\AgentCore\Application\Pipeline\RunMessageStateTools;
-use Ineersa\AgentCore\Contract\Hook\BeforeProviderRequestHookInterface;
-use Ineersa\AgentCore\Contract\Hook\ConvertToLlmHookInterface;
-use Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
-use Ineersa\AgentCore\Domain\Run\RunState;
-use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ModelResolverRoutingSubscriber;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\PlatformInvocationMetadata;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\HomeSettingsWriter;
-use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\SessionAwareModelResolver;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
+use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
 use PHPUnit\Framework\TestCase;
-use Symfony\AI\Platform\Message\MessageBag;
-use Symfony\AI\Platform\Message\Message;
-use Symfony\AI\Platform\Message\AssistantMessage;
+use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Message\Content\Text;
+use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Model;
 use Symfony\AI\Platform\ModelCatalog\FallbackModelCatalog;
 use Symfony\AI\Platform\ModelClientInterface;
 use Symfony\AI\Platform\Platform;
 use Symfony\AI\Platform\PlatformInterface as SymfonyPlatformInterface;
-use Symfony\AI\Platform\PlainConverter;
 use Symfony\AI\Platform\Provider;
 use Symfony\AI\Platform\Result\DeferredResult;
 use Symfony\AI\Platform\Result\InMemoryRawResult;
@@ -56,6 +47,8 @@ use Symfony\AI\Platform\ResultConverterInterface;
 use Symfony\AI\Platform\TokenUsage\TokenUsageExtractorInterface;
 use Symfony\AI\Platform\TokenUsage\TokenUsageInterface;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -148,6 +141,8 @@ final class TraceReplayTest extends TestCase
             platform: $platform,
             transformContextHooks: [],
             convertToLlmHooks: [],
+            streamObserver: null,
+            logger: new NullLogger(),
         );
 
         $result = $adapter->invoke(new ModelInvocationRequest(
@@ -162,23 +157,23 @@ final class TraceReplayTest extends TestCase
         // ── Assertions ──
 
         // Model was resolved from session metadata (not fallback)
-        self::assertSame($fixture['model'], $modelClient->capturedModel,
+        $this->assertSame($fixture['model'], $modelClient->capturedModel,
             'Model should be resolved from session metadata');
 
         // Assistant message text matches fixture expected text
-        self::assertNotNull($result->assistantMessage, 'Assistant message should not be null');
-        self::assertSame($fixture['expected_text'], $result->assistantMessage->asText(),
+        $this->assertNotNull($result->assistantMessage, 'Assistant message should not be null');
+        $this->assertSame($fixture['expected_text'], $result->assistantMessage->asText(),
             'Assistant message text should match fixture expected text');
 
         // Usage metadata is captured
-        self::assertSame($fixture['usage']['input_tokens'], $result->usage['input_tokens']);
-        self::assertSame($fixture['usage']['output_tokens'], $result->usage['output_tokens']);
-        self::assertSame($fixture['usage']['total_tokens'], $result->usage['total_tokens']);
+        $this->assertSame($fixture['usage']['input_tokens'], $result->usage['input_tokens']);
+        $this->assertSame($fixture['usage']['output_tokens'], $result->usage['output_tokens']);
+        $this->assertSame($fixture['usage']['total_tokens'], $result->usage['total_tokens']);
 
         // Session metadata remains available
         $meta = $this->sessionMetaStore->readSessionMetadata('replay-session-1');
-        self::assertSame($fixture['model'], $meta['model'] ?? null);
-        self::assertSame($fixture['reasoning'], $meta['reasoning'] ?? null);
+        $this->assertSame($fixture['model'], $meta['model'] ?? null);
+        $this->assertSame($fixture['reasoning'], $meta['reasoning'] ?? null);
     }
 
     // ──────────────────────────────────────────────
@@ -247,10 +242,10 @@ final class TraceReplayTest extends TestCase
             sessionId: 'resume-session-1',
         );
 
-        self::assertNotNull($resolvedModel);
-        self::assertSame('llama_cpp', $resolvedModel->providerId,
+        $this->assertNotNull($resolvedModel);
+        $this->assertSame('llama_cpp', $resolvedModel->providerId,
             'Session metadata model provider should win over global default');
-        self::assertSame('flash', $resolvedModel->modelName,
+        $this->assertSame('flash', $resolvedModel->modelName,
             'Session metadata model name should win over global default');
 
         // Reasoning should also come from session metadata
@@ -258,7 +253,7 @@ final class TraceReplayTest extends TestCase
             explicitReasoning: null,
             sessionId: 'resume-session-1',
         );
-        self::assertSame('off', $resolvedReasoning,
+        $this->assertSame('off', $resolvedReasoning,
             'Session metadata reasoning should win over global default');
     }
 
@@ -273,7 +268,7 @@ final class TraceReplayTest extends TestCase
 
         // Initially no session metadata
         $meta = $this->sessionMetaStore->readSessionMetadata('persist-session-1');
-        self::assertSame([], $meta, 'No metadata before first change');
+        $this->assertSame([], $meta, 'No metadata before first change');
 
         // Change model and reasoning
         $selectionService->changeModel(
@@ -284,19 +279,19 @@ final class TraceReplayTest extends TestCase
 
         // Verify metadata was persisted
         $meta = $this->sessionMetaStore->readSessionMetadata('persist-session-1');
-        self::assertSame('deepseek/deepseek-v4-flash', $meta['model'] ?? null);
-        self::assertSame('deepseek', $meta['model_provider'] ?? null);
-        self::assertSame('deepseek-v4-flash', $meta['model_name'] ?? null);
-        self::assertSame('low', $meta['reasoning'] ?? null);
-        self::assertArrayHasKey('updated_at', $meta);
+        $this->assertSame('deepseek/deepseek-v4-flash', $meta['model'] ?? null);
+        $this->assertSame('deepseek', $meta['model_provider'] ?? null);
+        $this->assertSame('deepseek-v4-flash', $meta['model_name'] ?? null);
+        $this->assertSame('low', $meta['reasoning'] ?? null);
+        $this->assertArrayHasKey('updated_at', $meta);
 
         // Resume resolves from persisted metadata
         $resolvedModel = $selectionService->resolveInitialModel(
             explicitModel: null,
             sessionId: 'persist-session-1',
         );
-        self::assertNotNull($resolvedModel);
-        self::assertSame('deepseek/deepseek-v4-flash', $resolvedModel->toString());
+        $this->assertNotNull($resolvedModel);
+        $this->assertSame('deepseek/deepseek-v4-flash', $resolvedModel->toString());
     }
 
     // ──────────────────────────────────────────────
@@ -352,6 +347,8 @@ final class TraceReplayTest extends TestCase
             platform: $platform,
             transformContextHooks: [],
             convertToLlmHooks: [],
+            streamObserver: null,
+            logger: new NullLogger(),
         );
 
         $result = $adapter->invoke(new ModelInvocationRequest(
@@ -363,11 +360,11 @@ final class TraceReplayTest extends TestCase
             ),
         ));
 
-        self::assertNotNull($result->assistantMessage);
-        self::assertSame($fixture['expected_text'], $result->assistantMessage->asText());
-        self::assertTrue($result->assistantMessage->hasThinking(),
+        $this->assertNotNull($result->assistantMessage);
+        $this->assertSame($fixture['expected_text'], $result->assistantMessage->asText());
+        $this->assertTrue($result->assistantMessage->hasThinking(),
             'Assistant message should contain thinking content');
-        self::assertSame($fixture['usage']['total_tokens'], $result->usage['total_tokens']);
+        $this->assertSame($fixture['usage']['total_tokens'], $result->usage['total_tokens']);
     }
 
     // ──────────────────────────────────────────────
@@ -380,10 +377,10 @@ final class TraceReplayTest extends TestCase
     private function loadFixture(string $name): array
     {
         $path = __DIR__.'/../../Fixtures/traces/'.$name;
-        self::assertFileExists($path, 'Fixture file not found: '.$path);
+        $this->assertFileExists($path, 'Fixture file not found: '.$path);
 
         $data = json_decode(file_get_contents($path), true);
-        self::assertIsArray($data, 'Fixture must be valid JSON');
+        $this->assertIsArray($data, 'Fixture must be valid JSON');
 
         return $data;
     }
@@ -531,7 +528,7 @@ final class TraceReplayTest extends TestCase
      * Create a real Symfony Platform wired with a fixture-driven model client
      * and the given model resolver.
      *
-     * @param array<string, mixed>           $fixture
+     * @param array<string, mixed> $fixture
      */
     private function createSymfonyPlatform(
         FixtureReplayModelClient $modelClient,
@@ -571,7 +568,7 @@ final class FixtureReplayModelClient implements ModelClientInterface
     /** @var array<string, mixed> */
     public array $capturedOptions = [];
 
-    /** @var array<string, mixed> $fixture */
+    /** @var array<string, mixed> */
     private array $fixture;
 
     /**
@@ -611,7 +608,7 @@ final class FixtureReplayModelClient implements ModelClientInterface
  */
 final class FixtureReplayResultConverter implements ResultConverterInterface
 {
-    /** @var array<string, mixed> $fixture */
+    /** @var array<string, mixed> */
     private array $fixture;
 
     /**
@@ -648,7 +645,7 @@ final class FixtureReplayResultConverter implements ResultConverterInterface
 
     public function getTokenUsageExtractor(): ?TokenUsageExtractorInterface
     {
-        return new class ($this->fixture) implements TokenUsageExtractorInterface {
+        return new class($this->fixture) implements TokenUsageExtractorInterface {
             /** @param array<string, mixed> $fixture */
             public function __construct(private array $fixture)
             {

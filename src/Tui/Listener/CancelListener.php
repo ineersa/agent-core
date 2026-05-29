@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
+use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Psr\Log\LoggerInterface;
@@ -19,11 +22,16 @@ use Symfony\Component\Tui\Event\CancelEvent;
  * When idle or in a terminal state, clears the editor text.
  *
  * Implements TuiListenerRegistrar for DI-driven registration.
+ *
+ * Exception handling: cancel failures delegate capture vs rethrow to
+ * RuntimeExceptionBoundary. The boundary owns the HATFIELD_CAPTURE_ERRORS
+ * policy — CancelListener never checks it directly.
  */
 final class CancelListener implements TuiListenerRegistrar
 {
     public function __construct(
         private readonly LoggerInterface $logger,
+        private readonly RuntimeExceptionBoundary $boundary,
     ) {
     }
 
@@ -33,8 +41,9 @@ final class CancelListener implements TuiListenerRegistrar
         $state = $context->state;
         $screen = $context->screen;
         $logger = $this->logger;
+        $boundary = $this->boundary;
 
-        $context->tui->addListener(static function (CancelEvent $event) use ($client, $state, $screen, $logger): void {
+        $context->tui->addListener(static function (CancelEvent $event) use ($client, $state, $screen, $logger, $boundary): void {
             if ($state->activity->isActive() && null !== $state->handle) {
                 $logger->info('ESC cancel requested', [
                     'run_id' => $state->handle->runId,
@@ -44,10 +53,29 @@ final class CancelListener implements TuiListenerRegistrar
                 try {
                     $client->cancel($state->handle->runId);
                 } catch (\Throwable $e) {
-                    $logger->warning('Cancel command failed', [
+                    // Delegate capture=0 rethrow vs capture=1 recovery to boundary.
+                    // If we reach here, capture mode is enabled — show TUI error.
+                    $boundary->catch($e, 'cancel_listener.cancel_command_failed', [
+                        'run_id' => $state->handle->runId,
+                    ]);
+
+                    $logger->error('Cancel command failed', [
                         'run_id' => $state->handle->runId,
                         'exception' => $e,
                     ]);
+                    $state->activity = RunActivityStateEnum::Failed;
+                    $block = new TranscriptBlock(
+                        id: \sprintf('cancel_error_%s', $state->handle->runId),
+                        kind: TranscriptBlockKindEnum::Error,
+                        runId: $state->handle->runId,
+                        seq: $state->lastSeq + 1,
+                        text: 'Cancel failed: '.$e->getMessage()
+                            .' The runtime process may have crashed. Please restart the agent.',
+                        meta: ['exception' => $e::class],
+                    );
+                    $state->transcript[] = $block;
+
+                    return;
                 }
 
                 $state->activity = RunActivityStateEnum::Cancelling;

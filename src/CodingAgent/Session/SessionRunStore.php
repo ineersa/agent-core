@@ -49,10 +49,16 @@ final class SessionRunStore implements RunStoreInterface
             return null;
         }
 
+        // Empty or whitespace-only file is indistinguishable from "no state yet" —
+        // HatfieldSessionStore::createSession() creates an empty state.json placeholder.
+        if ('' === trim($json)) {
+            return null;
+        }
+
         try {
             $data = json_decode($json, true, 512, \JSON_THROW_ON_ERROR);
-        } catch (\JsonException) {
-            return null;
+        } catch (\JsonException $e) {
+            throw new \RuntimeException(\sprintf('Corrupt state.json for run "%s" — not parseable as JSON: %s', $runId, $e->getMessage()), previous: $e);
         }
 
         if (!\is_array($data)) {

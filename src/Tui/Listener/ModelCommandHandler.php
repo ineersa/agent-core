@@ -177,6 +177,8 @@ final class ModelCommandHandler implements SlashCommandHandler
 
     private function buildModelListMessage(): TranscriptMessage
     {
+        $fetchError = null;
+
         try {
             $ordered = $this->modelService->getOrderedModels();
         } catch (\Throwable $e) {
@@ -184,9 +186,18 @@ final class ModelCommandHandler implements SlashCommandHandler
                 'exception' => $e,
             ]);
             $ordered = [];
+            $fetchError = $e;
         }
 
         if ([] === $ordered) {
+            if (null !== $fetchError) {
+                return new TranscriptMessage(
+                    \sprintf('Failed to load AI models: %s. Check your AI settings in .hatfield/settings.yaml.', $fetchError->getMessage()),
+                    'system',
+                    'muted',
+                );
+            }
+
             return new TranscriptMessage(
                 'No AI models configured. Check your AI settings in .hatfield/settings.yaml.',
                 'system',

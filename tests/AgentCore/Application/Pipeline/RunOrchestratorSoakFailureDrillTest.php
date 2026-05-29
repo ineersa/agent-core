@@ -220,10 +220,13 @@ final class RunOrchestratorSoakFailureDrillTest extends TestCase
         $this->assertSame('call-b', $toolMessages[1]->toolCallId);
     }
 
-    public function testTransientEventStoreFailureDuringCommitRollsBackStateAndIsRecoveredByRetryLoop(): void
+    public function testTransientEventStoreFailureDuringCommitThrowsAndMarksRunFailed(): void
     {
         $eventStore = new FailOnceEventStore(new RunEventStore());
-        $fixture = $this->createFixture($eventStore);
+        // Use capture enabled so the error capture service logs but
+        // does not rethrow the original. RunCommit throws its own
+        // terminal RuntimeException with the wrapped message.
+        $fixture = $this->createFixture($eventStore, captureEnabled: true);
 
         $start = new StartRun(
             runId: 'run-failure-drill-1',
@@ -234,34 +237,23 @@ final class RunOrchestratorSoakFailureDrillTest extends TestCase
             payload: new StartRunPayload(messages: []),
         );
 
-        // The CAS retry loop in RunMessageProcessor automatically recovers
-        // from transient EventStore failures: the first commit() attempt
-        // fails and rolls back, then the retry loop re-reads state and
-        // re-executes the handler, and the second attempt succeeds.
-        $fixture->orchestrator->onStartRun($start);
+        // Event persist failures now throw (instead of returning false
+        // and relying on the CAS retry loop). The exception propagates
+        // out to the messenger transport which handles retry/DLQ.
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Event persistence failed');
 
-        // After the automatic retry recovery, state is committed.
-        $state = $fixture->runStore->get('run-failure-drill-1');
-        $this->assertNotNull($state);
-        $this->assertSame(RunStatus::Running, $state->status);
-        $this->assertSame(1, $state->version);
-        $this->assertSame(1, $state->lastSeq);
-
-        $events = $eventStore->allFor('run-failure-drill-1');
-        $this->assertCount(1, $events);
-        $this->assertSame(1, $events[0]->seq);
-        $this->assertSame('run_started', $events[0]->type);
-
-        // Second dispatch of the same message is idempotency-skipped.
-        $fixture->orchestrator->onStartRun($start);
-
-        $stateAfterIdempotency = $fixture->runStore->get('run-failure-drill-1');
-        $this->assertNotNull($stateAfterIdempotency);
-        $this->assertSame(1, $stateAfterIdempotency->version);
-        $this->assertSame(1, $stateAfterIdempotency->lastSeq);
+        try {
+            $fixture->orchestrator->onStartRun($start);
+        } finally {
+            // Verify the run was marked as Failed in the store.
+            $state = $fixture->runStore->get('run-failure-drill-1');
+            $this->assertNotNull($state);
+            $this->assertSame(RunStatus::Failed, $state->status);
+        }
     }
 
-    private function createFixture(?EventStoreInterface $eventStore = null): SoakFailureDrillFixture
+    private function createFixture(?EventStoreInterface $eventStore = null, bool $captureEnabled = false): SoakFailureDrillFixture
     {
         $runStore = new InMemoryRunStore();
         $eventStore ??= new RunEventStore();
@@ -284,8 +276,8 @@ final class RunOrchestratorSoakFailureDrillTest extends TestCase
             commandStore: $commandStore,
             replayService: $replayService,
             stepDispatcher: $stepDispatcher,
-            hookDispatcher: null,
             logger: new NullLogger(),
+            hookDispatcher: null,
         );
 
         $runMessageProcessor = new RunMessageProcessor(
