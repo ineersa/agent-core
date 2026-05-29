@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
+use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
-use Ineersa\CodingAgent\Runtime\Contract\RuntimeErrorCaptureConfig;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
@@ -95,7 +95,7 @@ final class HeadlessController
         private readonly EventDispatcherInterface $dispatcher,
         private readonly LoggerInterface $logger,
         private readonly ToolExecutionSettingsInterface $toolExecutionSettings,
-        private readonly RuntimeErrorCaptureConfig $errorCaptureConfig,
+        private readonly RuntimeExceptionBoundary $boundary,
         private readonly ?InProcessAgentSessionClient $eventClient = null,
         /**
          * Optional override for parallel tool messenger consumers.
@@ -209,10 +209,11 @@ final class HeadlessController
                     }
                 } catch (\Throwable $e) {
                     // Event drain failures can stall the TUI silently.
-                    // Under HATFIELD_CAPTURE_ERRORS=0, crash hard.
-                    if (!$this->errorCaptureConfig->captureErrors) {
-                        throw $e;
-                    }
+                    // Delegate capture=0 rethrow to boundary.
+                    // If we reach here, capture mode is enabled.
+                    $this->boundary->catch($e, 'headless_controller.event_drain_failed', [
+                        'run_id' => $runId,
+                    ]);
 
                     // Capture mode: emit protocol error for TUI visibility
                     // and release cursor so subsequent polls start fresh.
@@ -342,11 +343,11 @@ final class HeadlessController
                 ]);
 
                 if ($this->consecutiveBadLlmLines >= self::MAX_CONSECUTIVE_BAD_LLM_LINES) {
-                    // Persistent malformed LLM output — either crash or
-                    // emit a protocol error and reset the counter.
-                    if (!$this->errorCaptureConfig->captureErrors) {
-                        throw $e;
-                    }
+                    // Persistent malformed LLM output: delegate capture=0
+                    // rethrow to boundary. If we reach here, capture mode.
+                    $this->boundary->catch($e, 'headless_controller.llm_stdout_protocol_error', [
+                        'consecutive_bad' => $this->consecutiveBadLlmLines,
+                    ]);
 
                     $this->logger->error('Persistent malformed LLM consumer output — streaming may be incomplete', [
                         'consecutive_bad' => $this->consecutiveBadLlmLines,
@@ -389,11 +390,12 @@ final class HeadlessController
             $event = new ControllerCommandEvent($command, $emit);
             $this->dispatcher->dispatch($event);
         } catch (\Throwable $e) {
-            // Respect HATFIELD_CAPTURE_ERRORS policy: when disabled,
-            // crash/rethrow so CI harnesses see hard failures.
-            if (!$this->errorCaptureConfig->captureErrors) {
-                throw $e;
-            }
+            // Delegate capture=0 rethrow to boundary.
+            // If we reach here, capture mode is enabled.
+            $this->boundary->catch($e, 'headless_controller.command_dispatch_failed', [
+                'command_type' => $command->type,
+                'command_id' => $command->id,
+            ]);
 
             // Capture mode: log and emit a command_rejected event so
             // the TUI shows the user what happened.

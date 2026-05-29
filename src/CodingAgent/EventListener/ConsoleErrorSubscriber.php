@@ -13,19 +13,31 @@ use Symfony\Component\Console\Event\ConsoleErrorEvent;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 /**
- * Symfonian last-resort exception boundary for console commands.
+ * Last-resort Symfony Console exception boundary.
  *
- * When HATFIELD_CAPTURE_ERRORS=1 (default, user-facing mode):
- *   Uncaught exceptions reaching the console are logged as errors.
- *   The default Symfony console error rendering (stderr + exit code 1) applies.
+ * This subscriber fires for exceptions that escape all application-level
+ * callback boundaries (Revolt callbacks, TUI listeners, controller event
+ * loop). In a well-structured application, this should be rare — most
+ * exceptions are caught earlier by RuntimeExceptionBoundary at individual
+ * callback/runtime boundaries.
  *
- * When HATFIELD_CAPTURE_ERRORS=0 (test/CI mode):
- *   The exception is rethrown so the process exits with the original
- *   exception, giving test harnesses a loud, distinguishable crash.
+ * When this subscriber fires, Symfony Console has already caught the
+ * exception from doRunCommand() and dispatched ConsoleEvents::ERROR.
+ * Returning from this listener does NOT resume the command or recover
+ * the event loop — Symfony still owns the original error and will render
+ * it to stderr with exit code 1 unless a listener explicitly marks it
+ * handled by calling $event->setExitCode(0).
  *
- * This subscriber is NOT a substitute for per-callback boundary wrappers
- * in Revolt event-loop callbacks and TUI polling — those have their own
- * thin capture/rethrow guard at the callback entry point.
+ * Behavior:
+ *
+ * HATFIELD_CAPTURE_ERRORS=0 (test/CI mode):
+ *   Rethrows the original exception so test harnesses see a loud,
+ *   distinguishable crash.
+ *
+ * HATFIELD_CAPTURE_ERRORS=1 (default, user-facing mode):
+ *   In controller/headless mode: emits a protocol.error JSONL on stdout
+ *   as a final best-effort notification before Symfony exits non-zero.
+ *   Logs the exception for diagnostics.
  */
 final class ConsoleErrorSubscriber implements EventSubscriberInterface
 {
@@ -50,11 +62,10 @@ final class ConsoleErrorSubscriber implements EventSubscriberInterface
             throw $exception;
         }
 
-        // In controller/headless mode, emit a protocol.error JSONL to
-        // stdout so the TUI/controller client sees the unhandled error
-        // before the process exits. This is the last-resort TUI-visible
-        // error path when the Revolt event-loop boundaries have been
-        // exhausted.
+        // Last-resort: in controller/headless mode, try to emit a final
+        // protocol.error so the TUI/controller client sees the failure
+        // before the process exits. This only fires when exceptions escape
+        // all RuntimeExceptionBoundary boundaries.
         if ('agent' === $commandName) {
             $input = $event->getInput();
             if ($input->hasParameterOption('--controller') || $input->hasParameterOption('--headless')) {
@@ -62,7 +73,7 @@ final class ConsoleErrorSubscriber implements EventSubscriberInterface
             }
         }
 
-        $this->logger->error('Unhandled console exception', [
+        $this->logger->error('Unhandled console exception (last-resort)', [
             'exception' => $exception,
             'command' => $commandName,
         ]);
@@ -94,9 +105,6 @@ final class ConsoleErrorSubscriber implements EventSubscriberInterface
             fwrite(\STDOUT, JsonlCodec::encodeEvent($event)."\n");
             fflush(\STDOUT);
         } catch (\Throwable $emitError) {
-            // Avoid recursive failure — if emitting the protocol error
-            // itself fails (e.g. stdout closed), log it and fall through
-            // to the existing console error rendering.
             $this->logger->error('Failed to emit protocol.error in controller mode', [
                 'exception' => $emitError,
             ]);

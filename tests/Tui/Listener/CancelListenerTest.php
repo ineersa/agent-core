@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeErrorCaptureConfig;
+use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\CancelListener;
@@ -277,11 +278,14 @@ class CancelListenerTest extends TestCase
             sessionStore: $sessionStore,
         );
 
-        $errorCaptureConfig = new RuntimeErrorCaptureConfig(captureErrors: '0' !== $captureErrorEnv);
+        $boundary = new RuntimeExceptionBoundary(
+            new \Symfony\Component\EventDispatcher\EventDispatcher(),
+            new RuntimeErrorCaptureConfig(captureErrors: '0' !== $captureErrorEnv),
+        );
 
         $listener = new CancelListener(
             $this->logger,
-            $errorCaptureConfig,
+            $boundary,
         );
         $listener->register($context);
 
