@@ -91,14 +91,14 @@ Validation expectations:
 - Castor validation is reported, including a product-level runtime/TUI workflow (`castor test:controller`, `castor test:tui`, or `castor run:agent-test`) because this touches user-visible runtime/TUI behavior.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/runtime-centralized-error-propagation
 Worktree: /home/ineersa/projects/agent-core-worktrees/runtime-centralized-error-propagation
 Fork run: 9ri2qjslfmwi
 PR URL: https://github.com/ineersa/agent-core/pull/63
-PR Status: open
+PR Status: merged
 Started:
-Completed:
+Completed: 2026-05-29T22:53:17.455Z
 
 ## Work log
 - Created: 2026-05-29T15:37:21.939Z
@@ -140,3 +140,11 @@ Completed:
 - Pushed task/runtime-centralized-error-propagation to origin.
 - branch 'task/runtime-centralized-error-propagation' set up to track 'origin/task/runtime-centralized-error-propagation'.
 - Skipped PR creation (pushOnly: true).
+
+## Task workflow update - 2026-05-29T22:53:17.455Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/runtime-centralized-error-propagation into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/runtime-centralized-error-propagation.
+- Pulled integration checkout: Already up to date..
+- Summary: PR #63 merged. 58 files changed, 2310 ins, 339 del.
