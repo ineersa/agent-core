@@ -23,14 +23,22 @@ Scope:
 - Validation with Castor: `castor test --filter ToolHookDispatcher`; `castor test --filter ToolExecutor`; `castor deptrac`.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/ext-hook-04-extension-hook-dispatcher-wiring
+Worktree: /home/ineersa/projects/agent-core-worktrees/ext-hook-04-extension-hook-dispatcher-wiring
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-29T22:15:46.425Z
 Completed:
 
 ## Work log
 - Created: 2026-05-29T20:49:57.913Z
+
+## Task workflow update - 2026-05-29T22:15:46.425Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/ext-hook-04-extension-hook-dispatcher-wiring.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/ext-hook-04-extension-hook-dispatcher-wiring.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/ext-hook-04-extension-hook-dispatcher-wiring.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/ext-hook-04-extension-hook-dispatcher-wiring.
+- Summary: Starting EXT-HOOK-04 after EXT-HOOK-03 merged. Note: EXT-HOOK-03 final design reuses Symfony AI toolbox lifecycle events from RegistryBackedToolbox; EXT-HOOK-04 should adapt ExtensionHookRegistry hooks to Symfony AI ToolCallRequested and observational result events, not to a custom AgentCore ToolExecutor interceptor.
