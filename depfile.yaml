@@ -405,6 +405,7 @@ parameters:
       - AgentCore
       - AppConfig
       - SymfonyAiPlatform
+      - SymfonyEventDispatcher
 
     AppExtensionApi: ~
 

@@ -4,12 +4,17 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
+use Symfony\AI\Agent\Toolbox\Event\ToolCallArgumentsResolved;
+use Symfony\AI\Agent\Toolbox\Event\ToolCallFailed;
+use Symfony\AI\Agent\Toolbox\Event\ToolCallRequested;
+use Symfony\AI\Agent\Toolbox\Event\ToolCallSucceeded;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolResult;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\AI\Platform\Tool\ExecutionReference;
 use Symfony\AI\Platform\Tool\Tool;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Registry-backed Symfony AI Toolbox.
@@ -20,6 +25,7 @@ use Symfony\AI\Platform\Tool\Tool;
  *
  * - getTools(): converts each ToolDefinitionDTO to a Symfony Tool DTO.
  * - execute(): invokes the stored ToolHandlerInterface handler for the matching tool.
+ * - dispatches Symfony AI toolbox lifecycle events around registry-backed execution.
  *
  * Execution lifecycle:
  *   RegistryBackedToolbox::execute() is called inside a Messenger tool worker
@@ -33,6 +39,7 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
 {
     public function __construct(
         private ToolRegistryInterface $registry,
+        private ?EventDispatcherInterface $eventDispatcher = null,
     ) {
     }
 
@@ -51,15 +58,7 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
         $tools = [];
 
         foreach ($definitions as $definition) {
-            $tools[] = new Tool(
-                reference: new ExecutionReference(
-                    class: $definition->handler::class,
-                    method: '__invoke',
-                ),
-                name: $definition->name,
-                description: $definition->description,
-                parameters: $definition->parametersJsonSchema,
-            );
+            $tools[] = $this->toSymfonyTool($definition);
         }
 
         return $tools;
@@ -81,8 +80,47 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
             throw ToolNotFoundException::notFoundForToolCall($toolCall);
         }
 
-        $result = ($definition->handler)($toolCall->getArguments());
+        $metadata = $this->toSymfonyTool($definition);
 
-        return new ToolResult($toolCall, $result);
+        $requestedEvent = new ToolCallRequested($toolCall, $metadata);
+        $this->eventDispatcher?->dispatch($requestedEvent);
+
+        if ($requestedEvent->isDenied()) {
+            return new ToolResult($toolCall, $requestedEvent->getDenialReason() ?? 'Tool execution denied.');
+        }
+
+        if ($requestedEvent->hasResult()) {
+            return $requestedEvent->getResult() ?? new ToolResult($toolCall, null);
+        }
+
+        $handler = $definition->handler;
+        $arguments = $toolCall->getArguments();
+
+        try {
+            $this->eventDispatcher?->dispatch(new ToolCallArgumentsResolved($handler, $metadata, $arguments));
+
+            $result = new ToolResult($toolCall, ($handler)($arguments));
+
+            $this->eventDispatcher?->dispatch(new ToolCallSucceeded($handler, $metadata, $arguments, $result));
+
+            return $result;
+        } catch (\Throwable $exception) {
+            $this->eventDispatcher?->dispatch(new ToolCallFailed($handler, $metadata, $arguments, $exception));
+
+            throw $exception;
+        }
+    }
+
+    private function toSymfonyTool(ToolDefinitionDTO $definition): Tool
+    {
+        return new Tool(
+            reference: new ExecutionReference(
+                class: $definition->handler::class,
+                method: '__invoke',
+            ),
+            name: $definition->name,
+            description: $definition->description,
+            parameters: $definition->parametersJsonSchema,
+        );
     }
 }
