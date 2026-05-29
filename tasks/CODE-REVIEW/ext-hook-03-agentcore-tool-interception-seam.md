@@ -59,3 +59,9 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/66
 - Validation: castor test --filter ToolExecutor: OK (18 tests, 74 assertions); castor deptrac: OK (0 violations); castor cs-check on the 7 changed files: OK; Note: broad castor cs-check --path src/AgentCore/ --path tests/AgentCore/Application/Handler/ reports 10 pre-existing unrelated CS issues in other Handler tests; changed files are clean
 - Summary: EXT-HOOK-03 is implemented and committed on task branch at 609ae20d. Adds AgentCore-only ToolCallInterceptorInterface and before/after interception decision DTOs/enums, wires optional ToolExecutor interceptor after active tool allowlist and around toolbox handler execution, and ensures interceptor/toolbox exceptions become safe ToolResult values. No CodingAgent, ExtensionApi, SafeGuard, TUI, or approval-flow dependencies were introduced.
+
+## Task workflow update - 2026-05-29T22:07:11.524Z
+- Updated PR URL: https://github.com/ineersa/agent-core/pull/66
+- Updated PR Status: open
+- Validation: castor test --filter RegistryBackedToolbox: OK (14 tests, 31 assertions); castor test --filter ToolExecutor: OK (11 tests, 35 assertions); castor deptrac: OK (0 violations); castor cs-check on changed files: OK
+- Summary: PR #66 was revised after review feedback to avoid inventing a custom AgentCore interceptor/event surface. The branch was reset from the earlier ToolExecutor interceptor implementation and force-pushed at 93c01de0. Current implementation reuses Symfony AI toolbox lifecycle events by making RegistryBackedToolbox dispatch ToolCallRequested, ToolCallArgumentsResolved, ToolCallSucceeded, and ToolCallFailed through the shared Symfony event dispatcher. ToolCallRequested::deny() and ::setResult() can now block or replace execution before the handler runs. ToolExecutor is no longer modified, and no custom ToolCallInterceptorInterface or AgentCore tool execution events are added.
