@@ -14,7 +14,7 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Messenger\WorkerFailedEventSubscriber;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
 
@@ -30,7 +30,7 @@ class WorkerFailedEventSubscriberTest extends TestCase
         $runStore->expects($this->never())->method('compareAndSwap');
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->expects($this->never())->method('append');
-        $logger = $this->createMock(LoggerInterface::class);
+        $logger = new NullLogger();
 
         $subscriber = new WorkerFailedEventSubscriber($runStore, $eventStore, $logger);
 
@@ -52,7 +52,7 @@ class WorkerFailedEventSubscriberTest extends TestCase
         $runStore->expects($this->never())->method('compareAndSwap');
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->expects($this->never())->method('append');
-        $logger = $this->createMock(LoggerInterface::class);
+        $logger = new NullLogger();
 
         $subscriber = new WorkerFailedEventSubscriber($runStore, $eventStore, $logger);
 
@@ -72,7 +72,7 @@ class WorkerFailedEventSubscriberTest extends TestCase
         $runStore->expects($this->never())->method('compareAndSwap');
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->expects($this->never())->method('append');
-        $logger = $this->createMock(LoggerInterface::class);
+        $logger = new NullLogger();
 
         $subscriber = new WorkerFailedEventSubscriber($runStore, $eventStore, $logger);
 
@@ -95,7 +95,7 @@ class WorkerFailedEventSubscriberTest extends TestCase
         $runStore->expects($this->never())->method('compareAndSwap');
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->expects($this->never())->method('append');
-        $logger = $this->createMock(LoggerInterface::class);
+        $logger = new NullLogger();
 
         $subscriber = new WorkerFailedEventSubscriber($runStore, $eventStore, $logger);
 
@@ -137,7 +137,7 @@ class WorkerFailedEventSubscriberTest extends TestCase
                     && 1 === $event->seq;
             }));
 
-        $logger = $this->createMock(LoggerInterface::class);
+        $logger = new NullLogger();
 
         $subscriber = new WorkerFailedEventSubscriber($runStore, $eventStore, $logger);
 
@@ -192,7 +192,7 @@ class WorkerFailedEventSubscriberTest extends TestCase
                     && 6 === $event->seq;  // lastSeq 5 + 1
             }));
 
-        $logger = $this->createMock(LoggerInterface::class);
+        $logger = new NullLogger();
 
         $subscriber = new WorkerFailedEventSubscriber($runStore, $eventStore, $logger);
 
@@ -220,7 +220,7 @@ class WorkerFailedEventSubscriberTest extends TestCase
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->expects($this->never())->method('append');
 
-        $logger = $this->createMock(LoggerInterface::class);
+        $logger = new NullLogger();
 
         $subscriber = new WorkerFailedEventSubscriber($runStore, $eventStore, $logger);
 
@@ -246,7 +246,7 @@ class WorkerFailedEventSubscriberTest extends TestCase
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->expects($this->never())->method('append');
 
-        $logger = $this->createMock(LoggerInterface::class);
+        $logger = new NullLogger();
 
         $subscriber = new WorkerFailedEventSubscriber($runStore, $eventStore, $logger);
 

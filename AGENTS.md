@@ -21,8 +21,8 @@ Use Castor for QA. Do not run raw `vendor/bin/*` as the primary command; raw too
 
 ```bash
 castor install
-castor check             # deptrac → phpunit → phpstan → cs-check
-castor test              # excludes tui-e2e and llm-real
+castor check             # deptrac → phpunit → controller E2E → real LLM E2E → TUI E2E → phpstan → cs-check
+castor test              # unit/integration only; excludes tui-e2e and llm-real
 castor test --filter=X
 castor test:tui          # tmux TUI e2e snapshots
 castor test:tui-update
@@ -44,7 +44,7 @@ castor worktree:remove <slug> --force [--delete-branch]
 castor idea:run-configs
 ```
 
-`castor check` intentionally skips tmux/real-LLM tests. Run `castor test:tui`, `castor test:llm-real`, or `castor run:agent-test` explicitly for user-visible runtime/TUI work.
+Always run `castor check` before handing off or finishing code changes. It includes controller, real-LLM, and TUI E2E validation; if prerequisites such as tmux or llama.cpp on port 9052 are unavailable, report the exact blocker and keep the task in progress.
 
 ## E2E Testing Strategy
 
@@ -69,6 +69,7 @@ tests dump session artifacts to stderr.
 
 | Command | What it tests | Requires |
 |---|---|---|
+| `castor check` | Full required validation: deptrac, unit/integration, controller E2E, real LLM E2E, TUI E2E, phpstan, cs-check | tmux, llama.cpp on port 9052 |
 | `castor test` | Unit/integration tests | Nothing (pure PHP) |
 | `castor test:llm-real` | Real LLM smoke: `ControllerSmokeTest`, `LlamaCppSmokeTest` | llama.cpp on port 9052 |
 | `castor test:controller` | Controller E2E: spawns `--controller`, JSONL protocol | llama.cpp on port 9052 |
@@ -115,15 +116,13 @@ Messenger wiring, `TranscriptProjector`, `RuntimeEventPoller`, transcript
 rendering, or LLM-visible execution flow, unit/container/mocked tests are not
 enough.
 
-You MUST run and report a product-level Castor workflow. `castor test:controller`
-alone is insufficient for runtime/TUI/error-propagation changes — it exercises the
-controller process but not the interactive TUI or actual user-visible error blocks.
+You MUST run and report `castor check`. It includes `castor test:controller`,
+`castor test:llm-real`, and `castor test:tui`, so runtime/TUI/error-propagation
+changes exercise the controller process, real model path, and interactive
+user-visible TUI path before handoff.
 
-At minimum, you must run at least ONE of these in addition to `castor test:controller`:
-
-- `castor test:tui` for tmux snapshot/e2e assertions, or
-- `castor test:llm-real` for real-model paths (LlamaCppSmokeTest), or
-- `castor run:agent-test` to drive the agent in tmux and capture snapshots.
+For especially risky visual or interaction changes, also run `castor run:agent-test`
+to drive the agent in tmux and capture snapshots.
 
 Validation must exercise the real user flow: start agent, type prompt, submit,
 wait for visible assistant response or visible error block, and capture TUI

@@ -19,7 +19,8 @@ use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
-use Ineersa\Tui\Theme\TuiTheme;
+use Ineersa\Tui\Theme\DefaultTheme;
+use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
@@ -36,7 +37,6 @@ class CancelListenerTest extends TestCase
     private TuiSessionState $state;
     /** @var AgentSessionClient&MockObject */
     private AgentSessionClient $client;
-    /** @var LoggerInterface&MockObject */
     private LoggerInterface $logger;
     private string $tmpDir;
 
@@ -44,7 +44,7 @@ class CancelListenerTest extends TestCase
     {
         $this->state = new TuiSessionState('test-session');
         $this->client = $this->createMock(AgentSessionClient::class);
-        $this->logger = $this->createMock(LoggerInterface::class);
+        $this->logger = new NullLogger();
 
         $this->tmpDir = sys_get_temp_dir().'/hatfield-cancel-test-'.uniqid('', true);
         mkdir($this->tmpDir.'/.hatfield/sessions', 0777, true);
@@ -77,7 +77,8 @@ class CancelListenerTest extends TestCase
         $this->state->activity = RunActivityStateEnum::Running;
         $this->state->handle = new RunHandle('run-123');
 
-        $this->client->method('cancel');
+        $this->client->expects($this->once())
+            ->method('cancel');
         $this->dispatchCancelEvent();
 
         $this->assertSame(RunActivityStateEnum::Cancelling, $this->state->activity);
@@ -194,11 +195,13 @@ class CancelListenerTest extends TestCase
         $this->state->activity = RunActivityStateEnum::Running;
         $this->state->handle = new RunHandle('run-err');
 
-        $this->client->method('cancel')
+        $this->client->expects($this->once())
+            ->method('cancel')
             ->willThrowException(new \RuntimeException('Connection lost'));
 
         // The CancelListener logs info() before cancel attempt, then
         // logs error() when cancel fails in capture mode.
+        $this->logger = $this->createMock(LoggerInterface::class);
         $this->logger->method('info');
         $this->logger->expects($this->once())
             ->method('error')
@@ -220,12 +223,14 @@ class CancelListenerTest extends TestCase
         $this->state->activity = RunActivityStateEnum::Running;
         $this->state->handle = new RunHandle('run-crash');
 
-        $this->client->method('cancel')
+        $this->client->expects($this->once())
+            ->method('cancel')
             ->willThrowException(new \RuntimeException('Connection lost'));
 
         // The CancelListener calls logger->info() before attempting cancel.
         // With capture disabled, no error log is emitted — the exception
         // is rethrown directly from the catch block.
+        $this->logger = $this->createMock(LoggerInterface::class);
         $this->logger->method('info');
         $this->logger->expects($this->never())
             ->method('error');
@@ -261,7 +266,7 @@ class CancelListenerTest extends TestCase
     private function dispatchCancelEvent(?string $captureErrorEnv = '1'): ChatScreen
     {
         $tui = new Tui();
-        $theme = $this->createMock(TuiTheme::class);
+        $theme = new DefaultTheme(new ThemePalette('test'));
         $promptEditor = new PromptEditor();
         $screen = new ChatScreen($theme, 'test-session', $promptEditor);
 
