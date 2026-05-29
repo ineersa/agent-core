@@ -232,6 +232,7 @@ final class ToolExecutor implements ToolExecutorInterface
             toolName: $toolCall->toolName,
             cancellationToken: $this->cancellationToken($toolCall),
             timeoutSeconds: $policy->timeoutSeconds,
+            orderIndex: $toolCall->orderIndex,
         );
 
         /** @var SymfonyToolResult $result */

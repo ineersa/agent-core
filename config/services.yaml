@@ -249,6 +249,7 @@ services:
     arguments:
       $settings: '@Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface'
       $toolbox: '@Symfony\AI\Agent\Toolbox\ToolboxInterface'
+      $contextAccessor: '@Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor'
       $toolSetResolver: '@Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface'
 
   # Durable tool batch store — persists batch state across consumer restarts.
