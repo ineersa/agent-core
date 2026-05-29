@@ -11,7 +11,13 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionApiBridge;
 use Ineersa\CodingAgent\Extension\ExtensionManager;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
+use Ineersa\Hatfield\ExtensionApi\ToolCallContextDTO;
+use Ineersa\Hatfield\ExtensionApi\ToolCallDecisionDTO;
+use Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\ToolRegistrationDTO;
+use Ineersa\Hatfield\ExtensionApi\ToolResultContextDTO;
+use Ineersa\Hatfield\ExtensionApi\ToolResultDecisionDTO;
+use Ineersa\Hatfield\ExtensionApi\ToolResultHookInterface;
 use Monolog\Level;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -71,6 +77,49 @@ final class ExtensionManagerTest extends TestCase
         $bridge = new ExtensionApiBridge();
         $this->assertSame([], $bridge->drainRegistrations());
         $this->assertSame([], $bridge->getRegistrations());
+    }
+
+    // ── ExtensionApiBridge hook methods ──
+
+    public function testBridgeCollectsToolCallHooks(): void
+    {
+        $bridge = new ExtensionApiBridge();
+        $hookA = $this->dummyToolCallHook('hook_a');
+        $hookB = $this->dummyToolCallHook('hook_b');
+
+        $bridge->registerToolCallHook($hookA);
+        $bridge->registerToolCallHook($hookB);
+
+        $this->assertCount(2, $bridge->getToolCallHooks());
+        $this->assertSame($hookA, $bridge->getToolCallHooks()[0]);
+        $this->assertSame($hookB, $bridge->getToolCallHooks()[1]);
+    }
+
+    public function testBridgeCollectsToolResultHooks(): void
+    {
+        $bridge = new ExtensionApiBridge();
+        $hookA = $this->dummyToolResultHook('result_a');
+        $hookB = $this->dummyToolResultHook('result_b');
+
+        $bridge->registerToolResultHook($hookA);
+        $bridge->registerToolResultHook($hookB);
+
+        $this->assertCount(2, $bridge->getToolResultHooks());
+        $this->assertSame($hookA, $bridge->getToolResultHooks()[0]);
+        $this->assertSame($hookB, $bridge->getToolResultHooks()[1]);
+    }
+
+    public function testBridgeHooksCoexistWithTools(): void
+    {
+        $bridge = new ExtensionApiBridge();
+
+        $bridge->registerTool(new ToolRegistrationDTO(name: 'tool_x', description: 'X', parametersJsonSchema: [], handler: null));
+        $bridge->registerToolCallHook($this->dummyToolCallHook('hook_x'));
+        $bridge->registerToolResultHook($this->dummyToolResultHook('result_x'));
+
+        $this->assertCount(1, $bridge->getRegistrations());
+        $this->assertCount(1, $bridge->getToolCallHooks());
+        $this->assertCount(1, $bridge->getToolResultHooks());
     }
 
     // ── Tests: ExtensionManager ──
@@ -331,11 +380,117 @@ PHP
         $this->assertCount(0, $bridge->getRegistrations());
     }
 
+    public function testLoadExtensionsWithHookRegistration(): void
+    {
+        $autoloadCode = <<<'PHP'
+<?php
+spl_autoload_register(function (string $class): void {
+    if ('HatfieldExtTest\\HookRegistrationExtension' === $class) {
+        require_once __DIR__ . '/HookRegistrationExtension.php';
+    }
+});
+PHP;
+        file_put_contents($this->autoloadPath, $autoloadCode);
+
+        file_put_contents(
+            \dirname($this->autoloadPath).'/HookRegistrationExtension.php',
+            <<<'PHP'
+<?php
+namespace HatfieldExtTest;
+
+use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
+use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
+use Ineersa\Hatfield\ExtensionApi\ToolCallContextDTO;
+use Ineersa\Hatfield\ExtensionApi\ToolCallDecisionDTO;
+use Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface;
+use Ineersa\Hatfield\ExtensionApi\ToolRegistrationDTO;
+use Ineersa\Hatfield\ExtensionApi\ToolResultContextDTO;
+use Ineersa\Hatfield\ExtensionApi\ToolResultDecisionDTO;
+use Ineersa\Hatfield\ExtensionApi\ToolResultHookInterface;
+
+class HookRegistrationExtension implements HatfieldExtensionInterface
+{
+    public function register(ExtensionApiInterface $api): void
+    {
+        $api->registerTool(new ToolRegistrationDTO(name: 'hook_ext_tool', description: 'Tool from hook extension', parametersJsonSchema: [], handler: null));
+        $api->registerToolCallHook(new class implements ToolCallHookInterface {
+            public function onToolCall(ToolCallContextDTO $context): ToolCallDecisionDTO
+            {
+                return ToolCallDecisionDTO::allow();
+            }
+        });
+        $api->registerToolResultHook(new class implements ToolResultHookInterface {
+            public function onToolResult(ToolResultContextDTO $context): ToolResultDecisionDTO
+            {
+                return ToolResultDecisionDTO::keep();
+            }
+        });
+    }
+}
+PHP
+        );
+
+        $config = $this->createAppConfig(
+            cwd: $this->extensionsDir,
+            extensions: ['HatfieldExtTest\\HookRegistrationExtension']
+        );
+        $bridge = new ExtensionApiBridge();
+        $logger = new NullLogger();
+
+        $manager = new ExtensionManager($config, $bridge, $logger);
+        $manager->loadExtensions();
+
+        // Verify tool registration
+        $this->assertCount(1, $bridge->getRegistrations());
+        $this->assertSame('hook_ext_tool', $bridge->getRegistrations()[0]->name);
+
+        // Verify hook registrations
+        $this->assertCount(1, $bridge->getToolCallHooks());
+        $this->assertCount(1, $bridge->getToolResultHooks());
+    }
+
     // ── Helpers ──
 
+    private function dummyToolCallHook(string $label = 'test'): ToolCallHookInterface
+    {
+        return new class($label) implements ToolCallHookInterface {
+            public function __construct(private readonly string $label)
+            {
+            }
+
+            public function onToolCall(ToolCallContextDTO $context): ToolCallDecisionDTO
+            {
+                return ToolCallDecisionDTO::allow();
+            }
+
+            public function label(): string
+            {
+                return $this->label;
+            }
+        };
+    }
+
+    private function dummyToolResultHook(string $label = 'test'): ToolResultHookInterface
+    {
+        return new class($label) implements ToolResultHookInterface {
+            public function __construct(private readonly string $label)
+            {
+            }
+
+            public function onToolResult(ToolResultContextDTO $context): ToolResultDecisionDTO
+            {
+                return ToolResultDecisionDTO::keep();
+            }
+
+            public function label(): string
+            {
+                return $this->label;
+            }
+        };
+    }
+
     /**
-     * @param list<class-string>   $extensions
-     * @param array<string, mixed> $rawOverrides
+     * @param list<class-string> $extensions
      */
     private function createAppConfig(
         string $cwd,

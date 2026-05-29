@@ -4,11 +4,18 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Extension;
 
+use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
+use Ineersa\Hatfield\ExtensionApi\ToolCallContextDTO;
+use Ineersa\Hatfield\ExtensionApi\ToolCallDecisionDTO;
+use Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\ToolRegistrationDTO;
+use Ineersa\Hatfield\ExtensionApi\ToolResultContextDTO;
+use Ineersa\Hatfield\ExtensionApi\ToolResultDecisionDTO;
+use Ineersa\Hatfield\ExtensionApi\ToolResultHookInterface;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -23,7 +30,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
     public function testRegisterToolForwardsToRegistry(): void
     {
         $registry = new ToolRegistry();
-        $bridge = new ExtensionToolRegistryBridge($registry);
+        $bridge = $this->bridgeFor($registry);
 
         $bridge->registerTool(new ToolRegistrationDTO(
             name: 'ext_tool',
@@ -47,7 +54,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
     public function testRegisterToolDerivesPromptLineFromNameAndDescription(): void
     {
         $registry = new ToolRegistry();
-        $bridge = new ExtensionToolRegistryBridge($registry);
+        $bridge = $this->bridgeFor($registry);
 
         $bridge->registerTool(new ToolRegistrationDTO(
             name: 'my_tool',
@@ -64,7 +71,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
     public function testRegisterToolWithoutGuidelines(): void
     {
         $registry = new ToolRegistry();
-        $bridge = new ExtensionToolRegistryBridge($registry);
+        $bridge = $this->bridgeFor($registry);
 
         $bridge->registerTool(new ToolRegistrationDTO(
             name: 'simple_tool',
@@ -80,7 +87,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
     public function testMultipleRegistrationsOrderPreserved(): void
     {
         $registry = new ToolRegistry();
-        $bridge = new ExtensionToolRegistryBridge($registry);
+        $bridge = $this->bridgeFor($registry);
 
         $bridge->registerTool(new ToolRegistrationDTO(
             name: 'tool_a', description: 'First', parametersJsonSchema: [], handler: $this->dummyHandler(),
@@ -107,7 +114,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
     public function testDuplicateIsIdempotent(): void
     {
         $registry = new ToolRegistry();
-        $bridge = new ExtensionToolRegistryBridge($registry);
+        $bridge = $this->bridgeFor($registry);
 
         $dto = new ToolRegistrationDTO(
             name: 'dup_tool', description: 'Duplicate', parametersJsonSchema: [], handler: $this->dummyHandler(),
@@ -126,7 +133,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
     public function testHandlerPassthrough(): void
     {
         $registry = new ToolRegistry();
-        $bridge = new ExtensionToolRegistryBridge($registry);
+        $bridge = $this->bridgeFor($registry);
 
         $handler = $this->dummyHandler();
 
@@ -148,7 +155,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         $this->expectExceptionMessage('must be an instance of ToolHandlerInterface');
 
         $registry = new ToolRegistry();
-        $bridge = new ExtensionToolRegistryBridge($registry);
+        $bridge = $this->bridgeFor($registry);
 
         $bridge->registerTool(new ToolRegistrationDTO(
             name: 'bad_handler_tool', description: 'Bad handler', parametersJsonSchema: [], handler: new \stdClass(),
@@ -161,7 +168,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         $this->expectExceptionMessage('must be an instance of ToolHandlerInterface');
 
         $registry = new ToolRegistry();
-        $bridge = new ExtensionToolRegistryBridge($registry);
+        $bridge = $this->bridgeFor($registry);
 
         $bridge->registerTool(new ToolRegistrationDTO(
             name: 'null_handler_tool', description: 'Null handler', parametersJsonSchema: [], handler: null,
@@ -173,7 +180,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
     public function testGuidelineDeduplication(): void
     {
         $registry = new ToolRegistry();
-        $bridge = new ExtensionToolRegistryBridge($registry);
+        $bridge = $this->bridgeFor($registry);
 
         $bridge->registerTool(new ToolRegistrationDTO(
             name: 'tool_x', description: 'X', parametersJsonSchema: [], handler: $this->dummyHandler(),
@@ -202,7 +209,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         $this->expectExceptionMessage('Tool name and description must be non-empty strings');
 
         $registry = new ToolRegistry();
-        $bridge = new ExtensionToolRegistryBridge($registry);
+        $bridge = $this->bridgeFor($registry);
 
         $bridge->registerTool(new ToolRegistrationDTO(
             name: '', description: 'Has name but empty', parametersJsonSchema: [], handler: $this->dummyHandler(),
@@ -215,7 +222,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         $this->expectExceptionMessage('Tool name and description must be non-empty strings');
 
         $registry = new ToolRegistry();
-        $bridge = new ExtensionToolRegistryBridge($registry);
+        $bridge = $this->bridgeFor($registry);
 
         $bridge->registerTool(new ToolRegistrationDTO(
             name: 'some_tool', description: '', parametersJsonSchema: [], handler: $this->dummyHandler(),
@@ -240,7 +247,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
                 ['Guideline'],
             );
 
-        $bridge = new ExtensionToolRegistryBridge($mock);
+        $bridge = $this->bridgeFor($mock);
         $bridge->registerTool(new ToolRegistrationDTO(
             name: 'mocked_tool',
             description: 'Mocked description',
@@ -251,7 +258,151 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         ));
     }
 
+    // ── Hook registration via ExtensionToolRegistryBridge ──
+
+    public function testRegisterToolCallHookForwardsToRegistry(): void
+    {
+        $hookRegistry = new ExtensionHookRegistry();
+        $bridge = new ExtensionToolRegistryBridge(new ToolRegistry(), $hookRegistry);
+
+        $hook = $this->dummyToolCallHook();
+        $bridge->registerToolCallHook($hook);
+
+        $this->assertSame([$hook], $hookRegistry->toolCallHooks());
+    }
+
+    public function testRegisterToolResultHookForwardsToRegistry(): void
+    {
+        $hookRegistry = new ExtensionHookRegistry();
+        $bridge = new ExtensionToolRegistryBridge(new ToolRegistry(), $hookRegistry);
+
+        $hook = $this->dummyToolResultHook();
+        $bridge->registerToolResultHook($hook);
+
+        $this->assertSame([$hook], $hookRegistry->toolResultHooks());
+    }
+
+    public function testHookRegistrationOrderPreserved(): void
+    {
+        $hookRegistry = new ExtensionHookRegistry();
+        $bridge = new ExtensionToolRegistryBridge(new ToolRegistry(), $hookRegistry);
+
+        $hookA = $this->dummyToolCallHook('hook_a');
+        $hookB = $this->dummyToolCallHook('hook_b');
+        $hookC = $this->dummyToolCallHook('hook_c');
+
+        $bridge->registerToolCallHook($hookA);
+        $bridge->registerToolCallHook($hookB);
+        $bridge->registerToolCallHook($hookC);
+
+        $this->assertSame([$hookA, $hookB, $hookC], $hookRegistry->toolCallHooks());
+    }
+
+    public function testToolResultHookRegistrationOrderPreserved(): void
+    {
+        $hookRegistry = new ExtensionHookRegistry();
+        $bridge = new ExtensionToolRegistryBridge(new ToolRegistry(), $hookRegistry);
+
+        $hookA = $this->dummyToolResultHook('result_a');
+        $hookB = $this->dummyToolResultHook('result_b');
+
+        $bridge->registerToolResultHook($hookA);
+        $bridge->registerToolResultHook($hookB);
+
+        $this->assertSame([$hookA, $hookB], $hookRegistry->toolResultHooks());
+    }
+
+    public function testHooksCoexistWithToolRegistration(): void
+    {
+        $registry = new ToolRegistry();
+        $hookRegistry = new ExtensionHookRegistry();
+        $bridge = new ExtensionToolRegistryBridge($registry, $hookRegistry);
+
+        // Register a tool
+        $bridge->registerTool(new ToolRegistrationDTO(
+            name: 'coexist_tool',
+            description: 'Tool that coexists with hooks',
+            parametersJsonSchema: [],
+            handler: $this->dummyHandler(),
+        ));
+
+        // Register hooks
+        $callHook = $this->dummyToolCallHook('coexist_call');
+        $resultHook = $this->dummyToolResultHook('coexist_result');
+        $bridge->registerToolCallHook($callHook);
+        $bridge->registerToolResultHook($resultHook);
+
+        // Verify tools work
+        $this->assertContains('coexist_tool', $registry->activeToolNames());
+
+        // Verify hooks are stored
+        $this->assertSame([$callHook], $hookRegistry->toolCallHooks());
+        $this->assertSame([$resultHook], $hookRegistry->toolResultHooks());
+    }
+
+    public function testSharedHookRegistryAcrossMultipleExtensions(): void
+    {
+        $hookRegistry = new ExtensionHookRegistry();
+        $bridge = new ExtensionToolRegistryBridge(new ToolRegistry(), $hookRegistry);
+
+        // Simulate two extensions each registering hooks
+        $ext1Hook = $this->dummyToolCallHook('ext1');
+        $ext2Hook = $this->dummyToolCallHook('ext2');
+
+        $bridge->registerToolCallHook($ext1Hook);
+        $bridge->registerToolCallHook($ext2Hook);
+
+        $this->assertCount(2, $hookRegistry->toolCallHooks());
+        $this->assertSame($ext1Hook, $hookRegistry->toolCallHooks()[0]);
+        $this->assertSame($ext2Hook, $hookRegistry->toolCallHooks()[1]);
+    }
+
     /* ───────── Private helpers ───────── */
+
+    private function bridgeFor(
+        ToolRegistryInterface $toolRegistry,
+        ?ExtensionHookRegistry $hookRegistry = null,
+    ): ExtensionToolRegistryBridge {
+        return new ExtensionToolRegistryBridge($toolRegistry, $hookRegistry ?? new ExtensionHookRegistry());
+    }
+
+    private function dummyToolCallHook(string $label = 'test'): ToolCallHookInterface
+    {
+        return new class($label) implements ToolCallHookInterface {
+            public function __construct(private readonly string $label)
+            {
+            }
+
+            public function onToolCall(ToolCallContextDTO $context): ToolCallDecisionDTO
+            {
+                return ToolCallDecisionDTO::allow();
+            }
+
+            public function label(): string
+            {
+                return $this->label;
+            }
+        };
+    }
+
+    private function dummyToolResultHook(string $label = 'test'): ToolResultHookInterface
+    {
+        return new class($label) implements ToolResultHookInterface {
+            public function __construct(private readonly string $label)
+            {
+            }
+
+            public function onToolResult(ToolResultContextDTO $context): ToolResultDecisionDTO
+            {
+                return ToolResultDecisionDTO::keep();
+            }
+
+            public function label(): string
+            {
+                return $this->label;
+            }
+        };
+    }
 
     private function dummyHandler(): ToolHandlerInterface
     {

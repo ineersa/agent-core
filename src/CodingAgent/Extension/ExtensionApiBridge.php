@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Extension;
 
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
+use Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\ToolRegistrationDTO;
+use Ineersa\Hatfield\ExtensionApi\ToolResultHookInterface;
 
 /**
  * Internal implementation of ExtensionApiInterface for the extension loading flow.
@@ -29,6 +31,20 @@ final class ExtensionApiBridge implements ExtensionApiInterface
      * @var list<ToolRegistrationDTO>
      */
     private array $registeredTools = [];
+
+    /**
+     * Registered tool call hooks, in registration order.
+     *
+     * @var list<ToolCallHookInterface>
+     */
+    private array $toolCallHooks = [];
+
+    /**
+     * Registered tool result hooks, in registration order.
+     *
+     * @var list<ToolResultHookInterface>
+     */
+    private array $toolResultHooks = [];
 
     public function registerTool(ToolRegistrationDTO $tool): void
     {
@@ -62,5 +78,31 @@ final class ExtensionApiBridge implements ExtensionApiInterface
     public function getRegistrations(): array
     {
         return $this->registeredTools;
+    }
+
+    public function registerToolCallHook(ToolCallHookInterface $hook): void
+    {
+        $this->toolCallHooks[] = $hook;
+    }
+
+    /**
+     * @return list<ToolCallHookInterface>
+     */
+    public function getToolCallHooks(): array
+    {
+        return $this->toolCallHooks;
+    }
+
+    public function registerToolResultHook(ToolResultHookInterface $hook): void
+    {
+        $this->toolResultHooks[] = $hook;
+    }
+
+    /**
+     * @return list<ToolResultHookInterface>
+     */
+    public function getToolResultHooks(): array
+    {
+        return $this->toolResultHooks;
     }
 }
