@@ -224,6 +224,7 @@ services:
   Ineersa\CodingAgent\Tool\RegistryBackedToolbox:
     arguments:
       $registry: '@Ineersa\CodingAgent\Tool\ToolRegistryInterface'
+      $eventDispatcher: '@event_dispatcher'
 
   Symfony\AI\Agent\Toolbox\ToolboxInterface:
     alias: Ineersa\CodingAgent\Tool\RegistryBackedToolbox

@@ -10,9 +10,15 @@ use Ineersa\CodingAgent\Tool\ToolDefinitionDTO;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Agent\Toolbox\Event\ToolCallArgumentsResolved;
+use Symfony\AI\Agent\Toolbox\Event\ToolCallFailed;
+use Symfony\AI\Agent\Toolbox\Event\ToolCallRequested;
+use Symfony\AI\Agent\Toolbox\Event\ToolCallSucceeded;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
+use Symfony\AI\Agent\Toolbox\ToolResult;
 use Symfony\AI\Platform\Result\ToolCall;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 
 /**
  * Tests for RegistryBackedToolbox.
@@ -171,6 +177,116 @@ final class RegistryBackedToolboxTest extends TestCase
         $toolbox->execute(new ToolCall('call-4', 'nonexistent', []));
     }
 
+    public function testExecuteDispatchesSymfonyAiToolLifecycleEvents(): void
+    {
+        $registry = new ToolRegistry();
+        $handler = $this->dummyHandler('evented result');
+        $registry->registerTool(name: 'evented', description: 'Evented', parametersJsonSchema: [], handler: $handler, promptLine: 'evented');
+
+        $dispatcher = new EventDispatcher();
+        $events = [];
+        $dispatcher->addListener(ToolCallRequested::class, function (ToolCallRequested $event) use (&$events): void {
+            $events[] = ['requested', $event->getToolCall()->getName(), $event->getMetadata()->getName()];
+        });
+        $dispatcher->addListener(ToolCallArgumentsResolved::class, function (ToolCallArgumentsResolved $event) use (&$events, $handler): void {
+            $events[] = ['arguments_resolved', $event->getTool() === $handler, $event->getArguments()];
+        });
+        $dispatcher->addListener(ToolCallSucceeded::class, function (ToolCallSucceeded $event) use (&$events, $handler): void {
+            $events[] = ['succeeded', $event->getTool() === $handler, $event->getResult()->getResult()];
+        });
+
+        $toolbox = new RegistryBackedToolbox($registry, $dispatcher);
+        $result = $toolbox->execute(new ToolCall('call-events', 'evented', ['query' => 'hello']));
+
+        self::assertSame('evented result', $result->getResult());
+        self::assertSame([
+            ['requested', 'evented', 'evented'],
+            ['arguments_resolved', true, ['query' => 'hello']],
+            ['succeeded', true, 'evented result'],
+        ], $events);
+    }
+
+    public function testToolCallRequestedCanDenyAndSkipHandler(): void
+    {
+        $registry = new ToolRegistry();
+        $handler = $this->countingHandler('should not run');
+        $registry->registerTool(name: 'guarded', description: 'Guarded', parametersJsonSchema: [], handler: $handler, promptLine: 'guarded');
+
+        $dispatcher = new EventDispatcher();
+        $events = [];
+        $dispatcher->addListener(ToolCallRequested::class, function (ToolCallRequested $event) use (&$events): void {
+            $events[] = 'requested';
+            $event->deny('blocked by listener');
+        });
+        $dispatcher->addListener(ToolCallArgumentsResolved::class, static function () use (&$events): void {
+            $events[] = 'arguments_resolved';
+        });
+
+        $toolbox = new RegistryBackedToolbox($registry, $dispatcher);
+        $result = $toolbox->execute(new ToolCall('call-denied', 'guarded', []));
+
+        self::assertSame('blocked by listener', $result->getResult());
+        self::assertSame(0, $handler->calls);
+        self::assertSame(['requested'], $events);
+    }
+
+    public function testToolCallRequestedCanReplaceResultAndSkipHandler(): void
+    {
+        $registry = new ToolRegistry();
+        $handler = $this->countingHandler('should not run');
+        $registry->registerTool(name: 'replaceable', description: 'Replaceable', parametersJsonSchema: [], handler: $handler, promptLine: 'replaceable');
+
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addListener(ToolCallRequested::class, static function (ToolCallRequested $event): void {
+            $event->setResult(new ToolResult($event->getToolCall(), ['replaced' => true]));
+        });
+
+        $toolbox = new RegistryBackedToolbox($registry, $dispatcher);
+        $result = $toolbox->execute(new ToolCall('call-replaced', 'replaceable', []));
+
+        self::assertSame(['replaced' => true], $result->getResult());
+        self::assertSame(0, $handler->calls);
+    }
+
+    public function testExecuteDispatchesSymfonyAiToolFailedEvent(): void
+    {
+        $registry = new ToolRegistry();
+        $exception = new \RuntimeException('boom');
+        $handler = new class($exception) implements ToolHandlerInterface {
+            public function __construct(
+                private readonly \RuntimeException $exception,
+            ) {
+            }
+
+            public function __invoke(array $arguments): mixed
+            {
+                throw $this->exception;
+            }
+        };
+        $registry->registerTool(name: 'failing', description: 'Failing', parametersJsonSchema: [], handler: $handler, promptLine: 'failing');
+
+        $dispatcher = new EventDispatcher();
+        $failedEvent = null;
+        $dispatcher->addListener(ToolCallFailed::class, static function (ToolCallFailed $event) use (&$failedEvent): void {
+            $failedEvent = $event;
+        });
+
+        $toolbox = new RegistryBackedToolbox($registry, $dispatcher);
+
+        try {
+            $toolbox->execute(new ToolCall('call-failed', 'failing', ['path' => 'x']));
+            self::fail('Expected handler exception to be re-thrown.');
+        } catch (\RuntimeException $caught) {
+            self::assertSame($exception, $caught);
+        }
+
+        self::assertInstanceOf(ToolCallFailed::class, $failedEvent);
+        self::assertSame($handler, $failedEvent->getTool());
+        self::assertSame('failing', $failedEvent->getMetadata()->getName());
+        self::assertSame(['path' => 'x'], $failedEvent->getArguments());
+        self::assertSame($exception, $failedEvent->getException());
+    }
+
     /* ───────── Extension-registered tools are the same path ───────── */
 
     public function testExecuteForExtensionRegisteredTool(): void
@@ -207,6 +323,25 @@ final class RegistryBackedToolboxTest extends TestCase
 
             public function __invoke(array $arguments): mixed
             {
+                return $this->result;
+            }
+        };
+    }
+
+    private function countingHandler(mixed $result): ToolHandlerInterface
+    {
+        return new class($result) implements ToolHandlerInterface {
+            public int $calls = 0;
+
+            public function __construct(
+                private readonly mixed $result,
+            ) {
+            }
+
+            public function __invoke(array $arguments): mixed
+            {
+                ++$this->calls;
+
                 return $this->result;
             }
         };
