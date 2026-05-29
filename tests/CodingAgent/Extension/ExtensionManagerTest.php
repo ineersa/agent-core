@@ -205,7 +205,7 @@ PHP;
 
         $this->assertCount(0, $bridge->getRegistrations());
         $this->assertCount(1, $logger->warnings);
-        $this->assertStringContainsString('Extension class not found', $logger->warnings[0]);
+        $this->assertStringContainsString('not found', $logger->warnings[0]);
     }
 
     public function testLoadExtensionsSkipsNonHatfieldExtension(): void

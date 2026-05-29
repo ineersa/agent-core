@@ -7,6 +7,8 @@ namespace Ineersa\CodingAgent\Session;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
+use Ineersa\AgentCore\Schema\SchemaVersion;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
 
 /**
@@ -32,6 +34,7 @@ final class SessionRunEventStore implements EventStoreInterface
         HatfieldSessionStore $hatfieldSessionStore,
         private readonly EventPayloadNormalizer $eventPayloadNormalizer,
         private readonly LockFactory $lockFactory,
+        private readonly LoggerInterface $logger,
     ) {
         $this->sessionsBasePath = $hatfieldSessionStore->resolveSessionsBasePath();
     }
@@ -90,16 +93,33 @@ final class SessionRunEventStore implements EventStoreInterface
 
             try {
                 $payload = json_decode($trimmedLine, true, 512, \JSON_THROW_ON_ERROR);
-            } catch (\JsonException) {
-                continue;
+            } catch (\JsonException $e) {
+                throw new \RuntimeException(\sprintf('Corrupt event JSONL line for run "%s" — not parseable as JSON: %s', $runId, $e->getMessage()), previous: $e);
             }
 
             if (!\is_array($payload)) {
+                $this->logger->warning('SessionRunEventStore skipped non-associative JSONL line', [
+                    'run_id' => $runId,
+                    'line' => mb_substr($trimmedLine, 0, 200),
+                ]);
+
                 continue;
             }
 
             $event = $this->eventPayloadNormalizer->denormalizeRunEvent($payload);
             if (null === $event) {
+                if (!$this->isIncompatibleSchemaVersion($payload)) {
+                    throw new \RuntimeException(\sprintf('Corrupt event JSONL for run "%s": denormalization returned null for compatible or missing schema — line: %s', $runId, mb_substr($trimmedLine, 0, 200)));
+                }
+
+                // Schema version is present but incompatible. This is an
+                // intentional schema-version compatibility policy: events from
+                // unsupported major versions are ignored with diagnostics.
+                $this->logger->debug('Skipping incompatible schema version in event JSONL', [
+                    'run_id' => $runId,
+                    'schema_version' => $payload['schema_version'],
+                ]);
+
                 continue;
             }
 
@@ -114,6 +134,22 @@ final class SessionRunEventStore implements EventStoreInterface
         usort($events, static fn (RunEvent $left, RunEvent $right): int => $left->seq <=> $right->seq);
 
         return $events;
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function isIncompatibleSchemaVersion(array $payload): bool
+    {
+        $schemaVersion = $payload['schema_version'] ?? null;
+        if (!\is_string($schemaVersion)) {
+            return false;
+        }
+
+        $expectedMajor = explode('.', SchemaVersion::CURRENT, 2)[0];
+        $candidateMajor = explode('.', $schemaVersion, 2)[0];
+
+        return '' !== $candidateMajor && $candidateMajor !== $expectedMajor;
     }
 
     private function sessionsDir(): string

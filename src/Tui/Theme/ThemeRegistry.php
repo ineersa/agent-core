@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Theme;
 
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -26,6 +27,7 @@ final class ThemeRegistry
     public function __construct(
         AppConfig $appConfig,
         AppResourceLocator $resources,
+        private readonly LoggerInterface $logger,
     ) {
         $tuiConfig = $appConfig->tui;
 
@@ -160,8 +162,15 @@ final class ThemeRegistry
         foreach ($files as $file) {
             try {
                 $palettes[] = $this->loadFile($file);
-            } catch (\RuntimeException) {
-                // Skip unparseable theme files; the caller may log or ignore
+            } catch (\RuntimeException $e) {
+                // Broken theme files are skipped so that a single
+                // misconfigured theme does not break the entire TUI.
+                // The theme name embedded in the YAML may not match
+                // the filename, so surface the path for diagnostics.
+                $this->logger->warning('Skipping unparseable theme file', [
+                    'file' => $file,
+                    'exception' => $e,
+                ]);
             }
         }
 

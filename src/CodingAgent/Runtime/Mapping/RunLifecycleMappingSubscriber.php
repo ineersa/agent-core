@@ -83,7 +83,11 @@ final readonly class RunLifecycleMappingSubscriber implements EventSubscriberInt
             type: $type,
             runId: $runEvent->runId,
             seq: $runEvent->seq,
-            payload: ['reason' => '' !== $reason ? $reason : 'completed'],
+            payload: [
+                'reason' => '' !== $reason ? $reason : 'completed',
+                'error' => (string) ($p['error'] ?? ''),
+                'message_type' => (string) ($p['message_type'] ?? ''),
+            ],
         );
     }
 }

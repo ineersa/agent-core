@@ -96,15 +96,11 @@ final class ConsumerSupervisor
 
             $process->start();
         } catch (\Throwable $e) {
-            $this->logger->error('Failed to launch messenger consumer', [
-                'transport' => $transportName,
-                'instance' => $instanceId,
-                'entrypoint' => $entrypoint,
-                'cwd' => $cwd,
-                'exception' => $e,
-            ]);
-
-            return;
+            // Consumer launch failure is terminal — the controller
+            // cannot process any work without its consumers. Throw
+            // so the process fails loudly. This prevents the
+            // "controller ready but nothing works" hang.
+            throw new \RuntimeException(\sprintf('Failed to launch messenger consumer for transport "%s" instance %d: %s', $transportName, $instanceId, $e->getMessage()), previous: $e);
         }
 
         $key = $this->consumerKey($transportName, $instanceId);

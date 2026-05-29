@@ -19,24 +19,24 @@ use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\HomeSettingsWriter;
-use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\SessionAwareModelResolver;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
+use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Bridge\Generic\Factory as GenericFactory;
 use Symfony\AI\Platform\Platform;
-use Symfony\AI\Platform\PlatformInterface as SymfonyPlatformInterface;
 use Symfony\AI\Platform\ProviderInterface;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -59,7 +59,7 @@ final class LlamaCppSmokeTest extends TestCase
         parent::setUp();
 
         if (false === getenv('LLAMA_CPP_SMOKE_TEST') || '' === getenv('LLAMA_CPP_SMOKE_TEST')) {
-            self::markTestSkipped(
+            $this->markTestSkipped(
                 'LLAMA_CPP_SMOKE_TEST is not set. Run `castor test:llm-real` or set '
                 .'LLAMA_CPP_SMOKE_TEST=1 to enable the real llama.cpp smoke test.'
             );
@@ -118,9 +118,9 @@ final class LlamaCppSmokeTest extends TestCase
         $eventDispatcher = new EventDispatcher();
 
         $providerConfig = $appConfig->catalog?->getProvider($llamaCppProviderKey);
-        self::assertNotNull($providerConfig, 'Expected '.$llamaCppProviderKey.' provider in test AppConfig');
+        $this->assertNotNull($providerConfig, 'Expected '.$llamaCppProviderKey.' provider in test AppConfig');
         $modelDefinition = $providerConfig->models[$modelName] ?? null;
-        self::assertNotNull($modelDefinition, 'Expected configured llama_cpp model in test AppConfig');
+        $this->assertNotNull($modelDefinition, 'Expected configured llama_cpp model in test AppConfig');
 
         // ── Build the real Platform with a live Provider ──
         $provider = GenericFactory::createProvider(
@@ -182,6 +182,8 @@ final class LlamaCppSmokeTest extends TestCase
             platform: $platform,
             transformContextHooks: [],
             convertToLlmHooks: [],
+            streamObserver: null,
+            logger: new NullLogger(),
         );
 
         // ── Invoke ──
@@ -195,14 +197,14 @@ final class LlamaCppSmokeTest extends TestCase
                 ),
             ));
         } catch (\Throwable $e) {
-            self::fail('Real llama.cpp invocation failed: '.$e->getMessage()."\n".$this->collectSessionDiagnostics());
+            $this->fail('Real llama.cpp invocation failed: '.$e->getMessage()."\n".$this->collectSessionDiagnostics());
         }
 
         // ── Assertions ──
-        self::assertNotNull($result->assistantMessage, 'Expected a non-null assistant message');
+        $this->assertNotNull($result->assistantMessage, 'Expected a non-null assistant message');
         $text = $result->assistantMessage->asText();
-        self::assertNotEmpty($text, 'Expected non-empty assistant text from llama.cpp');
-        self::assertStringContainsString(
+        $this->assertNotEmpty($text, 'Expected non-empty assistant text from llama.cpp');
+        $this->assertStringContainsString(
             'hello',
             strtolower($text),
             'Expected llama.cpp response to contain "hello" for the deterministic prompt. Response: '.$text,
@@ -210,15 +212,15 @@ final class LlamaCppSmokeTest extends TestCase
 
         // Verify usage if the provider returned it (do not fail if absent)
         if (isset($result->usage['total_tokens'])) {
-            self::assertGreaterThan(0, $result->usage['total_tokens']);
+            $this->assertGreaterThan(0, $result->usage['total_tokens']);
         }
         if (isset($result->usage['input_tokens'])) {
-            self::assertGreaterThan(0, $result->usage['input_tokens']);
+            $this->assertGreaterThan(0, $result->usage['input_tokens']);
         }
 
         // Session metadata is still intact — model resolution used it correctly
         $meta = $this->sessionMetaStore->readSessionMetadata($this->sessionId);
-        self::assertSame($modelRef, $meta['model'] ?? null,
+        $this->assertSame($modelRef, $meta['model'] ?? null,
             'Session metadata model should be preserved after invocation');
     }
 
@@ -331,9 +333,10 @@ final class LlamaCppSmokeTest extends TestCase
         }
 
         // Determine which provider key to use.
-        // Priority: 1) env override, 2) default_model prefix, 3) fall back to llama_cpp
+        // Priority: 1) env override, 2) llama_cpp_test if configured, 3) fall back to llama_cpp
         $defaultModel = (string) ($settings['ai']['default_model'] ?? '');
-        $providerKey = getenv('LLAMA_CPP_TEST_PROVIDER') ?: 'llama_cpp';
+        $providerKey = getenv('LLAMA_CPP_TEST_PROVIDER')
+            ?: (isset($settings['ai']['providers']['llama_cpp_test']) ? 'llama_cpp_test' : 'llama_cpp');
 
         // If default_model points to llama_cpp_test/, honour that
         if (str_starts_with($defaultModel, 'llama_cpp_test/')) {
@@ -345,7 +348,7 @@ final class LlamaCppSmokeTest extends TestCase
 
         $baseUrl = getenv('LLAMA_CPP_BASE_URL') ?: (string) ($provider['base_url'] ?? '');
         if ('' === $baseUrl) {
-            self::markTestSkipped(
+            $this->markTestSkipped(
                 'No '.$providerKey.' base URL configured. Set LLAMA_CPP_BASE_URL or configure '
                 .'ai.providers.'.$providerKey.'.base_url in .hatfield/settings.yaml.'
             );
@@ -412,7 +415,7 @@ final class LlamaCppSmokeTest extends TestCase
             }
 
             $content = (string) file_get_contents($path);
-            $chunks[] = "--- {$file} (".strlen($content)." bytes) ---\n".$content;
+            $chunks[] = "--- {$file} (".\strlen($content)." bytes) ---\n".$content;
         }
 
         return implode("\n\n", $chunks);

@@ -74,21 +74,21 @@ final class ViewImageToolTest extends TestCase
     {
         $img = \imagecreatetruecolor(1, 1);
         \imagepng($img, $path);
-        \imagedestroy($img);
+        // imagedestroy is no-op since PHP 8.0, removed
     }
 
     private function createGif1x1(string $path): void
     {
         $img = \imagecreatetruecolor(1, 1);
         \imagegif($img, $path);
-        \imagedestroy($img);
+        // imagedestroy is no-op since PHP 8.0, removed
     }
 
     private function createJpeg1x1(string $path): void
     {
         $img = \imagecreatetruecolor(1, 1);
         \imagejpeg($img, $path);
-        \imagedestroy($img);
+        // imagedestroy is no-op since PHP 8.0, removed
     }
 
     private function createWebp1x1(string $path): void
@@ -99,7 +99,7 @@ final class ViewImageToolTest extends TestCase
 
         $img = \imagecreatetruecolor(1, 1);
         \imagewebp($img, $path);
-        \imagedestroy($img);
+        // imagedestroy is no-op since PHP 8.0, removed
     }
 
     /**
@@ -352,7 +352,7 @@ final class ViewImageToolTest extends TestCase
         $img = \imagecreatetruecolor(1, 1);
         $imagePath = $this->tmpDir.'/large.png';
         \imagepng($img, $imagePath);
-        \imagedestroy($img);
+        // imagedestroy is no-op since PHP 8.0, removed
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('exceeds maximum allowed size');
@@ -383,7 +383,7 @@ final class ViewImageToolTest extends TestCase
         $imagePath = $this->tmpDir.'/wide.png';
         $img = \imagecreatetruecolor(10, 1);
         \imagepng($img, $imagePath);
-        \imagedestroy($img);
+        // imagedestroy is no-op since PHP 8.0, removed
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('exceed maximum allowed');
@@ -399,7 +399,7 @@ final class ViewImageToolTest extends TestCase
         $imagePath = $this->tmpDir.'/tall.png';
         $img = \imagecreatetruecolor(1, 10);
         \imagepng($img, $imagePath);
-        \imagedestroy($img);
+        // imagedestroy is no-op since PHP 8.0, removed
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('exceed maximum allowed');

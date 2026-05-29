@@ -85,7 +85,8 @@ final readonly class EventPayloadNormalizer
         if (\is_string($payload['ts'] ?? null)) {
             try {
                 $createdAt = new \DateTimeImmutable($payload['ts']);
-            } catch (\Throwable) {
+            } catch (\Throwable $e) {
+                throw new \InvalidArgumentException(\sprintf('Invalid timestamp in RunEvent payload: "%s"', $payload['ts']), previous: $e);
             }
         }
 

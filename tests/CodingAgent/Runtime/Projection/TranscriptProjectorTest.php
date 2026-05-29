@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\CancellationProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\HitlProjectionSubscriber;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\RunLifecycleProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\ToolProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
@@ -38,6 +39,7 @@ final class TranscriptProjectorTest extends TestCase
         $dispatcher->addSubscriber(new ToolProjectionSubscriber());
         $dispatcher->addSubscriber(new HitlProjectionSubscriber());
         $dispatcher->addSubscriber(new CancellationProjectionSubscriber());
+        $dispatcher->addSubscriber(new RunLifecycleProjectionSubscriber());
 
         $this->projector = new TranscriptProjector($dispatcher, $state);
         $this->seq = 0;
@@ -1044,6 +1046,79 @@ final class TranscriptProjectorTest extends TestCase
         // ID should contain the seq number
         $this->assertStringContainsString((string) $cancelBlock->seq, $cancelBlock->id,
             'Cancelled block ID suffix must match its own seq number');
+    }
+
+    // ── Run lifecycle ───────────────────────────────────────────────────────
+
+    public function testRunFailedCreatesErrorBlock(): void
+    {
+        $this->accept('user.message_submitted', ['message_id' => 'u1', 'text' => 'hi']);
+        $this->accept('run.failed', [
+            'reason' => 'failed',
+            'error' => 'CAS conflict exhausted after 3 attempts',
+            'message_type' => 'StartRun',
+        ]);
+
+        $blocks = $this->projector->blocks();
+        $this->assertCount(2, $blocks);
+
+        $errorBlock = $blocks[1];
+        $this->assertSame(TranscriptBlockKindEnum::Error, $errorBlock->kind);
+        $this->assertStringContainsString('Run failed', $errorBlock->text);
+        $this->assertStringContainsString('CAS conflict exhausted', $errorBlock->text);
+        $this->assertSame('CAS conflict exhausted after 3 attempts', $errorBlock->meta['error']);
+    }
+
+    public function testRunFailedFinalizesStreamingBlocks(): void
+    {
+        $this->accept('assistant.text_started', [
+            'message_id' => 'a1', 'block_id' => 'b1',
+        ]);
+        $this->accept('assistant.text_delta', [
+            'message_id' => 'a1', 'block_id' => 'b1', 'index' => 0, 'text' => 'partial...',
+        ]);
+
+        $blocks = $this->projector->blocks();
+        $this->assertCount(1, $blocks, 'Should have one streaming block before run.failed');
+        $this->assertTrue($blocks[0]->streaming);
+
+        $this->accept('run.failed', [
+            'reason' => 'failed',
+            'error' => 'Permanent worker failure',
+            'message_type' => 'AdvanceRun',
+        ]);
+
+        $blocks = $this->projector->blocks();
+        $this->assertCount(2, $blocks, 'Should have finalized streaming block + error block');
+        $this->assertFalse($blocks[0]->streaming, 'Streaming block must be finalized');
+        $this->assertSame(TranscriptBlockKindEnum::Error, $blocks[1]->kind);
+    }
+
+    public function testRunCompletedCreatesNoBlock(): void
+    {
+        $this->accept('user.message_submitted', ['message_id' => 'u1', 'text' => 'hi']);
+        $this->accept('run.completed', ['reason' => 'completed']);
+
+        $blocks = $this->projector->blocks();
+        // Only the user message block; run.completed creates none.
+        $this->assertCount(1, $blocks);
+        $this->assertSame(TranscriptBlockKindEnum::UserMessage, $blocks[0]->kind);
+    }
+
+    public function testRunCompletedDoesNotClobberExistingBlocks(): void
+    {
+        $this->accept('user.message_submitted', ['message_id' => 'u1', 'text' => 'hi']);
+        $this->accept('assistant.text_started', ['message_id' => 'a1', 'block_id' => 'b1']);
+        $this->accept('assistant.text_delta', ['message_id' => 'a1', 'block_id' => 'b1', 'index' => 0, 'text' => 'hello']);
+        $this->accept('assistant.text_completed', ['message_id' => 'a1', 'block_id' => 'b1']);
+
+        $blocks = $this->projector->blocks();
+        $this->assertCount(2, $blocks, 'User + finalized assistant block');
+
+        $this->accept('run.completed', ['reason' => 'completed']);
+
+        $blocksAfter = $this->projector->blocks();
+        $this->assertCount(2, $blocksAfter, 'No extra blocks after run.completed');
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

@@ -15,6 +15,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
+use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Input;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\ContentInterface;
@@ -48,7 +49,8 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         private SymfonyPlatformInterface $platform,
         private iterable $transformContextHooks,
         private iterable $convertToLlmHooks,
-        private ?LlmStreamObserverInterface $streamObserver = null,
+        private ?LlmStreamObserverInterface $streamObserver,
+        private LoggerInterface $logger,
     ) {
     }
 
@@ -265,8 +267,13 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             if ($rawResult instanceof RawHttpResult) {
                 $rawResult->getObject()->cancel();
             }
-        } catch (\Throwable) {
-            // Ignore already-closed or not-yet-established connections.
+        } catch (\Throwable $e) {
+            // Connection cleanup failures following stream abort are
+            // expected for already-closed or unestablished connections.
+            // Log at debug level since this is normal cleanup noise.
+            $this->logger->debug('HTTP connection abort threw (expected for already-closed connections)', [
+                'exception' => $e,
+            ]);
         }
     }
 
@@ -415,8 +422,16 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
         try {
             $this->streamObserver->onStreamStart($runId, $stepId);
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
             // Observer failures must not break model invocation.
+            // This is intentional diagnostic local degradation:
+            // the observer is an optional side-channel and its
+            // failure should not abort the LLM request.
+            $this->logger->warning('LlmStreamObserver::onStreamStart threw', [
+                'run_id' => $runId,
+                'step_id' => $stepId,
+                'exception' => $e,
+            ]);
         }
     }
 
@@ -428,8 +443,15 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
         try {
             $this->streamObserver->onDelta($runId, $stepId, $delta);
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
             // Observer failures must not break model invocation.
+            // Intentional diagnostic local degradation — optional side-channel.
+            $this->logger->warning('LlmStreamObserver::onDelta threw', [
+                'run_id' => $runId,
+                'step_id' => $stepId,
+                'delta_class' => $delta::class,
+                'exception' => $e,
+            ]);
         }
     }
 
@@ -441,8 +463,14 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
         try {
             $this->streamObserver->onStreamEnd($runId, $stepId);
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
             // Observer failures must not break model invocation.
+            // Intentional diagnostic local degradation — optional side-channel.
+            $this->logger->warning('LlmStreamObserver::onStreamEnd threw', [
+                'run_id' => $runId,
+                'step_id' => $stepId,
+                'exception' => $e,
+            ]);
         }
     }
 
@@ -454,8 +482,15 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
         try {
             $this->streamObserver->onStreamError($runId, $stepId, $error);
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
             // Observer failures must not break model invocation.
+            // Intentional diagnostic local degradation — optional side-channel.
+            $this->logger->warning('LlmStreamObserver::onStreamError threw', [
+                'run_id' => $runId,
+                'step_id' => $stepId,
+                'observer_exception' => $e,
+                'original_error' => $error,
+            ]);
         }
     }
 }
