@@ -7,7 +7,9 @@ namespace Ineersa\CodingAgent\Extension;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
+use Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\ToolRegistrationDTO;
+use Ineersa\Hatfield\ExtensionApi\ToolResultHookInterface;
 
 /**
  * Bridges public ExtensionApiInterface calls to the internal ToolRegistry.
@@ -59,5 +61,25 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
             promptLine: $tool->promptSummary ?? \sprintf('%s: %s', $tool->name, $tool->description),
             promptGuidelines: $tool->promptGuidelines,
         );
+    }
+
+    /**
+     * Register a tool call hook.
+     *
+     * Full hook storage and dispatch will be implemented by EXT-HOOK-02.
+     */
+    public function registerToolCallHook(ToolCallHookInterface $hook): void
+    {
+        // Reserved for EXT-HOOK-02: extension hook registry.
+    }
+
+    /**
+     * Register a tool result hook.
+     *
+     * Full hook storage and dispatch will be implemented by EXT-HOOK-02.
+     */
+    public function registerToolResultHook(ToolResultHookInterface $hook): void
+    {
+        // Reserved for EXT-HOOK-02: extension hook registry.
     }
 }

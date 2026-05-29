@@ -6,7 +6,15 @@ namespace Ineersa\CodingAgent\Tests\ExtensionApi;
 
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
+use Ineersa\Hatfield\ExtensionApi\ToolCallContextDTO;
+use Ineersa\Hatfield\ExtensionApi\ToolCallDecisionDTO;
+use Ineersa\Hatfield\ExtensionApi\ToolCallDecisionKindEnum;
+use Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\ToolRegistrationDTO;
+use Ineersa\Hatfield\ExtensionApi\ToolResultContextDTO;
+use Ineersa\Hatfield\ExtensionApi\ToolResultDecisionDTO;
+use Ineersa\Hatfield\ExtensionApi\ToolResultDecisionKindEnum;
+use Ineersa\Hatfield\ExtensionApi\ToolResultHookInterface;
 use PHPUnit\Framework\TestCase;
 
 final class ExtensionApiContractsTest extends TestCase
@@ -162,5 +170,209 @@ final class ExtensionApiContractsTest extends TestCase
         );
 
         $this->assertSame(['invalid' => 'schema'], $dto->parametersJsonSchema);
+    }
+
+    // --- ToolCallDecisionDTO tests ---
+
+    public function testToolCallDecisionAllowHasCorrectKind(): void
+    {
+        $decision = ToolCallDecisionDTO::allow();
+
+        $this->assertSame(ToolCallDecisionKindEnum::Allow, $decision->kind);
+        $this->assertNull($decision->reason);
+        $this->assertNull($decision->result);
+        $this->assertSame([], $decision->details);
+    }
+
+    public function testToolCallDecisionBlockHasReasonAndKind(): void
+    {
+        $decision = ToolCallDecisionDTO::block('Dangerous command', ['category' => 'dangerous_command']);
+
+        $this->assertSame(ToolCallDecisionKindEnum::Block, $decision->kind);
+        $this->assertSame('Dangerous command', $decision->reason);
+        $this->assertNull($decision->result);
+        $this->assertSame(['category' => 'dangerous_command'], $decision->details);
+    }
+
+    public function testToolCallDecisionReplaceResultHasResultAndKind(): void
+    {
+        $result = ['output' => 'cached']; // Arbitrary serializable value – mixed is correct
+        $decision = ToolCallDecisionDTO::replaceResult($result);
+
+        $this->assertSame(ToolCallDecisionKindEnum::ReplaceResult, $decision->kind);
+        $this->assertNull($decision->reason);
+        $this->assertSame($result, $decision->result);
+        $this->assertSame([], $decision->details);
+    }
+
+    public function testToolCallDecisionDtoIsImmutable(): void
+    {
+        $decision = ToolCallDecisionDTO::allow();
+
+        $this->assertTrue((new \ReflectionClass($decision))->isReadOnly());
+        $this->assertTrue((new \ReflectionClass($decision))->isFinal());
+    }
+
+    // --- ToolResultDecisionDTO tests ---
+
+    public function testToolResultDecisionKeepHasCorrectKind(): void
+    {
+        $decision = ToolResultDecisionDTO::keep();
+
+        $this->assertSame(ToolResultDecisionKindEnum::Keep, $decision->kind);
+        $this->assertNull($decision->isError);
+        $this->assertNull($decision->content);
+        $this->assertNull($decision->details);
+    }
+
+    public function testToolResultDecisionReplaceWithAllFields(): void
+    {
+        $content = [[
+            'type' => 'text',
+            'text' => 'Modified result',
+        ]];
+        $details = ['modified' => true];
+        $decision = ToolResultDecisionDTO::replace(
+            isError: false,
+            content: $content,
+            details: $details,
+        );
+
+        $this->assertSame(ToolResultDecisionKindEnum::Replace, $decision->kind);
+        $this->assertFalse($decision->isError);
+        $this->assertSame($content, $decision->content);
+        $this->assertSame($details, $decision->details);
+    }
+
+    public function testToolResultDecisionReplacePartialFields(): void
+    {
+        $decision = ToolResultDecisionDTO::replace(isError: true);
+
+        $this->assertSame(ToolResultDecisionKindEnum::Replace, $decision->kind);
+        $this->assertTrue($decision->isError);
+        $this->assertNull($decision->content);
+        $this->assertNull($decision->details);
+    }
+
+    public function testToolResultDecisionDtoIsImmutable(): void
+    {
+        $decision = ToolResultDecisionDTO::keep();
+
+        $this->assertTrue((new \ReflectionClass($decision))->isReadOnly());
+        $this->assertTrue((new \ReflectionClass($decision))->isFinal());
+    }
+
+    // --- ExtensionApiInterface hook registration contracts ---
+
+    public function testExtensionApiInterfaceAcceptsToolCallHook(): void
+    {
+        $hook = $this->createStub(ToolCallHookInterface::class);
+        $api = $this->createMock(ExtensionApiInterface::class);
+
+        $api->expects($this->once())
+            ->method('registerToolCallHook')
+            ->with($this->identicalTo($hook));
+
+        $api->registerToolCallHook($hook);
+    }
+
+    public function testExtensionApiInterfaceAcceptsToolResultHook(): void
+    {
+        $hook = $this->createStub(ToolResultHookInterface::class);
+        $api = $this->createMock(ExtensionApiInterface::class);
+
+        $api->expects($this->once())
+            ->method('registerToolResultHook')
+            ->with($this->identicalTo($hook));
+
+        $api->registerToolResultHook($hook);
+    }
+
+    // --- ToolCallContextDTO tests ---
+
+    public function testToolCallContextDtoConstructs(): void
+    {
+        $context = new ToolCallContextDTO(
+            toolCallId: 'call_123',
+            toolName: 'bash',
+            arguments: ['command' => 'ls'],
+            orderIndex: 0,
+            runId: 'run_abc',
+            turnNo: 1,
+            cwd: '/home/project',
+            metadata: ['source' => 'test'],
+        );
+
+        $this->assertSame('call_123', $context->toolCallId);
+        $this->assertSame('bash', $context->toolName);
+        $this->assertSame(['command' => 'ls'], $context->arguments);
+        $this->assertSame(0, $context->orderIndex);
+        $this->assertSame('run_abc', $context->runId);
+        $this->assertSame(1, $context->turnNo);
+        $this->assertSame('/home/project', $context->cwd);
+        $this->assertSame(['source' => 'test'], $context->metadata);
+    }
+
+    public function testToolCallContextDtoDefaults(): void
+    {
+        $context = new ToolCallContextDTO(
+            toolCallId: 'call_456',
+            toolName: 'read',
+            arguments: ['path' => 'file.txt'],
+            orderIndex: 1,
+        );
+
+        $this->assertNull($context->runId);
+        $this->assertNull($context->turnNo);
+        $this->assertNull($context->cwd);
+        $this->assertSame([], $context->metadata);
+    }
+
+    // --- ToolResultContextDTO tests ---
+
+    public function testToolResultContextDtoConstructs(): void
+    {
+        $content = [['type' => 'text', 'text' => 'ok']];
+        $details = ['exitCode' => 0];
+        $context = new ToolResultContextDTO(
+            toolCallId: 'call_789',
+            toolName: 'bash',
+            arguments: ['command' => 'echo hi'],
+            isError: false,
+            content: $content,
+            details: $details,
+            runId: 'run_def',
+            turnNo: 2,
+            cwd: '/home/project',
+            metadata: ['source' => 'test'],
+        );
+
+        $this->assertSame('call_789', $context->toolCallId);
+        $this->assertSame('bash', $context->toolName);
+        $this->assertSame(['command' => 'echo hi'], $context->arguments);
+        $this->assertFalse($context->isError);
+        $this->assertSame($content, $context->content);
+        $this->assertSame($details, $context->details);
+        $this->assertSame('run_def', $context->runId);
+        $this->assertSame(2, $context->turnNo);
+        $this->assertSame('/home/project', $context->cwd);
+        $this->assertSame(['source' => 'test'], $context->metadata);
+    }
+
+    public function testToolResultContextDtoDefaults(): void
+    {
+        $context = new ToolResultContextDTO(
+            toolCallId: 'call_000',
+            toolName: 'write',
+            arguments: ['path' => 'file.txt', 'content' => 'data'],
+            isError: true,
+            content: [],
+            details: [],
+        );
+
+        $this->assertNull($context->runId);
+        $this->assertNull($context->turnNo);
+        $this->assertNull($context->cwd);
+        $this->assertSame([], $context->metadata);
     }
 }
