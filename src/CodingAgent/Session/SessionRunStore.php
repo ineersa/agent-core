@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Session;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -33,7 +32,6 @@ final class SessionRunStore implements RunStoreInterface
         HatfieldSessionStore $hatfieldSessionStore,
         private readonly NormalizerInterface&DenormalizerInterface $serializer,
         private readonly LockFactory $lockFactory,
-        private readonly LoggerInterface $logger,
     ) {
         $this->sessionsBasePath = $hatfieldSessionStore->resolveSessionsBasePath();
     }
@@ -53,13 +51,8 @@ final class SessionRunStore implements RunStoreInterface
 
         try {
             $data = json_decode($json, true, 512, \JSON_THROW_ON_ERROR);
-        } catch (\JsonException) {
-            $this->logger->warning('SessionRunStore cannot decode corrupt state.json', [
-                'run_id' => $runId,
-                'path' => $path,
-            ]);
-
-            return null;
+        } catch (\JsonException $e) {
+            throw new \RuntimeException(\sprintf('Corrupt state.json for run "%s" — not parseable as JSON: %s', $runId, $e->getMessage()), previous: $e);
         }
 
         if (!\is_array($data)) {

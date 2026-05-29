@@ -10,7 +10,6 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureConfig;
-use Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureService;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\CancelListener;
@@ -96,14 +95,11 @@ class CancelListenerTest extends TestCase
             sessionStore: $sessionStore,
         );
 
-        $errorCaptureService = new RuntimeErrorCaptureService(
-            new RuntimeErrorCaptureConfig(envValue: $captureErrorEnv),
-        );
-        $errorCaptureService->setLogger($this->logger);
+        $errorCaptureConfig = new RuntimeErrorCaptureConfig(envValue: $captureErrorEnv);
 
         $listener = new CancelListener(
             $this->logger,
-            $errorCaptureService,
+            $errorCaptureConfig,
         );
         $listener->register($context);
 
@@ -257,16 +253,15 @@ class CancelListenerTest extends TestCase
         $this->client->method('cancel')
             ->willThrowException(new \RuntimeException('Connection lost'));
 
-        // The error is routed through the error capture service,
-        // which logs at error level with a structured context.
-        // The CancelListener also calls logger->info() before attempting
-        // cancel, so we allow any number of info calls.
+        // The CancelListener logs info() before cancel attempt, then
+        // logs error() when cancel fails in capture mode.
         $this->logger->method('info');
         $this->logger->expects($this->once())
             ->method('error')
             ->with(
-                $this->equalTo('Runtime error captured'),
-                $this->callback(fn (array $ctx) => 'cancel_listener.cancel_command_failed' === ($ctx['capture_context'] ?? null)),
+                $this->equalTo('Cancel command failed'),
+                $this->callback(fn (array $ctx) => 'run-err' === ($ctx['run_id'] ?? null)
+                    && $ctx['exception'] instanceof \RuntimeException),
             );
 
         $this->dispatchCancelEvent();
@@ -285,13 +280,13 @@ class CancelListenerTest extends TestCase
             ->willThrowException(new \RuntimeException('Connection lost'));
 
         // The CancelListener calls logger->info() before attempting cancel.
+        // With capture disabled, no error log is emitted — the exception
+        // is rethrown directly from the catch block.
         $this->logger->method('info');
-        $this->logger->expects($this->once())
-            ->method('notice')
-            ->with(
-                $this->equalTo('Error capture disabled — rethrowing exception'),
-                $this->callback(fn (array $ctx) => 'cancel_listener.cancel_command_failed' === ($ctx['capture_context'] ?? null)),
-            );
+        $this->logger->expects($this->never())
+            ->method('error');
+        $this->logger->expects($this->never())
+            ->method('notice');
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Connection lost');

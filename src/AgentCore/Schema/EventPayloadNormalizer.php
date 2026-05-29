@@ -85,11 +85,8 @@ final readonly class EventPayloadNormalizer
         if (\is_string($payload['ts'] ?? null)) {
             try {
                 $createdAt = new \DateTimeImmutable($payload['ts']);
-            } catch (\Throwable) {
-                // Invalid timestamp — event created with current time.
-                // Intentional local degradation: events from older/corrupt
-                // payloads should still normalize rather than fail entirely.
-                // Falls through to default `new DateTimeImmutable()` below.
+            } catch (\Throwable $e) {
+                throw new \InvalidArgumentException(\sprintf('Invalid timestamp in RunEvent payload: "%s"', $payload['ts']), previous: $e);
             }
         }
 

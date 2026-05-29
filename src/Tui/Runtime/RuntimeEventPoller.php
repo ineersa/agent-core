@@ -6,7 +6,7 @@ namespace Ineersa\Tui\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
-use Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureService;
+use Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureConfig;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -30,7 +30,7 @@ final class RuntimeEventPoller
     public function __construct(
         private readonly TranscriptProjectorInterface $projector,
         private readonly LoggerInterface $logger,
-        private readonly RuntimeErrorCaptureService $errorCapture,
+        private readonly RuntimeErrorCaptureConfig $errorCaptureConfig,
     ) {
     }
 
@@ -118,10 +118,10 @@ final class RuntimeEventPoller
                 return null;
             }
 
-            $this->errorCapture->handleError($e, 'runtime_event_poller.polling_failed', [
-                'run_id' => $state->handle->runId,
-                'consecutive_errors' => $state->runtimePollErrorCount,
-            ]);
+            // Check config — if disabled, rethrow for crash mode.
+            if (!$this->errorCaptureConfig->captureErrors) {
+                throw $e;
+            }
 
             // If capture is enabled, show the error and transition to Failed.
             $state->activity = RunActivityStateEnum::Failed;

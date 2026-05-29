@@ -15,6 +15,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
+use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Input;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\ContentInterface;
@@ -49,6 +50,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         private iterable $transformContextHooks,
         private iterable $convertToLlmHooks,
         private ?LlmStreamObserverInterface $streamObserver = null,
+        private ?LoggerInterface $logger = null,
     ) {
     }
 
@@ -265,8 +267,12 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             if ($rawResult instanceof RawHttpResult) {
                 $rawResult->getObject()->cancel();
             }
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
             // Ignore already-closed or not-yet-established connections.
+            // Log at debug so silent cleanup failures don't go unnoticed.
+            $this->logger?->debug('HTTP connection abort threw (expected for already-closed connections)', [
+                'exception' => $e,
+            ]);
         }
     }
 
@@ -415,8 +421,15 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
         try {
             $this->streamObserver->onStreamStart($runId, $stepId);
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
             // Observer failures must not break model invocation.
+            // They are isolated intentionally. Log at debug level so
+            // operator diagnostics can surface silent observer bugs.
+            $this->logger?->debug('LlmStreamObserver::onStreamStart threw', [
+                'run_id' => $runId,
+                'step_id' => $stepId,
+                'exception' => $e,
+            ]);
         }
     }
 
@@ -428,8 +441,14 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
         try {
             $this->streamObserver->onDelta($runId, $stepId, $delta);
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
             // Observer failures must not break model invocation.
+            $this->logger?->debug('LlmStreamObserver::onDelta threw', [
+                'run_id' => $runId,
+                'step_id' => $stepId,
+                'delta_class' => $delta::class,
+                'exception' => $e,
+            ]);
         }
     }
 
@@ -441,8 +460,13 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
         try {
             $this->streamObserver->onStreamEnd($runId, $stepId);
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
             // Observer failures must not break model invocation.
+            $this->logger?->debug('LlmStreamObserver::onStreamEnd threw', [
+                'run_id' => $runId,
+                'step_id' => $stepId,
+                'exception' => $e,
+            ]);
         }
     }
 
@@ -454,8 +478,14 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
         try {
             $this->streamObserver->onStreamError($runId, $stepId, $error);
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
             // Observer failures must not break model invocation.
+            $this->logger?->debug('LlmStreamObserver::onStreamError threw', [
+                'run_id' => $runId,
+                'step_id' => $stepId,
+                'observer_exception' => $e,
+                'original_error' => $error,
+            ]);
         }
     }
 }

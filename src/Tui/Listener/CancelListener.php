@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
-use Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureService;
+use Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureConfig;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
@@ -27,7 +27,7 @@ final class CancelListener implements TuiListenerRegistrar
 {
     public function __construct(
         private readonly LoggerInterface $logger,
-        private readonly RuntimeErrorCaptureService $errorCapture,
+        private readonly RuntimeErrorCaptureConfig $errorCaptureConfig,
     ) {
     }
 
@@ -38,9 +38,9 @@ final class CancelListener implements TuiListenerRegistrar
         $screen = $context->screen;
         $logger = $this->logger;
 
-        $errorCapture = $this->errorCapture;
+        $errorCaptureConfig = $this->errorCaptureConfig;
 
-        $context->tui->addListener(static function (CancelEvent $event) use ($client, $state, $screen, $logger, $errorCapture): void {
+        $context->tui->addListener(static function (CancelEvent $event) use ($client, $state, $screen, $logger, $errorCaptureConfig): void {
             if ($state->activity->isActive() && null !== $state->handle) {
                 $logger->info('ESC cancel requested', [
                     'run_id' => $state->handle->runId,
@@ -50,12 +50,15 @@ final class CancelListener implements TuiListenerRegistrar
                 try {
                     $client->cancel($state->handle->runId);
                 } catch (\Throwable $e) {
-                    $errorCapture->handleError($e, 'cancel_listener.cancel_command_failed', [
-                        'run_id' => $state->handle->runId,
-                    ]);
+                    // Cancel failure: crash or show error.
+                    if (!$errorCaptureConfig->captureErrors) {
+                        throw $e;
+                    }
 
-                    // If capture is enabled, show an error instead
-                    // of a fake "Cancelling..." that would hang forever.
+                    $logger->error('Cancel command failed', [
+                        'run_id' => $state->handle->runId,
+                        'exception' => $e,
+                    ]);
                     $state->activity = RunActivityStateEnum::Failed;
                     $block = new TranscriptBlock(
                         id: \sprintf('cancel_error_%s', $state->handle->runId),

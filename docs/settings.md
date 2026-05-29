@@ -137,20 +137,22 @@ Files are stored under `logging.path`. The default of 14 keeps two weeks of logs
 
 ### `HATFIELD_CAPTURE_ERRORS`
 
-Controls whether infrastructure-level caught exceptions are converted
+Controls whether uncaught infrastructure exceptions are converted
 into user-visible runtime/TUI failures or allowed to crash the process.
 
-- `1` (default): **Capture mode.** Infrastructure errors are logged and
-  converted into user-visible runtime events (e.g. `run.failed`,
-  `protocol.error`, error TranscriptBlock). The TUI shows what happened.
-  This is the normal user-facing mode.
-- `0`: **Crash mode.** The centralized error capture service rethrows
-  the original exception after logging. The process exits with a loud
-  crash. This is intended for test/CI/SDK harnesses that need to fail
-  fast on real errors.
+- `1` (default): **Capture mode.** A Symfony `ConsoleEvents::ERROR`
+  subscriber and top-level callback wrappers (Revolt event-loop,
+  TUI polling) convert exceptions into user-visible runtime events
+  (e.g. `run.failed`, `protocol.error`, error TranscriptBlock). The
+  TUI shows what happened.
+- `0`: **Crash mode.** Boundaries rethrow the original exception
+  after logging. The process exits with a loud crash. This is
+  intended for test/CI/SDK harnesses that need to fail fast on real
+  errors.
 
 This is an environment variable, not a YAML setting key. It is read at
-process startup by `RuntimeErrorCaptureConfig`.
+process startup by `RuntimeErrorCaptureConfig` and used by the centralized
+`ConsoleErrorSubscriber` and top-level callback wrappers.
 
 **Default:** `1` (enabled)
 

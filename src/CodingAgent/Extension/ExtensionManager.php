@@ -38,19 +38,25 @@ final readonly class ExtensionManager
     /**
      * Load all enabled extensions.
      *
+     * Returns diagnostic messages for any extension that failed to
+     * register. An empty array means all extensions loaded cleanly.
+     *
      * Safe to call even when no extensions are configured or
      * when the extension autoload file is absent.
+     *
+     * @return list<string> Human-readable diagnostic messages for failed extensions
      */
-    public function loadExtensions(): void
+    public function loadExtensions(): array
     {
         $enabled = $this->getEnabledClasses();
 
         if ([] === $enabled) {
-            return;
+            return [];
         }
 
         $this->requireExtensionAutoload();
-        $this->loadEach($enabled);
+
+        return $this->loadEach($enabled);
     }
 
     /**
@@ -85,12 +91,21 @@ final readonly class ExtensionManager
 
     /**
      * @param list<class-string> $classNames
+     *
+     * @return list<string> Diagnostic messages for failed extensions
      */
-    private function loadEach(array $classNames): void
+    private function loadEach(array $classNames): array
     {
+        $diagnostics = [];
+
         foreach ($classNames as $className) {
-            $this->loadSingle($className);
+            $msg = $this->loadSingle($className);
+            if (null !== $msg) {
+                $diagnostics[] = $msg;
+            }
         }
+
+        return $diagnostics;
     }
 
     /**
@@ -99,38 +114,43 @@ final readonly class ExtensionManager
      * Logs a warning for missing classes and invalid implementations
      * without aborting the startup sequence, so a misconfigured extension
      * does not prevent other extensions from loading.
+     *
+     * @return string|null Diagnostic message if the extension failed to load, null if successful
      */
-    private function loadSingle(string $className): void
+    private function loadSingle(string $className): ?string
     {
         if ('' === $className) {
-            return;
+            return null;
         }
 
         if (!class_exists($className)) {
-            $this->logger->warning('Extension class not found; skipping', [
-                'class' => $className,
-            ]);
+            $msg = \sprintf('Extension class "%s" not found — skipping.', $className);
+            $this->logger->warning($msg, ['class' => $className]);
 
-            return;
+            return $msg;
         }
 
         $instance = new $className();
 
         if (!$instance instanceof HatfieldExtensionInterface) {
-            $this->logger->warning('Extension class does not implement HatfieldExtensionInterface; skipping', [
-                'class' => $className,
-            ]);
+            $msg = \sprintf('Extension class "%s" does not implement HatfieldExtensionInterface — skipping.', $className);
+            $this->logger->warning($msg, ['class' => $className]);
 
-            return;
+            return $msg;
         }
 
         try {
             $instance->register($this->extensionApi);
         } catch (\Throwable $e) {
-            $this->logger->error('Extension registration threw an exception', [
+            $msg = \sprintf('Extension "%s" failed to register: %s', $className, $e->getMessage());
+            $this->logger->error($msg, [
                 'class' => $className,
                 'exception' => $e,
             ]);
+
+            return $msg;
         }
+
+        return null;
     }
 }

@@ -6,7 +6,7 @@ namespace Ineersa\CodingAgent\Runtime\Controller;
 
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
-use Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureService;
+use Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureConfig;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
@@ -95,7 +95,7 @@ final class HeadlessController
         private readonly EventDispatcherInterface $dispatcher,
         private readonly LoggerInterface $logger,
         private readonly ToolExecutionSettingsInterface $toolExecutionSettings,
-        private readonly RuntimeErrorCaptureService $errorCapture,
+        private readonly RuntimeErrorCaptureConfig $errorCaptureConfig,
         private readonly ?InProcessAgentSessionClient $eventClient = null,
         /**
          * Optional override for parallel tool messenger consumers.
@@ -209,15 +209,20 @@ final class HeadlessController
                     }
                 } catch (\Throwable $e) {
                     // Event drain failures can stall the TUI silently.
-                    // Emit a runtime_error so the TUI shows an error block.
+                    // Under HATFIELD_CAPTURE_ERRORS=0, crash hard.
+                    if (!$this->errorCaptureConfig->captureErrors) {
+                        throw $e;
+                    }
+
+                    // Capture mode: emit protocol error for TUI visibility
+                    // and release cursor so subsequent polls start fresh.
                     $this->emitInternal(new RuntimeEvent(
-                        type: RuntimeEventTypeEnum::RuntimeReady->value, // not ideal but broadcast
+                        type: RuntimeEventTypeEnum::RuntimeReady->value, // broadcast to unstick
                         runId: $runId,
                         seq: 0,
                         payload: [],
                     ));
 
-                    // Use dedicated protocol.error for user-visible signal.
                     $this->emitInternal(new RuntimeEvent(
                         type: RuntimeEventTypeEnum::ProtocolError->value,
                         runId: $runId,
@@ -228,15 +233,14 @@ final class HeadlessController
                         ],
                     ));
 
-                    // Release cursor so subsequent polls start fresh.
                     unset($this->runEventCursors[$runId]);
 
-                    $this->errorCapture->handleError($e, 'controller.event_drain_error', [
+                    $this->logger->error('Event drain failed', [
                         'run_id' => $runId,
+                        'exception' => $e,
                     ]);
 
-                    // If capture is enabled, don't bubble further.
-                    // Let event drain try again next tick.
+                    // Event drain will retry next tick.
                 }
             }
         });
@@ -333,13 +337,18 @@ final class HeadlessController
                 ]);
 
                 if ($this->consecutiveBadLlmLines >= self::MAX_CONSECUTIVE_BAD_LLM_LINES) {
-                    $this->errorCapture->handleError($e, 'controller.llm_stdout_persistent_malformed', [
+                    // Persistent malformed LLM output — either crash or
+                    // emit a protocol error and reset the counter.
+                    if (!$this->errorCaptureConfig->captureErrors) {
+                        throw $e;
+                    }
+
+                    $this->logger->error('Persistent malformed LLM consumer output — streaming may be incomplete', [
                         'consecutive_bad' => $this->consecutiveBadLlmLines,
                         'sample' => mb_substr($trimmed, 0, 200),
+                        'exception' => $e,
                     ]);
-                    // If capture is enabled, emit a protocol error and
-                    // reset counter. This prevents infinite error looping
-                    // while still making the issue visible.
+
                     $this->emitInternal(new RuntimeEvent(
                         type: RuntimeEventTypeEnum::ProtocolError->value,
                         runId: '',

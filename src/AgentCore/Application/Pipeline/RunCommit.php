@@ -16,7 +16,6 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureService;
 use Psr\Log\LoggerInterface;
 
 final readonly class RunCommit
@@ -28,7 +27,6 @@ final readonly class RunCommit
         private ReplayService $replayService,
         private StepDispatcher $stepDispatcher,
         private LoggerInterface $logger,
-        private RuntimeErrorCaptureService $errorCapture,
         private ?HookDispatcher $hookDispatcher = null,
         private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
@@ -88,22 +86,17 @@ final readonly class RunCommit
                         retryableFailure: false,
                     );
                     $this->runStore->compareAndSwap($failedState, $state->version);
-                } catch (\Throwable) {
+                } catch (\Throwable $markFailedException) {
                     // Best effort — cannot mark failed in store.
+                    $this->logger->warning('Could not mark run as failed after event persistence failure', [
+                        'run_id' => $nextState->runId,
+                        'exception' => $markFailedException,
+                    ]);
                 }
 
-                $this->errorCapture->handleError($exception, 'agent_loop.commit.event_persist_failed', [
-                    'run_id' => $nextState->runId,
-                    'turn_no' => $nextState->turnNo,
-                    'step_id' => $nextState->activeStepId,
-                    'event_count' => \count($events),
-                    'rollback_restored' => $rollbackRestored,
-                    'rollback_error' => $rollbackError,
-                ]);
-
-                // If we reach here, capture is enabled — throw a
-                // terminal exception so the message processor does
-                // NOT retry (this is not a CAS conflict).
+                // Throw a terminal exception so the message processor
+                // does NOT retry (this is not a CAS conflict). The
+                // app-layer exception boundary decides capture vs crash.
                 throw new \RuntimeException(\sprintf('Event persistence failed for run %s turn %d: %s', $nextState->runId, $nextState->turnNo, $exception->getMessage()), previous: $exception);
             }
 
@@ -111,10 +104,14 @@ final readonly class RunCommit
                 try {
                     $this->replayService->rebuildHotPromptState($nextState->runId);
                 } catch (\Throwable $exception) {
-                    $this->errorCapture->handleDegradation($exception, 'agent_loop.commit.hot_state_rebuild_failed', [
+                    // Hot prompt rebuild is best-effort — the previous
+                    // hot state is still valid. Log the failure so
+                    // operators can diagnose persistent rebuild issues.
+                    $this->logger->warning('Hot prompt state rebuild failed (best-effort)', [
                         'run_id' => $nextState->runId,
                         'turn_no' => $nextState->turnNo,
                         'step_id' => $nextState->activeStepId,
+                        'exception' => $exception,
                     ]);
                 }
             }
@@ -125,11 +122,14 @@ final readonly class RunCommit
                 try {
                     $this->stepDispatcher->dispatchEffects($effects);
                 } catch (\Throwable $exception) {
-                    $this->errorCapture->handleDegradation($exception, 'agent_loop.commit.effect_dispatch_failed', [
+                    // Effect dispatch is best-effort side work.
+                    // The primary commit (state + events) succeeded.
+                    $this->logger->warning('Effect dispatch failed after successful commit (best-effort)', [
                         'run_id' => $nextState->runId,
                         'turn_no' => $nextState->turnNo,
                         'step_id' => $nextState->activeStepId,
                         'effects_count' => \count($effects),
+                        'exception' => $exception,
                     ]);
                 }
             }
@@ -139,10 +139,13 @@ final readonly class RunCommit
                     AfterTurnCommitHookContext::fromRunState($nextState, $events, \count($effects)),
                 );
             } catch (\Throwable $exception) {
-                $this->errorCapture->handleDegradation($exception, 'agent_loop.commit.after_turn_commit_hook_failed', [
+                // After-turn commit hooks are optional extension points.
+                // A failing hook must not roll back the commit.
+                $this->logger->warning('After-turn commit hook failed (best-effort)', [
                     'run_id' => $nextState->runId,
                     'turn_no' => $nextState->turnNo,
                     'step_id' => $nextState->activeStepId,
+                    'exception' => $exception,
                 ]);
             }
 

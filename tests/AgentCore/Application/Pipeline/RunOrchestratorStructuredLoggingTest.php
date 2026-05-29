@@ -70,11 +70,6 @@ final class RunOrchestratorStructuredLoggingTest extends TestCase
         $stateTools = new RunMessageStateTools(new \Ineersa\AgentCore\Domain\Event\EventFactory(), new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor());
         $toolBatchCollector = new ToolBatchCollector();
 
-        $captureService = new \Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureService(
-            new \Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureConfig(envValue: '1'),
-        );
-        $captureService->setLogger($logger);
-
         $runCommit = new RunCommit(
             runStore: $runStore,
             eventStore: $eventStore,
@@ -82,7 +77,6 @@ final class RunOrchestratorStructuredLoggingTest extends TestCase
             replayService: $replayService,
             stepDispatcher: $stepDispatcher,
             logger: $logger,
-            errorCapture: $captureService,
             hookDispatcher: null,
         );
 

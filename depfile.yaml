@@ -190,6 +190,11 @@ parameters:
         - type: classNameRegex
           value: '#^Symfony\\Component\\HttpKernel\\#i'
 
+    - name: ForbiddenCodingAgent
+      collectors:
+        - type: classNameRegex
+          value: '#^Ineersa\\\\CodingAgent\\\\#i'
+
     - name: AppSystemPrompt
       collectors:
         - type: directory

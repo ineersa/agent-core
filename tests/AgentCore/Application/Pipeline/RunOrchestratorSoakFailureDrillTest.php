@@ -37,8 +37,6 @@ use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
 use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use PHPUnit\Framework\TestCase;
-use Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureConfig;
-use Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureService;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\InMemoryStore;
@@ -272,11 +270,6 @@ final class RunOrchestratorSoakFailureDrillTest extends TestCase
         $stateTools = new RunMessageStateTools(new \Ineersa\AgentCore\Domain\Event\EventFactory(), new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor());
         $toolBatchCollector = new ToolBatchCollector();
 
-        $errorCapture = new RuntimeErrorCaptureService(
-            new RuntimeErrorCaptureConfig(envValue: $captureEnabled ? '1' : '0'),
-        );
-        $errorCapture->setLogger(new NullLogger());
-
         $runCommit = new RunCommit(
             runStore: $runStore,
             eventStore: $eventStore,
@@ -284,7 +277,6 @@ final class RunOrchestratorSoakFailureDrillTest extends TestCase
             replayService: $replayService,
             stepDispatcher: $stepDispatcher,
             logger: new NullLogger(),
-            errorCapture: $errorCapture,
             hookDispatcher: null,
         );
 

@@ -35,8 +35,6 @@ use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
 use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use PHPUnit\Framework\TestCase;
-use Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureConfig;
-use Ineersa\CodingAgent\Runtime\ErrorCapture\RuntimeErrorCaptureService;
 use Psr\Log\AbstractLogger;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
@@ -78,9 +76,6 @@ final class RunOrchestratorObservabilityTest extends TestCase
         $stateTools = new RunMessageStateTools(new \Ineersa\AgentCore\Domain\Event\EventFactory(), new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor());
         $toolBatchCollector = new ToolBatchCollector();
 
-        $errorCaptureService = new RuntimeErrorCaptureService(new RuntimeErrorCaptureConfig(envValue: '1'));
-        $errorCaptureService->setLogger(new NullLogger());
-
         $runCommit = new RunCommit(
             runStore: $runStore,
             eventStore: $eventStore,
@@ -88,7 +83,6 @@ final class RunOrchestratorObservabilityTest extends TestCase
             replayService: new ReplayService($eventStore, new HotPromptStateStore(), $metrics, $tracer),
             stepDispatcher: $stepDispatcher,
             logger: $traceLogger,
-            errorCapture: $errorCaptureService,
             hookDispatcher: null,
             metrics: $metrics,
             tracer: $tracer,

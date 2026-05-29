@@ -7,15 +7,18 @@ namespace Ineersa\CodingAgent\Runtime\ErrorCapture;
 /**
  * Reads HATFIELD_CAPTURE_ERRORS from the process environment.
  *
- * When enabled (default), exceptions caught by infrastructure code are
- * converted into user-visible runtime/TUI failures rather than being
- * silently logged or ignored.
+ * When enabled (default, HATFIELD_CAPTURE_ERRORS=1), uncaught exceptions
+ * at top-level boundaries are converted into user-visible runtime/TUI
+ * failures rather than crashing the process.
  *
- * When disabled (HATFIELD_CAPTURE_ERRORS=0), the capture path rethrows
- * so callers and test harnesses see the original exception loud and fast.
+ * When disabled (HATFIELD_CAPTURE_ERRORS=0), exceptions propagate
+ * normally so test/CI harnesses see hard failures.
  *
- * int value 1 = enabled  (default — user-facing mode)
- * int value 0 = disabled (tests, deterministic crash-on-failure mode)
+ * Usage: inject this config at the few top-level callback boundaries
+ * (HeadlessController Revolt callbacks, CancelListener, RuntimeEventPoller).
+ * Most code should NOT inject this — it should throw or return typed results,
+ * and let the Symfony ConsoleEvents::ERROR subscriber or the top-level
+ * callback wrapper decide capture vs crash.
  */
 final class RuntimeErrorCaptureConfig
 {

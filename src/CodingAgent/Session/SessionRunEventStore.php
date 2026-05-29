@@ -92,13 +92,8 @@ final class SessionRunEventStore implements EventStoreInterface
 
             try {
                 $payload = json_decode($trimmedLine, true, 512, \JSON_THROW_ON_ERROR);
-            } catch (\JsonException) {
-                $this->logger->warning('SessionRunEventStore skipped corrupt JSONL line', [
-                    'run_id' => $runId,
-                    'line' => mb_substr($trimmedLine, 0, 200),
-                ]);
-
-                continue;
+            } catch (\JsonException $e) {
+                throw new \RuntimeException(\sprintf('Corrupt event JSONL line for run "%s" — not parseable as JSON: %s', $runId, $e->getMessage()), previous: $e);
             }
 
             if (!\is_array($payload)) {

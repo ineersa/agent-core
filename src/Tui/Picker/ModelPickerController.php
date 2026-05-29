@@ -141,6 +141,9 @@ final class ModelPickerController
                     'model' => $ref->toString(),
                 ]);
 
+                $screen->setStatus('error', 'Error: '.$e->getMessage());
+                $screen->refresh();
+
                 return true;
             }
 
@@ -306,7 +309,9 @@ final class ModelPickerController
                 'model' => $ref->toString(),
             ]);
 
-            // Silently fail — the picker controls the UX
+            // Make the error visible in the TUI status bar.
+            $screen->setStatus('error', 'Error: '.$e->getMessage());
+
             return;
         }
 
