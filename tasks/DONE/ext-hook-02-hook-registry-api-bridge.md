@@ -20,14 +20,14 @@ Scope:
 - Validation with Castor: `castor test --filter Extension`; `castor deptrac`.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/ext-hook-02-hook-registry-api-bridge
 Worktree: /home/ineersa/projects/agent-core-worktrees/ext-hook-02-hook-registry-api-bridge
 Fork run: zenqm6om5pyd
 PR URL: https://github.com/ineersa/agent-core/pull/65
-PR Status: open
+PR Status: merged
 Started: 2026-05-29T21:22:56.507Z
-Completed:
+Completed: 2026-05-29T21:32:46.090Z
 
 ## Work log
 - Created: 2026-05-29T20:49:40.311Z
@@ -56,3 +56,20 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/65
 - Validation: castor test --filter Extension: OK (78 tests, 193 assertions); castor deptrac: OK (0 violations); castor cs-check --path src/CodingAgent/Extension/ --path tests/CodingAgent/Extension/: OK
 - Summary: EXT-HOOK-02 is implemented and committed on task branch at c7f4889f. Adds internal ExtensionHookRegistry storage, wires it into ExtensionToolRegistryBridge, updates legacy ExtensionApiBridge hook collection, and covers order/coexistence tests. Parent review removed the fork's optional default registry constructor fallback so production requires the shared DI registry explicitly.
+
+## Task workflow update - 2026-05-29T21:32:46.090Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/ext-hook-02-hook-registry-api-bridge into integration checkout.
+- Merge made by the 'ort' strategy.
+ config/services.yaml                               |   2 +
+ src/CodingAgent/Extension/ExtensionApiBridge.php   |  42 +++++
+ .../Extension/ExtensionHookRegistry.php            |  61 +++++++
+ .../Extension/ExtensionToolRegistryBridge.php      |  11 +-
+ .../CodingAgent/Extension/ExtensionManagerTest.php | 159 ++++++++++++++++++-
+ .../Extension/ExtensionToolRegistryBridgeTest.php  | 175 +++++++++++++++++++--
+ 6 files changed, 432 insertions(+), 18 deletions(-)
+ create mode 100644 src/CodingAgent/Extension/ExtensionHookRegistry.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/ext-hook-02-hook-registry-api-bridge.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR #65 merged on GitHub; castor test --filter Extension: OK (78 tests, 193 assertions); castor deptrac: OK (0 violations); castor cs-check --path src/CodingAgent/Extension/ --path tests/CodingAgent/Extension/: OK
+- Summary: PR #65 was merged; moving EXT-HOOK-02 to DONE and syncing integration checkout.
