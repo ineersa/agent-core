@@ -279,7 +279,8 @@ final class HeadlessController
      * pipe, accumulates partial lines across polls, parses valid RuntimeEvent
      * JSONL, and forwards to the TUI.
      *
-     * Non-JSONL lines (e.g. messenger:consume output) are silently skipped.
+     * Non-JSONL lines (e.g. messenger:consume output) are treated as
+     * expected protocol noise and logged at debug level.
      * Incomplete lines (no trailing \n) are buffered and completed on the
      * next poll cycle.
      *

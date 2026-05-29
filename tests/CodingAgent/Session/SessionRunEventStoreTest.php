@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Session;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
+use Ineersa\AgentCore\Schema\SchemaVersion;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -204,7 +205,7 @@ final class SessionRunEventStoreTest extends TestCase
         $this->store->allFor($runId);
     }
 
-    public function testIncompatibleSchemaVersionIsSkippedSilently(): void
+    public function testCorruptJsonLineWithCompatibleSchemaAndMissingRequiredFieldsThrows(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
         $this->store->append(new RunEvent(
@@ -216,10 +217,30 @@ final class SessionRunEventStoreTest extends TestCase
         ));
 
         $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
-        // Append an old-format event with incompatible schema version
+        file_put_contents($eventsPath, '{"schema_version":"'.SchemaVersion::CURRENT.'","run_id":"'.$runId.'","seq":null}'."\n", \FILE_APPEND);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Corrupt event JSONL for run');
+        $this->store->allFor($runId);
+    }
+
+    public function testIncompatibleSchemaVersionIsSkippedWithDiagnosticPolicy(): void
+    {
+        $runId = 'run-'.bin2hex(random_bytes(4));
+        $this->store->append(new RunEvent(
+            runId: $runId,
+            seq: 1,
+            turnNo: 0,
+            type: 'run_started',
+            payload: [],
+        ));
+
+        $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
+        // Append an old-format event with incompatible schema version.
         file_put_contents($eventsPath, '{"schema_version":"0.1","run_id":"'.$runId.'","seq":2,"turn_no":1,"type":"old_event","payload":[]}'."\n", \FILE_APPEND);
 
-        // Should succeed — incompatible schema is skipped, original event is returned.
+        // Should succeed — incompatible schema follows the documented
+        // compatibility policy and the original event is returned.
         $events = $this->store->allFor($runId);
         $this->assertCount(1, $events);
         $this->assertSame(1, $events[0]->seq);

@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Session;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
+use Ineersa\AgentCore\Schema\SchemaVersion;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
 
@@ -107,18 +108,13 @@ final class SessionRunEventStore implements EventStoreInterface
 
             $event = $this->eventPayloadNormalizer->denormalizeRunEvent($payload);
             if (null === $event) {
-                // denormalizeRunEvent returns null for two reasons:
-                // 1. Incompatible schema version (intentional skip policy)
-                // 2. Missing/invalid required fields (corrupt data)
-                // Distinguish by checking whether schema_version is present.
-                if (!isset($payload['schema_version']) || !\is_string($payload['schema_version'])) {
-                    // No schema_version field — likely corrupt or pre-schema data.
-                    throw new \RuntimeException(\sprintf('Corrupt event JSONL for run "%s": denormalization returned null with no schema_version — line: %s', $runId, mb_substr($trimmedLine, 0, 200)));
+                if (!$this->isIncompatibleSchemaVersion($payload)) {
+                    throw new \RuntimeException(\sprintf('Corrupt event JSONL for run "%s": denormalization returned null for compatible or missing schema — line: %s', $runId, mb_substr($trimmedLine, 0, 200)));
                 }
 
                 // Schema version is present but incompatible. This is an
-                // intentional skip under the schema-version compatibility
-                // policy — older format events are transparently ignored.
+                // intentional schema-version compatibility policy: events from
+                // unsupported major versions are ignored with diagnostics.
                 $this->logger->debug('Skipping incompatible schema version in event JSONL', [
                     'run_id' => $runId,
                     'schema_version' => $payload['schema_version'],
@@ -138,6 +134,22 @@ final class SessionRunEventStore implements EventStoreInterface
         usort($events, static fn (RunEvent $left, RunEvent $right): int => $left->seq <=> $right->seq);
 
         return $events;
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function isIncompatibleSchemaVersion(array $payload): bool
+    {
+        $schemaVersion = $payload['schema_version'] ?? null;
+        if (!\is_string($schemaVersion)) {
+            return false;
+        }
+
+        $expectedMajor = explode('.', SchemaVersion::CURRENT, 2)[0];
+        $candidateMajor = explode('.', $schemaVersion, 2)[0];
+
+        return '' !== $candidateMajor && $candidateMajor !== $expectedMajor;
     }
 
     private function sessionsDir(): string
