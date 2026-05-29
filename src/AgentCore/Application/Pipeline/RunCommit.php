@@ -82,7 +82,7 @@ final readonly class RunCommit
                         isStreaming: $state->isStreaming,
                         streamingMessage: $state->streamingMessage,
                         pendingToolCalls: $state->pendingToolCalls,
-                        errorMessage: 'Event persistence failed: ' . $exception->getMessage(),
+                        errorMessage: 'Event persistence failed: '.$exception->getMessage(),
                         messages: $state->messages,
                         activeStepId: $state->activeStepId,
                         retryableFailure: false,
@@ -104,15 +104,7 @@ final readonly class RunCommit
                 // If we reach here, capture is enabled — throw a
                 // terminal exception so the message processor does
                 // NOT retry (this is not a CAS conflict).
-                throw new \RuntimeException(
-                    \sprintf(
-                        'Event persistence failed for run %s turn %d: %s',
-                        $nextState->runId,
-                        $nextState->turnNo,
-                        $exception->getMessage(),
-                    ),
-                    previous: $exception,
-                );
+                throw new \RuntimeException(\sprintf('Event persistence failed for run %s turn %d: %s', $nextState->runId, $nextState->turnNo, $exception->getMessage()), previous: $exception);
             }
 
             if ($eventsPersisted) {

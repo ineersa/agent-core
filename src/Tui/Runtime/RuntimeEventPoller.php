@@ -112,7 +112,7 @@ final class RuntimeEventPoller
                 // The poller will retry; if the issue persists, the
                 // error block below kicks in at count=3.
                 if (1 === $state->runtimePollErrorCount) {
-                    $state->lastRuntimePollError = 'Polling issue (' . $e->getMessage() . ') — retrying...';
+                    $state->lastRuntimePollError = 'Polling issue ('.$e->getMessage().') — retrying...';
                 }
 
                 return null;

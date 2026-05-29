@@ -51,8 +51,8 @@ final class RuntimeErrorCaptureService implements LoggerAwareInterface
     /**
      * Handle a caught Throwable with the given context.
      *
-     * @param \Throwable $exception The caught throwable
-     * @param string     $context   Human-readable operation identifier for logging
+     * @param \Throwable           $exception  The caught throwable
+     * @param string               $context    Human-readable operation identifier for logging
      * @param array<string, mixed> $logContext Additional structured context for log entry
      *
      * @throws \Throwable Always rethrows when capture is disabled
@@ -88,8 +88,8 @@ final class RuntimeErrorCaptureService implements LoggerAwareInterface
      * log line parsing, optional observer hooks) that must never crash
      * the runtime regardless of capture mode.
      *
-     * @param \Throwable $exception The caught throwable
-     * @param string     $context   Human-readable operation identifier
+     * @param \Throwable           $exception  The caught throwable
+     * @param string               $context    Human-readable operation identifier
      * @param array<string, mixed> $logContext
      */
     public function handleDegradation(\Throwable $exception, string $context, array $logContext = []): void

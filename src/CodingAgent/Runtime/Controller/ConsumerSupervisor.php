@@ -108,15 +108,7 @@ final class ConsumerSupervisor
             // If we reach here, capture is enabled — throw so the
             // controller stops launching and reports the error. This
             // prevents the "controller ready but nothing works" hang.
-            throw new \RuntimeException(
-                \sprintf(
-                    'Failed to launch messenger consumer for transport "%s" instance %d: %s',
-                    $transportName,
-                    $instanceId,
-                    $e->getMessage(),
-                ),
-                previous: $e,
-            );
+            throw new \RuntimeException(\sprintf('Failed to launch messenger consumer for transport "%s" instance %d: %s', $transportName, $instanceId, $e->getMessage()), previous: $e);
         }
 
         $key = $this->consumerKey($transportName, $instanceId);

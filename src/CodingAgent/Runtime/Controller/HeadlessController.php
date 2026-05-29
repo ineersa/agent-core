@@ -59,6 +59,7 @@ final class HeadlessController
 
     /** 5s consumer supervision interval. */
     private const float SUPERVISE_INTERVAL = 5.0;
+    private const int MAX_CONSECUTIVE_BAD_LLM_LINES = 10;
 
     /** @var resource|null */
     private $stdout;
@@ -70,7 +71,6 @@ final class HeadlessController
 
     /** Consecutive unparseable LLM stdout lines for error threshold. */
     private int $consecutiveBadLlmLines = 0;
-    private const int MAX_CONSECUTIVE_BAD_LLM_LINES = 10;
 
     /**
      * Session identifier from HATFIELD_SESSION_ID env var.
@@ -223,7 +223,7 @@ final class HeadlessController
                         runId: $runId,
                         seq: 0,
                         payload: [
-                            'error' => 'Event drain failed: ' . $e->getMessage(),
+                            'error' => 'Event drain failed: '.$e->getMessage(),
                             'run_id' => $runId,
                         ],
                     ));

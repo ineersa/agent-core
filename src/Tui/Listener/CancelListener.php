@@ -62,8 +62,8 @@ final class CancelListener implements TuiListenerRegistrar
                         kind: TranscriptBlockKindEnum::Error,
                         runId: $state->handle->runId,
                         seq: $state->lastSeq + 1,
-                        text: 'Cancel failed: ' . $e->getMessage()
-                            . ' The runtime process may have crashed. Please restart the agent.',
+                        text: 'Cancel failed: '.$e->getMessage()
+                            .' The runtime process may have crashed. Please restart the agent.',
                         meta: ['exception' => $e::class],
                     );
                     $state->transcript[] = $block;
