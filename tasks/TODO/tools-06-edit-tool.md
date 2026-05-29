@@ -20,7 +20,7 @@ Scope:
 - Check cancellation via `CancellationGuard` before mutating the target file.
 - Require target file to exist; creation belongs to `write`.
 - Use `PatchRunner` for dry-run + apply.
-- After successful apply, compare old vs new content, calculate additions/deletions or use `diff -u` output for stats.
+- After successful apply, compare old vs new content, use `diff -u` output for stats.
 - Atomically replace target with temp output after successful apply.
 - Return success text: `Applied patch to <path> (N additions, M deletions)`.
 - Return patch stderr/stdout verbatim on failure so the model can correct and retry.

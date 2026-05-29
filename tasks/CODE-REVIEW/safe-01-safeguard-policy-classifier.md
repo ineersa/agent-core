@@ -82,14 +82,27 @@ Depends on: none strictly.
 - Validation with Castor: `castor test --filter SafeGuard`; `castor deptrac`.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: CODE-REVIEW
+Branch: task/safe-01-safeguard-policy-classifier
+Worktree: /home/ineersa/projects/agent-core-worktrees/safe-01-safeguard-policy-classifier
 Fork run:
-PR URL:
-PR Status:
-Started:
+PR URL: https://github.com/ineersa/agent-core/pull/68
+PR Status: open
+Started: 2026-05-29T22:58:17.134Z
 Completed:
 
 ## Work log
 - Created: 2026-05-29T20:50:06.010Z
+
+## Task workflow update - 2026-05-29T22:58:17.134Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/safe-01-safeguard-policy-classifier.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/safe-01-safeguard-policy-classifier.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/safe-01-safeguard-policy-classifier.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/safe-01-safeguard-policy-classifier.
+
+## Task workflow update - 2026-05-29T23:06:08.609Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/safe-01-safeguard-policy-classifier to origin.
+- branch 'task/safe-01-safeguard-policy-classifier' set up to track 'origin/task/safe-01-safeguard-policy-classifier'.
+- Created PR: https://github.com/ineersa/agent-core/pull/68
