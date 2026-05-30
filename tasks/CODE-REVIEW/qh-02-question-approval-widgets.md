@@ -90,12 +90,12 @@ Update `TuiQuestion` ruleset to allow needed layers. `TuiScreen` may need `TuiQu
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/qh-02-question-approval-widgets
 Worktree: /home/ineersa/projects/agent-core-worktrees/qh-02-question-approval-widgets
-Fork run: tpnta6q1pnb0
-PR URL: https://github.com/ineersa/agent-core/pull/77
-PR Status: closed
+Fork run: 2vgd139wwmnp
+PR URL: https://github.com/ineersa/agent-core/pull/78
+PR Status: open
 Started: 2026-05-30T22:26:13.282Z
 Completed:
 
@@ -106,3 +106,19 @@ Completed:
 
 ## Task workflow update - 2026-05-30T22:54:22.894Z
 - Moved CODE-REVIEW → IN-PROGRESS.
+
+## Task workflow update - 2026-05-30T23:00:43.788Z
+- Recorded fork run: i62t71teprw1
+- Validation: castor cs-check → ok; castor test --filter=Question → 43 tests, 153 assertions, 0 failures; castor deptrac → 0 violations
+- Summary: Rewrote QH-02 (merged with QH-03): QuestionController following ModelPickerController pattern. SelectListWidget for Confirm/Choice/Approval with allowOther "Type your answer" option. TextWidget banner for Text kind. SubmitListener intercepts editor submit when question active. Dynamic tui->add()/remove(), no ChatScreen modifications. 43 tests/153 assertions, 0 deptrac violations.
+
+## Task workflow update - 2026-05-30T23:02:16.887Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/qh-02-question-approval-widgets to origin.
+- branch 'task/qh-02-question-approval-widgets' set up to track 'origin/task/qh-02-question-approval-widgets'.
+- Created PR: https://github.com/ineersa/agent-core/pull/78
+
+## Task workflow update - 2026-05-30T23:22:30.276Z
+- Recorded fork run: 2vgd139wwmnp
+- Validation: castor cs-fix → ok; castor cs-check → ok; castor test --filter=Question → 43 tests, 153 assertions, 0 failures; castor deptrac → 0 violations
+- Summary: Addressed all 4 PR #78 review comments: (1) replaced 3 nullable props with TuiRuntimeContext + constructor-injected QuestionCoordinator, (2) removed local variable aliases, (3) replaced static function + $onSelectController captures with non-static closures, (4) split 96-line open() into addHeader/addTextBanner/addSelectList/mount. Bonus fix: SubmitListener::register() now actually calls setRuntimeRefs() — previously open() silently no-op'd.
