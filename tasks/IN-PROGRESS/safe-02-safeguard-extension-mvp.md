@@ -25,14 +25,21 @@ Scope:
 - Validation with Castor: `castor test --filter SafeGuard`; `castor test --filter ToolHookDispatcher`; `castor deptrac`.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/safe-02-safeguard-extension-mvp
+Worktree: /home/ineersa/projects/agent-core-worktrees/safe-02-safeguard-extension-mvp
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-30T01:22:43.740Z
 Completed:
 
 ## Work log
 - Created: 2026-05-29T20:50:13.971Z
+
+## Task workflow update - 2026-05-30T01:22:43.740Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/safe-02-safeguard-extension-mvp.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/safe-02-safeguard-extension-mvp.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/safe-02-safeguard-extension-mvp.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/safe-02-safeguard-extension-mvp.
