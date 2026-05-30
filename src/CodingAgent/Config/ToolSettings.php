@@ -20,14 +20,19 @@ final readonly class ToolSettings implements ToolExecutionSettingsInterface
     public int $timeoutSeconds;
     public int $maxParallelism;
 
+    /** @var array<string, array{mode?: string|null, timeout_seconds?: int|null}> */
+    public array $overrides;
+
     public function __construct(
         ?string $mode = null,
         ?int $timeoutSeconds = null,
         ?int $maxParallelism = null,
+        array $overrides = [],
     ) {
         $this->mode = $mode ?? ToolExecutionConfig::DEFAULT_MODE;
         $this->timeoutSeconds = $timeoutSeconds ?? ToolExecutionConfig::DEFAULT_TIMEOUT_SECONDS;
         $this->maxParallelism = $maxParallelism ?? ToolExecutionConfig::DEFAULT_MAX_PARALLELISM;
+        $this->overrides = $overrides;
     }
 
     /**
@@ -41,6 +46,7 @@ final readonly class ToolSettings implements ToolExecutionSettingsInterface
             mode: $execution->defaultMode,
             timeoutSeconds: $execution->timeoutSeconds,
             maxParallelism: $execution->maxParallelism,
+            overrides: $execution->overrides,
         );
     }
 
@@ -57,5 +63,10 @@ final readonly class ToolSettings implements ToolExecutionSettingsInterface
     public function maxParallelism(): int
     {
         return $this->maxParallelism;
+    }
+
+    public function executionOverrides(): array
+    {
+        return $this->overrides;
     }
 }

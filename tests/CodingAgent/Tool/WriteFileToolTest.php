@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Tool\HatfieldToolProviderInterface;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolDefinitionDTO;
@@ -201,7 +202,7 @@ final class WriteFileToolTest extends TestCase
 
     public function testWriteThrowsOnMissingPath(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('"path" argument is required');
 
         ($this->writeFileTool)(['content' => 'some content']);
@@ -209,7 +210,7 @@ final class WriteFileToolTest extends TestCase
 
     public function testWriteThrowsOnEmptyPath(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('"path" argument is required');
 
         ($this->writeFileTool)(['path' => '', 'content' => 'content']);
@@ -217,7 +218,7 @@ final class WriteFileToolTest extends TestCase
 
     public function testWriteThrowsOnNonStringPath(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('"path" argument is required');
 
         ($this->writeFileTool)(['path' => 42, 'content' => 'content']);
@@ -225,7 +226,7 @@ final class WriteFileToolTest extends TestCase
 
     public function testWriteThrowsOnMissingContent(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('"content" argument is required');
 
         ($this->writeFileTool)(['path' => $this->tmpDir.'/test.txt']);
@@ -233,7 +234,7 @@ final class WriteFileToolTest extends TestCase
 
     public function testWriteThrowsOnNonStringContent(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('"content" argument is required');
 
         ($this->writeFileTool)(['path' => $this->tmpDir.'/test.txt', 'content' => ['not', 'a', 'string']]);
@@ -244,7 +245,7 @@ final class WriteFileToolTest extends TestCase
         $existingFile = $this->tmpDir.'/existing_file.txt';
         file_put_contents($existingFile, 'I am a file, not a directory.');
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('Failed to write file');
 
         ($this->writeFileTool)(['path' => $existingFile.'/child.txt', 'content' => 'cannot create']);

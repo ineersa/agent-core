@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
@@ -132,6 +133,25 @@ final readonly class ExecuteToolCallWorker
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
             $this->metrics?->recordToolLatency($durationMs, true, false);
 
+            $errorType = $exception::class;
+            $details = [
+                'error_type' => $errorType,
+            ];
+
+            if ($exception instanceof ToolCallException) {
+                $details['retryable'] = $exception->retryable();
+                $details['hint'] = $exception->hint();
+            }
+
+            $error = [
+                'type' => $errorType,
+                'message' => $exception->getMessage(),
+            ];
+            if ($exception instanceof ToolCallException) {
+                $error['retryable'] = $exception->retryable();
+                $error['hint'] = $exception->hint();
+            }
+
             return new ToolCallResult(
                 runId: $message->runId(),
                 turnNo: $message->turnNo(),
@@ -146,17 +166,12 @@ final readonly class ExecuteToolCallWorker
                         'type' => 'text',
                         'text' => $exception->getMessage(),
                     ]],
-                    'details' => [
-                        'error_type' => $exception::class,
-                    ],
+                    'details' => $details,
                     'tool_idempotency_key' => $message->toolIdempotencyKey,
                     'mode' => $message->mode,
                 ],
                 isError: true,
-                error: [
-                    'type' => $exception::class,
-                    'message' => $exception->getMessage(),
-                ],
+                error: $error,
             );
         }
     }

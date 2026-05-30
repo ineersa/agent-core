@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Tool\EditFileTool;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
@@ -180,7 +181,7 @@ final class EditFileToolTest extends TestCase
         $patchNew = "something\nnew\ndifferent\n";
         $patch = $this->createUnifiedDiff($patchOld, $patchNew);
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('Patch dry-run failed');
 
         ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
@@ -200,9 +201,8 @@ final class EditFileToolTest extends TestCase
 +new
 DIFF;
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('does not exist');
-        $this->expectExceptionMessage('write tool');
 
         ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
     }
@@ -211,7 +211,7 @@ DIFF;
 
     public function testEditThrowsOnMissingPath(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('"path" argument is required');
 
         ($this->editFileTool)(['patch' => 'some diff content']);
@@ -219,7 +219,7 @@ DIFF;
 
     public function testEditThrowsOnEmptyPath(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('"path" argument is required');
 
         ($this->editFileTool)(['path' => '', 'patch' => 'diff']);
@@ -227,7 +227,7 @@ DIFF;
 
     public function testEditThrowsOnNonStringPath(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('"path" argument is required');
 
         ($this->editFileTool)(['path' => 42, 'patch' => 'diff']);
@@ -235,7 +235,7 @@ DIFF;
 
     public function testEditThrowsOnMissingPatch(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('"patch" argument is required');
 
         ($this->editFileTool)(['path' => $this->tmpDir.'/test.txt']);
@@ -243,7 +243,7 @@ DIFF;
 
     public function testEditThrowsOnNonStringPatch(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('"patch" argument is required');
 
         ($this->editFileTool)(['path' => $this->tmpDir.'/test.txt', 'patch' => ['not', 'a', 'string']]);

@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolIdempotencyKeyResolverInterface;
@@ -129,12 +130,29 @@ final class ToolExecutor implements ToolExecutorInterface
         try {
             $result = $this->executeToolCall($toolCall, $policy);
         } catch (\Throwable $exception) {
-            $result = $this->errorResult(
-                toolCallId: $toolCall->toolCallId,
-                toolName: $toolCall->toolName,
-                message: $exception->getMessage(),
-                details: ['error_type' => $exception::class],
-            );
+            if ($exception instanceof ToolCallException) {
+                $message = $exception->getMessage();
+                if (null !== $exception->hint()) {
+                    $message .= ' '.$exception->hint();
+                }
+                $result = $this->errorResult(
+                    toolCallId: $toolCall->toolCallId,
+                    toolName: $toolCall->toolName,
+                    message: $message,
+                    details: [
+                        'error_type' => ToolCallException::class,
+                        'retryable' => $exception->retryable(),
+                        'hint' => $exception->hint(),
+                    ],
+                );
+            } else {
+                $result = $this->errorResult(
+                    toolCallId: $toolCall->toolCallId,
+                    toolName: $toolCall->toolName,
+                    message: $exception->getMessage(),
+                    details: ['error_type' => $exception::class],
+                );
+            }
         }
 
         $durationMs = (hrtime(true) - $startedAt) / 1_000_000;

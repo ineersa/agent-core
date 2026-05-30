@@ -22,6 +22,7 @@ final readonly class ToolExecutionConfig
      * @param string $defaultMode    Default execution mode ('sequential' or 'parallel')
      * @param int    $timeoutSeconds Default timeout in seconds for tool execution
      * @param int    $maxParallelism Maximum concurrent tool calls
+     * @param array<string, array{mode?: string|null, timeout_seconds?: int|null}> $overrides Per-tool execution mode overrides
      */
     public function __construct(
         #[SerializedName('default_mode')]
@@ -32,6 +33,9 @@ final readonly class ToolExecutionConfig
 
         #[SerializedName('max_parallelism')]
         public int $maxParallelism = self::DEFAULT_MAX_PARALLELISM,
+
+        #[SerializedName('overrides')]
+        public array $overrides = [],
     ) {
     }
 }

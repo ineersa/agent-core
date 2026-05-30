@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Handler\ToolExecutor;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
@@ -334,6 +335,88 @@ final class ToolExecutorTest extends TestCase
 
     /* ───────── Context accessor ───────── */
 
+    /* ───────── ToolCallException handling ───────── */
+
+    public function testToolCallExceptionWithRetryableAndHintProducesStructuredDetails(): void
+    {
+        $toolbox = new ThrowingToolCallExceptionToolbox(false, 'Something went wrong', 'Try again with different input');
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel',
+            defaultTimeoutSeconds: 30,
+            maxParallelism: 4,
+            overrides: [],
+            toolbox: $toolbox,
+            resultStore: new ToolExecutionResultStore(),
+        );
+
+        $result = $executor->execute(new ToolCall(
+            toolCallId: 'call-tce-1',
+            toolName: 'some_tool',
+            arguments: ['x' => 1],
+            orderIndex: 0,
+        ));
+
+        self::assertTrue($result->isError);
+        self::assertIsArray($result->details);
+        self::assertSame('Try again with different input', $result->details['hint']);
+        self::assertFalse($result->details['retryable']);
+        self::assertStringContainsString('Something went wrong', $result->content[0]['text']);
+        self::assertStringContainsString('Try again with different input', $result->content[0]['text']);
+    }
+
+    public function testToolCallExceptionWithRetryableTrueProducesRetryableDetails(): void
+    {
+        $toolbox = new ThrowingToolCallExceptionToolbox(true, 'Temporary failure');
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel',
+            defaultTimeoutSeconds: 30,
+            maxParallelism: 4,
+            overrides: [],
+            toolbox: $toolbox,
+            resultStore: new ToolExecutionResultStore(),
+        );
+
+        $result = $executor->execute(new ToolCall(
+            toolCallId: 'call-tce-2',
+            toolName: 'some_tool',
+            arguments: ['x' => 1],
+            orderIndex: 0,
+        ));
+
+        self::assertTrue($result->isError);
+        self::assertTrue($result->details['retryable']);
+        self::assertNull($result->details['hint']);
+        self::assertStringContainsString('Temporary failure', $result->content[0]['text']);
+    }
+
+    public function testRegularRuntimeExceptionStillProducesPlainErrorResult(): void
+    {
+        $toolbox = new ThrowingToolCallExceptionToolbox(false, 'Boom!', null, false);
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel',
+            defaultTimeoutSeconds: 30,
+            maxParallelism: 4,
+            overrides: [],
+            toolbox: $toolbox,
+            resultStore: new ToolExecutionResultStore(),
+        );
+
+        $result = $executor->execute(new ToolCall(
+            toolCallId: 'call-re-1',
+            toolName: 'some_tool',
+            arguments: ['x' => 1],
+            orderIndex: 0,
+        ));
+
+        self::assertTrue($result->isError);
+        self::assertIsArray($result->details);
+        self::assertArrayHasKey('error_type', $result->details);
+        self::assertSame(\RuntimeException::class, $result->details['error_type']);
+        self::assertArrayNotHasKey('retryable', $result->details);
+        self::assertArrayNotHasKey('hint', $result->details);
+        self::assertStringContainsString('Boom!', $result->content[0]['text']);
+    }
+
     public function testContextAccessorSetsCorrectValues(): void
     {
         $accessor = new StackToolExecutionContextAccessor();
@@ -390,6 +473,31 @@ final class ContextCheckingToolbox implements ToolboxInterface
         assert(false === $context->cancellationToken()->isCancellationRequested());
 
         return new SymfonyToolResult($toolCall, ['status' => 'ok']);
+    }
+}
+
+final class ThrowingToolCallExceptionToolbox implements ToolboxInterface
+{
+    public function __construct(
+        private readonly bool $retryable,
+        private readonly string $message,
+        private readonly ?string $hint = null,
+        private readonly bool $useToolCallException = true,
+    ) {
+    }
+
+    public function getTools(): array
+    {
+        return [];
+    }
+
+    public function execute(SymfonyToolCall $toolCall): SymfonyToolResult
+    {
+        if ($this->useToolCallException) {
+            throw new ToolCallException($this->message, retryable: $this->retryable, hint: $this->hint);
+        }
+
+        throw new \RuntimeException($this->message);
     }
 }
 

@@ -215,6 +215,29 @@ dispatch pipeline.
 
 ---
 
+### `tools.execution.overrides`
+
+Per-tool execution mode overrides. These specify an execution mode for
+specific tools that overrides the `default_mode`. File-mutation tools
+(`write`, `edit`) must always run sequentially to prevent race conditions
+on concurrent writes or edits to the same file.
+
+**Example:**
+
+```yaml
+tools:
+    execution:
+        overrides:
+            write:
+                mode: sequential
+            edit:
+                mode: sequential
+```
+
+**Default:** Empty (no overrides)
+
+---
+
 ### `tools.output_cap.path`
 
 Storage directory for persisted oversized tool output. Tool output that
