@@ -286,6 +286,22 @@ final class BackgroundProcessManagerTest extends TestCase
         self::assertTrue($found);
     }
 
+    public function testStopTermOnlyWhenProcessFinishesDuringGrace(): void
+    {
+        // With the procCache removed, after TERM is sent and the grace window
+        // passes, isAlive() performs a fresh /proc/<pid> check. If a short-lived
+        // process (sleep 3) finishes naturally within the grace window (5s),
+        // no KILL is sent — only TERM.
+        $this->createManager(stopGraceSeconds: 5);
+        $result = $this->manager->start('sleep 3');
+        $stopResult = $this->manager->stop($result['pid']);
+
+        self::assertTrue($stopResult['stopped_by_user']);
+        self::assertFalse($stopResult['already_finished']);
+        self::assertSame('term', $stopResult['signal_sent'],
+            'Expected term-only signal: sleep 3 should finish within 5s grace window');
+    }
+
     /* ── cleanupStale() tests ── */
 
     public function testCleanupStaleRemovesOldFinishedProcesses(): void
@@ -412,11 +428,11 @@ final class BackgroundProcessManagerTest extends TestCase
 
     /* ── Helpers ── */
 
-    private function assertLogEventuallyContains(string $logPath, string $expected, int $maxWaitMs = 2000): void
+    private function assertLogEventuallyContains(string $logPath, string $expected, int $maxWaitMicro = 2_000_000): void
     {
         $waited = 0;
-        $step = 100_000; // 100ms
-        while ($waited < $maxWaitMs * 1000) {
+        $step = 100_000; // 100ms in microseconds
+        while ($waited < $maxWaitMicro) {
             if (is_file($logPath)) {
                 $content = @file_get_contents($logPath);
                 if (false !== $content && str_contains($content, $expected)) {
@@ -429,7 +445,7 @@ final class BackgroundProcessManagerTest extends TestCase
             $waited += $step;
         }
 
-        self::fail(\sprintf('Log file "%s" did not contain expected content "%s" within %dms.', $logPath, $expected, $maxWaitMs));
+        self::fail(\sprintf('Log file "%s" did not contain expected content "%s" within %d \u{b5}s.', $logPath, $expected, $maxWaitMicro));
     }
 
     private function isProcessAlive(int $pid): bool

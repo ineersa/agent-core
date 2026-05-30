@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tool;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception as DbalException;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
+use Psr\Log\LoggerInterface;
 
 /**
  * Durable, DBAL-backed manager for background processes.
@@ -39,12 +40,10 @@ final class BackgroundProcessManager
 
     private bool $tableInitialized = false;
 
-    /** @var array<int, bool> Cache of /proc/<pid> existence checks within one request */
-    private array $procCache = [];
-
     public function __construct(
         private readonly Connection $connection,
         private readonly BackgroundProcessConfig $config,
+        private readonly ?LoggerInterface $logger = null,
     ) {
     }
 
@@ -62,6 +61,11 @@ final class BackgroundProcessManager
      *                        Must already be shell-escaped if it contains
      *                        user-controlled tokens.
      *
+     * @warning This method accepts raw shell commands and executes them via
+     *          bash -c. Callers MUST escape all user-controlled tokens with
+     *          escapeshellarg() before passing to start(). Do not pass
+     *          unsanitized input or arguments as a flat string.
+     *
      * @return array{id: int, pid: int, pgid: int|null, command: string,
      *               log_path: string, started_at: string, status: string}
      *
@@ -74,11 +78,11 @@ final class BackgroundProcessManager
         // Ensure storage directory exists
         $bgDir = $this->ensureStorageDir();
 
-        // Generate unique record ID and file paths
-        $recordId = bin2hex(random_bytes(8));
-        $pidFile = $bgDir.'/'.$recordId.'.pid';
-        $statusFile = $bgDir.'/'.$recordId.'.status';
-        $logFile = $bgDir.'/'.$recordId.'.log';
+        // Generate unique file prefix and file paths
+        $filePrefix = bin2hex(random_bytes(8));
+        $pidFile = $bgDir.'/'.$filePrefix.'.pid';
+        $statusFile = $bgDir.'/'.$filePrefix.'.status';
+        $logFile = $bgDir.'/'.$filePrefix.'.log';
 
         $now = $this->nowIso();
 
@@ -97,15 +101,25 @@ final class BackgroundProcessManager
             escapeshellarg($statusFile),
         );
 
-        // Background with setsid (process group) and capture PID via $!
+        // Attempt to launch with setsid (process group) and capture PID via $!
         $launcher = 'setsid bash -c '.escapeshellarg($shellCode).' & echo $!';
 
         $output = [];
         $exitCode = -1;
         exec($launcher, $output, $exitCode);
 
-        if (0 !== $exitCode || [] === $output) {
-            // Fallback: try without setsid (process-group management degraded)
+        if (0 === $exitCode && [] !== $output) {
+            // setsid succeeded — determine PGID for group signalling
+            $pid = (int) $output[0];
+            if ($pid <= 0) {
+                throw new \RuntimeException('Failed to launch background process: invalid PID ('.$output[0].').');
+            }
+            $pgid = $this->resolvePgid($pid);
+        } else {
+            // Fallback: try without setsid (single-PID management, no group termination).
+            // IMPORTANT: on the fallback path we must NOT record PGID, because the
+            // child inherits the PHP worker's process group. Recording that PGID would
+            // cause stop() to signal the entire worker process group (kill -TERM -PGID).
             $launcher = 'bash -c '.escapeshellarg($shellCode).' & echo $!';
             $output = [];
             $exitCode = -1;
@@ -114,17 +128,13 @@ final class BackgroundProcessManager
             if (0 !== $exitCode || [] === $output) {
                 throw new \RuntimeException('Failed to launch background process: exec returned exit code '.$exitCode);
             }
-        }
 
-        // By this point $output is non-empty ([] === $output check above)
-        $pid = (int) $output[0];
-        if ($pid <= 0) {
-            throw new \RuntimeException('Failed to launch background process: invalid PID ('.$output[0].').');
+            $pid = (int) $output[0];
+            if ($pid <= 0) {
+                throw new \RuntimeException('Failed to launch background process: invalid PID ('.$output[0].').');
+            }
+            $pgid = null; // no process group — single-PID only
         }
-
-        // Determine PGID: with setsid, PID === PGID (session leader).
-        // Without setsid, we read the PGID via ps or leave null.
-        $pgid = $this->resolvePgid($pid);
 
         // Insert record into DB
         try {
@@ -137,13 +147,22 @@ final class BackgroundProcessManager
                 [$pid, $pgid, $command, $logFile, $statusFile, $now, $now],
             );
 
-            $recordId = (int) $this->connection->lastInsertId();
+            $dbId = (int) $this->connection->lastInsertId();
         } catch (DbalException $e) {
             throw new \RuntimeException('Failed to insert background process record.', 0, $e);
         }
 
+        $this->logger?->info('Background process started', [
+            'component' => 'tool.background_process',
+            'event_type' => 'background_process.started',
+            'process_pid' => $pid,
+            'process_pgid' => $pgid,
+            'has_group_termination' => null !== $pgid,
+            'log_path' => $logFile,
+        ]);
+
         return [
-            'id' => $recordId,
+            'id' => $dbId,
             'pid' => $pid,
             'pgid' => $pgid,
             'command' => $command,
@@ -348,6 +367,15 @@ final class BackgroundProcessManager
             }
         }
 
+        $this->logger?->info('Background process stopped', [
+            'component' => 'tool.background_process',
+            'event_type' => 'background_process.stopped',
+            'process_pid' => $pid,
+            'process_pgid' => $pgid,
+            'signal_sent' => $signalSent,
+            'grace_seconds' => $graceSeconds,
+        ]);
+
         // Mark as stopped by user
         $now = $this->nowIso();
         try {
@@ -426,7 +454,13 @@ final class BackgroundProcessManager
                 );
                 ++$count;
             } catch (DbalException $e) {
-                throw new \RuntimeException('Failed to delete stale background process record.', 0, $e);
+                // Log and continue — one failure should not block the rest of cleanup
+                $this->logger?->warning('Failed to delete stale background process record, continuing cleanup', [
+                    'component' => 'tool.background_process',
+                    'event_type' => 'background_process.cleanup_failed',
+                    'record_id' => (int) $row['id'],
+                    'error' => $e->getMessage(),
+                ]);
             }
         }
 
@@ -580,6 +614,12 @@ final class BackgroundProcessManager
         $row['finished_at'] = $now;
         $row['exit_code'] = null;
 
+        $this->logger?->info('Background process finished uncleanly (no status file)', [
+            'component' => 'tool.background_process',
+            'event_type' => 'background_process.finished_unclean',
+            'process_pid' => $pid,
+        ]);
+
         try {
             $this->connection->executeStatement(
                 \sprintf(
@@ -597,26 +637,22 @@ final class BackgroundProcessManager
 
     /**
      * Check if a process is alive by examining /proc/<pid>.
+     *
+     * No caching: every call performs a fresh /proc/<pid> check so that
+     * stop() correctly detects TERM-induced termination after the grace
+     * window rather than returning a stale cached result.
      */
     private function isAlive(int $pid): bool
     {
-        if (isset($this->procCache[$pid])) {
-            return $this->procCache[$pid];
-        }
-
         // Use /proc/<pid> on Linux; fallback to kill -0
         if (is_dir('/proc/'.$pid)) {
-            $this->procCache[$pid] = true;
-
             return true;
         }
 
         // Fallback: kill -0
         @exec('kill -0 '.$pid.' 2>/dev/null', $_, $exitCode);
-        $alive = (0 === $exitCode);
-        $this->procCache[$pid] = $alive;
 
-        return $alive;
+        return 0 === $exitCode;
     }
 
     /**
