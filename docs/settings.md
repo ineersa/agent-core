@@ -334,7 +334,8 @@ register tools and other integrations.
 Extension packages installed via Composer under `.hatfield/extensions/vendor/`
 are autoloaded automatically at startup when this list is non-empty.
 
-**Default:** `[]` (no extensions enabled).
+**Default:** The built-in SafeGuard extension is enabled by default
+(`Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension`).
 
 **Example:**
 
@@ -346,6 +347,54 @@ extensions:
 
 See `.pi/plans/extension-api-phar-plan.md` for the full extension loading
 and isolation model.
+
+### `extensions.settings`
+
+Generic settings map exposed to extensions through the Extension API
+via `ExtensionApiInterface::getSettings(string $key): array`.
+
+Each extension reads its own settings section by key (e.g. SafeGuard
+reads `extensions.settings.safe_guard`).
+
+**Default:** `{}` (empty — no settings).
+
+### `extensions.settings.safe_guard`
+
+SafeGuard policy configuration. All fields are optional — the defaults
+provide sensible security with no user intervention.
+
+Settings are read at extension load time through
+`ExtensionApiInterface::getSettings('safe_guard')`.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `tool_names` | map | `{bash: bash, write: write, edit: edit, read: read}` | Maps internal tool labels to tool call names. Change if you register custom aliases. |
+| `allow_command_patterns` | list | `[]` | Command substrings that bypass destructive/dangerous checks (case-insensitive substring match). |
+| `allow_write_outside_cwd` | list | `[]` | Absolute paths where writes/edits outside the project CWD are always allowed. |
+| `allow_destructive_in_paths` | list | `[]` | Reserved for serialization compatibility. Not currently wired to classification logic. |
+| `protected_read_patterns` | list | `[]` | Additional filename/path patterns requiring confirmation to read. Added **on top** of built-in defaults — defaults cannot be removed. |
+| `dangerous_command_patterns` | list | `[]` | Extra command substrings treated as dangerous, added to built-in regexes. |
+
+**Example:**
+
+```yaml
+extensions:
+    settings:
+        safe_guard:
+            tool_names:
+                bash: bash
+                write: write
+                edit: edit
+                read: read
+            allow_command_patterns: []
+            allow_write_outside_cwd:
+                - /home/user/shared-tmp
+            protected_read_patterns:
+                - secrets.json
+                - .env.production
+            dangerous_command_patterns:
+                - python -c "import os"
+```
 
 ### `ai.default_model`
 
@@ -694,3 +743,100 @@ version control.
 The committed `.hatfield/settings.yaml` in this project serves as both
 the project settings file and the example. Customize its values for
 your workflow.
+
+## SafeGuard extension
+
+SafeGuard is a built-in extension that blocks dangerous operations to
+protect the user from accidental data loss, privilege escalation, or
+sensitive information exposure. It is **enabled by default** via
+`extensions.enabled` in `config/hatfield.defaults.yaml`.
+
+SafeGuard registers a `tool_call` hook through the Extension API
+(`Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface`) that intercepts
+`bash`, `write`, `edit`, and `read` tool calls before execution and
+returns a structured denial result to the LLM when a policy violation
+is detected.
+
+### Classification rules
+
+#### Hard-blocked operations (never negotiable)
+
+These operations are always denied regardless of policy:
+
+- `sudo`
+- `su`
+- Any command attempting privilege escalation that cannot be made safe
+  by allowlisting
+
+#### Dangerous commands
+
+Blocked unless allowlisted via `allow_command_patterns`:
+
+- `rm`, `rmdir`
+- `git clean`, `git reset --hard`, `git checkout -- .`
+- `mkfs`, `dd if=`
+- `chmod` with a 3- or 4-digit octal mode granting 777
+- `chown -R`, `chown -r`
+- `mv ... /dev/null`
+- Shell redirection to `/dev/null` combined with destructive commands
+
+#### Dangerous git operations
+
+Blocked unless allowlisted:
+
+- `git push --force`, `git push -f`
+- `git branch -d`, `git branch -D`
+- `git tag -d`
+- `git rebase`
+- `git reflog expire`
+
+#### Sensitive information exposure
+
+Blocked unless allowlisted via `allow_command_patterns`:
+
+- `env` (and piped variants like `env | grep`)
+- `printenv` (and piped variants)
+
+#### Protected reads
+
+Blocked unless allowlisted via `allow_command_patterns`. Built-in
+defaults (always active, cannot be removed):
+
+- `.env.local`, `.env.dev.local`, `.env.prod.local`,
+  `.env.staging.local`, `.env.test.local`
+- `auth.json`, `credentials.json`, `.netrc`, `.npmrc`
+- `.bashrc`, `.zshrc`, `.bash_profile`, `.zprofile`, `.profile`,
+  `.bash_history`, `.zsh_history`
+- `.ssh/id_*`, `.ssh/config`, `.ssh/known_hosts`
+- `.aws/credentials`, `.aws/config`
+- `.kube/config`
+- `.gcp/`, `.config/gcloud/`, `.azure/`
+- `*.pem`, `*.pkcs12`, `*.p12`, `*.pfx`
+- Files containing `service-account` in their path
+
+Additional patterns can be added via
+`extensions.settings.safe_guard.protected_read_patterns` but the
+built-in list cannot be removed.
+
+#### Writes and edits outside CWD
+
+Writes (`write` tool) and edits (`edit` tool) targeting paths outside
+the current working directory are blocked by default. They can be
+allowlisted via
+`extensions.settings.safe_guard.allow_write_outside_cwd` by listing
+the absolute paths where writes should be permitted.
+
+### MVP behaviour
+
+In the current version, SafeGuard blocks policy violations with a
+structured denial result returned to the LLM. The response includes
+`denied: true`, a `reason` code (`safe_guard_policy`), a human-readable
+`message` explaining the block, and a `category` identifying the rule
+triggered (e.g. `dangerous_command`, `protected_read`,
+`write_outside_cwd`).
+
+**Interactive approval prompts** (Block / Allow once / Always allow)
+are not yet implemented. They will be added in a future phase
+(planned as SAFE-04) that requires the QH question/approval widget
+infrastructure in the TUI. Until then, all blocks are final for the
+duration of the session — no user prompting occurs.

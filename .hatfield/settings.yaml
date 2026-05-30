@@ -102,6 +102,26 @@ tui:
 # (one file per day). The log directory, minimum level, and rotation count
 # are all configurable.
 #
+# ---------------------------------------------------------------------------
+# Extensions
+# ---------------------------------------------------------------------------
+#
+# SafeGuard is enabled by default (see config/hatfield.defaults.yaml).
+# Uncomment below to customize SafeGuard policy:
+#
+# extensions:
+#     settings:
+#         safe_guard:
+#             tool_names:
+#                 bash: bash
+#                 write: write
+#                 edit: edit
+#                 read: read
+#             allow_command_patterns: []
+#             allow_write_outside_cwd: []
+#             protected_read_patterns: []
+#             dangerous_command_patterns: []
+
 logging:
 #     # Log storage directory. Relative paths resolve against the active
 #     # project CWD. Supports ~ (home) and %kernel.project_dir%.
