@@ -41,11 +41,11 @@ use Psr\Log\LoggerInterface;
  * StackToolExecutionContextAccessor so operations are scoped.
  *
  * Shutdown handling:
- * The constructor registers a PHP shutdown function via
- * register_shutdown_function() that calls shutdownCleanup() with
- * no session filter, killing ALL running background processes when
- * this PHP process exits. This covers both graceful exit (Ctrl+C,
- * quit command, normal script end) and fatal errors.
+ * Call registerShutdownHandler() from production wiring (services.yaml)
+ * to register a PHP shutdown function that calls shutdownCleanup() with
+ * no session filter, killing ALL running background processes when this
+ * PHP process exits. This covers graceful exit (Ctrl+C, quit command,
+ * normal script end) and fatal errors.
  *
  * Crash resilience: SIGKILL, OOM, or segfault bypass the shutdown
  * function, so background processes survive unexpected controller
@@ -60,18 +60,39 @@ final class BackgroundProcessManager
     private const string TABLE_NAME = 'background_process';
 
     private bool $tableInitialized = false;
+    private bool $shutdownRegistered = false;
 
     public function __construct(
         private readonly Connection $connection,
         private readonly BackgroundProcessConfig $config,
         private readonly ?LoggerInterface $logger = null,
     ) {
-        // Register a PHP shutdown function that terminates all running
-        // background processes when this PHP process exits.
-        // On graceful shutdown (exit, Ctrl+C, fatal error), this calls
-        // shutdownCleanup() which TERM→grace→KILLs all tracked processes.
-        // On hard crash (SIGKILL, OOM, segfault), the shutdown function
-        // does not fire — BG processes survive for inspection or resume.
+        // Shutdown handler is NOT registered here. Call
+        // registerShutdownHandler() from production wiring
+        // (config/services.yaml) to enable automatic cleanup.
+        // This avoids accumulating shutdown callbacks in tests
+        // where many manager instances are constructed.
+    }
+
+    /**
+     * Register a PHP shutdown function that terminates all running
+     * background processes when this PHP process exits.
+     *
+     * On graceful shutdown (exit, Ctrl+C, fatal error), this calls
+     * shutdownCleanup() which TERM→grace→KILLs all tracked processes.
+     * On hard crash (SIGKILL, OOM, segfault), the shutdown function
+     * does not fire — BG processes survive for inspection or resume.
+     *
+     * Safe to call multiple times — idempotent.
+     */
+    public function registerShutdownHandler(): void
+    {
+        if ($this->shutdownRegistered) {
+            return;
+        }
+
+        $this->shutdownRegistered = true;
+
         register_shutdown_function(function (): void {
             $this->shutdownCleanup();
         });
@@ -974,8 +995,10 @@ final class BackgroundProcessManager
                 $this->connection->executeStatement(
                     \sprintf('ALTER TABLE %s ADD COLUMN session_id TEXT NOT NULL DEFAULT \'\'', self::TABLE_NAME),
                 );
-            } catch (DbalException) {
-                // Column already exists — ignore
+            } catch (DbalException $e) {
+                $this->logger?->debug('background_process migration: column likely already exists', [
+                    'exception' => $e->getMessage(),
+                ]);
             }
 
             $this->tableInitialized = true;

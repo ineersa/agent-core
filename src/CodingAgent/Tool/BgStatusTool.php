@@ -156,7 +156,7 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
             $sessionId = $this->contextAccessor->current()?->runId();
             $result = $this->manager->readLogTail($pid, $this->config->logTailChars, $sessionId);
         } catch (\RuntimeException $e) {
-            throw new ToolCallException($e->getMessage(), retryable: false, hint: 'The process may no longer be tracked. Run bg_status list to see available processes.');
+            throw new ToolCallException($e->getMessage(), retryable: false, hint: 'The process may have already finished or belongs to a different session. Run bg_status list to see available processes for this session.');
         }
 
         $lines = [];

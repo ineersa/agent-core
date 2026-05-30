@@ -145,6 +145,12 @@ services:
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 
+  # BackgroundProcessManager — register shutdown handler in production so
+  # tests (which construct the manager directly) don't accumulate callbacks.
+  Ineersa\CodingAgent\Tool\BackgroundProcessManager:
+    calls:
+      - registerShutdownHandler: []
+
   # CodingAgentImageCapabilityChecker — wraps HatfieldModelCatalog from AppConfig.
   Ineersa\CodingAgent\Tool\ImageProcessing\CodingAgentImageCapabilityChecker:
     factory: ['Ineersa\CodingAgent\Tool\ImageProcessing\CodingAgentImageCapabilityChecker', 'fromAppConfig']
