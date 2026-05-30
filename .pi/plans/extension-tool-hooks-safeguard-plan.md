@@ -704,6 +704,8 @@ Do not bundle these into the SafeGuard MVP.
 5. `SAFE-01 SafeGuard classifier and policy store`
 6. `SAFE-02 SafeGuard extension hook integration`
 7. `SAFE-03 SafeGuard docs/settings/tests`
-8. `TUI-APPROVAL-01 Common approval prompt component`
-9. `EXT-HOOK-05 Extension tool approval decision bridge`
-10. `SAFE-04 SafeGuard policy actions over generic extension approvals`
+8. `EXT-HOOK-05 Extension tool approval via existing HITL interrupt flow`
+9. `SAFE-04 SafeGuard approval flow over existing HITL interrupt`
+
+> **Note**: TUI-APPROVAL-01 was removed. The existing HITL `waiting_human` → `answer_human` flow
+> handles approval prompts natively. No new TUI component or runtime plumbing needed.
