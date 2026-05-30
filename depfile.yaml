@@ -270,6 +270,7 @@ parameters:
       - TuiHeader
       - TuiTranscript
       - TuiStatus
+      - TuiQuestion
       - TuiEditor
       - TuiFooter
       - TuiWidget
@@ -335,7 +336,9 @@ parameters:
       - SymfonyConsole
       - SymfonyYaml
 
-    TuiQuestion: ~
+    TuiQuestion:
+      - TuiWidget
+      - TuiTheme
 
     AppRuntimeInternals:
       - AppRuntimeContract

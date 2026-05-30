@@ -13,6 +13,8 @@ use Ineersa\Tui\Footer\FooterSegment;
 use Ineersa\Tui\Footer\FooterSegmentProvider;
 use Ineersa\Tui\Header\HeaderWidget;
 use Ineersa\Tui\Layout\TuiSlotRegistry;
+use Ineersa\Tui\Question\QuestionRequest;
+use Ineersa\Tui\Question\QuestionWidget;
 use Ineersa\Tui\Status\StatusPanelWidget;
 use Ineersa\Tui\Status\WorkingStatusWidget;
 use Ineersa\Tui\Theme\ThemeColorEnum;
@@ -63,6 +65,7 @@ final class ChatScreen
     private readonly LiveTextWidget $pendingWidget;
     private readonly LiveTextWidget $workingWidget;
     private readonly LiveTextWidget $statusPanelWidget;
+    private readonly LiveTextWidget $questionWidget;
     private readonly LiveTextWidget $aboveEditorWidget;
     private readonly LiveTextWidget $editorSepWidget;
     private readonly LiveTextWidget $belowEditorWidget;
@@ -75,6 +78,7 @@ final class ChatScreen
     private readonly PendingMessagesWidget $pendingRenderable;
     private readonly WorkingStatusWidget $workingRenderable;
     private readonly StatusPanelWidget $statusPanelRenderable;
+    private readonly QuestionWidget $questionRenderable;
     private readonly FooterDataProvider $footerDataProvider;
     private readonly FooterBarWidget $footerRenderable;
 
@@ -98,6 +102,7 @@ final class ChatScreen
         $this->pendingRenderable = new PendingMessagesWidget();
         $this->workingRenderable = new WorkingStatusWidget();
         $this->statusPanelRenderable = new StatusPanelWidget();
+        $this->questionRenderable = new QuestionWidget();
         $this->footerDataProvider = new FooterDataProvider();
         $this->extensionContext = new SlotBasedTuiExtensionContext($this->registry, $this->footerDataProvider);
         $this->footerDataProvider->addProvider($this->createDefaultFooterProvider());
@@ -182,6 +187,15 @@ final class ChatScreen
                 $tuiCtx = $this->tuiContext($symfonyCtx);
 
                 return implode("\n", $this->statusPanelRenderable->render($tuiCtx));
+            },
+        );
+
+        // ── Question display ──
+        $this->questionWidget = new LiveTextWidget(
+            function (RenderContext $symfonyCtx): string {
+                $tuiCtx = $this->tuiContext($symfonyCtx);
+
+                return implode("\n", $this->questionRenderable->render($tuiCtx));
             },
         );
 
@@ -270,6 +284,7 @@ final class ChatScreen
         $tui->add($this->pendingWidget);
         $tui->add($this->workingWidget);
         $tui->add($this->statusPanelWidget);
+        $tui->add($this->questionWidget);
         $tui->add($this->aboveEditorWidget);
         $tui->add($this->editorSepWidget);
         $tui->add($this->promptEditor->getWidget());
@@ -375,6 +390,7 @@ final class ChatScreen
         $this->pendingWidget->invalidate();
         $this->workingWidget->invalidate();
         $this->statusPanelWidget->invalidate();
+        $this->questionWidget->invalidate();
         $this->aboveEditorWidget->invalidate();
         $this->belowEditorWidget->invalidate();
         $this->footerWidget->invalidate();
@@ -390,6 +406,24 @@ final class ChatScreen
     public function extensionContext(): TuiExtensionContext
     {
         return $this->extensionContext;
+    }
+
+    /**
+     * Set the active question request for display above the editor.
+     */
+    public function setQuestionRequest(?QuestionRequest $request): void
+    {
+        $this->questionRenderable->setRequest($request);
+        $this->questionWidget->invalidate();
+    }
+
+    /**
+     * Clear the active question display.
+     */
+    public function clearQuestion(): void
+    {
+        $this->questionRenderable->setRequest(null);
+        $this->questionWidget->invalidate();
     }
 
     /* ────────── Helpers ────────── */
