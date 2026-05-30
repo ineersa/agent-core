@@ -6,6 +6,7 @@
     "reflectAfterTokens": 30000,
     "compactAfterTokens": 60000,
     "passive": false,
+    "debugLog": true,
     "model": {
       "provider": "runpod",
       "id": "Qwen3.6-27B"

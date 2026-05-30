@@ -39,10 +39,10 @@ Out of scope:
 - Focused tests pass with Castor/PHPUnit.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/tools-08-background-process-manager
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-08-background-process-manager
-Fork run: le1l92h1nurr
+Fork run: 3uzgi1405tmx
 PR URL: https://github.com/ineersa/agent-core/pull/73
 PR Status: open
 Started:
@@ -106,3 +106,16 @@ Completed:
 ## Task workflow update - 2026-05-30T20:38:24.520Z
 - Recorded fork run: le1l92h1nurr
 - Summary: Launched fork le1l92h1nurr to make TOOLS-08 background-process stop semantics bulletproof. Instructions include: redesign wrapper to avoid `trap "" TERM` inherited SIG_IGN, make/keep `setsid` semantics safe (prefer requiring it over weak fallback), ensure TERM reaches actual workload while wrapper still writes status sidecar, KILL only after grace, avoid parent-worker kills/orphans, replace `trigger_error` with PSR structured logger, add PID/PGID guards, use dot-notation log messages, remove unused kill exit vars, add tests proving TERM reaches workload and KILL only follows ignored TERM, run Castor validation, and commit.
+
+## Task workflow update - 2026-05-30T21:50:05.942Z
+- Recorded fork run: 3uzgi1405tmx
+- Validation: `castor test`: ok (1531 tests, 11468 assertions, 0 failures); `castor test --filter='BackgroundProcessManagerTest|BgStatusToolTest'`: ok (54 tests, 136 assertions, 0 failures, ~27s); `castor deptrac`: ok (violations=0); `castor phpstan`: ok (errors=0); `castor cs-check`: ok (files_fixed=0)
+- Summary: Fork 3uzgi1405tmx completed at commit `847880a5`. Added `session_id` column (TEXT NOT NULL) to SQLite schema with ALTER TABLE migration for existing DBs. All manager methods (`start`, `list`, `stop`, `readLogTail`, `shutdownCleanup`) accept `?string $sessionId` param (null = unscoped/admin). BgStatusTool passes null for now with TODO docblock for TOOLS-09. Tests updated with session IDs; 3 new tests for session filtering/mismatch/scoped cleanup. Test timing reduced but focused suite still ~27s due to real subprocess lifecycle (grace periods + sleep commands). Castor validation: 1531 tests pass, deptrac 0 violations, phpstan 0 errors, cs-check clean.
+
+## Task workflow update - 2026-05-30T21:50:12.437Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/tools-08-background-process-manager to origin.
+- branch 'task/tools-08-background-process-manager' set up to track 'origin/task/tools-08-background-process-manager'.
+- Skipped PR creation (pushOnly: true).
+- Validation: `castor test`: ok (1531 tests, 11468 assertions, 0 failures); `castor deptrac`: ok (violations=0); `castor phpstan`: ok (errors=0); `castor cs-check`: ok (files_fixed=0)
+- Summary: Session ownership added at `847880a5`; pushed to existing PR #73. Castor validation clean. Test suite still ~27s due to real subprocess lifecycle.
