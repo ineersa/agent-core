@@ -51,15 +51,32 @@ Out of scope:
 - `castor deptrac` passes.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
-Fork run:
+Status: IN-PROGRESS
+Branch: task/tools-06-edit-tool
+Worktree: /home/ineersa/projects/agent-core-worktrees/tools-06-edit-tool
+Fork run: 1812c1libtd7
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-30T00:48:53.386Z
 Completed:
 
 ## Work log
 - Created: 2026-05-17T04:42:49.755Z
 - Updated: 2026-05-29 — merged TOOLS-05 scope into this task; updated dependencies to reflect actual TOOLS-00 shipped surface.
+
+## Task workflow update - 2026-05-30T00:48:53.386Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/tools-06-edit-tool.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/tools-06-edit-tool.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/tools-06-edit-tool.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/tools-06-edit-tool.
+
+## Task workflow update - 2026-05-30T00:53:49.456Z
+- Recorded fork run: aub24qlr77wb
+- Validation: castor test --filter=EditFileTool: 20 tests, 45 assertions, 0 failures; castor deptrac: 0 violations, 0 errors; castor phpstan --path=src/CodingAgent/Tool/EditFileTool.php: 0 errors; CS clean (php-cs-fixer dry-run)
+- Summary: Implemented EditFileTool with built-in GNU patch runner (two-pass dry-run → apply → atomic rename). 216-line production class replacing shell placeholder. 20 tests covering success, bad patch, missing file, whitespace tolerance, multi-hunk, no-op, cancellation, argument validation, registry exposure. All validation passes: castor test (20 tests, 45 assertions), castor deptrac (0 violations), phpstan (0 errors), CS clean.
+
+## Task workflow update - 2026-05-30T01:19:00.260Z
+- Recorded fork run: 1812c1libtd7
+- Validation: castor test: 1373 tests, 11027 assertions (1 pre-existing failure in ExtensionToolHookEventSubscriberTest); castor deptrac: 0 violations; castor phpstan: 0 errors on all changed files; castor cs-fix: 3 files auto-fixed
+- Summary: Fork 1812c1libtd7 completed: ToolCallException structured error contract, EditFileTool refactored into 8 methods, all tools converted to ToolCallException, per-tool sequential overrides for write/edit. 18 files changed, 717+/190-, all tests pass, deptrac/phpstan/CS clean.
