@@ -148,6 +148,8 @@ services:
   # BackgroundProcessManager — register shutdown handler in production so
   # tests (which construct the manager directly) don't accumulate callbacks.
   Ineersa\CodingAgent\Tool\BackgroundProcessManager:
+    arguments:
+      $denormalizer: '@serializer'
     calls:
       - registerShutdownHandler: []
 

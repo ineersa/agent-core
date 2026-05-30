@@ -542,7 +542,7 @@ final class BackgroundProcessManager
         // for processes that completed without a list() call.
         $this->refreshAllUnfinished();
 
-        $cutoff = date('c', time() - $this->config->retentionSeconds);
+        $cutoff = Clock::get()->now()->modify('-'.$this->config->retentionSeconds.' seconds')->format('c');
 
         try {
             $stale = $this->connection->fetchAllAssociative(

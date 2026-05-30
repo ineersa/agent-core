@@ -10,7 +10,8 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
  * Symfony Denormalizer that converts a DB row array into a
  * BackgroundProcessRecord DTO with proper type coercions.
  *
- * Autoconfigured via DenormalizerInterface — no manual service wiring needed.
+ * Registered as a serializer.normalizer via autoconfigure. Consumers should inject
+ * the serializer service, not this normalizer directly.
  */
 final class BackgroundProcessRecordNormalizer implements DenormalizerInterface
 {
