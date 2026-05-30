@@ -90,7 +90,7 @@ Update `TuiQuestion` ruleset to allow needed layers. `TuiScreen` may need `TuiQu
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/qh-02-question-approval-widgets
 Worktree: /home/ineersa/projects/agent-core-worktrees/qh-02-question-approval-widgets
 Fork run: tpnta6q1pnb0
@@ -103,3 +103,6 @@ Completed:
 - Created: 2026-05-18T00:04:15.305Z
 - 2026-05-30: First implementation (QuestionWidget + ChatScreen slot) — closed after review. PR #77 closed.
 - 2026-05-30: Redesign — merging QH-02+QH-03 into QuestionController pattern (ModelPickerController).
+
+## Task workflow update - 2026-05-30T22:54:22.894Z
+- Moved CODE-REVIEW → IN-PROGRESS.
