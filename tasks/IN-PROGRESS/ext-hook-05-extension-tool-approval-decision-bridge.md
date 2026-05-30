@@ -165,15 +165,22 @@ This should be handled in SAFE-04, not in EXT-HOOK-05. The generic hook contract
 - Deptrac clean, cs-check clean, all existing tests continue to pass.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/ext-hook-05-extension-tool-approval-decision-bridge
+Worktree: /home/ineersa/projects/agent-core-worktrees/ext-hook-05-extension-tool-approval-decision-bridge
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-30T01:22:25.264Z
 Completed:
 
 ## Work log
 - Created: 2026-05-29T20:59:55.419Z
 - Updated: 2026-05-30 — Rewrote task based on architectural discovery that existing HITL interrupt flow handles the entire approval lifecycle. Eliminated TUI-APPROVAL-01 dependency and removed new-runtime-plumbing scope.
+
+## Task workflow update - 2026-05-30T01:22:25.264Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/ext-hook-05-extension-tool-approval-decision-bridge.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/ext-hook-05-extension-tool-approval-decision-bridge.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/ext-hook-05-extension-tool-approval-decision-bridge.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/ext-hook-05-extension-tool-approval-decision-bridge.
