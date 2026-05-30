@@ -121,7 +121,8 @@ tools:
 # enabled.
 #
 extensions:
-    enabled: []
+    enabled:
+        - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
 
     # Generic extension settings exposed via the Extension API.
     # Each extension reads its own section by key.

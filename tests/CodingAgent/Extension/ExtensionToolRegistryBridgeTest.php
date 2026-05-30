@@ -400,21 +400,6 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         $this->assertSame('/home/some-project', $bridge->getCwd());
     }
 
-    public function testGetCwdFallbackToGetcwd(): void
-    {
-        $appConfig = new AppConfig(
-            tui: new TuiConfig(theme: 'cyberpunk'),
-            logging: new LoggingConfig(),
-            cwd: '',
-        );
-
-        $bridge = $this->bridgeFor(new ToolRegistry(), appConfig: $appConfig);
-        $cwd = $bridge->getCwd();
-
-        $this->assertNotEmpty($cwd);
-        $this->assertSame(\getcwd(), $cwd);
-    }
-
     /* ───────── Private helpers ───────── */
 
     private function testAppConfig(): AppConfig

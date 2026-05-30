@@ -97,12 +97,6 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
 
     public function getCwd(): string
     {
-        if ('' !== $this->appConfig->cwd) {
-            return $this->appConfig->cwd;
-        }
-
-        $cwd = \getcwd();
-
-        return false !== $cwd ? $cwd : '/';
+        return $this->appConfig->cwd;
     }
 }
