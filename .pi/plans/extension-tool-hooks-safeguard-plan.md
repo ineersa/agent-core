@@ -334,7 +334,7 @@ Important ordering choice:
 
 Do not expose `Symfony\AI\Agent\Toolbox\Event\ToolCallRequested` through `ExtensionApi` because the public API boundary must remain extraction-safe and Symfony-free.
 
-Also, Hatfield's production `RegistryBackedToolbox` currently bypasses Symfony AI event dispatch. We can either add Symfony event dispatch to `RegistryBackedToolbox` later or not; the ExtensionApi hook bridge should not depend on that detail.
+**Update (EXT-HOOK-03 pivot):** `RegistryBackedToolbox` now dispatches Symfony AI lifecycle events internally. The extension bridge (`ExtensionToolHookEventSubscriber`) adapts between public ExtensionApi DTOs and Symfony AI events. Extension authors never see Symfony AI types.
 
 ## SafeGuard extension design
 
@@ -526,55 +526,68 @@ castor test --filter Extension
 castor deptrac
 ```
 
-### Phase 3 — AgentCore interception seam
+### Phase 3 — Symfony AI lifecycle events in RegistryBackedToolbox (pivoted from custom AgentCore interceptor)
+
+> **Pivot note:** Originally planned as a custom `ToolCallInterceptorInterface` in AgentCore.
+> Pivoted to reusing Symfony AI's native `ToolCallRequested`/`ToolCallSucceeded`/`ToolCallFailed`
+> events inside `RegistryBackedToolbox`. `ToolCallRequested` supports `deny()` and `setResult()`
+> for pre-execution interception, which is sufficient for SafeGuard's needs.
 
 Files:
 
 ```text
-src/AgentCore/Contract/Tool/ToolCallInterceptorInterface.php
-src/AgentCore/Domain/Tool/ToolCallInterceptionResult.php
-src/AgentCore/Domain/Tool/ToolCallInterceptionKind.php
-src/AgentCore/Application/Handler/ToolExecutor.php
+src/CodingAgent/Tool/RegistryBackedToolbox.php
+config/services.yaml
+src/AgentCore/Domain/Tool/ToolContext.php  (added orderIndex)
 ```
 
 Acceptance:
 
-- `ToolExecutor` invokes `beforeToolCall()` after allowlist checks and before handler execution.
-- Blocked calls do not invoke the underlying handler.
-- Replaced results do not invoke the underlying handler.
-- `afterToolCall()` can replace/adjust the final result after successful/failed toolbox execution.
-- Interceptor exceptions are converted to safe blocked/error results, not process crashes.
+- `RegistryBackedToolbox::execute()` dispatches `ToolCallRequested` before execution.
+- `ToolCallRequested::deny()` skips handler and returns denial result.
+- `ToolCallRequested::setResult()` skips handler and returns custom result.
+- `ToolCallSucceeded` and `ToolCallFailed` dispatch after execution for observability.
+- `ToolExecutor` is **not** modified — events flow through the existing toolbox path.
 
 Validation:
 
 ```bash
+castor test --filter RegistryBackedToolbox
 castor test --filter ToolExecutor
-castor test
+castor deptrac
 ```
 
-### Phase 4 — CodingAgent adapter from ExtensionApi hooks to AgentCore seam
+### Phase 4 — CodingAgent adapter from ExtensionApi hooks to Symfony AI events
+
+> **Update:** Instead of implementing an AgentCore `ToolCallInterceptorInterface`,
+> this phase created `ExtensionToolHookEventSubscriber` that subscribes to Symfony AI
+> `ToolCallRequested`/`ToolCallSucceeded`/`ToolCallFailed` events and iterates
+> `ExtensionHookRegistry` hooks, converting between ExtensionApi DTOs and Symfony AI event types.
 
 Files:
 
 ```text
-src/CodingAgent/Extension/ToolHookDispatcher.php
+src/CodingAgent/Extension/ExtensionToolHookEventSubscriber.php
 config/services.yaml
+depfile.yaml
+src/AgentCore/Application/Handler/ToolExecutor.php  (orderIndex propagation)
+src/AgentCore/Domain/Tool/ToolContext.php
 ```
 
 Acceptance:
 
 - Public `ToolCallContextDTO` receives correct `toolCallId`, `toolName`, arguments, order index, run id, turn number, and cwd.
-- Public hook `Block` maps to an AgentCore error `ToolResult` with structured details.
-- Public hook `ReplaceResult` maps to a normal non-handler result.
+- Public hook `Block` maps to `ToolCallRequested::setResult()` with denied result.
+- Public hook `ReplaceResult` maps to `ToolCallRequested::setResult()` with custom result.
 - Multiple hooks run in registration order.
 - First non-allow before-hook decision wins.
-- Result hooks run in registration order, each seeing the latest result state.
+- Result hooks (`ToolCallSucceeded`/`ToolCallFailed`) are observational only — cannot mutate the Symfony AI result.
 
 Validation:
 
 ```bash
-castor test --filter ToolHookDispatcher
-castor test --filter ToolExecutor
+castor test --filter ExtensionToolHookEventSubscriber
+castor test
 castor deptrac
 ```
 
@@ -586,11 +599,17 @@ Files:
 src/CodingAgent/Extension/Builtin/SafeGuard/SafeGuardExtension.php
 src/CodingAgent/Extension/Builtin/SafeGuard/SafeGuardToolCallHook.php
 src/CodingAgent/Extension/Builtin/SafeGuard/SafeGuardClassifier.php
-src/CodingAgent/Extension/Builtin/SafeGuard/SafeGuardPolicy.php
-src/CodingAgent/Extension/Builtin/SafeGuard/SafeGuardPolicyStore.php
+src/CodingAgent/Extension/Builtin/SafeGuard/SafeGuardConfig.php
+src/CodingAgent/Extension/Builtin/SafeGuard/SafeGuardDecision.php
+src/CodingAgent/Extension/Builtin/SafeGuard/SafeGuardDecisionKind.php
 src/CodingAgent/Extension/Builtin/SafeGuard/SafeGuardPathMatcher.php
 src/CodingAgent/Extension/Builtin/SafeGuard/SafeGuardCommandMatcher.php
 ```
+
+> **Update:** SafeGuard reads settings from `extensions.settings.safe_guard` in YAML
+> via `$api->getSettings('safe_guard')`, not from a separate JSON policy file.
+> CWD comes from `$api->getCwd()`. Config DTO lives in the extension namespace
+> (`AppExtensionBuiltin` deptrac layer), not in `CodingAgent\Config`.
 
 Acceptance:
 
@@ -612,66 +631,52 @@ castor test
 castor deptrac
 ```
 
-### Phase 6 — Settings/docs enablement
+### Phase 6 — Settings/docs enablement and cross-process extension loading
+
+> **Update:** SafeGuard is enabled by default in `hatfield.defaults.yaml`.
+> Extension loading moved from `AgentCommand` to `ExtensionLoaderSubscriber` (ConsoleEvents::COMMAND)
+> to ensure extensions load in all processes including `messenger:consume` workers.
 
 Files:
 
 ```text
 config/hatfield.defaults.yaml
-.hatfield/settings.yaml
-docs/settings.md
+src/CodingAgent/Extension/ExtensionLoaderSubscriber.php
+src/CodingAgent/CLI/AgentCommand.php  (loadExtensions call removed)
+config/services.yaml
+src/CodingAgent/Kernel.php  (extends HttpKernel\Kernel)
+bin/console  (uses FrameworkBundle\Console\Application)
 ```
-
-Decision needed before implementation:
-
-- Should SafeGuard be enabled by default?
-
-Recommended first choice:
-
-- Keep `extensions.enabled: []` by default.
-- Document enabling SafeGuard explicitly:
-
-```yaml
-extensions:
-  enabled:
-    - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
-```
-
-This avoids surprising existing development workflows while the guard is new.
 
 Acceptance:
 
-- Settings docs show how to enable the built-in extension.
-- Docs explain policy file locations and MVP noninteractive behavior.
-
-Validation:
-
-```bash
-castor test --filter Config
-castor check
-```
+- SafeGuard blocks writes outside CWD in real agent sessions.
+- Extensions load in `agent`, `messenger:consume`, and all `bin/console` commands.
+- `bin/console cache:clear` works.
+- `castor check` passes.
 
 ## Later work intentionally out of scope
 
 ### Interactive approval prompts
 
-Pi SafeGuard supports Block / Allow once / Always allow through interactive UI. Hatfield needs a runtime/TUI approval path before this can be copied safely.
+Pi SafeGuard supports Block / Allow once / Always allow through interactive UI.
 
-Future extension API might add:
+**Update (EXT-HOOK-05):** `ToolCallDecisionKindEnum::RequireApproval` was added. The `ExtensionToolHookEventSubscriber` converts `RequireApproval` decisions to `setResult()` with an interrupt payload shape (`{kind: 'interrupt', question_id, prompt, schema, tool_name, tool_call_id, approval_context}`). This reuses Hatfield's existing HITL interrupt flow:
 
-```php
-ToolCallDecisionDTO::requireApproval(ApprovalRequestDTO $request)
+```
+ExtensionToolHookEventSubscriber → setResult(interrupt payload)
+  → RegistryBackedToolbox returns ToolResult
+  → ToolExecutor::toDomainResult() detects kind=interrupt
+  → ToolCallResultHandler sets WaitingHuman
+  → HitlMappingSubscriber maps to runtime event
+  → TUI shows prompt (requires QH-01/QH-02/QH-03)
+  → User approves/denies
+  → ApplyCommandHandler resumes run
+  → LLM retries tool call
+  → SafeGuard auto-allows via ApprovalSessionTracker (pending entry consumed)
 ```
 
-but that requires:
-
-- a local runtime approval queue,
-- TUI approval widgets/input routing,
-- original tool call resume semantics,
-- noninteractive timeout/deny behavior,
-- policy update semantics for "always allow".
-
-This should use a common TUI approval component, but it should not depend on the QH/HITL flow. SafeGuard approvals are local runtime control prompts for tool execution, not model-visible `ask_human` transcript HITL.
+SAFE-04 will implement the SafeGuard-specific `ApprovalSessionTracker` and map classification categories to approval decisions. **Blocked on QH-01/QH-02/QH-03** because the TUI currently has no question/answer widget or input routing.
 
 ### More Pi parity hooks
 
@@ -687,13 +692,75 @@ After tool hooks prove the public API/bridge pattern, consider adding additional
 
 Do not bundle these into the SafeGuard MVP.
 
+## Resolved questions and post-implementation notes
+
+### SafeGuard enablement
+Enabled by default in `hatfield.defaults.yaml`.
+
+### Policy merge rules
+Project settings override home settings (not merge). Both fall back to built-in defaults when absent.
+
+### Builtin extension location
+Bundled under `src/CodingAgent/Extension/Builtin/SafeGuard/` with `AppExtensionBuiltin` deptrac layer restricted to `AppExtensionApi` dependency only.
+
+### RegistryBackedToolbox Symfony events
+**Resolved (EXT-HOOK-03 pivot):** `RegistryBackedToolbox` now dispatches Symfony AI lifecycle events (`ToolCallRequested`, `ToolCallArgumentsResolved`, `ToolCallSucceeded`, `ToolCallFailed`). No custom AgentCore interceptor was needed.
+
+### ExtensionApi settings exposure
+`ExtensionApiInterface` now provides `getSettings(string $key): array` and `getCwd(): string`. Extensions read config through the API without accessing `AppConfig` directly.
+
+### Result hook mutability
+Per-tool `ToolCallSucceeded`/`ToolCallFailed` events are readonly/observational. `ToolCallsExecuted` (batch-level, in `AgentProcessor`) supports `setResult()` but Hatfield doesn't use `AgentProcessor`. Mutable after-result hooks deferred until needed.
+
+## Post-implementation: SafeGuard not blocking — root cause analysis (2026-05-30)
+
+### Symptom
+After all extension hook tasks (EXT-HOOK-01 through EXT-HOOK-05, SAFE-01, SAFE-02) were merged, SafeGuard did not block writes outside CWD. Agent successfully wrote to `~/claw/hello.md` without any interception.
+
+### Root cause
+**Extensions were loaded only in the main `agent` command process, not in Messenger worker processes.**
+
+Hatfield's runtime architecture uses a controller pattern with multiple processes:
+
+```
+bin/console agent          (main TUI/headless process)
+  └─ bin/console agent --controller   (controller event loop)
+       ├─ messenger:consume run_control
+       ├─ messenger:consume llm
+       └─ messenger:consume tool       ← tool execution happens HERE
+```
+
+`ExtensionManager::loadExtensions()` was called only in `AgentCommand::__invoke()`. The `messenger:consume tool` worker processes have their own Symfony container and never call `loadExtensions()`. This means:
+
+1. `ExtensionHookRegistry` is empty in tool workers
+2. `ExtensionToolHookEventSubscriber` fires (it's registered) but finds zero hooks
+3. Tool executes unguarded — SafeGuard never runs
+
+### Additional issue: bin/console couldn't run FrameworkBundle commands
+
+The old `bin/console` used `Symfony\Component\Console\Application` directly, and the old `Kernel` extended `DependencyInjection\AbstractKernel` + `KernelTrait` instead of `HttpKernel\Kernel`. FrameworkBundle commands like `cache:clear` call `$application->getKernel()` which didn't exist, producing:
+
+```
+Call to undefined method Symfony\Component\Console\Application::getKernel()
+```
+
+### Fixes applied (commit 4dc56474)
+
+1. **Kernel extends `HttpKernel\Kernel`** — standard Symfony pattern. Provides `kernel.charset`, `kernel.default_locale`, and proper bundle integration. Keeps Hatfield-specific `getCacheDir()`, `getBuildDir()`, `getLogDir()`, CWD boot, and `getConfigDir()`.
+
+2. **`bin/console` uses `FrameworkBundle\Console\Application`** — provides `getKernel()`, event dispatcher injection, and bundle command registration. `cache:clear` and other FrameworkBundle commands now work.
+
+3. **`ExtensionLoaderSubscriber`** — new `EventSubscriberInterface` that listens to `ConsoleEvents::COMMAND` and calls `ExtensionManager::loadExtensions()`. Fires in **every** `bin/console` invocation: `agent`, `messenger:consume`, `cache:clear`, etc. Idempotent (`$loaded` flag) so `loadExtensions()` is called exactly once per process.
+
+4. **Removed `loadExtensions()` from `AgentCommand`** — no longer needed since the subscriber handles it for all processes.
+
+### Architecture lesson
+
+When tool execution runs in a separate process (Messenger workers), any extension registration that happens in the main process is invisible to workers. Extension loading must happen at a lifecycle point shared by all processes — kernel boot, console event, or a dedicated compiler pass. The `ConsoleEvents::COMMAND` subscriber ensures extensions are loaded regardless of which `bin/console` command starts the process.
+
 ## Open questions
 
-1. **SafeGuard enablement**: explicit opt-in first, or enabled by default once bash/read/write/edit are real?
-2. **Policy merge rules**: project overrides home, or project and home lists merge?
-3. **Builtin extension location**: keep bundled SafeGuard under `src/CodingAgent/Extension/Builtin/`, or create a package-like `extensions/safe-guard/` directory now?
-4. **Result hook mutability**: should result hooks be allowed to flip `isError`, or only content/details? Pi's contract includes `isError`, but previous Pi bridge caveat says error override was imperfect.
-5. **RegistryBackedToolbox Symfony events**: should we also dispatch Symfony AI Toolbox events there for compatibility/observability, or keep only Hatfield ExtensionApi hooks for now?
+1. **Result hook mutability**: should result hooks be allowed to flip `isError`, or only content/details? Pi's contract includes `isError`, but previous Pi bridge caveat says error override was imperfect.
 
 ## Recommended first task split
 
