@@ -5,9 +5,13 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Infrastructure;
 
 /**
- * Thread-safe logging correlation context for long-lived workers.
+ * Per-fiber logging correlation context for long-lived workers.
  *
- * Uses a static stack so nested scopes do not corrupt outer context.
+ * Each PHP {@see \Fiber} maintains its own context stack so concurrent
+ * fibers do not share or corrupt each other's correlation fields.
+ * Code running outside any fiber (e.g. the main event loop) uses a
+ * separate default stack.
+ *
  * Each scope is entered via {@see enter()} and must leave via
  * {@see leave()} in a try/finally block.
  *
@@ -20,11 +24,19 @@ namespace Ineersa\AgentCore\Infrastructure;
  */
 final class RunLogContext
 {
+    /**
+     * Per-fiber context stacks. Fibers are GC'd automatically when
+     * they finish, and WeakMap entries are released with them.
+     *
+     * @var \WeakMap<\Fiber<mixed, mixed, mixed, mixed>, list<array<string, mixed>>>
+     */
+    private static ?\WeakMap $fiberStacks = null;
+
     /** @var list<array<string, mixed>> */
-    private static array $stack = [];
+    private static array $defaultStack = [];
 
     /**
-     * Push new correlation context onto the stack.
+     * Push new correlation context onto the current fiber's stack.
      *
      * Merged on top of parent context. Must be paired with leave().
      *
@@ -32,17 +44,22 @@ final class RunLogContext
      */
     public static function enter(array $context): void
     {
-        $parent = self::$stack[array_key_last(self::$stack)] ?? [];
-        self::$stack[] = [...$parent, ...$context];
+        $stack = self::readStack();
+        $parent = $stack[array_key_last($stack)] ?? [];
+        $stack[] = [...$parent, ...$context];
+        self::writeStack($stack);
     }
 
     /**
-     * Pop the most recent context. No-op when stack is empty.
+     * Pop the most recent context from the current fiber's stack.
+     * No-op when the stack is empty.
      */
     public static function leave(): void
     {
-        if ([] !== self::$stack) {
-            array_pop(self::$stack);
+        $stack = self::readStack();
+        if ([] !== $stack) {
+            array_pop($stack);
+            self::writeStack($stack);
         }
     }
 
@@ -53,7 +70,9 @@ final class RunLogContext
      */
     public static function current(): array
     {
-        return self::$stack[array_key_last(self::$stack)] ?? [];
+        $stack = self::readStack();
+
+        return $stack[array_key_last($stack)] ?? [];
     }
 
     /**
@@ -82,6 +101,46 @@ final class RunLogContext
      */
     public static function reset(): void
     {
-        self::$stack = [];
+        $fiber = \Fiber::getCurrent();
+        if (null === $fiber) {
+            self::$defaultStack = [];
+        } elseif (null !== self::$fiberStacks && self::$fiberStacks->offsetExists($fiber)) {
+            self::$fiberStacks->offsetUnset($fiber);
+        }
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private static function readStack(): array
+    {
+        $fiber = \Fiber::getCurrent();
+
+        if (null === $fiber) {
+            return self::$defaultStack;
+        }
+
+        if (null === self::$fiberStacks || !self::$fiberStacks->offsetExists($fiber)) {
+            return [];
+        }
+
+        return self::$fiberStacks[$fiber];
+    }
+
+    /**
+     * @param list<array<string, mixed>> $stack
+     */
+    private static function writeStack(array $stack): void
+    {
+        $fiber = \Fiber::getCurrent();
+
+        if (null === $fiber) {
+            self::$defaultStack = $stack;
+
+            return;
+        }
+
+        self::$fiberStacks ??= new \WeakMap();
+        self::$fiberStacks->offsetSet($fiber, $stack);
     }
 }

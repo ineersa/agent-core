@@ -28,6 +28,12 @@ interface SpanProviderInterface
     /**
      * Close a span previously returned by {@see startSpan}.
      *
+     * **Must be called in LIFO order matching startSpan calls.**
+     * Backends like ddtrace use an internal stack and closeSpan always
+     * closes the most recently started span, regardless of the passed
+     * span ID. Pairing start/close in strict LIFO order ensures spans
+     * are properly nested and closed.
+     *
      * @param string|null          $spanId Span ID from startSpan, or null for no-op
      * @param array<string, mixed> $tags   Tags to set/update on close
      */

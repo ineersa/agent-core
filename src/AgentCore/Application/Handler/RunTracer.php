@@ -12,10 +12,11 @@ use Psr\Log\LoggerInterface;
  *
  * Wraps operations in named spans that emit start/finish log records
  * and, when a {@see SpanProviderInterface} is available, also create
- * real distributed tracing spans via the ddtrace extension.
+ * real distributed tracing spans via the configured provider (e.g.
+ * the ddtrace extension).
  *
  * All existing call sites use {@see inSpan()} which automatically
- * gets ddtrace coverage when the provider is wired.
+ * gets real distributed-trace coverage when a provider is wired.
  */
 final class RunTracer
 {
@@ -26,7 +27,7 @@ final class RunTracer
 
     public function __construct(
         private readonly LoggerInterface $logger,
-        private readonly ?SpanProviderInterface $ddtraceProvider = null,
+        private readonly ?SpanProviderInterface $spanProvider = null,
     ) {
     }
 
@@ -55,8 +56,8 @@ final class RunTracer
             ...$attributes,
         ]);
 
-        $ddSpanId = null !== $this->ddtraceProvider
-            ? $this->ddtraceProvider->startSpan($name, $this->ddTags($attributes))
+        $ddSpanId = null !== $this->spanProvider
+            ? $this->spanProvider->startSpan($name, $this->ddTags($attributes))
             : null;
 
         $status = 'error';
@@ -81,7 +82,7 @@ final class RunTracer
             ]);
 
             if (null !== $ddSpanId) {
-                $this->ddtraceProvider->closeSpan($ddSpanId, [
+                $this->spanProvider->closeSpan($ddSpanId, [
                     'duration_ms' => round($durationMs, 3),
                     'status' => $status,
                     'outcome' => 'ok' === $status ? 'success' : 'error',
