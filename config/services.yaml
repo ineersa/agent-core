@@ -134,6 +134,12 @@ services:
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 
+  # BackgroundProcessConfig is derived from AppConfig and autowireable.
+  Ineersa\CodingAgent\Config\BackgroundProcessConfig:
+    factory: ['Ineersa\CodingAgent\Config\BackgroundProcessConfig', 'fromAppConfig']
+    arguments:
+      - '@Ineersa\CodingAgent\Config\AppConfig'
+
   # CodingAgentImageCapabilityChecker — wraps HatfieldModelCatalog from AppConfig.
   Ineersa\CodingAgent\Tool\ImageProcessing\CodingAgentImageCapabilityChecker:
     factory: ['Ineersa\CodingAgent\Tool\ImageProcessing\CodingAgentImageCapabilityChecker', 'fromAppConfig']
