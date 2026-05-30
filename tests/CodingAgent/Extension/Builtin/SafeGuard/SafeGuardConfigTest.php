@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Tests\Config;
+namespace Ineersa\CodingAgent\Tests\Extension\Builtin\SafeGuard;
 
-use Ineersa\CodingAgent\Config\SafeGuardConfig;
+use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardConfig;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -94,7 +94,7 @@ final class SafeGuardConfigTest extends TestCase
             'protected_read_patterns' => ['.env.local'],
         ]);
 
-        $occurrences = \array_filter(
+        $occurrences = array_filter(
             $config->protectedReadPatterns,
             static fn (string $p): bool => '.env.local' === $p,
         );

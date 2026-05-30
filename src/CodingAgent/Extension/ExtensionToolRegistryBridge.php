@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension;
 
+use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
@@ -31,6 +32,7 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
     public function __construct(
         private ToolRegistryInterface $toolRegistry,
         private ExtensionHookRegistry $hookRegistry,
+        private AppConfig $appConfig,
     ) {
     }
 
@@ -84,5 +86,23 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
     public function registerToolResultHook(ToolResultHookInterface $hook): void
     {
         $this->hookRegistry->addToolResultHook($hook);
+    }
+
+    public function getSettings(string $key): array
+    {
+        $settings = $this->appConfig->extensions->settings[$key] ?? [];
+
+        return \is_array($settings) ? $settings : [];
+    }
+
+    public function getCwd(): string
+    {
+        if ('' !== $this->appConfig->cwd) {
+            return $this->appConfig->cwd;
+        }
+
+        $cwd = \getcwd();
+
+        return false !== $cwd ? $cwd : '/';
     }
 }

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy;
 
-use Ineersa\CodingAgent\Config\SafeGuardConfig;
+use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardConfig;
 
 /**
  * Immutable policy snapshot loaded from SafeGuardConfig.

@@ -2,18 +2,22 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Config;
+namespace Ineersa\CodingAgent\Extension\Builtin\SafeGuard;
 
 /**
- * SafeGuard settings resolved from Hatfield config.
+ * SafeGuard settings resolved from Hatfield config via the Extension API.
  *
  * Immutable value object. Contains policy fields, tool name mappings,
  * and the built-in protected-read/default-pattern constants.
  *
  * protectedReadPatterns are always additive: the built-in defaults plus
- * any patterns specified in the YAML safe_guard section. The built-in
- * defaults cannot be removed through config — they mirror Pi's
- * DEFAULT_PROTECTED_READ_PATTERNS.
+ * any patterns specified in the YAML extensions.settings.safe_guard
+ * section. The built-in defaults cannot be removed through config —
+ * they mirror Pi's DEFAULT_PROTECTED_READ_PATTERNS.
+ *
+ * Extensions receive config through ExtensionApiInterface::getSettings('safe_guard'),
+ * not through direct AppConfig access. This class is constructed from
+ * the settings array provided by the Extension API.
  */
 final readonly class SafeGuardConfig
 {
@@ -87,24 +91,6 @@ final readonly class SafeGuardConfig
         public string $editToolName = 'edit',
         public string $readToolName = 'read',
     ) {
-    }
-
-    /**
-     * DI factory — extract SafeGuard settings from the extensions settings
-     * in AppConfig.
-     *
-     * Reads the 'safe_guard' key from AppConfig->extensions->settings.
-     * Used by the Symfony container via services.yaml factory definition.
-     */
-    public static function fromAppConfig(AppConfig $appConfig): self
-    {
-        $data = $appConfig->extensions->settings['safe_guard'] ?? [];
-
-        if (!\is_array($data)) {
-            $data = [];
-        }
-
-        return self::fromArray($data);
     }
 
     /**

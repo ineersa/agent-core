@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Extension\Builtin\SafeGuard\Policy;
 
-use Ineersa\CodingAgent\Config\SafeGuardConfig;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardPolicy;
+use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardConfig;
 use PHPUnit\Framework\TestCase;
 
 /**

@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Extension\Builtin\SafeGuard\Classifier;
 
-use Ineersa\CodingAgent\Config\SafeGuardConfig;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Classifier\SafeGuardClassifier;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardDecision;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardDecisionKind;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardPolicy;
+use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardConfig;
 use PHPUnit\Framework\TestCase;
 
 /**

@@ -375,4 +375,41 @@ final class ExtensionApiContractsTest extends TestCase
         $this->assertNull($context->cwd);
         $this->assertSame([], $context->metadata);
     }
+
+    // --- ExtensionApiInterface settings and CWD contracts ---
+
+    public function testExtensionApiInterfaceGetSettingsReturnsArray(): void
+    {
+        $api = $this->createMock(ExtensionApiInterface::class);
+
+        $api->expects($this->once())
+            ->method('getSettings')
+            ->with('safe_guard')
+            ->willReturn(['enabled' => true]);
+
+        $this->assertSame(['enabled' => true], $api->getSettings('safe_guard'));
+    }
+
+    public function testExtensionApiInterfaceGetSettingsReturnsEmptyForUnknownKey(): void
+    {
+        $api = $this->createMock(ExtensionApiInterface::class);
+
+        $api->expects($this->once())
+            ->method('getSettings')
+            ->with('unknown')
+            ->willReturn([]);
+
+        $this->assertSame([], $api->getSettings('unknown'));
+    }
+
+    public function testExtensionApiInterfaceGetCwdReturnsString(): void
+    {
+        $api = $this->createMock(ExtensionApiInterface::class);
+
+        $api->expects($this->once())
+            ->method('getCwd')
+            ->willReturn('/home/project');
+
+        $this->assertSame('/home/project', $api->getCwd());
+    }
 }
