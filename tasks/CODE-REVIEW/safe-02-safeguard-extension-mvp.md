@@ -25,14 +25,27 @@ Scope:
 - Validation with Castor: `castor test --filter SafeGuard`; `castor test --filter ToolHookDispatcher`; `castor deptrac`.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: CODE-REVIEW
+Branch: task/safe-02-safeguard-extension-mvp
+Worktree: /home/ineersa/projects/agent-core-worktrees/safe-02-safeguard-extension-mvp
 Fork run:
-PR URL:
-PR Status:
-Started:
+PR URL: https://github.com/ineersa/agent-core/pull/70
+PR Status: open
+Started: 2026-05-30T01:22:43.740Z
 Completed:
 
 ## Work log
 - Created: 2026-05-29T20:50:13.971Z
+
+## Task workflow update - 2026-05-30T01:22:43.740Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/safe-02-safeguard-extension-mvp.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/safe-02-safeguard-extension-mvp.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/safe-02-safeguard-extension-mvp.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/safe-02-safeguard-extension-mvp.
+
+## Task workflow update - 2026-05-30T01:39:56.492Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/safe-02-safeguard-extension-mvp to origin.
+- branch 'task/safe-02-safeguard-extension-mvp' set up to track 'origin/task/safe-02-safeguard-extension-mvp'.
+- Created PR: https://github.com/ineersa/agent-core/pull/70

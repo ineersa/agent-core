@@ -11,6 +11,7 @@ namespace Ineersa\Hatfield\ExtensionApi;
  *   - ToolCallDecisionDTO::allow()               – proceed with execution
  *   - ToolCallDecisionDTO::block(string, array)  – deny with reason
  *   - ToolCallDecisionDTO::replaceResult(mixed)  – skip handler, use given result
+ *   - ToolCallDecisionDTO::requireApproval(...)  – request human approval via interrupt
  *
  * @see ToolCallHookInterface
  * @see ToolCallDecisionKindEnum
@@ -54,5 +55,32 @@ final readonly class ToolCallDecisionDTO
     public static function replaceResult(mixed $result, array $details = []): self
     {
         return new self(kind: ToolCallDecisionKindEnum::ReplaceResult, result: $result, details: $details);
+    }
+
+    /**
+     * Request human approval via the HITL interrupt flow.
+     *
+     * The tool call is replaced by an interrupt payload that pauses the run at
+     * WaitingHuman. The human response (from TUI or controller) is fed back to
+     * the LLM as a user message, allowing the LLM to retry the blocked call.
+     *
+     * @param array<string, mixed> $schema  JSON Schema for the expected answer shape
+     * @param array<string, mixed> $details extension-specific metadata (category, command, path, etc.)
+     */
+    public static function requireApproval(
+        string $prompt,
+        ?string $questionId = null,
+        array $schema = ['type' => 'string'],
+        array $details = [],
+    ): self {
+        $merged = $details;
+        $merged['prompt'] = $prompt;
+        $merged['schema'] = $schema;
+
+        if (null !== $questionId) {
+            $merged['question_id'] = $questionId;
+        }
+
+        return new self(kind: ToolCallDecisionKindEnum::RequireApproval, details: $merged);
     }
 }

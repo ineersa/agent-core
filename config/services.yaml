@@ -100,7 +100,13 @@ services:
 
   # Retained for backward compat (referenced in extension manager tests).
   # No longer the primary ExtensionApiInterface implementation.
-  Ineersa\CodingAgent\Extension\ExtensionApiBridge: ~
+  Ineersa\CodingAgent\Extension\ExtensionApiBridge:
+    arguments:
+      $cwd: '@=service("Ineersa\\CodingAgent\\Config\\AppConfig").cwd'
+
+  Ineersa\CodingAgent\Extension\ExtensionToolHookEventSubscriber:
+    arguments:
+      $cwd: '@=service("Ineersa\\CodingAgent\\Config\\AppConfig").cwd'
 
   Ineersa\CodingAgent\Extension\ExtensionManager:
     arguments:

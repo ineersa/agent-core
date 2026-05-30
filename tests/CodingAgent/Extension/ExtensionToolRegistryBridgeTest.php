@@ -407,7 +407,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         return new AppConfig(
             tui: new TuiConfig(theme: 'cyberpunk'),
             logging: new LoggingConfig(),
-            cwd: \getcwd() ?: '/',
+            cwd: getcwd() ?: '/',
         );
     }
 

@@ -18,11 +18,11 @@ use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardConfig;
 final readonly class SafeGuardPolicy
 {
     /**
-     * @param list<string> $allowCommandPatterns       Command substrings that bypass destructive/dangerous checks
-     * @param list<string> $allowWriteOutsideCwd        Absolute paths where writes outside CWD are always allowed
-     * @param list<string> $allowDestructiveInPaths     Paths where destructive file ops are always allowed (compat — not wired)
-     * @param list<string> $protectedReadPatterns       Filename/path patterns that require confirmation to read
-     * @param list<string> $dangerousCommandPatterns    Extra command substrings to treat as dangerous (added to built-ins)
+     * @param list<string> $allowCommandPatterns     Command substrings that bypass destructive/dangerous checks
+     * @param list<string> $allowWriteOutsideCwd     Absolute paths where writes outside CWD are always allowed
+     * @param list<string> $allowDestructiveInPaths  Paths where destructive file ops are always allowed (compat — not wired)
+     * @param list<string> $protectedReadPatterns    Filename/path patterns that require confirmation to read
+     * @param list<string> $dangerousCommandPatterns Extra command substrings to treat as dangerous (added to built-ins)
      */
     public function __construct(
         public array $allowCommandPatterns = [],
