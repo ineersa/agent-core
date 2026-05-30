@@ -351,7 +351,11 @@ function idea_run_configs(): void
         'log:search' => 'Search log entries.',
         'log:files' => 'List log files.',
         'log:clear' => 'Remove old rotated logs.',
+        'datadog:status' => 'Show local Datadog readiness for Hatfield logs/APM.',
+        'datadog:log-config' => 'Print the Datadog Agent Hatfield log config and install hints.',
+        'datadog:smoke-log' => 'Write a Datadog log collection smoke-test line.',
         'run:agent' => 'Launch the agent TUI in tmux.',
+        'run:agent-datadog' => 'Launch the agent TUI with Datadog APM enabled.',
         'run:agent-test' => 'Launch deterministic tmux session for snapshot testing.',
         'idea:run-configs' => 'Regenerate PhpStorm run configurations for Castor tasks.',
     ];
@@ -622,6 +626,96 @@ function run_interactive(string $command): void
 }
 
 /**
+ * Whether the default launcher should enable Datadog APM for the spawned
+ * agent process.
+ *
+ * Auto mode enables APM only when ddtrace is installed and a local Agent trace
+ * endpoint is reachable. Set HATFIELD_DATADOG=0 to force-disable or
+ * HATFIELD_DATADOG=1 to force-enable when ddtrace is loaded.
+ */
+function datadog_auto_enabled(): bool
+{
+    $flag = getenv('HATFIELD_DATADOG');
+    if (false !== $flag) {
+        return in_array(strtolower($flag), ['1', 'true', 'yes', 'on'], true) && extension_loaded('ddtrace');
+    }
+
+    if (!extension_loaded('ddtrace')) {
+        return false;
+    }
+
+    if (false !== getenv('DD_TRACE_ENABLED') && in_array(strtolower((string) getenv('DD_TRACE_ENABLED')), ['0', 'false', 'no', 'off'], true)) {
+        return false;
+    }
+
+    return datadog_trace_endpoint_available();
+}
+
+function datadog_is_unix_socket(string $path): bool
+{
+    return file_exists($path) && 'socket' === @filetype($path);
+}
+
+function datadog_trace_endpoint_available(): bool
+{
+    $agentUrl = getenv('DD_TRACE_AGENT_URL');
+    if (is_string($agentUrl) && str_starts_with($agentUrl, 'unix://')) {
+        return datadog_is_unix_socket(substr($agentUrl, strlen('unix://')));
+    }
+
+    if (datadog_is_unix_socket('/var/run/datadog/apm.socket')) {
+        return true;
+    }
+
+    $host = getenv('DD_AGENT_HOST') ?: '127.0.0.1';
+    $port = (int) (getenv('DD_TRACE_AGENT_PORT') ?: '8126');
+    $socket = @fsockopen((string) $host, $port, $errno, $errstr, 0.1);
+    if (is_resource($socket)) {
+        fclose($socket);
+
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * Environment prefix for Datadog APM opt-in/opt-out when launching PHP.
+ *
+ * ddtrace reads its settings before userland PHP boots, so these values must
+ * be present in the shell environment that starts `php bin/console`.
+ */
+function datadog_env_command(bool $enabled): string
+{
+    $vars = [
+        'DD_TRACE_ENABLED' => $enabled ? '1' : '0',
+        'DD_TRACE_CLI_ENABLED' => $enabled ? '1' : '0',
+    ];
+
+    if ($enabled) {
+        $version = trim(shell_exec('git rev-parse --short HEAD 2>/dev/null') ?? '');
+        $vars += [
+            'DD_SERVICE' => getenv('DD_SERVICE') ?: 'hatfield',
+            'DD_ENV' => getenv('DD_ENV') ?: 'dev',
+            'DD_VERSION' => '' !== $version ? $version : 'local',
+            'DD_LOGS_INJECTION' => 'true',
+            'DD_TRACE_APPEND_TRACE_IDS_TO_LOGS' => 'true',
+        ];
+
+        if (datadog_is_unix_socket('/var/run/datadog/apm.socket')) {
+            $vars['DD_TRACE_AGENT_URL'] = 'unix:///var/run/datadog/apm.socket';
+        }
+    }
+
+    $parts = ['env'];
+    foreach ($vars as $name => $value) {
+        $parts[] = $name.'='.escapeshellarg($value);
+    }
+
+    return implode(' ', $parts);
+}
+
+/**
  * Launch the agent TUI in a tmux session.
  *
  * Inside tmux: creates a new window named "hatfield-agent".
@@ -639,8 +733,43 @@ function run_agent(): void
     $insideTmux = false !== getenv('TMUX');
 
     $innerCmd = sprintf(
-        'cd %s && exec php bin/console agent',
-        escapeshellarg($root)
+        'cd %s && exec %s php bin/console agent',
+        escapeshellarg($root),
+        datadog_env_command(datadog_auto_enabled()),
+    );
+
+    if ($insideTmux) {
+        shell_exec(sprintf(
+            'tmux new-window -n %s bash -c %s',
+            escapeshellarg($session),
+            escapeshellarg($innerCmd)
+        ));
+        echo "Created tmux window '{$session}'.\n";
+    } else {
+        run_interactive(sprintf(
+            'tmux new-session -A -s %s bash -lc %s',
+            escapeshellarg($session),
+            escapeshellarg($innerCmd)
+        ));
+    }
+}
+
+/**
+ * Launch the agent TUI with Datadog APM/traces enabled for this run.
+ */
+#[AsTask(name: 'run:agent-datadog', description: 'Launch the agent TUI with Datadog APM enabled')]
+function run_agent_datadog(): void
+{
+    check_tmux();
+
+    $root = realpath(__DIR__.'/..');
+    $session = 'hatfield-agent-datadog';
+    $insideTmux = false !== getenv('TMUX');
+
+    $innerCmd = sprintf(
+        'cd %s && exec %s php bin/console agent',
+        escapeshellarg($root),
+        datadog_env_command(true),
     );
 
     if ($insideTmux) {
@@ -711,9 +840,10 @@ function run_agent_test(): void
     shell_exec(sprintf('tmux kill-session -t %s 2>/dev/null', escapeshellarg($session)));
 
     $innerCmd = sprintf(
-        'cd %s && APP_ENV=dev HOME=%s %s %s agent --prompt=%s --model=llama_cpp_test/test --reasoning=off 2>&1',
+        'cd %s && APP_ENV=dev HOME=%s %s %s %s agent --prompt=%s --model=llama_cpp_test/test --reasoning=off 2>&1',
         escapeshellarg($testDir),
         escapeshellarg($homeDir),
+        datadog_env_command(false),
         escapeshellarg(\PHP_BINARY),
         escapeshellarg($root.'/bin/console'),
         escapeshellarg('Say exactly: hello')
@@ -1122,6 +1252,88 @@ function project_relative_path(string $file): string
     }
 
     return $file;
+}
+
+// ─── Datadog tasks ────────────────────────────────────────────────
+
+#[AsTask(name: 'datadog:status', description: 'Show local Datadog readiness for Hatfield logs/APM')]
+function datadog_status(): void
+{
+    $root = realpath(__DIR__.'/..') ?: __DIR__.'/..';
+    $todayLog = $root.'/.hatfield/logs/agent-'.date('Y-m-d').'.log';
+    $apmSocket = '/var/run/datadog/apm.socket';
+    $installedConfig = '/etc/datadog-agent/conf.d/hatfield.d/conf.yaml';
+    $legacyConfig = '/etc/datadog-agent/conf.d/conf.yaml';
+
+    echo 'Datadog Agent: '.trim(shell_exec('datadog-agent version 2>/dev/null') ?? 'not found').\PHP_EOL;
+    echo 'Agent process: '.(str_contains(shell_exec("ps -eo user,cmd | grep '[d]atadog-agent/bin/agent/agent run' 2>/dev/null") ?? '', 'datadog-agent') ? 'running' : 'not detected').\PHP_EOL;
+    echo 'Trace agent: '.(str_contains(shell_exec("ps -eo user,cmd | grep '[d]atadog-agent/embedded/bin/trace-agent' 2>/dev/null") ?? '', 'trace-agent') ? 'running' : 'not detected').\PHP_EOL;
+    echo 'APM socket: '.(datadog_is_unix_socket($apmSocket) ? $apmSocket.' present' : $apmSocket.' missing').\PHP_EOL;
+    echo 'PHP ddtrace: '.(extension_loaded('ddtrace') ? 'loaded' : 'not loaded').\PHP_EOL;
+    echo 'Default run:agent APM: '.(datadog_auto_enabled() ? 'enabled' : 'disabled').\PHP_EOL;
+
+    if (extension_loaded('ddtrace')) {
+        echo 'ddtrace cli enabled: '.(ini_get('datadog.trace.cli_enabled') ?: '(default)').\PHP_EOL;
+        echo 'ddtrace enabled: '.(ini_get('datadog.trace.enabled') ?: '(default)').\PHP_EOL;
+        echo 'ddtrace service: '.(ini_get('datadog.service') ?: '(unset)').\PHP_EOL;
+        echo 'ddtrace env: '.(ini_get('datadog.env') ?: '(unset)').\PHP_EOL;
+        echo 'ddtrace agent_url: '.(ini_get('datadog.trace.agent_url') ?: '(default)').\PHP_EOL;
+    }
+
+    echo 'Hatfield log today: '.$todayLog.' '.(is_readable($todayLog) ? 'readable' : 'missing/not-readable').\PHP_EOL;
+    echo 'Expected Agent config: '.$installedConfig.' '.(is_readable($installedConfig) ? 'present' : 'missing/not-readable').\PHP_EOL;
+    if (is_readable($legacyConfig)) {
+        echo 'Legacy config warning: '.$legacyConfig.' exists; prefer conf.d/hatfield.d/conf.yaml'.\PHP_EOL;
+    }
+
+    echo \PHP_EOL.'Install/check commands:'.\PHP_EOL;
+    echo '  castor datadog:log-config'.\PHP_EOL;
+    echo '  sudo systemctl restart datadog-agent'.\PHP_EOL;
+    echo '  castor datadog:smoke-log'.\PHP_EOL;
+}
+
+#[AsTask(name: 'datadog:log-config', description: 'Print the Datadog Agent Hatfield log config and install hints')]
+function datadog_log_config(): void
+{
+    $root = realpath(__DIR__.'/..') ?: __DIR__.'/..';
+    $config = $root.'/ops/datadog/hatfield.d/conf.yaml';
+
+    echo file_get_contents($config);
+    echo \PHP_EOL.'Install with:'.\PHP_EOL;
+    echo '  sudo mkdir -p /etc/datadog-agent/conf.d/hatfield.d'.\PHP_EOL;
+    echo '  sudo install -o dd-agent -g dd-agent -m 0644 ops/datadog/hatfield.d/conf.yaml /etc/datadog-agent/conf.d/hatfield.d/conf.yaml'.\PHP_EOL;
+    echo '  sudo rm -f /etc/datadog-agent/conf.d/conf.yaml'.\PHP_EOL;
+    echo '  setfacl -m u:dd-agent:--x /home/ineersa'.\PHP_EOL;
+    echo '  setfacl -m u:dd-agent:rX /home/ineersa/projects/agent-core/.hatfield/logs'.\PHP_EOL;
+    echo '  setfacl -m u:dd-agent:rX /home/ineersa/projects/agent-core-worktrees 2>/dev/null || true'.\PHP_EOL;
+    echo '  sudo systemctl restart datadog-agent'.\PHP_EOL;
+}
+
+#[AsTask(name: 'datadog:smoke-log', description: 'Write a Datadog log collection smoke-test line')]
+function datadog_smoke_log(): void
+{
+    $root = realpath(__DIR__.'/..') ?: __DIR__.'/..';
+    $logDir = $root.'/.hatfield/logs';
+    if (!is_dir($logDir) && !mkdir($logDir, 0755, true) && !is_dir($logDir)) {
+        throw new RuntimeException(sprintf('Unable to create log directory "%s".', $logDir));
+    }
+
+    $message = 'datadog smoke '.date(\DATE_ATOM).' '.bin2hex(random_bytes(4));
+    $line = json_encode([
+        'message' => $message,
+        'context' => ['component' => 'datadog:smoke-log'],
+        'level' => 200,
+        'level_name' => 'INFO',
+        'channel' => 'app',
+        'datetime' => date(\DATE_ATOM),
+        'extra' => ['service' => 'hatfield', 'env' => 'dev'],
+    ], \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES);
+
+    $path = $logDir.'/agent-'.date('Y-m-d').'.log';
+    file_put_contents($path, $line.\PHP_EOL, \FILE_APPEND | \LOCK_EX);
+
+    echo 'Wrote smoke log line to '.project_relative_path($path).\PHP_EOL;
+    echo 'Search Datadog Logs Explorer for: "'.$message.'"'.\PHP_EOL;
 }
 
 // ─── Log tasks ────────────────────────────────────────────────────

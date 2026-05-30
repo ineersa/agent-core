@@ -1,0 +1,42 @@
+# Datadog Agent log collection for Hatfield / agent-core.
+#
+# Install to:
+#   /etc/datadog-agent/conf.d/hatfield.d/conf.yaml
+# and set `logs_enabled: true` in /etc/datadog-agent/datadog.yaml.
+
+logs:
+  - type: file
+    path: /home/ineersa/projects/agent-core/.hatfield/logs/*.log
+    service: hatfield
+    source: php
+    tags:
+      - env:dev
+      - app:hatfield
+      - checkout:main
+    log_processing_rules:
+      - type: mask_sequences
+        name: redact_common_secret_values
+        pattern: '(?i)(api[_-]?key|authorization|bearer|token|secret|password)(["\\s:=]+)([^,"\\s]+)'
+        replace_placeholder: '$1$2<redacted>'
+      - type: mask_sequences
+        name: redact_known_api_key_shapes
+        pattern: '(sk-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{20,}|gh[pousr]_[A-Za-z0-9_]{20,})'
+        replace_placeholder: '<redacted-secret>'
+
+  - type: file
+    path: /home/ineersa/projects/agent-core-worktrees/*/.hatfield/logs/*.log
+    service: hatfield
+    source: php
+    tags:
+      - env:dev
+      - app:hatfield
+      - checkout:worktree
+    log_processing_rules:
+      - type: mask_sequences
+        name: redact_common_secret_values
+        pattern: '(?i)(api[_-]?key|authorization|bearer|token|secret|password)(["\\s:=]+)([^,"\\s]+)'
+        replace_placeholder: '$1$2<redacted>'
+      - type: mask_sequences
+        name: redact_known_api_key_shapes
+        pattern: '(sk-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{20,}|gh[pousr]_[A-Za-z0-9_]{20,})'
+        replace_placeholder: '<redacted-secret>'

@@ -1,6 +1,6 @@
-# Agent Core Monorepo
+# Hatfield Monorepo
 
-Monorepo for the agent-core PHP library and its ecosystem.
+Monorepo for Hatfield, a coding assistant built with PHP.
 
 ## Structure
 

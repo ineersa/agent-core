@@ -5,13 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent;
 
 use Symfony\Component\DependencyInjection\ContainerBuilder;
-use Symfony\Component\DependencyInjection\Kernel\AbstractKernel;
-use Symfony\Component\DependencyInjection\Kernel\KernelTrait;
+use Symfony\Component\HttpKernel\Kernel as BaseKernel;
 
-class Kernel extends AbstractKernel
+class Kernel extends BaseKernel
 {
-    use KernelTrait;
-
     /**
      * @return iterable<\Symfony\Component\HttpKernel\Bundle\BundleInterface>
      */
@@ -28,12 +25,6 @@ class Kernel extends AbstractKernel
 
     public function build(ContainerBuilder $container): void
     {
-        // FrameworkBundle requires kernel.charset for web/service infrastructure.
-        // HttpKernel\Kernel normally sets this; we must set it manually since our
-        // Kernel extends AbstractKernel (not HttpKernel\Kernel).
-        $container->setParameter('kernel.charset', 'UTF-8');
-        $container->setParameter('kernel.default_locale', 'en');
-
         // app.cwd must reflect the actual working directory at runtime, not the
         // directory where the container was compiled. Use the HATFIELD_CWD env var
         // with a fallback to kernel.project_dir. The env var is set by:
@@ -42,10 +33,6 @@ class Kernel extends AbstractKernel
         //   - ConsumerSupervisor (Symfony Process cwd: argument sets child CWD)
         // Each process resolves its own CWD independently.
         $container->setParameter('app.cwd', '%env(default:kernel.project_dir:string:HATFIELD_CWD)%');
-
-        // FrameworkBundle and MessengerPass handle all Messenger wiring
-        // (buses, middleware, #[AsMessageHandler] attribute, handler-to-bus locators).
-        // No custom compiler passes are needed.
     }
 
     public function boot(): void
@@ -65,5 +52,20 @@ class Kernel extends AbstractKernel
     public function getConfigDir(): string
     {
         return $this->getProjectDir().'/config';
+    }
+
+    public function getCacheDir(): string
+    {
+        return $this->getProjectDir().'/var/cache/'.$this->environment;
+    }
+
+    public function getBuildDir(): string
+    {
+        return $this->getCacheDir();
+    }
+
+    public function getLogDir(): string
+    {
+        return $this->getProjectDir().'/var/log';
     }
 }
