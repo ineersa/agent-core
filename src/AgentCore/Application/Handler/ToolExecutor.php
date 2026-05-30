@@ -133,7 +133,7 @@ final class ToolExecutor implements ToolExecutorInterface
             if ($exception instanceof ToolCallException) {
                 $message = $exception->getMessage();
                 if (null !== $exception->hint()) {
-                    $message .= ' '.$exception->hint();
+                    $message .= "\nHint: ".$exception->hint();
                 }
                 $result = $this->errorResult(
                     toolCallId: $toolCall->toolCallId,

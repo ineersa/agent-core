@@ -21,8 +21,11 @@ final readonly class ToolSettings implements ToolExecutionSettingsInterface
     public int $maxParallelism;
 
     /** @var array<string, array{mode?: string|null, timeout_seconds?: int|null}> */
-    public array $overrides;
+    private array $overrides;
 
+    /**
+     * @param array<string, array{mode?: string|null, timeout_seconds?: int|null}> $overrides
+     */
     public function __construct(
         ?string $mode = null,
         ?int $timeoutSeconds = null,

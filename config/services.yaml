@@ -286,6 +286,7 @@ services:
     factory: ['Ineersa\AgentCore\Application\Handler\ToolExecutionPolicyResolver', 'fromSettings']
     arguments:
       $settings: '@Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface'
+      $overrides: "@=service('Ineersa\\CodingAgent\\Config\\ToolSettings').executionOverrides()"
 
   # ─── AI-10 Per-turn model/reasoning routing ───
 

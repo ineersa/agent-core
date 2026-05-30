@@ -181,13 +181,15 @@ final class EditFileToolTest extends TestCase
         $patchNew = "something\nnew\ndifferent\n";
         $patch = $this->createUnifiedDiff($patchOld, $patchNew);
 
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('Patch dry-run failed');
-
-        ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
-
-        // Original must be untouched
-        $this->assertSame($original, file_get_contents($targetPath));
+        try {
+            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $this->assertStringContainsString('Patch dry-run failed', $e->getMessage());
+            $this->assertTrue($e->retryable());
+            // Original must be untouched
+            $this->assertSame($original, file_get_contents($targetPath));
+        }
     }
 
     public function testEditMissingFileThrowsDirectingToWrite(): void

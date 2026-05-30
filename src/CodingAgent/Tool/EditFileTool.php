@@ -139,8 +139,8 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
      *
      * @return array{additions: int, deletions: int}
      *
-     * @throws ToolCallException on patch failures
-     * @throws \RuntimeException on cancellation or infrastructure errors
+     * @throws ToolCallException on patch or infrastructure failures
+     * @throws \RuntimeException on cancellation or timeout (runtime concerns)
      */
     private function applyPatch(string $targetPath, string $patchContent): array
     {
@@ -153,25 +153,24 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
 
             $patchedContent = @file_get_contents($tempOut);
             if (false === $patchedContent) {
-                throw new \RuntimeException('Failed to read patched output file.');
+                throw new ToolCallException('Failed to read patched output file.', retryable: true, hint: 'Check file system availability and try again.');
             }
 
-            // Check for no-op before replacing the original
+            // Early return if patch produced identical content — no need to rename
             $originalContent = @file_get_contents($targetPath);
             if (false !== $originalContent && $patchedContent === $originalContent) {
-                return ['additions' => 0, 'deletions' => 0, 'noop' => true];
+                return ['additions' => 0, 'deletions' => 0];
             }
 
             // Atomic replace
             if (!@rename($tempOut, $targetPath)) {
-                throw new \RuntimeException(\sprintf('Failed to replace original file "%s" with patched version.', $targetPath));
+                throw new ToolCallException(\sprintf('Failed to replace original file "%s" with patched version.', $targetPath), retryable: true, hint: 'Check file permissions and try again. The original file was not modified.');
             }
             $tempOut = null; // Prevent double-cleanup in finally
 
             return [
                 'additions' => $this->computeStats($patchContent)['additions'],
                 'deletions' => $this->computeStats($patchContent)['deletions'],
-                'noop' => false,
             ];
         } finally {
             // Clean up temp files
@@ -189,14 +188,14 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
      *
      * @return string Path to the temp patch file
      *
-     * @throws \RuntimeException when temp file creation or write fails
+     * @throws ToolCallException when temp file creation or write fails
      */
     private function writePatchFile(string $patchContent): string
     {
         $patchFile = tempnam(sys_get_temp_dir(), 'hatfield_patch_');
 
         if (false === $patchFile) {
-            throw new \RuntimeException('Failed to create temporary file for patch content.');
+            throw new ToolCallException('Failed to create temp file for patch content.', retryable: true, hint: 'Check disk space and temp directory permissions.');
         }
 
         $written = @file_put_contents($patchFile, $patchContent);
@@ -205,7 +204,7 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             if (is_file($patchFile)) {
                 @unlink($patchFile);
             }
-            throw new \RuntimeException('Failed to write patch content to temp file.');
+            throw new ToolCallException('Failed to write patch content to temp file.', retryable: true, hint: 'Check disk space and temp directory permissions.');
         }
 
         return $patchFile;
@@ -268,7 +267,7 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
 
         if (0 !== $result->exitCode) {
             $errorOutput = '' !== $result->stderr ? $result->stderr : $result->stdout;
-            throw new ToolCallException(\sprintf('Patch application failed for "%s": %s', $targetPath, $errorOutput), retryable: true, hint: 'The dry-run passed but apply failed. This may indicate a race condition or file system issue.');
+            throw new ToolCallException(\sprintf('Patch application failed for "%s": %s', $targetPath, $errorOutput), retryable: true, hint: 'Retry the edit operation.');
         }
     }
 
