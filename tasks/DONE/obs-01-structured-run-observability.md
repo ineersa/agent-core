@@ -260,14 +260,14 @@ If `castor check` cannot run because tmux or llama.cpp on port 9052 is unavailab
 - Required Castor validation is run and reported, including `castor check` or exact environmental blocker output.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/obs-01-structured-run-observability
 Worktree: /home/ineersa/projects/agent-core-worktrees/obs-01-structured-run-observability
 Fork run: iaonfcp46am1
 PR URL: https://github.com/ineersa/agent-core/pull/74
-PR Status: open
+PR Status: merged
 Started: 2026-05-30T18:30:26.010Z
-Completed:
+Completed: 2026-05-30T19:29:22.912Z
 
 ## Work log
 - Created: 2026-05-30T18:25:32.218Z
@@ -322,3 +322,48 @@ Completed:
 - Created PR: https://github.com/ineersa/agent-core/pull/74
 - Validation: `castor test --filter=RunLogContextTest` passed: 14 tests, 51 assertions.; `castor test --filter='RunLogContext|LogContextProcessor|RunTracer'` passed: 27 tests, 97 assertions.; `castor test` passed: 1477 tests, 11332 assertions.; `castor deptrac` previously reported pass with 0 violations after reviewer-fix commit `3f0c1330`; final commit only touched RunLogContext/tests.; `castor phpstan` passed with 0 errors.; `castor cs-check` passed with 0 files fixed.; Follow-up reviewer reported `castor check` partial: deptrac/phpunit/controller-E2E/llm-real/phpstan/cs-check passed; TUI E2E snapshot/ViewImageTool failures were reported as pre-existing/environmental and unrelated to OBS-01.
 - Summary: Implementation ready for review. Latest branch commit `fc21b4d9` includes structured run log context, Monolog processor, Datadog-ready span provider integration, event-style runtime/LLM/tool/storage logs, docs, tests, reviewer-requested fiber-safety/context-conflict fixes, and final Datadog-caught empty-stack deprecation fix. Reviewer verdict after fixes: APPROVE WITH SUGGESTIONS; final suggestions addressed with fiber tests and explicit empty-stack guards.
+
+## Task workflow update - 2026-05-30T19:28:05.838Z
+- Validation: Docs-only change; no tests run.
+- Summary: Added final PR polish commit `07064570` per user review: `AGENTS.md` now includes a one-sentence structured logging/privacy requirement and references `docs/datadog.md` in the docs map. Pushed to PR branch.
+
+## Task workflow update - 2026-05-30T19:29:22.912Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/obs-01-structured-run-observability into integration checkout.
+- Auto-merging AGENTS.md
+Auto-merging config/services.yaml
+Merge made by the 'ort' strategy.
+ .castor/tasks.php                                  |  24 +-
+ AGENTS.md                                          |   2 +
+ config/services.yaml                               |   5 +
+ docs/datadog.md                                    |  90 +++++++
+ .../Application/Handler/ExecuteLlmStepWorker.php   |  79 ++++--
+ .../Application/Handler/ExecuteToolCallWorker.php  |  58 +++--
+ src/AgentCore/Application/Handler/RunTracer.php    |  56 +++-
+ src/AgentCore/Application/Pipeline/RunCommit.php   |  40 ++-
+ .../Application/Pipeline/RunMessageProcessor.php   | 146 +++++++----
+ .../Application/Pipeline/RunOrchestrator.php       | 143 +++++++----
+ src/AgentCore/Contract/SpanProviderInterface.php   |  48 ++++
+ src/AgentCore/Infrastructure/RunLogContext.php     | 156 ++++++++++++
+ src/CodingAgent/Logging/DdtraceSpanProvider.php    | 110 ++++++++
+ src/CodingAgent/Logging/LogContext.php             |  69 +++++
+ src/CodingAgent/Logging/LogContextProcessor.php    |  77 ++++++
+ .../Application/Handler/RunTracerTest.php          | 165 ++++++++++++
+ .../RunOrchestratorStructuredLoggingTest.php       |  36 +--
+ .../AgentCore/Infrastructure/RunLogContextTest.php | 283 +++++++++++++++++++++
+ .../Logging/LogContextProcessorTest.php            | 173 +++++++++++++
+ tests/CodingAgent/Logging/LogContextTest.php       |  57 +++++
+ 20 files changed, 1637 insertions(+), 180 deletions(-)
+ create mode 100644 src/AgentCore/Contract/SpanProviderInterface.php
+ create mode 100644 src/AgentCore/Infrastructure/RunLogContext.php
+ create mode 100644 src/CodingAgent/Logging/DdtraceSpanProvider.php
+ create mode 100644 src/CodingAgent/Logging/LogContext.php
+ create mode 100644 src/CodingAgent/Logging/LogContextProcessor.php
+ create mode 100644 tests/AgentCore/Application/Handler/RunTracerTest.php
+ create mode 100644 tests/AgentCore/Infrastructure/RunLogContextTest.php
+ create mode 100644 tests/CodingAgent/Logging/LogContextProcessorTest.php
+ create mode 100644 tests/CodingAgent/Logging/LogContextTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/obs-01-structured-run-observability.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR merged by user: https://github.com/ineersa/agent-core/pull/74
+- Summary: PR was reviewed and merged by user. Moving task to DONE. Dirty integration checkout only contained this task file's local work-log metadata update, so merge cleanliness was intentionally relaxed.
