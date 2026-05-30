@@ -12,6 +12,9 @@ use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
  * Hydrated from the `tools.*` keys in the merged Hatfield settings
  * (defaults.yaml → home settings → project settings).
  *
+ * Execution mode per tool is set at registration time by the tool
+ * author/provider in ToolDefinitionDTO, not from settings overrides.
+ *
  * @immutable
  */
 final readonly class ToolSettings implements ToolExecutionSettingsInterface
@@ -20,22 +23,14 @@ final readonly class ToolSettings implements ToolExecutionSettingsInterface
     public int $timeoutSeconds;
     public int $maxParallelism;
 
-    /** @var array<string, array{mode?: string|null, timeout_seconds?: int|null}> */
-    private array $overrides;
-
-    /**
-     * @param array<string, array{mode?: string|null, timeout_seconds?: int|null}> $overrides
-     */
     public function __construct(
         ?string $mode = null,
         ?int $timeoutSeconds = null,
         ?int $maxParallelism = null,
-        array $overrides = [],
     ) {
         $this->mode = $mode ?? ToolExecutionConfig::DEFAULT_MODE;
         $this->timeoutSeconds = $timeoutSeconds ?? ToolExecutionConfig::DEFAULT_TIMEOUT_SECONDS;
         $this->maxParallelism = $maxParallelism ?? ToolExecutionConfig::DEFAULT_MAX_PARALLELISM;
-        $this->overrides = $overrides;
     }
 
     /**
@@ -49,7 +44,6 @@ final readonly class ToolSettings implements ToolExecutionSettingsInterface
             mode: $execution->defaultMode,
             timeoutSeconds: $execution->timeoutSeconds,
             maxParallelism: $execution->maxParallelism,
-            overrides: $execution->overrides,
         );
     }
 
@@ -66,10 +60,5 @@ final readonly class ToolSettings implements ToolExecutionSettingsInterface
     public function maxParallelism(): int
     {
         return $this->maxParallelism;
-    }
-
-    public function executionOverrides(): array
-    {
-        return $this->overrides;
     }
 }

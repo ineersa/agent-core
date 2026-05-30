@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+
 /**
  * Immutable snapshot of a single tool registration.
  *
@@ -15,6 +17,10 @@ namespace Ineersa\CodingAgent\Tool;
  * instead of PHP's `callable` pseudo-type, which cannot be used as a
  * property type. Implementations are invokable objects that receive
  * decoded tool call arguments as an associative array.
+ *
+ * The executionMode defaults to sequential. Tool authors/providers should
+ * set it in their definition() return when non-default behavior is needed.
+ * File-mutation tools (write, edit) must always run sequentially.
  */
 final readonly class ToolDefinitionDTO
 {
@@ -25,6 +31,7 @@ final readonly class ToolDefinitionDTO
      * @param ToolHandlerInterface $handler              Execution handler invoked with decoded arguments
      * @param string               $promptLine           One-line description for the <available_tools> prompt section
      * @param list<string>         $promptGuidelines     Zero or more guideline strings for the prompt guidelines section
+     * @param ToolExecutionMode    $executionMode        Execution mode for this tool (default: Sequential)
      */
     public function __construct(
         public readonly string $name,
@@ -33,6 +40,7 @@ final readonly class ToolDefinitionDTO
         public readonly ToolHandlerInterface $handler,
         public readonly string $promptLine,
         public readonly array $promptGuidelines = [],
+        public readonly ToolExecutionMode $executionMode = ToolExecutionMode::Sequential,
     ) {
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Path\PathResolver;
 use Symfony\Component\Process\Process;
 
@@ -82,6 +83,7 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
                 'additionalProperties' => false,
             ],
             handler: $this,
+            executionMode: ToolExecutionMode::Sequential,
             promptLine: 'edit path patch — apply a unified diff patch to an existing file; file must already exist, use write for new files',
             promptGuidelines: [
                 'Provide the patch in standard unified diff format (diff -u).',

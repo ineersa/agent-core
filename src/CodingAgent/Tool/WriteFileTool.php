@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Path\PathResolver;
 
 /**
@@ -93,6 +94,7 @@ final class WriteFileTool implements HatfieldToolProviderInterface, ToolHandlerI
                 'additionalProperties' => false,
             ],
             handler: $this,
+            executionMode: ToolExecutionMode::Sequential,
             promptLine: 'write path content — create or overwrite a file with exact text content; creates parent directories automatically',
             promptGuidelines: [
                 'Write the exact content provided — do not trim, format, or modify it.',

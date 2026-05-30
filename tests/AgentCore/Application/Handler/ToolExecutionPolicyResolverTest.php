@@ -14,9 +14,9 @@ use PHPUnit\Framework\TestCase;
  */
 final class ToolExecutionPolicyResolverTest extends TestCase
 {
-    public function testResolveReturnsDefaultModeWhenNoOverrides(): void
+    public function testResolveReturnsDefaultMode(): void
     {
-        $resolver = new ToolExecutionPolicyResolver('sequential', 300, 4, []);
+        $resolver = new ToolExecutionPolicyResolver('sequential', 300, 4);
 
         $policy = $resolver->resolve('read');
 
@@ -25,41 +25,18 @@ final class ToolExecutionPolicyResolverTest extends TestCase
         self::assertSame(4, $policy->maxParallelism);
     }
 
-    public function testResolveReturnsOverrideModeForConfiguredTool(): void
+    public function testResolveReturnsConfiguredDefaultMode(): void
     {
-        $resolver = new ToolExecutionPolicyResolver('parallel', 300, 4, [
-            'write' => ['mode' => 'sequential'],
-            'edit' => ['mode' => 'sequential'],
-        ]);
+        $resolver = new ToolExecutionPolicyResolver('parallel', 300, 4);
 
-        $writePolicy = $resolver->resolve('write');
-        $editPolicy = $resolver->resolve('edit');
-        $readPolicy = $resolver->resolve('read');
+        $policy = $resolver->resolve('any_tool');
 
-        // Overridden tools should be sequential despite default parallel
-        self::assertSame(ToolExecutionMode::Sequential, $writePolicy->mode);
-        self::assertSame(ToolExecutionMode::Sequential, $editPolicy->mode);
-
-        // Non-overridden tool should use default (parallel)
-        self::assertSame(ToolExecutionMode::Parallel, $readPolicy->mode);
-    }
-
-    public function testResolveReturnsOverrideTimeoutForConfiguredTool(): void
-    {
-        $resolver = new ToolExecutionPolicyResolver('sequential', 300, 4, [
-            'long_running' => ['timeout_seconds' => 600],
-        ]);
-
-        $overridePolicy = $resolver->resolve('long_running');
-        $defaultPolicy = $resolver->resolve('normal_tool');
-
-        self::assertSame(600, $overridePolicy->timeoutSeconds);
-        self::assertSame(300, $defaultPolicy->timeoutSeconds);
+        self::assertSame(ToolExecutionMode::Parallel, $policy->mode);
     }
 
     public function testResolveClampsTimeoutToAtLeastOneSecond(): void
     {
-        $resolver = new ToolExecutionPolicyResolver('sequential', 0, 4, []);
+        $resolver = new ToolExecutionPolicyResolver('sequential', 0, 4);
 
         $policy = $resolver->resolve('any_tool');
 
@@ -68,14 +45,14 @@ final class ToolExecutionPolicyResolverTest extends TestCase
 
     public function testResolveClampsMaxParallelismToAtLeastOne(): void
     {
-        $resolver = new ToolExecutionPolicyResolver('sequential', 300, 0, []);
+        $resolver = new ToolExecutionPolicyResolver('sequential', 300, 0);
 
         $policy = $resolver->resolve('any_tool');
 
         self::assertSame(1, $policy->maxParallelism);
     }
 
-    public function testResolveFromSettingsEmptyOverrides(): void
+    public function testResolveFromSettings(): void
     {
         $settings = $this->createStub(ToolExecutionSettingsInterface::class);
         $settings->method('defaultMode')->willReturn('sequential');
@@ -87,23 +64,5 @@ final class ToolExecutionPolicyResolverTest extends TestCase
         $policy = $resolver->resolve('any_tool');
 
         self::assertSame(ToolExecutionMode::Sequential, $policy->mode);
-    }
-
-    public function testResolveFromSettingsWithOverrides(): void
-    {
-        $settings = $this->createStub(ToolExecutionSettingsInterface::class);
-        $settings->method('defaultMode')->willReturn('parallel');
-        $settings->method('defaultTimeoutSeconds')->willReturn(300);
-        $settings->method('maxParallelism')->willReturn(4);
-
-        $resolver = ToolExecutionPolicyResolver::fromSettings($settings, [
-            'write' => ['mode' => 'sequential'],
-        ]);
-
-        $writePolicy = $resolver->resolve('write');
-        $defaultPolicy = $resolver->resolve('any_tool');
-
-        self::assertSame(ToolExecutionMode::Sequential, $writePolicy->mode);
-        self::assertSame(ToolExecutionMode::Parallel, $defaultPolicy->mode);
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Tool\HatfieldToolProviderInterface;
 use Ineersa\CodingAgent\Tool\ToolDefinitionDTO;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
@@ -25,7 +26,7 @@ final class ToolRegistryTest extends TestCase
     {
         $registry = new ToolRegistry([]);
 
-        self::assertSame([], $registry->activeToolNames());
+        $this->assertSame([], $registry->activeToolNames());
     }
 
     public function testConstructorRegistersProviderDefinitionsAsPermanentTools(): void
@@ -35,14 +36,14 @@ final class ToolRegistryTest extends TestCase
             $this->createProvider('read', 'Read tool', $handler, 'read: Read', ['G1']),
         ]);
 
-        self::assertSame(['read'], $registry->activeToolNames());
-        self::assertSame(['read: Read'], $registry->permanentToolLines());
-        self::assertSame(['G1'], $registry->permanentGuidelines());
+        $this->assertSame(['read'], $registry->activeToolNames());
+        $this->assertSame(['read: Read'], $registry->permanentToolLines());
+        $this->assertSame(['G1'], $registry->permanentGuidelines());
 
         $definition = $registry->toolDefinition('read');
-        self::assertNotNull($definition);
-        self::assertSame($handler, $definition->handler);
-        self::assertSame('Read tool', $definition->description);
+        $this->assertNotNull($definition);
+        $this->assertSame($handler, $definition->handler);
+        $this->assertSame('Read tool', $definition->description);
     }
 
     public function testConstructorRegistersMultipleProvidersInOrder(): void
@@ -53,8 +54,8 @@ final class ToolRegistryTest extends TestCase
             $this->createProvider('c', 'C', $this->dummyHandler(), 'c: C'),
         ]);
 
-        self::assertSame(['a', 'b', 'c'], $registry->activeToolNames());
-        self::assertSame(['a: A', 'b: B', 'c: C'], $registry->permanentToolLines());
+        $this->assertSame(['a', 'b', 'c'], $registry->activeToolNames());
+        $this->assertSame(['a: A', 'b: B', 'c: C'], $registry->permanentToolLines());
     }
 
     /* ───────── Permanent tool registration ───────── */
@@ -70,12 +71,12 @@ final class ToolRegistryTest extends TestCase
             promptGuidelines: ['Use read for files', 'Output is truncated at 2000 lines'],
         );
 
-        self::assertSame(['- read: Read file contents'], $this->registry->permanentToolLines());
-        self::assertSame(
+        $this->assertSame(['- read: Read file contents'], $this->registry->permanentToolLines());
+        $this->assertSame(
             ['Use read for files', 'Output is truncated at 2000 lines'],
             $this->registry->permanentGuidelines(),
         );
-        self::assertSame(['read'], $this->registry->activeToolNames());
+        $this->assertSame(['read'], $this->registry->activeToolNames());
     }
 
     public function testRegisterMultiplePermanentToolsPreservesOrder(): void
@@ -84,9 +85,9 @@ final class ToolRegistryTest extends TestCase
         $this->registry->registerTool(name: 'write', description: 'Write', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'write: Write', promptGuidelines: ['G2']);
         $this->registry->registerTool(name: 'bash', description: 'Bash', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'bash: Bash', promptGuidelines: ['G3']);
 
-        self::assertSame(['read: Read', 'write: Write', 'bash: Bash'], $this->registry->permanentToolLines());
-        self::assertSame(['G1', 'G2', 'G3'], $this->registry->permanentGuidelines());
-        self::assertSame(['read', 'write', 'bash'], $this->registry->activeToolNames());
+        $this->assertSame(['read: Read', 'write: Write', 'bash: Bash'], $this->registry->permanentToolLines());
+        $this->assertSame(['G1', 'G2', 'G3'], $this->registry->permanentGuidelines());
+        $this->assertSame(['read', 'write', 'bash'], $this->registry->activeToolNames());
     }
 
     public function testIdenticalReRegistrationIsIdempotent(): void
@@ -95,8 +96,8 @@ final class ToolRegistryTest extends TestCase
         $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read', promptGuidelines: ['G1']);
 
         // Lines should not duplicate
-        self::assertCount(1, $this->registry->permanentToolLines());
-        self::assertCount(1, $this->registry->permanentGuidelines());
+        $this->assertCount(1, $this->registry->permanentToolLines());
+        $this->assertCount(1, $this->registry->permanentGuidelines());
     }
 
     public function testRegisterPermanentToolWithEmptyNameThrows(): void
@@ -118,7 +119,7 @@ final class ToolRegistryTest extends TestCase
         $this->registry->registerTool(name: 'a', description: 'A', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'same line', promptGuidelines: ['G1']);
         $this->registry->registerTool(name: 'b', description: 'B', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'same line', promptGuidelines: ['G2']);
 
-        self::assertSame(['same line'], $this->registry->permanentToolLines());
+        $this->assertSame(['same line'], $this->registry->permanentToolLines());
     }
 
     public function testDedupesDuplicateGuidelinesAcrossTools(): void
@@ -126,7 +127,7 @@ final class ToolRegistryTest extends TestCase
         $this->registry->registerTool(name: 'a', description: 'A', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'L1', promptGuidelines: ['shared guideline']);
         $this->registry->registerTool(name: 'b', description: 'B', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'L2', promptGuidelines: ['shared guideline', 'unique g']);
 
-        self::assertSame(['shared guideline', 'unique g'], $this->registry->permanentGuidelines());
+        $this->assertSame(['shared guideline', 'unique g'], $this->registry->permanentGuidelines());
     }
 
     /* ───────── Dynamic tools ───────── */
@@ -135,7 +136,7 @@ final class ToolRegistryTest extends TestCase
     {
         $this->registry->addDynamicTool(name: 'fg', description: 'Fg tool', parametersJsonSchema: [], handler: $this->dummyHandler());
 
-        self::assertSame(['fg'], $this->registry->activeToolNames());
+        $this->assertSame(['fg'], $this->registry->activeToolNames());
     }
 
     public function testRemoveDynamicTool(): void
@@ -145,13 +146,13 @@ final class ToolRegistryTest extends TestCase
 
         $this->registry->removeDynamicTool('fg');
 
-        self::assertSame(['bg'], $this->registry->activeToolNames());
+        $this->assertSame(['bg'], $this->registry->activeToolNames());
     }
 
     public function testRemoveNonExistentDynamicToolIsNoOp(): void
     {
         $this->registry->removeDynamicTool('nonexistent');
-        self::assertSame([], $this->registry->activeToolNames());
+        $this->assertSame([], $this->registry->activeToolNames());
     }
 
     public function testSetDynamicToolsReplacesAll(): void
@@ -162,7 +163,7 @@ final class ToolRegistryTest extends TestCase
             ['name' => 'new2', 'description' => 'New2', 'parametersJsonSchema' => [], 'handler' => $this->dummyHandler()],
         ]);
 
-        self::assertSame(['new1', 'new2'], $this->registry->activeToolNames());
+        $this->assertSame(['new1', 'new2'], $this->registry->activeToolNames());
     }
 
     public function testGetDynamicToolsReturnsOrderedList(): void
@@ -171,10 +172,10 @@ final class ToolRegistryTest extends TestCase
         $this->registry->addDynamicTool(name: 'b', description: 'B', parametersJsonSchema: ['type' => 'array'], handler: $this->dummyHandler());
 
         $tools = $this->registry->getDynamicTools();
-        self::assertCount(2, $tools);
-        self::assertSame('a', $tools[0]['name']);
-        self::assertSame('b', $tools[1]['name']);
-        self::assertSame(['type' => 'object'], $tools[0]['parametersJsonSchema']);
+        $this->assertCount(2, $tools);
+        $this->assertSame('a', $tools[0]['name']);
+        $this->assertSame('b', $tools[1]['name']);
+        $this->assertSame(['type' => 'object'], $tools[0]['parametersJsonSchema']);
     }
 
     public function testDynamicToolNameConflictWithPermanentThrows(): void
@@ -200,7 +201,7 @@ final class ToolRegistryTest extends TestCase
         $this->registry->registerTool(name: 'write', description: 'Write', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'write', promptGuidelines: []);
         $this->registry->addDynamicTool(name: 'bg', description: 'Bg', parametersJsonSchema: [], handler: $this->dummyHandler());
 
-        self::assertSame(['read', 'write', 'bg'], $this->registry->activeToolNames());
+        $this->assertSame(['read', 'write', 'bg'], $this->registry->activeToolNames());
     }
 
     public function testActiveToolNamesDoesNotIncludeRemovedDynamicTools(): void
@@ -209,7 +210,7 @@ final class ToolRegistryTest extends TestCase
         $this->registry->addDynamicTool(name: 'bg', description: 'Bg', parametersJsonSchema: [], handler: $this->dummyHandler());
         $this->registry->removeDynamicTool('bg');
 
-        self::assertSame(['read'], $this->registry->activeToolNames());
+        $this->assertSame(['read'], $this->registry->activeToolNames());
     }
 
     public function testPermanentToolLinesAndGuidelinesExcludeDynamicTools(): void
@@ -217,8 +218,8 @@ final class ToolRegistryTest extends TestCase
         $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read line', promptGuidelines: ['Guideline']);
         $this->registry->addDynamicTool(name: 'bg', description: 'Bg', parametersJsonSchema: [], handler: $this->dummyHandler());
 
-        self::assertSame(['read line'], $this->registry->permanentToolLines());
-        self::assertSame(['Guideline'], $this->registry->permanentGuidelines());
+        $this->assertSame(['read line'], $this->registry->permanentToolLines());
+        $this->assertSame(['Guideline'], $this->registry->permanentGuidelines());
     }
 
     /* ───────── ToolDefinitionDTO lookup methods ───────── */
@@ -232,14 +233,14 @@ final class ToolRegistryTest extends TestCase
 
         $defs = $this->registry->activeToolDefinitions();
 
-        self::assertCount(2, $defs);
-        self::assertSame('read', $defs[0]->name);
-        self::assertSame('Read files', $defs[0]->description);
-        self::assertSame($h1, $defs[0]->handler);
-        self::assertSame('write', $defs[1]->name);
-        self::assertSame($h2, $defs[1]->handler);
-        self::assertSame('write: Write', $defs[1]->promptLine);
-        self::assertSame(['G2'], $defs[1]->promptGuidelines);
+        $this->assertCount(2, $defs);
+        $this->assertSame('read', $defs[0]->name);
+        $this->assertSame('Read files', $defs[0]->description);
+        $this->assertSame($h1, $defs[0]->handler);
+        $this->assertSame('write', $defs[1]->name);
+        $this->assertSame($h2, $defs[1]->handler);
+        $this->assertSame('write: Write', $defs[1]->promptLine);
+        $this->assertSame(['G2'], $defs[1]->promptGuidelines);
     }
 
     public function testActiveToolDefinitionsIncludesDynamicAfterPermanent(): void
@@ -249,14 +250,14 @@ final class ToolRegistryTest extends TestCase
 
         $defs = $this->registry->activeToolDefinitions();
 
-        self::assertCount(2, $defs);
-        self::assertSame('perm', $defs[0]->name);
-        self::assertSame('dyn', $defs[1]->name);
+        $this->assertCount(2, $defs);
+        $this->assertSame('perm', $defs[0]->name);
+        $this->assertSame('dyn', $defs[1]->name);
     }
 
     public function testActiveToolDefinitionsReturnsEmptyForEmptyRegistry(): void
     {
-        self::assertSame([], $this->registry->activeToolDefinitions());
+        $this->assertSame([], $this->registry->activeToolDefinitions());
     }
 
     public function testToolDefinitionReturnsDtoForPermanentTool(): void
@@ -266,11 +267,11 @@ final class ToolRegistryTest extends TestCase
 
         $def = $this->registry->toolDefinition('my_tool');
 
-        self::assertNotNull($def);
-        self::assertSame('my_tool', $def->name);
-        self::assertSame('My tool', $def->description);
-        self::assertSame($handler, $def->handler);
-        self::assertSame(['type' => 'object'], $def->parametersJsonSchema);
+        $this->assertNotNull($def);
+        $this->assertSame('my_tool', $def->name);
+        $this->assertSame('My tool', $def->description);
+        $this->assertSame($handler, $def->handler);
+        $this->assertSame(['type' => 'object'], $def->parametersJsonSchema);
     }
 
     public function testToolDefinitionReturnsDtoForDynamicTool(): void
@@ -280,16 +281,16 @@ final class ToolRegistryTest extends TestCase
 
         $def = $this->registry->toolDefinition('dyn_tool');
 
-        self::assertNotNull($def);
-        self::assertSame('dyn_tool', $def->name);
-        self::assertSame('Dynamic tool', $def->description);
-        self::assertSame($handler, $def->handler);
-        self::assertSame(['type' => 'array'], $def->parametersJsonSchema);
+        $this->assertNotNull($def);
+        $this->assertSame('dyn_tool', $def->name);
+        $this->assertSame('Dynamic tool', $def->description);
+        $this->assertSame($handler, $def->handler);
+        $this->assertSame(['type' => 'array'], $def->parametersJsonSchema);
     }
 
     public function testToolDefinitionReturnsNullForUnknownTool(): void
     {
-        self::assertNull($this->registry->toolDefinition('nonexistent'));
+        $this->assertNull($this->registry->toolDefinition('nonexistent'));
     }
 
     public function testToolDefinitionReturnsPermanentBeforeDynamicOnNameCollision(): void
@@ -302,24 +303,97 @@ final class ToolRegistryTest extends TestCase
 
         $def = $this->registry->toolDefinition('shared');
 
-        self::assertNotNull($def);
-        self::assertSame('Permanent', $def->description);
+        $this->assertNotNull($def);
+        $this->assertSame('Permanent', $def->description);
     }
 
     /* ───────── Edge cases ───────── */
 
     public function testEmptyRegistryReturnsEmptyLists(): void
     {
-        self::assertSame([], $this->registry->permanentToolLines());
-        self::assertSame([], $this->registry->permanentGuidelines());
-        self::assertSame([], $this->registry->activeToolNames());
-        self::assertSame([], $this->registry->getDynamicTools());
+        $this->assertSame([], $this->registry->permanentToolLines());
+        $this->assertSame([], $this->registry->permanentGuidelines());
+        $this->assertSame([], $this->registry->activeToolNames());
+        $this->assertSame([], $this->registry->getDynamicTools());
     }
 
     public function testToolWithNoGuidelines(): void
     {
         $this->registry->registerTool(name: 'minimal', description: 'Min', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'minimal: Minimal');
-        self::assertSame([], $this->registry->permanentGuidelines());
+        $this->assertSame([], $this->registry->permanentGuidelines());
+    }
+
+    /* ───────── Execution mode ───────── */
+
+    public function testRegisterToolDefaultsToSequentialExecutionMode(): void
+    {
+        $this->registry->registerTool(name: 'default_tool', description: 'Default', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'default_tool: Default');
+
+        $def = $this->registry->toolDefinition('default_tool');
+
+        $this->assertNotNull($def);
+        $this->assertSame(ToolExecutionMode::Sequential, $def->executionMode);
+    }
+
+    public function testRegisterToolPreservesExplicitExecutionMode(): void
+    {
+        $this->registry->registerTool(name: 'explicit_tool', description: 'Explicit', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'explicit_tool: Explicit', promptGuidelines: [], executionMode: ToolExecutionMode::Parallel);
+
+        $def = $this->registry->toolDefinition('explicit_tool');
+
+        $this->assertNotNull($def);
+        $this->assertSame(ToolExecutionMode::Parallel, $def->executionMode);
+    }
+
+    public function testDynamicToolDefaultsToSequentialExecutionMode(): void
+    {
+        $this->registry->addDynamicTool(name: 'dyn_tool', description: 'Dynamic', parametersJsonSchema: [], handler: $this->dummyHandler());
+
+        $def = $this->registry->toolDefinition('dyn_tool');
+
+        $this->assertNotNull($def);
+        $this->assertSame(ToolExecutionMode::Sequential, $def->executionMode);
+    }
+
+    public function testDynamicToolPreservesExplicitExecutionMode(): void
+    {
+        $this->registry->addDynamicTool(name: 'parallel_dyn', description: 'Parallel dyn', parametersJsonSchema: [], handler: $this->dummyHandler(), executionMode: ToolExecutionMode::Parallel);
+
+        $def = $this->registry->toolDefinition('parallel_dyn');
+
+        $this->assertNotNull($def);
+        $this->assertSame(ToolExecutionMode::Parallel, $def->executionMode);
+    }
+
+    public function testProviderRegistrationPreservesExecutionMode(): void
+    {
+        $definition = new ToolDefinitionDTO(
+            name: 'custom',
+            description: 'Custom mode tool',
+            parametersJsonSchema: [],
+            handler: $this->dummyHandler(),
+            promptLine: 'custom: Custom',
+            promptGuidelines: [],
+            executionMode: ToolExecutionMode::Parallel,
+        );
+
+        $provider = new class($definition) implements HatfieldToolProviderInterface {
+            public function __construct(
+                private readonly ToolDefinitionDTO $definition,
+            ) {
+            }
+
+            public function definition(): ToolDefinitionDTO
+            {
+                return $this->definition;
+            }
+        };
+
+        $registry = new ToolRegistry([$provider]);
+        $def = $registry->toolDefinition('custom');
+
+        $this->assertNotNull($def);
+        $this->assertSame(ToolExecutionMode::Parallel, $def->executionMode);
     }
 
     /* ───────── Private helpers ───────── */

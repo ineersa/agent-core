@@ -19,11 +19,4 @@ interface ToolExecutionSettingsInterface
     public function defaultTimeoutSeconds(): int;
 
     public function maxParallelism(): int;
-
-    /**
-     * Per-tool execution mode overrides.
-     *
-     * @return array<string, array{mode?: string|null, timeout_seconds?: int|null}>
-     */
-    public function executionOverrides(): array;
 }

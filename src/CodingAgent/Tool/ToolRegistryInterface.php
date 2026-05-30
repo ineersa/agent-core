@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+
 /**
  * CodingAgent-owned ToolRegistry contract.
  *
@@ -21,6 +23,10 @@ namespace Ineersa\CodingAgent\Tool;
  * Tool definitions are stored as ToolDefinitionDTO internally and
  * exposed via activeToolDefinitions() / toolDefinition() for downstream
  * adapters (e.g. RegistryBackedToolbox in TOOLS-R03).
+ *
+ * The executionMode defaults to Sequential. Tool authors set it at
+ * registration time; the corresponding value flows through ActiveToolSet
+ * to AgentCore's scheduling layer.
  */
 interface ToolRegistryInterface
 {
@@ -41,6 +47,7 @@ interface ToolRegistryInterface
      * @param ToolHandlerInterface $handler              Typed execution handler
      * @param string               $promptLine           Single-line description for <available_tools>
      * @param list<string>         $promptGuidelines     Zero or more guideline strings for <guidelines>
+     * @param ToolExecutionMode    $executionMode        Execution mode (default: Sequential)
      *
      * @throws \InvalidArgumentException on empty name or description
      */
@@ -51,6 +58,7 @@ interface ToolRegistryInterface
         ToolHandlerInterface $handler,
         string $promptLine,
         array $promptGuidelines = [],
+        ToolExecutionMode $executionMode = ToolExecutionMode::Sequential,
     ): void;
 
     /**
@@ -65,6 +73,7 @@ interface ToolRegistryInterface
      * @param string               $description          Provider-schema description
      * @param array<string, mixed> $parametersJsonSchema JSON Schema for tool parameters
      * @param ToolHandlerInterface $handler              Typed execution handler
+     * @param ToolExecutionMode    $executionMode        Execution mode (default: Sequential)
      *
      * @throws \InvalidArgumentException on name conflict with permanent tool
      */
@@ -73,6 +82,7 @@ interface ToolRegistryInterface
         string $description,
         array $parametersJsonSchema,
         ToolHandlerInterface $handler,
+        ToolExecutionMode $executionMode = ToolExecutionMode::Sequential,
     ): void;
 
     /**

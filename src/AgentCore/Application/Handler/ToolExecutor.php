@@ -29,31 +29,23 @@ final class ToolExecutor implements ToolExecutorInterface
 
     private ?FaultTolerantToolbox $faultTolerantToolbox;
 
-    /**
-     * @param array<string, array{mode?: string|null, timeout_seconds?: int|null}> $overrides
-     */
     public function __construct(
         string $defaultMode,
         int $defaultTimeoutSeconds,
         int $maxParallelism,
         private readonly ToolExecutionResultStore $resultStore,
-        array $overrides = [],
         ?ToolboxInterface $toolbox = null,
         private readonly ?ToolIdempotencyKeyResolverInterface $toolIdempotencyKeyResolver = null,
         private readonly ?StackToolExecutionContextAccessor $contextAccessor = null,
         private readonly ?ToolSetResolverInterface $toolSetResolver = null,
     ) {
-        $this->policyResolver = new ToolExecutionPolicyResolver($defaultMode, $defaultTimeoutSeconds, $maxParallelism, $overrides);
+        $this->policyResolver = new ToolExecutionPolicyResolver($defaultMode, $defaultTimeoutSeconds, $maxParallelism);
         $this->faultTolerantToolbox = null !== $toolbox ? new FaultTolerantToolbox($toolbox) : null;
     }
 
-    /**
-     * @param array<string, mixed> $overrides
-     */
     public static function fromSettings(
         ToolExecutionSettingsInterface $settings,
         ToolExecutionResultStore $resultStore,
-        array $overrides = [],
         ?ToolboxInterface $toolbox = null,
         ?ToolIdempotencyKeyResolverInterface $toolIdempotencyKeyResolver = null,
         ?StackToolExecutionContextAccessor $contextAccessor = null,
@@ -64,7 +56,6 @@ final class ToolExecutor implements ToolExecutorInterface
             defaultTimeoutSeconds: $settings->defaultTimeoutSeconds(),
             maxParallelism: $settings->maxParallelism(),
             resultStore: $resultStore,
-            overrides: $overrides,
             toolbox: $toolbox,
             toolIdempotencyKeyResolver: $toolIdempotencyKeyResolver,
             contextAccessor: $contextAccessor,

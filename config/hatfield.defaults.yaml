@@ -52,14 +52,10 @@ tools:
         # worker processes launched by the controller.
         max_parallelism: 4
 
-        # Per-tool execution mode overrides.
-        # File-mutation tools must always run sequentially to prevent
-        # race conditions on concurrent writes/edits to the same file.
-        overrides:
-            write:
-                mode: sequential
-            edit:
-                mode: sequential
+        # Execution mode per tool is set at registration time by the tool
+        # author/provider in ToolDefinitionDTO, not from settings overrides.
+        # File-mutation tools (write, edit) are explicitly registered as
+        # Sequential in their HatfieldToolProviderInterface::definition().
 
     image:
         # Maximum image file size in bytes (default: 10 MB).

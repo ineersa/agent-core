@@ -270,11 +270,12 @@ services:
 
   # Tool executor wiring: read execution defaults from merged Hatfield settings.
   # The toolbox wires to RegistryBackedToolbox; toolSetResolver to CodingAgentToolSetResolver.
+  # Execution mode per tool is set at registration time by the tool author/provider
+  # in ToolDefinitionDTO, not from settings overrides.
   Ineersa\AgentCore\Application\Handler\ToolExecutor:
     factory: ['Ineersa\AgentCore\Application\Handler\ToolExecutor', 'fromSettings']
     arguments:
       $settings: '@Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface'
-      $overrides: "@=service('Ineersa\\CodingAgent\\Config\\ToolSettings').executionOverrides()"
       $toolbox: '@Symfony\AI\Agent\Toolbox\ToolboxInterface'
       $contextAccessor: '@Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor'
       $toolSetResolver: '@Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface'
@@ -286,13 +287,9 @@ services:
   Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface:
     alias: Ineersa\CodingAgent\Tool\Store\DbalToolBatchStore
 
-  # ToolExecutionPolicyResolver is created inline by ToolExecutor,
-  # but is also an optional dependency of LlmStepResultHandler.
-  Ineersa\AgentCore\Application\Handler\ToolExecutionPolicyResolver:
-    factory: ['Ineersa\AgentCore\Application\Handler\ToolExecutionPolicyResolver', 'fromSettings']
-    arguments:
-      $settings: '@Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface'
-      $overrides: "@=service('Ineersa\\CodingAgent\\Config\\ToolSettings').executionOverrides()"
+  # ToolExecutionPolicyResolver is created inline by ToolExecutor and no longer
+  # needs a standalone service definition since LlmStepResultHandler now resolves
+  # execution mode from ActiveToolSet (sourced from ToolDefinitionDTO).
 
   # ─── AI-10 Per-turn model/reasoning routing ───
 
