@@ -15,34 +15,60 @@ castor.php        Task runner
 depfile.yaml      Deptrac rules
 ```
 
-## Castor only
+## ⚠️ MANDATORY: Use Castor for ALL QA and tooling commands
 
-Use Castor for QA. Do not run raw `vendor/bin/*` as the primary command; raw tools are only for isolating failures already reported by Castor.
+**ALL QA, test, lint, static-analysis, and formatting commands MUST go through Castor.**
+
+### Hard rules
+
+1. **NEVER run raw `vendor/bin/*` commands as your primary action.** This means: no `vendor/bin/phpunit`, no `vendor/bin/phpstan`, no `vendor/bin/deptrac`, no `vendor/bin/php-cs-fixer`. Always use the Castor equivalent instead.
+2. **The ONLY time you may run a raw command** is when a `castor` command has already failed and you need to isolate the specific raw tool's output to diagnose why Castor failed. In that case, prefix the raw command with a comment explaining the diagnosis:
+   ```bash
+   # Diagnosing: castor phpstan failed, isolating raw phpstan output
+   vendor/bin/phpstan analyse src/AgentCore/Domain/Entity/...
+   ```
+3. **Never substitute partial raw commands for Castor.** Running `vendor/bin/phpunit --filter=MyTest` instead of `castor test --filter=MyTest` is still a violation — use `castor test --filter=MyTest`.
+4. Castor tasks add important behavior: correct flag combinations, result summarization for LLM consumption, report persistence, and proper group filtering. Bypassing them loses this value.
+
+### Why Castor, not raw commands
+
+Castor wraps each raw tool with:
+- Correct flag combinations (e.g., `--exclude-group` filters, `--formatter=json` for LLM mode)
+- Output summarization (deptrac violations, phpstan errors, phpunit failures — condensed for agent context)
+- Report persistence to `var/qa/` for post-run diagnostics
+- Proper environment variables (`LLAMA_CPP_SMOKE_TEST=1`, `HATFIELD_UPDATE_SNAPSHOTS=1`)
+- Aggregated failure reporting in `castor check`
+
+Running raw commands silently drops all of this.
+
+### Command reference
 
 ```bash
-castor install
-castor check             # deptrac → phpunit → controller E2E → real LLM E2E → TUI E2E → phpstan → cs-check
-castor test              # unit/integration only; excludes tui-e2e and llm-real
-castor test --filter=X
-castor test:tui          # tmux TUI e2e snapshots
-castor test:tui-update
-castor test:llm-real     # real llama.cpp smoke (ControllerSmokeTest, LlamaCppSmokeTest)
-castor test:controller   # controller E2E smoke test (spawns --controller)
-castor deptrac
-castor phpstan [path]
-castor phpstan:baseline
-castor cs-fix [path]
-castor cs-check
-castor cache:clear       # clears QA caches and Symfony cache
+castor install              # composer install + setup
+castor check                # deptrac → phpunit → controller E2E → real LLM E2E → TUI E2E → phpstan → cs-check
+castor test                 # unit/integration only; excludes tui-e2e and llm-real
+castor test --filter=X      # filter tests by name
+castor test:tui             # tmux TUI e2e snapshots
+castor test:tui-update      # update TUI snapshot baselines
+castor test:llm-real        # real llama.cpp smoke (ControllerSmokeTest, LlamaCppSmokeTest)
+castor test:controller      # controller E2E smoke test (spawns --controller)
+castor deptrac              # architecture boundary validation
+castor phpstan [path]       # static analysis (optionally scoped to a path)
+castor phpstan:baseline     # regenerate phpstan baseline
+castor cs-fix [path]        # auto-fix coding style
+castor cs-check             # check coding style (dry-run)
+castor cache:clear          # clears QA caches and Symfony cache
 castor log:tail [--level=ERROR] [--lines=50] [--search=term]
 castor log:search <query> [--level=WARNING] [--from="-1 hour"] [--to=now]
-castor log:files         # list log files with size and modification date
+castor log:files            # list log files with size and modification date
 castor log:clear [--older-than=7d]
-castor run:agent         # launch TUI in tmux
-castor run:agent-test    # deterministic tmux session for snapshots
+castor run:agent            # launch TUI in tmux
+castor run:agent-test       # deterministic tmux session for snapshots
 castor worktree:remove <slug> --force [--delete-branch]
-castor idea:run-configs
+castor idea:run-configs     # generate IntelliJ run configurations
 ```
+
+### Pre-handoff validation
 
 Always run `castor check` before handing off or finishing code changes. It includes controller, real-LLM, and TUI E2E validation; if prerequisites such as tmux or llama.cpp on port 9052 are unavailable, report the exact blocker and keep the task in progress.
 
@@ -143,6 +169,7 @@ DONE without it.
 - Never use `ReflectionClass::newInstanceWithoutConstructor()`, `Closure::bind()`, or constructor/property bypass tricks in production code.
 - Test helpers belong in tests, not production.
 - **Every caught exception/error must be propagated forward or explicitly documented as intentional local degradation with diagnostic logging. Empty catch blocks are forbidden.**
+- Runtime logs must use structured event-style messages with correlation fields (`run_id`, `session_id`, `component`, `event_type`) and must not include raw prompts, tool output, environment values, API keys, or full session content by default; see `docs/datadog.md`.
 
 ## Symfony setup
 
@@ -207,6 +234,7 @@ Themes use `ThemeColorEnum`, `ThemePalette`, `DefaultTheme`, `ThemeRegistry`, `T
 - `docs/session-storage.md` — sessions, replay, locking, resume/fork design
 - `docs/tui-architecture.md` — layout, widgets, slots, themes
 - `docs/tui-testing.md` — tmux testing, snapshots, keybindings
+- `docs/datadog.md` — local Datadog setup, structured log fields, event names, spans, and observability privacy rules
 - `src/AgentCore/Domain/AGENTS.md` — domain/event docs
 - `src/AgentCore/Application/AGENTS.md` — command/handler topology
 - `.pi/plans/` — implementation plans

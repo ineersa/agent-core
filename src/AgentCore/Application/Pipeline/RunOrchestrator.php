@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
 final readonly class RunOrchestrator
@@ -32,19 +33,21 @@ final readonly class RunOrchestrator
     #[AsMessageHandler(bus: 'agent.command.bus')]
     public function onStartRun(StartRun $message): void
     {
-        $handle = fn () => $this->runMessageProcessor->process(self::ScopeStartRun, $message);
+        $this->withLogContext($message->runId(), 'command.start_run', function () use ($message): void {
+            $handle = fn () => $this->runMessageProcessor->process(self::ScopeStartRun, $message);
 
-        if (null === $this->tracer) {
-            $handle();
+            if (null === $this->tracer) {
+                $handle();
 
-            return;
-        }
+                return;
+            }
 
-        $this->tracer->inSpan('command.start_run', [
-            'run_id' => $message->runId(),
-            'turn_no' => $message->turnNo(),
-            'step_id' => $message->stepId(),
-        ], $handle, root: true);
+            $this->tracer->inSpan('command.start_run', [
+                'run_id' => $message->runId(),
+                'turn_no' => $message->turnNo(),
+                'step_id' => $message->stepId(),
+            ], $handle, root: true);
+        });
     }
 
     /**
@@ -53,20 +56,22 @@ final readonly class RunOrchestrator
     #[AsMessageHandler(bus: 'agent.command.bus')]
     public function onApplyCommand(ApplyCommand $message): void
     {
-        $handle = fn () => $this->runMessageProcessor->process(self::ScopeApplyCommand, $message);
+        $this->withLogContext($message->runId(), 'command.apply', function () use ($message): void {
+            $handle = fn () => $this->runMessageProcessor->process(self::ScopeApplyCommand, $message);
 
-        if (null === $this->tracer) {
-            $handle();
+            if (null === $this->tracer) {
+                $handle();
 
-            return;
-        }
+                return;
+            }
 
-        $this->tracer->inSpan('command.apply', [
-            'run_id' => $message->runId(),
-            'turn_no' => $message->turnNo(),
-            'step_id' => $message->stepId(),
-            'command_kind' => $message->kind,
-        ], $handle, root: true);
+            $this->tracer->inSpan('command.apply', [
+                'run_id' => $message->runId(),
+                'turn_no' => $message->turnNo(),
+                'step_id' => $message->stepId(),
+                'command_kind' => $message->kind,
+            ], $handle, root: true);
+        });
     }
 
     /**
@@ -75,19 +80,21 @@ final readonly class RunOrchestrator
     #[AsMessageHandler(bus: 'agent.command.bus')]
     public function onAdvanceRun(AdvanceRun $message): void
     {
-        $handle = fn () => $this->runMessageProcessor->process(self::ScopeAdvanceRun, $message);
+        $this->withLogContext($message->runId(), 'turn.orchestrator.advance', function () use ($message): void {
+            $handle = fn () => $this->runMessageProcessor->process(self::ScopeAdvanceRun, $message);
 
-        if (null === $this->tracer) {
-            $handle();
+            if (null === $this->tracer) {
+                $handle();
 
-            return;
-        }
+                return;
+            }
 
-        $this->tracer->inSpan('turn.orchestrator.advance', [
-            'run_id' => $message->runId(),
-            'turn_no' => $message->turnNo(),
-            'step_id' => $message->stepId(),
-        ], $handle, root: true);
+            $this->tracer->inSpan('turn.orchestrator.advance', [
+                'run_id' => $message->runId(),
+                'turn_no' => $message->turnNo(),
+                'step_id' => $message->stepId(),
+            ], $handle, root: true);
+        });
     }
 
     /**
@@ -96,19 +103,21 @@ final readonly class RunOrchestrator
     #[AsMessageHandler(bus: 'agent.command.bus')]
     public function onLlmStepResult(LlmStepResult $message): void
     {
-        $handle = fn () => $this->runMessageProcessor->process(self::ScopeLlmResult, $message);
+        $this->withLogContext($message->runId(), 'turn.orchestrator.llm_result', function () use ($message): void {
+            $handle = fn () => $this->runMessageProcessor->process(self::ScopeLlmResult, $message);
 
-        if (null === $this->tracer) {
-            $handle();
+            if (null === $this->tracer) {
+                $handle();
 
-            return;
-        }
+                return;
+            }
 
-        $this->tracer->inSpan('turn.orchestrator.llm_result', [
-            'run_id' => $message->runId(),
-            'turn_no' => $message->turnNo(),
-            'step_id' => $message->stepId(),
-        ], $handle, root: true);
+            $this->tracer->inSpan('turn.orchestrator.llm_result', [
+                'run_id' => $message->runId(),
+                'turn_no' => $message->turnNo(),
+                'step_id' => $message->stepId(),
+            ], $handle, root: true);
+        });
     }
 
     /**
@@ -117,19 +126,41 @@ final readonly class RunOrchestrator
     #[AsMessageHandler(bus: 'agent.command.bus')]
     public function onToolCallResult(ToolCallResult $message): void
     {
-        $handle = fn () => $this->runMessageProcessor->process(self::ScopeToolResult, $message);
+        $this->withLogContext($message->runId(), 'turn.orchestrator.tool_result', function () use ($message): void {
+            $handle = fn () => $this->runMessageProcessor->process(self::ScopeToolResult, $message);
 
-        if (null === $this->tracer) {
-            $handle();
+            if (null === $this->tracer) {
+                $handle();
 
-            return;
+                return;
+            }
+
+            $this->tracer->inSpan('turn.orchestrator.tool_result', [
+                'run_id' => $message->runId(),
+                'turn_no' => $message->turnNo(),
+                'step_id' => $message->stepId(),
+                'tool_call_id' => $message->toolCallId,
+            ], $handle, root: true);
+        });
+    }
+
+    /**
+     * Wrap an operation in RunLogContext with the run's correlation fields
+     * so every log emitted within the scope carries run_id and event_type.
+     */
+    private function withLogContext(string $runId, string $eventType, callable $operation): void
+    {
+        RunLogContext::enter([
+            'run_id' => $runId,
+            'session_id' => $runId,
+            'event_type' => $eventType,
+            'component' => 'runtime',
+        ]);
+
+        try {
+            $operation();
+        } finally {
+            RunLogContext::leave();
         }
-
-        $this->tracer->inSpan('turn.orchestrator.tool_result', [
-            'run_id' => $message->runId(),
-            'turn_no' => $message->turnNo(),
-            'step_id' => $message->stepId(),
-            'tool_call_id' => $message->toolCallId,
-        ], $handle, root: true);
     }
 }

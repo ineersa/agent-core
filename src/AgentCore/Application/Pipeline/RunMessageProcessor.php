@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -59,77 +60,122 @@ final readonly class RunMessageProcessor
         $runId = $message->runId();
         $idempotencyKey = $message->idempotencyKey();
 
-        $this->runLockManager->synchronized($runId, function () use ($scope, $message, $runId, $idempotencyKey): void {
-            if ($this->idempotency->wasHandled($scope, $runId, $idempotencyKey)) {
+        RunLogContext::enter([
+            'run_id' => $runId,
+            'scope' => $scope,
+            'queue' => 'agent.command.bus',
+            'message_type' => $message::class,
+        ]);
+
+        try {
+            $this->runLockManager->synchronized($runId, function () use ($scope, $message, $runId, $idempotencyKey): void {
+                if ($this->idempotency->wasHandled($scope, $runId, $idempotencyKey)) {
+                    return;
+                }
+
+                $handler = $this->resolveHandler($message);
+
+                // Set handler context for inner logs.
+                RunLogContext::enter([
+                    'handler' => $handler::class,
+                    'component' => self::componentForHandler($handler::class),
+                ]);
+
+                try {
+                    $this->processWithRetry($scope, $message, $runId, $idempotencyKey, $handler);
+                } finally {
+                    RunLogContext::leave(); // handler context
+                }
+            });
+        } finally {
+            RunLogContext::leave(); // run context
+        }
+    }
+
+    private function processWithRetry(string $scope, AbstractAgentBusMessage $message, string $runId, string $idempotencyKey, RunMessageHandler $handler): void
+    {
+        $delayMs = self::INITIAL_RETRY_DELAY_MS;
+
+        for ($attempt = 0; $attempt < self::MAX_CAS_RETRIES; ++$attempt) {
+            $state = $this->runStore->get($runId) ?? RunState::queued($runId);
+
+            RunLogContext::enter(['retry_count' => $attempt]);
+            try {
+                $result = $handler->handle($message, $state);
+            } finally {
+                RunLogContext::leave(); // retry_count
+            }
+
+            // No state change — nothing to commit.
+            if (null === $result->nextState) {
+                if ($result->markHandled) {
+                    $this->idempotency->markHandled($scope, $runId, $idempotencyKey);
+                }
+
                 return;
             }
 
-            $handler = $this->resolveHandler($message);
-            $delayMs = self::INITIAL_RETRY_DELAY_MS;
+            $committed = $this->runCommit->commit(
+                $state,
+                $result->nextState,
+                $result->events,
+                $result->effects,
+            );
 
-            for ($attempt = 0; $attempt < self::MAX_CAS_RETRIES; ++$attempt) {
-                $state = $this->runStore->get($runId) ?? RunState::queued($runId);
-                $result = $handler->handle($message, $state);
-
-                // No state change — nothing to commit.
-                if (null === $result->nextState) {
-                    if ($result->markHandled) {
-                        $this->idempotency->markHandled($scope, $runId, $idempotencyKey);
-                    }
-
-                    return;
+            if ($committed) {
+                // Success — post-commit effects and callbacks.
+                if ([] !== $result->postCommitEffects) {
+                    $this->stepDispatcher->dispatchEffects($result->postCommitEffects);
                 }
 
-                $committed = $this->runCommit->commit(
-                    $state,
-                    $result->nextState,
-                    $result->events,
-                    $result->effects,
-                );
-
-                if ($committed) {
-                    // Success — post-commit effects and callbacks.
-                    if ([] !== $result->postCommitEffects) {
-                        $this->stepDispatcher->dispatchEffects($result->postCommitEffects);
-                    }
-
-                    foreach ($result->postCommit as $callback) {
-                        $callback();
-                    }
-
-                    if ($result->markHandled) {
-                        $this->idempotency->markHandled($scope, $runId, $idempotencyKey);
-                    }
-
-                    return;
+                foreach ($result->postCommit as $callback) {
+                    $callback();
                 }
 
-                // CAS conflict — retry with exponential backoff.
-                $this->logger->warning('agent_loop.processor.cas_conflict_retry', [
-                    'scope' => $scope,
-                    'run_id' => $runId,
-                    'message_type' => $message::class,
-                    'attempt' => $attempt + 1,
-                    'max_retries' => self::MAX_CAS_RETRIES,
-                ]);
-
-                if ($attempt < self::MAX_CAS_RETRIES - 1) {
-                    usleep($delayMs * 1000);
-                    $delayMs *= 2;
+                if ($result->markHandled) {
+                    $this->idempotency->markHandled($scope, $runId, $idempotencyKey);
                 }
+
+                return;
             }
 
-            // All retries exhausted — throw so the message is properly
-            // rejected and the transport can handle it (e.g., retry or DLQ).
-            $this->logger->error('agent_loop.processor.cas_conflict_exhausted', [
+            // CAS conflict — retry with exponential backoff.
+            $this->logger->warning('messenger.message.cas_conflict_retry', [
                 'scope' => $scope,
                 'run_id' => $runId,
                 'message_type' => $message::class,
-                'attempts' => self::MAX_CAS_RETRIES,
+                'attempt' => $attempt + 1,
+                'max_retries' => self::MAX_CAS_RETRIES,
             ]);
 
-            throw new CasRetryExhaustedException(\sprintf('CAS conflict exhausted after %d attempts for run %s, message %s', self::MAX_CAS_RETRIES, $runId, $message::class));
-        });
+            if ($attempt < self::MAX_CAS_RETRIES - 1) {
+                usleep($delayMs * 1000);
+                $delayMs *= 2;
+            }
+        }
+
+        // All retries exhausted — throw so the message is properly
+        // rejected and the transport can handle it (e.g., retry or DLQ).
+        $this->logger->error('messenger.message.cas_conflict_exhausted', [
+            'scope' => $scope,
+            'run_id' => $runId,
+            'message_type' => $message::class,
+            'attempts' => self::MAX_CAS_RETRIES,
+        ]);
+
+        throw new CasRetryExhaustedException(\sprintf('CAS conflict exhausted after %d attempts for run %s, message %s', self::MAX_CAS_RETRIES, $runId, $message::class));
+    }
+
+    private static function componentForHandler(string $handlerClass): string
+    {
+        return match ($handlerClass) {
+            'Ineersa\AgentCore\Application\Pipeline\StartRunHandler' => 'runtime',
+            'Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler' => 'runtime',
+            'Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler' => 'runtime',
+            'Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler' => 'llm',
+            'Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler' => 'tool',
+            default => 'runtime',
+        };
     }
 
     private function resolveHandler(object $message): RunMessageHandler

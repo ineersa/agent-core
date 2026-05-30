@@ -260,12 +260,12 @@ If `castor check` cannot run because tmux or llama.cpp on port 9052 is unavailab
 - Required Castor validation is run and reported, including `castor check` or exact environmental blocker output.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/obs-01-structured-run-observability
 Worktree: /home/ineersa/projects/agent-core-worktrees/obs-01-structured-run-observability
-Fork run: 5l85538wwzk4
-PR URL:
-PR Status:
+Fork run: iaonfcp46am1
+PR URL: https://github.com/ineersa/agent-core/pull/74
+PR Status: open
 Started: 2026-05-30T18:30:26.010Z
 Completed:
 
@@ -288,3 +288,37 @@ Completed:
 - Recorded fork run: 5l85538wwzk4
 - Validation: Fork reported: `castor test --filter=RunLogContextTest` passed (9 tests, 24 assertions).; Fork reported: `castor test --filter=LogContextTest` passed (4 tests, 7 assertions).; Fork reported: targeted RunOrchestrator structured/observability tests passed.; Fork reported: `castor test` passed (1461 tests, 11263 assertions).; Fork reported: `castor deptrac` passed with 0 violations.; Fork reported: `castor cs-check` passed after `castor cs-fix`.; Fork reported: `castor test:controller` passed (1 test, 7 assertions).; Fork reported: `castor check` passed except `castor phpstan`, which still has 12 pre-existing `.castor/tasks.php` short-ternary errors unrelated to this branch.; Parent verified worktree has commit `ffd23cdc` and 16 changed files; worktree status is clean.
 - Summary: Fork 5l85538wwzk4 completed with commit `ffd23cdc` on branch `task/obs-01-structured-run-observability`. Implemented structured run observability foundation: RunLogContext scoped stack, Monolog LogContextProcessor, ddtrace SpanProvider abstraction/implementation, RunTracer integration, runtime/LLM/tool/storage context scopes, event-style log message normalization, docs update, and focused tests. Deliberate follow-ups: external metrics emission, TUI/headless-controller run context propagation, extension/safeguard component markers, optional subsystem file split/dashboard setup.
+
+## Task workflow update - 2026-05-30T18:55:24.433Z
+- Validation: Reviewer read all 16 changed files plus config/docs/tests and depfile. Static review confirms architecture boundaries mostly respected, exception safety via try/finally, privacy preserved, JSONL integrity preserved. Recommendation: fix the two blocking issues, then move to CODE-REVIEW; ignore known pre-existing `.castor/tasks.php` phpstan errors.
+- Summary: Reviewer subagent completed code review and recommended REQUEST CHANGES before CODE-REVIEW. Blocking items: (1) `RunLogContext` static stack is not fiber-safe despite thread-safe wording; fix by documenting/guarding or implementing per-fiber context. (2) `LogContextProcessor` injects context into `extra` without checking log-call `context`, causing duplicate/conflicting `event_type`/`component` between `extra` and `context` (e.g. ambient `llm.request.started` vs log message `llm.request.completed`). Reviewer also noted non-blocking issues: document ddtrace LIFO close requirement, avoid ddtrace trace id being blocked by ambient context, property naming `$ddtraceProvider` in AgentCore should be vendor-neutral, add tests for processor/span provider/RunTracer, clarify dynamic queue/component mapping.
+
+## Task workflow update - 2026-05-30T18:56:31.201Z
+- Recorded fork run: q5kcsubl4doh
+- Launched follow-up fork q5kcsubl4doh in worktree `/home/ineersa/projects/agent-core-worktrees/obs-01-structured-run-observability` to address reviewer blockers: RunLogContext fiber isolation and LogContextProcessor context/extra conflicts, plus small recommended cleanup/tests.
+
+## Task workflow update - 2026-05-30T19:03:53.064Z
+- Recorded fork run: q5kcsubl4doh
+- Validation: Fork reported targeted tests passed: 24 tests, 73 assertions.; Fork reported full `castor test` passed: 1472 tests, 11305 assertions.; Fork reported `castor deptrac` passed with 0 violations.; Fork reported `castor cs-check` passed with 0 files fixed.; Fork reported `castor phpstan` passed with 0 errors.; Parent verified latest worktree commit is `3f0c1330` and worktree status is clean.
+- Summary: Follow-up fork q5kcsubl4doh completed with commit `3f0c1330` on branch `task/obs-01-structured-run-observability`. Addressed reviewer blockers: rewrote `RunLogContext` with per-fiber stacks via WeakMap plus non-fiber fallback; fixed `LogContextProcessor` to avoid injecting ambient keys when log-call context/extra already has them; moved ddtrace trace/span injection before ambient merge; renamed `RunTracer` provider property to vendor-neutral `$spanProvider`; documented LIFO close requirement on `SpanProviderInterface`; added focused `RunTracerTest` and `LogContextProcessorTest`. Also fixed the pre-existing `.castor/tasks.php` phpstan short-ternary errors, so phpstan is now clean.
+
+## Task workflow update - 2026-05-30T19:16:03.967Z
+- Validation: Reviewer reported `castor deptrac` pass with 0 violations.; Reviewer reported `castor test` pass: 1472 tests, 0 failures.; Reviewer reported targeted `RunTracerTest|LogContextProcessorTest|RunLogContextTest` pass: 20 tests, 66 assertions.; Reviewer reported `castor phpstan` pass with 0 errors.; Reviewer reported `castor cs-check` pass with 0 fixed files.; Reviewer reported `castor check` partial: deptrac/phpunit/controller-E2E/llm-real/phpstan/cs-check pass; TUI E2E snapshot and ViewImageToolE2eTest fail with pre-existing/environmental issues unrelated to OBS-01. Recommendation: move to CODE-REVIEW.
+- Summary: Follow-up reviewer subagent completed review of latest commit `3f0c1330` and verdict is APPROVE WITH SUGGESTIONS. No critical/blocking issues remain. Reviewer confirms previous blockers resolved: per-fiber `RunLogContext` with WeakMap/default stack, `LogContextProcessor` skips conflicting context/extra keys and injects ddtrace IDs first, `RunTracer` vendor-neutral rename, LIFO docs, phpstan fixes safe. Main suggestion: add fiber-specific tests for `RunLogContext` isolation (currently non-blocking). Other suggestions: simplify empty-stack access, note WeakMap reset semantics, future cleanup to use SpanProviderInterface for trace-id injection.
+
+## Task workflow update - 2026-05-30T19:19:33.593Z
+- Recorded fork run: iaonfcp46am1
+- User approved moving toward CODE-REVIEW but provided Datadog runtime evidence of a deprecation from `RunLogContext.php:75` (`Using null as an array offset is deprecated`) and asked to fix reviewer suggestions first. Launched fork iaonfcp46am1 to fix explicit empty-stack handling, add fiber-specific RunLogContext tests, clarify WeakMap/reset semantics, validate, and commit before CODE-REVIEW.
+
+## Task workflow update - 2026-05-30T19:21:36.914Z
+- Recorded fork run: iaonfcp46am1
+- Validation: Fork reported `castor test --filter=RunLogContextTest` passed: 14 tests, 51 assertions.; Fork reported `castor test --filter='RunLogContext|LogContextProcessor|RunTracer'` passed: 27 tests, 97 assertions.; Fork reported `castor phpstan` passed with 0 errors.; Fork reported `castor cs-check` passed with 0 files fixed.; Fork reported `castor test` passed: 1477 tests, 11332 assertions.; Parent verified latest worktree commit is `fc21b4d9` and worktree status is clean.
+- Summary: Final fix fork iaonfcp46am1 completed with commit `fc21b4d9`. Fixed Datadog-caught runtime deprecation from `RunLogContext.php:75` by guarding empty stacks before `array_key_last()` in both `enter()` and `current()`. Added 5 fiber isolation tests covering main/fiber isolation, two-fiber isolation, suspend/resume preservation, fiber-local reset, and no leak after fiber finish. Clarified WeakMap/reset semantics in docs. Branch is clean and ready for CODE-REVIEW.
+
+## Task workflow update - 2026-05-30T19:21:57.276Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/obs-01-structured-run-observability to origin.
+- branch 'task/obs-01-structured-run-observability' set up to track 'origin/task/obs-01-structured-run-observability'.
+- Created PR: https://github.com/ineersa/agent-core/pull/74
+- Validation: `castor test --filter=RunLogContextTest` passed: 14 tests, 51 assertions.; `castor test --filter='RunLogContext|LogContextProcessor|RunTracer'` passed: 27 tests, 97 assertions.; `castor test` passed: 1477 tests, 11332 assertions.; `castor deptrac` previously reported pass with 0 violations after reviewer-fix commit `3f0c1330`; final commit only touched RunLogContext/tests.; `castor phpstan` passed with 0 errors.; `castor cs-check` passed with 0 files fixed.; Follow-up reviewer reported `castor check` partial: deptrac/phpunit/controller-E2E/llm-real/phpstan/cs-check passed; TUI E2E snapshot/ViewImageTool failures were reported as pre-existing/environmental and unrelated to OBS-01.
+- Summary: Implementation ready for review. Latest branch commit `fc21b4d9` includes structured run log context, Monolog processor, Datadog-ready span provider integration, event-style runtime/LLM/tool/storage logs, docs, tests, reviewer-requested fiber-safety/context-conflict fixes, and final Datadog-caught empty-stack deprecation fix. Reviewer verdict after fixes: APPROVE WITH SUGGESTIONS; final suggestions addressed with fiber tests and explicit empty-stack guards.

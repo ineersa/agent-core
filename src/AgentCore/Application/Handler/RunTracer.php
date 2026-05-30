@@ -4,8 +4,20 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Handler;
 
+use Ineersa\AgentCore\Contract\SpanProviderInterface;
 use Psr\Log\LoggerInterface;
 
+/**
+ * Span-based tracer for agent-core operations.
+ *
+ * Wraps operations in named spans that emit start/finish log records
+ * and, when a {@see SpanProviderInterface} is available, also create
+ * real distributed tracing spans via the configured provider (e.g.
+ * the ddtrace extension).
+ *
+ * All existing call sites use {@see inSpan()} which automatically
+ * gets real distributed-trace coverage when a provider is wired.
+ */
 final class RunTracer
 {
     /** @var list<string> */
@@ -13,8 +25,10 @@ final class RunTracer
 
     private int $sequence = 0;
 
-    public function __construct(private readonly LoggerInterface $logger)
-    {
+    public function __construct(
+        private readonly LoggerInterface $logger,
+        private readonly ?SpanProviderInterface $spanProvider = null,
+    ) {
     }
 
     /**
@@ -42,6 +56,10 @@ final class RunTracer
             ...$attributes,
         ]);
 
+        $ddSpanId = null !== $this->spanProvider
+            ? $this->spanProvider->startSpan($name, $this->ddTags($attributes))
+            : null;
+
         $status = 'error';
 
         try {
@@ -62,6 +80,40 @@ final class RunTracer
                 'status' => $status,
                 ...$attributes,
             ]);
+
+            if (null !== $ddSpanId) {
+                $this->spanProvider->closeSpan($ddSpanId, [
+                    'duration_ms' => round($durationMs, 3),
+                    'status' => $status,
+                    'outcome' => 'ok' === $status ? 'success' : 'error',
+                ]);
+            }
         }
+    }
+
+    /**
+     * Convert log-friendly attributes to ddtrace tag format (dot-separated keys).
+     *
+     * @param array<string, mixed> $attributes
+     *
+     * @return array<string, mixed>
+     */
+    private function ddTags(array $attributes): array
+    {
+        $tags = [];
+
+        foreach ($attributes as $key => $value) {
+            if (\is_scalar($value) || null === $value) {
+                $tags[$key] = $value;
+            } elseif (\is_array($value)) {
+                // Skip complex nested arrays for tags; they are
+                // available in the log record.
+                continue;
+            } elseif (\is_object($value) && method_exists($value, '__toString')) {
+                $tags[$key] = (string) $value;
+            }
+        }
+
+        return $tags;
     }
 }

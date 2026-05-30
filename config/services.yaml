@@ -122,6 +122,11 @@ services:
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 
+  # Monolog processor — injects RunLogContext fields into every log record.
+  Ineersa\CodingAgent\Logging\LogContextProcessor:
+    tags:
+      - { name: monolog.processor }
+
   # OutputCapConfig is derived from AppConfig and autowireable.
   Ineersa\CodingAgent\Config\OutputCapConfig:
     factory: ['Ineersa\CodingAgent\Config\OutputCapConfig', 'fromAppConfig']

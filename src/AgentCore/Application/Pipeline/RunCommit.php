@@ -16,6 +16,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Psr\Log\LoggerInterface;
 
 final readonly class RunCommit
@@ -213,16 +214,41 @@ final readonly class RunCommit
             return;
         }
 
+        $eventsByType = [];
         foreach ($events as $event) {
-            $this->logger->info('agent_loop.event', [
-                'run_id' => $event->runId,
-                'turn_no' => $event->turnNo,
-                'step_id' => $this->eventStepId($event, $state),
+            $eventsByType[$event->type] = ($eventsByType[$event->type] ?? 0) + 1;
+        }
+
+        // Log a summary event for log correlation at the commit level.
+        $this->logger->info('persistence.events_committed', [
+            'run_id' => $state->runId,
+            'turn_no' => $state->turnNo,
+            'event_count' => \count($events),
+            'events_by_type' => $eventsByType,
+            'new_status' => $state->status->value,
+            'component' => 'storage',
+        ]);
+
+        foreach ($events as $event) {
+            RunLogContext::enter([
+                'event_type' => $event->type,
                 'seq' => $event->seq,
-                'status' => $state->status->value,
-                'worker_id' => $this->eventWorkerId($event),
-                'attempt' => $this->eventAttempt($event),
+                'turn_no' => $event->turnNo,
             ]);
+
+            try {
+                $this->logger->info('event_store.appended', [
+                    'run_id' => $event->runId,
+                    'seq' => $event->seq,
+                    'turn_no' => $event->turnNo,
+                    'event_type' => $event->type,
+                    'step_id' => $this->eventStepId($event, $state),
+                    'worker_id' => $this->eventWorkerId($event),
+                    'attempt' => $this->eventAttempt($event),
+                ]);
+            } finally {
+                RunLogContext::leave();
+            }
         }
     }
 
