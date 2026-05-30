@@ -28,10 +28,15 @@ final class TmuxHarness
         $this->pid = getmypid();
     }
 
+    public function __destruct()
+    {
+        $this->killAll();
+    }
+
     // ── availability ──────────────────────────────────────
 
     /**
-     * @return bool True if tmux is available on the system.
+     * @return bool true if tmux is available on the system
      */
     public static function isAvailable(): bool
     {
@@ -45,10 +50,10 @@ final class TmuxHarness
     /**
      * Start a detached tmux session with fixed dimensions.
      *
-     * @param string $command  shell command to run inside the session
-     * @param string $prefix   unique prefix for the session name (pid appended)
-     * @param int    $width    terminal columns
-     * @param int    $height   terminal rows
+     * @param string $command shell command to run inside the session
+     * @param string $prefix  unique prefix for the session name (pid appended)
+     * @param int    $width   terminal columns
+     * @param int    $height  terminal rows
      *
      * @return TmuxPane value object describing the created pane
      */
@@ -59,16 +64,16 @@ final class TmuxHarness
         int $height = 40,
         ?string $cwd = null,
     ): TmuxPane {
-        $session = sprintf('%s-%d-%d', $prefix, $this->pid, count($this->sessionNames));
+        $session = \sprintf('%s-%d-%d', $prefix, $this->pid, \count($this->sessionNames));
         $this->sessionNames[] = $session;
 
-        $innerCmd = sprintf(
+        $innerCmd = \sprintf(
             'cd %s && %s',
             escapeshellarg($cwd ?? $this->root),
             $command,
         );
 
-        $cmd = sprintf(
+        $cmd = \sprintf(
             'tmux new-session -d -P -F "#{pane_id}" -x %d -y %d -s %s -- bash -c %s 2>&1',
             $width,
             $height,
@@ -78,21 +83,17 @@ final class TmuxHarness
 
         $output = shell_exec($cmd);
         if (null === $output) {
-            throw new \RuntimeException(sprintf('Failed to execute tmux command: %s', $cmd));
+            throw new \RuntimeException(\sprintf('Failed to execute tmux command: %s', $cmd));
         }
 
         $paneId = trim($output);
         if ('' === $paneId || !str_starts_with($paneId, '%')) {
-            throw new \RuntimeException(sprintf(
-                'Failed to create tmux session "%s". Output: %s',
-                $session,
-                $output,
-            ));
+            throw new \RuntimeException(\sprintf('Failed to create tmux session "%s". Output: %s', $session, $output));
         }
 
         // Some tmux servers ignore new-session -x/-y and keep the global
         // default-size (often 80x24). Force the requested deterministic size.
-        shell_exec(sprintf(
+        shell_exec(\sprintf(
             'tmux resize-window -t %s -x %d -y %d 2>/dev/null',
             escapeshellarg($session),
             $width,
@@ -115,7 +116,7 @@ final class TmuxHarness
     public function capturePlain(TmuxPane $pane): string
     {
         return shell_exec(
-            sprintf('tmux capture-pane -p -t %s 2>&1', escapeshellarg($pane->paneId)),
+            \sprintf('tmux capture-pane -p -t %s 2>&1', escapeshellarg($pane->paneId)),
         ) ?? '';
     }
 
@@ -132,7 +133,7 @@ final class TmuxHarness
     public function capturePlainWithHistory(TmuxPane $pane, int $lines = 1000): string
     {
         return shell_exec(
-            sprintf(
+            \sprintf(
                 'tmux capture-pane -p -S -%d -E - -t %s 2>&1',
                 $lines,
                 escapeshellarg($pane->paneId),
@@ -146,7 +147,7 @@ final class TmuxHarness
     public function captureAnsi(TmuxPane $pane): string
     {
         return shell_exec(
-            sprintf('tmux capture-pane -p -e -t %s 2>&1', escapeshellarg($pane->paneId)),
+            \sprintf('tmux capture-pane -p -e -t %s 2>&1', escapeshellarg($pane->paneId)),
         ) ?? '';
     }
 
@@ -157,7 +158,7 @@ final class TmuxHarness
      */
     public function sendLiteral(TmuxPane $pane, string $text): void
     {
-        shell_exec(sprintf(
+        shell_exec(\sprintf(
             'tmux send-keys -t %s -l %s',
             escapeshellarg($pane->paneId),
             escapeshellarg($text),
@@ -169,7 +170,7 @@ final class TmuxHarness
      */
     public function sendKey(TmuxPane $pane, string $key): void
     {
-        shell_exec(sprintf(
+        shell_exec(\sprintf(
             'tmux send-keys -t %s %s',
             escapeshellarg($pane->paneId),
             escapeshellarg($key),
@@ -179,7 +180,7 @@ final class TmuxHarness
     public function paneExists(TmuxPane $pane): bool
     {
         $output = [];
-        exec(sprintf('tmux display-message -p -t %s "#{pane_id}" 2>/dev/null', escapeshellarg($pane->paneId)), $output, $exitCode);
+        exec(\sprintf('tmux display-message -p -t %s "#{pane_id}" 2>/dev/null', escapeshellarg($pane->paneId)), $output, $exitCode);
 
         return 0 === $exitCode;
     }
@@ -193,9 +194,9 @@ final class TmuxHarness
      * @param string   $needle  substring to look for
      * @param float    $timeout seconds to wait (default 10.0)
      *
-     * @return string The capture that finally matched.
+     * @return string the capture that finally matched
      *
-     * @throws \RuntimeException if the timeout expires without finding the needle.
+     * @throws \RuntimeException if the timeout expires without finding the needle
      */
     public function waitForCaptureContains(
         TmuxPane $pane,
@@ -215,14 +216,7 @@ final class TmuxHarness
             usleep(100_000); // 100ms
         }
 
-        throw new \RuntimeException(sprintf(
-            'Timed out after %.1fs waiting for needle "%s" in pane %s. Last capture (%d lines):'."\n%s",
-            $timeout,
-            $needle,
-            $pane->paneId,
-            substr_count($lastCapture, "\n") + 1,
-            $lastCapture,
-        ));
+        throw new \RuntimeException(\sprintf('Timed out after %.1fs waiting for needle "%s" in pane %s. Last capture (%d lines):'."\n%s", $timeout, $needle, $pane->paneId, substr_count($lastCapture, "\n") + 1, $lastCapture));
     }
 
     /**
@@ -239,9 +233,9 @@ final class TmuxHarness
      * @param float    $timeout seconds to wait (default 10.0)
      * @param int      $history Maximum history lines to search
      *
-     * @return string The history capture that finally matched.
+     * @return string the history capture that finally matched
      *
-     * @throws \RuntimeException if the timeout expires without finding the needle.
+     * @throws \RuntimeException if the timeout expires without finding the needle
      */
     public function waitForHistoryContains(
         TmuxPane $pane,
@@ -262,14 +256,7 @@ final class TmuxHarness
             usleep(100_000); // 100ms
         }
 
-        throw new \RuntimeException(sprintf(
-            'Timed out after %.1fs waiting for needle "%s" in pane %s history. Last capture (%d lines):'."\n%s",
-            $timeout,
-            $needle,
-            $pane->paneId,
-            substr_count($lastCapture, "\n") + 1,
-            $lastCapture,
-        ));
+        throw new \RuntimeException(\sprintf('Timed out after %.1fs waiting for needle "%s" in pane %s history. Last capture (%d lines):'."\n%s", $timeout, $needle, $pane->paneId, substr_count($lastCapture, "\n") + 1, $lastCapture));
     }
 
     /**
@@ -280,15 +267,15 @@ final class TmuxHarness
      * this accepts an arbitrary predicate — useful for counting occurrences
      * (e.g. second `❯` or `◇` in a multi-turn conversation).
      *
-     * @param TmuxPane             $pane     the pane to poll
+     * @param TmuxPane              $pane     the pane to poll
      * @param callable(string):bool $callback receives the full history capture, must return true when condition met
-     * @param float                $timeout  seconds to wait (default 10.0)
-     * @param string               $message  diagnostic error message on timeout
-     * @param int                  $history  Maximum history lines to search
+     * @param float                 $timeout  seconds to wait (default 10.0)
+     * @param string                $message  diagnostic error message on timeout
+     * @param int                   $history  Maximum history lines to search
      *
-     * @return string The history capture that satisfied the callback.
+     * @return string the history capture that satisfied the callback
      *
-     * @throws \RuntimeException if the timeout expires without the callback returning true.
+     * @throws \RuntimeException if the timeout expires without the callback returning true
      */
     public function waitForCallback(
         TmuxPane $pane,
@@ -310,15 +297,9 @@ final class TmuxHarness
             usleep(100_000); // 100ms
         }
 
-        throw new \RuntimeException(sprintf(
-            '%s Timed out after %.1fs. Last capture (%d lines):'."
-%s",
-            '' !== $message ? $message.' ' : '',
-            $timeout,
-            substr_count($lastCapture, "
-") + 1,
-            $lastCapture,
-        ));
+        throw new \RuntimeException(\sprintf('%s Timed out after %.1fs. Last capture (%d lines):'.'
+%s', '' !== $message ? $message.' ' : '', $timeout, substr_count($lastCapture, '
+') + 1, $lastCapture, ));
     }
 
     // ── normalisation ──────────────────────────────────────
@@ -330,6 +311,9 @@ final class TmuxHarness
      * Replacements:
      *   - UUIDs / run IDs → <run-id>
      *   - Absolute paths to the project root → <root>
+     *   - CWD path in footer after ⌂ → <cwd>
+     *   - Git branch in footer after ⎇ → <branch>
+     *   - Wrapped footer lines rejoined
      *   - Date/timestamps → <timestamp>  (future; not yet applied)
      *   - Trailing blank lines trimmed
      */
@@ -357,6 +341,9 @@ final class TmuxHarness
             $snapshot,
         );
 
+        // Normalize dynamic footer segments (CWD, branch) and rejoin wrapped lines
+        $snapshot = $this->normalizeFooterSegments($snapshot);
+
         // Replace absolute project root paths
         $snapshot = str_replace($this->root, '<root>', $snapshot);
 
@@ -373,12 +360,12 @@ final class TmuxHarness
      */
     public function killSession(TmuxPane $pane): void
     {
-        shell_exec(sprintf(
+        shell_exec(\sprintf(
             'tmux kill-session -t %s 2>/dev/null',
             escapeshellarg($pane->session),
         ));
         $this->sessionNames = array_values(
-            array_filter($this->sessionNames, fn (string $n) => $n !== $pane->session),
+            array_filter($this->sessionNames, static fn (string $n) => $n !== $pane->session),
         );
     }
 
@@ -388,7 +375,7 @@ final class TmuxHarness
     public function killAll(): void
     {
         foreach ($this->sessionNames as $session) {
-            shell_exec(sprintf(
+            shell_exec(\sprintf(
                 'tmux kill-session -t %s 2>/dev/null',
                 escapeshellarg($session),
             ));
@@ -396,8 +383,73 @@ final class TmuxHarness
         $this->sessionNames = [];
     }
 
-    public function __destruct()
+    /**
+     * Normalize dynamic CWD and branch segments in footer bar lines.
+     *
+     * The TUI footer bar displays dynamic metadata (CWD path, git branch)
+     * that varies by checkout location and git state. When the combined
+     * segments exceed terminal width, FooterBarWidget wraps segments to
+     * the next line.
+     *
+     * This method first collapses all consecutive "footer-like" lines
+     * (any line containing ◆, ⌂, ⎇, or session) into one line with
+     * "  |  " separators, undoing the widget's multi-line wrapping.
+     * Then it replaces the dynamic content after ⌂ and ⎇ with <cwd>
+     * and <branch> placeholders via simple regex.
+     *
+     * @param string $snapshot snapshot text to normalize
+     *
+     * @return string snapshot with footer segments normalized
+     */
+    private function normalizeFooterSegments(string $snapshot): string
     {
-        $this->killAll();
+        // 1) Collapse consecutive footer lines into one
+        $lines = explode("\n", $snapshot);
+        $result = [];
+        $i = 0;
+
+        while ($i < \count($lines)) {
+            $line = $lines[$i];
+            $isFooter = (bool) preg_match('/[◆⌂⎇]/u', $line) || str_contains($line, 'session ');
+
+            if (!$isFooter) {
+                $result[] = $line;
+                ++$i;
+
+                continue;
+            }
+
+            // Collect all consecutive footer lines
+            $segments = [ltrim($line)];
+            ++$i;
+
+            while ($i < \count($lines)) {
+                $next = $lines[$i];
+                $isNextFooter = (bool) preg_match('/[◆⌂⎇]/u', $next) || str_contains($next, 'session ');
+
+                if (!$isNextFooter) {
+                    break;
+                }
+
+                $segments[] = ltrim($next);
+                ++$i;
+            }
+
+            // Rejoin with the original widget separator (all footer segment
+            // groups use "  |  " for the startup/toolbar layout).
+            $result[] = '  '.implode('  |  ', $segments);
+        }
+
+        $snapshot = implode("\n", $result);
+
+        // 2) Normalize dynamic CWD content after ⌂
+        //    \S+ matches only the non-whitespace path token, preserving
+        //    any trailing whitespace before the pipe separator.
+        $snapshot = preg_replace('/⌂\s+\S+/u', '⌂ <cwd>', $snapshot);
+
+        // 3) Normalize dynamic branch content after ⎇
+        $snapshot = preg_replace('/⎇\s+\S+/u', '⎇ <branch>', $snapshot);
+
+        return $snapshot;
     }
 }

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+
 /**
  * CodingAgent-owned ToolRegistry implementation.
  *
@@ -18,6 +20,10 @@ namespace Ineersa\CodingAgent\Tool;
  * Built-in providers are injected by Symfony as a tagged iterator and seeded
  * during registry construction so the tool subsystem owns registration instead
  * of Kernel boot hooks.
+ *
+ * Execution mode is set at registration time and defaults to Sequential.
+ * File-mutation tools (write, edit) should set it explicitly to Sequential
+ * (the default) in their HatfieldToolProviderInterface::definition().
  */
 final class ToolRegistry implements ToolRegistryInterface
 {
@@ -56,6 +62,7 @@ final class ToolRegistry implements ToolRegistryInterface
                 handler: $definition->handler,
                 promptLine: $definition->promptLine,
                 promptGuidelines: $definition->promptGuidelines,
+                executionMode: $definition->executionMode,
             );
         }
     }
@@ -67,6 +74,7 @@ final class ToolRegistry implements ToolRegistryInterface
         ToolHandlerInterface $handler,
         string $promptLine,
         array $promptGuidelines = [],
+        ToolExecutionMode $executionMode = ToolExecutionMode::Sequential,
     ): void {
         if ('' === $name || '' === $description) {
             throw new \InvalidArgumentException(\sprintf('Tool name and description must be non-empty strings, got name="%s" description="%s".', $name, $description));
@@ -84,6 +92,7 @@ final class ToolRegistry implements ToolRegistryInterface
             handler: $handler,
             promptLine: $promptLine,
             promptGuidelines: $promptGuidelines,
+            executionMode: $executionMode,
         );
         $this->permanentOrder[] = $name;
     }
@@ -93,6 +102,7 @@ final class ToolRegistry implements ToolRegistryInterface
         string $description,
         array $parametersJsonSchema,
         ToolHandlerInterface $handler,
+        ToolExecutionMode $executionMode = ToolExecutionMode::Sequential,
     ): void {
         if ('' === $name || '' === $description) {
             throw new \InvalidArgumentException(\sprintf('Dynamic tool name and description must be non-empty strings, got name="%s" description="%s".', $name, $description));
@@ -114,6 +124,7 @@ final class ToolRegistry implements ToolRegistryInterface
             handler: $handler,
             promptLine: '',  // dynamic tools have no prompt metadata
             promptGuidelines: [],
+            executionMode: $executionMode,
         );
     }
 

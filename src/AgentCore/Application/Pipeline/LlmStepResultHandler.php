@@ -8,7 +8,8 @@ use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
-use Ineersa\AgentCore\Application\Handler\ToolExecutionPolicyResolver;
+use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
+use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Event\CoreLifecycleEventType;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
@@ -29,7 +30,7 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
         private CommandMailboxPolicy $commandMailboxPolicy,
         private RunMessageStateTools $stateTools,
         private StepDispatcher $stepDispatcher,
-        private ?ToolExecutionPolicyResolver $toolExecutionPolicyResolver = null,
+        private ?ToolSetResolverInterface $toolSetResolver = null,
         private ?ToolboxInterface $toolbox = null,
         private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
@@ -172,9 +173,11 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
 
         $assistantMessagePayload = $this->stateTools->assistantMessagePayload($assistantMessage);
 
+        $activeSet = $this->resolveActiveSet($message->toolsRef, $state->turnNo, $runId);
+
         $effects = [];
         foreach ($toolCalls as $toolCall) {
-            $policy = $this->resolveToolPolicy($toolCall['name']);
+            $policy = $this->resolveToolPolicy($toolCall['name'], $activeSet);
 
             $effects[] = new ExecuteToolCall(
                 runId: $runId,
@@ -330,25 +333,40 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
     }
 
     /**
+     * Resolve the execution policy for a tool from its registered definition.
+     *
+     * The execution mode comes from the tool's ToolDefinitionDTO (set by the
+     * tool author/provider). Timeout and parallelism use fixed defaults
+     * since these are managed by the ToolExecutor's own policy resolver.
+     *
      * @return array{mode: ToolExecutionMode, timeout_seconds: int, max_parallelism: int}
      */
-    private function resolveToolPolicy(string $toolName): array
+    private function resolveToolPolicy(string $toolName, ?ActiveToolSet $activeSet = null): array
     {
-        if (null === $this->toolExecutionPolicyResolver) {
-            return [
-                'mode' => ToolExecutionMode::Sequential,
-                'timeout_seconds' => 90,
-                'max_parallelism' => 1,
-            ];
+        $mode = ToolExecutionMode::Sequential;
+
+        if (null !== $activeSet) {
+            $modeValue = $activeSet->executionModes[$toolName] ?? ToolExecutionMode::Sequential->value;
+            $mode = ToolExecutionMode::tryFrom($modeValue) ?? ToolExecutionMode::Sequential;
         }
 
-        $policy = $this->toolExecutionPolicyResolver->resolve($toolName);
-
         return [
-            'mode' => $policy->mode,
-            'timeout_seconds' => $policy->timeoutSeconds,
-            'max_parallelism' => $policy->maxParallelism,
+            'mode' => $mode,
+            'timeout_seconds' => 90,
+            'max_parallelism' => 1,
         ];
+    }
+
+    /**
+     * Resolve the active toolset for the current turn.
+     */
+    private function resolveActiveSet(?string $toolsRef, int $turnNo, string $runId): ?ActiveToolSet
+    {
+        if (null === $this->toolSetResolver || !\is_string($toolsRef) || '' === $toolsRef) {
+            return null;
+        }
+
+        return $this->toolSetResolver->resolve($toolsRef, $turnNo, $runId);
     }
 
     /**

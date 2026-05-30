@@ -11,6 +11,11 @@ use Symfony\Component\Serializer\Attribute\SerializedName;
  *
  * Hydrated by Symfony Serializer/Denormalizer from the merged Hatfield
  * config array (defaults.yaml → home settings → project settings).
+ *
+ * Execution mode per tool is set at registration time by the tool
+ * author/provider in ToolDefinitionDTO, not from settings overrides.
+ * File-mutation tools (write, edit) are explicitly registered as
+ * Sequential in their HatfieldToolProviderInterface::definition().
  */
 final readonly class ToolExecutionConfig
 {

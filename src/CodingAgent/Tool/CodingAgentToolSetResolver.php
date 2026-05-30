@@ -27,9 +27,18 @@ final readonly class CodingAgentToolSetResolver implements ToolSetResolverInterf
     {
         $toolNames = $this->toolRegistry->activeToolNames();
 
+        // Build execution mode map from registered tool definitions.
+        // Each ToolDefinitionDTO stores the execution mode set by the
+        // tool author/provider. Default is Sequential.
+        $executionModes = [];
+        foreach ($this->toolRegistry->activeToolDefinitions() as $definition) {
+            $executionModes[$definition->name] = $definition->executionMode->value;
+        }
+
         return new ActiveToolSet(
             toolNames: $toolNames,
             allowListNames: $toolNames,
+            executionModes: $executionModes,
         );
     }
 }

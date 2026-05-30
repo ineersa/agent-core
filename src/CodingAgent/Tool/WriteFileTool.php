@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Path\PathResolver;
 
 /**
@@ -42,11 +44,11 @@ final class WriteFileTool implements HatfieldToolProviderInterface, ToolHandlerI
             $content = $arguments['content'] ?? null;
 
             if (!\is_string($path) || '' === $path) {
-                throw new \InvalidArgumentException('The "path" argument is required and must be a non-empty string.');
+                throw new ToolCallException('The "path" argument is required and must be a non-empty string.', retryable: false, hint: 'Provide a valid file path.');
             }
 
             if (!\is_string($content)) {
-                throw new \InvalidArgumentException('The "content" argument is required and must be a string.');
+                throw new ToolCallException('The "content" argument is required and must be a string.', retryable: false, hint: 'Provide the text content to write.');
             }
 
             // Resolve the path to an absolute normalized form
@@ -61,7 +63,7 @@ final class WriteFileTool implements HatfieldToolProviderInterface, ToolHandlerI
             $bytesWritten = @file_put_contents($resolvedPath, $content, \LOCK_EX);
 
             if (false === $bytesWritten) {
-                throw new \RuntimeException(\sprintf('Failed to write file "%s".', $resolvedPath));
+                throw new ToolCallException(\sprintf('Failed to write file "%s".', $resolvedPath), retryable: true, hint: 'Check file permissions and available disk space.');
             }
 
             return \sprintf('Successfully wrote %d bytes to %s', $bytesWritten, $resolvedPath);
@@ -92,6 +94,7 @@ final class WriteFileTool implements HatfieldToolProviderInterface, ToolHandlerI
                 'additionalProperties' => false,
             ],
             handler: $this,
+            executionMode: ToolExecutionMode::Sequential,
             promptLine: 'write path content — create or overwrite a file with exact text content; creates parent directories automatically',
             promptGuidelines: [
                 'Write the exact content provided — do not trim, format, or modify it.',
