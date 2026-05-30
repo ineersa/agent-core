@@ -27,6 +27,8 @@ use PHPUnit\Framework\TestCase;
  */
 final class BgStatusToolTest extends TestCase
 {
+    private const string TEST_SESSION = 'test-session-001';
+
     private Connection $connection;
     private BackgroundProcessManager $manager;
     private BackgroundProcessConfig $config;
@@ -143,7 +145,7 @@ final class BgStatusToolTest extends TestCase
 
     public function testListWithRunningProcess(): void
     {
-        $this->manager->start('sleep 5');
+        $this->manager->start('sleep 2', self::TEST_SESSION);
 
         $result = ($this->tool)(['action' => 'list']);
 
@@ -156,8 +158,8 @@ final class BgStatusToolTest extends TestCase
 
     public function testListWithMultipleProcesses(): void
     {
-        $this->manager->start('echo "proc a"');
-        $this->manager->start('echo "proc b"');
+        $this->manager->start('echo "proc a"', self::TEST_SESSION);
+        $this->manager->start('echo "proc b"', self::TEST_SESSION);
 
         $result = ($this->tool)(['action' => 'list']);
 
@@ -172,7 +174,7 @@ final class BgStatusToolTest extends TestCase
 
     public function testLogWithExistingProcess(): void
     {
-        $started = $this->manager->start('echo "log test content"');
+        $started = $this->manager->start('echo "log test content"', self::TEST_SESSION);
         \usleep(500000); // wait for write
 
         $result = ($this->tool)(['action' => 'log', 'pid' => $started['pid']]);
@@ -213,7 +215,7 @@ final class BgStatusToolTest extends TestCase
 
     public function testStopWithRunningProcess(): void
     {
-        $started = $this->manager->start('sleep 30');
+        $started = $this->manager->start('sleep 10', self::TEST_SESSION);
 
         $result = ($this->tool)(['action' => 'stop', 'pid' => $started['pid']]);
 

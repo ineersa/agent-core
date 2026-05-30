@@ -33,6 +33,14 @@ use Psr\Log\LoggerInterface;
  *  5. cleanupStale() removes DB records and log files older than
  *     retention once the process has finished.
  *
+ * Session ownership: every process stores an optional session_id.
+ * Methods that accept ?string $sessionId will scope operations to
+ * that session when provided; null means unscoped/admin (show all,
+ * operate on any process regardless of session).
+ * BgStatusTool currently passes null for session_id — TOOLS-09 will
+ * plumb the real session_id from ToolContext::runId() into start(),
+ * list(), stop(), and shutdownCleanup().
+ *
  * setsid is required. If setsid is unavailable, start() fails with a
  * clear exception rather than falling back to unsafe single-PID mode
  * that cannot reliably propagate signals to child workloads.
@@ -76,9 +84,14 @@ final class BackgroundProcessManager
      * method throws rather than falling back to single-PID mode that
      * cannot safely propagate TERM to child workloads.
      *
-     * @param string $command The shell command to run in background.
-     *                        Must already be shell-escaped if it contains
-     *                        user-controlled tokens.
+     * @param string      $command   The shell command to run in background.
+     *                               Must already be shell-escaped if it contains
+     *                               user-controlled tokens.
+     * @param string|null $sessionId Optional session/run identifier for
+     *                               ownership scoping. When provided, the
+     *                               process is bound to this session.
+     *                               Pass null for unscoped operation
+     *                               (default, backwards-compat mode).
      *
      * @warning This method accepts raw shell commands and executes them via
      *          bash -c. Callers MUST escape all user-controlled tokens with
@@ -86,11 +99,12 @@ final class BackgroundProcessManager
      *          unsanitized input or arguments as a flat string.
      *
      * @return array{id: int, pid: int, pgid: int|null, command: string,
-     *               log_path: string, started_at: string, status: string}
+     *               log_path: string, started_at: string,
+     *               session_id: string, status: string}
      *
      * @throws \RuntimeException on storage/launch failure
      */
-    public function start(string $command): array
+    public function start(string $command, ?string $sessionId = null): array
     {
         $this->ensureTable();
 
@@ -156,17 +170,19 @@ final class BackgroundProcessManager
         try {
             $this->connection->executeStatement(
                 \sprintf(
-                    'INSERT INTO %s (pid, pgid, command, log_path, status_path, started_at, updated_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?)',
+                    'INSERT INTO %s (pid, pgid, session_id, command, log_path, status_path, started_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
                     self::TABLE_NAME,
                 ),
-                [$pid, $pgid, $command, $logFile, $statusFile, $now, $now],
+                [$pid, $pgid, $sessionId ?? '', $command, $logFile, $statusFile, $now, $now],
             );
 
             $dbId = (int) $this->connection->lastInsertId();
         } catch (DbalException $e) {
             throw new \RuntimeException('Failed to insert background process record.', 0, $e);
         }
+
+        $resolvedSessionId = $sessionId ?? '';
 
         $this->logger?->info('background_process.started', [
             'component' => 'tool.background_process',
@@ -175,6 +191,7 @@ final class BackgroundProcessManager
             'process_pgid' => $pgid,
             'has_group_termination' => true,
             'log_path' => $logFile,
+            'process_session_id' => $resolvedSessionId,
         ]);
 
         return [
@@ -184,6 +201,7 @@ final class BackgroundProcessManager
             'command' => $command,
             'log_path' => $logFile,
             'started_at' => $now,
+            'session_id' => $resolvedSessionId,
             'status' => 'running',
         ];
     }
@@ -191,19 +209,32 @@ final class BackgroundProcessManager
     /**
      * List all tracked background processes with refreshed status.
      *
+     * @param string|null $sessionId Optional session filter. When provided,
+     *                               only processes for that session are
+     *                               returned. Pass null for all processes
+     *                               (default, unscoped mode).
+     *
      * @return list<array{id: int, pid: int, pgid: int|null, command: string,
      *                    log_path: string, started_at: string,
      *                    finished_at: string|null, exit_code: int|null,
-     *                    stopped_by_user: bool, status: string}>
+     *                    stopped_by_user: bool, session_id: string,
+     *                    status: string}>
      */
-    public function list(): array
+    public function list(?string $sessionId = null): array
     {
         $this->ensureTable();
 
         try {
-            $rows = $this->connection->fetchAllAssociative(
-                \sprintf('SELECT * FROM %s ORDER BY id DESC', self::TABLE_NAME),
-            );
+            if (null !== $sessionId) {
+                $rows = $this->connection->fetchAllAssociative(
+                    \sprintf('SELECT * FROM %s WHERE session_id = ? ORDER BY id DESC', self::TABLE_NAME),
+                    [$sessionId],
+                );
+            } else {
+                $rows = $this->connection->fetchAllAssociative(
+                    \sprintf('SELECT * FROM %s ORDER BY id DESC', self::TABLE_NAME),
+                );
+            }
         } catch (DbalException $e) {
             throw new \RuntimeException('Failed to list background processes.', 0, $e);
         }
@@ -222,15 +253,19 @@ final class BackgroundProcessManager
      * Uses a shell command (tail -c) to read the last N bytes, avoiding
      * loading large files into PHP memory.
      *
-     * @param int      $pid      Process PID (also the DB lookup key)
-     * @param int|null $maxChars Maximum characters to return (null uses config default)
+     * @param int         $pid       Process PID (also the DB lookup key)
+     * @param int|null    $maxChars  Maximum characters to return (null uses config default)
+     * @param string|null $sessionId Optional session ownership check. When
+     *                               provided, only a process belonging to
+     *                               this session will be returned.
      *
      * @return array{pid: int, log_path: string, content: string,
      *               truncated: bool, total_bytes: int}
      *
-     * @throws \RuntimeException when the process is not found or log is unreadable
+     * @throws \RuntimeException when the process is not found,
+     *                           session mismatch, or log is unreadable
      */
-    public function readLogTail(int $pid, ?int $maxChars = null): array
+    public function readLogTail(int $pid, ?int $maxChars = null, ?string $sessionId = null): array
     {
         $maxChars ??= $this->config->logTailChars;
 
@@ -238,7 +273,7 @@ final class BackgroundProcessManager
 
         try {
             $row = $this->connection->fetchAssociative(
-                \sprintf('SELECT log_path FROM %s WHERE pid = ?', self::TABLE_NAME),
+                \sprintf('SELECT log_path, session_id FROM %s WHERE pid = ?', self::TABLE_NAME),
                 [$pid],
             );
         } catch (DbalException $e) {
@@ -247,6 +282,11 @@ final class BackgroundProcessManager
 
         if (false === $row || !\is_string($row['log_path'] ?? null)) {
             throw new \RuntimeException(\sprintf('No background process found with PID %d.', $pid));
+        }
+
+        // Session ownership check
+        if (null !== $sessionId && ($row['session_id'] ?? '') !== $sessionId) {
+            throw new \RuntimeException(\sprintf('No background process found with PID %d for this session.', $pid));
         }
 
         /** @var string $logPath */
@@ -302,14 +342,18 @@ final class BackgroundProcessManager
      * determine the group — a rare race window immediately after
      * process launch.
      *
-     * @param int $pid Process PID to stop. Must be > 0.
+     * @param int         $pid       Process PID to stop. Must be > 0.
+     * @param string|null $sessionId Optional session ownership check.
+     *                               When provided, only a process belonging
+     *                               to this session will be stopped.
      *
      * @return array{pid: int, pgid: int|null, stopped_by_user: bool,
      *               already_finished: bool, signal_sent: string}
      *
-     * @throws \RuntimeException when the process is not found or PID is invalid
+     * @throws \RuntimeException when the process is not found, session
+     *                           mismatch, or PID is invalid
      */
-    public function stop(int $pid): array
+    public function stop(int $pid, ?string $sessionId = null): array
     {
         $this->ensureTable();
 
@@ -332,6 +376,11 @@ final class BackgroundProcessManager
             throw new \RuntimeException(\sprintf('No background process found with PID %d.', $pid));
         }
 
+        // Session ownership check
+        if (null !== $sessionId && ($row['session_id'] ?? '') !== $sessionId) {
+            throw new \RuntimeException(\sprintf('No background process found with PID %d for this session.', $pid));
+        }
+
         // Refresh status before acting — the process may have finished
         // since the last list() call (status file written, /proc gone).
         $idVal = $row['id'] ?? 0;
@@ -350,6 +399,11 @@ final class BackgroundProcessManager
         if (false === $row) {
             // Record was removed during refresh (unlikely but handle gracefully)
             throw new \RuntimeException(\sprintf('Background process with PID %d disappeared during refresh.', $pid));
+        }
+
+        // Session ownership check on re-fetched row
+        if (null !== $sessionId && ($row['session_id'] ?? '') !== $sessionId) {
+            throw new \RuntimeException(\sprintf('No background process found with PID %d for this session.', $pid));
         }
 
         // Check if already finished (now correctly reflecting refreshed state)
@@ -506,16 +560,28 @@ final class BackgroundProcessManager
      * survive across tool worker exits. Callers (e.g. test tearDown or
      * controller lifecycle hooks) should invoke this explicitly.
      *
+     * @param string|null $sessionId Optional session filter. When provided,
+     *                               only processes for that session are
+     *                               stopped. Pass null to stop all running
+     *                               processes (current behaviour, unscoped).
+     *
      * @return int Number of processes terminated
      */
-    public function shutdownCleanup(): int
+    public function shutdownCleanup(?string $sessionId = null): int
     {
         $this->ensureTable();
 
         try {
-            $running = $this->connection->fetchAllAssociative(
-                \sprintf('SELECT pid FROM %s WHERE finished_at IS NULL', self::TABLE_NAME),
-            );
+            if (null !== $sessionId) {
+                $running = $this->connection->fetchAllAssociative(
+                    \sprintf('SELECT pid FROM %s WHERE finished_at IS NULL AND session_id = ?', self::TABLE_NAME),
+                    [$sessionId],
+                );
+            } else {
+                $running = $this->connection->fetchAllAssociative(
+                    \sprintf('SELECT pid FROM %s WHERE finished_at IS NULL', self::TABLE_NAME),
+                );
+            }
         } catch (DbalException $e) {
             throw new \RuntimeException('Failed to query running background processes for shutdown.', 0, $e);
         }
@@ -734,7 +800,8 @@ final class BackgroundProcessManager
      * @return array{id: int, pid: int, pgid: int|null, command: string,
      *               log_path: string, started_at: string,
      *               finished_at: string|null, exit_code: int|null,
-     *               stopped_by_user: bool, status: string}
+     *               stopped_by_user: bool, session_id: string,
+     *               status: string}
      */
     private function normalizeRow(array $row): array
     {
@@ -743,6 +810,7 @@ final class BackgroundProcessManager
         $id = $row['id'] ?? 0;
         $pid = $row['pid'] ?? 0;
         $pgidRaw = $row['pgid'] ?? null;
+        $sessionId = $row['session_id'] ?? '';
         $command = $row['command'] ?? '';
         $logPath = $row['log_path'] ?? '';
         $startedAt = $row['started_at'] ?? '';
@@ -754,6 +822,7 @@ final class BackgroundProcessManager
             'id' => \is_int($id) || (\is_string($id) && ctype_digit($id)) ? (int) $id : 0,
             'pid' => \is_int($pid) || (\is_string($pid) && ctype_digit($pid)) ? (int) $pid : 0,
             'pgid' => (null !== $pgidRaw && (\is_int($pgidRaw) || (\is_string($pgidRaw) && ctype_digit($pgidRaw)))) ? (int) $pgidRaw : null,
+            'session_id' => \is_string($sessionId) ? $sessionId : (string) $sessionId,
             'command' => \is_string($command) ? $command : (string) $command,
             'log_path' => \is_string($logPath) ? $logPath : (string) $logPath,
             'started_at' => \is_string($startedAt) ? $startedAt : (string) $startedAt,
@@ -862,20 +931,33 @@ final class BackgroundProcessManager
         try {
             $this->connection->executeStatement(\sprintf(
                 'CREATE TABLE IF NOT EXISTS %s (
-                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                    pid           INTEGER NOT NULL,
-                    pgid          INTEGER,
-                    command       TEXT NOT NULL,
-                    log_path      TEXT NOT NULL,
-                    status_path   TEXT NOT NULL,
-                    started_at    TEXT NOT NULL,
-                    finished_at   TEXT,
-                    exit_code     INTEGER,
+                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                    pid            INTEGER NOT NULL,
+                    pgid           INTEGER,
+                    session_id     TEXT NOT NULL DEFAULT \'\',
+                    command        TEXT NOT NULL,
+                    log_path       TEXT NOT NULL,
+                    status_path    TEXT NOT NULL,
+                    started_at     TEXT NOT NULL,
+                    finished_at    TEXT,
+                    exit_code      INTEGER,
                     stopped_by_user INTEGER NOT NULL DEFAULT 0,
-                    updated_at    TEXT NOT NULL
+                    updated_at     TEXT NOT NULL
                 )',
                 self::TABLE_NAME,
             ));
+
+            // Add session_id column if table already existed without it
+            // (SQLite migration: ALTER TABLE ADD COLUMN is a no-op if
+            //  the column already exists, but we wrap in try/catch for
+            //  safety, as some versions may error on duplicate column.)
+            try {
+                $this->connection->executeStatement(
+                    \sprintf('ALTER TABLE %s ADD COLUMN session_id TEXT NOT NULL DEFAULT \'\'', self::TABLE_NAME),
+                );
+            } catch (DbalException) {
+                // Column already exists — ignore
+            }
 
             $this->tableInitialized = true;
         } catch (DbalException $e) {

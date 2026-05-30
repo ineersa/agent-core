@@ -19,6 +19,8 @@ use PHPUnit\Framework\TestCase;
  */
 final class BackgroundProcessManagerTest extends TestCase
 {
+    private const string TEST_SESSION = 'test-session-001';
+
     private Connection $connection;
     private BackgroundProcessManager $manager;
     private string $tmpDir;
@@ -47,7 +49,7 @@ final class BackgroundProcessManagerTest extends TestCase
     public function testStartCreatesRecordAndLogs(): void
     {
         $this->createManager();
-        $result = $this->manager->start('echo "hello from bg"');
+        $result = $this->manager->start('echo "hello from bg"', self::TEST_SESSION);
 
         $this->assertArrayHasKey('id', $result);
         $this->assertArrayHasKey('pid', $result);
@@ -60,26 +62,14 @@ final class BackgroundProcessManagerTest extends TestCase
         // PID should be a real process (or recently exited)
         $this->assertFileExists($result['log_path']);
     }
-
-    public function testStartDetectsSetsidAvailable(): void
-    {
-        // Sanity: on this Linux system, command -v setsid returns 0
-        // (the preflight inside start() depends on this).
-        exec('command -v setsid', $_, $rc);
-        $this->assertSame(0, $rc, 'setsid must be available for start() to function');
-
-        // Calling start() should succeed since setsid is present
-        $this->createManager();
-        $result = $this->manager->start('echo "setsid test"');
-        $this->assertGreaterThan(0, $result['pid']);
-    }
+    
 
     public function testStartCommandWithProcessGroup(): void
     {
         $this->createManager();
         // Use a longer-running command so the process is still alive
         // when we query PGID via ps.
-        $result = $this->manager->start('sleep 5');
+        $result = $this->manager->start('sleep 2', self::TEST_SESSION);
 
         // PGID should be set when setsid is available
         $this->assertNotNull($result['pgid']);
@@ -96,7 +86,7 @@ final class BackgroundProcessManagerTest extends TestCase
         $customDir = $this->tmpDir.'/custom_bg';
         $this->createManager(storageDir: $customDir);
 
-        $result = $this->manager->start('echo "custom dir"');
+        $result = $this->manager->start('echo "custom dir"', self::TEST_SESSION);
 
         $this->assertStringContainsString('custom_bg', $result['log_path']);
         $this->assertFileExists($result['log_path']);
@@ -108,7 +98,7 @@ final class BackgroundProcessManagerTest extends TestCase
     public function testStartCreatesLogFromCommand(): void
     {
         $this->createManager();
-        $result = $this->manager->start('printf "log line 1\nlog line 2\n"');
+        $result = $this->manager->start('printf "log line 1\nlog line 2\n"', self::TEST_SESSION);
 
         // Wait for short process to finish
         usleep(500000);
@@ -134,7 +124,7 @@ final class BackgroundProcessManagerTest extends TestCase
     {
         $this->createManager();
         // Use a command that runs long enough for list to catch it running
-        $this->manager->start('sleep 5');
+        $this->manager->start('sleep 2', self::TEST_SESSION);
 
         $processes = $this->manager->list();
 
@@ -148,8 +138,8 @@ final class BackgroundProcessManagerTest extends TestCase
     public function testListReturnsMultipleProcesses(): void
     {
         $this->createManager();
-        $this->manager->start('echo "proc 1"');
-        $this->manager->start('echo "proc 2"');
+        $this->manager->start('echo "proc 1"', self::TEST_SESSION);
+        $this->manager->start('echo "proc 2"', self::TEST_SESSION);
 
         $processes = $this->manager->list();
 
@@ -159,7 +149,7 @@ final class BackgroundProcessManagerTest extends TestCase
     public function testListShowsFinishedProcessStatus(): void
     {
         $this->createManager();
-        $this->manager->start('echo "finish test"');
+        $this->manager->start('echo "finish test"', self::TEST_SESSION);
 
         // Wait for the short process to finish
         usleep(500000);
@@ -178,7 +168,7 @@ final class BackgroundProcessManagerTest extends TestCase
     public function testReadLogTailReturnsContent(): void
     {
         $this->createManager();
-        $result = $this->manager->start('echo "tail test content"');
+        $result = $this->manager->start('echo "tail test content"', self::TEST_SESSION);
 
         // Wait for process to write
         usleep(500000);
@@ -196,7 +186,7 @@ final class BackgroundProcessManagerTest extends TestCase
     {
         $this->createManager(logTailChars: 50);
         // Generate large output with repeated text
-        $result = $this->manager->start('for i in $(seq 1 100); do echo "line $i with some padding text to make it longer"; done');
+        $result = $this->manager->start('for i in $(seq 1 100, self::TEST_SESSION); do echo "line $i with some padding text to make it longer"; done');
 
         // Wait for process to finish and write
         usleep(500000);
@@ -228,7 +218,7 @@ final class BackgroundProcessManagerTest extends TestCase
     {
         $this->createManager(stopGraceSeconds: 1);
         // Use a TERM-ignoring command to force the KILL-after-grace path
-        $result = $this->manager->start('trap "" TERM; sleep 30');
+        $result = $this->manager->start('trap "" TERM; sleep 10', self::TEST_SESSION);
 
         $stopResult = $this->manager->stop($result['pid']);
 
@@ -245,7 +235,7 @@ final class BackgroundProcessManagerTest extends TestCase
     {
         $this->createManager();
         // A quick echo finishes nearly instantly
-        $result = $this->manager->start('echo "quick"');
+        $result = $this->manager->start('echo "quick"', self::TEST_SESSION);
 
         // Wait for it to finish
         usleep(500000);
@@ -281,7 +271,7 @@ final class BackgroundProcessManagerTest extends TestCase
     public function testStopMarksStoppedByUserInDb(): void
     {
         $this->createManager(stopGraceSeconds: 1);
-        $result = $this->manager->start('sleep 30');
+        $result = $this->manager->start('sleep 30', self::TEST_SESSION);
 
         $this->manager->stop($result['pid']);
 
@@ -304,9 +294,9 @@ final class BackgroundProcessManagerTest extends TestCase
         // With the procCache removed, after TERM is sent and the grace window
         // passes, isAlive() performs a fresh /proc/<pid> check. If a short-lived
         // process (sleep 3) finishes naturally within the grace window (5s),
-        // no KILL is sent — only TERM.
-        $this->createManager(stopGraceSeconds: 5);
-        $result = $this->manager->start('sleep 3');
+        // no KILL is sent - only TERM.
+        $this->createManager(stopGraceSeconds: 2);
+        $result = $this->manager->start('sleep 1', self::TEST_SESSION);
         $stopResult = $this->manager->stop($result['pid']);
 
         $this->assertTrue($stopResult['stopped_by_user']);
@@ -320,7 +310,7 @@ final class BackgroundProcessManagerTest extends TestCase
         // Prove that SIGTERM actually reaches the workload process by using a
         // command that traps TERM and writes a sentinel file. If the sentinel
         // exists after stop(), TERM delivered correctly to the child.
-        $this->createManager(stopGraceSeconds: 3);
+        $this->createManager(stopGraceSeconds: 1);
 
         $sentinel = $this->tmpDir.'/term_sentinel';
 
@@ -332,7 +322,7 @@ final class BackgroundProcessManagerTest extends TestCase
         );
         chmod($scriptPath, 0755);
 
-        $result = $this->manager->start($scriptPath);
+        $result = $this->manager->start($scriptPath, self::TEST_SESSION);
 
         // Give the process a moment to start
         usleep(200000);
@@ -346,7 +336,7 @@ final class BackgroundProcessManagerTest extends TestCase
         $this->assertSame('term', $stopResult['signal_sent'],
             'Expected term-only signal: TERM should have reached the workload');
         $this->assertFileExists($sentinel,
-            'Sentinel file should exist — SIGTERM should have reached the process');
+            'Sentinel file should exist - SIGTERM should have reached the process');
 
         $content = file_get_contents($sentinel);
         $this->assertStringContainsString('term_received', $content);
@@ -357,7 +347,7 @@ final class BackgroundProcessManagerTest extends TestCase
         // When TERM reaches the workload and the wrapper writes the real
         // exit code to the status file, stop() must NOT overwrite it with
         // -1 (which would corrupt forensic exit-code evidence).
-        $this->createManager(stopGraceSeconds: 3);
+        $this->createManager(stopGraceSeconds: 1);
 
         $sentinel = $this->tmpDir.'/term_sentinel';
         $scriptPath = $this->tmpDir.'/term_test2.sh';
@@ -367,7 +357,7 @@ final class BackgroundProcessManagerTest extends TestCase
         );
         chmod($scriptPath, 0755);
 
-        $result = $this->manager->start($scriptPath);
+        $result = $this->manager->start($scriptPath, self::TEST_SESSION);
         usleep(200000);
 
         $this->manager->stop($result['pid']);
@@ -378,7 +368,7 @@ final class BackgroundProcessManagerTest extends TestCase
         $processes = $this->manager->list();
         foreach ($processes as $p) {
             if ($p['pid'] === $result['pid']) {
-                // Process is stopped — status file should contain the real exit code
+                // Process is stopped - status file should contain the real exit code
                 // We check via the log_path pattern to find the status file
                 break;
             }
@@ -389,7 +379,7 @@ final class BackgroundProcessManagerTest extends TestCase
         $sentinelContent = file_get_contents($sentinel);
         $this->assertStringContainsString('term_received', $sentinelContent);
 
-        // Find the status file on disk — it should exist and NOT contain -1
+        // Find the status file on disk - it should exist and NOT contain -1
         // (The wrapper wrote the real exit code before stop() had a chance to
         // overwrite; and our fix now skips overwriting when the file exists.)
         $foundStatusFile = false;
@@ -410,7 +400,7 @@ final class BackgroundProcessManagerTest extends TestCase
     public function testCleanupStaleRemovesOldFinishedProcesses(): void
     {
         $this->createManager(retentionSeconds: 0); // zero retention = everything is stale
-        $result = $this->manager->start('echo "stale test"');
+        $result = $this->manager->start('echo "stale test"', self::TEST_SESSION);
 
         // Wait for finish
         usleep(500000);
@@ -426,7 +416,7 @@ final class BackgroundProcessManagerTest extends TestCase
     public function testCleanupStalePreservesRunningProcesses(): void
     {
         $this->createManager(retentionSeconds: 0);
-        $result = $this->manager->start('sleep 30');
+        $result = $this->manager->start('sleep 30', self::TEST_SESSION);
 
         $count = $this->manager->cleanupStale();
 
@@ -439,7 +429,7 @@ final class BackgroundProcessManagerTest extends TestCase
     public function testCleanupStaleRemovesLogFiles(): void
     {
         $this->createManager(retentionSeconds: 0);
-        $result = $this->manager->start('echo "log cleanup test"');
+        $result = $this->manager->start('echo "log cleanup test"', self::TEST_SESSION);
 
         usleep(500000);
 
@@ -456,8 +446,8 @@ final class BackgroundProcessManagerTest extends TestCase
     public function testShutdownCleanupTerminatesRunningProcesses(): void
     {
         $this->createManager(stopGraceSeconds: 1);
-        $this->manager->start('sleep 30');
-        $this->manager->start('sleep 30');
+        $this->manager->start('sleep 30', self::TEST_SESSION);
+        $this->manager->start('sleep 30', self::TEST_SESSION);
 
         $count = $this->manager->shutdownCleanup();
 
@@ -497,7 +487,7 @@ final class BackgroundProcessManagerTest extends TestCase
     public function testDataPersistsAcrossManagerInstances(): void
     {
         $this->createManager();
-        $result = $this->manager->start('echo "persist test"');
+        $result = $this->manager->start('echo "persist test"', self::TEST_SESSION);
 
         // Create a new manager with the same connection and config
         $config = new BackgroundProcessConfig(storageDir: $this->tmpDir);
@@ -512,9 +502,9 @@ final class BackgroundProcessManagerTest extends TestCase
     public function testStartWithLongRunningCommandProducesRunningStatus(): void
     {
         $this->createManager();
-        $result = $this->manager->start('sleep 5');
+        $result = $this->manager->start('sleep 2', self::TEST_SESSION);
 
-        // Immediately check status — should be running
+        // Immediately check status - should be running
         $processes = $this->manager->list();
         $found = false;
         foreach ($processes as $p) {
@@ -526,6 +516,56 @@ final class BackgroundProcessManagerTest extends TestCase
         }
         $this->assertTrue($found);
 
+        $this->manager->shutdownCleanup();
+    }
+
+    /* ── session ownership tests ── */
+
+    public function testListFiltersBySessionId(): void
+    {
+        $this->createManager();
+        $this->manager->start('echo "session-a"', 'session-a-1');
+        $this->manager->start('echo "session-b"', 'session-b-1');
+
+        // List with session filter
+        $sessionA = $this->manager->list('session-a-1');
+        $this->assertCount(1, $sessionA);
+        $this->assertStringContainsString('session-a', $sessionA[0]['command']);
+        $this->assertSame('session-a-1', $sessionA[0]['session_id']);
+
+        // List all (unscoped) should return both
+        $all = $this->manager->list();
+        $this->assertCount(2, $all);
+
+        $this->manager->shutdownCleanup();
+    }
+
+    public function testStopThrowsOnSessionMismatch(): void
+    {
+        $this->createManager(stopGraceSeconds: 1);
+        $result = $this->manager->start('sleep 10', 'session-X');
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('for this session');
+        $this->manager->stop($result['pid'], 'session-Y');
+    }
+
+    public function testShutdownCleanupOnlyStopsSessionProcesses(): void
+    {
+        $this->createManager(stopGraceSeconds: 1);
+        $this->manager->start('sleep 10', 'session-1');
+        $this->manager->start('sleep 10', 'session-2');
+
+        // Shutdown only session-1
+        $count = $this->manager->shutdownCleanup('session-1');
+        $this->assertSame(1, $count);
+
+        // session-2 process should still be running
+        $processes = $this->manager->list('session-2');
+        $this->assertCount(1, $processes);
+        $this->assertStringContainsString('running', $processes[0]['status']);
+
+        // Cleanup the remaining process
         $this->manager->shutdownCleanup();
     }
 

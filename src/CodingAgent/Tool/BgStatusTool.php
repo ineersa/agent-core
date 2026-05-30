@@ -18,6 +18,15 @@ use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
  *  - list:  Show all tracked background processes with status.
  *  - log:   Return the tail of a background process log file.
  *  - stop:  Terminate a background process (TERM → grace → KILL).
+ *
+ * Session ownership: currently passes null (unscoped) for all background
+ * process manager calls. This works because every Manager method defaults
+ * to null, which means "operate on any process regardless of session."
+ *
+ * TOOLS-09 will plumb the real session_id from ToolContext::runId() into
+ * BgStatusTool and BackgroundProcessManager::start(). When that happens,
+ * BgStatusTool will need to inject session context into its manager calls
+ * (list, stop, log) so operations are scoped to the current run/session.
  */
 final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerInterface
 {
