@@ -29,7 +29,7 @@ class QuestionControllerTest extends TestCase
     {
         parent::setUp();
         $this->coordinator = new QuestionCoordinator();
-        $this->controller = new QuestionController();
+        $this->controller = new QuestionController($this->coordinator);
     }
 
     // ── Lifecycle ──

@@ -337,6 +337,7 @@ parameters:
       - SymfonyYaml
 
     TuiQuestion:
+      - TuiRuntime
       - TuiScreen
       - TuiWidget
       - TuiTheme

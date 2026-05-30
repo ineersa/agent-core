@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Question;
 
-use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Widget\WidgetPlacementEnum;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Input\Key;
 use Symfony\Component\Tui\Input\Keybindings;
-use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
@@ -34,20 +33,20 @@ final class QuestionController
     private ?SelectListWidget $listWidget = null;
     private ?ContainerWidget $container = null;
     private bool $isOpen = false;
+    private ?TuiRuntimeContext $context = null;
 
-    private ?Tui $tui = null;
-    private ?ChatScreen $screen = null;
-    private ?QuestionCoordinator $coordinator = null;
+    public function __construct(
+        private readonly QuestionCoordinator $coordinator,
+    ) {
+    }
 
     /**
      * Set the per-run TUI references that are only available at
      * listener registration time.
      */
-    public function setRuntimeRefs(Tui $tui, ChatScreen $screen, QuestionCoordinator $coordinator): void
+    public function setRuntimeRefs(TuiRuntimeContext $context): void
     {
-        $this->tui = $tui;
-        $this->screen = $screen;
-        $this->coordinator = $coordinator;
+        $this->context = $context;
     }
 
     /**
@@ -62,95 +61,22 @@ final class QuestionController
      */
     public function open(QuestionRequest $request, WidgetPlacementEnum $placement = WidgetPlacementEnum::AboveEditor): void
     {
-        if ($this->isOpen || null === $this->tui || null === $this->screen || null === $this->coordinator) {
+        \assert(null !== $this->context, 'setRuntimeRefs() must be called before open()');
+
+        if ($this->isOpen) {
             return;
         }
 
-        $tui = $this->tui;
-        $screen = $this->screen;
-        $coordinator = $this->coordinator;
-
         $this->container = new ContainerWidget();
-
-        // ── Header — kind-appropriate title ──
-        $headerText = $request->header ?? match ($request->kind) {
-            QuestionKind::Text => 'Human input required',
-            QuestionKind::Confirm => 'Confirmation required',
-            QuestionKind::Choice => 'Choose an option',
-            QuestionKind::Approval => 'Approval requested',
-        };
-        $header = new TextWidget(text: $headerText, truncate: true);
-        $this->container->add($header);
+        $this->addHeader($request);
 
         if (QuestionKind::Text === $request->kind) {
-            // ── Text kind: banner only, user types in editor ──
-            $prompt = new TextWidget(text: $request->prompt, truncate: true);
-            $this->container->add($prompt);
-
-            $hintText = $request->secret
-                ? '[answer will be hidden, type and press Enter]'
-                : '[type answer and press Enter]';
-            $hint = new TextWidget(text: $hintText, truncate: true);
-            $this->container->add($hint);
+            $this->addTextBanner($request);
         } else {
-            // ── Interactive kinds: SelectListWidget ──
-            $prompt = new TextWidget(text: $request->prompt, truncate: true);
-            $this->container->add($prompt);
-
-            $items = $this->buildItems($request);
-            $kb = new Keybindings([
-                'select_up' => [Key::UP],
-                'select_down' => [Key::DOWN],
-                'select_page_up' => [Key::PAGE_UP],
-                'select_page_down' => [Key::PAGE_DOWN],
-                'select_confirm' => [Key::ENTER],
-                'select_cancel' => [Key::ESCAPE, Key::ctrl('c')],
-            ]);
-
-            $this->listWidget = new SelectListWidget(
-                items: $items,
-                maxVisible: 10,
-                keybindings: $kb,
-            );
-
-            // ── Enter → answer, close ──
-            $onSelectController = $this;
-            $this->listWidget->onSelect(static function (SelectEvent $event) use (
-                $coordinator, $screen, $onSelectController,
-            ): void {
-                $item = $event->getItem();
-                $value = $item['value'];
-
-                $answer = '__other__' === $value
-                    ? $screen->editorText()
-                    : $value;
-
-                $coordinator->answer($answer);
-                $onSelectController->close();
-            });
-
-            // ── Escape / Ctrl+C → cancel, close ──
-            $onCancelController = $this;
-            $this->listWidget->onCancel(static function (CancelEvent $event) use (
-                $coordinator, $onCancelController,
-            ): void {
-                $coordinator->cancel();
-                $onCancelController->close();
-            });
-
-            $this->container->add($this->listWidget);
+            $this->addSelectList($request);
         }
 
-        // ── Mount and focus ──
-        $tui->add($this->container);
-        $screen->setStatus('action', "\u{26A0} Question pending");
-
-        if (QuestionKind::Text !== $request->kind) {
-            $tui->setFocus($this->listWidget);
-        }
-
-        $tui->requestRender(true);
-        $this->isOpen = true;
+        $this->mount($request);
     }
 
     /**
@@ -159,13 +85,13 @@ final class QuestionController
     public function close(): void
     {
         if (null !== $this->container) {
-            $this->tui?->remove($this->container);
+            $this->context?->tui->remove($this->container);
             $this->container = null;
         }
         $this->listWidget = null;
         $this->isOpen = false;
-        $this->screen?->setStatus('action', null);
-        $this->screen?->refresh();
+        $this->context?->screen->setStatus('action', null);
+        $this->context?->screen->refresh();
     }
 
     /**
@@ -174,6 +100,101 @@ final class QuestionController
     public function isOpen(): bool
     {
         return $this->isOpen;
+    }
+
+    // ── Private helpers ──
+
+    /**
+     * Add a kind-appropriate header to the container.
+     */
+    private function addHeader(QuestionRequest $request): void
+    {
+        $headerText = $request->header ?? match ($request->kind) {
+            QuestionKind::Text => 'Human input required',
+            QuestionKind::Confirm => 'Confirmation required',
+            QuestionKind::Choice => 'Choose an option',
+            QuestionKind::Approval => 'Approval requested',
+        };
+        $header = new TextWidget(text: $headerText, truncate: true);
+        $this->container->add($header);
+    }
+
+    /**
+     * Add TextWidget banner (prompt + hint) for Text kind questions.
+     */
+    private function addTextBanner(QuestionRequest $request): void
+    {
+        $prompt = new TextWidget(text: $request->prompt, truncate: true);
+        $this->container->add($prompt);
+
+        $hintText = $request->secret
+            ? '[answer will be hidden, type and press Enter]'
+            : '[type answer and press Enter]';
+        $hint = new TextWidget(text: $hintText, truncate: true);
+        $this->container->add($hint);
+    }
+
+    /**
+     * Build and wire a SelectListWidget for interactive question kinds.
+     *
+     * Creates the widget with items from buildItems(), attaches Enter/ESCAPE
+     * callbacks, and adds it to the container.
+     */
+    private function addSelectList(QuestionRequest $request): void
+    {
+        $prompt = new TextWidget(text: $request->prompt, truncate: true);
+        $this->container->add($prompt);
+
+        $items = $this->buildItems($request);
+        $kb = new Keybindings([
+            'select_up' => [Key::UP],
+            'select_down' => [Key::DOWN],
+            'select_page_up' => [Key::PAGE_UP],
+            'select_page_down' => [Key::PAGE_DOWN],
+            'select_confirm' => [Key::ENTER],
+            'select_cancel' => [Key::ESCAPE, Key::ctrl('c')],
+        ]);
+
+        $this->listWidget = new SelectListWidget(
+            items: $items,
+            maxVisible: 10,
+            keybindings: $kb,
+        );
+
+        $this->listWidget->onSelect(function (SelectEvent $event): void {
+            $item = $event->getItem();
+            $value = $item['value'];
+
+            $answer = '__other__' === $value
+                ? $this->context->screen->editorText()
+                : $value;
+
+            $this->coordinator->answer($answer);
+            $this->close();
+        });
+
+        $this->listWidget->onCancel(function (CancelEvent $event): void {
+            $this->coordinator->cancel();
+            $this->close();
+        });
+
+        $this->container->add($this->listWidget);
+    }
+
+    /**
+     * Mount the container into the TUI widget tree and request focus.
+     */
+    private function mount(QuestionRequest $request): void
+    {
+        $this->context->tui->add($this->container);
+        $this->context->screen->setStatus('action', "\u{26A0} Question pending");
+
+        if (QuestionKind::Text !== $request->kind) {
+            $this->context->tui->setFocus($this->listWidget);
+        }
+
+        $this->context->tui->requestRender(true);
+        $this->isOpen = true;
     }
 
     /**
