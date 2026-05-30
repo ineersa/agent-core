@@ -17,16 +17,16 @@ namespace Ineersa\Tui\Question;
  * appears in session transcripts (true for AgentCore HITL, false for
  * local TUI questions).
  *
- * @param array<string, mixed> $schema   JSON Schema describing expected answer shape
- * @param list<QuestionOption>  $choices  Structured options for choice/approval questions
- * @param mixed                $default  Default value if the user does not provide input
+ * @param array<string, mixed> $schema  JSON Schema describing expected answer shape
+ * @param list<QuestionOption> $choices Structured options for choice/approval questions
+ * @param mixed                $default Default value if the user does not provide input
  */
 final readonly class QuestionRequest
 {
     /**
-     * @param array<string, mixed> $schema   JSON Schema describing expected answer shape
-     * @param list<QuestionOption>  $choices  Structured options for choice/approval questions
-     * @param mixed                $default  Default value if the user does not provide input
+     * @param array<string, mixed> $schema  JSON Schema describing expected answer shape
+     * @param list<QuestionOption> $choices Structured options for choice/approval questions
+     * @param mixed                $default Default value if the user does not provide input
      */
     public function __construct(
         public string $requestId,
@@ -44,5 +44,6 @@ final readonly class QuestionRequest
         public ?string $toolCallId = null,
         public ?string $toolName = null,
         public bool $transcript = false,
-    ) {}
+    ) {
+    }
 }

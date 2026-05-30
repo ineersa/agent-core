@@ -16,5 +16,6 @@ final readonly class QuestionOption
     public function __construct(
         public string $label,
         public string $description = '',
-    ) {}
+    ) {
+    }
 }

@@ -25,6 +25,9 @@ final class QuestionCoordinator
     /** @var array<string, \Closure(mixed): void> */
     private array $callbacks = [];
 
+    /** @var array<string, true> */
+    private array $requestIds = [];
+
     public function __construct()
     {
         $this->queue = new \SplQueue();
@@ -43,11 +46,17 @@ final class QuestionCoordinator
      */
     public function enqueue(QuestionRequest $request, ?\Closure $onAnswer = null): void
     {
-        if ($onAnswer !== null) {
+        if (isset($this->requestIds[$request->requestId])) {
+            throw new \InvalidArgumentException(\sprintf('A request with ID "%s" is already enqueued or active.', $request->requestId));
+        }
+
+        $this->requestIds[$request->requestId] = true;
+
+        if (null !== $onAnswer) {
             $this->callbacks[$request->requestId] = $onAnswer;
         }
 
-        if ($this->active === null) {
+        if (null === $this->active) {
             $this->activate($request);
         } else {
             $this->queue->enqueue($request);
@@ -75,7 +84,7 @@ final class QuestionCoordinator
      */
     public function actionRequired(): bool
     {
-        return $this->active !== null;
+        return null !== $this->active;
     }
 
     /**
@@ -91,18 +100,25 @@ final class QuestionCoordinator
      */
     public function answer(mixed $value): void
     {
-        if ($this->active === null) {
+        if (null === $this->active) {
             return;
         }
 
-        if ($this->active->source === QuestionSource::Tui) {
+        $this->activeStatus = QuestionStatus::Answered;
+
+        if (QuestionSource::Tui === $this->active->source) {
             $callback = $this->callbacks[$this->active->requestId] ?? null;
-            if ($callback !== null) {
-                $callback($value);
+            if (null !== $callback) {
+                try {
+                    $callback($value);
+                } finally {
+                    $this->advance();
+                }
+
+                return;
             }
         }
 
-        $this->activeStatus = QuestionStatus::Answered;
         $this->advance();
     }
 
@@ -113,7 +129,7 @@ final class QuestionCoordinator
      */
     public function reject(): void
     {
-        if ($this->active === null) {
+        if (null === $this->active) {
             return;
         }
 
@@ -128,7 +144,7 @@ final class QuestionCoordinator
      */
     public function cancel(): void
     {
-        if ($this->active === null) {
+        if (null === $this->active) {
             return;
         }
 
@@ -141,9 +157,7 @@ final class QuestionCoordinator
      */
     private function advance(): void
     {
-        \assert($this->active !== null);
-
-        unset($this->callbacks[$this->active->requestId]);
+        unset($this->callbacks[$this->active->requestId], $this->requestIds[$this->active->requestId]);
 
         if ($this->queue->isEmpty()) {
             $this->active = null;

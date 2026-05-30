@@ -327,4 +327,17 @@ final class QuestionCoordinatorTest extends TestCase
 
         self::assertNull($coordinator->activeRequest());
     }
+
+    // ─── Duplicate requestId guard ───────────────────────────────────
+
+    public function testDuplicateRequestIdThrows(): void
+    {
+        $coordinator = new QuestionCoordinator();
+        $request = $this->tuiRequest('dup-id');
+
+        $coordinator->enqueue($request);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $coordinator->enqueue($this->tuiRequest('dup-id'));
+    }
 }
