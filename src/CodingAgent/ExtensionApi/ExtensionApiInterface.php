@@ -45,4 +45,22 @@ interface ExtensionApiInterface
      * @param ToolResultHookInterface $hook the hook implementation
      */
     public function registerToolResultHook(ToolResultHookInterface $hook): void;
+
+    /**
+     * Get extension settings by key.
+     *
+     * Returns the settings array for the given key from the extensions.settings
+     * section of Hatfield configuration. Returns empty array if key not found.
+     *
+     * @return array<string, mixed>
+     */
+    public function getSettings(string $key): array;
+
+    /**
+     * Get the current working directory for the Hatfield session.
+     *
+     * Returns the resolved CWD path that extensions should use for
+     * path resolution and policy evaluation.
+     */
+    public function getCwd(): string;
 }

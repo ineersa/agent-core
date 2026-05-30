@@ -105,4 +105,14 @@ final class ExtensionApiBridge implements ExtensionApiInterface
     {
         return $this->toolResultHooks;
     }
+
+    public function getSettings(string $key): array
+    {
+        return [];
+    }
+
+    public function getCwd(): string
+    {
+        return \getcwd() ?: '';
+    }
 }

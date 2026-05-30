@@ -91,7 +91,9 @@ services:
 
   Ineersa\CodingAgent\Extension\ExtensionHookRegistry: ~
 
-  Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge: ~
+  Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge:
+    arguments:
+      $appConfig: '@Ineersa\CodingAgent\Config\AppConfig'
 
   Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface:
     alias: Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge
