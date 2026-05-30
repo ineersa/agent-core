@@ -15,6 +15,8 @@ use Ineersa\Tui\Command\ExitApplication;
 use Ineersa\Tui\Command\StatusUpdate;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
+use Ineersa\Tui\Question\QuestionController;
+use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -40,6 +42,8 @@ final class SubmitListener implements TuiListenerRegistrar
         private readonly HatfieldSessionStore $sessionStore,
         private readonly SubmissionRouter $submissionRouter,
         private readonly TranscriptBlockFactory $blockFactory,
+        private readonly QuestionCoordinator $coordinator,
+        private readonly QuestionController $questionController,
     ) {
     }
 
@@ -53,11 +57,23 @@ final class SubmitListener implements TuiListenerRegistrar
         $screen = $context->screen;
         $tui = $context->tui;
 
+        $questionCoordinator = $this->coordinator;
+        $questionController = $this->questionController;
+
         $context->tui->addListener(static function (SubmitEvent $event) use (
             $client, $sessionStore, $state, $screen, $tui, $router, $blockFactory,
+            $questionCoordinator, $questionController,
         ) {
             $text = $screen->extract();
             if ('' === $text) {
+                return;
+            }
+
+            // ── Question interception: route editor text to active question ──
+            if ($questionCoordinator->actionRequired()) {
+                $questionCoordinator->answer($text);
+                $questionController->close();
+
                 return;
             }
 
