@@ -667,8 +667,8 @@ function datadog_trace_endpoint_available(): bool
         return true;
     }
 
-    $host = getenv('DD_AGENT_HOST') ?: '127.0.0.1';
-    $port = (int) (getenv('DD_TRACE_AGENT_PORT') ?: '8126');
+    $host = (false !== ($_host = getenv('DD_AGENT_HOST')) ? $_host : '127.0.0.1');
+    $port = (int) (false !== ($_port = getenv('DD_TRACE_AGENT_PORT')) ? $_port : '8126');
     $socket = @fsockopen((string) $host, $port, $errno, $errstr, 0.1);
     if (is_resource($socket)) {
         fclose($socket);
@@ -695,8 +695,8 @@ function datadog_env_command(bool $enabled): string
     if ($enabled) {
         $version = trim(shell_exec('git rev-parse --short HEAD 2>/dev/null') ?? '');
         $vars += [
-            'DD_SERVICE' => getenv('DD_SERVICE') ?: 'hatfield',
-            'DD_ENV' => getenv('DD_ENV') ?: 'dev',
+            'DD_SERVICE' => (false !== ($_svc = getenv('DD_SERVICE')) ? $_svc : 'hatfield'),
+            'DD_ENV' => (false !== ($_env = getenv('DD_ENV')) ? $_env : 'dev'),
             'DD_VERSION' => '' !== $version ? $version : 'local',
             'DD_LOGS_INJECTION' => 'true',
             'DD_TRACE_APPEND_TRACE_IDS_TO_LOGS' => 'true',
@@ -1259,7 +1259,7 @@ function project_relative_path(string $file): string
 #[AsTask(name: 'datadog:status', description: 'Show local Datadog readiness for Hatfield logs/APM')]
 function datadog_status(): void
 {
-    $root = realpath(__DIR__.'/..') ?: __DIR__.'/..';
+    $root = (false !== ($_rp = realpath(__DIR__.'/..')) ? $_rp : __DIR__.'/..');
     $todayLog = $root.'/.hatfield/logs/agent-'.date('Y-m-d').'.log';
     $apmSocket = '/var/run/datadog/apm.socket';
     $installedConfig = '/etc/datadog-agent/conf.d/hatfield.d/conf.yaml';
@@ -1273,11 +1273,11 @@ function datadog_status(): void
     echo 'Default run:agent APM: '.(datadog_auto_enabled() ? 'enabled' : 'disabled').\PHP_EOL;
 
     if (extension_loaded('ddtrace')) {
-        echo 'ddtrace cli enabled: '.(ini_get('datadog.trace.cli_enabled') ?: '(default)').\PHP_EOL;
-        echo 'ddtrace enabled: '.(ini_get('datadog.trace.enabled') ?: '(default)').\PHP_EOL;
-        echo 'ddtrace service: '.(ini_get('datadog.service') ?: '(unset)').\PHP_EOL;
-        echo 'ddtrace env: '.(ini_get('datadog.env') ?: '(unset)').\PHP_EOL;
-        echo 'ddtrace agent_url: '.(ini_get('datadog.trace.agent_url') ?: '(default)').\PHP_EOL;
+        echo 'ddtrace cli enabled: '.(false !== ($_v = ini_get('datadog.trace.cli_enabled')) ? $_v : '(default)').\PHP_EOL;
+        echo 'ddtrace enabled: '.(false !== ($_v = ini_get('datadog.trace.enabled')) ? $_v : '(default)').\PHP_EOL;
+        echo 'ddtrace service: '.(false !== ($_v = ini_get('datadog.service')) ? $_v : '(unset)').\PHP_EOL;
+        echo 'ddtrace env: '.(false !== ($_v = ini_get('datadog.env')) ? $_v : '(unset)').\PHP_EOL;
+        echo 'ddtrace agent_url: '.(false !== ($_v = ini_get('datadog.trace.agent_url')) ? $_v : '(default)').\PHP_EOL;
     }
 
     echo 'Hatfield log today: '.$todayLog.' '.(is_readable($todayLog) ? 'readable' : 'missing/not-readable').\PHP_EOL;
@@ -1295,7 +1295,7 @@ function datadog_status(): void
 #[AsTask(name: 'datadog:log-config', description: 'Print the Datadog Agent Hatfield log config and install hints')]
 function datadog_log_config(): void
 {
-    $root = realpath(__DIR__.'/..') ?: __DIR__.'/..';
+    $root = (false !== ($_rp = realpath(__DIR__.'/..')) ? $_rp : __DIR__.'/..');
     $config = $root.'/ops/datadog/hatfield.d/conf.yaml';
 
     echo file_get_contents($config);
@@ -1312,7 +1312,7 @@ function datadog_log_config(): void
 #[AsTask(name: 'datadog:smoke-log', description: 'Write a Datadog log collection smoke-test line')]
 function datadog_smoke_log(): void
 {
-    $root = realpath(__DIR__.'/..') ?: __DIR__.'/..';
+    $root = (false !== ($_rp = realpath(__DIR__.'/..')) ? $_rp : __DIR__.'/..');
     $logDir = $root.'/.hatfield/logs';
     if (!is_dir($logDir) && !mkdir($logDir, 0755, true) && !is_dir($logDir)) {
         throw new RuntimeException(sprintf('Unable to create log directory "%s".', $logDir));

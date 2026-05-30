@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\RunCancellationToken;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
@@ -34,30 +35,43 @@ final readonly class ExecuteToolCallWorker
     #[AsMessageHandler(bus: 'agent.execution.bus')]
     public function __invoke(ExecuteToolCall $message): void
     {
-        $execute = function () use ($message): void {
-            $result = $this->execute($message);
-
-            try {
-                $this->commandBus->dispatch($result);
-            } catch (ExceptionInterface $exception) {
-                throw new \RuntimeException('Failed to dispatch tool result to command bus.', previous: $exception);
-            }
-        };
-
-        if (null === $this->tracer) {
-            $execute();
-
-            return;
-        }
-
-        $this->tracer->inSpan('turn.execution.tool_worker', [
+        RunLogContext::enter([
             'run_id' => $message->runId(),
-            'turn_no' => $message->turnNo(),
-            'step_id' => $message->stepId(),
-            'tool_call_id' => $message->toolCallId,
-            'tool_name' => $message->toolName,
+            'session_id' => $message->runId(),
+            'component' => 'tool',
+            'queue' => 'agent.execution.bus',
             'worker' => 'tool',
-        ], $execute, root: true);
+            'tool_name' => $message->toolName,
+        ]);
+
+        try {
+            $execute = function () use ($message): void {
+                $result = $this->execute($message);
+
+                try {
+                    $this->commandBus->dispatch($result);
+                } catch (ExceptionInterface $exception) {
+                    throw new \RuntimeException('Failed to dispatch tool result to command bus.', previous: $exception);
+                }
+            };
+
+            if (null === $this->tracer) {
+                $execute();
+
+                return;
+            }
+
+            $this->tracer->inSpan('turn.execution.tool_worker', [
+                'run_id' => $message->runId(),
+                'turn_no' => $message->turnNo(),
+                'step_id' => $message->stepId(),
+                'tool_call_id' => $message->toolCallId,
+                'tool_name' => $message->toolName,
+                'worker' => 'tool',
+            ], $execute, root: true);
+        } finally {
+            RunLogContext::leave();
+        }
     }
 
     private function execute(ExecuteToolCall $message): ToolCallResult
@@ -87,6 +101,8 @@ final readonly class ExecuteToolCallWorker
         );
 
         $startedAt = hrtime(true);
+
+        RunLogContext::enter(['event_type' => 'tool.execute.started']);
 
         try {
             $executeTool = fn () => $this->toolExecutor->execute($toolCall);
@@ -173,6 +189,8 @@ final readonly class ExecuteToolCallWorker
                 isError: true,
                 error: $error,
             );
+        } finally {
+            RunLogContext::leave(); // event_type scope
         }
     }
 }

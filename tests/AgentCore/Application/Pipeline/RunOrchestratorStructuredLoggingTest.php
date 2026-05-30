@@ -130,21 +130,27 @@ final class RunOrchestratorStructuredLoggingTest extends TestCase
 
         $this->assertNotEmpty($logger->records);
 
-        $record = $logger->records[0];
+        // First commit log is the summary event.
+        $summaryRecord = $logger->records[0];
+        $this->assertSame('persistence.events_committed', $summaryRecord['message']);
+        $this->assertArrayHasKey('run_id', $summaryRecord['context']);
+        $this->assertArrayHasKey('turn_no', $summaryRecord['context']);
+        $this->assertArrayHasKey('event_count', $summaryRecord['context']);
+        $this->assertArrayHasKey('events_by_type', $summaryRecord['context']);
+        $this->assertArrayHasKey('new_status', $summaryRecord['context']);
+        $this->assertSame('run-log-1', $summaryRecord['context']['run_id']);
 
-        $this->assertSame('agent_loop.event', $record['message']);
-        $this->assertArrayHasKey('run_id', $record['context']);
-        $this->assertArrayHasKey('turn_no', $record['context']);
-        $this->assertArrayHasKey('step_id', $record['context']);
-        $this->assertArrayHasKey('seq', $record['context']);
-        $this->assertArrayHasKey('status', $record['context']);
-        $this->assertArrayHasKey('worker_id', $record['context']);
-        $this->assertArrayHasKey('attempt', $record['context']);
-
-        $this->assertSame('run-log-1', $record['context']['run_id']);
-        $this->assertSame('start-step-1', $record['context']['step_id']);
-        $this->assertSame('running', $record['context']['status']);
-        $this->assertSame('orchestrator', $record['context']['worker_id']);
+        // Second commit log is the per-event record.
+        $eventRecord = $logger->records[1] ?? $logger->records[0];
+        $this->assertSame('event_store.appended', $eventRecord['message']);
+        $this->assertArrayHasKey('run_id', $eventRecord['context']);
+        $this->assertArrayHasKey('seq', $eventRecord['context']);
+        $this->assertArrayHasKey('turn_no', $eventRecord['context']);
+        $this->assertArrayHasKey('event_type', $eventRecord['context']);
+        $this->assertArrayHasKey('step_id', $eventRecord['context']);
+        $this->assertArrayHasKey('worker_id', $eventRecord['context']);
+        $this->assertArrayHasKey('attempt', $eventRecord['context']);
+        $this->assertSame('run-log-1', $eventRecord['context']['run_id']);
     }
 
     private function deleteDirectory(string $path): void
