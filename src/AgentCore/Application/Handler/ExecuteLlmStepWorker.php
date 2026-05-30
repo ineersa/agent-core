@@ -10,6 +10,9 @@ use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
+use Ineersa\AgentCore\Infrastructure\RunLogContext;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
@@ -24,6 +27,7 @@ final readonly class ExecuteLlmStepWorker
         private string $defaultModel,
         private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
+        private LoggerInterface $logger = new NullLogger(),
     ) {
     }
 
@@ -33,33 +37,51 @@ final readonly class ExecuteLlmStepWorker
     #[AsMessageHandler(bus: 'agent.execution.bus')]
     public function __invoke(ExecuteLlmStep $message): void
     {
-        $execute = function () use ($message): void {
-            $result = $this->execute($message);
-
-            try {
-                $this->commandBus->dispatch($result);
-            } catch (ExceptionInterface $exception) {
-                throw new \RuntimeException('Failed to dispatch LLM result to command bus.', previous: $exception);
-            }
-        };
-
-        if (null === $this->tracer) {
-            $execute();
-
-            return;
-        }
-
-        $this->tracer->inSpan('turn.execution.llm_worker', [
+        RunLogContext::enter([
             'run_id' => $message->runId(),
-            'turn_no' => $message->turnNo(),
-            'step_id' => $message->stepId(),
+            'session_id' => $message->runId(),
+            'component' => 'llm',
+            'queue' => 'agent.execution.bus',
             'worker' => 'llm',
-        ], $execute, root: true);
+        ]);
+
+        try {
+            $execute = function () use ($message): void {
+                $result = $this->execute($message);
+
+                try {
+                    $this->commandBus->dispatch($result);
+                } catch (ExceptionInterface $exception) {
+                    throw new \RuntimeException('Failed to dispatch LLM result to command bus.', previous: $exception);
+                }
+            };
+
+            if (null === $this->tracer) {
+                $execute();
+
+                return;
+            }
+
+            $this->tracer->inSpan('turn.execution.llm_worker', [
+                'run_id' => $message->runId(),
+                'turn_no' => $message->turnNo(),
+                'step_id' => $message->stepId(),
+                'worker' => 'llm',
+            ], $execute, root: true);
+        } finally {
+            RunLogContext::leave();
+        }
     }
 
     private function execute(ExecuteLlmStep $message): LlmStepResult
     {
         $startedAt = hrtime(true);
+
+        RunLogContext::enter([
+            'event_type' => 'llm.request.started',
+            'model' => $this->defaultModel,
+            'provider' => 'symfony-ai',
+        ]);
 
         try {
             $invoke = fn (): PlatformInvocationResult => $this->platform->invoke(new ModelInvocationRequest(
@@ -79,11 +101,24 @@ final readonly class ExecuteLlmStepWorker
                     'run_id' => $message->runId(),
                     'turn_no' => $message->turnNo(),
                     'step_id' => $message->stepId(),
+                    'model' => $this->defaultModel,
                 ], $invoke)
             ;
 
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
             $this->metrics?->recordLlmLatency($durationMs, null !== $response->error);
+
+            if (null !== $response->error) {
+                $this->logger->info('llm.request.failed', [
+                    'duration_ms' => round($durationMs, 3),
+                    'event_type' => 'llm.request.failed',
+                ]);
+            } else {
+                $this->logger->info('llm.request.completed', [
+                    'duration_ms' => round($durationMs, 3),
+                    'event_type' => 'llm.request.completed',
+                ]);
+            }
 
             $assistantMessage = $response->assistantMessage;
             $hasStreamDeltas = [] !== $response->deltas();
@@ -109,6 +144,12 @@ final readonly class ExecuteLlmStepWorker
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
             $this->metrics?->recordLlmLatency($durationMs, true);
 
+            $this->logger->info('llm.request.failed', [
+                'duration_ms' => round($durationMs, 3),
+                'event_type' => 'llm.request.failed',
+                'error_type' => $exception::class,
+            ]);
+
             return new LlmStepResult(
                 runId: $message->runId(),
                 turnNo: $message->turnNo(),
@@ -124,6 +165,8 @@ final readonly class ExecuteLlmStepWorker
                 ],
                 toolsRef: $message->toolsRef,
             );
+        } finally {
+            RunLogContext::leave();
         }
     }
 }

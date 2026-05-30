@@ -99,6 +99,96 @@ If logs do not appear, check:
 - `/home/ineersa` has an ACL entry for `dd-agent` execute traversal.
 - a new log line was written after the Agent restart.
 
+## Structured correlation fields (RunLogContext)
+
+All logs emitted within a run, handler, or worker scope automatically carry
+correlation context injected by `RunLogContext` + `LogContextProcessor`.
+
+Fields set automatically (where known):
+
+| Field | Description | Set by |
+|---|---|---|
+| `run_id` | Active run identifier | RunOrchestrator, ExecuteLlmStepWorker, ExecuteToolCallWorker |
+| `session_id` | Session (same as run_id) | RunOrchestrator, workers |
+| `component` | Subsystem: `runtime`, `llm`, `tool`, `storage` | RunMessageProcessor, workers |
+| `queue` | Messenger bus: `agent.command.bus`, `agent.execution.bus` | RunMessageProcessor, workers |
+| `scope` | Message processing scope | RunMessageProcessor |
+| `handler` | RunMessageHandler class name | RunMessageProcessor |
+| `worker` | Worker type: `llm`, `tool` | Workers |
+| `tool_name` | Current tool being executed | ExecuteToolCallWorker |
+| `model` | Model name for LLM requests | ExecuteLlmStepWorker |
+| `provider` | Provider: `symfony-ai` | ExecuteLlmStepWorker |
+| `event_type` | Current event/message type | Various |
+| `retry_count` | Current CAS retry attempt | RunMessageProcessor |
+| `dd.trace_id` | Datadog trace ID for log-trace correlation | LogContextProcessor (automatic) |
+| `dd.span_id` | Datadog span ID for log-trace correlation | LogContextProcessor (automatic) |
+
+### Recommended Datadog facets
+
+Configure these as Datadog Log Explorer facets:
+
+- `run_id` — group/filter by run
+- `session_id` — group/filter by session
+- `component` — filter to subsystem: `runtime`, `llm`, `tool`, `storage`
+- `event_type` — filter to specific event names
+- `handler` — filter by handler class
+- `queue` — filter by Messenger bus
+- `worker` — filter by worker type (`llm`, `tool`)
+- `tool_name` — filter by tool being executed
+- `model` — filter by LLM model
+- `dd.trace_id` — link log to trace
+- `dd.span_id` — link log to span
+
+## Event-style log messages
+
+Important runtime events now emit stable event-name messages instead of prose.
+Search Datadog for these message patterns:
+
+| Log message | Context fields | When |
+|---|---|---|
+| `messenger.message.cas_conflict_retry` | scope, run_id, message_type, attempt | CAS retry attempt |
+| `messenger.message.cas_conflict_exhausted` | scope, run_id, message_type, attempts | All CAS retries exhausted |
+| `persistence.events_committed` | run_id, event_count, events_by_type, new_status | Events persisted to store |
+| `event_store.appended` | run_id, seq, turn_no, event_type | Single event appended |
+| `llm.request.completed` | duration_ms | LLM request succeeded |
+| `llm.request.failed` | duration_ms, error_type | LLM request failed |
+| `agent_loop.trace.start` | span_id, span_name, run_id, ... | Span started |
+| `agent_loop.trace.finish` | span_id, span_name, duration_ms, status | Span finished |
+
+Datadog query example — find all errors for a specific run:
+```
+@run_id:"run-abc123" AND @level:error
+```
+
+Query — all LLM activity for a run:
+```
+@run_id:"run-abc123" AND @component:llm
+```
+
+## Span and trace names (ddtrace)
+
+When ddtrace is loaded, the following spans are emitted automatically through
+`RunTracer.inSpan()` + `DdtraceSpanProvider`:
+
+| Span name | Tags |
+|---|---|
+| `command.start_run` | run_id, turn_no, step_id |
+| `command.apply` | run_id, turn_no, step_id, command_kind |
+| `turn.orchestrator.advance` | run_id, turn_no, step_id |
+| `turn.orchestrator.llm_result` | run_id, turn_no, step_id |
+| `turn.orchestrator.tool_result` | run_id, turn_no, step_id, tool_call_id |
+| `turn.execution.llm_worker` | run_id, turn_no, step_id, worker |
+| `turn.execution.tool_worker` | run_id, turn_no, step_id, tool_call_id, tool_name, worker |
+| `llm.call` | run_id, turn_no, step_id, model |
+| `tool.call` | run_id, turn_no, step_id, tool_call_id, tool_name |
+| `persistence.commit` | run_id, turn_no, step_id, event_count, effects_count |
+| `replay.rebuild_hot_prompt_state` | run_id |
+| `command.application.turn_start_boundary` | run_id, turn_no, step_id |
+| `command.application.stop_boundary` | run_id, turn_no, step_id |
+
+A span's `outcome` tag is set to `success` or `error` on close.
+Duration is recorded in `duration_ms`.
+
 ## Privacy note
 
 Hatfield logs can contain prompts, paths, tool output, and exception context. The Agent config masks common secret shapes, but it cannot reliably remove all sensitive prompt/session content. Keep this enabled only for local development or after reviewing/redacting what the application logs.
