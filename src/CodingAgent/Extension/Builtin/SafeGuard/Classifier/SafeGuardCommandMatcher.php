@@ -78,7 +78,7 @@ final class SafeGuardCommandMatcher
     public function classify(string $command, array $dangerousCommandPatterns = []): SafeGuardDecision
     {
         // 1. Hard block: sudo — never allowlisted, never asked
-        if (1 === \preg_match(self::SUDO_PATTERN, $command)) {
+        if (1 === preg_match(self::SUDO_PATTERN, $command)) {
             return SafeGuardDecision::block(
                 kind: SafeGuardDecisionKind::HardBlock,
                 reason: 'sudo commands are not allowed',
@@ -88,7 +88,7 @@ final class SafeGuardCommandMatcher
 
         // 2. Built-in destructive patterns
         foreach (self::DESTRUCTIVE_PATTERNS as $pattern) {
-            if (1 === \preg_match($pattern, $command)) {
+            if (1 === preg_match($pattern, $command)) {
                 return SafeGuardDecision::block(
                     kind: SafeGuardDecisionKind::Destructive,
                     reason: 'Destructive command',
@@ -99,7 +99,7 @@ final class SafeGuardCommandMatcher
 
         // 3. Built-in dangerous git patterns
         foreach (self::DANGEROUS_GIT_PATTERNS as $pattern) {
-            if (1 === \preg_match($pattern, $command)) {
+            if (1 === preg_match($pattern, $command)) {
                 return SafeGuardDecision::block(
                     kind: SafeGuardDecisionKind::DangerousGit,
                     reason: 'Dangerous git operation',
@@ -110,7 +110,7 @@ final class SafeGuardCommandMatcher
 
         // 4. Sensitive info exposure (env, printenv)
         foreach (self::SENSITIVE_INFO_PATTERNS as $pattern) {
-            if (1 === \preg_match($pattern, $command)) {
+            if (1 === preg_match($pattern, $command)) {
                 return SafeGuardDecision::block(
                     kind: SafeGuardDecisionKind::SensitiveInfo,
                     reason: 'Exposes environment variables',
@@ -123,7 +123,7 @@ final class SafeGuardCommandMatcher
         $normalized = $this->normalizeCommand($command);
         foreach ($dangerousCommandPatterns as $pattern) {
             $normalizedPattern = $this->normalizeCommand($pattern);
-            if (\str_contains($normalized, $normalizedPattern)) {
+            if (str_contains($normalized, $normalizedPattern)) {
                 return SafeGuardDecision::block(
                     kind: SafeGuardDecisionKind::CustomDangerous,
                     reason: 'Matched custom dangerous pattern',
@@ -145,7 +145,7 @@ final class SafeGuardCommandMatcher
         $normalized = $this->normalizeCommand($command);
 
         foreach ($allowCommandPatterns as $pattern) {
-            if (\str_contains($normalized, $this->normalizeCommand($pattern))) {
+            if (str_contains($normalized, $this->normalizeCommand($pattern))) {
                 return true;
             }
         }
@@ -160,6 +160,6 @@ final class SafeGuardCommandMatcher
      */
     private function normalizeCommand(string $command): string
     {
-        return \trim(\mb_strtolower(\preg_replace('/\s+/', ' ', $command) ?? $command));
+        return trim(mb_strtolower(preg_replace('/\s+/', ' ', $command) ?? $command));
     }
 }

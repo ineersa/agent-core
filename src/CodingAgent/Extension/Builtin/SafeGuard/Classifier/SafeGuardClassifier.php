@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Classifier;
 
-use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardConfig;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardDecision;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardDecisionKind;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardPolicy;
+use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardConfig;
 
 /**
  * Main SafeGuard classifier — decides whether a tool call should be
@@ -55,10 +55,10 @@ final class SafeGuardClassifier
     /**
      * Classify a tool call against the active policy.
      *
-     * @param string           $toolName  e.g., "bash", "write", "edit", "read"
+     * @param string               $toolName  e.g., "bash", "write", "edit", "read"
      * @param array<string, mixed> $arguments Tool-specific decoded arguments
-     * @param string           $cwd       Current working directory
-     * @param SafeGuardPolicy  $policy    Loaded policy for this invocation
+     * @param string               $cwd       Current working directory
+     * @param SafeGuardPolicy      $policy    Loaded policy for this invocation
      */
     public function classify(
         string $toolName,
@@ -142,8 +142,8 @@ final class SafeGuardClassifier
         $rawPath = (string) ($arguments['path'] ?? '');
 
         // Strip leading @ (editor-style file references like @src/foo.php)
-        if (\str_starts_with($rawPath, '@')) {
-            $rawPath = \substr($rawPath, 1);
+        if (str_starts_with($rawPath, '@')) {
+            $rawPath = substr($rawPath, 1);
         }
 
         if ('' === $rawPath) {
@@ -185,8 +185,8 @@ final class SafeGuardClassifier
         $rawPath = (string) ($arguments['path'] ?? '');
 
         // Strip leading @
-        if (\str_starts_with($rawPath, '@')) {
-            $rawPath = \substr($rawPath, 1);
+        if (str_starts_with($rawPath, '@')) {
+            $rawPath = substr($rawPath, 1);
         }
 
         if ('' === $rawPath) {

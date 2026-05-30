@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Classifier;
 
-use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardConfig;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardPolicy;
+use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardConfig;
 use Ineersa\CodingAgent\Path\PathResolver;
 
 /**
@@ -33,7 +33,7 @@ final class SafeGuardPathMatcher
         $normalizedCwd = PathResolver::resolve($cwd);
 
         return $resolved === $normalizedCwd
-            || \str_starts_with($resolved, $normalizedCwd . '/');
+            || str_starts_with($resolved, $normalizedCwd.'/');
     }
 
     /**
@@ -53,7 +53,7 @@ final class SafeGuardPathMatcher
             $resolvedEntry = PathResolver::resolve($entry);
 
             if ($resolved === $resolvedEntry
-                || \str_starts_with($resolved, $resolvedEntry . '/')
+                || str_starts_with($resolved, $resolvedEntry.'/')
             ) {
                 return true;
             }
@@ -74,11 +74,11 @@ final class SafeGuardPathMatcher
      */
     public function isProtectedReadPath(SafeGuardPolicy $policy, string $filePath): bool
     {
-        $resolved = \mb_strtolower(PathResolver::resolve($filePath));
-        $basename = \basename($resolved);
+        $resolved = mb_strtolower(PathResolver::resolve($filePath));
+        $basename = basename($resolved);
 
         foreach ($policy->protectedReadPatterns as $pattern) {
-            $p = \mb_strtolower($pattern);
+            $p = mb_strtolower($pattern);
 
             // 1. Exact basename match
             if ($basename === $p) {
@@ -86,13 +86,13 @@ final class SafeGuardPathMatcher
             }
 
             // 2. Path ends with pattern
-            if (\str_ends_with($resolved, $p)) {
+            if (str_ends_with($resolved, $p)) {
                 return true;
             }
 
             // 3. Path contains pattern as a segment
-            if (\str_contains($resolved, '/' . $p)
-                || \str_contains($resolved, $p . '/')
+            if (str_contains($resolved, '/'.$p)
+                || str_contains($resolved, $p.'/')
             ) {
                 return true;
             }
