@@ -31,6 +31,7 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
 {
     public function __construct(
         private ExtensionHookRegistry $hookRegistry,
+        private string $cwd,
         private ?StackToolExecutionContextAccessor $contextAccessor = null,
     ) {
     }
@@ -69,7 +70,7 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
 
             if (ToolCallDecisionKindEnum::Block === $decision->kind) {
                 $reason = $decision->reason ?? 'blocked_by_extension_hook';
-                $event->setResult(new ToolResult($toolCall, \array_replace(
+                $event->setResult(new ToolResult($toolCall, array_replace(
                     [
                         'denied' => true,
                         'reason' => $reason,
@@ -162,7 +163,7 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
             orderIndex: $current?->orderIndex() ?? 0,
             runId: $current?->runId(),
             turnNo: $current?->turnNo(),
-            cwd: getcwd() ?: null,
+            cwd: $this->cwd,
             metadata: [
                 'signature' => $toolCall->getSignature(),
                 'timeout_seconds' => $current?->timeoutSeconds(),
@@ -187,7 +188,7 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
             details: $details,
             runId: $current?->runId(),
             turnNo: $current?->turnNo(),
-            cwd: getcwd() ?: null,
+            cwd: $this->cwd,
             metadata: [
                 'signature' => $toolCall->getSignature(),
                 'timeout_seconds' => $current?->timeoutSeconds(),

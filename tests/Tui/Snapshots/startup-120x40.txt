@@ -16,5 +16,4 @@
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  ◆ test  |  0/0 $0.00 0% 0/32.8k  |  ⏱ 0s  |  ⌂ agent-core-worktrees/runtime-centralized-error-propagation
-  ⎇ task/runtime-centralized-error-propagation  |  session <session-id>
+  ◆ test  |  0/0 $0.00 0% 0/32.8k  |  ⏱ 0s  |  ⌂ projects/agent-core  |  ⎇ main  |  session <session-id>

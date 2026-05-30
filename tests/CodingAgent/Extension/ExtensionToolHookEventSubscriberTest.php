@@ -8,6 +8,9 @@ use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionToolHookEventSubscriber;
 use Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge;
@@ -32,7 +35,12 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         $registry->registerTool('guarded', 'Guarded tool', [], $handler, 'guarded');
 
         $hookRegistry = new ExtensionHookRegistry();
-        $bridge = new ExtensionToolRegistryBridge($registry, $hookRegistry);
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'cyberpunk'),
+            logging: new LoggingConfig(),
+            cwd: getcwd() ?: '/',
+        );
+        $bridge = new ExtensionToolRegistryBridge($registry, $hookRegistry, $appConfig);
         $seenContext = null;
         $bridge->registerToolCallHook(new class($seenContext) implements ToolCallHookInterface {
             public function __construct(
@@ -50,7 +58,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
 
         $contextAccessor = new StackToolExecutionContextAccessor();
         $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, $contextAccessor));
+        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, getcwd() ?: '/', $contextAccessor));
 
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
@@ -113,7 +121,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         }));
 
         $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry));
+        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, getcwd() ?: '/'));
 
         $result = (new RegistryBackedToolbox($registry, $dispatcher))->execute(
             new \Symfony\AI\Platform\Result\ToolCall('call-ordered', 'ordered', [])
@@ -146,7 +154,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         }));
 
         $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry));
+        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, getcwd() ?: '/'));
 
         $result = (new RegistryBackedToolbox($registry, $dispatcher))->execute(
             new \Symfony\AI\Platform\Result\ToolCall('call-resultful', 'resultful', [])
@@ -171,7 +179,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         }));
 
         $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry));
+        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, getcwd() ?: '/'));
 
         $result = (new RegistryBackedToolbox($registry, $dispatcher))->execute(
             new \Symfony\AI\Platform\Result\ToolCall('call-throws', 'throws', [])
@@ -191,7 +199,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
 
         $hookRegistry = new ExtensionHookRegistry();
         $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry));
+        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, getcwd() ?: '/'));
 
         $result = (new RegistryBackedToolbox($registry, $dispatcher))->execute(
             new \Symfony\AI\Platform\Result\ToolCall('call-unhooked', 'unhooked', [])
@@ -210,7 +218,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         $hookRegistry = new ExtensionHookRegistry();
         $contextAccessor = new StackToolExecutionContextAccessor();
         $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, $contextAccessor));
+        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry, getcwd() ?: '/', $contextAccessor));
 
         $executor = new ToolExecutor(
             defaultMode: 'parallel',

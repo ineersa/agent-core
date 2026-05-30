@@ -25,6 +25,8 @@ use Ineersa\Hatfield\ExtensionApi\ToolResultHookInterface;
  */
 final class ExtensionApiBridge implements ExtensionApiInterface
 {
+    private string $cwd;
+
     /**
      * Collected tool registrations, in registration order.
      *
@@ -45,6 +47,11 @@ final class ExtensionApiBridge implements ExtensionApiInterface
      * @var list<ToolResultHookInterface>
      */
     private array $toolResultHooks = [];
+
+    public function __construct(?string $cwd = null)
+    {
+        $this->cwd = $cwd ?? '';
+    }
 
     public function registerTool(ToolRegistrationDTO $tool): void
     {
@@ -113,6 +120,6 @@ final class ExtensionApiBridge implements ExtensionApiInterface
 
     public function getCwd(): string
     {
-        return \getcwd() ?: '';
+        return $this->cwd;
     }
 }
