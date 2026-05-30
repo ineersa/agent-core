@@ -112,6 +112,10 @@ services:
     arguments:
       $extensionApi: '@Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface'
 
+  # Loads extensions on every console command (including messenger:consume workers)
+  # so extension hooks are available in tool execution processes.
+  Ineersa\CodingAgent\Extension\ExtensionLoaderSubscriber: ~
+
   # LoggingConfig is derived from AppConfig and autowireable.
   Ineersa\CodingAgent\Config\LoggingConfig:
     factory: ['Ineersa\CodingAgent\Config\LoggingConfig', 'fromAppConfig']

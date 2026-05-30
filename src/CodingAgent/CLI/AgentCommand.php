@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\CLI;
 
-use Ineersa\CodingAgent\Extension\ExtensionManager;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
@@ -48,7 +47,6 @@ final class AgentCommand
         private HatfieldSessionStore $sessionStore,
         private SkillsConfig $skillsConfig,
         private LoggerInterface $logger,
-        private ExtensionManager $extensionManager,
         private ?HeadlessController $controller = null,
     ) {
     }
@@ -110,18 +108,9 @@ final class AgentCommand
             $this->skillsConfig->skillsPaths = $skillsPath;
             $this->skillsConfig->preloadSkills = $skills;
 
-            // Load extensions before agent mode selection.
-            // This ensures enabled extensions register their tools and
-            // resources before any interactive or controller session starts.
-            // Diagnostics are logged as a single structured entry to avoid
-            // noisy per-diagnostic log lines in the foreach loop.
-            $extensionDiagnostics = $this->extensionManager->loadExtensions();
-            if ([] !== $extensionDiagnostics) {
-                $this->logger->warning('Extension startup diagnostics', [
-                    'count' => \count($extensionDiagnostics),
-                    'diagnostics' => $extensionDiagnostics,
-                ]);
-            }
+            // Extension loading is handled by ExtensionLoaderSubscriber
+            // (fires on ConsoleEvents::COMMAND) which loads extensions in
+            // every process including messenger:consume workers.
 
             if ($controller) {
                 return $this->runController();
