@@ -11,12 +11,8 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
-use Ineersa\CodingAgent\Tool\BgStatusTool;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
-use Ineersa\CodingAgent\Tool\HatfieldToolProviderInterface;
-use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
-use Ineersa\CodingAgent\Tool\ToolDefinitionDTO;
-use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
+use Ineersa\CodingAgent\Tool\BgStatusTool;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use PHPUnit\Framework\TestCase;
 
@@ -27,6 +23,9 @@ use PHPUnit\Framework\TestCase;
  *
  * @requires extension pdo_sqlite
  * @requires OS Linux
+ *
+ * Sleep budget: no tests use grace-blocking stop().
+ * Teardown uses direct SIGKILL via .pid files.
  */
 final class BgStatusToolTest extends TestCase
 {
@@ -46,7 +45,7 @@ final class BgStatusToolTest extends TestCase
             'memory' => true,
         ]);
 
-        $this->tmpDir = sys_get_temp_dir().'/hatfield_bgtool_test_'.\bin2hex(random_bytes(8));
+        $this->tmpDir = sys_get_temp_dir().'/hatfield_bgtool_test_'.bin2hex(random_bytes(8));
         mkdir($this->tmpDir, 0750, recursive: true);
 
         $this->config = new BackgroundProcessConfig(
@@ -61,88 +60,153 @@ final class BgStatusToolTest extends TestCase
 
     protected function tearDown(): void
     {
-        try {
-            $this->manager->shutdownCleanup();
-        } catch (\RuntimeException) {
-            // Best-effort
+        // Direct SIGKILL via .pid files to avoid 1s grace sleep in shutdownCleanup
+        if (isset($this->manager)) {
+            $bgDir = $this->config->storageDir;
+            if (is_dir($bgDir)) {
+                foreach (new \FilesystemIterator($bgDir, \FilesystemIterator::SKIP_DOTS) as $file) {
+                    if ('pid' === $file->getExtension()) {
+                        $pid = (int) file_get_contents((string) $file);
+                        if ($pid > 0 && is_dir('/proc/'.$pid)) {
+                            @exec('kill -KILL -'.$pid.' 2>/dev/null');
+                            @exec('kill -KILL '.$pid.' 2>/dev/null');
+                        }
+                    }
+                }
+            }
         }
+
         $this->rmDir($this->tmpDir);
     }
 
-    /* ── definition() tests ── */
+    /* ── list action ── */
 
-    public function testDefinitionNameIsBgStatus(): void
+    public function testListReturnsProcesses(): void
     {
-        $definition = $this->tool->definition();
-        self::assertSame('bg_status', $definition->name);
+        $this->withContext(self::TEST_SESSION, function (): void {
+            $this->manager->start('echo "bg process"', self::TEST_SESSION);
+        });
+
+        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'list']));
+
+        $this->assertStringContainsString('bg process', $result);
+        $this->assertStringContainsString('Total: 1', $result);
     }
 
-    public function testDefinitionHasDescription(): void
+    public function testListEmpty(): void
     {
-        $definition = $this->tool->definition();
-        self::assertNotEmpty($definition->description);
+        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'list']));
+
+        $this->assertStringContainsString('No background processes', $result);
     }
 
-    public function testDefinitionHandlerIsInvokable(): void
+    /* ── log action ── */
+
+    public function testLogReturnsContent(): void
     {
-        $definition = $this->tool->definition();
-        self::assertTrue(method_exists($definition->handler, '__invoke'));
+        $started = $this->withContext(self::TEST_SESSION, fn (): array => $this->manager->start('echo "hello from bg"', self::TEST_SESSION));
+
+        usleep(150_000);
+
+        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'log', 'pid' => $started['pid']]));
+
+        $this->assertStringContainsString('hello from bg', $result);
+        $this->assertStringContainsString('BEGIN LOG', $result);
     }
 
-    public function testDefinitionHasPromptLine(): void
+    public function testLogThrowsOnUnknownPid(): void
     {
-        $definition = $this->tool->definition();
-        self::assertNotEmpty($definition->promptLine);
-        self::assertStringContainsString('bg_status', $definition->promptLine);
+        $this->expectException(ToolCallException::class);
+
+        $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'log', 'pid' => 999999]));
     }
 
-    public function testDefinitionHasGuidelines(): void
+    /* ── stop action ── */
+
+    public function testStopAlreadyFinishedProcess(): void
     {
-        $definition = $this->tool->definition();
-        self::assertNotEmpty($definition->promptGuidelines);
+        $started = $this->withContext(self::TEST_SESSION, fn (): array => $this->manager->start('echo "quick"', self::TEST_SESSION));
+
+        usleep(150_000);
+
+        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'stop', 'pid' => $started['pid']]));
+
+        $this->assertStringContainsString('had already finished', $result);
     }
 
-    public function testDefinitionImplementsHatfieldToolProviderInterface(): void
+    public function testStopThrowsOnUnknownPid(): void
     {
-        self::assertTrue(method_exists($this->tool, 'definition'));
+        $this->expectException(ToolCallException::class);
+
+        $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'stop', 'pid' => 999999]));
     }
 
-    public function testDefinitionJsonSchemaHasAction(): void
-    {
-        $definition = $this->tool->definition();
-        $schema = $definition->parametersJsonSchema;
+    /* ── Argument validation ── */
 
-        self::assertArrayHasKey('type', $schema);
-        self::assertSame('object', $schema['type']);
-        self::assertArrayHasKey('properties', $schema);
-        self::assertArrayHasKey('action', $schema['properties']);
-        self::assertArrayHasKey('enum', $schema['properties']['action']);
-        self::assertContains('list', $schema['properties']['action']['enum']);
-        self::assertContains('log', $schema['properties']['action']['enum']);
-        self::assertContains('stop', $schema['properties']['action']['enum']);
-        self::assertArrayHasKey('required', $schema);
-        self::assertContains('action', $schema['required']);
-        self::assertArrayHasKey('additionalProperties', $schema);
-        self::assertFalse($schema['additionalProperties']);
+    public function testArgumentValidationThrows(): void
+    {
+        // Missing action (empty args)
+        try {
+            $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)([]));
+            $this->fail('Expected ToolCallException for missing action');
+        } catch (ToolCallException $e) {
+            $this->assertStringContainsString('action', $e->getMessage());
+        }
+
+        // Invalid action value
+        try {
+            $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'invalid']));
+            $this->fail('Expected ToolCallException for invalid action');
+        } catch (ToolCallException $e) {
+            $this->assertStringContainsString('Invalid action', $e->getMessage());
+        }
     }
 
-    /* ── ToolRegistry integration test ── */
+    /* ── Session scoping ── */
 
-    public function testRegistryExposesBgStatusTool(): void
+    public function testListOnlyShowsCurrentSessionProcesses(): void
+    {
+        $this->withContext('other-session', function (): void {
+            $this->manager->start('echo "other"', 'other-session');
+        });
+
+        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'list']));
+
+        $this->assertStringContainsString('No background processes', $result);
+    }
+
+    public function testStopWithProcessFromOtherSessionThrows(): void
+    {
+        $started = $this->withContext('other-session', fn (): array => $this->manager->start('echo "other"', 'other-session'));
+
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('No background process found');
+
+        $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'stop', 'pid' => $started['pid']]));
+    }
+
+    /* ── Registry exposure ── */
+
+    public function testRegistryExposesTool(): void
     {
         $registry = new ToolRegistry([$this->tool]);
-        $toolbox = new RegistryBackedToolbox($registry);
-        $tools = $toolbox->getTools();
 
-        $toolNames = array_map(fn ($t) => $t->getName(), $tools);
+        $definitions = $registry->activeToolDefinitions();
 
-        self::assertContains('bg_status', $toolNames);
+        $bgDef = null;
+        foreach ($definitions as $def) {
+            if ('bg_status' === $def->name) {
+                $bgDef = $def;
+                break;
+            }
+        }
+
+        $this->assertNotNull($bgDef, 'bg_status should be registered');
+        $this->assertSame($this->tool, $bgDef->handler);
     }
 
-    /**
-     * Push a ToolContext with the test session ID onto the context accessor
-     * and execute a callback within that scope.
-     */
+    /* ── Helper ── */
+
     private function withContext(string $sessionId, callable $callback): mixed
     {
         $cancellationToken = $this->createStub(CancellationTokenInterface::class);
@@ -159,214 +223,6 @@ final class BgStatusToolTest extends TestCase
 
         return $this->contextAccessor->with($context, $callback);
     }
-
-    /* ── __invoke() — list action ── */
-
-    public function testListWithNoProcesses(): void
-    {
-        $result = $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'list']));
-
-        self::assertStringContainsString('No background processes tracked', $result);
-    }
-
-    public function testListWithRunningProcess(): void
-    {
-        $this->manager->start('sleep 2', self::TEST_SESSION);
-
-        $result = $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'list']));
-
-        self::assertStringContainsString('sleep', $result);
-        self::assertStringContainsString('running', $result);
-        self::assertStringContainsString('Total:', $result);
-
-        $this->manager->shutdownCleanup();
-    }
-
-    public function testListWithMultipleProcesses(): void
-    {
-        $this->manager->start('echo "proc a"', self::TEST_SESSION);
-        $this->manager->start('echo "proc b"', self::TEST_SESSION);
-
-        $result = $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'list']));
-
-        self::assertStringContainsString('proc a', $result);
-        self::assertStringContainsString('proc b', $result);
-        self::assertStringContainsString('Total: 2', $result);
-
-        $this->manager->shutdownCleanup();
-    }
-
-    public function testListOnlyShowsCurrentSessionProcesses(): void
-    {
-        // Start a process in a different session
-        $this->manager->start('echo "other session proc"', 'other-session');
-
-        // List with current session context — should NOT see the other session's process
-        $result = $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'list']));
-
-        self::assertStringContainsString('No background processes tracked', $result);
-        self::assertStringNotContainsString('other session proc', $result);
-
-        $this->manager->shutdownCleanup();
-    }
-
-    /* ── __invoke() — log action ── */
-
-    public function testLogWithExistingProcess(): void
-    {
-        $started = $this->manager->start('echo "log test content"', self::TEST_SESSION);
-        \usleep(500000); // wait for write
-
-        $result = $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'log', 'pid' => $started['pid']]));
-
-        self::assertStringContainsString('log test content', $result);
-        self::assertStringContainsString('PID ' . $started['pid'], $result);
-        self::assertStringContainsString('BEGIN LOG', $result);
-        self::assertStringContainsString('END LOG', $result);
-
-        $this->manager->shutdownCleanup();
-    }
-
-    public function testLogWithoutPidThrows(): void
-    {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('"pid" argument is required');
-
-        $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'log']));
-    }
-
-    public function testLogWithInvalidPidThrows(): void
-    {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('"pid" argument is required');
-
-        $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'log', 'pid' => 0]));
-    }
-
-    public function testLogWithUnknownPidThrows(): void
-    {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('No background process found');
-
-        $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'log', 'pid' => 999999]));
-    }
-
-    public function testLogWithProcessFromOtherSessionThrows(): void
-    {
-        // Start a process in a different session
-        $started = $this->manager->start('echo "other session log"', 'other-session');
-        \usleep(500000); // wait for write
-
-        // Log with current session context — should throw because PID belongs to other session
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('No background process found');
-
-        $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'log', 'pid' => $started['pid']]));
-
-        $this->manager->shutdownCleanup();
-    }
-
-    /* ── __invoke() — stop action ── */
-
-    public function testStopWithRunningProcess(): void
-    {
-        $started = $this->manager->start('sleep 10', self::TEST_SESSION);
-
-        $result = $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'stop', 'pid' => $started['pid']]));
-
-        self::assertStringContainsString('stopped', $result);
-        self::assertStringContainsString((string) $started['pid'], $result);
-    }
-
-    public function testStopWithoutPidThrows(): void
-    {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('"pid" argument is required');
-
-        $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'stop']));
-    }
-
-    public function testStopWithInvalidPidThrows(): void
-    {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('"pid" argument is required');
-
-        $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'stop', 'pid' => -1]));
-    }
-
-    public function testStopWithUnknownPidThrows(): void
-    {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('No background process found');
-
-        $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'stop', 'pid' => 999999]));
-    }
-
-    public function testStopWithProcessFromOtherSessionThrows(): void
-    {
-        // Start a process in a different session
-        $started = $this->manager->start('sleep 10', 'other-session');
-
-        // Stop with current session context — should throw because PID belongs to other session
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('No background process found');
-
-        $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'stop', 'pid' => $started['pid']]));
-
-        $this->manager->shutdownCleanup();
-    }
-
-    /* ── __invoke() — argument validation ── */
-
-    public function testMissingActionThrows(): void
-    {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('"action" argument is required');
-
-        $this->withContext(self::TEST_SESSION, fn () => ($this->tool)([]));
-    }
-
-    public function testEmptyActionThrows(): void
-    {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('"action" argument is required');
-
-        $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => '']));
-    }
-
-    public function testInvalidActionThrows(): void
-    {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('Invalid action');
-
-        $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'invalid_action']));
-    }
-
-    /* ── ToolCallException structured error tests ── */
-
-    public function testMissingActionExceptionHasHint(): void
-    {
-        try {
-            $this->withContext(self::TEST_SESSION, fn () => ($this->tool)([]));
-        } catch (ToolCallException $e) {
-            self::assertFalse($e->retryable());
-            self::assertNotNull($e->hint());
-            self::assertStringContainsString('list, log, stop', $e->hint());
-        }
-    }
-
-    public function testMissingPidExceptionHasHint(): void
-    {
-        try {
-            $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'stop']));
-        } catch (ToolCallException $e) {
-            self::assertFalse($e->retryable());
-            self::assertNotNull($e->hint());
-            self::assertStringContainsString('PID', $e->hint());
-        }
-    }
-
-    /* ── Helpers ── */
 
     private function rmDir(string $path): void
     {

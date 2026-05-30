@@ -17,10 +17,10 @@ final class CodingAgentToolSetResolverTest extends TestCase
     public function testResolveReturnsAllToolNamesFromRegistry(): void
     {
         $registry = $this->createMock(ToolRegistryInterface::class);
-        $registry->expects(self::once())
+        $registry->expects($this->once())
             ->method('activeToolNames')
             ->willReturn(['read', 'write', 'bash']);
-        $registry->expects(self::once())
+        $registry->expects($this->once())
             ->method('activeToolDefinitions')
             ->willReturn([
                 $this->makeDefinition('read'),
@@ -31,10 +31,10 @@ final class CodingAgentToolSetResolverTest extends TestCase
         $resolver = new CodingAgentToolSetResolver($registry);
         $result = $resolver->resolve('toolset:run:abc:turn:1');
 
-        self::assertInstanceOf(ActiveToolSet::class, $result);
-        self::assertSame(['read', 'write', 'bash'], $result->toolNames);
-        self::assertSame(['read', 'write', 'bash'], $result->allowListNames);
-        self::assertSame(
+        $this->assertInstanceOf(ActiveToolSet::class, $result);
+        $this->assertSame(['read', 'write', 'bash'], $result->toolNames);
+        $this->assertSame(['read', 'write', 'bash'], $result->allowListNames);
+        $this->assertSame(
             ['read' => 'sequential', 'write' => 'sequential', 'bash' => 'sequential'],
             $result->executionModes,
         );
@@ -43,44 +43,44 @@ final class CodingAgentToolSetResolverTest extends TestCase
     public function testResolveReturnsEmptySetWhenNoToolsRegistered(): void
     {
         $registry = $this->createMock(ToolRegistryInterface::class);
-        $registry->expects(self::once())
+        $registry->expects($this->once())
             ->method('activeToolNames')
             ->willReturn([]);
-        $registry->expects(self::once())
+        $registry->expects($this->once())
             ->method('activeToolDefinitions')
             ->willReturn([]);
 
         $resolver = new CodingAgentToolSetResolver($registry);
         $result = $resolver->resolve('toolset:run:abc:turn:1');
 
-        self::assertSame([], $result->toolNames);
-        self::assertSame([], $result->allowListNames);
-        self::assertSame([], $result->executionModes);
+        $this->assertSame([], $result->toolNames);
+        $this->assertSame([], $result->allowListNames);
+        $this->assertSame([], $result->executionModes);
     }
 
     public function testResolveIgnoresTurnNoAndRunId(): void
     {
         $registry = $this->createMock(ToolRegistryInterface::class);
-        $registry->expects(self::once())
+        $registry->expects($this->once())
             ->method('activeToolNames')
             ->willReturn(['read']);
-        $registry->expects(self::once())
+        $registry->expects($this->once())
             ->method('activeToolDefinitions')
             ->willReturn([$this->makeDefinition('read')]);
 
         $resolver = new CodingAgentToolSetResolver($registry);
         $result = $resolver->resolve('toolset:run:x:turn:5', turnNo: 5, runId: 'x');
 
-        self::assertSame(['read'], $result->toolNames);
+        $this->assertSame(['read'], $result->toolNames);
     }
 
     public function testResolveWithDifferentToolsRefStillReturnsSameSnapshot(): void
     {
         $registry = $this->createMock(ToolRegistryInterface::class);
-        $registry->expects(self::exactly(2))
+        $registry->expects($this->exactly(2))
             ->method('activeToolNames')
             ->willReturn(['read']);
-        $registry->expects(self::exactly(2))
+        $registry->expects($this->exactly(2))
             ->method('activeToolDefinitions')
             ->willReturn([$this->makeDefinition('read')]);
 
@@ -89,16 +89,16 @@ final class CodingAgentToolSetResolverTest extends TestCase
         $result1 = $resolver->resolve('toolset:run:a:turn:1');
         $result2 = $resolver->resolve('toolset:run:b:turn:2');
 
-        self::assertSame($result1->toolNames, $result2->toolNames);
+        $this->assertSame($result1->toolNames, $result2->toolNames);
     }
 
     public function testResolveIncludesExecutionModesFromToolDefinitions(): void
     {
         $registry = $this->createMock(ToolRegistryInterface::class);
-        $registry->expects(self::once())
+        $registry->expects($this->once())
             ->method('activeToolNames')
             ->willReturn(['seq_tool', 'par_tool']);
-        $registry->expects(self::once())
+        $registry->expects($this->once())
             ->method('activeToolDefinitions')
             ->willReturn([
                 new ToolDefinitionDTO(
@@ -121,7 +121,7 @@ final class CodingAgentToolSetResolverTest extends TestCase
         $resolver = new CodingAgentToolSetResolver($registry);
         $result = $resolver->resolve('toolset:run:abc:turn:1');
 
-        self::assertSame(
+        $this->assertSame(
             ['seq_tool' => 'sequential', 'par_tool' => 'parallel'],
             $result->executionModes,
         );

@@ -12,7 +12,6 @@ use PHPUnit\Framework\TestCase;
 /**
  * @requires extension pdo_sqlite
  */
-
 final class DbalToolBatchStoreTest extends TestCase
 {
     private Connection $connection;
@@ -29,7 +28,7 @@ final class DbalToolBatchStoreTest extends TestCase
 
     public function testLoadReturnsNullForUnknownBatch(): void
     {
-        self::assertNull($this->store->load('run-1', 1, 'step-1'));
+        $this->assertNull($this->store->load('run-1', 1, 'step-1'));
     }
 
     public function testSaveAndLoadRoundTrip(): void
@@ -50,8 +49,8 @@ final class DbalToolBatchStoreTest extends TestCase
         $this->store->save('run-1', 1, 'step-1', $state);
         $loaded = $this->store->load('run-1', 1, 'step-1');
 
-        self::assertIsArray($loaded);
-        self::assertSame($state, $loaded);
+        $this->assertIsArray($loaded);
+        $this->assertSame($state, $loaded);
     }
 
     public function testSaveOverwritesExistingBatch(): void
@@ -60,7 +59,7 @@ final class DbalToolBatchStoreTest extends TestCase
         $this->store->save('run-1', 1, 'step-1', ['expected_order' => ['call-1' => 0, 'call-2' => 1], 'call_data' => [], 'pending_queue' => [], 'in_flight' => [], 'result_data' => [], 'finalized' => false, 'max_parallelism' => 2]);
 
         $loaded = $this->store->load('run-1', 1, 'step-1');
-        self::assertSame(2, $loaded['max_parallelism']);
+        $this->assertSame(2, $loaded['max_parallelism']);
     }
 
     public function testDeleteRemovesBatch(): void
@@ -69,7 +68,7 @@ final class DbalToolBatchStoreTest extends TestCase
         $this->store->save('run-1', 1, 'step-1', $state);
         $this->store->delete('run-1', 1, 'step-1');
 
-        self::assertNull($this->store->load('run-1', 1, 'step-1'));
+        $this->assertNull($this->store->load('run-1', 1, 'step-1'));
     }
 
     public function testDeleteDoesNotAffectOtherBatches(): void
@@ -79,8 +78,8 @@ final class DbalToolBatchStoreTest extends TestCase
 
         $this->store->delete('run-1', 1, 'step-1');
 
-        self::assertNull($this->store->load('run-1', 1, 'step-1'));
-        self::assertIsArray($this->store->load('run-1', 1, 'step-2'));
+        $this->assertNull($this->store->load('run-1', 1, 'step-1'));
+        $this->assertIsArray($this->store->load('run-1', 1, 'step-2'));
     }
 
     public function testTableIsCreatedLazily(): void
@@ -89,7 +88,7 @@ final class DbalToolBatchStoreTest extends TestCase
         $state = ['expected_order' => ['call-1' => 0], 'call_data' => [], 'pending_queue' => [], 'in_flight' => [], 'result_data' => [], 'finalized' => false, 'max_parallelism' => 1];
         $this->store->save('run-1', 1, 'step-1', $state);
         $loaded = $this->store->load('run-1', 1, 'step-1');
-        self::assertIsArray($loaded);
+        $this->assertIsArray($loaded);
     }
 
     public function testIsolationOfDifferentRunTurnAndStep(): void
@@ -101,8 +100,8 @@ final class DbalToolBatchStoreTest extends TestCase
         $this->store->save('run-1', 2, 'step-1', $stateB);
         $this->store->save('run-2', 1, 'step-1', $stateB);
 
-        self::assertSame(1, $this->store->load('run-1', 1, 'step-1')['max_parallelism']);
-        self::assertSame(2, $this->store->load('run-1', 2, 'step-1')['max_parallelism']);
-        self::assertSame(2, $this->store->load('run-2', 1, 'step-1')['max_parallelism']);
+        $this->assertSame(1, $this->store->load('run-1', 1, 'step-1')['max_parallelism']);
+        $this->assertSame(2, $this->store->load('run-1', 2, 'step-1')['max_parallelism']);
+        $this->assertSame(2, $this->store->load('run-2', 1, 'step-1')['max_parallelism']);
     }
 }

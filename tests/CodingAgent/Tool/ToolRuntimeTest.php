@@ -27,26 +27,6 @@ final class ToolRuntimeTest extends TestCase
         $this->toolRuntime = new ToolRuntime($this->contextAccessor);
     }
 
-    private function createToken(bool $cancelled): CancellationTokenInterface
-    {
-        $token = $this->createStub(CancellationTokenInterface::class);
-        $token->method('isCancellationRequested')->willReturn($cancelled);
-
-        return $token;
-    }
-
-    private function contextWithToken(CancellationTokenInterface $token): ToolContext
-    {
-        return new ToolContext(
-            runId: 'run_1',
-            turnNo: 1,
-            toolCallId: 'call_1',
-            toolName: 'test_tool',
-            cancellationToken: $token,
-            timeoutSeconds: 30,
-        );
-    }
-
     /* ────────── run() tests ────────── */
 
     public function testRunReturnsCallbackResult(): void
@@ -55,10 +35,10 @@ final class ToolRuntimeTest extends TestCase
 
         $result = $this->contextAccessor->with(
             $this->contextWithToken($token),
-            fn (): string => $this->toolRuntime->run(fn (): string => 'completed'),
+            fn (): string => $this->toolRuntime->run(static fn (): string => 'completed'),
         );
 
-        self::assertSame('completed', $result);
+        $this->assertSame('completed', $result);
     }
 
     public function testRunThrowsWhenCancelledBefore(): void
@@ -70,7 +50,7 @@ final class ToolRuntimeTest extends TestCase
             function (): void {
                 $this->expectException(\RuntimeException::class);
                 $this->expectExceptionMessage('cancelled before start');
-                $this->toolRuntime->run(fn (): string => 'unreachable');
+                $this->toolRuntime->run(static fn (): string => 'unreachable');
             },
         );
     }
@@ -87,7 +67,7 @@ final class ToolRuntimeTest extends TestCase
             function (): void {
                 $this->expectException(\RuntimeException::class);
                 $this->expectExceptionMessage('stale due to run cancellation');
-                $this->toolRuntime->run(fn (): string => 'result');
+                $this->toolRuntime->run(static fn (): string => 'result');
             },
         );
     }
@@ -95,9 +75,9 @@ final class ToolRuntimeTest extends TestCase
     public function testRunWithoutContextSucceeds(): void
     {
         // No context on the stack — current() returns null.
-        $result = $this->toolRuntime->run(fn (): string => 'ok');
+        $result = $this->toolRuntime->run(static fn (): string => 'ok');
 
-        self::assertSame('ok', $result);
+        $this->assertSame('ok', $result);
     }
 
     /* ────────── runCancellableProcess() tests ────────── */
@@ -117,10 +97,10 @@ final class ToolRuntimeTest extends TestCase
             ),
         );
 
-        self::assertSame('hello', $result->stdout);
-        self::assertSame(0, $result->exitCode);
-        self::assertFalse($result->cancelled);
-        self::assertFalse($result->timedOut);
+        $this->assertSame('hello', $result->stdout);
+        $this->assertSame(0, $result->exitCode);
+        $this->assertFalse($result->cancelled);
+        $this->assertFalse($result->timedOut);
     }
 
     public function testCancellableProcessCancelled(): void
@@ -138,8 +118,8 @@ final class ToolRuntimeTest extends TestCase
             ),
         );
 
-        self::assertTrue($result->cancelled, 'Process should be marked cancelled');
-        self::assertFalse($result->timedOut);
+        $this->assertTrue($result->cancelled, 'Process should be marked cancelled');
+        $this->assertFalse($result->timedOut);
     }
 
     public function testCancellableProcessTimeout(): void
@@ -158,8 +138,8 @@ final class ToolRuntimeTest extends TestCase
             ),
         );
 
-        self::assertTrue($result->timedOut, 'Process should be marked timed out');
-        self::assertFalse($result->cancelled);
+        $this->assertTrue($result->timedOut, 'Process should be marked timed out');
+        $this->assertFalse($result->cancelled);
     }
 
     public function testCancellableProcessWithoutContext(): void
@@ -174,10 +154,10 @@ final class ToolRuntimeTest extends TestCase
             pollIntervalMicros: 1000,
         );
 
-        self::assertSame('no_context', $result->stdout);
-        self::assertSame(0, $result->exitCode);
-        self::assertFalse($result->cancelled);
-        self::assertFalse($result->timedOut);
+        $this->assertSame('no_context', $result->stdout);
+        $this->assertSame(0, $result->exitCode);
+        $this->assertFalse($result->cancelled);
+        $this->assertFalse($result->timedOut);
     }
 
     /* ────────── CancellableProcessResult DTO tests ────────── */
@@ -194,21 +174,41 @@ final class ToolRuntimeTest extends TestCase
 
         $array = $result->toArray();
 
-        self::assertSame('out', $array['stdout']);
-        self::assertSame('err', $array['stderr']);
-        self::assertSame(0, $array['exit_code']);
-        self::assertFalse($array['cancelled']);
-        self::assertFalse($array['timed_out']);
+        $this->assertSame('out', $array['stdout']);
+        $this->assertSame('err', $array['stderr']);
+        $this->assertSame(0, $array['exit_code']);
+        $this->assertFalse($array['cancelled']);
+        $this->assertFalse($array['timed_out']);
     }
 
     public function testCancellableProcessResultDefaultValues(): void
     {
         $result = new CancellableProcessResult();
 
-        self::assertSame('', $result->stdout);
-        self::assertSame('', $result->stderr);
-        self::assertNull($result->exitCode);
-        self::assertFalse($result->cancelled);
-        self::assertFalse($result->timedOut);
+        $this->assertSame('', $result->stdout);
+        $this->assertSame('', $result->stderr);
+        $this->assertNull($result->exitCode);
+        $this->assertFalse($result->cancelled);
+        $this->assertFalse($result->timedOut);
+    }
+
+    private function createToken(bool $cancelled): CancellationTokenInterface
+    {
+        $token = $this->createStub(CancellationTokenInterface::class);
+        $token->method('isCancellationRequested')->willReturn($cancelled);
+
+        return $token;
+    }
+
+    private function contextWithToken(CancellationTokenInterface $token): ToolContext
+    {
+        return new ToolContext(
+            runId: 'run_1',
+            turnNo: 1,
+            toolCallId: 'call_1',
+            toolName: 'test_tool',
+            cancellationToken: $token,
+            timeoutSeconds: 30,
+        );
     }
 }
