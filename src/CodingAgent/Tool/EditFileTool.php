@@ -239,8 +239,45 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
 
         if (0 !== $result->exitCode) {
             $errorOutput = '' !== $result->stderr ? $result->stderr : $result->stdout;
-            throw new ToolCallException(\sprintf('Patch dry-run failed for "%s": %s', $targetPath, $errorOutput), retryable: true, hint: 'Check that the patch context matches the file content and the diff is in unified format.');
+            $hint = 'Check that the patch context matches the file content and the diff is in unified format.';
+
+            if ($this->targetLacksTrailingNewline($targetPath)) {
+                $hint = 'The target file does not end with a newline. Unified diff context lines normally expect newline-terminated text; add a trailing newline with the write tool or include a "\\ No newline at end of file" marker in the patch.';
+            }
+
+            throw new ToolCallException(\sprintf('Patch dry-run failed for "%s": %s', $targetPath, $errorOutput), retryable: true, hint: $hint);
         }
+    }
+
+    /**
+     * Check whether a regular file is non-empty and does not end with "\n".
+     *
+     * Unreadable files, directories, or empty files return false because
+     * resolveAndVerifyTarget() already checked readability and the caller
+     * handles other failure paths.
+     */
+    private function targetLacksTrailingNewline(string $targetPath): bool
+    {
+        if (!is_file($targetPath) || !is_readable($targetPath)) {
+            return false; // Graceful degradation: caller already checked readability
+        }
+
+        $handle = @fopen($targetPath, 'r');
+        if (false === $handle) {
+            return false; // Graceful degradation: file was readable, now is not
+        }
+
+        // Seek to the last byte
+        if (-1 === fseek($handle, -1, \SEEK_END)) {
+            fclose($handle);
+
+            return false; // Empty file (or seek failed) — no trailing newline concern
+        }
+
+        $lastByte = fread($handle, 1);
+        fclose($handle);
+
+        return "\n" !== $lastByte;
     }
 
     /**

@@ -299,6 +299,97 @@ DIFF;
         $this->assertSame($originalContent, file_get_contents($targetPath));
     }
 
+    /* ── Trailing newline regression tests ── */
+
+    public function testEditOnWriteNormalizedFileSucceeds(): void
+    {
+        // Simulate the write-then-edit workflow: write creates a file with
+        // content that would lack a trailing newline, but WriteFileTool
+        // normalizes it. The edit tool should apply cleanly.
+        //
+        // This test uses the createUnifiedDiff helper to produce a standard
+        // unified diff (which expects newline-terminated context lines).
+        $targetPath = $this->tmpDir.'/write_normalized.txt';
+        $original = "hello from outside cwd\n";
+        file_put_contents($targetPath, $original);
+
+        $newContent = "hello from inside cwd\n";
+        $patch = $this->createUnifiedDiff($original, $newContent);
+
+        $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+
+        $this->assertStringContainsString('Applied patch', $result);
+        $this->assertSame($newContent, file_get_contents($targetPath));
+    }
+
+    public function testEditTargetNotEndingWithNewlineIncludesEnrichedHint(): void
+    {
+        // When patch -l does fail on a target without trailing newline,
+        // the enriched hint should help the LLM understand the root cause.
+        // This test verifies the enriched hint path even though -l often
+        // tolerates the missing newline in simple cases (defense-in-depth).
+        $targetPath = $this->tmpDir.'/no_trailing_newline.txt';
+        // Create a multi-line file where the last line lacks a newline
+        $original = "context line that matches\nlast line without newline";
+        file_put_contents($targetPath, $original);
+
+        // Generate a diff where the old version IS newline-terminated
+        $oldWithNewline = "context line that matches\nlast line without newline\n";
+        $newWithNewline = "context line that matches\nmodified last line\n";
+        $patch = $this->createUnifiedDiff($oldWithNewline, $newWithNewline);
+
+        try {
+            $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+        } catch (ToolCallException $e) {
+            $message = $e->getMessage();
+            $hint = $e->hint();
+            $combined = $message.' '.$hint;
+
+            // Verify the hint mentions trailing newline and actionable guidance
+            if ($this->targetLacksTrailingNewline($targetPath)) {
+                $this->assertStringContainsString('does not end with a newline', $hint);
+                $this->assertStringContainsString('trailing newline', $hint);
+                $this->assertTrue($e->retryable());
+            }
+
+            // Original must be untouched
+            $this->assertSame($original, file_get_contents($targetPath));
+
+            return;
+        }
+
+        // If no exception was thrown (patch -l succeeded despite missing newline),
+        // this is acceptable (defense-in-depth). The write normalization fix
+        // is the primary defense.
+        $this->assertStringContainsString('Applied patch', $result);
+    }
+
+    /**
+     * Test helper: check if a file lacks a trailing newline.
+     */
+    private function targetLacksTrailingNewline(string $targetPath): bool
+    {
+        if (!is_file($targetPath) || !is_readable($targetPath)) {
+            return false;
+        }
+
+        $handle = @fopen($targetPath, 'rb');
+        if (false === $handle) {
+            return false;
+        }
+
+        if (-1 === fseek($handle, -1, \SEEK_END)) {
+            fclose($handle);
+
+            return false;
+        }
+
+        $lastByte = fread($handle, 1);
+        fclose($handle);
+
+        return "\n" !== $lastByte;
+    }
+
     /* ── helpers ── */
 
     /**

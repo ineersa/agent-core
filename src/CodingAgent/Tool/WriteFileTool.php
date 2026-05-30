@@ -54,6 +54,13 @@ final class WriteFileTool implements HatfieldToolProviderInterface, ToolHandlerI
             // Resolve the path to an absolute normalized form
             $resolvedPath = PathResolver::resolve($path);
 
+            // Normalize non-empty content to POSIX text convention:
+            // ensure non-empty files end with a single trailing newline so
+            // subsequent edit (GNU patch) operations work reliably.
+            if ('' !== $content && !str_ends_with($content, "\n")) {
+                $content .= "\n";
+            }
+
             // Create parent directories if they do not exist.
             // If the parent path is an existing file, mkdir will fail silently
             // and file_put_contents below will produce the error.
@@ -77,7 +84,7 @@ final class WriteFileTool implements HatfieldToolProviderInterface, ToolHandlerI
     {
         return new ToolDefinitionDTO(
             name: 'write',
-            description: 'Create a new file or overwrite an existing file with the given text content. Creates parent directories automatically if they do not exist.',
+            description: 'Create a new file or overwrite an existing file with the given text content. Creates parent directories automatically if they do not exist. Non-empty text content is automatically newline-terminated for POSIX compatibility.',
             parametersJsonSchema: [
                 'type' => 'object',
                 'properties' => [
@@ -95,12 +102,13 @@ final class WriteFileTool implements HatfieldToolProviderInterface, ToolHandlerI
             ],
             handler: $this,
             executionMode: ToolExecutionMode::Sequential,
-            promptLine: 'write path content — create or overwrite a file with exact text content; creates parent directories automatically',
+            promptLine: 'write path content — create or overwrite a file; creates parent directories automatically; non-empty text is newline-terminated',
             promptGuidelines: [
-                'Write the exact content provided — do not trim, format, or modify it.',
+                'Non-empty content is automatically newline-terminated for POSIX text compatibility and edit tool reliability.',
                 'Parent directories are created automatically if they do not exist.',
                 'Overwrites the file entirely if it already exists.',
                 'Use when creating new files or replacing file content entirely.',
+                'The reported byte count reflects the written bytes after newline normalization.',
                 'For targeted edits to existing file content, use the edit tool instead.',
             ],
         );

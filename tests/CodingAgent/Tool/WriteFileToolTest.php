@@ -129,7 +129,8 @@ final class WriteFileToolTest extends TestCase
         self::assertStringContainsString('Successfully', $result);
         self::assertStringContainsString('new_file.txt', $result);
         self::assertFileExists($targetPath);
-        self::assertSame($content, file_get_contents($targetPath));
+        // Non-empty content without trailing newline is normalized: \n appended
+        self::assertSame("Hello, World!\n", file_get_contents($targetPath));
     }
 
     public function testWriteCreatesNestedDirectories(): void
@@ -141,7 +142,8 @@ final class WriteFileToolTest extends TestCase
 
         self::assertStringContainsString('Successfully', $result);
         self::assertFileExists($targetPath);
-        self::assertSame($content, file_get_contents($targetPath));
+        // Non-empty content without trailing newline is normalized
+        self::assertSame("Nested content\n", file_get_contents($targetPath));
     }
 
     public function testWriteOverwritesExistingFile(): void
@@ -153,7 +155,8 @@ final class WriteFileToolTest extends TestCase
         $result = ($this->writeFileTool)(['path' => $targetPath, 'content' => $newContent]);
 
         self::assertStringContainsString('Successfully', $result);
-        self::assertSame($newContent, file_get_contents($targetPath));
+        // Non-empty content without trailing newline is normalized
+        self::assertSame("New content replacing the old one.\n", file_get_contents($targetPath));
     }
 
     public function testWriteReturnsByteCount(): void
@@ -163,7 +166,8 @@ final class WriteFileToolTest extends TestCase
 
         $result = ($this->writeFileTool)(['path' => $targetPath, 'content' => $content]);
 
-        self::assertStringContainsString('1000 bytes', $result);
+        // Non-empty content without trailing newline: one extra byte for \n
+        self::assertStringContainsString('1001 bytes', $result);
     }
 
     public function testWriteEmptyContent(): void
@@ -188,7 +192,8 @@ final class WriteFileToolTest extends TestCase
             $cwd = getcwd();
             self::assertFileExists($cwd.'/'.$relativePath);
             self::assertStringContainsString($cwd.'/'.$relativePath, $result);
-            self::assertSame($content, file_get_contents($cwd.'/'.$relativePath));
+            // Non-empty content without trailing newline is normalized
+            self::assertSame("Relative path test.\n", file_get_contents($cwd.'/'.$relativePath));
         } finally {
             $cwd = getcwd();
             $fullPath = $cwd.'/'.$relativePath;
@@ -251,7 +256,47 @@ final class WriteFileToolTest extends TestCase
         ($this->writeFileTool)(['path' => $existingFile.'/child.txt', 'content' => 'cannot create']);
     }
 
-    /* ── cancellation tests ── */
+    /* ── Trailing newline normalization tests ── */
+
+    public function testWriteAppendsNewlineToNonEmptyContent(): void
+    {
+        $targetPath = $this->tmpDir.'/newline_added.txt';
+        $content = 'No trailing newline';
+
+        ($this->writeFileTool)(['path' => $targetPath, 'content' => $content]);
+
+        self::assertSame("No trailing newline\n", file_get_contents($targetPath));
+    }
+
+    public function testWriteDoesNotDoubleNewlineWhenAlreadyPresent(): void
+    {
+        $targetPath = $this->tmpDir.'/no_double_newline.txt';
+        $content = "Has trailing newline\n";
+
+        ($this->writeFileTool)(['path' => $targetPath, 'content' => $content]);
+
+        self::assertSame("Has trailing newline\n", file_get_contents($targetPath));
+    }
+
+    public function testWriteEmptyContentRemainsEmpty(): void
+    {
+        $targetPath = $this->tmpDir.'/empty_stays_empty.txt';
+
+        ($this->writeFileTool)(['path' => $targetPath, 'content' => '']);
+
+        self::assertSame('', file_get_contents($targetPath));
+    }
+
+    public function testWriteDoesNotModifyCrlfEnding(): void
+    {
+        $targetPath = $this->tmpDir.'/crlf_content.txt';
+        $content = "line1\r\n";
+
+        ($this->writeFileTool)(['path' => $targetPath, 'content' => $content]);
+
+        // CRLF content already ends with \n, so no modification
+        self::assertSame("line1\r\n", file_get_contents($targetPath));
+    }
 
     public function testWriteCancelledBeforeExecutionThrows(): void
     {
