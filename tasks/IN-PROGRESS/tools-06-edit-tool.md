@@ -54,7 +54,7 @@ Out of scope:
 Status: IN-PROGRESS
 Branch: task/tools-06-edit-tool
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-06-edit-tool
-Fork run: 1812c1libtd7
+Fork run: lfawasrx6my6
 PR URL:
 PR Status:
 Started: 2026-05-30T00:48:53.386Z
@@ -80,3 +80,8 @@ Completed:
 - Recorded fork run: 1812c1libtd7
 - Validation: castor test: 1373 tests, 11027 assertions (1 pre-existing failure in ExtensionToolHookEventSubscriberTest); castor deptrac: 0 violations; castor phpstan: 0 errors on all changed files; castor cs-fix: 3 files auto-fixed
 - Summary: Fork 1812c1libtd7 completed: ToolCallException structured error contract, EditFileTool refactored into 8 methods, all tools converted to ToolCallException, per-tool sequential overrides for write/edit. 18 files changed, 717+/190-, all tests pass, deptrac/phpstan/CS clean.
+
+## Task workflow update - 2026-05-30T01:29:33.797Z
+- Recorded fork run: lfawasrx6my6
+- Validation: castor test: 1373 tests, 11028 assertions, 0 new failures; castor deptrac: 0 violations; castor phpstan: 0 errors on all changed files; castor cs-fix: 0 issues
+- Summary: Fix fork lfawasrx6my6: all 7 review findings addressed — standalone ToolExecutionPolicyResolver override wiring, EditFileTool exception consistency, hint separator, dead code removal, ToolSettings.$overrides private, test fix. 5 files changed, 25+/20-, all tests pass, deptrac/phpstan/CS clean.

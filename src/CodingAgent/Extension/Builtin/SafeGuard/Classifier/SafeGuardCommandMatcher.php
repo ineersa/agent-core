@@ -139,6 +139,8 @@ final class SafeGuardCommandMatcher
      * Check if a command matches any allowlist pattern.
      *
      * Mirrors Pi's isCommandAllowed() — substring match on normalized command.
+     *
+     * @param list<string> $allowCommandPatterns
      */
     public function isCommandAllowed(array $allowCommandPatterns, string $command): bool
     {
