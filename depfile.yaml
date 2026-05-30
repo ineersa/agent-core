@@ -90,6 +90,11 @@ parameters:
         - type: directory
           value: src/Tui/Theme/.*
 
+    - name: TuiQuestion
+      collectors:
+        - type: directory
+          value: src/Tui/Question/.*
+
     - name: AppRuntimeContract
       collectors:
         - type: directory
@@ -329,6 +334,8 @@ parameters:
       - SymfonyTui
       - SymfonyConsole
       - SymfonyYaml
+
+    TuiQuestion: ~
 
     AppRuntimeInternals:
       - AppRuntimeContract
