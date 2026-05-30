@@ -51,12 +51,12 @@ Out of scope:
 - `castor deptrac` passes.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/tools-06-edit-tool
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-06-edit-tool
 Fork run: lfawasrx6my6
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/71
+PR Status: open
 Started: 2026-05-30T00:48:53.386Z
 Completed:
 
@@ -85,3 +85,9 @@ Completed:
 - Recorded fork run: lfawasrx6my6
 - Validation: castor test: 1373 tests, 11028 assertions, 0 new failures; castor deptrac: 0 violations; castor phpstan: 0 errors on all changed files; castor cs-fix: 0 issues
 - Summary: Fix fork lfawasrx6my6: all 7 review findings addressed — standalone ToolExecutionPolicyResolver override wiring, EditFileTool exception consistency, hint separator, dead code removal, ToolSettings.$overrides private, test fix. 5 files changed, 25+/20-, all tests pass, deptrac/phpstan/CS clean.
+
+## Task workflow update - 2026-05-30T01:42:40.744Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/tools-06-edit-tool to origin.
+- branch 'task/tools-06-edit-tool' set up to track 'origin/task/tools-06-edit-tool'.
+- Created PR: https://github.com/ineersa/agent-core/pull/71
