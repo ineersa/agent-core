@@ -260,14 +260,31 @@ If `castor check` cannot run because tmux or llama.cpp on port 9052 is unavailab
 - Required Castor validation is run and reported, including `castor check` or exact environmental blocker output.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
-Fork run:
+Status: IN-PROGRESS
+Branch: task/obs-01-structured-run-observability
+Worktree: /home/ineersa/projects/agent-core-worktrees/obs-01-structured-run-observability
+Fork run: 5l85538wwzk4
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-30T18:30:26.010Z
 Completed:
 
 ## Work log
 - Created: 2026-05-30T18:25:32.218Z
+
+## Task workflow update - 2026-05-30T18:30:26.010Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/obs-01-structured-run-observability.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/obs-01-structured-run-observability.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/obs-01-structured-run-observability.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/obs-01-structured-run-observability.
+- Summary: Claiming task for implementation. Note: stashed unrelated pre-existing ExtensionLoaderSubscriber work before claiming to keep integration checkout clean (`pre-obs-01 untracked ExtensionLoaderSubscriber`, `pre-obs-01 services extension loader subscriber wiring`).
+
+## Task workflow update - 2026-05-30T18:31:16.913Z
+- Recorded fork run: 5l85538wwzk4
+- Launched implementation fork 5l85538wwzk4 in worktree `/home/ineersa/projects/agent-core-worktrees/obs-01-structured-run-observability` with instructions to implement the structured logging/tracing foundation, validate via Castor, commit changes, and leave task in IN-PROGRESS for parent review.
+
+## Task workflow update - 2026-05-30T18:45:14.433Z
+- Recorded fork run: 5l85538wwzk4
+- Validation: Fork reported: `castor test --filter=RunLogContextTest` passed (9 tests, 24 assertions).; Fork reported: `castor test --filter=LogContextTest` passed (4 tests, 7 assertions).; Fork reported: targeted RunOrchestrator structured/observability tests passed.; Fork reported: `castor test` passed (1461 tests, 11263 assertions).; Fork reported: `castor deptrac` passed with 0 violations.; Fork reported: `castor cs-check` passed after `castor cs-fix`.; Fork reported: `castor test:controller` passed (1 test, 7 assertions).; Fork reported: `castor check` passed except `castor phpstan`, which still has 12 pre-existing `.castor/tasks.php` short-ternary errors unrelated to this branch.; Parent verified worktree has commit `ffd23cdc` and 16 changed files; worktree status is clean.
+- Summary: Fork 5l85538wwzk4 completed with commit `ffd23cdc` on branch `task/obs-01-structured-run-observability`. Implemented structured run observability foundation: RunLogContext scoped stack, Monolog LogContextProcessor, ddtrace SpanProvider abstraction/implementation, RunTracer integration, runtime/LLM/tool/storage context scopes, event-style log message normalization, docs update, and focused tests. Deliberate follow-ups: external metrics emission, TUI/headless-controller run context propagation, extension/safeguard component markers, optional subsystem file split/dashboard setup.
