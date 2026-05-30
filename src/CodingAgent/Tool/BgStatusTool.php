@@ -123,12 +123,12 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
         foreach ($processes as $proc) {
             $lines[] = \sprintf(
                 '%-6d %-8d %-6s %-10s %-12s %s',
-                $proc['id'],
-                $proc['pid'],
-                $proc['pgid'] ?? '-',
-                $proc['status'],
-                substr($proc['started_at'], 11, 8), // HH:MM:SS from ISO
-                mb_substr($proc['command'], 0, 80),
+                $proc->id,
+                $proc->pid,
+                $proc->pgid ?? '-',
+                $proc->status,
+                substr($proc->startedAt, 11, 8), // HH:MM:SS from ISO
+                mb_substr($proc->command, 0, 80),
             );
         }
 
@@ -161,16 +161,16 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
 
         $lines = [];
         $lines[] = \sprintf('Background process PID %d log output:', $pid);
-        $lines[] = \sprintf('Log path: %s', $result['log_path']);
-        $lines[] = \sprintf('Total log size: %d bytes', $result['total_bytes']);
+        $lines[] = \sprintf('Log path: %s', $result->logPath);
+        $lines[] = \sprintf('Total log size: %d bytes', $result->totalBytes);
 
-        if ($result['truncated']) {
-            $lines[] = \sprintf('(Showing last %d of %d bytes)', $this->config->logTailChars, $result['total_bytes']);
+        if ($result->truncated) {
+            $lines[] = \sprintf('(Showing last %d of %d bytes)', $this->config->logTailChars, $result->totalBytes);
         }
 
         $lines[] = '';
         $lines[] = '--- BEGIN LOG ---';
-        $lines[] = $result['content'];
+        $lines[] = $result->content;
         $lines[] = '--- END LOG ---';
 
         return implode("\n", $lines);
@@ -197,21 +197,21 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
             throw new ToolCallException($e->getMessage(), retryable: false, hint: 'The process may have already finished. Run bg_status list to see current state.');
         }
 
-        if ($result['already_finished']) {
+        if ($result->alreadyFinished) {
             return \sprintf('Process PID %d had already finished.', $pid);
         }
 
-        $signalDesc = match ($result['signal_sent']) {
+        $signalDesc = match ($result->signalSent) {
             'term' => 'SIGTERM (graceful shutdown)',
             'term+kill' => 'SIGTERM then SIGKILL (forced termination)',
-            default => $result['signal_sent'],
+            default => $result->signalSent,
         };
 
         return \sprintf(
             'Process PID %d stopped. Signal: %s. PGID: %s.',
             $pid,
             $signalDesc,
-            $result['pgid'] ?? 'N/A',
+            $result->pgid ?? 'N/A',
         );
     }
 }

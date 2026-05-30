@@ -11,10 +11,13 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\BackgroundProcessRecordNormalizer;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\CodingAgent\Tool\BgStatusTool;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+use Symfony\Component\Serializer\Serializer;
 
 /**
  * @covers \Ineersa\CodingAgent\Tool\BgStatusTool
@@ -53,7 +56,12 @@ final class BgStatusToolTest extends TestCase
             stopGraceSeconds: 1,
             logTailChars: 5000,
         );
-        $this->manager = new BackgroundProcessManager($this->connection, $this->config);
+        $this->manager = new BackgroundProcessManager(
+            $this->connection,
+            $this->config,
+            new NullLogger(),
+            new Serializer([new BackgroundProcessRecordNormalizer()]),
+        );
         $this->contextAccessor = new StackToolExecutionContextAccessor();
         $this->tool = new BgStatusTool($this->manager, $this->config, $this->contextAccessor);
     }
@@ -104,11 +112,11 @@ final class BgStatusToolTest extends TestCase
 
     public function testLogReturnsContent(): void
     {
-        $started = $this->withContext(self::TEST_SESSION, fn (): array => $this->manager->start('echo "hello from bg"', self::TEST_SESSION));
+        $started = $this->withContext(self::TEST_SESSION, fn () => $this->manager->start('echo "hello from bg"', self::TEST_SESSION));
 
         usleep(150_000);
 
-        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'log', 'pid' => $started['pid']]));
+        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'log', 'pid' => $started->pid]));
 
         $this->assertStringContainsString('hello from bg', $result);
         $this->assertStringContainsString('BEGIN LOG', $result);
@@ -125,11 +133,11 @@ final class BgStatusToolTest extends TestCase
 
     public function testStopAlreadyFinishedProcess(): void
     {
-        $started = $this->withContext(self::TEST_SESSION, fn (): array => $this->manager->start('echo "quick"', self::TEST_SESSION));
+        $started = $this->withContext(self::TEST_SESSION, fn () => $this->manager->start('echo "quick"', self::TEST_SESSION));
 
         usleep(150_000);
 
-        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'stop', 'pid' => $started['pid']]));
+        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'stop', 'pid' => $started->pid]));
 
         $this->assertStringContainsString('had already finished', $result);
     }
@@ -177,12 +185,12 @@ final class BgStatusToolTest extends TestCase
 
     public function testStopWithProcessFromOtherSessionThrows(): void
     {
-        $started = $this->withContext('other-session', fn (): array => $this->manager->start('echo "other"', 'other-session'));
+        $started = $this->withContext('other-session', fn () => $this->manager->start('echo "other"', 'other-session'));
 
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('No background process found');
 
-        $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'stop', 'pid' => $started['pid']]));
+        $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'stop', 'pid' => $started->pid]));
     }
 
     /* ── Registry exposure ── */

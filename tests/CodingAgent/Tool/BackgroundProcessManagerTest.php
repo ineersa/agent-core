@@ -7,8 +7,15 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\BackgroundProcessRecord;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\BackgroundProcessRecordNormalizer;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\LogTailResult;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\StartResult;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\StopResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+use Symfony\Component\Serializer\Serializer;
 
 /**
  * @covers \Ineersa\CodingAgent\Tool\BackgroundProcessManager
@@ -46,6 +53,11 @@ final class BackgroundProcessManagerTest extends TestCase
         $this->rmDir($this->tmpDir);
     }
 
+    private function makeSerializer(): Serializer
+    {
+        return new Serializer([new BackgroundProcessRecordNormalizer()]);
+    }
+
     /* ── start() ── */
 
     public function testStartCreatesProcess(): void
@@ -53,16 +65,17 @@ final class BackgroundProcessManagerTest extends TestCase
         $this->createManager();
         $result = $this->manager->start('echo "hello"', self::TEST_SESSION);
 
-        $this->assertArrayHasKey('id', $result);
-        $this->assertGreaterThan(0, $result['pid']);
+        $this->assertInstanceOf(StartResult::class, $result);
+        $this->assertGreaterThan(0, $result->id);
+        $this->assertGreaterThan(0, $result->pid);
         // PGID may be null for instant commands that exit before ps resolves it
-        if (null !== $result['pgid']) {
-            $this->assertGreaterThan(0, $result['pgid']);
-            $this->assertSame($result['pid'], $result['pgid']);
+        if (null !== $result->pgid) {
+            $this->assertGreaterThan(0, $result->pgid);
+            $this->assertSame($result->pid, $result->pgid);
         }
-        $this->assertSame('running', $result['status']);
-        $this->assertStringContainsString(self::TEST_SESSION, $result['session_id']);
-        $this->assertFileExists($result['log_path']);
+        $this->assertSame('running', $result->status);
+        $this->assertStringContainsString(self::TEST_SESSION, $result->sessionId);
+        $this->assertFileExists($result->logPath);
 
         $this->manager->shutdownCleanup();
     }
@@ -83,14 +96,14 @@ final class BackgroundProcessManagerTest extends TestCase
         $this->assertCount(2, $processes);
 
         // Sort by PID so order is predictable (sleep 3 started first = lower PID)
-        usort($processes, static fn (array $a, array $b): int => $a['pid'] <=> $b['pid']);
+        usort($processes, static fn (BackgroundProcessRecord $a, BackgroundProcessRecord $b): int => $a->pid <=> $b->pid);
 
         // First process (lower PID): sleep 3 — still running
-        $this->assertStringContainsString('running', $processes[0]['status']);
+        $this->assertStringContainsString('running', $processes[0]->status);
 
         // Second process (higher PID): echo done — finished with exit 0
-        $this->assertStringContainsString('finish', $processes[1]['status']);
-        $this->assertSame(0, $processes[1]['exit_code']);
+        $this->assertStringContainsString('finish', $processes[1]->status);
+        $this->assertSame(0, $processes[1]->exitCode);
 
         $this->manager->shutdownCleanup();
     }
@@ -104,12 +117,13 @@ final class BackgroundProcessManagerTest extends TestCase
 
         usleep(150_000);
 
-        $logResult = $this->manager->readLogTail($result['pid']);
+        $logResult = $this->manager->readLogTail($result->pid);
 
-        $this->assertSame($result['pid'], $logResult['pid']);
-        $this->assertFalse($logResult['truncated']);
-        $this->assertStringContainsString('line1', $logResult['content']);
-        $this->assertStringContainsString('line2', $logResult['content']);
+        $this->assertInstanceOf(LogTailResult::class, $logResult);
+        $this->assertSame($result->pid, $logResult->pid);
+        $this->assertFalse($logResult->truncated);
+        $this->assertStringContainsString('line1', $logResult->content);
+        $this->assertStringContainsString('line2', $logResult->content);
 
         $this->manager->shutdownCleanup();
     }
@@ -141,11 +155,12 @@ final class BackgroundProcessManagerTest extends TestCase
         $result = $this->manager->start($scriptPath, self::TEST_SESSION);
         usleep(100_000);
 
-        $stopResult = $this->manager->stop($result['pid']);
+        $stopResult = $this->manager->stop($result->pid);
 
-        $this->assertTrue($stopResult['stopped_by_user']);
-        $this->assertFalse($stopResult['already_finished']);
-        $this->assertSame('term', $stopResult['signal_sent']);
+        $this->assertInstanceOf(StopResult::class, $stopResult);
+        $this->assertTrue($stopResult->stoppedByUser);
+        $this->assertFalse($stopResult->alreadyFinished);
+        $this->assertSame('term', $stopResult->signalSent);
         $this->assertFileExists($sentinel);
         $this->assertStringContainsString('term_received', file_get_contents($sentinel));
     }
@@ -157,11 +172,11 @@ final class BackgroundProcessManagerTest extends TestCase
         $this->createManager(stopGraceSeconds: 0);
         $result = $this->manager->start('trap "" TERM; sleep 3', self::TEST_SESSION);
 
-        $stopResult = $this->manager->stop($result['pid']);
+        $stopResult = $this->manager->stop($result->pid);
 
-        $this->assertTrue($stopResult['stopped_by_user']);
-        $this->assertFalse($stopResult['already_finished']);
-        $this->assertSame('term+kill', $stopResult['signal_sent']);
+        $this->assertTrue($stopResult->stoppedByUser);
+        $this->assertFalse($stopResult->alreadyFinished);
+        $this->assertSame('term+kill', $stopResult->signalSent);
     }
 
     public function testStopOnAlreadyFinishedProcess(): void
@@ -171,10 +186,10 @@ final class BackgroundProcessManagerTest extends TestCase
 
         usleep(200_000);
 
-        $stopResult = $this->manager->stop($result['pid']);
+        $stopResult = $this->manager->stop($result->pid);
 
-        $this->assertTrue($stopResult['already_finished']);
-        $this->assertFalse($stopResult['stopped_by_user']);
+        $this->assertTrue($stopResult->alreadyFinished);
+        $this->assertFalse($stopResult->stoppedByUser);
     }
 
     public function testStopThrowsOnUnknownPid(): void
@@ -200,7 +215,7 @@ final class BackgroundProcessManagerTest extends TestCase
         $this->assertSame(1, $count);
 
         // Log file should be gone
-        $this->assertFileDoesNotExist($result['log_path']);
+        $this->assertFileDoesNotExist($result->logPath);
 
         // DB record should be gone
         $this->assertCount(0, $this->manager->list());
@@ -218,7 +233,7 @@ final class BackgroundProcessManagerTest extends TestCase
         $this->assertSame(1, $count);
 
         foreach ($this->manager->list() as $p) {
-            $this->assertNotNull($p['finished_at']);
+            $this->assertNotNull($p->finishedAt);
         }
     }
 
@@ -238,7 +253,7 @@ final class BackgroundProcessManagerTest extends TestCase
 
         $sessionA = $this->manager->list('session-A');
         $this->assertCount(1, $sessionA);
-        $this->assertSame('session-A', $sessionA[0]['session_id']);
+        $this->assertSame('session-A', $sessionA[0]->sessionId);
 
         $this->assertCount(2, $this->manager->list());
 
@@ -254,7 +269,7 @@ final class BackgroundProcessManagerTest extends TestCase
         // Stop with wrong session should throw
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('for this session');
-        $this->manager->stop($resX['pid'], 'session-Y');
+        $this->manager->stop($resX->pid, 'session-Y');
     }
 
     /* ── Helpers ── */
@@ -267,7 +282,7 @@ final class BackgroundProcessManagerTest extends TestCase
             stopGraceSeconds: $stopGraceSeconds,
             logTailChars: $logTailChars,
         );
-        $this->manager = new BackgroundProcessManager($this->connection, $config);
+        $this->manager = new BackgroundProcessManager($this->connection, $config, new NullLogger(), $this->makeSerializer());
     }
 
     private function cleanupProcesses(): void
