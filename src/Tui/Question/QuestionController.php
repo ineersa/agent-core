@@ -61,7 +61,9 @@ final class QuestionController
      */
     public function open(QuestionRequest $request, WidgetPlacementEnum $placement = WidgetPlacementEnum::AboveEditor): void
     {
-        \assert(null !== $this->context, 'setRuntimeRefs() must be called before open()');
+        if (null === $this->context) {
+            throw new \LogicException('setRuntimeRefs() must be called before open()');
+        }
 
         if ($this->isOpen) {
             return;
