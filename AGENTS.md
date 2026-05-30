@@ -143,6 +143,7 @@ DONE without it.
 - Never use `ReflectionClass::newInstanceWithoutConstructor()`, `Closure::bind()`, or constructor/property bypass tricks in production code.
 - Test helpers belong in tests, not production.
 - **Every caught exception/error must be propagated forward or explicitly documented as intentional local degradation with diagnostic logging. Empty catch blocks are forbidden.**
+- Runtime logs must use structured event-style messages with correlation fields (`run_id`, `session_id`, `component`, `event_type`) and must not include raw prompts, tool output, environment values, API keys, or full session content by default; see `docs/datadog.md`.
 
 ## Symfony setup
 
@@ -207,6 +208,7 @@ Themes use `ThemeColorEnum`, `ThemePalette`, `DefaultTheme`, `ThemeRegistry`, `T
 - `docs/session-storage.md` — sessions, replay, locking, resume/fork design
 - `docs/tui-architecture.md` — layout, widgets, slots, themes
 - `docs/tui-testing.md` — tmux testing, snapshots, keybindings
+- `docs/datadog.md` — local Datadog setup, structured log fields, event names, spans, and observability privacy rules
 - `src/AgentCore/Domain/AGENTS.md` — domain/event docs
 - `src/AgentCore/Application/AGENTS.md` — command/handler topology
 - `.pi/plans/` — implementation plans
