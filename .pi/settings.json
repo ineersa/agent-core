@@ -8,8 +8,8 @@
     "passive": false,
     "debugLog": true,
     "model": {
-      "provider": "runpod",
-      "id": "Qwen3.6-27B"
+      "provider": "llama.cpp",
+      "id": "flash"
     }
   },
   "hideThinkingBlock": false,
