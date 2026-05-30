@@ -113,6 +113,6 @@ final class ExtensionApiBridge implements ExtensionApiInterface
 
     public function getCwd(): string
     {
-        return \getcwd() ?: '';
+        return getcwd() ?: '';
     }
 }

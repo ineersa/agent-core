@@ -8,6 +8,12 @@ use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Handler\ToolExecutor;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\ExtensionsConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\SessionsConfig;
+use Ineersa\CodingAgent\Config\ToolsConfig;
+use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionToolHookEventSubscriber;
 use Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge;
@@ -32,7 +38,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         $registry->registerTool('guarded', 'Guarded tool', [], $handler, 'guarded');
 
         $hookRegistry = new ExtensionHookRegistry();
-        $bridge = new ExtensionToolRegistryBridge($registry, $hookRegistry);
+        $bridge = new ExtensionToolRegistryBridge($registry, $hookRegistry, self::appConfig());
         $seenContext = null;
         $bridge->registerToolCallHook(new class($seenContext) implements ToolCallHookInterface {
             public function __construct(
@@ -201,6 +207,110 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         $this->assertSame(1, $handler->calls);
     }
 
+    public function testRequireApprovalCreatesInterruptPayloadWithApprovalContext(): void
+    {
+        $registry = new ToolRegistry();
+        $handler = $this->countingHandler('should not run');
+        $registry->registerTool('approval-needing', 'Tool needing approval', [], $handler, 'approval-needing');
+
+        $hookRegistry = new ExtensionHookRegistry();
+        $hookRegistry->addToolCallHook($this->toolCallHook(static function (ToolCallContextDTO $context): ToolCallDecisionDTO {
+            return ToolCallDecisionDTO::requireApproval(
+                prompt: 'Allow destructive command: rm -rf /tmp/build?',
+                questionId: 'sg_qid_test',
+                schema: ['type' => 'string', 'enum' => ['Allow once', 'Always allow', 'Deny']],
+                details: [
+                    'category' => 'destructive',
+                    'command' => 'rm -rf /tmp/build',
+                    'tool_name' => 'bash',
+                ],
+            );
+        }));
+
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry));
+
+        $result = (new RegistryBackedToolbox($registry, $dispatcher))->execute(
+            new \Symfony\AI\Platform\Result\ToolCall('call-approve', 'approval-needing', [])
+        );
+
+        $this->assertSame(0, $handler->calls);
+        $this->assertIsArray($result->getResult());
+        $this->assertSame('interrupt', $result->getResult()['kind']);
+        $this->assertSame('sg_qid_test', $result->getResult()['question_id']);
+        $this->assertSame('Allow destructive command: rm -rf /tmp/build?', $result->getResult()['prompt']);
+        $this->assertSame(['type' => 'string', 'enum' => ['Allow once', 'Always allow', 'Deny']], $result->getResult()['schema']);
+        $this->assertSame('approval-needing', $result->getResult()['tool_name']);
+        $this->assertSame('call-approve', $result->getResult()['tool_call_id']);
+
+        // approval_context preserves all extension-specific metadata
+        $this->assertIsArray($result->getResult()['approval_context']);
+        $this->assertSame('destructive', $result->getResult()['approval_context']['category']);
+        $this->assertSame('rm -rf /tmp/build', $result->getResult()['approval_context']['command']);
+        $this->assertSame('bash', $result->getResult()['approval_context']['tool_name']);
+        // prompt and schema from requireApproval are in details, visible in approval_context
+        $this->assertSame('Allow destructive command: rm -rf /tmp/build?', $result->getResult()['approval_context']['prompt']);
+    }
+
+    public function testRequireApprovalGeneratesQuestionIdWhenNoneProvided(): void
+    {
+        $registry = new ToolRegistry();
+        $handler = $this->countingHandler('should not run');
+        $registry->registerTool('approval-auto', 'Tool', [], $handler, 'approval-auto');
+
+        $hookRegistry = new ExtensionHookRegistry();
+        $hookRegistry->addToolCallHook($this->toolCallHook(static function (): ToolCallDecisionDTO {
+            return ToolCallDecisionDTO::requireApproval(prompt: 'Allow?');
+        }));
+
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry));
+
+        $result = (new RegistryBackedToolbox($registry, $dispatcher))->execute(
+            new \Symfony\AI\Platform\Result\ToolCall('call-auto', 'approval-auto', [])
+        );
+
+        $this->assertSame(0, $handler->calls);
+        $this->assertIsArray($result->getResult());
+        $this->assertSame('interrupt', $result->getResult()['kind']);
+        // When no question_id is provided, the subscriber generates a sha256 hash
+        $questionId = $result->getResult()['question_id'];
+        $this->assertIsString($questionId);
+        $this->assertSame(64, \strlen($questionId)); // sha256 hex length
+        $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $questionId);
+        $this->assertSame('Allow?', $result->getResult()['prompt']);
+        $this->assertSame(['type' => 'string'], $result->getResult()['schema']);
+    }
+
+    public function testRequireApprovalWithMultipleHooksFirstNonAllowWins(): void
+    {
+        $registry = new ToolRegistry();
+        $handler = $this->countingHandler('should not run');
+        $registry->registerTool('multi-approval', 'Multi', [], $handler, 'multi-approval');
+
+        $hookRegistry = new ExtensionHookRegistry();
+        $hookRegistry->addToolCallHook($this->toolCallHook(static function (): ToolCallDecisionDTO {
+            return ToolCallDecisionDTO::allow();
+        }));
+        $hookRegistry->addToolCallHook($this->toolCallHook(static function (): ToolCallDecisionDTO {
+            return ToolCallDecisionDTO::requireApproval(prompt: 'Second hook says approve?');
+        }));
+        $hookRegistry->addToolCallHook($this->toolCallHook(static function (): ToolCallDecisionDTO {
+            return ToolCallDecisionDTO::block('should not reach');
+        }));
+
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new ExtensionToolHookEventSubscriber($hookRegistry));
+
+        $result = (new RegistryBackedToolbox($registry, $dispatcher))->execute(
+            new \Symfony\AI\Platform\Result\ToolCall('call-multi', 'multi-approval', [])
+        );
+
+        $this->assertSame(0, $handler->calls);
+        $this->assertSame('interrupt', $result->getResult()['kind']);
+        $this->assertSame('Second hook says approve?', $result->getResult()['prompt']);
+    }
+
     public function testEmptyHookRegistryWithContextAccessorStillPassesThrough(): void
     {
         $registry = new ToolRegistry();
@@ -261,6 +371,21 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
                 return ($this->callback)($context);
             }
         };
+    }
+
+    private static function appConfig(): AppConfig
+    {
+        return new AppConfig(
+            tui: new TuiConfig(theme: 'test'),
+            logging: new LoggingConfig(),
+            sessions: new SessionsConfig(),
+            extensions: new ExtensionsConfig(),
+            tools: new ToolsConfig(),
+            ai: null,
+            raw: [],
+            catalog: null,
+            cwd: '',
+        );
     }
 
     private function countingHandler(mixed $result): object

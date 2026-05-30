@@ -70,15 +70,15 @@ final readonly class SafeGuardConfig
     ];
 
     /**
-     * @param list<string> $allowCommandPatterns       Command substrings that bypass destructive/dangerous checks
-     * @param list<string> $allowWriteOutsideCwd        Absolute paths where writes outside CWD are always allowed
-     * @param list<string> $allowDestructiveInPaths     Paths where destructive file ops are always allowed (compat — not wired)
-     * @param list<string> $protectedReadPatterns       Effective protected read patterns (defaults + YAML patterns)
-     * @param list<string> $dangerousCommandPatterns    Extra command substrings to treat as dangerous (added to built-ins)
-     * @param string       $bashToolName                Tool name used for bash (default: 'bash')
-     * @param string       $writeToolName               Tool name used for write (default: 'write')
-     * @param string       $editToolName                Tool name used for edit (default: 'edit')
-     * @param string       $readToolName                Tool name used for read (default: 'read')
+     * @param list<string> $allowCommandPatterns     Command substrings that bypass destructive/dangerous checks
+     * @param list<string> $allowWriteOutsideCwd     Absolute paths where writes outside CWD are always allowed
+     * @param list<string> $allowDestructiveInPaths  Paths where destructive file ops are always allowed (compat — not wired)
+     * @param list<string> $protectedReadPatterns    Effective protected read patterns (defaults + YAML patterns)
+     * @param list<string> $dangerousCommandPatterns Extra command substrings to treat as dangerous (added to built-ins)
+     * @param string       $bashToolName             Tool name used for bash (default: 'bash')
+     * @param string       $writeToolName            Tool name used for write (default: 'write')
+     * @param string       $editToolName             Tool name used for edit (default: 'edit')
+     * @param string       $readToolName             Tool name used for read (default: 'read')
      */
     public function __construct(
         public array $allowCommandPatterns = [],
@@ -125,11 +125,12 @@ final readonly class SafeGuardConfig
      * deduplicating so each pattern appears only once.
      *
      * @param list<string> $yamlPatterns Patterns from YAML config
+     *
      * @return list<string>
      */
     private static function mergedProtectedReadPatterns(array $yamlPatterns): array
     {
-        return \array_values(\array_unique([
+        return array_values(array_unique([
             ...self::DEFAULT_PROTECTED_READ_PATTERNS,
             ...$yamlPatterns,
         ]));
@@ -140,6 +141,7 @@ final readonly class SafeGuardConfig
      *
      * @param array<string, mixed> $data Raw config data
      * @param string               $key  Config key
+     *
      * @return list<string>
      */
     private static function stringListValue(array $data, string $key): array
@@ -150,8 +152,8 @@ final readonly class SafeGuardConfig
             return [];
         }
 
-        return \array_values(\array_filter(
-            \array_map(static fn (mixed $item): string => (string) $item, $value),
+        return array_values(array_filter(
+            array_map(static fn (mixed $item): string => (string) $item, $value),
             static fn (string $s): bool => '' !== $s,
         ));
     }

@@ -14,8 +14,8 @@ namespace Ineersa\CodingAgent\Config;
 final readonly class ExtensionsConfig
 {
     /**
-     * @param list<class-string> $enabled  Fully-qualified class names of
-     *                                     enabled Hatfield extensions
+     * @param list<class-string>   $enabled  Fully-qualified class names of
+     *                                       enabled Hatfield extensions
      * @param array<string, mixed> $settings Generic key-value settings for
      *                                       extensions. Extensions read their
      *                                       section by key (e.g. 'safe_guard').
