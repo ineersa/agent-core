@@ -82,14 +82,14 @@ Depends on: none strictly.
 - Validation with Castor: `castor test --filter SafeGuard`; `castor deptrac`.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/safe-01-safeguard-policy-classifier
 Worktree: /home/ineersa/projects/agent-core-worktrees/safe-01-safeguard-policy-classifier
 Fork run:
 PR URL: https://github.com/ineersa/agent-core/pull/68
-PR Status: open
+PR Status: merged
 Started: 2026-05-29T22:58:17.134Z
-Completed:
+Completed: 2026-05-30T00:48:42.350Z
 
 ## Work log
 - Created: 2026-05-29T20:50:06.010Z
@@ -106,3 +106,44 @@ Completed:
 - Pushed task/safe-01-safeguard-policy-classifier to origin.
 - branch 'task/safe-01-safeguard-policy-classifier' set up to track 'origin/task/safe-01-safeguard-policy-classifier'.
 - Created PR: https://github.com/ineersa/agent-core/pull/68
+
+## Task workflow update - 2026-05-30T00:48:42.350Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/safe-01-safeguard-policy-classifier into integration checkout.
+- Merge made by the 'ort' strategy.
+ config/hatfield.defaults.yaml                      |  54 +++-
+ config/services.yaml                               |   4 +-
+ depfile.yaml                                       |  12 +-
+ src/CodingAgent/Config/ExtensionsConfig.php        |  11 +-
+ .../SafeGuard/Classifier/SafeGuardClassifier.php   | 206 +++++++++++++
+ .../Classifier/SafeGuardCommandMatcher.php         | 165 +++++++++++
+ .../SafeGuard/Classifier/SafeGuardPathMatcher.php  | 113 ++++++++
+ .../Builtin/SafeGuard/Policy/SafeGuardDecision.php |  57 ++++
+ .../SafeGuard/Policy/SafeGuardDecisionKind.php     |  30 ++
+ .../Builtin/SafeGuard/Policy/SafeGuardPolicy.php   |  52 ++++
+ .../Builtin/SafeGuard/SafeGuardConfig.php          | 158 ++++++++++
+ src/CodingAgent/Extension/ExtensionApiBridge.php   |  10 +
+ .../Extension/ExtensionToolRegistryBridge.php      |  14 +
+ .../ExtensionApi/ExtensionApiInterface.php         |  18 ++
+ .../Classifier/SafeGuardClassifierTest.php         | 264 +++++++++++++++++
+ .../Classifier/SafeGuardCommandMatcherTest.php     | 320 +++++++++++++++++++++
+ .../Classifier/SafeGuardPathMatcherTest.php        | 232 +++++++++++++++
+ .../SafeGuard/Policy/SafeGuardPolicyTest.php       |  85 ++++++
+ .../Builtin/SafeGuard/SafeGuardConfigTest.php      | 136 +++++++++
+ .../Extension/ExtensionToolRegistryBridgeTest.php  |  71 ++++-
+ .../ExtensionApi/ExtensionApiContractsTest.php     |  37 +++
+ 21 files changed, 2035 insertions(+), 14 deletions(-)
+ create mode 100644 src/CodingAgent/Extension/Builtin/SafeGuard/Classifier/SafeGuardClassifier.php
+ create mode 100644 src/CodingAgent/Extension/Builtin/SafeGuard/Classifier/SafeGuardCommandMatcher.php
+ create mode 100644 src/CodingAgent/Extension/Builtin/SafeGuard/Classifier/SafeGuardPathMatcher.php
+ create mode 100644 src/CodingAgent/Extension/Builtin/SafeGuard/Policy/SafeGuardDecision.php
+ create mode 100644 src/CodingAgent/Extension/Builtin/SafeGuard/Policy/SafeGuardDecisionKind.php
+ create mode 100644 src/CodingAgent/Extension/Builtin/SafeGuard/Policy/SafeGuardPolicy.php
+ create mode 100644 src/CodingAgent/Extension/Builtin/SafeGuard/SafeGuardConfig.php
+ create mode 100644 tests/CodingAgent/Extension/Builtin/SafeGuard/Classifier/SafeGuardClassifierTest.php
+ create mode 100644 tests/CodingAgent/Extension/Builtin/SafeGuard/Classifier/SafeGuardCommandMatcherTest.php
+ create mode 100644 tests/CodingAgent/Extension/Builtin/SafeGuard/Classifier/SafeGuardPathMatcherTest.php
+ create mode 100644 tests/CodingAgent/Extension/Builtin/SafeGuard/Policy/SafeGuardPolicyTest.php
+ create mode 100644 tests/CodingAgent/Extension/Builtin/SafeGuard/SafeGuardConfigTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/safe-01-safeguard-policy-classifier.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
