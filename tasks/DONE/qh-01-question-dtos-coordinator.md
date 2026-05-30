@@ -26,14 +26,14 @@ Parallelizable with: QH-04.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/qh-01-question-dtos-coordinator
 Worktree: /home/ineersa/projects/agent-core-worktrees/qh-01-question-dtos-coordinator
 Fork run: lzw8ic1phy3k
 PR URL: https://github.com/ineersa/agent-core/pull/76
-PR Status: open
+PR Status: merged
 Started: 2026-05-30T21:47:52.959Z
-Completed:
+Completed: 2026-05-30T22:04:33.874Z
 
 ## Work log
 - Created: 2026-05-18T00:04:09.620Z
@@ -55,3 +55,29 @@ Completed:
 - Pushed task/qh-01-question-dtos-coordinator to origin.
 - branch 'task/qh-01-question-dtos-coordinator' set up to track 'origin/task/qh-01-question-dtos-coordinator'.
 - Created PR: https://github.com/ineersa/agent-core/pull/76
+
+## Task workflow update - 2026-05-30T22:04:33.874Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/qh-01-question-dtos-coordinator into integration checkout.
+- Merge made by the 'ort' strategy.
+ depfile.yaml                                   |   7 +
+ src/Tui/Question/QuestionCoordinator.php       | 180 +++++++++++++
+ src/Tui/Question/QuestionKind.php              |  20 ++
+ src/Tui/Question/QuestionOption.php            |  21 ++
+ src/Tui/Question/QuestionRequest.php           |  49 ++++
+ src/Tui/Question/QuestionSource.php            |  20 ++
+ src/Tui/Question/QuestionStatus.php            |  19 ++
+ tests/Tui/Question/QuestionCoordinatorTest.php | 343 +++++++++++++++++++++++++
+ tests/Tui/Question/QuestionRequestTest.php     | 114 ++++++++
+ 9 files changed, 773 insertions(+)
+ create mode 100644 src/Tui/Question/QuestionCoordinator.php
+ create mode 100644 src/Tui/Question/QuestionKind.php
+ create mode 100644 src/Tui/Question/QuestionOption.php
+ create mode 100644 src/Tui/Question/QuestionRequest.php
+ create mode 100644 src/Tui/Question/QuestionSource.php
+ create mode 100644 src/Tui/Question/QuestionStatus.php
+ create mode 100644 tests/Tui/Question/QuestionCoordinatorTest.php
+ create mode 100644 tests/Tui/Question/QuestionRequestTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/qh-01-question-dtos-coordinator.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Summary: PR #76 merged. QH-01 complete: 6 source files (3 enums, 2 DTOs, coordinator with FIFO queue + duplicate guard + try/finally), 29 tests/115 assertions, deptrac clean.

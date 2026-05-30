@@ -42,7 +42,7 @@ Out of scope:
 Status: CODE-REVIEW
 Branch: task/tools-08-background-process-manager
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-08-background-process-manager
-Fork run: 3uzgi1405tmx
+Fork run: 3k12mjpvr99c
 PR URL: https://github.com/ineersa/agent-core/pull/73
 PR Status: open
 Started:
@@ -119,3 +119,8 @@ Completed:
 - Skipped PR creation (pushOnly: true).
 - Validation: `castor test`: ok (1531 tests, 11468 assertions, 0 failures); `castor deptrac`: ok (violations=0); `castor phpstan`: ok (errors=0); `castor cs-check`: ok (files_fixed=0)
 - Summary: Session ownership added at `847880a5`; pushed to existing PR #73. Castor validation clean. Test suite still ~27s due to real subprocess lifecycle.
+
+## Task workflow update - 2026-05-30T22:05:34.563Z
+- Recorded fork run: 3k12mjpvr99c
+- Validation: `castor test`: ok (1534 tests, 11474 assertions, 0 failures); `castor test --filter='BackgroundProcessManagerTest|BgStatusToolTest'`: ok (57 tests, 142 assertions, 0 failures); `castor deptrac`: ok (violations=0); `castor phpstan`: ok (errors=0); `castor cs-check`: ok (files_fixed=0)
+- Summary: Fork 3k12mjpvr99c completed at `abbdfb99`. Three changes: (1) BgStatusTool now injects StackToolExecutionContextAccessor and scopes all operations to current session's runId — LLM sees only its own processes. (2) BackgroundProcessManager constructor registers register_shutdown_function for automatic cleanup on exit/fatal (misses SIGKILL/OOM/segfault — correct for crash resilience). (3) HeadlessController injects BackgroundProcessManager and calls explicit session-scoped cleanup in shutdown() after consumer supervisor stops. 3 new tests for cross-session isolation. Castor validation: 1534 tests pass, deptrac 0 violations, phpstan 0 errors, cs-check clean. Pushed to PR #73.

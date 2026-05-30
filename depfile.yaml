@@ -252,6 +252,7 @@ parameters:
       - TuiCommand
       - TuiPicker
       - TuiFooter
+      - TuiQuestion
       - TuiTheme
       - SymfonyTui
 
@@ -335,7 +336,12 @@ parameters:
       - SymfonyConsole
       - SymfonyYaml
 
-    TuiQuestion: ~
+    TuiQuestion:
+      - TuiRuntime
+      - TuiScreen
+      - TuiWidget
+      - TuiTheme
+      - SymfonyTui
 
     AppRuntimeInternals:
       - AppRuntimeContract
