@@ -222,10 +222,11 @@ final class BackgroundProcessManagerTest extends TestCase
 
     /* ── stop() tests ── */
 
-    public function testStopTerminatesRunningProcess(): void
+    public function testStopTerminatesRunningProcessWithKill(): void
     {
         $this->createManager(stopGraceSeconds: 1);
-        $result = $this->manager->start('sleep 30');
+        // Use a TERM-ignoring command to force the KILL-after-grace path
+        $result = $this->manager->start('trap "" TERM; sleep 30');
 
         $stopResult = $this->manager->stop($result['pid']);
 
@@ -233,7 +234,7 @@ final class BackgroundProcessManagerTest extends TestCase
         self::assertFalse($stopResult['already_finished']);
         self::assertSame('term+kill', $stopResult['signal_sent']);
 
-        // Process should be dead
+        // Process should be dead after KILL
         \usleep(200000);
         self::assertFalse($this->isProcessAlive($result['pid']));
     }
@@ -263,6 +264,16 @@ final class BackgroundProcessManagerTest extends TestCase
         $this->expectExceptionMessage('No background process found');
 
         $this->manager->stop(999999);
+    }
+
+    public function testStopThrowsOnInvalidPid(): void
+    {
+        $this->createManager();
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Invalid PID');
+
+        $this->manager->stop(0);
     }
 
     public function testStopMarksStoppedByUserInDb(): void
@@ -300,6 +311,43 @@ final class BackgroundProcessManagerTest extends TestCase
         self::assertFalse($stopResult['already_finished']);
         self::assertSame('term', $stopResult['signal_sent'],
             'Expected term-only signal: sleep 3 should finish within 5s grace window');
+    }
+
+    public function testStopTerminatesProcessWithSigterm(): void
+    {
+        // Prove that SIGTERM actually reaches the workload process by using a
+        // command that traps TERM and writes a sentinel file. If the sentinel
+        // exists after stop(), TERM delivered correctly to the child.
+        $this->createManager(stopGraceSeconds: 3);
+
+        $sentinel = $this->tmpDir.'/term_sentinel';
+
+        // Create a script that traps TERM, writes sentinel, then exits
+        $scriptPath = $this->tmpDir.'/term_test.sh';
+        \file_put_contents(
+            $scriptPath,
+            "#!/bin/bash\ntrap 'echo term_received > ".$sentinel."; exit 0' TERM\nwhile true; do sleep 1; done\n",
+        );
+        \chmod($scriptPath, 0755);
+
+        $result = $this->manager->start($scriptPath);
+
+        // Give the process a moment to start
+        \usleep(200000);
+
+        $stopResult = $this->manager->stop($result['pid']);
+
+        // With the TERM-forwarding wrapper, TERM should reach the workload and
+        // the script's trap handler should write the sentinel before exiting.
+        self::assertTrue($stopResult['stopped_by_user']);
+        self::assertFalse($stopResult['already_finished']);
+        self::assertSame('term', $stopResult['signal_sent'],
+            'Expected term-only signal: TERM should have reached the workload');
+        self::assertFileExists($sentinel,
+            'Sentinel file should exist — SIGTERM should have reached the process');
+
+        $content = \file_get_contents($sentinel);
+        self::assertStringContainsString('term_received', $content);
     }
 
     /* ── cleanupStale() tests ── */

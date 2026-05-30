@@ -18,10 +18,12 @@ use Psr\Log\LoggerInterface;
  * cleanup, and shutdown cleanup.
  *
  * Process lifecycle:
- *  1. start() creates a tracking record in the SQLite table, writes a
- *     shell wrapper that backgrounds the command in a new process group
- *     (via setsid), redirects stdout/stderr to a log file, and records
- *     exit status to a status file on completion.
+ *  1. start() creates a tracking record in the SQLite table and launches
+ *     the command in a new session/process group via setsid. A shell
+ *     wrapper backgrounds the command as a distinct child process,
+ *     redirects stdout/stderr to a log file, and records exit status
+ *     to a status file on completion. The wrapper traps SIGTERM and
+ *     forwards it to the child so TERM reaches the actual workload.
  *  2. The process runs independently — the PHP tool worker exits while
  *     the child continues in its own session.
  *  3. On subsequent list() calls, refreshStatus() checks liveness via
@@ -31,8 +33,9 @@ use Psr\Log\LoggerInterface;
  *  5. cleanupStale() removes DB records and log files older than
  *     retention once the process has finished.
  *
- * If setsid is unavailable or process-group creation fails, the manager
- * falls back to single-PID management (no group termination).
+ * setsid is required. If setsid is unavailable, start() fails with a
+ * clear exception rather than falling back to unsafe single-PID mode
+ * that cannot reliably propagate signals to child workloads.
  */
 final class BackgroundProcessManager
 {
@@ -52,10 +55,26 @@ final class BackgroundProcessManager
     /**
      * Start a background process and register it in the durable store.
      *
-     * The command is executed in a new process group (via setsid) so the
-     * entire group can be terminated by stop(). stdout and stderr are
-     * redirected to a log file under the configured storage directory.
-     * The exit status is written to a companion status file on completion.
+     * The command is launched in a new session/process group via setsid
+     * and wrapped in a shell harness that:
+     *  - Records the wrapper PID to a .pid file
+     *  - Redirects stdout/stderr to a .log file
+     *  - Backgrounds the user command as a distinct child process so it
+     *    inherits default SIGTERM handling (not SIG_IGN)
+     *  - Traps SIGTERM and forwards it to the child process, then waits
+     *    for the child and writes its exit code to a .status file
+     *  - Also writes the child exit code after normal completion
+     *
+     * Forwarding TERM via a trap ensures $command receives a deliverable
+     * signal with default disposition, while the wrapper survives long
+     * enough to write the status sidecar.  When stop() sends SIGKILL
+     * (after grace expires) the wrapper dies immediately and the status
+     * file is not written; refreshStatus() marks that scenario as
+     * "finished (unclean)".
+     *
+     * setsid is required.  If setsid is not available or fails, this
+     * method throws rather than falling back to single-PID mode that
+     * cannot safely propagate TERM to child workloads.
      *
      * @param string $command The shell command to run in background.
      *                        Must already be shell-escaped if it contains
@@ -86,55 +105,43 @@ final class BackgroundProcessManager
 
         $now = $this->nowIso();
 
-        // Build a shell command that:
-        // 1. Uses setsid to create a new process group (session)
-        // 2. Records PID to pidFile
-        // 3. Redirects stdout/stderr to logFile
-        // 4. Traps SIGTERM to allow process group handling
-        // 5. Runs the command
-        // 6. Writes exit code to statusFile on completion
+        // Build a shell wrapper that:
+        //  1. Records wrapper PID to pidFile
+        //  2. Redirects stdout/stderr to logFile
+        //  3. Backgrounds the user command as a child process (&) so
+        //     the child inherits default SIGTERM (not ignored)
+        //  4. Sets a SIGTERM trap in the wrapper that forwards TERM
+        //     to the child, waits for it, writes the status, and exits
+        //  5. Waits for the child on the normal path and writes status
+        //
+        // Result is executed via: setsid bash -c '...' & echo $!
         $shellCode = \sprintf(
-            'echo $$ > %s; exec >> %s 2>&1; trap "" TERM; %s; echo $? > %s',
+            'echo $$ > %s; exec >> %s 2>&1; %s & CHILD_PID=$!; STATUS_FILE=%s; trap \'kill -TERM $CHILD_PID 2>/dev/null; wait $CHILD_PID 2>/dev/null; echo $? > $STATUS_FILE; exit\' TERM; wait $CHILD_PID 2>/dev/null; echo $? > $STATUS_FILE; exit $?',
             escapeshellarg($pidFile),
             escapeshellarg($logFile),
             $command,
             escapeshellarg($statusFile),
         );
 
-        // Attempt to launch with setsid (process group) and capture PID via $!
+        // Launch with setsid (new process group) and capture PID via $!
         $launcher = 'setsid bash -c '.escapeshellarg($shellCode).' & echo $!';
 
         $output = [];
         $exitCode = -1;
         exec($launcher, $output, $exitCode);
 
-        if (0 === $exitCode && [] !== $output) {
-            // setsid succeeded — determine PGID for group signalling
-            $pid = (int) $output[0];
-            if ($pid <= 0) {
-                throw new \RuntimeException('Failed to launch background process: invalid PID ('.$output[0].').');
-            }
-            $pgid = $this->resolvePgid($pid);
-        } else {
-            // Fallback: try without setsid (single-PID management, no group termination).
-            // IMPORTANT: on the fallback path we must NOT record PGID, because the
-            // child inherits the PHP worker's process group. Recording that PGID would
-            // cause stop() to signal the entire worker process group (kill -TERM -PGID).
-            $launcher = 'bash -c '.escapeshellarg($shellCode).' & echo $!';
-            $output = [];
-            $exitCode = -1;
-            exec($launcher, $output, $exitCode);
-
-            if (0 !== $exitCode || [] === $output) {
-                throw new \RuntimeException('Failed to launch background process: exec returned exit code '.$exitCode);
-            }
-
-            $pid = (int) $output[0];
-            if ($pid <= 0) {
-                throw new \RuntimeException('Failed to launch background process: invalid PID ('.$output[0].').');
-            }
-            $pgid = null; // no process group — single-PID only
+        // setsid is required — fail safely rather than fall back
+        if (0 !== $exitCode || [] === $output) {
+            throw new \RuntimeException('Failed to launch background process: setsid returned exit code '.$exitCode.'. setsid is required on this platform (.pid: '.$pidFile.').');
         }
+
+        $pid = (int) $output[0];
+        if ($pid <= 0) {
+            throw new \RuntimeException('Failed to launch background process: invalid PID ('.$output[0].').');
+        }
+
+        // Resolve PGID for group signalling
+        $pgid = $this->resolvePgid($pid);
 
         // Insert record into DB
         try {
@@ -152,12 +159,12 @@ final class BackgroundProcessManager
             throw new \RuntimeException('Failed to insert background process record.', 0, $e);
         }
 
-        $this->logger?->info('Background process started', [
+        $this->logger?->info('background_process.started', [
             'component' => 'tool.background_process',
             'event_type' => 'background_process.started',
             'process_pid' => $pid,
             'process_pgid' => $pgid,
-            'has_group_termination' => null !== $pgid,
+            'has_group_termination' => true,
             'log_path' => $logFile,
         ]);
 
@@ -282,16 +289,22 @@ final class BackgroundProcessManager
      * entire group via negative PID (kill -TERM -<PGID>). Falls back
      * to single-PID signaling.
      *
-     * @param int $pid Process PID to stop
+     * @param int $pid Process PID to stop. Must be > 0.
      *
      * @return array{pid: int, pgid: int|null, stopped_by_user: bool,
      *               already_finished: bool, signal_sent: string}
      *
-     * @throws \RuntimeException when the process is not found
+     * @throws \RuntimeException when the process is not found or PID is invalid
      */
     public function stop(int $pid): array
     {
         $this->ensureTable();
+
+        // Defence-in-depth: reject non-positive PIDs that could cause
+        // kill(0) or kill(-negative) to broadcast signals to the caller.
+        if ($pid <= 0) {
+            throw new \RuntimeException(\sprintf('Invalid PID %d for stop.', $pid));
+        }
 
         try {
             $row = $this->connection->fetchAssociative(
@@ -343,13 +356,12 @@ final class BackgroundProcessManager
         $pgid = null !== $pgidRaw && (\is_int($pgidRaw) || (\is_string($pgidRaw) && ctype_digit($pgidRaw))) ? (int) $pgidRaw : null;
         $graceSeconds = $this->config->stopGraceSeconds;
 
-        // TERM signal — target process group if available, else single PID
+        // TERM signal — target process group (negative PGID)
         $signalSent = 'term';
         if (null !== $pgid && $pgid > 0) {
-            // Negative PID targets the process group
-            @exec(\sprintf('kill -TERM -%d 2>/dev/null', $pgid), $_, $termExit);
+            @exec(\sprintf('kill -TERM -%d 2>/dev/null', $pgid));
         } else {
-            @exec(\sprintf('kill -TERM %d 2>/dev/null', $pid), $_, $termExit);
+            @exec(\sprintf('kill -TERM %d 2>/dev/null', $pid));
         }
 
         // Wait grace period
@@ -361,13 +373,13 @@ final class BackgroundProcessManager
         if ($this->isAlive($pid)) {
             $signalSent = 'term+kill';
             if (null !== $pgid && $pgid > 0) {
-                @exec(\sprintf('kill -KILL -%d 2>/dev/null', $pgid), $_, $killExit);
+                @exec(\sprintf('kill -KILL -%d 2>/dev/null', $pgid));
             } else {
-                @exec(\sprintf('kill -KILL %d 2>/dev/null', $pid), $_, $killExit);
+                @exec(\sprintf('kill -KILL %d 2>/dev/null', $pid));
             }
         }
 
-        $this->logger?->info('Background process stopped', [
+        $this->logger?->info('background_process.stopped', [
             'component' => 'tool.background_process',
             'event_type' => 'background_process.stopped',
             'process_pid' => $pid,
@@ -455,7 +467,7 @@ final class BackgroundProcessManager
                 ++$count;
             } catch (DbalException $e) {
                 // Log and continue — one failure should not block the rest of cleanup
-                $this->logger?->warning('Failed to delete stale background process record, continuing cleanup', [
+                $this->logger?->warning('background_process.cleanup_failed', [
                     'component' => 'tool.background_process',
                     'event_type' => 'background_process.cleanup_failed',
                     'record_id' => (int) $row['id'],
@@ -501,7 +513,12 @@ final class BackgroundProcessManager
                 ++$count;
             } catch (\RuntimeException $e) {
                 // Process may have exited between fetch and stop; log and continue
-                trigger_error(\sprintf('Background process shutdown cleanup failed for PID %d: %s', $pid, $e->getMessage()), \E_USER_WARNING);
+                $this->logger?->warning('background_process.shutdown_cleanup_error', [
+                    'component' => 'tool.background_process',
+                    'event_type' => 'background_process.shutdown_cleanup_error',
+                    'process_pid' => $pid,
+                    'error' => $e->getMessage(),
+                ]);
             }
         }
 
@@ -614,7 +631,7 @@ final class BackgroundProcessManager
         $row['finished_at'] = $now;
         $row['exit_code'] = null;
 
-        $this->logger?->info('Background process finished uncleanly (no status file)', [
+        $this->logger?->info('background_process.finished_unclean', [
             'component' => 'tool.background_process',
             'event_type' => 'background_process.finished_unclean',
             'process_pid' => $pid,
