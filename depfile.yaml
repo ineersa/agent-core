@@ -100,10 +100,15 @@ parameters:
         - type: directory
           value: src/CodingAgent/ExtensionApi/.*
 
+    - name: AppExtensionBuiltin
+      collectors:
+        - type: classNameRegex
+          value: '#Ineersa\\CodingAgent\\Extension\\Builtin\\#'
+
     - name: AppExtension
       collectors:
-        - type: directory
-          value: src/CodingAgent/Extension/.*
+        - type: classNameRegex
+          value: '#^Ineersa\\CodingAgent\\Extension\\(?!Builtin\\)#'
 
     - name: AppRuntimeInternals
       collectors:
@@ -416,6 +421,9 @@ parameters:
       - SymfonyEventDispatcher
 
     AppExtensionApi: ~
+
+    AppExtensionBuiltin:
+      - AppExtensionApi
 
     AgentCore:
       - SymfonyLock

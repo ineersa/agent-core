@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Extension;
 
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\ExtensionsConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
@@ -263,7 +267,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
     public function testRegisterToolCallHookForwardsToRegistry(): void
     {
         $hookRegistry = new ExtensionHookRegistry();
-        $bridge = new ExtensionToolRegistryBridge(new ToolRegistry(), $hookRegistry);
+        $bridge = $this->bridgeFor(new ToolRegistry(), hookRegistry: $hookRegistry);
 
         $hook = $this->dummyToolCallHook();
         $bridge->registerToolCallHook($hook);
@@ -274,7 +278,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
     public function testRegisterToolResultHookForwardsToRegistry(): void
     {
         $hookRegistry = new ExtensionHookRegistry();
-        $bridge = new ExtensionToolRegistryBridge(new ToolRegistry(), $hookRegistry);
+        $bridge = $this->bridgeFor(new ToolRegistry(), hookRegistry: $hookRegistry);
 
         $hook = $this->dummyToolResultHook();
         $bridge->registerToolResultHook($hook);
@@ -285,7 +289,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
     public function testHookRegistrationOrderPreserved(): void
     {
         $hookRegistry = new ExtensionHookRegistry();
-        $bridge = new ExtensionToolRegistryBridge(new ToolRegistry(), $hookRegistry);
+        $bridge = $this->bridgeFor(new ToolRegistry(), hookRegistry: $hookRegistry);
 
         $hookA = $this->dummyToolCallHook('hook_a');
         $hookB = $this->dummyToolCallHook('hook_b');
@@ -301,7 +305,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
     public function testToolResultHookRegistrationOrderPreserved(): void
     {
         $hookRegistry = new ExtensionHookRegistry();
-        $bridge = new ExtensionToolRegistryBridge(new ToolRegistry(), $hookRegistry);
+        $bridge = $this->bridgeFor(new ToolRegistry(), hookRegistry: $hookRegistry);
 
         $hookA = $this->dummyToolResultHook('result_a');
         $hookB = $this->dummyToolResultHook('result_b');
@@ -316,7 +320,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
     {
         $registry = new ToolRegistry();
         $hookRegistry = new ExtensionHookRegistry();
-        $bridge = new ExtensionToolRegistryBridge($registry, $hookRegistry);
+        $bridge = $this->bridgeFor($registry, $hookRegistry);
 
         // Register a tool
         $bridge->registerTool(new ToolRegistrationDTO(
@@ -343,7 +347,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
     public function testSharedHookRegistryAcrossMultipleExtensions(): void
     {
         $hookRegistry = new ExtensionHookRegistry();
-        $bridge = new ExtensionToolRegistryBridge(new ToolRegistry(), $hookRegistry);
+        $bridge = $this->bridgeFor(new ToolRegistry(), hookRegistry: $hookRegistry);
 
         // Simulate two extensions each registering hooks
         $ext1Hook = $this->dummyToolCallHook('ext1');
@@ -357,13 +361,66 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         $this->assertSame($ext2Hook, $hookRegistry->toolCallHooks()[1]);
     }
 
+    // ── getSettings / getCwd via AppConfig ──
+
+    public function testGetSettingsReturnsExtensionSettingsByKey(): void
+    {
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'cyberpunk'),
+            logging: new LoggingConfig(),
+            extensions: new ExtensionsConfig(
+                settings: ['safe_guard' => ['allow_command_patterns' => ['ls -la']]],
+            ),
+            cwd: '/home/project',
+        );
+
+        $bridge = $this->bridgeFor(new ToolRegistry(), appConfig: $appConfig);
+
+        $settings = $bridge->getSettings('safe_guard');
+        $this->assertSame(['allow_command_patterns' => ['ls -la']], $settings);
+    }
+
+    public function testGetSettingsReturnsEmptyForMissingKey(): void
+    {
+        $bridge = $this->bridgeFor(new ToolRegistry());
+
+        $this->assertSame([], $bridge->getSettings('nonexistent'));
+    }
+
+    public function testGetCwdReturnsFromAppConfig(): void
+    {
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'cyberpunk'),
+            logging: new LoggingConfig(),
+            cwd: '/home/some-project',
+        );
+
+        $bridge = $this->bridgeFor(new ToolRegistry(), appConfig: $appConfig);
+
+        $this->assertSame('/home/some-project', $bridge->getCwd());
+    }
+
     /* ───────── Private helpers ───────── */
+
+    private function testAppConfig(): AppConfig
+    {
+        return new AppConfig(
+            tui: new TuiConfig(theme: 'cyberpunk'),
+            logging: new LoggingConfig(),
+            cwd: \getcwd() ?: '/',
+        );
+    }
 
     private function bridgeFor(
         ToolRegistryInterface $toolRegistry,
         ?ExtensionHookRegistry $hookRegistry = null,
+        ?AppConfig $appConfig = null,
     ): ExtensionToolRegistryBridge {
-        return new ExtensionToolRegistryBridge($toolRegistry, $hookRegistry ?? new ExtensionHookRegistry());
+        return new ExtensionToolRegistryBridge(
+            $toolRegistry,
+            $hookRegistry ?? new ExtensionHookRegistry(),
+            $appConfig ?? $this->testAppConfig(),
+        );
     }
 
     private function dummyToolCallHook(string $label = 'test'): ToolCallHookInterface
