@@ -87,6 +87,25 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
 
                 return;
             }
+
+            if (ToolCallDecisionKindEnum::RequireApproval === $decision->kind) {
+                $questionId = $decision->details['question_id']
+                    ?? hash('sha256', \sprintf('%s|%s|%s', $toolCall->getName(), $toolCall->getId(), (string) microtime(true)));
+                $prompt = $decision->details['prompt'] ?? 'Approval required.';
+                $schema = $decision->details['schema'] ?? ['type' => 'string'];
+
+                $event->setResult(new ToolResult($toolCall, [
+                    'kind' => 'interrupt',
+                    'question_id' => $questionId,
+                    'prompt' => $prompt,
+                    'schema' => $schema,
+                    'tool_name' => $toolCall->getName(),
+                    'tool_call_id' => $toolCall->getId(),
+                    'approval_context' => $decision->details,
+                ]));
+
+                return;
+            }
         }
     }
 

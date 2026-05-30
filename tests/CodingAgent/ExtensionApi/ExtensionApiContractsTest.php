@@ -205,6 +205,48 @@ final class ExtensionApiContractsTest extends TestCase
         $this->assertSame([], $decision->details);
     }
 
+    public function testToolCallDecisionRequireApprovalWithAllParams(): void
+    {
+        $decision = ToolCallDecisionDTO::requireApproval(
+            prompt: 'Allow destructive command: rm -rf /tmp?',
+            questionId: 'sg_qid_abc',
+            schema: ['type' => 'string', 'enum' => ['Allow once', 'Always allow', 'Deny']],
+            details: ['category' => 'destructive', 'command' => 'rm -rf /tmp'],
+        );
+
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $decision->kind);
+        $this->assertNull($decision->reason);
+        $this->assertNull($decision->result);
+        $this->assertSame('Allow destructive command: rm -rf /tmp?', $decision->details['prompt']);
+        $this->assertSame('sg_qid_abc', $decision->details['question_id']);
+        $this->assertSame(['type' => 'string', 'enum' => ['Allow once', 'Always allow', 'Deny']], $decision->details['schema']);
+        $this->assertSame('destructive', $decision->details['category']);
+        $this->assertSame('rm -rf /tmp', $decision->details['command']);
+    }
+
+    public function testToolCallDecisionRequireApprovalWithMinimalParams(): void
+    {
+        $decision = ToolCallDecisionDTO::requireApproval(prompt: 'Allow this operation?');
+
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $decision->kind);
+        $this->assertSame('Allow this operation?', $decision->details['prompt']);
+        $this->assertSame(['type' => 'string'], $decision->details['schema']);
+        $this->assertArrayNotHasKey('question_id', $decision->details);
+    }
+
+    public function testToolCallDecisionRequireApprovalWithoutQuestionId(): void
+    {
+        $decision = ToolCallDecisionDTO::requireApproval(
+            prompt: 'Approve?',
+            schema: ['type' => 'boolean'],
+        );
+
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $decision->kind);
+        $this->assertSame('Approve?', $decision->details['prompt']);
+        $this->assertSame(['type' => 'boolean'], $decision->details['schema']);
+        $this->assertArrayNotHasKey('question_id', $decision->details);
+    }
+
     public function testToolCallDecisionDtoIsImmutable(): void
     {
         $decision = ToolCallDecisionDTO::allow();
