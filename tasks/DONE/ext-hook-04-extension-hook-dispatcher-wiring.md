@@ -23,14 +23,14 @@ Scope:
 - Validation with Castor: `castor test --filter ToolHookDispatcher`; `castor test --filter ToolExecutor`; `castor deptrac`.
 
 ## Workflow metadata
-Status: DONE
+Status: CODE-REVIEW
 Branch: task/ext-hook-04-extension-hook-dispatcher-wiring
 Worktree: /home/ineersa/projects/agent-core-worktrees/ext-hook-04-extension-hook-dispatcher-wiring
 Fork run: a0iyc35feygf
 PR URL: https://github.com/ineersa/agent-core/pull/67
-PR Status: merged
+PR Status: open
 Started: 2026-05-29T22:15:46.425Z
-Completed: 2026-05-29T22:45:07.588Z
+Completed:
 
 ## Work log
 - Created: 2026-05-29T20:49:57.913Z
@@ -54,11 +54,3 @@ Completed: 2026-05-29T22:45:07.588Z
 - Created PR: https://github.com/ineersa/agent-core/pull/67
 - Validation: castor test --filter ExtensionToolHookEventSubscriber: passed (17 tests, 63 assertions); castor test --filter ToolExecutor: passed (11 tests, 35 assertions); castor test: passed (1204 tests, 10668 assertions, 0 errors/failures; command exit 1 due pre-existing PHPUnit notices in CancelListenerTest); castor deptrac: passed (0 violations); castor cs-check on changed files: passed
 - Summary: EXT-HOOK-04 completed in fork run a0iyc35feygf at commit 7c0cfdf2. Added CodingAgent ExtensionToolHookEventSubscriber adapting public ExtensionApi ToolCallHookInterface hooks to Symfony AI ToolCallRequested events; first non-allow decision wins, Block/ReplaceResult skip handlers via setResult. ToolResultHookInterface hooks run on ToolCallSucceeded/ToolCallFailed in registration order with latest local state, but remain observational because Symfony AI result events are readonly. ToolContext now carries orderIndex and ToolExecutor passes the shared context accessor for hook context enrichment. No custom AgentCore ToolExecutor interceptor/events introduced.
-
-## Task workflow update - 2026-05-29T22:45:07.588Z
-- Moved CODE-REVIEW → DONE.
-- Merged task/ext-hook-04-extension-hook-dispatcher-wiring into integration checkout.
-- Already up to date.
-- Removed worktree /home/ineersa/projects/agent-core-worktrees/ext-hook-04-extension-hook-dispatcher-wiring.
-- Pulled integration checkout: Already up to date..
-- Summary: PR #67 merged. ExtensionApi tool call hooks wired to Symfony AI ToolCallRequested events via ExtensionToolHookEventSubscriber. Per-tool result hooks observational only; toolbox decorator approach deferred until needed.
