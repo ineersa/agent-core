@@ -102,7 +102,7 @@ tui:
 # (one file per day). The log directory, minimum level, and rotation count
 # are all configurable.
 #
-# logging:
+logging:
 #     # Log storage directory. Relative paths resolve against the active
 #     # project CWD. Supports ~ (home) and %kernel.project_dir%.
 #     # Default: .hatfield/logs
@@ -110,10 +110,10 @@ tui:
 #
 #     # Minimum log level. PSR-3 level names (lowercase):
 #     #   debug, info, notice, warning, error, critical, alert, emergency
-#     level: info
+      level: debug
 #
 #     # Number of daily rotated log files to retain before deletion.
-#     max_files: 14
+      max_files: 2
 
 # ---------------------------------------------------------------------------
 # AI provider and model configuration

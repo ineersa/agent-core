@@ -9,7 +9,8 @@ framework:
     http_method_override: false
     handle_all_throwables: true
     php_errors:
-        log: true
+        log:
+            !php/const E_USER_DEPRECATED: debug
 
     # CLI-only — disable HTTP/routing stack
     router:

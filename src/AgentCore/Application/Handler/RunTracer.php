@@ -44,7 +44,7 @@ final class RunTracer
     public function inSpan(string $name, array $attributes, callable $operation, bool $root = false): mixed
     {
         $spanId = \sprintf('span-%d', ++$this->sequence);
-        $parentSpanId = $root ? null : ($this->spanStack[array_key_last($this->spanStack)] ?? null);
+        $parentSpanId = $root || [] === $this->spanStack ? null : $this->spanStack[array_key_last($this->spanStack)];
 
         $this->spanStack[] = $spanId;
         $startedAt = hrtime(true);
