@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Runtime\Session\TranscriptPersistenceService;
+use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
 use Symfony\Component\Console\Command\Command;
@@ -104,6 +105,13 @@ final class HeadlessController
          */
         private readonly int $toolWorkerCount = 0,
         private readonly ?TranscriptPersistenceService $transcriptPersistence = null,
+        /**
+         * Optional background process manager for session-scoped cleanup
+         * on graceful controller shutdown (SIGTERM/SIGINT).
+         * Nullable for backwards compatibility with tests that construct
+         * HeadlessController without it.
+         */
+        private readonly ?BackgroundProcessManager $bgProcessManager = null,
     ) {
         $this->sessionId = $_SERVER['HATFIELD_SESSION_ID'] ?? $_ENV['HATFIELD_SESSION_ID'] ?? 'unknown';
     }
@@ -560,6 +568,7 @@ final class HeadlessController
         $this->logger->info('Controller shutting down gracefully');
 
         $this->consumerSupervisor->shutdown();
+        $this->bgProcessManager?->shutdownCleanup($this->sessionId);
     }
 
     // ── Output ───────────────────────────────────────────────────────────

@@ -6,6 +6,9 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Application\Tool\ToolContext;
+use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Tool\BgStatusTool;
@@ -32,6 +35,7 @@ final class BgStatusToolTest extends TestCase
     private Connection $connection;
     private BackgroundProcessManager $manager;
     private BackgroundProcessConfig $config;
+    private StackToolExecutionContextAccessor $contextAccessor;
     private BgStatusTool $tool;
     private string $tmpDir;
 
@@ -51,7 +55,8 @@ final class BgStatusToolTest extends TestCase
             logTailChars: 5000,
         );
         $this->manager = new BackgroundProcessManager($this->connection, $this->config);
-        $this->tool = new BgStatusTool($this->manager, $this->config);
+        $this->contextAccessor = new StackToolExecutionContextAccessor();
+        $this->tool = new BgStatusTool($this->manager, $this->config, $this->contextAccessor);
     }
 
     protected function tearDown(): void
@@ -134,11 +139,32 @@ final class BgStatusToolTest extends TestCase
         self::assertContains('bg_status', $toolNames);
     }
 
+    /**
+     * Push a ToolContext with the test session ID onto the context accessor
+     * and execute a callback within that scope.
+     */
+    private function withContext(string $sessionId, callable $callback): mixed
+    {
+        $cancellationToken = $this->createStub(CancellationTokenInterface::class);
+        $cancellationToken->method('isCancellationRequested')->willReturn(false);
+
+        $context = new ToolContext(
+            runId: $sessionId,
+            turnNo: 1,
+            toolCallId: 'tc_bg_status',
+            toolName: 'bg_status',
+            cancellationToken: $cancellationToken,
+            timeoutSeconds: 30,
+        );
+
+        return $this->contextAccessor->with($context, $callback);
+    }
+
     /* ── __invoke() — list action ── */
 
     public function testListWithNoProcesses(): void
     {
-        $result = ($this->tool)(['action' => 'list']);
+        $result = $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'list']));
 
         self::assertStringContainsString('No background processes tracked', $result);
     }
@@ -147,7 +173,7 @@ final class BgStatusToolTest extends TestCase
     {
         $this->manager->start('sleep 2', self::TEST_SESSION);
 
-        $result = ($this->tool)(['action' => 'list']);
+        $result = $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'list']));
 
         self::assertStringContainsString('sleep', $result);
         self::assertStringContainsString('running', $result);
@@ -161,11 +187,25 @@ final class BgStatusToolTest extends TestCase
         $this->manager->start('echo "proc a"', self::TEST_SESSION);
         $this->manager->start('echo "proc b"', self::TEST_SESSION);
 
-        $result = ($this->tool)(['action' => 'list']);
+        $result = $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'list']));
 
         self::assertStringContainsString('proc a', $result);
         self::assertStringContainsString('proc b', $result);
         self::assertStringContainsString('Total: 2', $result);
+
+        $this->manager->shutdownCleanup();
+    }
+
+    public function testListOnlyShowsCurrentSessionProcesses(): void
+    {
+        // Start a process in a different session
+        $this->manager->start('echo "other session proc"', 'other-session');
+
+        // List with current session context — should NOT see the other session's process
+        $result = $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'list']));
+
+        self::assertStringContainsString('No background processes tracked', $result);
+        self::assertStringNotContainsString('other session proc', $result);
 
         $this->manager->shutdownCleanup();
     }
@@ -177,7 +217,7 @@ final class BgStatusToolTest extends TestCase
         $started = $this->manager->start('echo "log test content"', self::TEST_SESSION);
         \usleep(500000); // wait for write
 
-        $result = ($this->tool)(['action' => 'log', 'pid' => $started['pid']]);
+        $result = $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'log', 'pid' => $started['pid']]));
 
         self::assertStringContainsString('log test content', $result);
         self::assertStringContainsString('PID ' . $started['pid'], $result);
@@ -192,7 +232,7 @@ final class BgStatusToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('"pid" argument is required');
 
-        ($this->tool)(['action' => 'log']);
+        $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'log']));
     }
 
     public function testLogWithInvalidPidThrows(): void
@@ -200,7 +240,7 @@ final class BgStatusToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('"pid" argument is required');
 
-        ($this->tool)(['action' => 'log', 'pid' => 0]);
+        $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'log', 'pid' => 0]));
     }
 
     public function testLogWithUnknownPidThrows(): void
@@ -208,7 +248,22 @@ final class BgStatusToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('No background process found');
 
-        ($this->tool)(['action' => 'log', 'pid' => 999999]);
+        $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'log', 'pid' => 999999]));
+    }
+
+    public function testLogWithProcessFromOtherSessionThrows(): void
+    {
+        // Start a process in a different session
+        $started = $this->manager->start('echo "other session log"', 'other-session');
+        \usleep(500000); // wait for write
+
+        // Log with current session context — should throw because PID belongs to other session
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('No background process found');
+
+        $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'log', 'pid' => $started['pid']]));
+
+        $this->manager->shutdownCleanup();
     }
 
     /* ── __invoke() — stop action ── */
@@ -217,7 +272,7 @@ final class BgStatusToolTest extends TestCase
     {
         $started = $this->manager->start('sleep 10', self::TEST_SESSION);
 
-        $result = ($this->tool)(['action' => 'stop', 'pid' => $started['pid']]);
+        $result = $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'stop', 'pid' => $started['pid']]));
 
         self::assertStringContainsString('stopped', $result);
         self::assertStringContainsString((string) $started['pid'], $result);
@@ -228,7 +283,7 @@ final class BgStatusToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('"pid" argument is required');
 
-        ($this->tool)(['action' => 'stop']);
+        $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'stop']));
     }
 
     public function testStopWithInvalidPidThrows(): void
@@ -236,7 +291,7 @@ final class BgStatusToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('"pid" argument is required');
 
-        ($this->tool)(['action' => 'stop', 'pid' => -1]);
+        $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'stop', 'pid' => -1]));
     }
 
     public function testStopWithUnknownPidThrows(): void
@@ -244,7 +299,21 @@ final class BgStatusToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('No background process found');
 
-        ($this->tool)(['action' => 'stop', 'pid' => 999999]);
+        $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'stop', 'pid' => 999999]));
+    }
+
+    public function testStopWithProcessFromOtherSessionThrows(): void
+    {
+        // Start a process in a different session
+        $started = $this->manager->start('sleep 10', 'other-session');
+
+        // Stop with current session context — should throw because PID belongs to other session
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('No background process found');
+
+        $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'stop', 'pid' => $started['pid']]));
+
+        $this->manager->shutdownCleanup();
     }
 
     /* ── __invoke() — argument validation ── */
@@ -254,7 +323,7 @@ final class BgStatusToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('"action" argument is required');
 
-        ($this->tool)([]);
+        $this->withContext(self::TEST_SESSION, fn () => ($this->tool)([]));
     }
 
     public function testEmptyActionThrows(): void
@@ -262,7 +331,7 @@ final class BgStatusToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('"action" argument is required');
 
-        ($this->tool)(['action' => '']);
+        $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => '']));
     }
 
     public function testInvalidActionThrows(): void
@@ -270,7 +339,7 @@ final class BgStatusToolTest extends TestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('Invalid action');
 
-        ($this->tool)(['action' => 'invalid_action']);
+        $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'invalid_action']));
     }
 
     /* ── ToolCallException structured error tests ── */
@@ -278,7 +347,7 @@ final class BgStatusToolTest extends TestCase
     public function testMissingActionExceptionHasHint(): void
     {
         try {
-            ($this->tool)([]);
+            $this->withContext(self::TEST_SESSION, fn () => ($this->tool)([]));
         } catch (ToolCallException $e) {
             self::assertFalse($e->retryable());
             self::assertNotNull($e->hint());
@@ -289,7 +358,7 @@ final class BgStatusToolTest extends TestCase
     public function testMissingPidExceptionHasHint(): void
     {
         try {
-            ($this->tool)(['action' => 'stop']);
+            $this->withContext(self::TEST_SESSION, fn () => ($this->tool)(['action' => 'stop']));
         } catch (ToolCallException $e) {
             self::assertFalse($e->retryable());
             self::assertNotNull($e->hint());

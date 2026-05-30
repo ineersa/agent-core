@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
@@ -15,24 +16,24 @@ use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
  * as a permanent tool and ToolHandlerInterface for execution.
  *
  * Actions:
- *  - list:  Show all tracked background processes with status.
- *  - log:   Return the tail of a background process log file.
- *  - stop:  Terminate a background process (TERM → grace → KILL).
+ *  - list:  Show all tracked background processes with status, scoped to
+ *           the current session via ambient ToolContext.
+ *  - log:   Return the tail of a background process log file, scoped to
+ *           the current session.
+ *  - stop:  Terminate a background process (TERM → grace → KILL), scoped
+ *           to the current session.
  *
- * Session ownership: currently passes null (unscoped) for all background
- * process manager calls. This works because every Manager method defaults
- * to null, which means "operate on any process regardless of session."
- *
- * TOOLS-09 will plumb the real session_id from ToolContext::runId() into
- * BgStatusTool and BackgroundProcessManager::start(). When that happens,
- * BgStatusTool will need to inject session context into its manager calls
- * (list, stop, log) so operations are scoped to the current run/session.
+ * Session ownership: resolves the current run/session ID from the ambient
+ * StackToolExecutionContextAccessor (ToolContext::runId()) and passes it
+ * to every BackgroundProcessManager call. This ensures the LLM only sees
+ * and operates on processes it owns.
  */
 final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerInterface
 {
     public function __construct(
         private readonly BackgroundProcessManager $manager,
         private readonly BackgroundProcessConfig $config,
+        private readonly StackToolExecutionContextAccessor $contextAccessor,
     ) {
     }
 
@@ -108,7 +109,8 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
      */
     private function handleList(): string
     {
-        $processes = $this->manager->list();
+        $sessionId = $this->contextAccessor->current()?->runId();
+        $processes = $this->manager->list($sessionId);
 
         if ([] === $processes) {
             return 'No background processes tracked.';
@@ -151,7 +153,8 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
         }
 
         try {
-            $result = $this->manager->readLogTail($pid, $this->config->logTailChars);
+            $sessionId = $this->contextAccessor->current()?->runId();
+            $result = $this->manager->readLogTail($pid, $this->config->logTailChars, $sessionId);
         } catch (\RuntimeException $e) {
             throw new ToolCallException($e->getMessage(), retryable: false, hint: 'The process may no longer be tracked. Run bg_status list to see available processes.');
         }
@@ -188,7 +191,8 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
         }
 
         try {
-            $result = $this->manager->stop($pid);
+            $sessionId = $this->contextAccessor->current()?->runId();
+            $result = $this->manager->stop($pid, $sessionId);
         } catch (\RuntimeException $e) {
             throw new ToolCallException($e->getMessage(), retryable: false, hint: 'The process may have already finished. Run bg_status list to see current state.');
         }

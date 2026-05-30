@@ -37,9 +37,19 @@ use Psr\Log\LoggerInterface;
  * Methods that accept ?string $sessionId will scope operations to
  * that session when provided; null means unscoped/admin (show all,
  * operate on any process regardless of session).
- * BgStatusTool currently passes null for session_id — TOOLS-09 will
- * plumb the real session_id from ToolContext::runId() into start(),
- * list(), stop(), and shutdownCleanup().
+ * BgStatusTool resolves the current session from the ambient
+ * StackToolExecutionContextAccessor so operations are scoped.
+ *
+ * Shutdown handling:
+ * The constructor registers a PHP shutdown function via
+ * register_shutdown_function() that calls shutdownCleanup() with
+ * no session filter, killing ALL running background processes when
+ * this PHP process exits. This covers both graceful exit (Ctrl+C,
+ * quit command, normal script end) and fatal errors.
+ *
+ * Crash resilience: SIGKILL, OOM, or segfault bypass the shutdown
+ * function, so background processes survive unexpected controller
+ * death. The user can inspect logs on the next session resume.
  *
  * setsid is required. If setsid is unavailable, start() fails with a
  * clear exception rather than falling back to unsafe single-PID mode
@@ -56,6 +66,15 @@ final class BackgroundProcessManager
         private readonly BackgroundProcessConfig $config,
         private readonly ?LoggerInterface $logger = null,
     ) {
+        // Register a PHP shutdown function that terminates all running
+        // background processes when this PHP process exits.
+        // On graceful shutdown (exit, Ctrl+C, fatal error), this calls
+        // shutdownCleanup() which TERM→grace→KILLs all tracked processes.
+        // On hard crash (SIGKILL, OOM, segfault), the shutdown function
+        // does not fire — BG processes survive for inspection or resume.
+        register_shutdown_function(function (): void {
+            $this->shutdownCleanup();
+        });
     }
 
     // ─── Public lifecycle API ─────────────────────────────────────────
@@ -555,15 +574,15 @@ final class BackgroundProcessManager
     /**
      * Terminate all currently tracked running processes.
      *
-     * This is exposed for test lifecycle and controller shutdown — it is
-     * NOT wired to automatic PHP shutdown because background jobs must
-     * survive across tool worker exits. Callers (e.g. test tearDown or
-     * controller lifecycle hooks) should invoke this explicitly.
+     * Called automatically via register_shutdown_function() on PHP process
+     * exit (graceful or fatal). Also callable explicitly from test tearDown
+     * or controller lifecycle hooks. Safe to call multiple times — only
+     * processes still marked running are affected.
      *
      * @param string|null $sessionId Optional session filter. When provided,
      *                               only processes for that session are
      *                               stopped. Pass null to stop all running
-     *                               processes (current behaviour, unscoped).
+     *                               processes (default, unscoped).
      *
      * @return int Number of processes terminated
      */
