@@ -45,7 +45,7 @@ final class RunLogContext
     public static function enter(array $context): void
     {
         $stack = self::readStack();
-        $parent = $stack[array_key_last($stack)] ?? [];
+        $parent = [] !== $stack ? $stack[array_key_last($stack)] : [];
         $stack[] = [...$parent, ...$context];
         self::writeStack($stack);
     }
@@ -72,7 +72,11 @@ final class RunLogContext
     {
         $stack = self::readStack();
 
-        return $stack[array_key_last($stack)] ?? [];
+        if ([] === $stack) {
+            return [];
+        }
+
+        return $stack[array_key_last($stack)];
     }
 
     /**
@@ -97,7 +101,13 @@ final class RunLogContext
     }
 
     /**
-     * Reset all context — for testing and worker startup.
+     * Reset all context for the current fiber (or default stack outside any fiber).
+     *
+     * For testing and worker startup. Does NOT affect other fibers' context — each
+     * fiber owns its own stack via WeakMap; reset() only targets the current execution
+     * context. WeakMap entries are automatically released when a fiber finishes
+     * and gets GC'd, so explicit reset() is typically only needed between test cases
+     * or worker iterations within the same fiber lifetime.
      */
     public static function reset(): void
     {
