@@ -21,14 +21,27 @@ Scope:
 - Validation with Castor: `castor test --filter Config`; `castor check`.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: CODE-REVIEW
+Branch: task/safe-03-safeguard-docs-settings-validation
+Worktree: /home/ineersa/projects/agent-core-worktrees/safe-03-safeguard-docs-settings-validation
 Fork run:
-PR URL:
-PR Status:
-Started:
+PR URL: https://github.com/ineersa/agent-core/pull/75
+PR Status: open
+Started: 2026-05-30T21:15:03.671Z
 Completed:
 
 ## Work log
 - Created: 2026-05-29T20:50:20.133Z
+
+## Task workflow update - 2026-05-30T21:15:03.671Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/safe-03-safeguard-docs-settings-validation.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/safe-03-safeguard-docs-settings-validation.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/safe-03-safeguard-docs-settings-validation.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/safe-03-safeguard-docs-settings-validation.
+
+## Task workflow update - 2026-05-30T21:17:51.805Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/safe-03-safeguard-docs-settings-validation to origin.
+- branch 'task/safe-03-safeguard-docs-settings-validation' set up to track 'origin/task/safe-03-safeguard-docs-settings-validation'.
+- Created PR: https://github.com/ineersa/agent-core/pull/75
