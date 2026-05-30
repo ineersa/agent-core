@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
@@ -303,7 +304,7 @@ final class ViewImageToolTest extends TestCase
         $filePath = $this->tmpDir.'/text.txt';
         $this->writeFixture($filePath, 'This is not an image.');
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('Unsupported image type');
 
         ($this->viewImageTool)(['path' => $filePath]);
@@ -314,7 +315,7 @@ final class ViewImageToolTest extends TestCase
         $filePath = $this->tmpDir.'/page.html';
         $this->writeFixture($filePath, '<html><body>not an image</body></html>');
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('Unsupported image type');
 
         ($this->viewImageTool)(['path' => $filePath]);
@@ -325,7 +326,7 @@ final class ViewImageToolTest extends TestCase
         $filePath = $this->tmpDir.'/doc.pdf';
         $this->writeFixture($filePath, '%PDF-1.4 fake pdf content');
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('Unsupported image type');
 
         ($this->viewImageTool)(['path' => $filePath]);
@@ -336,7 +337,7 @@ final class ViewImageToolTest extends TestCase
         $filePath = $this->tmpDir.'/empty.dat';
         $this->writeFixture($filePath, '');
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('Failed to read header bytes');
 
         ($this->viewImageTool)(['path' => $filePath]);
@@ -354,7 +355,7 @@ final class ViewImageToolTest extends TestCase
         \imagepng($img, $imagePath);
         // imagedestroy is no-op since PHP 8.0, removed
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('exceeds maximum allowed size');
 
         $tool(['path' => $imagePath]);
@@ -385,7 +386,7 @@ final class ViewImageToolTest extends TestCase
         \imagepng($img, $imagePath);
         // imagedestroy is no-op since PHP 8.0, removed
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('exceed maximum allowed');
 
         $tool(['path' => $imagePath]);
@@ -401,7 +402,7 @@ final class ViewImageToolTest extends TestCase
         \imagepng($img, $imagePath);
         // imagedestroy is no-op since PHP 8.0, removed
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('exceed maximum allowed');
 
         $tool(['path' => $imagePath]);
@@ -411,7 +412,7 @@ final class ViewImageToolTest extends TestCase
 
     public function testThrowsOnMissingPath(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('"path" argument is required');
 
         ($this->viewImageTool)([]);
@@ -419,7 +420,7 @@ final class ViewImageToolTest extends TestCase
 
     public function testThrowsOnNonStringPath(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('"path" argument is required');
 
         ($this->viewImageTool)(['path' => 123]);
@@ -427,7 +428,7 @@ final class ViewImageToolTest extends TestCase
 
     public function testThrowsOnEmptyPath(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('"path" argument is required');
 
         ($this->viewImageTool)(['path' => '']);
@@ -435,7 +436,7 @@ final class ViewImageToolTest extends TestCase
 
     public function testThrowsOnNonExistentFile(): void
     {
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('does not exist or is not readable');
 
         ($this->viewImageTool)(['path' => $this->tmpDir.'/nonexistent.png']);
@@ -1052,7 +1053,7 @@ final class ViewImageToolTest extends TestCase
 
         $context = $this->contextWithToken($this->createStub(CancellationTokenInterface::class));
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('does not support image input');
 
         $this->contextAccessor->with($context, function () use ($tool, $imagePath): void {

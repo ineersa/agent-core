@@ -8,47 +8,40 @@ use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionPolicy;
 
+/**
+ * Resolves default execution policy from settings.
+ *
+ * Execution mode is now sourced from tool registration
+ * (ToolDefinitionDTO.executionMode) via ActiveToolSet in
+ * LlmStepResultHandler. This resolver provides only the
+ * global fallback defaults for timeout and parallelism.
+ */
 final readonly class ToolExecutionPolicyResolver
 {
     private ToolExecutionMode $defaultMode;
 
-    /**
-     * Initializes default mode, timeout, parallelism, and override configurations.
-     *
-     * @param array<string, array{mode?: string|null, timeout_seconds?: int|null}> $overrides
-     */
     public function __construct(
         string $defaultMode,
         private int $defaultTimeoutSeconds,
         private int $maxParallelism,
-        private array $overrides = [],
     ) {
         $this->defaultMode = ToolExecutionMode::tryFrom($defaultMode) ?? ToolExecutionMode::Sequential;
     }
 
-    /**
-     * @param array<string, array{mode?: string|null, timeout_seconds?: int|null}> $overrides
-     */
-    public static function fromSettings(ToolExecutionSettingsInterface $settings, array $overrides = []): self
+    public static function fromSettings(ToolExecutionSettingsInterface $settings): self
     {
         return new self(
             defaultMode: $settings->defaultMode(),
             defaultTimeoutSeconds: $settings->defaultTimeoutSeconds(),
             maxParallelism: $settings->maxParallelism(),
-            overrides: $overrides,
         );
     }
 
     public function resolve(string $toolName): ToolExecutionPolicy
     {
-        $override = $this->overrides[$toolName] ?? [];
-
-        $mode = ToolExecutionMode::tryFrom((string) ($override['mode'] ?? $this->defaultMode->value)) ?? $this->defaultMode;
-        $timeout = (int) ($override['timeout_seconds'] ?? $this->defaultTimeoutSeconds);
-
         return new ToolExecutionPolicy(
-            mode: $mode,
-            timeoutSeconds: max(1, $timeout),
+            mode: $this->defaultMode,
+            timeoutSeconds: max(1, $this->defaultTimeoutSeconds),
             maxParallelism: max(1, $this->maxParallelism),
         );
     }

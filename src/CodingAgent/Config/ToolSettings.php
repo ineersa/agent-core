@@ -12,6 +12,9 @@ use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
  * Hydrated from the `tools.*` keys in the merged Hatfield settings
  * (defaults.yaml → home settings → project settings).
  *
+ * Execution mode per tool is set at registration time by the tool
+ * author/provider in ToolDefinitionDTO, not from settings overrides.
+ *
  * @immutable
  */
 final readonly class ToolSettings implements ToolExecutionSettingsInterface

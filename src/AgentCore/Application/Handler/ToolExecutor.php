@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolIdempotencyKeyResolverInterface;
@@ -28,31 +29,23 @@ final class ToolExecutor implements ToolExecutorInterface
 
     private ?FaultTolerantToolbox $faultTolerantToolbox;
 
-    /**
-     * @param array<string, array{mode?: string|null, timeout_seconds?: int|null}> $overrides
-     */
     public function __construct(
         string $defaultMode,
         int $defaultTimeoutSeconds,
         int $maxParallelism,
         private readonly ToolExecutionResultStore $resultStore,
-        array $overrides = [],
         ?ToolboxInterface $toolbox = null,
         private readonly ?ToolIdempotencyKeyResolverInterface $toolIdempotencyKeyResolver = null,
         private readonly ?StackToolExecutionContextAccessor $contextAccessor = null,
         private readonly ?ToolSetResolverInterface $toolSetResolver = null,
     ) {
-        $this->policyResolver = new ToolExecutionPolicyResolver($defaultMode, $defaultTimeoutSeconds, $maxParallelism, $overrides);
+        $this->policyResolver = new ToolExecutionPolicyResolver($defaultMode, $defaultTimeoutSeconds, $maxParallelism);
         $this->faultTolerantToolbox = null !== $toolbox ? new FaultTolerantToolbox($toolbox) : null;
     }
 
-    /**
-     * @param array<string, mixed> $overrides
-     */
     public static function fromSettings(
         ToolExecutionSettingsInterface $settings,
         ToolExecutionResultStore $resultStore,
-        array $overrides = [],
         ?ToolboxInterface $toolbox = null,
         ?ToolIdempotencyKeyResolverInterface $toolIdempotencyKeyResolver = null,
         ?StackToolExecutionContextAccessor $contextAccessor = null,
@@ -63,7 +56,6 @@ final class ToolExecutor implements ToolExecutorInterface
             defaultTimeoutSeconds: $settings->defaultTimeoutSeconds(),
             maxParallelism: $settings->maxParallelism(),
             resultStore: $resultStore,
-            overrides: $overrides,
             toolbox: $toolbox,
             toolIdempotencyKeyResolver: $toolIdempotencyKeyResolver,
             contextAccessor: $contextAccessor,
@@ -129,12 +121,29 @@ final class ToolExecutor implements ToolExecutorInterface
         try {
             $result = $this->executeToolCall($toolCall, $policy);
         } catch (\Throwable $exception) {
-            $result = $this->errorResult(
-                toolCallId: $toolCall->toolCallId,
-                toolName: $toolCall->toolName,
-                message: $exception->getMessage(),
-                details: ['error_type' => $exception::class],
-            );
+            if ($exception instanceof ToolCallException) {
+                $message = $exception->getMessage();
+                if (null !== $exception->hint()) {
+                    $message .= "\nHint: ".$exception->hint();
+                }
+                $result = $this->errorResult(
+                    toolCallId: $toolCall->toolCallId,
+                    toolName: $toolCall->toolName,
+                    message: $message,
+                    details: [
+                        'error_type' => ToolCallException::class,
+                        'retryable' => $exception->retryable(),
+                        'hint' => $exception->hint(),
+                    ],
+                );
+            } else {
+                $result = $this->errorResult(
+                    toolCallId: $toolCall->toolCallId,
+                    toolName: $toolCall->toolName,
+                    message: $exception->getMessage(),
+                    details: ['error_type' => $exception::class],
+                );
+            }
         }
 
         $durationMs = (hrtime(true) - $startedAt) / 1_000_000;

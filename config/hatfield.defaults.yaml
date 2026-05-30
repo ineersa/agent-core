@@ -52,6 +52,11 @@ tools:
         # worker processes launched by the controller.
         max_parallelism: 4
 
+        # Execution mode per tool is set at registration time by the tool
+        # author/provider in ToolDefinitionDTO, not from settings overrides.
+        # File-mutation tools (write, edit) are explicitly registered as
+        # Sequential in their HatfieldToolProviderInterface::definition().
+
     image:
         # Maximum image file size in bytes (default: 10 MB).
         max_bytes: 10485760

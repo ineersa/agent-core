@@ -215,6 +215,15 @@ dispatch pipeline.
 
 ---
 
+### `tools.execution` notes
+
+Execution mode per tool is set at registration time by the tool
+author/provider in `ToolDefinitionDTO`, not from settings overrides.
+File-mutation tools (`write`, `edit`) are explicitly registered as
+`Sequential` in their `HatfieldToolProviderInterface::definition()`.
+
+---
+
 ### `tools.output_cap.path`
 
 Storage directory for persisted oversized tool output. Tool output that

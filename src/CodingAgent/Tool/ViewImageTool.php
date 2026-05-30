@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Message\ToolResultType;
 use Ineersa\CodingAgent\Config\ImageToolConfig;
 use Ineersa\CodingAgent\Path\PathResolver;
@@ -63,14 +64,14 @@ final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerI
             $context = $this->contextAccessor->current();
             if (null !== $context && null !== $this->visionCheck) {
                 if (!$this->visionCheck->isModelVisionCapable($context->runId())) {
-                    throw new \RuntimeException('The active model does not support image input. Switch to a vision-capable model to use view_image.');
+                    throw new ToolCallException('The active model does not support image input.', retryable: false, hint: 'Switch to a vision-capable model to use view_image.');
                 }
             }
 
             // Validate required argument
             $path = $arguments['path'] ?? null;
             if (!\is_string($path) || '' === $path) {
-                throw new \InvalidArgumentException('The "path" argument is required and must be a non-empty string.');
+                throw new ToolCallException('The "path" argument is required and must be a non-empty string.', retryable: false, hint: 'Provide a valid file path.');
             }
 
             // Resolve to absolute normalized path
@@ -78,30 +79,30 @@ final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerI
 
             // Check file existence and readability
             if (!is_file($resolvedPath) || !is_readable($resolvedPath)) {
-                throw new \RuntimeException(\sprintf('File "%s" does not exist or is not readable.', $resolvedPath));
+                throw new ToolCallException(\sprintf('File "%s" does not exist or is not readable.', $resolvedPath), retryable: false, hint: 'Check the file path. Use absolute paths or paths relative to the working directory.');
             }
 
             // Check file size against maximum before reading content
             $fileSize = @filesize($resolvedPath);
             if (false === $fileSize) {
-                throw new \RuntimeException(\sprintf('Failed to determine file size for "%s".', $resolvedPath));
+                throw new ToolCallException(\sprintf('Failed to determine file size for "%s".', $resolvedPath), retryable: true, hint: 'The file may be damaged or unreadable.');
             }
 
             if ($fileSize > $this->imageConfig->maxBytes) {
-                throw new \RuntimeException(\sprintf('Image file "%s" exceeds maximum allowed size of %d bytes (actual: %d bytes).', $resolvedPath, $this->imageConfig->maxBytes, $fileSize));
+                throw new ToolCallException(\sprintf('Image file "%s" exceeds maximum allowed size of %d bytes (actual: %d bytes).', $resolvedPath, $this->imageConfig->maxBytes, $fileSize), retryable: false, hint: 'Resize the image or increase the max_bytes setting.');
             }
 
             // Read the first 8KB for magic-byte MIME detection
             $fh = @fopen($resolvedPath, 'r');
             if (false === $fh) {
-                throw new \RuntimeException(\sprintf('Failed to open file "%s" for reading.', $resolvedPath));
+                throw new ToolCallException(\sprintf('Failed to open file "%s" for reading.', $resolvedPath), retryable: true, hint: 'Check file permissions and that the file is not locked by another process.');
             }
 
             $headerBytes = @fread($fh, 8192);
             @fclose($fh);
 
             if (false === $headerBytes || '' === $headerBytes) {
-                throw new \RuntimeException(\sprintf('Failed to read header bytes from "%s".', $resolvedPath));
+                throw new ToolCallException(\sprintf('Failed to read header bytes from "%s".', $resolvedPath), retryable: true, hint: 'The file appears empty or unreadable; try downloading it again.');
             }
 
             // Detect MIME type from magic bytes
@@ -110,20 +111,20 @@ final class ViewImageTool implements HatfieldToolProviderInterface, ToolHandlerI
 
             if (null === $mediaType || !\in_array($mediaType, self::SUPPORTED_TYPES, true)) {
                 $displayType = null !== $mediaType ? $mediaType : 'unknown';
-                throw new \RuntimeException(\sprintf('Unsupported image type "%s" for file "%s". Supported types: JPEG, PNG, GIF, WebP.', $displayType, $resolvedPath));
+                throw new ToolCallException(\sprintf('Unsupported image type "%s" for file "%s".', $displayType, $resolvedPath), retryable: false, hint: 'Use JPEG, PNG, GIF, or WebP format.');
             }
 
             // Check image dimensions
             $imageInfo = @getimagesize($resolvedPath);
             if (false === $imageInfo) {
-                throw new \RuntimeException(\sprintf('Failed to determine dimensions for image "%s".', $resolvedPath));
+                throw new ToolCallException(\sprintf('Failed to determine dimensions for image "%s".', $resolvedPath), retryable: true, hint: 'The file may be corrupted or not a valid image.');
             }
 
             $width = $imageInfo[0];
             $height = $imageInfo[1];
 
             if ($width > $this->imageConfig->maxWidth || $height > $this->imageConfig->maxHeight) {
-                throw new \RuntimeException(\sprintf('Image "%s" dimensions (%dx%d) exceed maximum allowed (%dx%d).', $resolvedPath, $width, $height, $this->imageConfig->maxWidth, $this->imageConfig->maxHeight));
+                throw new ToolCallException(\sprintf('Image "%s" dimensions (%dx%d) exceed maximum allowed (%dx%d).', $resolvedPath, $width, $height, $this->imageConfig->maxWidth, $this->imageConfig->maxHeight), retryable: false, hint: 'Resize the image to fit within the maximum allowed dimensions or increase max_width/max_height settings.');
             }
 
             // Process image for provider-safe delivery (resize, quality reduction).
