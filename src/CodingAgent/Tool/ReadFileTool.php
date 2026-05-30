@@ -28,7 +28,7 @@ use Symfony\Component\Process\Process;
 final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerInterface
 {
     /** Default maximum lines for an unrestricted read. */
-    private const int DEFAULT_MAX_LINES = 2000;
+    private const int DEFAULT_LINE_LIMIT = 2000;
 
     /** @var list<string> Path prefixes that are obviously non-file resources. */
     private const array BLOCKED_PATH_PREFIXES = [
@@ -88,6 +88,14 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
 
             // Read the file content via Unix pipeline
             $content = $this->readContent($resolvedPath, $offset, $limit);
+
+            // Detect offset past EOF for non-empty files
+            if ('' === $content && null !== $offset) {
+                $totalLines = $this->countTotalLines($resolvedPath);
+                if (null !== $totalLines && $offset > $totalLines) {
+                    throw new ToolCallException(\sprintf('Cannot read "%s": offset %d exceeds file length (%d lines).', $resolvedPath, $offset, $totalLines), retryable: false, hint: \sprintf('The file has %d lines. Use an offset between 1 and %d, or omit offset to read from the beginning.', $totalLines, $totalLines));
+                }
+            }
 
             // Check if the output was truncated and append continuation hint
             $content = $this->appendContinuationHint($content, $resolvedPath, $offset, $limit);
@@ -294,15 +302,20 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
     {
         $fh = @fopen($resolvedPath, 'r');
         if (false === $fh) {
-            throw new ToolCallException(\sprintf('Failed to open file "%s" for inspection.', $resolvedPath), retryable: true, hint: 'Check file permissions and disk health.');
+            $lastError = error_get_last();
+            $diagnostic = $lastError['message'] ?? 'Failed to open file for inspection';
+            throw new ToolCallException(\sprintf('Unable to inspect file "%s": %s', $resolvedPath, $diagnostic), retryable: true, hint: 'Check file permissions and disk health.');
         }
 
         $sample = @fread($fh, 8192);
-        @fclose($fh);
-
         if (false === $sample) {
-            throw new ToolCallException(\sprintf('Failed to read sample from file "%s".', $resolvedPath), retryable: true, hint: 'Check disk health and file integrity.');
+            $lastError = error_get_last();
+            $diagnostic = $lastError['message'] ?? 'Failed to read sample from file';
+            @fclose($fh);
+            throw new ToolCallException(\sprintf('Unable to inspect file "%s": %s', $resolvedPath, $diagnostic), retryable: true, hint: 'Check disk health and file integrity.');
         }
+
+        @fclose($fh);
 
         return $sample;
     }
@@ -389,7 +402,7 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
     private function readContent(string $resolvedPath, ?int $offset, ?int $limit): string
     {
         $pathArg = escapeshellarg($resolvedPath);
-        $effectiveLimit = $limit ?? self::DEFAULT_MAX_LINES;
+        $effectiveLimit = $limit ?? self::DEFAULT_LINE_LIMIT;
 
         if (null !== $offset && null !== $limit) {
             $end = $offset + $limit - 1;
@@ -400,7 +413,7 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             $cmd = \sprintf('cat -n %s | head -n %d', $pathArg, $effectiveLimit);
         }
 
-        $process = new Process(['bash', '-lc', $cmd]);
+        $process = new Process(['bash', '-c', $cmd]);
         $result = $this->toolRuntime->runCancellableProcess($process);
 
         if ($result->cancelled) {
@@ -438,7 +451,6 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         $outputLines = substr_count($content, "\n");
 
         // Account for trailing newline
-        // $content is guaranteed non-empty here (empty content returned early above)
         if (!str_ends_with($content, "\n")) {
             ++$outputLines;
         }
@@ -448,22 +460,18 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         }
 
         // Determine the effective limit
-        $effectiveLimit = $limit ?? self::DEFAULT_MAX_LINES;
+        $effectiveLimit = $limit ?? self::DEFAULT_LINE_LIMIT;
 
         // If output lines are less than the limit, we didn't truncate
         if ($outputLines < $effectiveLimit) {
             return $content;
         }
 
-        // Check total file lines with wc -l
-        $wcProcess = new Process(['bash', '-lc', \sprintf('wc -l < %s', escapeshellarg($resolvedPath))]);
-        $wcResult = $this->toolRuntime->runCancellableProcess($wcProcess);
-
-        if (0 !== $wcResult->exitCode || '' === trim($wcResult->stdout)) {
+        // Check total file lines (gracefully handles cancellation/timeout/failure)
+        $totalLines = $this->countTotalLines($resolvedPath);
+        if (null === $totalLines) {
             return $content; // Cannot determine total, skip hint
         }
-
-        $totalLines = (int) trim($wcResult->stdout);
 
         // Calculate the last line we returned
         $lastReturnedLine = null !== $offset ? $offset + $outputLines - 1 : $outputLines;
@@ -476,5 +484,28 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         }
 
         return $content;
+    }
+
+    /**
+     * Count total lines in a file matching cat -n numbering.
+     *
+     * Uses awk which correctly counts the last line even without a
+     * trailing newline (unlike wc -l).
+     *
+     * Returns null when the count cannot be determined (cancelled, timed out,
+     * process failure, or empty output).
+     *
+     * @return int|null Total line count, or null on failure
+     */
+    private function countTotalLines(string $resolvedPath): ?int
+    {
+        $wcProcess = new Process(['bash', '-c', \sprintf("awk 'END {print NR}' %s", escapeshellarg($resolvedPath))]);
+        $wcResult = $this->toolRuntime->runCancellableProcess($wcProcess);
+
+        if ($wcResult->cancelled || $wcResult->timedOut || 0 !== $wcResult->exitCode || '' === trim($wcResult->stdout)) {
+            return null; // Cannot determine total, graceful degradation
+        }
+
+        return (int) trim($wcResult->stdout);
     }
 }

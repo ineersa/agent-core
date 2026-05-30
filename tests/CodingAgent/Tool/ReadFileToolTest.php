@@ -203,6 +203,20 @@ final class ReadFileToolTest extends TestCase
         self::assertStringNotContainsString("     4\td", $result);
     }
 
+    public function testReadOffsetPastEofThrows(): void
+    {
+        $targetPath = $this->tmpDir.'/few_lines.txt';
+        file_put_contents($targetPath, "line one\nline two\nline three\n");
+
+        try {
+            ($this->readFileTool)(['path' => $targetPath, 'offset' => 10]);
+            self::fail('Expected ToolCallException was not thrown.');
+        } catch (ToolCallException $e) {
+            self::assertStringContainsString('offset 10 exceeds file length', $e->getMessage());
+            self::assertStringContainsString('3 lines', $e->getMessage());
+        }
+    }
+
     public function testReadEmptyFile(): void
     {
         $targetPath = $this->tmpDir.'/empty.txt';
