@@ -30,7 +30,7 @@ final class BackgroundProcessManagerTest extends TestCase
             'memory' => true,
         ]);
 
-        $this->tmpDir = sys_get_temp_dir().'/hatfield_bg_test_'.\bin2hex(random_bytes(8));
+        $this->tmpDir = sys_get_temp_dir().'/hatfield_bg_test_'.bin2hex(random_bytes(8));
         mkdir($this->tmpDir, 0750, recursive: true);
     }
 
@@ -42,17 +42,6 @@ final class BackgroundProcessManagerTest extends TestCase
         $this->rmDir($this->tmpDir);
     }
 
-    private function createManager(string $storageDir = null, int $retentionSeconds = 86400, int $stopGraceSeconds = 1, int $logTailChars = 5000): void
-    {
-        $config = new BackgroundProcessConfig(
-            storageDir: $storageDir ?? $this->tmpDir,
-            retentionSeconds: $retentionSeconds,
-            stopGraceSeconds: $stopGraceSeconds,
-            logTailChars: $logTailChars,
-        );
-        $this->manager = new BackgroundProcessManager($this->connection, $config);
-    }
-
     /* ── start() tests ── */
 
     public function testStartCreatesRecordAndLogs(): void
@@ -60,16 +49,29 @@ final class BackgroundProcessManagerTest extends TestCase
         $this->createManager();
         $result = $this->manager->start('echo "hello from bg"');
 
-        self::assertArrayHasKey('id', $result);
-        self::assertArrayHasKey('pid', $result);
-        self::assertGreaterThan(0, $result['pid']);
-        self::assertArrayHasKey('pgid', $result);
-        self::assertArrayHasKey('log_path', $result);
-        self::assertArrayHasKey('started_at', $result);
-        self::assertSame('running', $result['status']);
+        $this->assertArrayHasKey('id', $result);
+        $this->assertArrayHasKey('pid', $result);
+        $this->assertGreaterThan(0, $result['pid']);
+        $this->assertArrayHasKey('pgid', $result);
+        $this->assertArrayHasKey('log_path', $result);
+        $this->assertArrayHasKey('started_at', $result);
+        $this->assertSame('running', $result['status']);
 
         // PID should be a real process (or recently exited)
-        self::assertFileExists($result['log_path']);
+        $this->assertFileExists($result['log_path']);
+    }
+
+    public function testStartDetectsSetsidAvailable(): void
+    {
+        // Sanity: on this Linux system, command -v setsid returns 0
+        // (the preflight inside start() depends on this).
+        exec('command -v setsid', $_, $rc);
+        $this->assertSame(0, $rc, 'setsid must be available for start() to function');
+
+        // Calling start() should succeed since setsid is present
+        $this->createManager();
+        $result = $this->manager->start('echo "setsid test"');
+        $this->assertGreaterThan(0, $result['pid']);
     }
 
     public function testStartCommandWithProcessGroup(): void
@@ -80,11 +82,11 @@ final class BackgroundProcessManagerTest extends TestCase
         $result = $this->manager->start('sleep 5');
 
         // PGID should be set when setsid is available
-        self::assertNotNull($result['pgid']);
-        self::assertGreaterThan(0, $result['pgid']);
+        $this->assertNotNull($result['pgid']);
+        $this->assertGreaterThan(0, $result['pgid']);
 
         // Process group leader should be the PID itself
-        self::assertSame($result['pid'], $result['pgid']);
+        $this->assertSame($result['pid'], $result['pgid']);
 
         $this->manager->shutdownCleanup();
     }
@@ -96,8 +98,8 @@ final class BackgroundProcessManagerTest extends TestCase
 
         $result = $this->manager->start('echo "custom dir"');
 
-        self::assertStringContainsString('custom_bg', $result['log_path']);
-        self::assertFileExists($result['log_path']);
+        $this->assertStringContainsString('custom_bg', $result['log_path']);
+        $this->assertFileExists($result['log_path']);
 
         // Clean up
         $this->manager->shutdownCleanup();
@@ -109,7 +111,7 @@ final class BackgroundProcessManagerTest extends TestCase
         $result = $this->manager->start('printf "log line 1\nlog line 2\n"');
 
         // Wait for short process to finish
-        \usleep(500000);
+        usleep(500000);
 
         $this->assertLogEventuallyContains($result['log_path'], 'log line 1');
         $this->assertLogEventuallyContains($result['log_path'], 'log line 2');
@@ -124,8 +126,8 @@ final class BackgroundProcessManagerTest extends TestCase
         $this->createManager();
         $processes = $this->manager->list();
 
-        self::assertIsArray($processes);
-        self::assertCount(0, $processes);
+        $this->assertIsArray($processes);
+        $this->assertCount(0, $processes);
     }
 
     public function testListReturnsStartedProcess(): void
@@ -136,9 +138,9 @@ final class BackgroundProcessManagerTest extends TestCase
 
         $processes = $this->manager->list();
 
-        self::assertCount(1, $processes);
-        self::assertStringContainsString('sleep', $processes[0]['command']);
-        self::assertStringContainsString('running', $processes[0]['status']);
+        $this->assertCount(1, $processes);
+        $this->assertStringContainsString('sleep', $processes[0]['command']);
+        $this->assertStringContainsString('running', $processes[0]['status']);
 
         $this->manager->shutdownCleanup();
     }
@@ -151,7 +153,7 @@ final class BackgroundProcessManagerTest extends TestCase
 
         $processes = $this->manager->list();
 
-        self::assertCount(2, $processes);
+        $this->assertCount(2, $processes);
     }
 
     public function testListShowsFinishedProcessStatus(): void
@@ -160,15 +162,15 @@ final class BackgroundProcessManagerTest extends TestCase
         $this->manager->start('echo "finish test"');
 
         // Wait for the short process to finish
-        \usleep(500000);
+        usleep(500000);
 
         $processes = $this->manager->list();
 
-        self::assertCount(1, $processes);
+        $this->assertCount(1, $processes);
         // Status should transition from running to finished
-        self::assertStringContainsString('finish', $processes[0]['status']);
+        $this->assertStringContainsString('finish', $processes[0]['status']);
         // Exit code should be 0 for echo
-        self::assertSame(0, $processes[0]['exit_code']);
+        $this->assertSame(0, $processes[0]['exit_code']);
     }
 
     /* ── readLogTail() tests ── */
@@ -179,13 +181,13 @@ final class BackgroundProcessManagerTest extends TestCase
         $result = $this->manager->start('echo "tail test content"');
 
         // Wait for process to write
-        \usleep(500000);
+        usleep(500000);
 
         $logResult = $this->manager->readLogTail($result['pid']);
 
-        self::assertSame($result['pid'], $logResult['pid']);
-        self::assertFalse($logResult['truncated']);
-        self::assertStringContainsString('tail test content', $logResult['content']);
+        $this->assertSame($result['pid'], $logResult['pid']);
+        $this->assertFalse($logResult['truncated']);
+        $this->assertStringContainsString('tail test content', $logResult['content']);
 
         $this->manager->shutdownCleanup();
     }
@@ -197,14 +199,14 @@ final class BackgroundProcessManagerTest extends TestCase
         $result = $this->manager->start('for i in $(seq 1 100); do echo "line $i with some padding text to make it longer"; done');
 
         // Wait for process to finish and write
-        \usleep(500000);
+        usleep(500000);
 
         $logResult = $this->manager->readLogTail($result['pid'], 50); // match logTailChars: 50
 
         // With 50 char cap and large output, truncation should happen
         if ($logResult['total_bytes'] > 50) {
-            self::assertTrue($logResult['truncated'],
-                'Expected truncated=true for ' . $logResult['total_bytes'] . ' byte log with 50 char cap');
+            $this->assertTrue($logResult['truncated'],
+                'Expected truncated=true for '.$logResult['total_bytes'].' byte log with 50 char cap');
         }
 
         $this->manager->shutdownCleanup();
@@ -230,13 +232,13 @@ final class BackgroundProcessManagerTest extends TestCase
 
         $stopResult = $this->manager->stop($result['pid']);
 
-        self::assertTrue($stopResult['stopped_by_user']);
-        self::assertFalse($stopResult['already_finished']);
-        self::assertSame('term+kill', $stopResult['signal_sent']);
+        $this->assertTrue($stopResult['stopped_by_user']);
+        $this->assertFalse($stopResult['already_finished']);
+        $this->assertSame('term+kill', $stopResult['signal_sent']);
 
         // Process should be dead after KILL
-        \usleep(200000);
-        self::assertFalse($this->isProcessAlive($result['pid']));
+        usleep(200000);
+        $this->assertFalse($this->isProcessAlive($result['pid']));
     }
 
     public function testStopOnAlreadyFinishedProcess(): void
@@ -246,14 +248,14 @@ final class BackgroundProcessManagerTest extends TestCase
         $result = $this->manager->start('echo "quick"');
 
         // Wait for it to finish
-        \usleep(500000);
+        usleep(500000);
 
         $stopResult = $this->manager->stop($result['pid']);
 
         // The stop method should detect it already finished via refreshStatus
-        self::assertTrue($stopResult['already_finished'],
-            'Expected already_finished=true but got signal_sent=' . ($stopResult['signal_sent'] ?? '?'));
-        self::assertFalse($stopResult['stopped_by_user']);
+        $this->assertTrue($stopResult['already_finished'],
+            'Expected already_finished=true but got signal_sent='.($stopResult['signal_sent'] ?? '?'));
+        $this->assertFalse($stopResult['stopped_by_user']);
     }
 
     public function testStopThrowsOnUnknownProcess(): void
@@ -289,12 +291,12 @@ final class BackgroundProcessManagerTest extends TestCase
         foreach ($processes as $p) {
             if ($p['pid'] === $result['pid']) {
                 $found = true;
-                self::assertTrue($p['stopped_by_user']);
-                self::assertStringContainsString('stopped', $p['status']);
+                $this->assertTrue($p['stopped_by_user']);
+                $this->assertStringContainsString('stopped', $p['status']);
                 break;
             }
         }
-        self::assertTrue($found);
+        $this->assertTrue($found);
     }
 
     public function testStopTermOnlyWhenProcessFinishesDuringGrace(): void
@@ -307,9 +309,9 @@ final class BackgroundProcessManagerTest extends TestCase
         $result = $this->manager->start('sleep 3');
         $stopResult = $this->manager->stop($result['pid']);
 
-        self::assertTrue($stopResult['stopped_by_user']);
-        self::assertFalse($stopResult['already_finished']);
-        self::assertSame('term', $stopResult['signal_sent'],
+        $this->assertTrue($stopResult['stopped_by_user']);
+        $this->assertFalse($stopResult['already_finished']);
+        $this->assertSame('term', $stopResult['signal_sent'],
             'Expected term-only signal: sleep 3 should finish within 5s grace window');
     }
 
@@ -324,30 +326,83 @@ final class BackgroundProcessManagerTest extends TestCase
 
         // Create a script that traps TERM, writes sentinel, then exits
         $scriptPath = $this->tmpDir.'/term_test.sh';
-        \file_put_contents(
+        file_put_contents(
             $scriptPath,
-            "#!/bin/bash\ntrap 'echo term_received > ".$sentinel."; exit 0' TERM\nwhile true; do sleep 1; done\n",
+            "#!/bin/bash\ntrap 'echo term_received > ".escapeshellarg($sentinel)."; exit 0' TERM\nwhile true; do sleep 1; done\n",
         );
-        \chmod($scriptPath, 0755);
+        chmod($scriptPath, 0755);
 
         $result = $this->manager->start($scriptPath);
 
         // Give the process a moment to start
-        \usleep(200000);
+        usleep(200000);
 
         $stopResult = $this->manager->stop($result['pid']);
 
         // With the TERM-forwarding wrapper, TERM should reach the workload and
         // the script's trap handler should write the sentinel before exiting.
-        self::assertTrue($stopResult['stopped_by_user']);
-        self::assertFalse($stopResult['already_finished']);
-        self::assertSame('term', $stopResult['signal_sent'],
+        $this->assertTrue($stopResult['stopped_by_user']);
+        $this->assertFalse($stopResult['already_finished']);
+        $this->assertSame('term', $stopResult['signal_sent'],
             'Expected term-only signal: TERM should have reached the workload');
-        self::assertFileExists($sentinel,
+        $this->assertFileExists($sentinel,
             'Sentinel file should exist — SIGTERM should have reached the process');
 
-        $content = \file_get_contents($sentinel);
-        self::assertStringContainsString('term_received', $content);
+        $content = file_get_contents($sentinel);
+        $this->assertStringContainsString('term_received', $content);
+    }
+
+    public function testStopPreservesWrapperStatusFileOnGracefulTerm(): void
+    {
+        // When TERM reaches the workload and the wrapper writes the real
+        // exit code to the status file, stop() must NOT overwrite it with
+        // -1 (which would corrupt forensic exit-code evidence).
+        $this->createManager(stopGraceSeconds: 3);
+
+        $sentinel = $this->tmpDir.'/term_sentinel';
+        $scriptPath = $this->tmpDir.'/term_test2.sh';
+        file_put_contents(
+            $scriptPath,
+            "#!/bin/bash\ntrap 'echo term_received > ".escapeshellarg($sentinel)."; exit 42' TERM\nwhile true; do sleep 1; done\n",
+        );
+        chmod($scriptPath, 0755);
+
+        $result = $this->manager->start($scriptPath);
+        usleep(200000);
+
+        $this->manager->stop($result['pid']);
+
+        // The wrapper should have written the real exit code (42)
+        // to the status file, not -1.
+        $statusPath = null;
+        $processes = $this->manager->list();
+        foreach ($processes as $p) {
+            if ($p['pid'] === $result['pid']) {
+                // Process is stopped — status file should contain the real exit code
+                // We check via the log_path pattern to find the status file
+                break;
+            }
+        }
+
+        // Verify sentinel was written (TERM reached workload)
+        $this->assertFileExists($sentinel);
+        $sentinelContent = file_get_contents($sentinel);
+        $this->assertStringContainsString('term_received', $sentinelContent);
+
+        // Find the status file on disk — it should exist and NOT contain -1
+        // (The wrapper wrote the real exit code before stop() had a chance to
+        // overwrite; and our fix now skips overwriting when the file exists.)
+        $foundStatusFile = false;
+        foreach (new \FilesystemIterator($this->tmpDir, \FilesystemIterator::SKIP_DOTS) as $file) {
+            if ('status' === $file->getExtension()) {
+                $foundStatusFile = true;
+                $statusContent = file_get_contents((string) $file);
+                $this->assertNotSame('-1', trim($statusContent),
+                    'Status file should NOT contain -1; wrapper wrote real exit code');
+                break;
+            }
+        }
+        $this->assertTrue($foundStatusFile, 'No .status file found in tmpDir');
     }
 
     /* ── cleanupStale() tests ── */
@@ -358,14 +413,14 @@ final class BackgroundProcessManagerTest extends TestCase
         $result = $this->manager->start('echo "stale test"');
 
         // Wait for finish
-        \usleep(500000);
+        usleep(500000);
 
         $count = $this->manager->cleanupStale();
-        self::assertSame(1, $count, 'Expected 1 stale process cleaned, got ' . $count);
+        $this->assertSame(1, $count, 'Expected 1 stale process cleaned, got '.$count);
 
         // DB record should be gone
         $processes = $this->manager->list();
-        self::assertCount(0, $processes);
+        $this->assertCount(0, $processes);
     }
 
     public function testCleanupStalePreservesRunningProcesses(): void
@@ -376,7 +431,7 @@ final class BackgroundProcessManagerTest extends TestCase
         $count = $this->manager->cleanupStale();
 
         // Running processes should not be cleaned
-        self::assertSame(0, $count);
+        $this->assertSame(0, $count);
 
         $this->manager->shutdownCleanup();
     }
@@ -386,14 +441,14 @@ final class BackgroundProcessManagerTest extends TestCase
         $this->createManager(retentionSeconds: 0);
         $result = $this->manager->start('echo "log cleanup test"');
 
-        \usleep(500000);
+        usleep(500000);
 
         $logPath = $result['log_path'];
-        self::assertFileExists($logPath);
+        $this->assertFileExists($logPath);
 
         $this->manager->cleanupStale();
 
-        self::assertFileDoesNotExist($logPath);
+        $this->assertFileDoesNotExist($logPath);
     }
 
     /* ── shutdownCleanup() tests ── */
@@ -406,12 +461,12 @@ final class BackgroundProcessManagerTest extends TestCase
 
         $count = $this->manager->shutdownCleanup();
 
-        self::assertSame(2, $count);
+        $this->assertSame(2, $count);
 
         // All processes should be stopped
         $processes = $this->manager->list();
         foreach ($processes as $p) {
-            self::assertNotNull($p['finished_at']);
+            $this->assertNotNull($p['finished_at']);
         }
     }
 
@@ -419,7 +474,7 @@ final class BackgroundProcessManagerTest extends TestCase
     {
         $this->createManager();
         $count = $this->manager->shutdownCleanup();
-        self::assertSame(0, $count);
+        $this->assertSame(0, $count);
     }
 
     /* ── Table creation tests ── */
@@ -430,11 +485,11 @@ final class BackgroundProcessManagerTest extends TestCase
 
         // Table should not exist before first operation
         $schemaManager = $this->connection->createSchemaManager();
-        self::assertFalse($schemaManager->tablesExist(['background_process']));
+        $this->assertFalse($schemaManager->tablesExist(['background_process']));
 
         // First operation creates the table
         $this->manager->list();
-        self::assertTrue($schemaManager->tablesExist(['background_process']));
+        $this->assertTrue($schemaManager->tablesExist(['background_process']));
     }
 
     /* ── DB persistence tests ── */
@@ -449,7 +504,7 @@ final class BackgroundProcessManagerTest extends TestCase
         $manager2 = new BackgroundProcessManager($this->connection, $config);
 
         $processes = $manager2->list();
-        self::assertGreaterThanOrEqual(1, \count($processes));
+        $this->assertGreaterThanOrEqual(1, \count($processes));
 
         $this->manager->shutdownCleanup();
     }
@@ -465,13 +520,24 @@ final class BackgroundProcessManagerTest extends TestCase
         foreach ($processes as $p) {
             if ($p['pid'] === $result['pid']) {
                 $found = true;
-                self::assertStringContainsString('running', $p['status']);
+                $this->assertStringContainsString('running', $p['status']);
                 break;
             }
         }
-        self::assertTrue($found);
+        $this->assertTrue($found);
 
         $this->manager->shutdownCleanup();
+    }
+
+    private function createManager(?string $storageDir = null, int $retentionSeconds = 86400, int $stopGraceSeconds = 1, int $logTailChars = 5000): void
+    {
+        $config = new BackgroundProcessConfig(
+            storageDir: $storageDir ?? $this->tmpDir,
+            retentionSeconds: $retentionSeconds,
+            stopGraceSeconds: $stopGraceSeconds,
+            logTailChars: $logTailChars,
+        );
+        $this->manager = new BackgroundProcessManager($this->connection, $config);
     }
 
     /* ── Helpers ── */
@@ -484,16 +550,16 @@ final class BackgroundProcessManagerTest extends TestCase
             if (is_file($logPath)) {
                 $content = @file_get_contents($logPath);
                 if (false !== $content && str_contains($content, $expected)) {
-                    self::assertTrue(true);
+                    $this->assertTrue(true);
 
                     return;
                 }
             }
-            \usleep($step);
+            usleep($step);
             $waited += $step;
         }
 
-        self::fail(\sprintf('Log file "%s" did not contain expected content "%s" within %d \u{b5}s.', $logPath, $expected, $maxWaitMicro));
+        $this->fail(\sprintf('Log file "%s" did not contain expected content "%s" within %d \u{b5}s.', $logPath, $expected, $maxWaitMicro));
     }
 
     private function isProcessAlive(int $pid): bool
@@ -518,7 +584,7 @@ final class BackgroundProcessManagerTest extends TestCase
                 continue;
             }
             foreach (new \FilesystemIterator($dir, \FilesystemIterator::SKIP_DOTS) as $file) {
-                if ($file->getExtension() === 'pid') {
+                if ('pid' === $file->getExtension()) {
                     $pid = (int) file_get_contents((string) $file);
                     if ($pid > 0 && is_dir('/proc/'.$pid)) {
                         @exec('kill -KILL -'.$pid.' 2>/dev/null');

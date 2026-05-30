@@ -105,6 +105,14 @@ final class BackgroundProcessManager
 
         $now = $this->nowIso();
 
+        // Preflight: verify setsid is available before attempting launch.
+        // The shell pipeline "setsid … & echo $!" cannot detect setsid
+        // failure because the shell exit code is from echo $!, not setsid.
+        exec('command -v setsid', $_, $rc);
+        if (0 !== $rc) {
+            throw new \RuntimeException('setsid is required but not found on this platform.');
+        }
+
         // Build a shell wrapper that:
         //  1. Records wrapper PID to pidFile
         //  2. Redirects stdout/stderr to logFile
@@ -112,11 +120,12 @@ final class BackgroundProcessManager
         //     the child inherits default SIGTERM (not ignored)
         //  4. Sets a SIGTERM trap in the wrapper that forwards TERM
         //     to the child, waits for it, writes the status, and exits
-        //  5. Waits for the child on the normal path and writes status
+        //  5. Waits for the child on the normal path, stores child RC
+        //     in a variable before echo so exit reflects child outcome
         //
         // Result is executed via: setsid bash -c '...' & echo $!
         $shellCode = \sprintf(
-            'echo $$ > %s; exec >> %s 2>&1; %s & CHILD_PID=$!; STATUS_FILE=%s; trap \'kill -TERM $CHILD_PID 2>/dev/null; wait $CHILD_PID 2>/dev/null; echo $? > $STATUS_FILE; exit\' TERM; wait $CHILD_PID 2>/dev/null; echo $? > $STATUS_FILE; exit $?',
+            'echo $$ > %s; exec >> %s 2>&1; %s & CHILD_PID=$!; STATUS_FILE=%s; trap \'kill -TERM $CHILD_PID 2>/dev/null; wait $CHILD_PID 2>/dev/null; echo $? > $STATUS_FILE; exit\' TERM; wait $CHILD_PID 2>/dev/null; RC=$?; echo $RC > $STATUS_FILE; exit $RC',
             escapeshellarg($pidFile),
             escapeshellarg($logFile),
             $command,
@@ -130,9 +139,9 @@ final class BackgroundProcessManager
         $exitCode = -1;
         exec($launcher, $output, $exitCode);
 
-        // setsid is required — fail safely rather than fall back
+        // Should not happen after preflight, but guard anyway
         if (0 !== $exitCode || [] === $output) {
-            throw new \RuntimeException('Failed to launch background process: setsid returned exit code '.$exitCode.'. setsid is required on this platform (.pid: '.$pidFile.').');
+            throw new \RuntimeException('Failed to launch background process: setsid returned exit code '.$exitCode.'. (pid: '.$pidFile.')');
         }
 
         $pid = (int) $output[0];
@@ -213,16 +222,18 @@ final class BackgroundProcessManager
      * Uses a shell command (tail -c) to read the last N bytes, avoiding
      * loading large files into PHP memory.
      *
-     * @param int $pid      Process PID (also the DB lookup key)
-     * @param int $maxChars Maximum characters to return
+     * @param int      $pid      Process PID (also the DB lookup key)
+     * @param int|null $maxChars Maximum characters to return (null uses config default)
      *
      * @return array{pid: int, log_path: string, content: string,
      *               truncated: bool, total_bytes: int}
      *
      * @throws \RuntimeException when the process is not found or log is unreadable
      */
-    public function readLogTail(int $pid, int $maxChars = 5000): array
+    public function readLogTail(int $pid, ?int $maxChars = null): array
     {
+        $maxChars ??= $this->config->logTailChars;
+
         $this->ensureTable();
 
         try {
@@ -285,9 +296,11 @@ final class BackgroundProcessManager
     /**
      * Stop a background process: TERM → grace → KILL.
      *
-     * When the process has a known PGID (process group), targets the
-     * entire group via negative PID (kill -TERM -<PGID>). Falls back
-     * to single-PID signaling.
+     * Targets the entire process group via negative PGID
+     * (kill -TERM -<PGID>) when a PGID is available.  Falls back
+     * to single-PID signalling only when resolvePgid() could not
+     * determine the group — a rare race window immediately after
+     * process launch.
      *
      * @param int $pid Process PID to stop. Must be > 0.
      *
@@ -402,9 +415,12 @@ final class BackgroundProcessManager
             throw new \RuntimeException('Failed to update background process stop record.', 0, $e);
         }
 
-        // Also write empty status file so refreshStatus marks finished
+        // Write -1 to the status file only when the wrapper did not
+        // already write a real exit code (KILL path).  When TERM succeeds
+        // the wrapper's trap handler writes the child's real exit code
+        // before exiting; overwriting would corrupt forensic evidence.
         $statusPath = $row['status_path'] ?? null;
-        if (\is_string($statusPath) && '' !== $statusPath) {
+        if (\is_string($statusPath) && '' !== $statusPath && !is_file($statusPath)) {
             @file_put_contents($statusPath, (string) (-1));
         }
 
@@ -540,7 +556,13 @@ final class BackgroundProcessManager
                 [$id],
             );
         } catch (DbalException $e) {
-            return; // best-effort
+            $this->logger?->warning('background_process.refresh_failed', [
+                'component' => 'tool.background_process',
+                'event_type' => 'background_process.refresh_failed',
+                'error' => $e->getMessage(),
+            ]);
+
+            return; // intentional degradation: one record refresh failing should not block others
         }
 
         if (false === $row) {
@@ -562,7 +584,13 @@ final class BackgroundProcessManager
                 \sprintf('SELECT * FROM %s WHERE finished_at IS NULL', self::TABLE_NAME),
             );
         } catch (DbalException $e) {
-            return; // best-effort
+            $this->logger?->warning('background_process.refresh_all_failed', [
+                'component' => 'tool.background_process',
+                'event_type' => 'background_process.refresh_all_failed',
+                'error' => $e->getMessage(),
+            ]);
+
+            return; // intentional degradation: unable to refresh, cleanup will skip
         }
 
         foreach ($rows as $row) {
@@ -674,16 +702,24 @@ final class BackgroundProcessManager
 
     /**
      * Resolve the process group ID for a given PID.
+     *
+     * Retries briefly to close a startup race: after exec() returns
+     * the PID, the process may not yet be visible to ps.
      */
     private function resolvePgid(int $pid): ?int
     {
-        // Try ps -o pgid (POSIX)
-        $pgidStr = @shell_exec(\sprintf('ps -o pgid= -p %d 2>/dev/null', $pid));
-
-        if (\is_string($pgidStr) && '' !== trim($pgidStr)) {
-            $pgid = (int) trim($pgidStr);
-            if ($pgid > 0) {
-                return $pgid;
+        // Retry up to 5 times with 50ms backoff to close the startup
+        // race where the PID exists but ps cannot see it yet.
+        for ($attempt = 0; $attempt < 5; ++$attempt) {
+            $pgidStr = @shell_exec(\sprintf('ps -o pgid= -p %d 2>/dev/null', $pid));
+            if (\is_string($pgidStr) && '' !== trim($pgidStr)) {
+                $pgid = (int) trim($pgidStr);
+                if ($pgid > 0) {
+                    return $pgid;
+                }
+            }
+            if ($attempt < 4) {
+                usleep(50_000);
             }
         }
 
@@ -764,8 +800,14 @@ final class BackgroundProcessManager
             $activePids = $this->connection->fetchFirstColumn(
                 \sprintf('SELECT pid FROM %s WHERE finished_at IS NULL', self::TABLE_NAME),
             );
-        } catch (DbalException) {
-            return; // best-effort
+        } catch (DbalException $e) {
+            $this->logger?->warning('background_process.cleanup_orphaned_failed', [
+                'component' => 'tool.background_process',
+                'event_type' => 'background_process.cleanup_orphaned_failed',
+                'error' => $e->getMessage(),
+            ]);
+
+            return; // intentional degradation: orphaned PID cleanup is best-effort
         }
 
         /** @var array<int|string, true> $activePidSet */
