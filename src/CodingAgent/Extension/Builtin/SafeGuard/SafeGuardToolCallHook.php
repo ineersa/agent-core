@@ -32,9 +32,13 @@ use Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface;
  *   6. LLM retries the tool call (same tool worker process)
  *   7. onToolCall() checks ApprovalSessionTracker for pending → resolves answer
  *      from events.jsonl via SessionEventReader
- *   8. "Allow once" → approve in tracker → Allow (one-time, consumed on this call)
+ *   8. "Allow once" → approve in tracker → Allow (one-time, consumed on retry)
  *      "Always allow" → approve in tracker + persist to policy file → Allow
  *      "Deny" → remove from tracker → Block
+ *
+ * When a stable operation key cannot be derived (no command or path argument)
+ * or the run ID is unknown, the hook falls back to Block instead of
+ * RequireApproval, since approval tracking would be impossible.
  */
 final readonly class SafeGuardToolCallHook implements ToolCallHookInterface
 {
@@ -123,25 +127,34 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface
 
         // 6. Relaxable categories
         if ($this->isRelaxable($decision->kind)) {
-            if ($this->autoDenyInNoninteractive) {
+            // Block when we cannot track approval (no key or no runId)
+            $sessionId = $context->runId ?? '';
+            if ($this->autoDenyInNoninteractive || null === $key || '' === $sessionId) {
+                $details = [
+                    'category' => $decision->kind->value,
+                    'intercepted' => true,
+                    'denied' => true,
+                ];
+                if ($this->autoDenyInNoninteractive) {
+                    $details['auto_denied'] = true;
+                }
+                if (null === $key) {
+                    $details['no_approval_key'] = true;
+                }
+                if ('' === $sessionId) {
+                    $details['no_run_id'] = true;
+                }
+
                 return ToolCallDecisionDTO::block(
                     reason: $decision->reason,
-                    details: [
-                        'category' => $decision->kind->value,
-                        'intercepted' => true,
-                        'denied' => true,
-                        'auto_denied' => true,
-                    ],
+                    details: $details,
                 );
             }
 
             $questionId = $this->generateQuestionId($context, $decision);
-            $sessionId = $context->runId ?? '';
             $command = $this->extractCommand($context);
 
-            if (null !== $key) {
-                $this->tracker->markPending($key, $questionId, $sessionId);
-            }
+            $this->tracker->markPending($key, $questionId, $sessionId);
 
             return ToolCallDecisionDTO::requireApproval(
                 prompt: $this->buildPrompt($decision, $command),
@@ -189,21 +202,25 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface
         }
 
         if ('Always allow' === $answer && null !== $this->policyWriter) {
-            // Re-classify to get the category and command for persistence
+            // Re-classify to get the category and pattern for persistence
             $decision = $this->classifier->classify(
                 toolName: $context->toolName,
                 arguments: $context->arguments,
                 cwd: $this->cwd,
                 policy: $this->policy,
             );
-            $command = $this->extractCommand($context);
-            $this->policyWriter->addAllowPattern($decision->kind->value, $command);
+            $pattern = $this->resolvePatternForCategory($decision->kind, $context);
+            if ('' !== $pattern) {
+                $this->policyWriter->addAllowPattern($decision->kind->value, $pattern);
+            }
+            $this->tracker->approve($key);
 
             return ToolCallDecisionDTO::allow();
         }
 
-        // "Allow once" (default affirmative) — approval was already consumed
-        // by resolveAnswer. This call just advances to Allow.
+        // "Allow once" — approve in tracker so one retry is auto-allowed
+        $this->tracker->approve($key);
+
         return ToolCallDecisionDTO::allow();
     }
 
@@ -241,6 +258,20 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface
         $path = $context->arguments['path'] ?? null;
 
         return \is_string($path) ? $path : '';
+    }
+
+    /**
+     * Resolve the pattern to persist for an "Always allow" answer.
+     *
+     * Uses the path for path-based categories (write_outside_cwd, protected_read)
+     * and the command for command-based categories (destructive, dangerous_git, etc.).
+     */
+    private function resolvePatternForCategory(SafeGuardDecisionKind $kind, ToolCallContextDTO $context): string
+    {
+        return match ($kind) {
+            SafeGuardDecisionKind::WriteOutsideCwd, SafeGuardDecisionKind::ProtectedRead => $this->extractPath($context),
+            default => $this->extractCommand($context),
+        };
     }
 
     private function generateQuestionId(ToolCallContextDTO $context, Policy\SafeGuardDecision $decision): string

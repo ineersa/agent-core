@@ -147,6 +147,10 @@ final readonly class SafeGuardConfig
      */
     private static function parseBool(mixed $value): bool
     {
+        if (null === $value) {
+            return true; // default when config key is explicitly null/missing
+        }
+
         if (\is_bool($value)) {
             return $value;
         }
