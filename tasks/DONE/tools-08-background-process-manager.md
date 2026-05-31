@@ -39,14 +39,14 @@ Out of scope:
 - Focused tests pass with Castor/PHPUnit.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/tools-08-background-process-manager
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-08-background-process-manager
 Fork run: zp5xlq9ydjs4
 PR URL: https://github.com/ineersa/agent-core/pull/73
-PR Status: open
+PR Status: merged
 Started:
-Completed:
+Completed: 2026-05-31T02:40:19.591Z
 
 ## Work log
 - Created: 2026-05-17T04:42:49.755Z
@@ -154,3 +154,53 @@ Completed:
 - Recorded fork run: zp5xlq9ydjs4
 - Validation: `castor test`: ok (1500 tests, 11388 assertions, 0 failures); `castor deptrac`: ok (violations=0); `castor phpstan`: ok (errors=0); `castor cs-check`: clean
 - Summary: Fork zp5xlq9ydjs4 at `70b8032b`. Addressed 4 non-blocking reviewer suggestions: (1) deleteById @return docblock now mentions "no row matched", (2) ensureTable migration log uses structured component/event_type fields, (3) removed unnecessary (string) cast on $activePidSet keys, (4) removed dead deleteOlderThan() method (zero callers, superseded by fetchStale). 2 files changed, 6+/20-. Castor: 1500 tests pass, deptrac 0, phpstan 0, cs clean. Pushed to PR #73.
+
+## Task workflow update - 2026-05-31T02:40:19.591Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/tools-08-background-process-manager into integration checkout.
+- Auto-merging docs/settings.md
+Merge made by the 'ort' strategy.
+ config/hatfield.defaults.yaml                      |  14 +
+ config/services.yaml                               |  34 ++
+ docs/background-processes.md                       | 121 +++++
+ docs/settings.md                                   |  33 ++
+ src/CodingAgent/Config/AppConfig.php               |   2 +-
+ src/CodingAgent/Config/AppConfigLoader.php         |   7 +
+ src/CodingAgent/Config/BackgroundProcessConfig.php |  48 ++
+ src/CodingAgent/Config/ToolsConfig.php             |   3 +
+ .../Runtime/Controller/HeadlessController.php      |   9 +
+ .../BackgroundProcess/BackgroundProcessRecord.php  |  30 ++
+ .../Tool/BackgroundProcess/LogTailResult.php       |  20 +
+ .../Tool/BackgroundProcess/ProcessLifecycle.php    | 363 +++++++++++++
+ .../Tool/BackgroundProcess/ProcessStore.php        | 317 +++++++++++
+ .../Tool/BackgroundProcess/StartResult.php         |  23 +
+ .../Tool/BackgroundProcess/StopResult.php          |  20 +
+ src/CodingAgent/Tool/BackgroundProcessManager.php  | 584 +++++++++++++++++++++
+ src/CodingAgent/Tool/BgStatusTool.php              | 217 ++++++++
+ .../Tool/BackgroundProcessManagerTest.php          | 343 ++++++++++++
+ tests/CodingAgent/Tool/BgStatusToolTest.php        | 258 +++++++++
+ .../Tool/CodingAgentToolSetResolverTest.php        |  40 +-
+ tests/CodingAgent/Tool/EditFileToolTest.php        |   2 +-
+ .../ImageAttachmentProcessorTest.php               | 120 ++---
+ tests/CodingAgent/Tool/ReadFileToolTest.php        | 114 ++--
+ .../CodingAgent/Tool/RegistryBackedToolboxTest.php |  72 ++-
+ .../Tool/Store/DbalToolBatchStoreTest.php          |  23 +-
+ tests/CodingAgent/Tool/ToolRuntimeTest.php         |  96 ++--
+ tests/CodingAgent/Tool/ViewImageToolTest.php       | 449 ++++++++--------
+ tests/CodingAgent/Tool/WriteFileToolTest.php       |  87 ++-
+ 28 files changed, 2942 insertions(+), 507 deletions(-)
+ create mode 100644 docs/background-processes.md
+ create mode 100644 src/CodingAgent/Config/BackgroundProcessConfig.php
+ create mode 100644 src/CodingAgent/Tool/BackgroundProcess/BackgroundProcessRecord.php
+ create mode 100644 src/CodingAgent/Tool/BackgroundProcess/LogTailResult.php
+ create mode 100644 src/CodingAgent/Tool/BackgroundProcess/ProcessLifecycle.php
+ create mode 100644 src/CodingAgent/Tool/BackgroundProcess/ProcessStore.php
+ create mode 100644 src/CodingAgent/Tool/BackgroundProcess/StartResult.php
+ create mode 100644 src/CodingAgent/Tool/BackgroundProcess/StopResult.php
+ create mode 100644 src/CodingAgent/Tool/BackgroundProcessManager.php
+ create mode 100644 src/CodingAgent/Tool/BgStatusTool.php
+ create mode 100644 tests/CodingAgent/Tool/BackgroundProcessManagerTest.php
+ create mode 100644 tests/CodingAgent/Tool/BgStatusToolTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/tools-08-background-process-manager.
+- Deleted branch task/tools-08-background-process-manager.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
