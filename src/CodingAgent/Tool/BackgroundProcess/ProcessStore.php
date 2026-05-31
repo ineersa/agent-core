@@ -70,8 +70,10 @@ final class ProcessStore
                     'ALTER TABLE '.self::TABLE.' ADD COLUMN session_id TEXT NOT NULL DEFAULT \'\'',
                 );
             } catch (DbalException $e) {
-                $this->logger->debug('background_process migration: column likely already exists', [
-                    'exception' => $e->getMessage(),
+                $this->logger->debug('background_process.schema_migration', [
+                    'component' => 'tool.background_process',
+                    'event_type' => 'background_process.schema_migration',
+                    'error' => $e->getMessage(),
                 ]);
             }
 
@@ -275,25 +277,9 @@ final class ProcessStore
     }
 
     /**
-     * Delete rows where finished_at is before the given cutoff.
-     *
-     * @return int Number of deleted rows
-     */
-    public function deleteOlderThan(string $cutoff): int
-    {
-        try {
-            return $this->connection->delete(self::TABLE, [
-                'finished_at<=' => $cutoff,
-            ]);
-        } catch (DbalException $e) {
-            throw new \RuntimeException('Failed to delete stale background process records.', 0, $e);
-        }
-    }
-
-    /**
      * Delete a single row by ID.
      *
-     * @return bool True if the row was deleted, false on DB error (already logged)
+     * @return bool True if the row was deleted, false if no row matched or on DB error (already logged)
      */
     public function deleteById(int $id): bool
     {

@@ -429,7 +429,7 @@ final class BackgroundProcessManager
         $activePidSet = [];
         foreach ($activePids as $activePid) {
             if (\is_int($activePid) || \is_string($activePid)) {
-                $activePidSet[(string) $activePid] = true;
+                $activePidSet[$activePid] = true;
             }
         }
         $this->lifecycle->cleanupOrphanedPidFiles($activePidSet);
