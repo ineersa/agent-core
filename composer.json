@@ -30,7 +30,8 @@
         "league/mime-type-detection": "^1.15",
         "symfony/expression-language": "^8.1",
         "doctrine/orm": "^3.6",
-        "symfony/var-exporter": "^8.1"
+        "symfony/var-exporter": "^8.1",
+        "doctrine/doctrine-migrations-bundle": "^3.0"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.94",

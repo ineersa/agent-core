@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\CLI;
 
-use Ineersa\CodingAgent\Migrations\MigrationRunner;
+use Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
@@ -48,7 +48,7 @@ final class AgentCommand
         private HatfieldSessionStore $sessionStore,
         private SkillsConfig $skillsConfig,
         private LoggerInterface $logger,
-        private readonly ?MigrationRunner $migrationRunner = null,
+        private readonly ?StartupDatabaseMigrator $startupDatabaseMigrator = null,
         private ?HeadlessController $controller = null,
     ) {
     }
@@ -111,12 +111,13 @@ final class AgentCommand
             $this->skillsConfig->preloadSkills = $skills;
 
             // Run pending database migrations once on agent startup.
-            // MigrationRunner is idempotent per process lifetime and
+            // StartupDatabaseMigrator is idempotent per process lifetime and
             // safe for concurrent controller+consumer processes.
+            // Runs built-in doctrine:migrations:migrate via Symfony Console Application.
             // Running here ensures migrations complete before any
             // controller/TUI/headless path accesses the DB.
-            if (null !== $this->migrationRunner) {
-                ($this->migrationRunner)();
+            if (null !== $this->startupDatabaseMigrator) {
+                ($this->startupDatabaseMigrator)();
             }
 
             // Extension loading is handled by ExtensionLoaderSubscriber

@@ -9,9 +9,10 @@ use Doctrine\ORM\EntityManagerInterface;
 /**
  * Repository for BackgroundProcess entity queries.
  *
- * Dedicated query layer that keeps DQL and finder logic outside stores.
- * Stores coordinate persist/flush via EntityManager directly; queries
- * live here.
+ * Only meaningful domain query methods are defined here.
+ * Trivial find/findBy/findOneBy wrappers are omitted — callers use
+ * EntityManager::find() or the built-in getRepository()->findBy() directly
+ * when the criteria are simple.
  *
  * @see BackgroundProcess
  */
@@ -20,45 +21,6 @@ final class BackgroundProcessRepository
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
     ) {
-    }
-
-    /**
-     * Find a process record by PID.
-     */
-    public function findByPid(int $pid): ?BackgroundProcess
-    {
-        /** @var ?BackgroundProcess $entity */
-        $entity = $this->entityManager->getRepository(BackgroundProcess::class)
-            ->findOneBy(['pid' => $pid]);
-
-        return $entity;
-    }
-
-    /**
-     * Find a process record by auto-incremented ID.
-     */
-    public function findById(int $id): ?BackgroundProcess
-    {
-        return $this->entityManager->find(BackgroundProcess::class, $id);
-    }
-
-    /**
-     * Find all processes, optionally filtered by session.
-     *
-     * @return BackgroundProcess[]
-     */
-    public function findAll(?string $sessionId = null): array
-    {
-        $criteria = [];
-        if (null !== $sessionId) {
-            $criteria['sessionId'] = $sessionId;
-        }
-
-        /** @var BackgroundProcess[] $result */
-        $result = $this->entityManager->getRepository(BackgroundProcess::class)
-            ->findBy($criteria, ['id' => 'DESC']);
-
-        return $result;
     }
 
     /**
@@ -86,7 +48,7 @@ final class BackgroundProcessRepository
     }
 
     /**
-     * Find unfinished PIDs only.
+     * Find unfinished PIDs only (no entity hydration).
      *
      * @return int[]
      */

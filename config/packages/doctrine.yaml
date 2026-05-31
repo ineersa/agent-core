@@ -18,8 +18,11 @@ doctrine:
                 path: '%app.cwd%/.hatfield/messenger.sqlite'
 
     orm:
-        auto_generate_proxy_classes: true
-        enable_lazy_ghost_objects: true
+        # Native lazy objects are the default in DoctrineBundle 3.x
+        # (replaces proxy generation from earlier versions).
+        # enable_lazy_ghost_objects and auto_generate_proxy_classes
+        # are removed/no-op in DoctrineBundle 3.x.
+        enable_native_lazy_objects: true
         default_entity_manager: default
         entity_managers:
             default:

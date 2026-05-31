@@ -7,9 +7,9 @@ namespace Ineersa\CodingAgent\Tool\BackgroundProcess;
 /**
  * Read-only DTO representing a single background-process DB record.
  *
- * Hydrated by Symfony's built-in ObjectNormalizer via DenormalizerInterface.
- * DB snake_case columns are mapped to camelCase properties via a
- * CamelCaseToSnakeCaseNameConverter on the ObjectNormalizer.
+ * Created by BackgroundProcess::toRecord() from the Doctrine ORM entity.
+ * No custom serializer/normalizer is used for DB row hydration —
+ * schema is managed by Doctrine migrations.
  */
 final readonly class BackgroundProcessRecord
 {

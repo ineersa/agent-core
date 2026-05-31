@@ -12,7 +12,8 @@ use Psr\Log\LoggerInterface;
 /**
  * Doctrine ORM-backed durable store for background process records.
  *
- * Query operations delegate to BackgroundProcessRepository.
+ * Query operations delegate to BackgroundProcessRepository for domain queries
+ * and use the built-in EntityManager::getRepository() for simple lookups.
  * Write operations (persist, flush, remove) use EntityManager directly.
  *
  * Schema is managed by Doctrine migrations — no runtime CREATE TABLE/ALTER TABLE.
@@ -29,13 +30,13 @@ final class ProcessStore
     /**
      * Insert a new process record and return its auto-incremented ID.
      *
-     * @param array<string, mixed> $fields Fields matching BackgroundProcess constructor
+     * @param array<string, mixed> $fields Fields matching BackgroundProcess::create() parameters
      *
      * @return int Auto-generated entity ID
      */
     public function insertRecord(array $fields): int
     {
-        $entity = new BackgroundProcess(
+        $entity = BackgroundProcess::create(
             pid: (int) ($fields['pid'] ?? 0),
             pgid: isset($fields['pgid']) ? (int) $fields['pgid'] : null,
             sessionId: (string) ($fields['session_id'] ?? ''),
@@ -49,7 +50,7 @@ final class ProcessStore
         $this->entityManager->persist($entity);
         $this->entityManager->flush();
 
-        return $entity->getId();
+        return $entity->id;
     }
 
     /**
@@ -57,15 +58,13 @@ final class ProcessStore
      */
     public function markFinished(int $id, ?int $exitCode, string $finishedAt): void
     {
-        $entity = $this->repository->findById($id);
+        $entity = $this->fetchById($id);
 
         if (null === $entity) {
             throw new \RuntimeException(\sprintf('Background process record with ID %d not found.', $id));
         }
 
-        $entity->setFinishedAt($finishedAt);
-        $entity->setExitCode($exitCode);
-        $entity->setUpdatedAt($finishedAt);
+        $entity->finish($exitCode, $finishedAt);
 
         $this->entityManager->flush();
     }
@@ -75,15 +74,14 @@ final class ProcessStore
      */
     public function markStoppedByUser(int $pid, string $finishedAt): void
     {
-        $entity = $this->repository->findByPid($pid);
+        $entity = $this->entityManager->getRepository(BackgroundProcess::class)
+            ->findOneBy(['pid' => $pid]);
 
         if (null === $entity) {
             throw new \RuntimeException(\sprintf('Background process with PID %d not found.', $pid));
         }
 
-        $entity->setStoppedByUser(true);
-        $entity->setFinishedAt($finishedAt);
-        $entity->setUpdatedAt($finishedAt);
+        $entity->markStoppedByUser($finishedAt);
 
         $this->entityManager->flush();
     }
@@ -93,15 +91,18 @@ final class ProcessStore
      */
     public function fetchByPid(int $pid): ?BackgroundProcess
     {
-        return $this->repository->findByPid($pid);
+        /* @var ?BackgroundProcess */
+        return $this->entityManager->getRepository(BackgroundProcess::class)
+            ->findOneBy(['pid' => $pid]);
     }
 
     /**
-     * Fetch a single entity by ID.
+     * Fetch a single entity by auto-increment ID.
      */
     public function fetchById(int $id): ?BackgroundProcess
     {
-        return $this->repository->findById($id);
+        /* @var ?BackgroundProcess */
+        return $this->entityManager->find(BackgroundProcess::class, $id);
     }
 
     /**
@@ -111,7 +112,14 @@ final class ProcessStore
      */
     public function fetchAll(?string $sessionId = null): array
     {
-        return $this->repository->findAll($sessionId);
+        $criteria = [];
+        if (null !== $sessionId) {
+            $criteria['sessionId'] = $sessionId;
+        }
+
+        /* @var BackgroundProcess[] */
+        return $this->entityManager->getRepository(BackgroundProcess::class)
+            ->findBy($criteria, ['id' => 'DESC']);
     }
 
     /**
@@ -151,7 +159,7 @@ final class ProcessStore
      */
     public function deleteById(int $id): bool
     {
-        $entity = $this->repository->findById($id);
+        $entity = $this->fetchById($id);
 
         if (null === $entity) {
             $this->logger->warning('background_process.delete_not_found', [

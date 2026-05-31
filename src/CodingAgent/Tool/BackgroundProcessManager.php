@@ -6,7 +6,7 @@ namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
-use Ineersa\CodingAgent\Migrations\MigrationRunner;
+use Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\BackgroundProcessRecord;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\LogTailResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
@@ -77,7 +77,7 @@ final class BackgroundProcessManager
         private readonly ProcessLifecycle $lifecycle,
         private readonly BackgroundProcessConfig $config,
         private readonly LoggerInterface $logger,
-        private readonly ?MigrationRunner $migrationRunner = null,
+        private readonly ?StartupDatabaseMigrator $startupDatabaseMigrator = null,
     ) {
         // Shutdown handler is NOT registered here. Call
         // registerShutdownHandler() from production wiring
@@ -267,11 +267,11 @@ final class BackgroundProcessManager
         }
 
         // Session ownership check
-        if (null !== $sessionId && $entity->getSessionId() !== $sessionId) {
+        if (null !== $sessionId && $entity->sessionId !== $sessionId) {
             throw new \RuntimeException(\sprintf('No background process found with PID %d for this session.', $pid));
         }
 
-        return $this->lifecycle->readLogTail($entity->getLogPath(), $pid, $maxChars);
+        return $this->lifecycle->readLogTail($entity->logPath, $pid, $maxChars);
     }
 
     /**
@@ -308,7 +308,7 @@ final class BackgroundProcessManager
         }
 
         // Session ownership check
-        if (null !== $sessionId && $entity->getSessionId() !== $sessionId) {
+        if (null !== $sessionId && $entity->sessionId !== $sessionId) {
             throw new \RuntimeException(\sprintf('No background process found with PID %d for this session.', $pid));
         }
 
@@ -323,17 +323,17 @@ final class BackgroundProcessManager
         }
 
         // Check if already finished (now correctly reflecting refreshed state)
-        if (null !== $entity->getFinishedAt()) {
+        if (null !== $entity->finishedAt) {
             return new StopResult(
                 pid: $pid,
-                pgid: $entity->getPgid(),
+                pgid: $entity->pgid,
                 stoppedByUser: false,
                 alreadyFinished: true,
                 signalSent: 'none',
             );
         }
 
-        $pgid = $entity->getPgid();
+        $pgid = $entity->pgid;
         $graceSeconds = $this->config->stopGraceSeconds;
 
         // TERM signal — target process group (negative PGID)
@@ -362,15 +362,13 @@ final class BackgroundProcessManager
 
         // Mark as stopped by user
         $now = Clock::get()->now()->format('c');
-        $entity->setStoppedByUser(true);
-        $entity->setFinishedAt($now);
-        $entity->setUpdatedAt($now);
+        $entity->markStoppedByUser($now);
 
         // Write -1 to the status file only when the wrapper did not
         // already write a real exit code (KILL path). When TERM succeeds
         // the wrapper's trap handler writes the child's real exit code
         // before exiting; overwriting would corrupt forensic evidence.
-        $statusPath = $entity->getStatusPath();
+        $statusPath = $entity->statusPath;
         if ('' !== $statusPath) {
             $this->lifecycle->writeStopMarker($statusPath);
         }
@@ -409,14 +407,14 @@ final class BackgroundProcessManager
 
         $count = 0;
         foreach ($staleEntities as $entity) {
-            $logPath = $entity->getLogPath();
-            $statusPath = $entity->getStatusPath();
+            $logPath = $entity->logPath;
+            $statusPath = $entity->statusPath;
 
             // Delete log and status files
             $this->lifecycle->deleteRecordFiles($logPath, $statusPath);
 
             // Delete DB record
-            if ($this->store->deleteById($entity->getId())) {
+            if ($this->store->deleteById($entity->id)) {
                 ++$count;
             }
         }
@@ -455,7 +453,7 @@ final class BackgroundProcessManager
 
         $count = 0;
         foreach ($entities as $entity) {
-            $pid = $entity->getPid();
+            $pid = $entity->pid;
             try {
                 $this->stop($pid);
                 ++$count;
@@ -476,13 +474,13 @@ final class BackgroundProcessManager
     /**
      * Ensure migrations have been run before any DB operation.
      *
-     * Called lazily from each public method. Uses MigrationRunner
+     * Called lazily from each public method. Uses StartupDatabaseMigrator
      * which tracks whether it already ran this process lifetime.
      */
     private function ensureMigrations(): void
     {
-        if (null !== $this->migrationRunner) {
-            ($this->migrationRunner)();
+        if (null !== $this->startupDatabaseMigrator) {
+            ($this->startupDatabaseMigrator)();
         }
     }
 
@@ -498,19 +496,17 @@ final class BackgroundProcessManager
     private function resolveEntityStatus(BackgroundProcess $entity): string
     {
         // Already finished in DB
-        if (null !== $entity->getFinishedAt()) {
-            return $entity->isStoppedByUser() ? 'stopped' : 'finished';
+        if (null !== $entity->finishedAt) {
+            return $entity->stoppedByUser ? 'stopped' : 'finished';
         }
 
-        $pid = $entity->getPid();
+        $pid = $entity->pid;
 
         // Check status file first (process might have finished normally)
-        $exitCode = $this->lifecycle->readStatusFile($entity->getStatusPath());
+        $exitCode = $this->lifecycle->readStatusFile($entity->statusPath);
         if (null !== $exitCode) {
             $now = Clock::get()->now()->format('c');
-            $entity->setFinishedAt($now);
-            $entity->setExitCode($exitCode);
-            $entity->setUpdatedAt($now);
+            $entity->finish($exitCode, $now);
 
             return 0 === $exitCode ? 'finished' : 'finished (exit code '.$exitCode.')';
         }
@@ -522,9 +518,7 @@ final class BackgroundProcessManager
 
         // Process is gone but no status file written (crash / SIGKILL / unclean exit)
         $now = Clock::get()->now()->format('c');
-        $entity->setFinishedAt($now);
-        $entity->setExitCode(null);
-        $entity->setUpdatedAt($now);
+        $entity->finish(null, $now);
 
         $this->logger->info('background_process.finished_unclean', [
             'component' => 'tool.background_process',

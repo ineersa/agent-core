@@ -58,7 +58,7 @@ final class DbalToolBatchStore implements ToolBatchStoreInterface
             $entity->setUpdatedAt($now);
         } else {
             // Create new
-            $entity = new ToolBatchState(
+            $entity = ToolBatchState::create(
                 runId: $runId,
                 turnNo: $turnNo,
                 stepId: $stepId,

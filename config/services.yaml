@@ -10,8 +10,7 @@ parameters:
     # Services read this parameter — not the raw env directly.
     app.capture_errors: '%env(bool:HATFIELD_CAPTURE_ERRORS)%'
 
-    # Doctrine migration classes directory.
-    app.migration_dir: '%kernel.project_dir%/src/CodingAgent/Migrations'
+
 
 
 services:
@@ -172,11 +171,12 @@ services:
     arguments:
       $entityManager: '@doctrine.orm.default_entity_manager'
 
-  # Migration runner — runs pending migrations once on agent startup.
-  Ineersa\CodingAgent\Migrations\MigrationRunner:
+  # Startup database migrator — runs built-in doctrine:migrations:migrate once on startup.
+  # Uses console.messenger.application (Symfony Console Application service) to invoke
+  # the built-in Doctrine Migrations command programmatically.
+  Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator:
     arguments:
-      $entityManager: '@doctrine.orm.default_entity_manager'
-      $migrationDir: '%app.migration_dir%'
+      $consoleApplication: '@console.messenger.application'
 
   # CodingAgentImageCapabilityChecker — wraps HatfieldModelCatalog from AppConfig.
   Ineersa\CodingAgent\Tool\ImageProcessing\CodingAgentImageCapabilityChecker:
