@@ -25,6 +25,9 @@ final readonly class ToolsConfig
 
         #[SerializedName('image')]
         public ImageToolConfig $image = new ImageToolConfig(),
+
+        #[SerializedName('bash')]
+        public BashToolConfig $bash = new BashToolConfig(),
     ) {
     }
 }

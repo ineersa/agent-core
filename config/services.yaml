@@ -145,6 +145,12 @@ services:
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 
+  # BashToolConfig is derived from AppConfig and autowireable.
+  Ineersa\CodingAgent\Config\BashToolConfig:
+    factory: ['Ineersa\CodingAgent\Config\BashToolConfig', 'fromAppConfig']
+    arguments:
+      - '@Ineersa\CodingAgent\Config\AppConfig'
+
   # BackgroundProcessManager — register shutdown handler in production so
   # tests (which construct the manager directly) don't accumulate callbacks.
   Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore:

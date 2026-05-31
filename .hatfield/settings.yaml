@@ -93,6 +93,12 @@ tui:
 #         default_mode: sequential
 #         timeout_seconds: 300
 #         max_parallelism: 4
+#
+#     bash:
+#         default_timeout_seconds: 300
+#         background_prompt_threshold_seconds: 30
+#         poll_interval_micros: 100000
+#         log_tail_chars: 20000
 
 # ---------------------------------------------------------------------------
 # Logging configuration
