@@ -30,6 +30,9 @@ final class ProcessStore
     /**
      * Insert a new process record and return its auto-incremented ID.
      *
+     * Timestamps (created_at, updated_at) are maintained by
+     * TimestampableLifecycleTrait via lifecycle callbacks.
+     *
      * @param array<string, mixed> $fields
      */
     public function insertRecord(array $fields): int
@@ -42,7 +45,6 @@ final class ProcessStore
         $entity->logPath = (string) ($fields['log_path'] ?? '');
         $entity->statusPath = (string) ($fields['status_path'] ?? '');
         $entity->startedAt = (string) ($fields['started_at'] ?? '');
-        $entity->updatedAt = (string) ($fields['updated_at'] ?? '');
 
         $this->entityManager->persist($entity);
         $this->entityManager->flush();
@@ -78,7 +80,7 @@ final class ProcessStore
             throw new \RuntimeException(\sprintf('Background process with PID %d not found.', $pid));
         }
 
-        $entity->markStoppedByUser($finishedAt);
+        $entity->markStopped($finishedAt);
 
         $this->entityManager->flush();
     }

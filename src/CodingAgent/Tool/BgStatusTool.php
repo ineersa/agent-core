@@ -110,30 +110,38 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
     private function handleList(): string
     {
         $sessionId = $this->contextAccessor->current()?->runId();
-        $processes = $this->manager->list($sessionId);
+        $entities = $this->manager->list($sessionId);
 
-        if ([] === $processes) {
+        if ([] === $entities) {
             return 'No background processes tracked.';
         }
 
         $lines = [];
-        $lines[] = \sprintf('%-6s %-8s %-6s %-10s %-12s %s', 'ID', 'PID', 'PGID', 'Status', 'Started', 'Command');
+        $lines[] = \sprintf('%-6s %-8s %-6s %-22s %-12s %s', 'ID', 'PID', 'PGID', 'Status', 'Started', 'Command');
         $lines[] = str_repeat('-', 80);
 
-        foreach ($processes as $proc) {
+        foreach ($entities as $entity) {
+            $status = $entity->status->value;
+            if (\Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum::Finished === $entity->status
+                && null !== $entity->exitCode
+                && 0 !== $entity->exitCode
+            ) {
+                $status = \sprintf('finished (exit code %d)', $entity->exitCode);
+            }
+
             $lines[] = \sprintf(
-                '%-6d %-8d %-6s %-10s %-12s %s',
-                $proc->id,
-                $proc->pid,
-                $proc->pgid ?? '-',
-                $proc->status,
-                substr($proc->startedAt, 11, 8), // HH:MM:SS from ISO
-                mb_substr($proc->command, 0, 80),
+                '%-6d %-8d %-6s %-22s %-12s %s',
+                $entity->id,
+                $entity->pid,
+                $entity->pgid ?? '-',
+                $status,
+                substr($entity->startedAt, 11, 8),
+                mb_substr($entity->command, 0, 80),
             );
         }
 
         $lines[] = '';
-        $lines[] = \sprintf('Total: %d process(es)', \count($processes));
+        $lines[] = \sprintf('Total: %d process(es)', \count($entities));
 
         return implode("\n", $lines);
     }

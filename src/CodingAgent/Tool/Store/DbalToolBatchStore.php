@@ -48,20 +48,17 @@ final class DbalToolBatchStore implements ToolBatchStoreInterface
     {
         $json = json_encode($batchState, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
 
-        $now = date('c');
-
         $entity = $this->repository->findByCompositeKey($runId, $turnNo, $stepId);
 
         if (null !== $entity) {
-            $entity->updateBatchData($json, $now);
+            $entity->updateBatchData($json);
         } else {
             $entity = new ToolBatchState();
             $entity->runId = $runId;
             $entity->turnNo = $turnNo;
             $entity->stepId = $stepId;
             $entity->batchData = $json;
-            $entity->createdAt = $now;
-            $entity->updatedAt = $now;
+            // created_at/updated_at set by TimestampableLifecycleTrait lifecycle callbacks
             $this->entityManager->persist($entity);
         }
 

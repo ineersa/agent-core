@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
-use Doctrine\DBAL\DriverManager;
 use Doctrine\ORM\EntityManager;
-use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
@@ -27,8 +25,7 @@ use Psr\Log\NullLogger;
  * @requires extension pdo_sqlite
  * @requires OS Linux
  *
- * Sleep budget: no tests use grace-blocking stop().
- * Teardown uses direct SIGKILL via .pid files.
+ * ORM setup is centralized through OrmTestHelper.
  */
 final class BgStatusToolTest extends TestCase
 {
@@ -43,23 +40,8 @@ final class BgStatusToolTest extends TestCase
 
     protected function setUp(): void
     {
-        $connection = DriverManager::getConnection([
-            'driver' => 'pdo_sqlite',
-            'memory' => true,
-        ]);
+        $this->entityManager = OrmTestHelper::createEntityManager();
 
-        $ormConfig = ORMSetup::createAttributeMetadataConfiguration(
-            paths: [__DIR__.'/../../../src/CodingAgent/Entity'],
-            isDevMode: true,
-            proxyDir: sys_get_temp_dir(),
-        );
-
-        // Enable PHP 8.4+ native lazy objects to avoid symfony/var-exporter dependency
-        $ormConfig->enableNativeLazyObjects(true);
-
-        $this->entityManager = new EntityManager($connection, $ormConfig);
-
-        // Create schema from entity metadata
         $schemaTool = new SchemaTool($this->entityManager);
         $schemaTool->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
 

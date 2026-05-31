@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool\Store;
 
-use Doctrine\DBAL\DriverManager;
-use Doctrine\ORM\EntityManager;
-use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
+use Ineersa\CodingAgent\Entity\ToolBatchStateRepository;
+use Ineersa\CodingAgent\Tests\Tool\OrmTestHelper;
 use Ineersa\CodingAgent\Tool\Store\DbalToolBatchStore;
 use PHPUnit\Framework\TestCase;
 
@@ -20,27 +19,12 @@ final class DbalToolBatchStoreTest extends TestCase
 
     protected function setUp(): void
     {
-        $connection = DriverManager::getConnection([
-            'driver' => 'pdo_sqlite',
-            'memory' => true,
-        ]);
+        $entityManager = OrmTestHelper::createEntityManager();
 
-        $config = ORMSetup::createAttributeMetadataConfiguration(
-            paths: [__DIR__.'/../../../../src/CodingAgent/Entity'],
-            isDevMode: true,
-            proxyDir: sys_get_temp_dir(),
-        );
-
-        // Enable PHP 8.4+ native lazy objects to avoid symfony/var-exporter dependency
-        $config->enableNativeLazyObjects(true);
-
-        $entityManager = new EntityManager($connection, $config);
-
-        // Create schema from entity metadata
         $schemaTool = new SchemaTool($entityManager);
         $schemaTool->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
 
-        $repository = new \Ineersa\CodingAgent\Entity\ToolBatchStateRepository($entityManager);
+        $repository = new ToolBatchStateRepository($entityManager);
         $this->store = new DbalToolBatchStore($entityManager, $repository);
     }
 
@@ -102,7 +86,6 @@ final class DbalToolBatchStoreTest extends TestCase
 
     public function testTableIsCreatedLazily(): void
     {
-        // Should not throw despite no table pre-creation
         $state = ['expected_order' => ['call-1' => 0], 'call_data' => [], 'pending_queue' => [], 'in_flight' => [], 'result_data' => [], 'finalized' => false, 'max_parallelism' => 1];
         $this->store->save('run-1', 1, 'step-1', $state);
         $loaded = $this->store->load('run-1', 1, 'step-1');

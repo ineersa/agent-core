@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Tool;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
-use Ineersa\CodingAgent\Tool\BackgroundProcess\BackgroundProcessRecord;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\LogTailResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
@@ -26,9 +25,6 @@ use Symfony\Component\Clock\Clock;
  *
  * Schema is managed by Doctrine migrations — no runtime DDL.
  * Migrations run once at AgentCommand startup before any manager call.
- *
- * setsid is required. If unavailable, start() fails rather than
- * falling back to unsafe single-PID mode.
  */
 final class BackgroundProcessManager
 {
@@ -45,11 +41,6 @@ final class BackgroundProcessManager
     /**
      * Register a PHP shutdown function that terminates all running
      * background processes when this PHP process exits.
-     *
-     * On hard crash (SIGKILL, OOM, segfault), the shutdown function
-     * does not fire — BG processes survive for inspection or resume.
-     *
-     * Safe to call multiple times — idempotent.
      */
     public function registerShutdownHandler(): void
     {
@@ -69,15 +60,8 @@ final class BackgroundProcessManager
     /**
      * Start a background process and register it in the durable store.
      *
-     * The command is launched in a new session/process group via setsid
-     * and wrapped in a shell harness with log/pid/status sidecars.
-     * SIGTERM is forwarded to the child process via trap.
-     *
-     * @param string      $command   Shell command to run in background.
-     *                               Must be shell-escaped if it contains
-     *                               user-controlled tokens.
-     * @param string|null $sessionId optional session/run identifier for
-     *                               ownership scoping
+     * @param string      $command   shell command to run in background
+     * @param string|null $sessionId optional session/run identifier
      *
      * @throws \RuntimeException on storage/launch failure
      */
@@ -104,7 +88,6 @@ final class BackgroundProcessManager
             'log_path' => $logFile,
             'status_path' => $statusFile,
             'started_at' => $now,
-            'updated_at' => $now,
         ]);
 
         $resolvedSessionId = $sessionId ?? '';
@@ -134,31 +117,27 @@ final class BackgroundProcessManager
     /**
      * List all tracked background processes with refreshed status.
      *
+     * Status is resolved from filesystem state and persisted on the entity.
+     *
      * @param string|null $sessionId optional session filter
      *
-     * @return list<BackgroundProcessRecord>
+     * @return list<BackgroundProcess>
      */
     public function list(?string $sessionId = null): array
     {
         $entities = $this->store->fetchAll($sessionId);
 
-        $results = [];
         foreach ($entities as $entity) {
-            $status = $this->resolveEntityStatus($entity);
-            $results[] = $entity->toRecord($status);
+            $this->resolveEntityStatus($entity);
         }
 
         $this->store->flush();
 
-        return $results;
+        return $entities;
     }
 
     /**
      * Return the tail of a background process log file.
-     *
-     * @param int         $pid       Process PID
-     * @param int|null    $maxChars  Maximum characters to return (null uses config default)
-     * @param string|null $sessionId Optional session ownership check
      *
      * @throws \RuntimeException when process not found, session mismatch, or log unreadable
      */
@@ -181,11 +160,6 @@ final class BackgroundProcessManager
 
     /**
      * Stop a background process: TERM → grace → KILL.
-     *
-     * Targets the entire process group via negative PGID when available.
-     *
-     * @param int         $pid       Process PID to stop. Must be > 0.
-     * @param string|null $sessionId optional session ownership check
      *
      * @throws \RuntimeException when process not found, session mismatch, or PID invalid
      */
@@ -247,7 +221,7 @@ final class BackgroundProcessManager
         ]);
 
         $now = Clock::get()->now()->format('c');
-        $entity->markStoppedByUser($now);
+        $entity->markStopped($now);
 
         $statusPath = $entity->statusPath;
         if ('' !== $statusPath) {
@@ -303,9 +277,6 @@ final class BackgroundProcessManager
     /**
      * Terminate all currently tracked running processes.
      *
-     * Called automatically via register_shutdown_function().
-     * Safe to call multiple times.
-     *
      * @return int Number of processes terminated
      */
     public function shutdownCleanup(?string $sessionId = null): int
@@ -333,35 +304,34 @@ final class BackgroundProcessManager
 
     // ─── Private helpers ─────────────────────────────────────────────
 
-    /**
-     * Resolve status for an entity by checking filesystem state.
-     */
     private function resolveEntityStatus(BackgroundProcess $entity): BackgroundProcessStatusEnum
     {
+        // Already resolved in DB
         if (null !== $entity->finishedAt) {
-            return $entity->stoppedByUser
-                ? BackgroundProcessStatusEnum::Stopped
-                : BackgroundProcessStatusEnum::Finished;
+            return $entity->status;
         }
 
         $pid = $entity->pid;
 
+        // Check status file first (process may have finished normally)
         $exitCode = $this->lifecycle->readStatusFile($entity->statusPath);
         if (null !== $exitCode) {
             $now = Clock::get()->now()->format('c');
             $entity->finish($exitCode, $now);
 
-            // Return a plain "finished" classification; the caller decides
-            // whether to attach a non-zero exit code annotation.
             return BackgroundProcessStatusEnum::Finished;
         }
 
+        // Check /proc/<pid> for liveness
         if ($this->lifecycle->isAlive($pid)) {
+            $entity->status = BackgroundProcessStatusEnum::Running;
+
             return BackgroundProcessStatusEnum::Running;
         }
 
+        // Process is gone but no status file written (crash / SIGKILL / unclean exit)
         $now = Clock::get()->now()->format('c');
-        $entity->finish(null, $now);
+        $entity->markFinishedUnclean($now);
 
         $this->logger->info('background_process.finished_unclean', [
             'component' => 'tool.background_process',

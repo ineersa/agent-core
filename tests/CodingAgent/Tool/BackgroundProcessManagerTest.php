@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
-use Doctrine\DBAL\DriverManager;
 use Doctrine\ORM\EntityManager;
-use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
-use Ineersa\CodingAgent\Tool\BackgroundProcess\BackgroundProcessRecord;
+use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\LogTailResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
@@ -28,9 +26,8 @@ use Psr\Log\NullLogger;
  * @requires extension pdo_sqlite
  * @requires OS Linux
  *
- * Sleep budget: bg subprocesses use sleep 3 max, usleep 100-200ms.
- * Only 1 test blocks on the 1s grace window (testStopTerminatesWithTerm).
- * Teardown uses direct SIGKILL (.pid files) to avoid manager grace sleeps.
+ * ORM setup is centralized through OrmTestHelper — never repeat
+ * hardcoded entity metadata paths across tests.
  */
 final class BackgroundProcessManagerTest extends TestCase
 {
@@ -42,23 +39,8 @@ final class BackgroundProcessManagerTest extends TestCase
 
     protected function setUp(): void
     {
-        $connection = DriverManager::getConnection([
-            'driver' => 'pdo_sqlite',
-            'memory' => true,
-        ]);
+        $this->entityManager = OrmTestHelper::createEntityManager();
 
-        $config = ORMSetup::createAttributeMetadataConfiguration(
-            paths: [__DIR__.'/../../../src/CodingAgent/Entity'],
-            isDevMode: true,
-            proxyDir: sys_get_temp_dir(),
-        );
-
-        // Enable PHP 8.4+ native lazy objects to avoid symfony/var-exporter dependency
-        $config->enableNativeLazyObjects(true);
-
-        $this->entityManager = new EntityManager($connection, $config);
-
-        // Create schema from entity metadata
         $schemaTool = new SchemaTool($this->entityManager);
         $schemaTool->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
 
@@ -82,7 +64,6 @@ final class BackgroundProcessManagerTest extends TestCase
         $this->assertInstanceOf(StartResult::class, $result);
         $this->assertGreaterThan(0, $result->id);
         $this->assertGreaterThan(0, $result->pid);
-        // PGID may be null for instant commands that exit before ps resolves it
         if (null !== $result->pgid) {
             $this->assertGreaterThan(0, $result->pgid);
             $this->assertSame($result->pid, $result->pgid);
@@ -99,25 +80,20 @@ final class BackgroundProcessManagerTest extends TestCase
     public function testListReturnsRunningAndFinished(): void
     {
         $this->createManager();
-        $this->manager->start('sleep 3', self::TEST_SESSION); // long-running
-        $this->manager->start('echo "done"', self::TEST_SESSION); // quick
+        $this->manager->start('sleep 3', self::TEST_SESSION);
+        $this->manager->start('echo "done"', self::TEST_SESSION);
 
-        // Wait for the quick echo to finish
         usleep(200_000);
 
-        $processes = $this->manager->list();
+        $entities = $this->manager->list();
 
-        $this->assertCount(2, $processes);
+        $this->assertCount(2, $entities);
 
-        // Sort by PID so order is predictable (sleep 3 started first = lower PID)
-        usort($processes, static fn (BackgroundProcessRecord $a, BackgroundProcessRecord $b): int => $a->pid <=> $b->pid);
+        usort($entities, static fn (BackgroundProcess $a, BackgroundProcess $b): int => $a->pid <=> $b->pid);
 
-        // First process (lower PID): sleep 3 — still running
-        $this->assertStringContainsString('running', $processes[0]->status);
-
-        // Second process (higher PID): echo done — finished with exit 0
-        $this->assertStringContainsString('finish', $processes[1]->status);
-        $this->assertSame(0, $processes[1]->exitCode);
+        $this->assertSame('running', $entities[0]->status->value);
+        $this->assertSame('finished', $entities[1]->status->value);
+        $this->assertSame(0, $entities[1]->exitCode);
 
         $this->manager->shutdownCleanup();
     }
@@ -181,8 +157,6 @@ final class BackgroundProcessManagerTest extends TestCase
 
     public function testStopEscalatesToKill(): void
     {
-        // grace=0: TERM is ignored, so the process is definitely alive
-        // immediately after TERM => KILL is sent. No blocking wait.
         $this->createManager(stopGraceSeconds: 0);
         $result = $this->manager->start('trap "" TERM; sleep 3', self::TEST_SESSION);
 
@@ -228,10 +202,7 @@ final class BackgroundProcessManagerTest extends TestCase
         $count = $this->manager->cleanupStale();
         $this->assertSame(1, $count);
 
-        // Log file should be gone
         $this->assertFileDoesNotExist($result->logPath);
-
-        // DB record should be gone
         $this->assertCount(0, $this->manager->list());
     }
 
@@ -265,6 +236,8 @@ final class BackgroundProcessManagerTest extends TestCase
         $this->manager->start('echo "session-a"', 'session-A');
         $this->manager->start('echo "session-b"', 'session-B');
 
+        usleep(200_000);
+
         $sessionA = $this->manager->list('session-A');
         $this->assertCount(1, $sessionA);
         $this->assertSame('session-A', $sessionA[0]->sessionId);
@@ -280,7 +253,6 @@ final class BackgroundProcessManagerTest extends TestCase
         $resX = $this->manager->start('sleep 3', 'session-X');
         $this->manager->start('sleep 3', 'session-Y');
 
-        // Stop with wrong session should throw
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('for this session');
         $this->manager->stop($resX->pid, 'session-Y');

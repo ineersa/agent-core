@@ -5,27 +5,30 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Entity;
 
 use Doctrine\ORM\Mapping as ORM;
-use Ineersa\CodingAgent\Tool\BackgroundProcess\BackgroundProcessRecord;
 
 /**
  * Doctrine ORM entity for the background_process table.
  *
- * Mapped fields are public — Doctrine ORM 3.6.7 hydrates via native
- * lazy objects (enabled by default in DoctrineBundle 3.x). Property
- * hooks ({ set => ... }) are not yet supported by ORM 3.6 for mapped
- * fields — the UnitOfWork attempts to unset hooked properties during
- * entity removal, which raises an Error. See:
+ * Mapped fields are public — ORM hydrates via native lazy objects
+ * (DoctrineBundle 3.x default). Property hooks are not yet supported
+ * for mapped fields (UnitOfWork unset during removal raises Error):
  * https://github.com/doctrine/orm/issues/11624
  *
- * Lifecycle mutations use domain methods:
- *   finish(?int $exitCode, string $finishedAt) — normal completion
- *   markStoppedByUser(string $finishedAt) — user-initiated stop
- *   touch(string $updatedAt) — bump timestamp
+ * Lifecycle:
+ *   finish(?int $exitCode, ?string $finishedAt) — normal completion
+ *   markStopped(string $finishedAt) — user-initiated stop
+ *   markFinishedUnclean(string $finishedAt) — crash/unclean exit
+ *
+ * created_at / updated_at are maintained by TimestampableLifecycleTrait.
+ * Semantic process times (started_at, finished_at) are set explicitly.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'background_process')]
+#[ORM\HasLifecycleCallbacks]
 class BackgroundProcess
 {
+    use TimestampableLifecycleTrait;
+
     #[ORM\Id]
     #[ORM\GeneratedValue(strategy: 'AUTO')]
     #[ORM\Column(type: 'integer')]
@@ -61,6 +64,12 @@ class BackgroundProcess
     #[ORM\Column(name: 'stopped_by_user', type: 'boolean')]
     public bool $stoppedByUser = false;
 
+    #[ORM\Column(name: 'status', type: 'string', enumType: BackgroundProcessStatusEnum::class)]
+    public BackgroundProcessStatusEnum $status = BackgroundProcessStatusEnum::Running;
+
+    #[ORM\Column(name: 'created_at', type: 'string')]
+    public string $createdAt = '';
+
     #[ORM\Column(name: 'updated_at', type: 'string')]
     public string $updatedAt = '';
 
@@ -72,48 +81,30 @@ class BackgroundProcess
     /**
      * Mark this process as finished with an optional exit code.
      */
-    public function finish(?int $exitCode, string $finishedAt): void
+    public function finish(?int $exitCode, ?string $finishedAt): void
     {
         $this->exitCode = $exitCode;
         $this->finishedAt = $finishedAt;
-        $this->updatedAt = $finishedAt;
+        $this->status = BackgroundProcessStatusEnum::Finished;
     }
 
     /**
      * Mark this process as stopped by the user.
      */
-    public function markStoppedByUser(string $finishedAt): void
+    public function markStopped(string $finishedAt): void
     {
         $this->stoppedByUser = true;
         $this->finishedAt = $finishedAt;
-        $this->updatedAt = $finishedAt;
+        $this->status = BackgroundProcessStatusEnum::Stopped;
     }
 
     /**
-     * Update the timestamp.
+     * Mark this process as finished uncleanly (crash / SIGKILL / no status file).
      */
-    public function touch(string $updatedAt): void
+    public function markFinishedUnclean(string $finishedAt): void
     {
-        $this->updatedAt = $updatedAt;
-    }
-
-    /**
-     * Convert to the read-only DTO for external consumption.
-     */
-    public function toRecord(BackgroundProcessStatusEnum $status): BackgroundProcessRecord
-    {
-        return new BackgroundProcessRecord(
-            id: $this->id,
-            pid: $this->pid,
-            pgid: $this->pgid,
-            command: $this->command,
-            logPath: $this->logPath,
-            startedAt: $this->startedAt,
-            finishedAt: $this->finishedAt,
-            exitCode: $this->exitCode,
-            stoppedByUser: $this->stoppedByUser,
-            sessionId: $this->sessionId,
-            status: $status->value,
-        );
+        $this->exitCode = null;
+        $this->finishedAt = $finishedAt;
+        $this->status = BackgroundProcessStatusEnum::FinishedUnclean;
     }
 }
