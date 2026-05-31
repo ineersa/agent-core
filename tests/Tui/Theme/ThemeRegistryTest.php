@@ -24,7 +24,7 @@ final class ThemeRegistryTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->projectRoot = \dirname(__DIR__, 3);
+        $this->projectRoot = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
         $this->tempDir = sys_get_temp_dir().'/theme-registry-test-'.getmypid();
         if (!is_dir($this->tempDir)) {
             mkdir($this->tempDir, 0777, true);

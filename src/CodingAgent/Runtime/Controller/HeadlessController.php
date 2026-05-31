@@ -400,7 +400,7 @@ final class HeadlessController
         // async Doctrine transports.
         try {
             $emit = $this->emit(...);
-            $event = new ControllerCommandEvent($command, $emit);
+            $event = new ControllerCommandEvent($command, $emit, $this->sessionId);
             $this->dispatcher->dispatch($event);
         } catch (\Throwable $e) {
             // Delegate capture=0 rethrow to boundary.

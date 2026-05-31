@@ -24,7 +24,7 @@ final class TmuxHarness
 
     public function __construct()
     {
-        $this->root = realpath(__DIR__.'/../../..');
+        $this->root = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
         $this->pid = getmypid();
     }
 

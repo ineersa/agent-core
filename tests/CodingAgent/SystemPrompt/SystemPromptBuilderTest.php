@@ -35,8 +35,7 @@ final class SystemPromptBuilderTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->projectDir = realpath(__DIR__.'/../../..');
-        \assert(\is_string($this->projectDir), 'Cannot resolve project directory');
+        $this->projectDir = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
 
         // Create a temp directory for test templates without polluting real .hatfield/
         $this->tmpDir = sys_get_temp_dir().'/system_prompt_test_'.bin2hex(random_bytes(8));

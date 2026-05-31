@@ -47,8 +47,7 @@ final class SkillsContextInjectionTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->projectDir = realpath(__DIR__.'/../../../..');
-        \assert(\is_string($this->projectDir), 'Cannot resolve project directory');
+        $this->projectDir = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
 
         $this->tmpDir = sys_get_temp_dir().'/skills_injection_test_'.bin2hex(random_bytes(8));
         mkdir($this->tmpDir.'/.hatfield', 0777, true);
