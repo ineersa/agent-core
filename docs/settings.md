@@ -323,6 +323,39 @@ to this minimum in steps before reducing image dimensions.
 
 **Default:** `40`
 
+### `tools.background_process.path`
+
+Storage directory for background process log files. Each backgrounded
+process gets its own log file under this directory, capturing both
+stdout and stderr. The storage is shared across all tool consumers.
+
+Relative paths resolve against the active project CWD.
+
+**Default:** `.hatfield/tmp/bg` (resolves to `<CWD>/.hatfield/tmp/bg`)
+
+### `tools.background_process.retention`
+
+Maximum age in seconds for background process log files and DB records
+before they are cleaned up. Cleanup is triggered on demand via the
+manager's cleanup operations.
+
+**Default:** `86400` (24 hours)
+
+### `tools.background_process.stop_grace_seconds`
+
+Grace period in seconds for SIGTERM before sending SIGKILL when
+stopping a background process.
+
+**Default:** `5`
+
+### `tools.background_process.log_tail_chars`
+
+Maximum number of characters returned by the `bg_status` tool's `log`
+action. Output exceeding this limit is truncated with a continuation
+marker.
+
+**Default:** `5000`
+
 ### `extensions.enabled`
 
 List of enabled extension class names. Each class must implement

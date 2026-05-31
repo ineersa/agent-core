@@ -139,6 +139,40 @@ services:
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 
+  # BackgroundProcessConfig is derived from AppConfig and autowireable.
+  Ineersa\CodingAgent\Config\BackgroundProcessConfig:
+    factory: ['Ineersa\CodingAgent\Config\BackgroundProcessConfig', 'fromAppConfig']
+    arguments:
+      - '@Ineersa\CodingAgent\Config\AppConfig'
+
+  # BackgroundProcessManager — register shutdown handler in production so
+  # tests (which construct the manager directly) don't accumulate callbacks.
+  Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore:
+    arguments:
+      $denormalizer: '@background_process.object_normalizer'
+
+  Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle: ~
+
+  Ineersa\CodingAgent\Tool\BackgroundProcessManager:
+    arguments:
+      $store: '@Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore'
+      $lifecycle: '@Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle'
+      $config: '@Ineersa\CodingAgent\Config\BackgroundProcessConfig'
+    calls:
+      - registerShutdownHandler: []
+
+  # Dedicated ObjectNormalizer with CamelCaseToSnakeCaseNameConverter
+  # for background process DB row → DTO conversion. Avoids using the
+  # global @serializer which would break other DTOs that expect exact
+  # property name matching (e.g. RunState).
+  background_process.object_normalizer:
+    class: Symfony\Component\Serializer\Normalizer\ObjectNormalizer
+    arguments:
+      $nameConverter: '@background_process.name_converter'
+
+  background_process.name_converter:
+    class: Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter
+
   # CodingAgentImageCapabilityChecker — wraps HatfieldModelCatalog from AppConfig.
   Ineersa\CodingAgent\Tool\ImageProcessing\CodingAgentImageCapabilityChecker:
     factory: ['Ineersa\CodingAgent\Tool\ImageProcessing\CodingAgentImageCapabilityChecker', 'fromAppConfig']

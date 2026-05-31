@@ -8,10 +8,7 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
-use Ineersa\CodingAgent\Tool\HatfieldToolProviderInterface;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
-use Ineersa\CodingAgent\Tool\ToolDefinitionDTO;
-use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Ineersa\CodingAgent\Tool\WriteFileTool;
@@ -33,7 +30,7 @@ final class WriteFileToolTest extends TestCase
         $this->contextAccessor = new StackToolExecutionContextAccessor();
         $this->toolRuntime = new ToolRuntime($this->contextAccessor);
 
-        $this->tmpDir = sys_get_temp_dir().'/hatfield_write_test_'.\bin2hex(random_bytes(8));
+        $this->tmpDir = sys_get_temp_dir().'/hatfield_write_test_'.bin2hex(random_bytes(8));
         mkdir($this->tmpDir, 0750, recursive: true);
 
         $this->writeFileTool = new WriteFileTool($this->toolRuntime);
@@ -50,36 +47,36 @@ final class WriteFileToolTest extends TestCase
     {
         $definition = $this->writeFileTool->definition();
 
-        self::assertSame('write', $definition->name);
+        $this->assertSame('write', $definition->name);
     }
 
     public function testDefinitionHasDescription(): void
     {
         $definition = $this->writeFileTool->definition();
 
-        self::assertNotEmpty($definition->description);
+        $this->assertNotEmpty($definition->description);
     }
 
     public function testDefinitionHandlerIsInvokable(): void
     {
         $definition = $this->writeFileTool->definition();
 
-        self::assertTrue(method_exists($definition->handler, '__invoke'));
+        $this->assertTrue(method_exists($definition->handler, '__invoke'));
     }
 
     public function testDefinitionHasPromptLine(): void
     {
         $definition = $this->writeFileTool->definition();
 
-        self::assertNotEmpty($definition->promptLine);
-        self::assertStringContainsString('write', $definition->promptLine);
+        $this->assertNotEmpty($definition->promptLine);
+        $this->assertStringContainsString('write', $definition->promptLine);
     }
 
     public function testDefinitionHasGuidelines(): void
     {
         $definition = $this->writeFileTool->definition();
 
-        self::assertNotEmpty($definition->promptGuidelines);
+        $this->assertNotEmpty($definition->promptGuidelines);
     }
 
     public function testDefinitionJsonSchemaHasPathAndContent(): void
@@ -87,21 +84,21 @@ final class WriteFileToolTest extends TestCase
         $definition = $this->writeFileTool->definition();
         $schema = $definition->parametersJsonSchema;
 
-        self::assertArrayHasKey('type', $schema);
-        self::assertSame('object', $schema['type']);
-        self::assertArrayHasKey('properties', $schema);
-        self::assertArrayHasKey('path', $schema['properties']);
-        self::assertArrayHasKey('content', $schema['properties']);
-        self::assertArrayHasKey('required', $schema);
-        self::assertContains('path', $schema['required']);
-        self::assertContains('content', $schema['required']);
-        self::assertArrayHasKey('additionalProperties', $schema);
-        self::assertFalse($schema['additionalProperties']);
+        $this->assertArrayHasKey('type', $schema);
+        $this->assertSame('object', $schema['type']);
+        $this->assertArrayHasKey('properties', $schema);
+        $this->assertArrayHasKey('path', $schema['properties']);
+        $this->assertArrayHasKey('content', $schema['properties']);
+        $this->assertArrayHasKey('required', $schema);
+        $this->assertContains('path', $schema['required']);
+        $this->assertContains('content', $schema['required']);
+        $this->assertArrayHasKey('additionalProperties', $schema);
+        $this->assertFalse($schema['additionalProperties']);
     }
 
     public function testDefinitionImplementsHatfieldToolProviderInterface(): void
     {
-        self::assertTrue(method_exists($this->writeFileTool, 'definition'));
+        $this->assertTrue(method_exists($this->writeFileTool, 'definition'));
     }
 
     /* ── ToolRegistry integration test ── */
@@ -112,9 +109,9 @@ final class WriteFileToolTest extends TestCase
         $toolbox = new RegistryBackedToolbox($registry);
         $tools = $toolbox->getTools();
 
-        $toolNames = array_map(fn ($t) => $t->getName(), $tools);
+        $toolNames = array_map(static fn ($t) => $t->getName(), $tools);
 
-        self::assertContains('write', $toolNames);
+        $this->assertContains('write', $toolNames);
     }
 
     /* ── __invoke() success tests ── */
@@ -126,11 +123,11 @@ final class WriteFileToolTest extends TestCase
 
         $result = ($this->writeFileTool)(['path' => $targetPath, 'content' => $content]);
 
-        self::assertStringContainsString('Successfully', $result);
-        self::assertStringContainsString('new_file.txt', $result);
-        self::assertFileExists($targetPath);
+        $this->assertStringContainsString('Successfully', $result);
+        $this->assertStringContainsString('new_file.txt', $result);
+        $this->assertFileExists($targetPath);
         // Non-empty content without trailing newline is normalized: \n appended
-        self::assertSame("Hello, World!\n", file_get_contents($targetPath));
+        $this->assertSame("Hello, World!\n", file_get_contents($targetPath));
     }
 
     public function testWriteCreatesNestedDirectories(): void
@@ -140,10 +137,10 @@ final class WriteFileToolTest extends TestCase
 
         $result = ($this->writeFileTool)(['path' => $targetPath, 'content' => $content]);
 
-        self::assertStringContainsString('Successfully', $result);
-        self::assertFileExists($targetPath);
+        $this->assertStringContainsString('Successfully', $result);
+        $this->assertFileExists($targetPath);
         // Non-empty content without trailing newline is normalized
-        self::assertSame("Nested content\n", file_get_contents($targetPath));
+        $this->assertSame("Nested content\n", file_get_contents($targetPath));
     }
 
     public function testWriteOverwritesExistingFile(): void
@@ -154,9 +151,9 @@ final class WriteFileToolTest extends TestCase
         $newContent = 'New content replacing the old one.';
         $result = ($this->writeFileTool)(['path' => $targetPath, 'content' => $newContent]);
 
-        self::assertStringContainsString('Successfully', $result);
+        $this->assertStringContainsString('Successfully', $result);
         // Non-empty content without trailing newline is normalized
-        self::assertSame("New content replacing the old one.\n", file_get_contents($targetPath));
+        $this->assertSame("New content replacing the old one.\n", file_get_contents($targetPath));
     }
 
     public function testWriteReturnsByteCount(): void
@@ -167,7 +164,7 @@ final class WriteFileToolTest extends TestCase
         $result = ($this->writeFileTool)(['path' => $targetPath, 'content' => $content]);
 
         // Non-empty content without trailing newline: one extra byte for \n
-        self::assertStringContainsString('1001 bytes', $result);
+        $this->assertStringContainsString('1001 bytes', $result);
     }
 
     public function testWriteEmptyContent(): void
@@ -176,9 +173,9 @@ final class WriteFileToolTest extends TestCase
 
         $result = ($this->writeFileTool)(['path' => $targetPath, 'content' => '']);
 
-        self::assertStringContainsString('0 bytes', $result);
-        self::assertFileExists($targetPath);
-        self::assertSame('', file_get_contents($targetPath));
+        $this->assertStringContainsString('0 bytes', $result);
+        $this->assertFileExists($targetPath);
+        $this->assertSame('', file_get_contents($targetPath));
     }
 
     public function testWriteWithRelativePathResolvesAgainstCwd(): void
@@ -190,10 +187,10 @@ final class WriteFileToolTest extends TestCase
             $result = ($this->writeFileTool)(['path' => $relativePath, 'content' => $content]);
 
             $cwd = getcwd();
-            self::assertFileExists($cwd.'/'.$relativePath);
-            self::assertStringContainsString($cwd.'/'.$relativePath, $result);
+            $this->assertFileExists($cwd.'/'.$relativePath);
+            $this->assertStringContainsString($cwd.'/'.$relativePath, $result);
             // Non-empty content without trailing newline is normalized
-            self::assertSame("Relative path test.\n", file_get_contents($cwd.'/'.$relativePath));
+            $this->assertSame("Relative path test.\n", file_get_contents($cwd.'/'.$relativePath));
         } finally {
             $cwd = getcwd();
             $fullPath = $cwd.'/'.$relativePath;
@@ -265,7 +262,7 @@ final class WriteFileToolTest extends TestCase
 
         ($this->writeFileTool)(['path' => $targetPath, 'content' => $content]);
 
-        self::assertSame("No trailing newline\n", file_get_contents($targetPath));
+        $this->assertSame("No trailing newline\n", file_get_contents($targetPath));
     }
 
     public function testWriteDoesNotDoubleNewlineWhenAlreadyPresent(): void
@@ -275,7 +272,7 @@ final class WriteFileToolTest extends TestCase
 
         ($this->writeFileTool)(['path' => $targetPath, 'content' => $content]);
 
-        self::assertSame("Has trailing newline\n", file_get_contents($targetPath));
+        $this->assertSame("Has trailing newline\n", file_get_contents($targetPath));
     }
 
     public function testWriteEmptyContentRemainsEmpty(): void
@@ -284,7 +281,7 @@ final class WriteFileToolTest extends TestCase
 
         ($this->writeFileTool)(['path' => $targetPath, 'content' => '']);
 
-        self::assertSame('', file_get_contents($targetPath));
+        $this->assertSame('', file_get_contents($targetPath));
     }
 
     public function testWriteDoesNotModifyCrlfEnding(): void
@@ -295,7 +292,7 @@ final class WriteFileToolTest extends TestCase
         ($this->writeFileTool)(['path' => $targetPath, 'content' => $content]);
 
         // CRLF content already ends with \n, so no modification
-        self::assertSame("line1\r\n", file_get_contents($targetPath));
+        $this->assertSame("line1\r\n", file_get_contents($targetPath));
     }
 
     public function testWriteCancelledBeforeExecutionThrows(): void
@@ -316,7 +313,7 @@ final class WriteFileToolTest extends TestCase
         );
 
         // The file should NOT exist because cancellation happened before execution
-        self::assertFileDoesNotExist($this->tmpDir.'/cancelled.txt');
+        $this->assertFileDoesNotExist($this->tmpDir.'/cancelled.txt');
     }
 
     public function testWriteCancelledAfterExecutionThrows(): void
@@ -343,7 +340,7 @@ final class WriteFileToolTest extends TestCase
         // The file IS written because cancellation happened after the write
         // but the toll runtime still throws to prevent the stale result from
         // reaching the LLM.
-        self::assertFileExists($targetPath);
+        $this->assertFileExists($targetPath);
     }
 
     /* ── helpers ── */
