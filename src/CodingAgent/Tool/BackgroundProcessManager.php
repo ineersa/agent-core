@@ -61,10 +61,10 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
  * clear exception rather than falling back to unsafe single-PID mode
  * that cannot reliably propagate signals to child workloads.
  *
- * Serializer usage: normalizeRow() uses Symfony Serializer + a custom
- * DenormalizerInterface implementation (BackgroundProcessRecordNormalizer)
- * to convert DB row arrays into typed BackgroundProcessRecord DTOs,
- * replacing hand-rolled array casting.
+ * Serializer usage: normalizeRow() uses Symfony's built-in ObjectNormalizer
+ * (via DenormalizerInterface) to convert DB row arrays into typed
+ * BackgroundProcessRecord DTOs. CamelCase property mapping is handled
+ * via #[SerializedName] attributes on the DTO.
  */
 final class BackgroundProcessManager
 {
@@ -825,8 +825,8 @@ final class BackgroundProcessManager
     /**
      * Normalize a DB row into a BackgroundProcessRecord with refreshed status.
      *
-     * Uses Symfony Serializer + BackgroundProcessRecordNormalizer to
-     * convert the raw DB row into a typed DTO.
+     * Uses Symfony Serializer's built-in ObjectNormalizer to convert
+     * a raw DB row array into a typed BackgroundProcessRecord DTO.
      *
      * @param array<string, mixed> $row
      */

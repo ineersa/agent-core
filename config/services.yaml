@@ -149,9 +149,21 @@ services:
   # tests (which construct the manager directly) don't accumulate callbacks.
   Ineersa\CodingAgent\Tool\BackgroundProcessManager:
     arguments:
-      $denormalizer: '@serializer'
+      $denormalizer: '@BackgroundProcess.BgObjectNormalizer'
     calls:
       - registerShutdownHandler: []
+
+  # Dedicated ObjectNormalizer with CamelCaseToSnakeCaseNameConverter
+  # for background process DB row → DTO conversion. Avoids using the
+  # global @serializer which would break other DTOs that expect exact
+  # property name matching (e.g. RunState).
+  BackgroundProcess.BgObjectNormalizer:
+    class: Symfony\Component\Serializer\Normalizer\ObjectNormalizer
+    arguments:
+      $nameConverter: '@BackgroundProcess.NameConverter'
+
+  BackgroundProcess.NameConverter:
+    class: Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter
 
   # CodingAgentImageCapabilityChecker — wraps HatfieldModelCatalog from AppConfig.
   Ineersa\CodingAgent\Tool\ImageProcessing\CodingAgentImageCapabilityChecker:

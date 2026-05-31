@@ -8,13 +8,14 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\BackgroundProcessRecord;
-use Ineersa\CodingAgent\Tool\BackgroundProcess\BackgroundProcessRecordNormalizer;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\LogTailResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\StartResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\StopResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
+use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
 
 /**
@@ -55,7 +56,7 @@ final class BackgroundProcessManagerTest extends TestCase
 
     private function makeSerializer(): Serializer
     {
-        return new Serializer([new BackgroundProcessRecordNormalizer()]);
+        return new Serializer([new ObjectNormalizer(nameConverter: new CamelCaseToSnakeCaseNameConverter())]);
     }
 
     /* ── start() ── */

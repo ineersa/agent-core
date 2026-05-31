@@ -11,12 +11,13 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
-use Ineersa\CodingAgent\Tool\BackgroundProcess\BackgroundProcessRecordNormalizer;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\CodingAgent\Tool\BgStatusTool;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
+use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
 
 /**
@@ -60,7 +61,7 @@ final class BgStatusToolTest extends TestCase
             $this->connection,
             $this->config,
             new NullLogger(),
-            new Serializer([new BackgroundProcessRecordNormalizer()]),
+            new Serializer([new ObjectNormalizer(nameConverter: new CamelCaseToSnakeCaseNameConverter())]),
         );
         $this->contextAccessor = new StackToolExecutionContextAccessor();
         $this->tool = new BgStatusTool($this->manager, $this->config, $this->contextAccessor);
