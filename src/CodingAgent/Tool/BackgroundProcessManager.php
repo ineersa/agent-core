@@ -4,16 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
-use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\Exception as DbalException;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\BackgroundProcessRecord;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\LogTailResult;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\StartResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\StopResult;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Clock\Clock;
-use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
  * Durable, DBAL-backed manager for background processes.
@@ -22,6 +21,9 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
  * will call to start and register background processes. Exposes lifecycle
  * operations: start, list, log tail, stop (TERM → grace → KILL), stale
  * cleanup, and shutdown cleanup.
+ *
+ * This is a thin facade that delegates database operations to ProcessStore
+ * and OS/filesystem operations to ProcessLifecycle.
  *
  * Process lifecycle:
  *  1. start() creates a tracking record in the SQLite table and launches
@@ -32,7 +34,7 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
  *     forwards it to the child so TERM reaches the actual workload.
  *  2. The process runs independently — the PHP tool worker exits while
  *     the child continues in its own session.
- *  3. On subsequent list() calls, refreshStatus() checks liveness via
+ *  3. On subsequent list() calls, normalizeRow() checks liveness via
  *     /proc/<pid> on Linux or the status file.
  *  4. stop() sends SIGTERM to the process group (negative PGID), waits
  *     the configured grace period, sends SIGKILL if still alive.
@@ -61,24 +63,20 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
  * clear exception rather than falling back to unsafe single-PID mode
  * that cannot reliably propagate signals to child workloads.
  *
- * Serializer usage: normalizeRow() uses Symfony's built-in ObjectNormalizer
- * (via DenormalizerInterface) to convert DB row arrays into typed
- * BackgroundProcessRecord DTOs. CamelCase property mapping is handled
- * via #[SerializedName] attributes on the DTO.
+ * CamelCase property mapping is handled by the CamelCaseToSnakeCaseNameConverter
+ * on the dedicated ObjectNormalizer, not the global @serializer. This isolation
+ * prevents breaking other DTOs (e.g. RunState) that expect exact property name
+ * matching.
  */
 final class BackgroundProcessManager
 {
-    /** @var string SQLite table name */
-    private const string TABLE = 'background_process';
-
-    private bool $tableInitialized = false;
     private bool $shutdownRegistered = false;
 
     public function __construct(
-        private readonly Connection $connection,
+        private readonly ProcessStore $store,
+        private readonly ProcessLifecycle $lifecycle,
         private readonly BackgroundProcessConfig $config,
         private readonly LoggerInterface $logger,
-        private readonly DenormalizerInterface $denormalizer,
     ) {
         // Shutdown handler is NOT registered here. Call
         // registerShutdownHandler() from production wiring
@@ -161,10 +159,10 @@ final class BackgroundProcessManager
      */
     public function start(string $command, ?string $sessionId = null): StartResult
     {
-        $this->ensureTable();
+        $this->store->ensureTable();
 
         // Ensure storage directory exists
-        $bgDir = $this->ensureStorageDir();
+        $bgDir = $this->lifecycle->ensureStorageDir();
 
         // Generate unique file prefix and file paths
         $filePrefix = bin2hex(random_bytes(8));
@@ -174,65 +172,22 @@ final class BackgroundProcessManager
 
         $now = Clock::get()->now()->format('c');
 
-        // Preflight: verify setsid is available before attempting launch.
-        // The shell pipeline "setsid … & echo $!" cannot detect setsid
-        // failure because the shell exit code is from echo $!, not setsid.
-        exec('command -v setsid', $_, $rc);
-        if (0 !== $rc) {
-            throw new \RuntimeException('setsid is required but not found on this platform.');
-        }
-
-        // Build a shell wrapper that:
-        //  1. Records wrapper PID to pidFile
-        //  2. Redirects stdout/stderr to logFile
-        //  3. Backgrounds the user command as a child process (&) so
-        //     the child inherits default SIGTERM (not ignored)
-        //  4. Sets a SIGTERM trap in the wrapper that forwards TERM
-        //     to the child, waits for it, writes the status, and exits
-        //  5. Waits for the child on the normal path, stores child RC
-        //     in a variable before echo so exit reflects child outcome
-        //
-        // Result is executed via: setsid bash -c '...' & echo $!
-        $shellCode = \sprintf(
-            'echo $$ > %s; exec >> %s 2>&1; %s & CHILD_PID=$!; STATUS_FILE=%s; trap \'kill -TERM $CHILD_PID 2>/dev/null; wait $CHILD_PID 2>/dev/null; echo $? > $STATUS_FILE; exit\' TERM; wait $CHILD_PID 2>/dev/null; RC=$?; echo $RC > $STATUS_FILE; exit $RC',
-            escapeshellarg($pidFile),
-            escapeshellarg($logFile),
-            $command,
-            escapeshellarg($statusFile),
-        );
-
-        // Launch with setsid (new process group) and capture PID via $!
-        $launcher = 'setsid bash -c '.escapeshellarg($shellCode).' & echo $!';
-
-        $output = [];
-        $exitCode = -1;
-        exec($launcher, $output, $exitCode);
-
-        // Should not happen after preflight, but guard anyway
-        if (0 !== $exitCode || [] === $output) {
-            throw new \RuntimeException('Failed to launch background process: setsid returned exit code '.$exitCode.'. (pid: '.$pidFile.')');
-        }
-
-        $pid = (int) $output[0];
-        if ($pid <= 0) {
-            throw new \RuntimeException('Failed to launch background process: invalid PID ('.$output[0].').');
-        }
-
-        // Resolve PGID for group signalling
-        $pgid = $this->resolvePgid($pid);
+        // Launch process in new session group
+        $launchResult = $this->lifecycle->launchProcess($command, $pidFile, $logFile, $statusFile);
+        $pid = $launchResult['pid'];
+        $pgid = $launchResult['pgid'];
 
         // Insert record into DB
-        try {
-            $this->connection->executeStatement(
-                'INSERT INTO '.self::TABLE.' (pid, pgid, session_id, command, log_path, status_path, started_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                [$pid, $pgid, $sessionId ?? '', $command, $logFile, $statusFile, $now, $now],
-            );
-
-            $dbId = (int) $this->connection->lastInsertId();
-        } catch (DbalException $e) {
-            throw new \RuntimeException('Failed to insert background process record.', 0, $e);
-        }
+        $dbId = $this->store->insertRecord([
+            'pid' => $pid,
+            'pgid' => $pgid,
+            'session_id' => $sessionId ?? '',
+            'command' => $command,
+            'log_path' => $logFile,
+            'status_path' => $statusFile,
+            'started_at' => $now,
+            'updated_at' => $now,
+        ]);
 
         $resolvedSessionId = $sessionId ?? '';
 
@@ -263,29 +218,15 @@ final class BackgroundProcessManager
      *
      * @param string|null $sessionId Optional session filter. When provided,
      *                               only processes for that session are
-     *                               returned. Pass null for all processes
-     *                               (default, unscoped mode).
+     *                               returned. Pass null for all processes.
      *
      * @return list<BackgroundProcessRecord>
      */
     public function list(?string $sessionId = null): array
     {
-        $this->ensureTable();
+        $this->store->ensureTable();
 
-        try {
-            if (null !== $sessionId) {
-                $rows = $this->connection->fetchAllAssociative(
-                    'SELECT * FROM '.self::TABLE.' WHERE session_id = ? ORDER BY id DESC',
-                    [$sessionId],
-                );
-            } else {
-                $rows = $this->connection->fetchAllAssociative(
-                    'SELECT * FROM '.self::TABLE.' ORDER BY id DESC',
-                );
-            }
-        } catch (DbalException $e) {
-            throw new \RuntimeException('Failed to list background processes.', 0, $e);
-        }
+        $rows = $this->store->fetchAll($sessionId);
 
         $results = [];
         foreach ($rows as $row) {
@@ -297,9 +238,6 @@ final class BackgroundProcessManager
 
     /**
      * Return the tail of a background process log file.
-     *
-     * Uses a shell command (tail -c) to read the last N bytes, avoiding
-     * loading large files into PHP memory.
      *
      * @param int         $pid       Process PID (also the DB lookup key)
      * @param int|null    $maxChars  Maximum characters to return (null uses config default)
@@ -314,18 +252,11 @@ final class BackgroundProcessManager
     {
         $maxChars ??= $this->config->logTailChars;
 
-        $this->ensureTable();
+        $this->store->ensureTable();
 
-        try {
-            $row = $this->connection->fetchAssociative(
-                'SELECT log_path, session_id FROM '.self::TABLE.' WHERE pid = ?',
-                [$pid],
-            );
-        } catch (DbalException $e) {
-            throw new \RuntimeException('Failed to query background process log path.', 0, $e);
-        }
+        $row = $this->store->fetchByPid($pid);
 
-        if (false === $row || !\is_string($row['log_path'] ?? null)) {
+        if (null === $row || !\is_string($row['log_path'] ?? null)) {
             throw new \RuntimeException(\sprintf('No background process found with PID %d.', $pid));
         }
 
@@ -337,45 +268,7 @@ final class BackgroundProcessManager
         /** @var string $logPath */
         $logPath = $row['log_path'];
 
-        if (!is_file($logPath) || !is_readable($logPath)) {
-            return new LogTailResult(
-                pid: $pid,
-                logPath: $logPath,
-                content: '(log file not found or not readable)',
-                truncated: false,
-                totalBytes: 0,
-            );
-        }
-
-        $totalBytes = @filesize($logPath);
-        if (false === $totalBytes) {
-            $totalBytes = 0;
-        }
-
-        if ($totalBytes <= $maxChars) {
-            /** @var string|false $content */
-            $content = @file_get_contents($logPath);
-
-            return new LogTailResult(
-                pid: $pid,
-                logPath: $logPath,
-                content: \is_string($content) ? $content : '(failed to read log)',
-                truncated: false,
-                totalBytes: $totalBytes,
-            );
-        }
-
-        // Read tail via shell for large files
-        $tailCmd = \sprintf('tail -c %d %s 2>/dev/null', $maxChars, escapeshellarg($logPath));
-        $content = @shell_exec($tailCmd);
-
-        return new LogTailResult(
-            pid: $pid,
-            logPath: $logPath,
-            content: \is_string($content) ? $content : '(failed to read log)',
-            truncated: true,
-            totalBytes: $totalBytes,
-        );
+        return $this->lifecycle->readLogTail($logPath, $pid, $maxChars);
     }
 
     /**
@@ -383,9 +276,8 @@ final class BackgroundProcessManager
      *
      * Targets the entire process group via negative PGID
      * (kill -TERM -<PGID>) when a PGID is available.  Falls back
-     * to single-PID signalling only when resolvePgid() could not
-     * determine the group — a rare race window immediately after
-     * process launch.
+     * to single-PID signalling only when the PGID could not be
+     * determined — a rare race window immediately after process launch.
      *
      * @param int         $pid       Process PID to stop. Must be > 0.
      * @param string|null $sessionId Optional session ownership check.
@@ -397,7 +289,7 @@ final class BackgroundProcessManager
      */
     public function stop(int $pid, ?string $sessionId = null): StopResult
     {
-        $this->ensureTable();
+        $this->store->ensureTable();
 
         // Defence-in-depth: reject non-positive PIDs that could cause
         // kill(0) or kill(-negative) to broadcast signals to the caller.
@@ -405,16 +297,10 @@ final class BackgroundProcessManager
             throw new \RuntimeException(\sprintf('Invalid PID %d for stop.', $pid));
         }
 
-        try {
-            $row = $this->connection->fetchAssociative(
-                'SELECT * FROM '.self::TABLE.' WHERE pid = ?',
-                [$pid],
-            );
-        } catch (DbalException $e) {
-            throw new \RuntimeException('Failed to query background process for stop.', 0, $e);
-        }
+        // Fetch row
+        $row = $this->store->fetchByPid($pid);
 
-        if (false === $row) {
+        if (null === $row) {
             throw new \RuntimeException(\sprintf('No background process found with PID %d.', $pid));
         }
 
@@ -423,23 +309,17 @@ final class BackgroundProcessManager
             throw new \RuntimeException(\sprintf('No background process found with PID %d for this session.', $pid));
         }
 
+        $idVal = $row['id'] ?? 0;
+        $id = is_numeric($idVal) ? (int) $idVal : 0;
+
         // Refresh status before acting — the process may have finished
         // since the last list() call (status file written, /proc gone).
-        $idVal = $row['id'] ?? 0;
-        $this->refreshRecord(is_numeric($idVal) ? (int) $idVal : 0);
+        $this->refreshSingleRecord($id);
 
         // Re-fetch after refresh
-        try {
-            $row = $this->connection->fetchAssociative(
-                'SELECT * FROM '.self::TABLE.' WHERE pid = ?',
-                [$pid],
-            );
-        } catch (DbalException $e) {
-            throw new \RuntimeException('Failed to query background process after refresh.', 0, $e);
-        }
+        $row = $this->store->fetchByPid($pid);
 
-        if (false === $row) {
-            // Record was removed during refresh (unlikely but handle gracefully)
+        if (null === $row) {
             throw new \RuntimeException(\sprintf('Background process with PID %d disappeared during refresh.', $pid));
         }
 
@@ -450,28 +330,21 @@ final class BackgroundProcessManager
 
         // Check if already finished (now correctly reflecting refreshed state)
         if (null !== ($row['finished_at'] ?? null)) {
-            $pgidRaw = $row['pgid'] ?? null;
-
             return new StopResult(
                 pid: $pid,
-                pgid: null !== $pgidRaw && (\is_int($pgidRaw) || (\is_string($pgidRaw) && ctype_digit($pgidRaw))) ? (int) $pgidRaw : null,
+                pgid: $this->lifecycle->coerceNullableInt($row['pgid'] ?? null),
                 stoppedByUser: false,
                 alreadyFinished: true,
                 signalSent: 'none',
             );
         }
 
-        $pgidRaw = $row['pgid'] ?? null;
-        $pgid = null !== $pgidRaw && (\is_int($pgidRaw) || (\is_string($pgidRaw) && ctype_digit($pgidRaw))) ? (int) $pgidRaw : null;
+        $pgid = $this->lifecycle->coerceNullableInt($row['pgid'] ?? null);
         $graceSeconds = $this->config->stopGraceSeconds;
 
         // TERM signal — target process group (negative PGID)
         $signalSent = 'term';
-        if (null !== $pgid && $pgid > 0) {
-            @exec(\sprintf('kill -TERM -%d 2>/dev/null', $pgid));
-        } else {
-            @exec(\sprintf('kill -TERM %d 2>/dev/null', $pid));
-        }
+        $this->lifecycle->sendTerm($pid, $pgid);
 
         // Wait grace period
         if ($graceSeconds > 0) {
@@ -479,13 +352,9 @@ final class BackgroundProcessManager
         }
 
         // Check if still alive and KILL if needed
-        if ($this->isAlive($pid)) {
+        if ($this->lifecycle->isAlive($pid)) {
             $signalSent = 'term+kill';
-            if (null !== $pgid && $pgid > 0) {
-                @exec(\sprintf('kill -KILL -%d 2>/dev/null', $pgid));
-            } else {
-                @exec(\sprintf('kill -KILL %d 2>/dev/null', $pid));
-            }
+            $this->lifecycle->sendKill($pid, $pgid);
         }
 
         $this->logger->info('background_process.stopped', [
@@ -499,22 +368,15 @@ final class BackgroundProcessManager
 
         // Mark as stopped by user
         $now = Clock::get()->now()->format('c');
-        try {
-            $this->connection->executeStatement(
-                'UPDATE '.self::TABLE.' SET stopped_by_user = 1, finished_at = ?, updated_at = ? WHERE pid = ?',
-                [$now, $now, $pid],
-            );
-        } catch (DbalException $e) {
-            throw new \RuntimeException('Failed to update background process stop record.', 0, $e);
-        }
+        $this->store->markStoppedByUser($pid, $now);
 
         // Write -1 to the status file only when the wrapper did not
-        // already write a real exit code (KILL path).  When TERM succeeds
+        // already write a real exit code (KILL path). When TERM succeeds
         // the wrapper's trap handler writes the child's real exit code
         // before exiting; overwriting would corrupt forensic evidence.
         $statusPath = $row['status_path'] ?? null;
-        if (\is_string($statusPath) && '' !== $statusPath && !is_file($statusPath)) {
-            @file_put_contents($statusPath, (string) (-1));
+        if (\is_string($statusPath)) {
+            $this->lifecycle->writeStopMarker($statusPath);
         }
 
         return new StopResult(
@@ -536,7 +398,7 @@ final class BackgroundProcessManager
      */
     public function cleanupStale(): int
     {
-        $this->ensureTable();
+        $this->store->ensureTable();
 
         // First, refresh all unfinished records so finished_at is populated
         // for processes that completed without a list() call.
@@ -544,18 +406,24 @@ final class BackgroundProcessManager
 
         $cutoff = Clock::get()->now()->modify('-'.$this->config->retentionSeconds.' seconds')->format('c');
 
+        // Find stale rows (finished_at set and within retention window)
         try {
-            $stale = $this->connection->fetchAllAssociative(
-                'SELECT id, log_path, status_path FROM '.self::TABLE.'
-                 WHERE finished_at IS NOT NULL AND finished_at <= ?',
-                [$cutoff],
-            );
-        } catch (DbalException $e) {
+            $stale = $this->store->fetchAll();
+        } catch (\RuntimeException $e) {
             throw new \RuntimeException('Failed to query stale background processes.', 0, $e);
         }
 
-        $count = 0;
+        // Filter to only stale rows (finished_at <= cutoff)
+        $staleRows = [];
         foreach ($stale as $row) {
+            $finishedAt = $row['finished_at'] ?? null;
+            if (null !== $finishedAt && \is_string($finishedAt) && $finishedAt <= $cutoff) {
+                $staleRows[] = $row;
+            }
+        }
+
+        $count = 0;
+        foreach ($staleRows as $row) {
             // Delete log and status files
             if (isset($row['log_path']) && \is_string($row['log_path']) && is_file($row['log_path'])) {
                 @unlink($row['log_path']);
@@ -565,25 +433,19 @@ final class BackgroundProcessManager
             }
 
             // Delete DB record
-            try {
-                $this->connection->executeStatement(
-                    'DELETE FROM '.self::TABLE.' WHERE id = ?',
-                    [(int) $row['id']],
-                );
-                ++$count;
-            } catch (DbalException $e) {
-                // Log and continue — one failure should not block the rest of cleanup
-                $this->logger->warning('background_process.cleanup_failed', [
-                    'component' => 'tool.background_process',
-                    'event_type' => 'background_process.cleanup_failed',
-                    'record_id' => (int) $row['id'],
-                    'error' => $e->getMessage(),
-                ]);
-            }
+            $this->store->deleteById((int) $row['id']);
+            ++$count;
         }
 
         // Also clean up orphaned .pid files (from crashed processes)
-        $this->cleanupOrphanedPidFiles();
+        $activePids = $this->store->fetchAllActivePids();
+        $activePidSet = [];
+        foreach ($activePids as $activePid) {
+            if (\is_int($activePid) || \is_string($activePid)) {
+                $activePidSet[(string) $activePid] = true;
+            }
+        }
+        $this->lifecycle->cleanupOrphanedPidFiles($activePidSet);
 
         return $count;
     }
@@ -605,22 +467,9 @@ final class BackgroundProcessManager
      */
     public function shutdownCleanup(?string $sessionId = null): int
     {
-        $this->ensureTable();
+        $this->store->ensureTable();
 
-        try {
-            if (null !== $sessionId) {
-                $running = $this->connection->fetchAllAssociative(
-                    'SELECT pid FROM '.self::TABLE.' WHERE finished_at IS NULL AND session_id = ?',
-                    [$sessionId],
-                );
-            } else {
-                $running = $this->connection->fetchAllAssociative(
-                    'SELECT pid FROM '.self::TABLE.' WHERE finished_at IS NULL',
-                );
-            }
-        } catch (DbalException $e) {
-            throw new \RuntimeException('Failed to query running background processes for shutdown.', 0, $e);
-        }
+        $running = $this->store->fetchAllUnfinished($sessionId);
 
         $count = 0;
         foreach ($running as $row) {
@@ -643,114 +492,63 @@ final class BackgroundProcessManager
         return $count;
     }
 
-    // ─── Status refresh helpers (used by list, stop, cleanup) ────────
+    // ─── Private helpers ─────────────────────────────────────────────
 
     /**
-     * Refresh a single record by ID, checking filesystem state and
-     * updating the DB row if the process has finished.
-     */
-    private function refreshRecord(int $id): void
-    {
-        try {
-            /** @var array<string, mixed>|false $row */
-            $row = $this->connection->fetchAssociative(
-                'SELECT * FROM '.self::TABLE.' WHERE id = ?',
-                [$id],
-            );
-        } catch (DbalException $e) {
-            $this->logger->warning('background_process.refresh_failed', [
-                'component' => 'tool.background_process',
-                'event_type' => 'background_process.refresh_failed',
-                'error' => $e->getMessage(),
-            ]);
-
-            return; // intentional degradation: one record refresh failing should not block others
-        }
-
-        if (false === $row) {
-            return;
-        }
-
-        $this->refreshStatus($row);
-    }
-
-    /**
-     * Refresh all unfinished records so finished_at is populated
-     * for processes that completed without a list() call.
-     */
-    private function refreshAllUnfinished(): void
-    {
-        try {
-            /** @var list<array<string, mixed>> $rows */
-            $rows = $this->connection->fetchAllAssociative(
-                'SELECT * FROM '.self::TABLE.' WHERE finished_at IS NULL',
-            );
-        } catch (DbalException $e) {
-            $this->logger->warning('background_process.refresh_all_failed', [
-                'component' => 'tool.background_process',
-                'event_type' => 'background_process.refresh_all_failed',
-                'error' => $e->getMessage(),
-            ]);
-
-            return; // intentional degradation: unable to refresh, cleanup will skip
-        }
-
-        foreach ($rows as $row) {
-            $this->refreshStatus($row);
-        }
-    }
-
-    // ─── Internal helpers ────────────────────────────────────────────
-
-    /**
-     * Refresh the status of a single row by examining the filesystem.
+     * Convert a raw DB row into a BackgroundProcessRecord with
+     * filesystem-refreshed status.
      *
-     * This is called by normalizeRow() and updates the DB if the process
-     * has finished since the last check.
+     * Injects the computed 'status' key before delegating to the store's
+     * normalizeRow() for DTO conversion.
      *
      * @param array<string, mixed> $row
-     *
-     * @return string 'running' | 'finished' | 'stopped' | 'unknown'
      */
-    private function refreshStatus(array &$row): string
+    private function normalizeRow(array $row): BackgroundProcessRecord
+    {
+        $this->enrichWithStatus($row);
+
+        // Inject computed status — not a real DB column, added for DTO hydration
+        return $this->store->normalizeRow($row);
+    }
+
+    /**
+     * Enrich a single row's status from the filesystem, updating the DB
+     * if the process has completed since the last check.
+     *
+     * @param array<string, mixed> $row Row data, passed by reference and mutated in place
+     */
+    private function enrichWithStatus(array &$row): void
     {
         // Already finished
         if (null !== ($row['finished_at'] ?? null)) {
             $stopped = (bool) ($row['stopped_by_user'] ?? false);
+            $row['status'] = $stopped ? 'stopped' : 'finished';
 
-            return $stopped ? 'stopped' : 'finished';
+            return;
         }
 
-        $pidVal = $row['pid'] ?? 0;
-        $pid = is_numeric($pidVal) ? (int) $pidVal : 0;
+        $pid = is_numeric($row['pid'] ?? 0) ? (int) $row['pid'] : 0;
         $statusPath = $row['status_path'] ?? null;
+        $id = is_numeric($row['id'] ?? 0) ? (int) $row['id'] : 0;
 
-        // Check status file first (process might have finished)
-        if (\is_string($statusPath) && '' !== $statusPath && is_file($statusPath)) {
-            $exitCodeRaw = @file_get_contents($statusPath);
-            if (\is_string($exitCodeRaw) && '' !== trim($exitCodeRaw)) {
-                $exitCode = (int) trim($exitCodeRaw);
-                $now = Clock::get()->now()->format('c');
+        // Check status file first (process might have finished normally)
+        $exitCode = $this->lifecycle->readStatusFile($statusPath);
+        if (null !== $exitCode) {
+            $now = Clock::get()->now()->format('c');
+            $row['finished_at'] = $now;
+            $row['exit_code'] = $exitCode;
 
-                $row['finished_at'] = $now;
-                $row['exit_code'] = $exitCode;
+            $this->store->markFinished($id, $exitCode, $now);
+            $row['status'] = 0 === $exitCode ? 'finished' : 'finished (exit code '.$exitCode.')';
 
-                try {
-                    $this->connection->executeStatement(
-                        'UPDATE '.self::TABLE.' SET finished_at = ?, exit_code = ?, updated_at = ? WHERE id = ?',
-                        [$now, $exitCode, $now, (int) $row['id']],
-                    );
-                } catch (DbalException $e) {
-                    throw new \RuntimeException('Failed to update background process finished status.', 0, $e);
-                }
-
-                return 0 === $exitCode ? 'finished' : 'finished (exit code '.$exitCode.')';
-            }
+            return;
         }
 
         // Check /proc/<pid> for liveness
-        if ($this->isAlive($pid)) {
-            return 'running';
+        if ($this->lifecycle->isAlive($pid)) {
+            $row['status'] = 'running';
+
+            return;
         }
 
         // Process is gone but no status file written (crash / SIGKILL / unclean exit)
@@ -764,211 +562,36 @@ final class BackgroundProcessManager
             'process_pid' => $pid,
         ]);
 
-        try {
-            $this->connection->executeStatement(
-                'UPDATE '.self::TABLE.' SET finished_at = ?, updated_at = ? WHERE id = ?',
-                [$now, $now, (int) $row['id']],
-            );
-        } catch (DbalException $e) {
-            throw new \RuntimeException('Failed to update background process terminated status.', 0, $e);
-        }
-
-        return 'finished (unclean)';
+        $this->store->markFinished($id, null, $now);
+        $row['status'] = 'finished (unclean)';
     }
 
     /**
-     * Check if a process is alive by examining /proc/<pid>.
-     *
-     * No caching: every call performs a fresh /proc/<pid> check so that
-     * stop() correctly detects TERM-induced termination after the grace
-     * window rather than returning a stale cached result.
+     * Refresh a single record by ID, checking filesystem state and
+     * updating the DB row if the process has finished.
      */
-    private function isAlive(int $pid): bool
+    private function refreshSingleRecord(int $id): void
     {
-        // Use /proc/<pid> on Linux; fallback to kill -0
-        if (is_dir('/proc/'.$pid)) {
-            return true;
-        }
+        /** @var array<string, mixed>|null $row */
+        $row = $this->store->fetchById($id);
 
-        // Fallback: kill -0
-        @exec('kill -0 '.$pid.' 2>/dev/null', $_, $exitCode);
-
-        return 0 === $exitCode;
-    }
-
-    /**
-     * Resolve the process group ID for a given PID.
-     *
-     * Retries briefly to close a startup race: after exec() returns
-     * the PID, the process may not yet be visible to ps.
-     */
-    private function resolvePgid(int $pid): ?int
-    {
-        // Retry up to 5 times with 50ms backoff to close the startup
-        // race where the PID exists but ps cannot see it yet.
-        for ($attempt = 0; $attempt < 5; ++$attempt) {
-            $pgidStr = @shell_exec(\sprintf('ps -o pgid= -p %d 2>/dev/null', $pid));
-            if (\is_string($pgidStr) && '' !== trim($pgidStr)) {
-                $pgid = (int) trim($pgidStr);
-                if ($pgid > 0) {
-                    return $pgid;
-                }
-            }
-            if ($attempt < 4) {
-                usleep(50_000);
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Normalize a DB row into a BackgroundProcessRecord with refreshed status.
-     *
-     * Uses Symfony Serializer's built-in ObjectNormalizer to convert
-     * a raw DB row array into a typed BackgroundProcessRecord DTO.
-     *
-     * @param array<string, mixed> $row
-     */
-    private function normalizeRow(array $row): BackgroundProcessRecord
-    {
-        // Refresh filesystem-based status and mutate $row in place
-        $status = $this->refreshStatus($row);
-        $row['status'] = $status;
-
-        return $this->denormalizer->denormalize($row, BackgroundProcessRecord::class);
-    }
-
-    /**
-     * Ensure the storage directory exists and return its resolved path.
-     */
-    private function ensureStorageDir(): string
-    {
-        $bgDir = $this->config->storageDir;
-
-        if (!is_dir($bgDir)) {
-            $created = @mkdir($bgDir, 0750, recursive: true);
-            if (!$created && !is_dir($bgDir)) {
-                throw new \RuntimeException(\sprintf('Failed to create background process storage directory: %s', $bgDir));
-            }
-        }
-
-        if (!is_writable($bgDir)) {
-            throw new \RuntimeException(\sprintf('Background process storage directory is not writable: %s', $bgDir));
-        }
-
-        return $bgDir;
-    }
-
-    /**
-     * Clean up orphaned .pid files left by crashed or improperly cleaned processes.
-     */
-    private function cleanupOrphanedPidFiles(): void
-    {
-        $bgDir = $this->config->storageDir;
-        if (!is_dir($bgDir)) {
+        if (null === $row) {
             return;
         }
 
-        // Collect all active DB record PIDs
-        try {
-            $activePids = $this->connection->fetchFirstColumn(
-                'SELECT pid FROM '.self::TABLE.' WHERE finished_at IS NULL',
-            );
-        } catch (DbalException $e) {
-            $this->logger->warning('background_process.cleanup_orphaned_failed', [
-                'component' => 'tool.background_process',
-                'event_type' => 'background_process.cleanup_orphaned_failed',
-                'error' => $e->getMessage(),
-            ]);
-
-            return; // intentional degradation: orphaned PID cleanup is best-effort
-        }
-
-        /** @var array<int|string, true> $activePidSet */
-        $activePidSet = [];
-        foreach ($activePids as $activePid) {
-            if (\is_int($activePid) || \is_string($activePid)) {
-                $activePidSet[(string) $activePid] = true;
-            }
-        }
-
-        $iterator = new \FilesystemIterator($bgDir, \FilesystemIterator::SKIP_DOTS);
-        /** @var \SplFileInfo $file */
-        foreach ($iterator as $file) {
-            if (!$file->isFile()) {
-                continue;
-            }
-
-            $filename = $file->getFilename();
-
-            // Only clean .pid files
-            if (!str_ends_with($filename, '.pid')) {
-                continue;
-            }
-
-            $pidContent = @file_get_contents($file->getPathname());
-            $pidFromFile = \is_string($pidContent) ? (int) trim($pidContent) : 0;
-            if ($pidFromFile > 0 && !isset($activePidSet[$pidFromFile])) {
-                // This PID is not in our active set — the .pid file is orphaned
-                @unlink($file->getPathname());
-
-                // Also clean up companion .status and .log files if they exist
-                $base = $file->getPath().'/'.pathinfo($filename, \PATHINFO_FILENAME);
-                foreach (['.status', '.log'] as $ext) {
-                    $companion = $base.$ext;
-                    if (is_file($companion)) {
-                        @unlink($companion);
-                    }
-                }
-            }
-        }
+        $this->enrichWithStatus($row);
     }
 
     /**
-     * Ensure the background_process table exists.
+     * Refresh all unfinished records so finished_at is populated
+     * for processes that completed without a list() call.
      */
-    private function ensureTable(): void
+    private function refreshAllUnfinished(): void
     {
-        if ($this->tableInitialized) {
-            return;
-        }
+        $rows = $this->store->fetchAllUnfinished();
 
-        try {
-            $this->connection->executeStatement(
-                'CREATE TABLE IF NOT EXISTS '.self::TABLE.' (
-                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-                    pid            INTEGER NOT NULL,
-                    pgid           INTEGER,
-                    session_id     TEXT NOT NULL DEFAULT \'\',
-                    command        TEXT NOT NULL,
-                    log_path       TEXT NOT NULL,
-                    status_path    TEXT NOT NULL,
-                    started_at     TEXT NOT NULL,
-                    finished_at    TEXT,
-                    exit_code      INTEGER,
-                    stopped_by_user INTEGER NOT NULL DEFAULT 0,
-                    updated_at     TEXT NOT NULL
-                )'
-            );
-
-            // Add session_id column if table already existed without it
-            // (SQLite migration: ALTER TABLE ADD COLUMN is a no-op if
-            //  the column already exists, but we wrap in try/catch for
-            //  safety, as some versions may error on duplicate column.)
-            try {
-                $this->connection->executeStatement(
-                    'ALTER TABLE '.self::TABLE.' ADD COLUMN session_id TEXT NOT NULL DEFAULT \'\'',
-                );
-            } catch (DbalException $e) {
-                $this->logger->debug('background_process migration: column likely already exists', [
-                    'exception' => $e->getMessage(),
-                ]);
-            }
-
-            $this->tableInitialized = true;
-        } catch (DbalException $e) {
-            throw new \RuntimeException('Failed to create background_process table.', 0, $e);
+        foreach ($rows as $row) {
+            $this->enrichWithStatus($row);
         }
     }
 }

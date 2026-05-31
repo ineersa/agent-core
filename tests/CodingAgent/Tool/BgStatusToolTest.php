@@ -11,6 +11,8 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\CodingAgent\Tool\BgStatusTool;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
@@ -18,7 +20,6 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
-use Symfony\Component\Serializer\Serializer;
 
 /**
  * @covers \Ineersa\CodingAgent\Tool\BgStatusTool
@@ -57,12 +58,10 @@ final class BgStatusToolTest extends TestCase
             stopGraceSeconds: 1,
             logTailChars: 5000,
         );
-        $this->manager = new BackgroundProcessManager(
-            $this->connection,
-            $this->config,
-            new NullLogger(),
-            new Serializer([new ObjectNormalizer(nameConverter: new CamelCaseToSnakeCaseNameConverter())]),
-        );
+        $denormalizer = new ObjectNormalizer(nameConverter: new CamelCaseToSnakeCaseNameConverter());
+        $store = new ProcessStore($this->connection, $denormalizer, new NullLogger());
+        $lifecycle = new ProcessLifecycle($this->config);
+        $this->manager = new BackgroundProcessManager($store, $lifecycle, $this->config, new NullLogger());
         $this->contextAccessor = new StackToolExecutionContextAccessor();
         $this->tool = new BgStatusTool($this->manager, $this->config, $this->contextAccessor);
     }

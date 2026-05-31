@@ -9,6 +9,8 @@ use Doctrine\DBAL\DriverManager;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\BackgroundProcessRecord;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\LogTailResult;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
+use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\StartResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\StopResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
@@ -16,7 +18,6 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
-use Symfony\Component\Serializer\Serializer;
 
 /**
  * @covers \Ineersa\CodingAgent\Tool\BackgroundProcessManager
@@ -54,9 +55,9 @@ final class BackgroundProcessManagerTest extends TestCase
         $this->rmDir($this->tmpDir);
     }
 
-    private function makeSerializer(): Serializer
+    private function makeDenormalizer(): ObjectNormalizer
     {
-        return new Serializer([new ObjectNormalizer(nameConverter: new CamelCaseToSnakeCaseNameConverter())]);
+        return new ObjectNormalizer(nameConverter: new CamelCaseToSnakeCaseNameConverter());
     }
 
     /* ── start() ── */
@@ -283,7 +284,9 @@ final class BackgroundProcessManagerTest extends TestCase
             stopGraceSeconds: $stopGraceSeconds,
             logTailChars: $logTailChars,
         );
-        $this->manager = new BackgroundProcessManager($this->connection, $config, new NullLogger(), $this->makeSerializer());
+        $store = new ProcessStore($this->connection, $this->makeDenormalizer(), new NullLogger());
+        $lifecycle = new ProcessLifecycle($config);
+        $this->manager = new BackgroundProcessManager($store, $lifecycle, $config, new NullLogger());
     }
 
     private function cleanupProcesses(): void
