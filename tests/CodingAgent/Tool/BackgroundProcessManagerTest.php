@@ -22,6 +22,8 @@ use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 /**
  * @covers \Ineersa\CodingAgent\Tool\BackgroundProcessManager
  * @covers \Ineersa\CodingAgent\Config\BackgroundProcessConfig
+ * @covers \Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore
+ * @covers \Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle
  *
  * @requires extension pdo_sqlite
  * @requires OS Linux
@@ -285,7 +287,7 @@ final class BackgroundProcessManagerTest extends TestCase
             logTailChars: $logTailChars,
         );
         $store = new ProcessStore($this->connection, $this->makeDenormalizer(), new NullLogger());
-        $lifecycle = new ProcessLifecycle($config);
+        $lifecycle = new ProcessLifecycle($config, new NullLogger());
         $this->manager = new BackgroundProcessManager($store, $lifecycle, $config, new NullLogger());
     }
 

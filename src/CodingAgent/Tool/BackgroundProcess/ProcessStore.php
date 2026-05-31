@@ -174,6 +174,8 @@ final class ProcessStore
      * Fetch a single row by ID.
      *
      * @return array<string, mixed>|null
+     *
+     * @throws \RuntimeException on DB error
      */
     public function fetchById(int $id): ?array
     {
@@ -185,7 +187,7 @@ final class ProcessStore
 
             return false !== $row ? $row : null;
         } catch (DbalException $e) {
-            return null;
+            throw new \RuntimeException('Failed to fetch background process by ID.', 0, $e);
         }
     }
 
@@ -236,24 +238,39 @@ final class ProcessStore
     }
 
     /**
-     * Fetch all active (unfinished) PIDs.
+     * Fetch all unfinished PIDs.
      *
      * @return list<int>
+     *
+     * @throws \RuntimeException on DB error
      */
-    public function fetchAllActivePids(): array
+    public function fetchAllUnfinishedPids(): array
     {
         try {
             return $this->connection->fetchFirstColumn(
                 'SELECT pid FROM '.self::TABLE.' WHERE finished_at IS NULL',
             );
         } catch (DbalException $e) {
-            $this->logger->warning('background_process.fetch_active_pids_failed', [
-                'component' => 'tool.background_process',
-                'event_type' => 'background_process.fetch_active_pids_failed',
-                'error' => $e->getMessage(),
-            ]);
+            throw new \RuntimeException('Failed to fetch unfinished PIDs.', 0, $e);
+        }
+    }
 
-            return [];
+    /**
+     * Fetch stale rows where finished_at is set and <= cutoff.
+     *
+     * @return list<array<string, mixed>>
+     *
+     * @throws \RuntimeException on DB error
+     */
+    public function fetchStale(string $cutoff): array
+    {
+        try {
+            return $this->connection->fetchAllAssociative(
+                'SELECT * FROM '.self::TABLE.' WHERE finished_at IS NOT NULL AND finished_at <= :cutoff ORDER BY id DESC',
+                ['cutoff' => $cutoff],
+            );
+        } catch (DbalException $e) {
+            throw new \RuntimeException('Failed to query stale background processes.', 0, $e);
         }
     }
 
@@ -275,14 +292,18 @@ final class ProcessStore
 
     /**
      * Delete a single row by ID.
+     *
+     * @return bool True if the row was deleted, false on DB error (already logged)
      */
-    public function deleteById(int $id): void
+    public function deleteById(int $id): bool
     {
         try {
-            $this->connection->executeStatement(
+            $affected = $this->connection->executeStatement(
                 'DELETE FROM '.self::TABLE.' WHERE id = :id',
                 ['id' => $id],
             );
+
+            return $affected > 0;
         } catch (DbalException $e) {
             $this->logger->warning('background_process.delete_failed', [
                 'component' => 'tool.background_process',
@@ -290,6 +311,8 @@ final class ProcessStore
                 'record_id' => $id,
                 'error' => $e->getMessage(),
             ]);
+
+            return false;
         }
     }
 

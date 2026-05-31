@@ -406,39 +406,26 @@ final class BackgroundProcessManager
 
         $cutoff = Clock::get()->now()->modify('-'.$this->config->retentionSeconds.' seconds')->format('c');
 
-        // Find stale rows (finished_at set and within retention window)
-        try {
-            $stale = $this->store->fetchAll();
-        } catch (\RuntimeException $e) {
-            throw new \RuntimeException('Failed to query stale background processes.', 0, $e);
-        }
-
-        // Filter to only stale rows (finished_at <= cutoff)
-        $staleRows = [];
-        foreach ($stale as $row) {
-            $finishedAt = $row['finished_at'] ?? null;
-            if (null !== $finishedAt && \is_string($finishedAt) && $finishedAt <= $cutoff) {
-                $staleRows[] = $row;
-            }
-        }
+        // Find stale rows via SQL predicate (finished_at <= cutoff)
+        $staleRows = $this->store->fetchStale($cutoff);
 
         $count = 0;
         foreach ($staleRows as $row) {
+            $id = $row['id'] ?? 0;
+            $logPath = \is_string($row['log_path'] ?? null) ? $row['log_path'] : '';
+            $statusPath = \is_string($row['status_path'] ?? null) ? $row['status_path'] : '';
+
             // Delete log and status files
-            if (isset($row['log_path']) && \is_string($row['log_path']) && is_file($row['log_path'])) {
-                @unlink($row['log_path']);
-            }
-            if (isset($row['status_path']) && \is_string($row['status_path']) && is_file($row['status_path'])) {
-                @unlink($row['status_path']);
-            }
+            $this->lifecycle->deleteRecordFiles($logPath, $statusPath);
 
             // Delete DB record
-            $this->store->deleteById((int) $row['id']);
-            ++$count;
+            if ($this->store->deleteById((int) $id)) {
+                ++$count;
+            }
         }
 
         // Also clean up orphaned .pid files (from crashed processes)
-        $activePids = $this->store->fetchAllActivePids();
+        $activePids = $this->store->fetchAllUnfinishedPids();
         $activePidSet = [];
         foreach ($activePids as $activePid) {
             if (\is_int($activePid) || \is_string($activePid)) {

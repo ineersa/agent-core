@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool\BackgroundProcess;
 
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
+use Psr\Log\LoggerInterface;
 
 /**
  * OS and filesystem operations for background process lifecycle.
@@ -19,6 +20,7 @@ final class ProcessLifecycle
 {
     public function __construct(
         private readonly BackgroundProcessConfig $config,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -146,11 +148,27 @@ final class ProcessLifecycle
         }
 
         $exitCodeRaw = @file_get_contents($statusPath);
-        if (!\is_string($exitCodeRaw) || '' === trim($exitCodeRaw)) {
+        if (false === $exitCodeRaw) {
+            // file exists but read failed — log diagnostics
+            $error = error_get_last();
+            if (null !== $error) {
+                $this->logger->debug('background_process.status_file_unreadable', [
+                    'component' => 'tool.background_process',
+                    'event_type' => 'background_process.status_file_unreadable',
+                    'path' => $statusPath,
+                    'error' => $error['message'],
+                ]);
+            }
+
             return null;
         }
 
-        return (int) trim($exitCodeRaw);
+        $trimmed = trim($exitCodeRaw);
+        if ('' === $trimmed) {
+            return null;
+        }
+
+        return (int) $trimmed;
     }
 
     /**
@@ -274,19 +292,6 @@ final class ProcessLifecycle
     // ─── Cleanup ─────────────────────────────────────────────────────
 
     /**
-     * Delete stale log and status files for processes whose retention
-     * has expired.
-     *
-     * @param string $olderThan ISO timestamp cutoff
-     *
-     * @return int Number of stale log files cleaned
-     */
-    public function cleanupStaleLogs(string $olderThan): int
-    {
-        return 0; // Log/status file cleanup is now per-record in cleanupStale
-    }
-
-    /**
      * Remove orphaned .pid files (and companion .status/.log files) that
      * belong to PIDs not tracked in the active set.
      *
@@ -332,6 +337,21 @@ final class ProcessLifecycle
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────
+
+    /**
+     * Delete log and status files for a finished process.
+     *
+     * Silently ignores non-existent or empty paths.
+     */
+    public function deleteRecordFiles(string $logPath, string $statusPath): void
+    {
+        if ('' !== $logPath && is_file($logPath)) {
+            @unlink($logPath);
+        }
+        if ('' !== $statusPath && is_file($statusPath)) {
+            @unlink($statusPath);
+        }
+    }
 
     /**
      * Coerce a mixed value to ?int, handling numeric strings from SQLite.

@@ -25,6 +25,8 @@ use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
  * @covers \Ineersa\CodingAgent\Tool\BgStatusTool
  * @covers \Ineersa\CodingAgent\Tool\BackgroundProcessManager
  * @covers \Ineersa\CodingAgent\Config\BackgroundProcessConfig
+ * @covers \Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore
+ * @covers \Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle
  *
  * @requires extension pdo_sqlite
  * @requires OS Linux
@@ -60,7 +62,7 @@ final class BgStatusToolTest extends TestCase
         );
         $denormalizer = new ObjectNormalizer(nameConverter: new CamelCaseToSnakeCaseNameConverter());
         $store = new ProcessStore($this->connection, $denormalizer, new NullLogger());
-        $lifecycle = new ProcessLifecycle($this->config);
+        $lifecycle = new ProcessLifecycle($this->config, new NullLogger());
         $this->manager = new BackgroundProcessManager($store, $lifecycle, $this->config, new NullLogger());
         $this->contextAccessor = new StackToolExecutionContextAccessor();
         $this->tool = new BgStatusTool($this->manager, $this->config, $this->contextAccessor);
