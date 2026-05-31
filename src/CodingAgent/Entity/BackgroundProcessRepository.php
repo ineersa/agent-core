@@ -4,17 +4,22 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Entity;
 
-use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
-use Doctrine\Persistence\ManagerRegistry;
+use Doctrine\ORM\EntityManagerInterface;
 
 /**
- * @extends ServiceEntityRepository<BackgroundProcess>
+ * Repository for BackgroundProcess entity queries.
+ *
+ * Dedicated query layer that keeps DQL and finder logic outside stores.
+ * Stores coordinate persist/flush via EntityManager directly; queries
+ * live here.
+ *
+ * @see BackgroundProcess
  */
-class BackgroundProcessRepository extends ServiceEntityRepository
+final class BackgroundProcessRepository
 {
-    public function __construct(ManagerRegistry $registry)
-    {
-        parent::__construct($registry, BackgroundProcess::class);
+    public function __construct(
+        private readonly EntityManagerInterface $entityManager,
+    ) {
     }
 
     /**
@@ -23,9 +28,18 @@ class BackgroundProcessRepository extends ServiceEntityRepository
     public function findByPid(int $pid): ?BackgroundProcess
     {
         /** @var ?BackgroundProcess $entity */
-        $entity = $this->findOneBy(['pid' => $pid]);
+        $entity = $this->entityManager->getRepository(BackgroundProcess::class)
+            ->findOneBy(['pid' => $pid]);
 
         return $entity;
+    }
+
+    /**
+     * Find a process record by auto-incremented ID.
+     */
+    public function findById(int $id): ?BackgroundProcess
+    {
+        return $this->entityManager->find(BackgroundProcess::class, $id);
     }
 
     /**
@@ -33,13 +47,18 @@ class BackgroundProcessRepository extends ServiceEntityRepository
      *
      * @return BackgroundProcess[]
      */
-    public function findProcesses(?string $sessionId = null): array
+    public function findAll(?string $sessionId = null): array
     {
+        $criteria = [];
         if (null !== $sessionId) {
-            return $this->findBy(['sessionId' => $sessionId], ['id' => 'DESC']);
+            $criteria['sessionId'] = $sessionId;
         }
 
-        return $this->findBy([], ['id' => 'DESC']);
+        /** @var BackgroundProcess[] $result */
+        $result = $this->entityManager->getRepository(BackgroundProcess::class)
+            ->findBy($criteria, ['id' => 'DESC']);
+
+        return $result;
     }
 
     /**
@@ -49,8 +68,10 @@ class BackgroundProcessRepository extends ServiceEntityRepository
      */
     public function findUnfinished(?string $sessionId = null): array
     {
-        $qb = $this->createQueryBuilder('bp')
-            ->where('bp.finishedAt IS NULL')
+        $qb = $this->entityManager->createQueryBuilder();
+        $qb->select('bp')
+            ->from(BackgroundProcess::class, 'bp')
+            ->where($qb->expr()->isNull('bp.finishedAt'))
             ->orderBy('bp.id', 'DESC');
 
         if (null !== $sessionId) {
@@ -58,36 +79,47 @@ class BackgroundProcessRepository extends ServiceEntityRepository
                 ->setParameter('sessionId', $sessionId);
         }
 
-        return $qb->getQuery()->getResult();
+        /** @var BackgroundProcess[] $result */
+        $result = $qb->getQuery()->getResult();
+
+        return $result;
     }
 
     /**
+     * Find unfinished PIDs only.
+     *
      * @return int[]
      */
     public function findUnfinishedPids(): array
     {
-        $rows = $this->createQueryBuilder('bp')
-            ->select('bp.pid')
-            ->where('bp.finishedAt IS NULL')
-            ->getQuery()
-            ->getScalarResult();
+        $qb = $this->entityManager->createQueryBuilder();
+        $qb->select('bp.pid')
+            ->from(BackgroundProcess::class, 'bp')
+            ->where($qb->expr()->isNull('bp.finishedAt'));
+
+        $rows = $qb->getQuery()->getScalarResult();
 
         return array_map('intval', array_column($rows, 'pid'));
     }
 
     /**
-     * Find stale (finished and old) processes.
+     * Find stale (finished and older than cutoff) processes.
      *
      * @return BackgroundProcess[]
      */
     public function findStale(string $cutoff): array
     {
-        return $this->createQueryBuilder('bp')
-            ->where('bp.finishedAt IS NOT NULL')
+        $qb = $this->entityManager->createQueryBuilder();
+        $qb->select('bp')
+            ->from(BackgroundProcess::class, 'bp')
+            ->where($qb->expr()->isNotNull('bp.finishedAt'))
             ->andWhere('bp.finishedAt <= :cutoff')
             ->setParameter('cutoff', $cutoff)
-            ->orderBy('bp.id', 'DESC')
-            ->getQuery()
-            ->getResult();
+            ->orderBy('bp.id', 'DESC');
+
+        /** @var BackgroundProcess[] $result */
+        $result = $qb->getQuery()->getResult();
+
+        return $result;
     }
 }

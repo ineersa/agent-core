@@ -296,7 +296,8 @@ final class BackgroundProcessManagerTest extends TestCase
             stopGraceSeconds: $stopGraceSeconds,
             logTailChars: $logTailChars,
         );
-        $store = new ProcessStore($this->entityManager, new NullLogger());
+        $repository = new \Ineersa\CodingAgent\Entity\BackgroundProcessRepository($this->entityManager);
+        $store = new ProcessStore($this->entityManager, $repository, new NullLogger());
         $lifecycle = new ProcessLifecycle($config, new NullLogger());
         $this->manager = new BackgroundProcessManager($store, $lifecycle, $config, new NullLogger());
     }

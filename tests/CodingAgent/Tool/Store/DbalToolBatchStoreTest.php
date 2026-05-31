@@ -40,7 +40,8 @@ final class DbalToolBatchStoreTest extends TestCase
         $schemaTool = new SchemaTool($entityManager);
         $schemaTool->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
 
-        $this->store = new DbalToolBatchStore($entityManager);
+        $repository = new \Ineersa\CodingAgent\Entity\ToolBatchStateRepository($entityManager);
+        $this->store = new DbalToolBatchStore($entityManager, $repository);
     }
 
     public function testLoadReturnsNullForUnknownBatch(): void

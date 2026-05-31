@@ -71,7 +71,8 @@ final class BgStatusToolTest extends TestCase
             stopGraceSeconds: 1,
             logTailChars: 5000,
         );
-        $store = new ProcessStore($this->entityManager, new NullLogger());
+        $repository = new \Ineersa\CodingAgent\Entity\BackgroundProcessRepository($this->entityManager);
+        $store = new ProcessStore($this->entityManager, $repository, new NullLogger());
         $lifecycle = new ProcessLifecycle($this->config, new NullLogger());
         $this->manager = new BackgroundProcessManager($store, $lifecycle, $this->config, new NullLogger());
         $this->contextAccessor = new StackToolExecutionContextAccessor();

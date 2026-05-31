@@ -6,22 +6,22 @@ namespace Ineersa\CodingAgent\Tool\BackgroundProcess;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
+use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
 use Psr\Log\LoggerInterface;
 
 /**
  * Doctrine ORM-backed durable store for background process records.
  *
- * Replaces the previous DBAL + custom normalizer approach with standard
- * Doctrine ORM entity/repository pattern. Schema is managed by Doctrine
- * migrations, not runtime CREATE TABLE statements.
+ * Query operations delegate to BackgroundProcessRepository.
+ * Write operations (persist, flush, remove) use EntityManager directly.
  *
- * The caller (BackgroundProcessManager) receives entity objects or
- * BackgroundProcessRecord DTOs via toRecord().
+ * Schema is managed by Doctrine migrations — no runtime CREATE TABLE/ALTER TABLE.
  */
 final class ProcessStore
 {
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
+        private readonly BackgroundProcessRepository $repository,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -57,7 +57,7 @@ final class ProcessStore
      */
     public function markFinished(int $id, ?int $exitCode, string $finishedAt): void
     {
-        $entity = $this->entityManager->find(BackgroundProcess::class, $id);
+        $entity = $this->repository->findById($id);
 
         if (null === $entity) {
             throw new \RuntimeException(\sprintf('Background process record with ID %d not found.', $id));
@@ -75,7 +75,7 @@ final class ProcessStore
      */
     public function markStoppedByUser(int $pid, string $finishedAt): void
     {
-        $entity = $this->findByPid($pid);
+        $entity = $this->repository->findByPid($pid);
 
         if (null === $entity) {
             throw new \RuntimeException(\sprintf('Background process with PID %d not found.', $pid));
@@ -93,7 +93,7 @@ final class ProcessStore
      */
     public function fetchByPid(int $pid): ?BackgroundProcess
     {
-        return $this->findByPid($pid);
+        return $this->repository->findByPid($pid);
     }
 
     /**
@@ -101,7 +101,7 @@ final class ProcessStore
      */
     public function fetchById(int $id): ?BackgroundProcess
     {
-        return $this->entityManager->find(BackgroundProcess::class, $id);
+        return $this->repository->findById($id);
     }
 
     /**
@@ -111,13 +111,7 @@ final class ProcessStore
      */
     public function fetchAll(?string $sessionId = null): array
     {
-        $repo = $this->entityManager->getRepository(BackgroundProcess::class);
-
-        if (null !== $sessionId) {
-            return $repo->findBy(['sessionId' => $sessionId], ['id' => 'DESC']);
-        }
-
-        return $repo->findBy([], ['id' => 'DESC']);
+        return $this->repository->findAll($sessionId);
     }
 
     /**
@@ -127,21 +121,7 @@ final class ProcessStore
      */
     public function fetchAllUnfinished(?string $sessionId = null): array
     {
-        $qb = $this->entityManager->createQueryBuilder();
-        $qb->select('bp')
-            ->from(BackgroundProcess::class, 'bp')
-            ->where($qb->expr()->isNull('bp.finishedAt'))
-            ->orderBy('bp.id', 'DESC');
-
-        if (null !== $sessionId) {
-            $qb->andWhere('bp.sessionId = :sessionId')
-                ->setParameter('sessionId', $sessionId);
-        }
-
-        /** @var BackgroundProcess[] $result */
-        $result = $qb->getQuery()->getResult();
-
-        return $result;
+        return $this->repository->findUnfinished($sessionId);
     }
 
     /**
@@ -151,14 +131,7 @@ final class ProcessStore
      */
     public function fetchAllUnfinishedPids(): array
     {
-        $qb = $this->entityManager->createQueryBuilder();
-        $qb->select('bp.pid')
-            ->from(BackgroundProcess::class, 'bp')
-            ->where($qb->expr()->isNull('bp.finishedAt'));
-
-        $rows = $qb->getQuery()->getScalarResult();
-
-        return array_map('intval', array_column($rows, 'pid'));
+        return $this->repository->findUnfinishedPids();
     }
 
     /**
@@ -168,18 +141,7 @@ final class ProcessStore
      */
     public function fetchStale(string $cutoff): array
     {
-        $qb = $this->entityManager->createQueryBuilder();
-        $qb->select('bp')
-            ->from(BackgroundProcess::class, 'bp')
-            ->where($qb->expr()->isNotNull('bp.finishedAt'))
-            ->andWhere('bp.finishedAt <= :cutoff')
-            ->setParameter('cutoff', $cutoff)
-            ->orderBy('bp.id', 'DESC');
-
-        /** @var BackgroundProcess[] $result */
-        $result = $qb->getQuery()->getResult();
-
-        return $result;
+        return $this->repository->findStale($cutoff);
     }
 
     /**
@@ -189,7 +151,7 @@ final class ProcessStore
      */
     public function deleteById(int $id): bool
     {
-        $entity = $this->entityManager->find(BackgroundProcess::class, $id);
+        $entity = $this->repository->findById($id);
 
         if (null === $entity) {
             $this->logger->warning('background_process.delete_not_found', [
@@ -213,15 +175,5 @@ final class ProcessStore
     public function flush(): void
     {
         $this->entityManager->flush();
-    }
-
-    private function findByPid(int $pid): ?BackgroundProcess
-    {
-        $repo = $this->entityManager->getRepository(BackgroundProcess::class);
-
-        /** @var ?BackgroundProcess $entity */
-        $entity = $repo->findOneBy(['pid' => $pid]);
-
-        return $entity;
     }
 }

@@ -7,17 +7,20 @@ namespace Ineersa\CodingAgent\Tool\Store;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\CodingAgent\Entity\ToolBatchState;
+use Ineersa\CodingAgent\Entity\ToolBatchStateRepository;
 
 /**
  * Doctrine ORM-backed durable batch store.
  *
- * Replaces the previous DBAL + raw SQL approach with standard Doctrine
- * ORM entity/repository pattern. Schema is managed by Doctrine migrations.
+ * Query operations delegate to ToolBatchStateRepository.
+ * Write operations use EntityManager directly.
+ * Schema is managed by Doctrine migrations — no runtime CREATE TABLE.
  */
 final class DbalToolBatchStore implements ToolBatchStoreInterface
 {
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
+        private readonly ToolBatchStateRepository $repository,
     ) {
     }
 
@@ -26,7 +29,7 @@ final class DbalToolBatchStore implements ToolBatchStoreInterface
      */
     public function load(string $runId, int $turnNo, string $stepId): ?array
     {
-        $entity = $this->findEntity($runId, $turnNo, $stepId);
+        $entity = $this->repository->findByCompositeKey($runId, $turnNo, $stepId);
 
         if (null === $entity) {
             return null;
@@ -47,7 +50,7 @@ final class DbalToolBatchStore implements ToolBatchStoreInterface
 
         $now = date('c');
 
-        $entity = $this->findEntity($runId, $turnNo, $stepId);
+        $entity = $this->repository->findByCompositeKey($runId, $turnNo, $stepId);
 
         if (null !== $entity) {
             // Update existing
@@ -71,19 +74,11 @@ final class DbalToolBatchStore implements ToolBatchStoreInterface
 
     public function delete(string $runId, int $turnNo, string $stepId): void
     {
-        $entity = $this->findEntity($runId, $turnNo, $stepId);
+        $entity = $this->repository->findByCompositeKey($runId, $turnNo, $stepId);
 
         if (null !== $entity) {
             $this->entityManager->remove($entity);
             $this->entityManager->flush();
         }
-    }
-
-    private function findEntity(string $runId, int $turnNo, string $stepId): ?ToolBatchState
-    {
-        return $this->entityManager->find(
-            ToolBatchState::class,
-            ['runId' => $runId, 'turnNo' => $turnNo, 'stepId' => $stepId],
-        );
     }
 }

@@ -11,3 +11,9 @@ parameters:
 			identifier: missingType.iterableValue
 			count: 1
 			path: src/CodingAgent/CLI/AgentCommand.php
+
+		-
+			message: '#^Match arm comparison between Ineersa\\Tui\\Question\\QuestionKind\:\:Approval and Ineersa\\Tui\\Question\\QuestionKind\:\:Approval is always true\.$#'
+			identifier: match.alwaysTrue
+			count: 1
+			path: src/Tui/Question/QuestionController.php

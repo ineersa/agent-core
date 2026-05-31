@@ -165,10 +165,17 @@ services:
   # Tool batch store — also uses Doctrine ORM EntityManager.
   Ineersa\CodingAgent\Tool\Store\DbalToolBatchStore: ~
 
-  # Repository services for autowiring into stores/managers.
-  Ineersa\CodingAgent\Entity\BackgroundProcessRepository: ~
+  # Repository services — use EntityManagerInterface directly (not ManagerRegistry)
+  # so they work in production DI and test EntityManager setups.
+  Ineersa\CodingAgent\Entity\BackgroundProcessRepository:
+    arguments:
+      $entityManager: '@doctrine.orm.default_entity_manager'
 
-  # Migration runner — runs pending migrations once on startup.
+  Ineersa\CodingAgent\Entity\ToolBatchStateRepository:
+    arguments:
+      $entityManager: '@doctrine.orm.default_entity_manager'
+
+  # Migration runner — runs pending migrations once on agent startup.
   Ineersa\CodingAgent\Migrations\MigrationRunner:
     arguments:
       $entityManager: '@doctrine.orm.default_entity_manager'
