@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
-use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
+use Doctrine\ORM\EntityManager;
+use Doctrine\ORM\ORMSetup;
+use Doctrine\ORM\Tools\SchemaTool;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\BackgroundProcessRecord;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\LogTailResult;
@@ -16,8 +18,6 @@ use Ineersa\CodingAgent\Tool\BackgroundProcess\StopResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
-use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
-use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 
 /**
  * @covers \Ineersa\CodingAgent\Tool\BackgroundProcessManager
@@ -36,16 +36,31 @@ final class BackgroundProcessManagerTest extends TestCase
 {
     private const string TEST_SESSION = 'test-session-001';
 
-    private Connection $connection;
+    private EntityManager $entityManager;
     private BackgroundProcessManager $manager;
     private string $tmpDir;
 
     protected function setUp(): void
     {
-        $this->connection = DriverManager::getConnection([
+        $connection = DriverManager::getConnection([
             'driver' => 'pdo_sqlite',
             'memory' => true,
         ]);
+
+        $config = ORMSetup::createAttributeMetadataConfiguration(
+            paths: [__DIR__.'/../../../src/CodingAgent/Entity'],
+            isDevMode: true,
+            proxyDir: sys_get_temp_dir(),
+        );
+
+        // Enable PHP 8.4+ native lazy objects to avoid symfony/var-exporter dependency
+        $config->enableNativeLazyObjects(true);
+
+        $this->entityManager = new EntityManager($connection, $config);
+
+        // Create schema from entity metadata
+        $schemaTool = new SchemaTool($this->entityManager);
+        $schemaTool->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
 
         $this->tmpDir = sys_get_temp_dir().'/hatfield_bg_test_'.bin2hex(random_bytes(8));
         mkdir($this->tmpDir, 0750, recursive: true);
@@ -55,11 +70,6 @@ final class BackgroundProcessManagerTest extends TestCase
     {
         $this->cleanupProcesses();
         $this->rmDir($this->tmpDir);
-    }
-
-    private function makeDenormalizer(): ObjectNormalizer
-    {
-        return new ObjectNormalizer(nameConverter: new CamelCaseToSnakeCaseNameConverter());
     }
 
     /* ── start() ── */
@@ -286,7 +296,8 @@ final class BackgroundProcessManagerTest extends TestCase
             stopGraceSeconds: $stopGraceSeconds,
             logTailChars: $logTailChars,
         );
-        $store = new ProcessStore($this->connection, $this->makeDenormalizer(), new NullLogger());
+        $repository = new \Ineersa\CodingAgent\Entity\BackgroundProcessRepository($this->entityManager);
+        $store = new ProcessStore($this->entityManager, $repository, new NullLogger());
         $lifecycle = new ProcessLifecycle($config, new NullLogger());
         $this->manager = new BackgroundProcessManager($store, $lifecycle, $config, new NullLogger());
     }
@@ -297,47 +308,25 @@ final class BackgroundProcessManagerTest extends TestCase
             try {
                 $this->manager->shutdownCleanup();
             } catch (\RuntimeException) {
-                // Best-effort cleanup
-            }
-        }
-
-        // Extra safety: kill any orphaned test processes
-        $pattern = sys_get_temp_dir().'/hatfield_bg_test_*';
-        foreach (glob($pattern) as $dir) {
-            if (!is_dir($dir)) {
-                continue;
-            }
-            foreach (new \FilesystemIterator($dir, \FilesystemIterator::SKIP_DOTS) as $file) {
-                if ('pid' === $file->getExtension()) {
-                    $pid = (int) file_get_contents((string) $file);
-                    if ($pid > 0 && is_dir('/proc/'.$pid)) {
-                        @exec('kill -KILL -'.$pid.' 2>/dev/null');
-                        @exec('kill -KILL '.$pid.' 2>/dev/null');
-                    }
-                }
+                // ignore cleanup errors in teardown
             }
         }
     }
 
-    private function rmDir(string $path): void
+    private function rmDir(string $dir): void
     {
-        if (!is_dir($path)) {
+        if (!is_dir($dir)) {
             return;
         }
-
-        $items = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($path, \RecursiveDirectoryIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-
-        foreach ($items as $item) {
-            if ($item->isDir()) {
-                @rmdir((string) $item);
+        $it = new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS);
+        $files = new \RecursiveIteratorIterator($it, \RecursiveIteratorIterator::CHILD_FIRST);
+        foreach ($files as $file) {
+            if ($file->isDir()) {
+                rmdir((string) $file);
             } else {
-                @unlink((string) $item);
+                unlink((string) $file);
             }
         }
-
-        @rmdir($path);
+        rmdir($dir);
     }
 }

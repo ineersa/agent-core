@@ -1,8 +1,11 @@
-# Doctrine DBAL configuration for SQLite-backed Messenger transports.
+# Doctrine DBAL + ORM configuration for SQLite-backed storage.
 #
-# Only DBAL — no ORM. The connection is used exclusively by
-# Symfony Messenger Doctrine transport for async message queues
-# (run_control, llm, tool, publish) defined in config/packages/messenger.yaml.
+# DBAL connection is shared between Symfony Messenger Doctrine transport
+# (run_control, llm, tool, publish) and project-owned entity tables.
+#
+# ORM entities are mapped under CodingAgent for:
+#   - background_process  — BackgroundProcessManager durable tracking
+#   - tool_batch_state    — DbalToolBatchStore parallel tool execution state
 #
 doctrine:
     dbal:
@@ -13,3 +16,19 @@ doctrine:
                 # CWD-based: .hatfield/ lives relative to the user's working directory,
                 # not the app install root. See Kernel::build() where app.cwd is set.
                 path: '%app.cwd%/.hatfield/messenger.sqlite'
+
+    orm:
+        # Native lazy objects are the default in DoctrineBundle 3.x
+        # (replaces proxy generation from earlier versions).
+        # enable_lazy_ghost_objects and auto_generate_proxy_classes
+        # are removed/no-op in DoctrineBundle 3.x.
+        enable_native_lazy_objects: true
+        default_entity_manager: default
+        entity_managers:
+            default:
+                connection: default
+                mappings:
+                    CodingAgent\Entity:
+                        dir: '%kernel.project_dir%/src/CodingAgent/Entity'
+                        prefix: 'Ineersa\CodingAgent\Entity'
+                        type: attribute

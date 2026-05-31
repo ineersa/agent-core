@@ -39,7 +39,14 @@ final class HatfieldSessionStore
      * Create a new session directory and return its ID.
      *
      * When $sessionId is provided, it becomes both the session ID and the
-     * agent-core run ID. When empty, a new 12-char hex ID is generated.
+     * agent-core run ID. When empty, a new 12-char hex ID is generated
+     * with collision checking (loops until a non-existing ID is found).
+     *
+     * Session ID collision is explicitly validated:
+     * - If an explicit $sessionId is provided and already exists, a
+     *   \RuntimeException is thrown.
+     * - If a generated ID collides, the loop retries.
+     * - session_id === run_id in Hatfield.
      *
      * The on-disk layout is self-contained for resume and future forking:
      *   metadata.yaml (session_id, run_id, parent_id, root_id, etc.)
@@ -55,7 +62,13 @@ final class HatfieldSessionStore
     public function createSession(string $prompt = '', string $sessionId = ''): string
     {
         if ('' === $sessionId) {
-            $sessionId = $this->generateSessionId();
+            $sessionId = $this->generateSessionId(false);
+        } else {
+            // When an explicit session ID is provided, verify it does not already exist.
+            // This prevents silent overwrite of an existing session directory.
+            if ($this->exists($sessionId)) {
+                throw new \RuntimeException(\sprintf('Cannot create session "%s": a session with this ID already exists.', $sessionId));
+            }
         }
 
         $sessionPath = $this->getSessionDir($sessionId);
@@ -263,11 +276,22 @@ final class HatfieldSessionStore
     }
 
     /**
-     * Generate a unique session ID.
+     * Generate a unique session ID that does not already exist on disk.
+     *
+     * When $checkExisting is true (default), loops until a non-existing
+     * ID is found. This prevents collision with existing sessions.
+     *
+     * @param bool $checkExisting When true, verify the ID does not collide with an existing session
+     *
+     * @return string 12-char hex ID
      */
-    private function generateSessionId(): string
+    private function generateSessionId(bool $checkExisting = true): string
     {
-        // 12-char hex ID, same style as agent-core run IDs
-        return bin2hex(random_bytes(6));
+        do {
+            // 12-char hex ID, same style as agent-core run IDs
+            $id = bin2hex(random_bytes(6));
+        } while ($checkExisting && $this->exists($id));
+
+        return $id;
     }
 }

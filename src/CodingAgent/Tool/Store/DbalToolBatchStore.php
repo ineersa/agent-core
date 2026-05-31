@@ -4,38 +4,23 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool\Store;
 
-use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\Exception as DbalException;
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
+use Ineersa\CodingAgent\Entity\ToolBatchState;
+use Ineersa\CodingAgent\Entity\ToolBatchStateRepository;
 
 /**
- * Doctrine DBAL-backed durable batch store using the shared messenger SQLite.
+ * Doctrine ORM-backed durable batch store.
  *
- * Stores per-run/per-turn/per-step tool batch execution state in a
- * `tool_batch_state` table. Uses JSON serialization for the batch
- * state array so it can be reconstructed by any consumer process.
- *
- * Table schema:
- *
- *   run_id       TEXT NOT NULL,
- *   turn_no      INTEGER NOT NULL,
- *   step_id      TEXT NOT NULL,
- *   batch_data   TEXT NOT NULL,       -- JSON-serialized batch state
- *   created_at   TEXT NOT NULL DEFAULT (datetime('now')),
- *   updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
- *   PRIMARY KEY (run_id, turn_no, step_id)
- *
- * The table is created lazily on first use (CREATE TABLE IF NOT EXISTS)
- * so no explicit migration step is needed.
+ * Query operations delegate to ToolBatchStateRepository.
+ * Write operations use EntityManager directly.
+ * Schema is managed by Doctrine migrations — no runtime CREATE TABLE.
  */
 final class DbalToolBatchStore implements ToolBatchStoreInterface
 {
-    private const string TABLE_NAME = 'tool_batch_state';
-
-    private bool $tableInitialized = false;
-
     public function __construct(
-        private readonly Connection $connection,
+        private readonly EntityManagerInterface $entityManager,
+        private readonly ToolBatchStateRepository $repository,
     ) {
     }
 
@@ -44,26 +29,14 @@ final class DbalToolBatchStore implements ToolBatchStoreInterface
      */
     public function load(string $runId, int $turnNo, string $stepId): ?array
     {
-        $this->ensureTable();
+        $entity = $this->repository->findByCompositeKey($runId, $turnNo, $stepId);
 
-        try {
-            $row = $this->connection->fetchAssociative(
-                \sprintf('SELECT batch_data FROM %s WHERE run_id = ? AND turn_no = ? AND step_id = ?', self::TABLE_NAME),
-                [$runId, $turnNo, $stepId],
-            );
-        } catch (DbalException $e) {
-            throw new \RuntimeException('Failed to load tool batch state from DBAL store.', 0, $e);
-        }
-
-        if (false === $row || !\is_string($row['batch_data'] ?? null)) {
+        if (null === $entity) {
             return null;
         }
 
-        /** @var string $batchData */
-        $batchData = $row['batch_data'];
-
         /** @var array<string, mixed> $decoded */
-        $decoded = json_decode($batchData, true);
+        $decoded = json_decode($entity->getBatchData(), true);
 
         return $decoded;
     }
@@ -73,68 +46,39 @@ final class DbalToolBatchStore implements ToolBatchStoreInterface
      */
     public function save(string $runId, int $turnNo, string $stepId, array $batchState): void
     {
-        $this->ensureTable();
-
         $json = json_encode($batchState, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
 
-        try {
-            $this->connection->executeStatement(
-                \sprintf(
-                    'INSERT INTO %s (run_id, turn_no, step_id, batch_data) VALUES (?, ?, ?, ?)
-                     ON CONFLICT(run_id, turn_no, step_id) DO UPDATE SET batch_data = ?, updated_at = datetime(\'now\')',
-                    self::TABLE_NAME,
-                ),
-                [$runId, $turnNo, $stepId, $json, $json],
+        $now = date('c');
+
+        $entity = $this->repository->findByCompositeKey($runId, $turnNo, $stepId);
+
+        if (null !== $entity) {
+            // Update existing
+            $entity->setBatchData($json);
+            $entity->setUpdatedAt($now);
+        } else {
+            // Create new
+            $entity = ToolBatchState::create(
+                runId: $runId,
+                turnNo: $turnNo,
+                stepId: $stepId,
+                batchData: $json,
+                createdAt: $now,
+                updatedAt: $now,
             );
-        } catch (DbalException $e) {
-            throw new \RuntimeException('Failed to save tool batch state to DBAL store.', 0, $e);
+            $this->entityManager->persist($entity);
         }
+
+        $this->entityManager->flush();
     }
 
     public function delete(string $runId, int $turnNo, string $stepId): void
     {
-        $this->ensureTable();
+        $entity = $this->repository->findByCompositeKey($runId, $turnNo, $stepId);
 
-        try {
-            $this->connection->executeStatement(
-                \sprintf('DELETE FROM %s WHERE run_id = ? AND turn_no = ? AND step_id = ?', self::TABLE_NAME),
-                [$runId, $turnNo, $stepId],
-            );
-        } catch (DbalException $e) {
-            throw new \RuntimeException('Failed to delete tool batch state from DBAL store.', 0, $e);
-        }
-    }
-
-    /**
-     * Ensure the tool_batch_state table exists.
-     *
-     * Creates the table lazily on first store operation so no explicit
-     * migration is needed — the table appears in the shared messenger
-     * SQLite database on first tool execution.
-     */
-    private function ensureTable(): void
-    {
-        if ($this->tableInitialized) {
-            return;
-        }
-
-        try {
-            $this->connection->executeStatement(\sprintf(
-                'CREATE TABLE IF NOT EXISTS %s (
-                    run_id       TEXT NOT NULL,
-                    turn_no      INTEGER NOT NULL,
-                    step_id      TEXT NOT NULL,
-                    batch_data   TEXT NOT NULL,
-                    created_at   TEXT NOT NULL DEFAULT (datetime(\'now\')),
-                    updated_at   TEXT NOT NULL DEFAULT (datetime(\'now\')),
-                    PRIMARY KEY (run_id, turn_no, step_id)
-                )',
-                self::TABLE_NAME,
-            ));
-
-            $this->tableInitialized = true;
-        } catch (DbalException $e) {
-            throw new \RuntimeException('Failed to create tool_batch_state table.', 0, $e);
+        if (null !== $entity) {
+            $this->entityManager->remove($entity);
+            $this->entityManager->flush();
         }
     }
 }

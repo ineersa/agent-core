@@ -4,114 +4,53 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool\BackgroundProcess;
 
-use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\Exception as DbalException;
+use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\CodingAgent\Entity\BackgroundProcess;
+use Ineersa\CodingAgent\Entity\BackgroundProcessRepository;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 /**
- * SQLite-backed durable store for background process records.
+ * Doctrine ORM-backed durable store for background process records.
  *
- * Handles all database operations: schema management, CRUD, and DTO
- * normalization. Pure data layer — no filesystem or OS process calls.
- * The caller (BackgroundProcessManager) enriches rows with filesystem
- * status before calling normalizeRow().
+ * Query operations delegate to BackgroundProcessRepository for domain queries
+ * and use the built-in EntityManager::getRepository() for simple lookups.
+ * Write operations (persist, flush, remove) use EntityManager directly.
+ *
+ * Schema is managed by Doctrine migrations — no runtime CREATE TABLE/ALTER TABLE.
  */
 final class ProcessStore
 {
-    /** @var string SQLite table name */
-    private const TABLE = 'background_process';
-
-    private bool $tableInitialized = false;
-
     public function __construct(
-        private readonly Connection $connection,
-        private readonly DenormalizerInterface $denormalizer,
+        private readonly EntityManagerInterface $entityManager,
+        private readonly BackgroundProcessRepository $repository,
         private readonly LoggerInterface $logger,
     ) {
     }
 
     /**
-     * Ensure the background_process table exists.
-     *
-     * Creates the table if it doesn't exist and runs ALTER TABLE migrations
-     * for schema additions (e.g. session_id column).
-     */
-    public function ensureTable(): void
-    {
-        if ($this->tableInitialized) {
-            return;
-        }
-
-        try {
-            $this->connection->executeStatement(
-                'CREATE TABLE IF NOT EXISTS '.self::TABLE.' (
-                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-                    pid            INTEGER NOT NULL,
-                    pgid           INTEGER,
-                    session_id     TEXT NOT NULL DEFAULT \'\',
-                    command        TEXT NOT NULL,
-                    log_path       TEXT NOT NULL,
-                    status_path    TEXT NOT NULL,
-                    started_at     TEXT NOT NULL,
-                    finished_at    TEXT,
-                    exit_code      INTEGER,
-                    stopped_by_user INTEGER NOT NULL DEFAULT 0,
-                    updated_at     TEXT NOT NULL
-                )'
-            );
-
-            // Add session_id column if table already existed without it
-            // (SQLite migration: ALTER TABLE ADD COLUMN is a no-op if
-            //  the column already exists, but we wrap in try/catch for
-            //  safety, as some versions may error on duplicate column.)
-            try {
-                $this->connection->executeStatement(
-                    'ALTER TABLE '.self::TABLE.' ADD COLUMN session_id TEXT NOT NULL DEFAULT \'\'',
-                );
-            } catch (DbalException $e) {
-                $this->logger->debug('background_process.schema_migration', [
-                    'component' => 'tool.background_process',
-                    'event_type' => 'background_process.schema_migration',
-                    'error' => $e->getMessage(),
-                ]);
-            }
-
-            $this->tableInitialized = true;
-        } catch (DbalException $e) {
-            throw new \RuntimeException('Failed to create background_process table.', 0, $e);
-        }
-    }
-
-    /**
      * Insert a new process record and return its auto-incremented ID.
      *
-     * @param array<string, mixed> $fields Fields to insert
+     * @param array<string, mixed> $fields Fields matching BackgroundProcess::create() parameters
      *
-     * @return int Last insert ID
+     * @return int Auto-generated entity ID
      */
     public function insertRecord(array $fields): int
     {
-        try {
-            $this->connection->executeStatement(
-                'INSERT INTO '.self::TABLE.' (pid, pgid, session_id, command, log_path, status_path, started_at, updated_at)
-                 VALUES (:pid, :pgid, :session_id, :command, :log_path, :status_path, :started_at, :updated_at)',
-                [
-                    'pid' => $fields['pid'],
-                    'pgid' => $fields['pgid'],
-                    'session_id' => $fields['session_id'] ?? '',
-                    'command' => $fields['command'],
-                    'log_path' => $fields['log_path'],
-                    'status_path' => $fields['status_path'],
-                    'started_at' => $fields['started_at'],
-                    'updated_at' => $fields['updated_at'],
-                ],
-            );
+        $entity = BackgroundProcess::create(
+            pid: (int) ($fields['pid'] ?? 0),
+            pgid: isset($fields['pgid']) ? (int) $fields['pgid'] : null,
+            sessionId: (string) ($fields['session_id'] ?? ''),
+            command: (string) ($fields['command'] ?? ''),
+            logPath: (string) ($fields['log_path'] ?? ''),
+            statusPath: (string) ($fields['status_path'] ?? ''),
+            startedAt: (string) ($fields['started_at'] ?? ''),
+            updatedAt: (string) ($fields['updated_at'] ?? ''),
+        );
 
-            return (int) $this->connection->lastInsertId();
-        } catch (DbalException $e) {
-            throw new \RuntimeException('Failed to insert background process record.', 0, $e);
-        }
+        $this->entityManager->persist($entity);
+        $this->entityManager->flush();
+
+        return $entity->id;
     }
 
     /**
@@ -119,19 +58,15 @@ final class ProcessStore
      */
     public function markFinished(int $id, ?int $exitCode, string $finishedAt): void
     {
-        try {
-            $this->connection->executeStatement(
-                'UPDATE '.self::TABLE.' SET finished_at = :finished_at, exit_code = :exit_code, updated_at = :updated_at WHERE id = :id',
-                [
-                    'finished_at' => $finishedAt,
-                    'exit_code' => $exitCode,
-                    'updated_at' => $finishedAt,
-                    'id' => $id,
-                ],
-            );
-        } catch (DbalException $e) {
-            throw new \RuntimeException('Failed to update background process finished status.', 0, $e);
+        $entity = $this->fetchById($id);
+
+        if (null === $entity) {
+            throw new \RuntimeException(\sprintf('Background process record with ID %d not found.', $id));
         }
+
+        $entity->finish($exitCode, $finishedAt);
+
+        $this->entityManager->flush();
     }
 
     /**
@@ -139,179 +74,114 @@ final class ProcessStore
      */
     public function markStoppedByUser(int $pid, string $finishedAt): void
     {
-        try {
-            $this->connection->executeStatement(
-                'UPDATE '.self::TABLE.' SET stopped_by_user = 1, finished_at = :finished_at, updated_at = :updated_at WHERE pid = :pid',
-                [
-                    'finished_at' => $finishedAt,
-                    'updated_at' => $finishedAt,
-                    'pid' => $pid,
-                ],
-            );
-        } catch (DbalException $e) {
-            throw new \RuntimeException('Failed to update background process stop record.', 0, $e);
+        $entity = $this->entityManager->getRepository(BackgroundProcess::class)
+            ->findOneBy(['pid' => $pid]);
+
+        if (null === $entity) {
+            throw new \RuntimeException(\sprintf('Background process with PID %d not found.', $pid));
         }
+
+        $entity->markStoppedByUser($finishedAt);
+
+        $this->entityManager->flush();
     }
 
     /**
-     * Fetch a single row by PID.
-     *
-     * @return array<string, mixed>|null
+     * Fetch a single entity by PID.
      */
-    public function fetchByPid(int $pid): ?array
+    public function fetchByPid(int $pid): ?BackgroundProcess
     {
-        try {
-            $row = $this->connection->fetchAssociative(
-                'SELECT * FROM '.self::TABLE.' WHERE pid = :pid',
-                ['pid' => $pid],
-            );
-
-            return false !== $row ? $row : null;
-        } catch (DbalException $e) {
-            throw new \RuntimeException('Failed to query background process.', 0, $e);
-        }
+        /* @var ?BackgroundProcess */
+        return $this->entityManager->getRepository(BackgroundProcess::class)
+            ->findOneBy(['pid' => $pid]);
     }
 
     /**
-     * Fetch a single row by ID.
-     *
-     * @return array<string, mixed>|null
-     *
-     * @throws \RuntimeException on DB error
+     * Fetch a single entity by auto-increment ID.
      */
-    public function fetchById(int $id): ?array
+    public function fetchById(int $id): ?BackgroundProcess
     {
-        try {
-            $row = $this->connection->fetchAssociative(
-                'SELECT * FROM '.self::TABLE.' WHERE id = :id',
-                ['id' => $id],
-            );
-
-            return false !== $row ? $row : null;
-        } catch (DbalException $e) {
-            throw new \RuntimeException('Failed to fetch background process by ID.', 0, $e);
-        }
+        /* @var ?BackgroundProcess */
+        return $this->entityManager->find(BackgroundProcess::class, $id);
     }
 
     /**
-     * Fetch all rows, optionally filtered by session.
+     * Fetch all entities, optionally filtered by session.
      *
-     * @return list<array<string, mixed>>
+     * @return BackgroundProcess[]
      */
     public function fetchAll(?string $sessionId = null): array
     {
-        try {
-            if (null !== $sessionId) {
-                return $this->connection->fetchAllAssociative(
-                    'SELECT * FROM '.self::TABLE.' WHERE session_id = :session_id ORDER BY id DESC',
-                    ['session_id' => $sessionId],
-                );
-            }
-
-            return $this->connection->fetchAllAssociative(
-                'SELECT * FROM '.self::TABLE.' ORDER BY id DESC',
-            );
-        } catch (DbalException $e) {
-            throw new \RuntimeException('Failed to list background processes.', 0, $e);
+        $criteria = [];
+        if (null !== $sessionId) {
+            $criteria['sessionId'] = $sessionId;
         }
+
+        /* @var BackgroundProcess[] */
+        return $this->entityManager->getRepository(BackgroundProcess::class)
+            ->findBy($criteria, ['id' => 'DESC']);
     }
 
     /**
-     * Fetch all unfinished rows (finished_at IS NULL), optionally scoped by session.
+     * Fetch all unfinished entities (finishedAt IS NULL), optionally scoped by session.
      *
-     * @return list<array<string, mixed>>
+     * @return BackgroundProcess[]
      */
     public function fetchAllUnfinished(?string $sessionId = null): array
     {
-        try {
-            if (null !== $sessionId) {
-                return $this->connection->fetchAllAssociative(
-                    'SELECT * FROM '.self::TABLE.' WHERE finished_at IS NULL AND session_id = :session_id',
-                    ['session_id' => $sessionId],
-                );
-            }
-
-            return $this->connection->fetchAllAssociative(
-                'SELECT * FROM '.self::TABLE.' WHERE finished_at IS NULL',
-            );
-        } catch (DbalException $e) {
-            throw new \RuntimeException('Failed to query running background processes.', 0, $e);
-        }
+        return $this->repository->findUnfinished($sessionId);
     }
 
     /**
      * Fetch all unfinished PIDs.
      *
-     * @return list<int>
-     *
-     * @throws \RuntimeException on DB error
+     * @return int[]
      */
     public function fetchAllUnfinishedPids(): array
     {
-        try {
-            return $this->connection->fetchFirstColumn(
-                'SELECT pid FROM '.self::TABLE.' WHERE finished_at IS NULL',
-            );
-        } catch (DbalException $e) {
-            throw new \RuntimeException('Failed to fetch unfinished PIDs.', 0, $e);
-        }
+        return $this->repository->findUnfinishedPids();
     }
 
     /**
-     * Fetch stale rows where finished_at is set and <= cutoff.
+     * Fetch stale entities where finishedAt is set and <= cutoff.
      *
-     * @return list<array<string, mixed>>
-     *
-     * @throws \RuntimeException on DB error
+     * @return BackgroundProcess[]
      */
     public function fetchStale(string $cutoff): array
     {
-        try {
-            return $this->connection->fetchAllAssociative(
-                'SELECT * FROM '.self::TABLE.' WHERE finished_at IS NOT NULL AND finished_at <= :cutoff ORDER BY id DESC',
-                ['cutoff' => $cutoff],
-            );
-        } catch (DbalException $e) {
-            throw new \RuntimeException('Failed to query stale background processes.', 0, $e);
-        }
+        return $this->repository->findStale($cutoff);
     }
 
     /**
-     * Delete a single row by ID.
+     * Delete a single entity by ID.
      *
-     * @return bool True if the row was deleted, false if no row matched or on DB error (already logged)
+     * @return bool True if the entity was deleted, false if not found
      */
     public function deleteById(int $id): bool
     {
-        try {
-            $affected = $this->connection->executeStatement(
-                'DELETE FROM '.self::TABLE.' WHERE id = :id',
-                ['id' => $id],
-            );
+        $entity = $this->fetchById($id);
 
-            return $affected > 0;
-        } catch (DbalException $e) {
-            $this->logger->warning('background_process.delete_failed', [
+        if (null === $entity) {
+            $this->logger->warning('background_process.delete_not_found', [
                 'component' => 'tool.background_process',
-                'event_type' => 'background_process.delete_failed',
+                'event_type' => 'background_process.delete_not_found',
                 'record_id' => $id,
-                'error' => $e->getMessage(),
             ]);
 
             return false;
         }
+
+        $this->entityManager->remove($entity);
+        $this->entityManager->flush();
+
+        return true;
     }
 
     /**
-     * Convert a raw DB row array into a typed BackgroundProcessRecord.
-     *
-     * The caller must inject the 'status' key into $row before calling
-     * this method — it is not a real DB column.
-     *
-     * @param array<string, mixed> $row Enriched row (must include 'status' key)
+     * Flush pending entity changes to the database.
      */
-    public function normalizeRow(array $row): BackgroundProcessRecord
+    public function flush(): void
     {
-        return $this->denormalizer->denormalize($row, BackgroundProcessRecord::class);
+        $this->entityManager->flush();
     }
 }
