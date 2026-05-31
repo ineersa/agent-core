@@ -84,15 +84,31 @@ Important design update: do **not** start bash as an unmanaged foreground `Symfo
 - Logging must use structured event-style messages and must not include raw prompts, full command output, environment values, API keys, or full session content by default.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
-Fork run:
+Status: IN-PROGRESS
+Branch: task/tools-09-bash-tool-background
+Worktree: /home/ineersa/projects/agent-core-worktrees/tools-09-bash-tool-background
+Fork run: dfc9tpb60hvm
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-31T18:06:23.023Z
 Completed:
 
 ## Work log
 - Created: 2026-05-17T04:42:49.755Z
 - Updated: 2026-05-31 — Split production runtime/TUI confirmation bridge into TOOLS-09B. TOOLS-09 now starts every bash command through BackgroundProcessManager and supervises it as foreground to avoid duplicate execution/adoption problems.
+
+## Task workflow update - 2026-05-31T18:06:23.023Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/tools-09-bash-tool-background.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/tools-09-bash-tool-background.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/tools-09-bash-tool-background.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/tools-09-bash-tool-background.
+
+## Task workflow update - 2026-05-31T18:06:40.102Z
+- Recorded fork run: dfc9tpb60hvm
+- Launched implementation fork dfc9tpb60hvm in /home/ineersa/projects/agent-core-worktrees/tools-09-bash-tool-background.
+
+## Task workflow update - 2026-05-31T18:17:36.390Z
+- Recorded fork run: dfc9tpb60hvm
+- Validation: castor test --filter=BashTool: PASS (18 tests, 56 assertions); castor test: PASS (1558 tests, 11584 assertions); castor deptrac: PASS (0 violations); castor phpstan scoped/all changed files: PASS (0 errors); castor cs-check: PASS; castor check: BLOCKED/FAIL — deptrac + unit/integration pass; ControllerSmokeTest fails on pre-existing log path resolution issue (`//agent-2026-05-31.log` with empty project_dir); llm-real/TUI E2E fails on pre-existing tmux pane issue (`%14 not found`). Per repo instructions, task remains IN-PROGRESS until full castor check can pass or blocker is resolved.
+- Summary: Implementation fork completed TOOLS-09 and committed 94321e4d842e0b89778d47f93a74e122e65e6ecd on branch task/tools-09-bash-tool-background. Implemented BashTool as registry-backed Hatfield provider/handler; every command starts through BackgroundProcessManager::start() and is supervised foreground-style. Added BashToolConfig, default declining prompt adapter, settings/defaults, service wiring, and focused tests. Deferred TOOLS-09B runtime/TUI confirmation bridge and live streaming as planned.
