@@ -14,7 +14,12 @@ use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
  *
  * Registers a tool-call hook that intercepts bash, write, edit, and read
  * tool invocations, classifies them against policy rules, and returns a
- * block decision for dangerous/risky operations.
+ * decision to block, allow, or request approval for risky operations.
+ *
+ * For policy-relaxable categories (destructive commands, dangerous git ops,
+ * sensitive info access, writes outside CWD, protected reads), the hook
+ * returns RequireApproval instead of Block, triggering the HITL approval
+ * flow. The human can answer "Allow once", "Always allow", or "Deny".
  *
  * Enabled by default in hatfield.defaults.yaml under extensions.enabled.
  * Configured via extensions.settings.safe_guard in YAML config.
@@ -22,6 +27,8 @@ use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
  * @see SafeGuardConfig
  * @see SafeGuardToolCallHook
  * @see SafeGuardClassifier
+ * @see ApprovalSessionTracker
+ * @see SafeGuardPolicyWriter
  */
 final readonly class SafeGuardExtension implements HatfieldExtensionInterface
 {
@@ -32,11 +39,23 @@ final readonly class SafeGuardExtension implements HatfieldExtensionInterface
         $classifier = SafeGuardClassifier::fromConfig($config);
         $policy = SafeGuardPolicy::fromConfig($config);
         $cwd = $api->getCwd();
+        $tracker = new ApprovalSessionTracker();
+
+        $policyWriter = null;
+
+        // Policy writer writes to .hatfield/settings.yaml for "Always allow" persistence
+        $settingsPath = $cwd.'/.hatfield/settings.yaml';
+        if (is_dir(\dirname($settingsPath))) {
+            $policyWriter = new SafeGuardPolicyWriter($settingsPath);
+        }
 
         $api->registerToolCallHook(new SafeGuardToolCallHook(
             classifier: $classifier,
             policy: $policy,
+            approvalTracker: $tracker,
+            policyWriter: $policyWriter,
             cwd: $cwd,
+            autoDenyInNoninteractive: $config->autoDenyInNoninteractive,
         ));
     }
 }

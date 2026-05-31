@@ -10,7 +10,17 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 /**
- * Maps AgentCore HITL event (waiting_human) to runtime human_input.requested.
+ * Maps AgentCore HITL events to runtime protocol events.
+ *
+ * Handles:
+ *   waiting_human → human_input.requested (existing)
+ *   agent_command_applied (kind=human_response) → human_input.answered (new)
+ *
+ * The agent_command_applied handler must run BEFORE
+ * CancelAndFallbackMappingSubscriber, which maps all non-cancel
+ * agent_command_applied events to status.updated.
+ * Priority 10 ensures we handle human_response before
+ * CancelAndFallbackMappingSubscriber (priority 0).
  */
 final readonly class HitlMappingSubscriber implements EventSubscriberInterface
 {
@@ -18,6 +28,7 @@ final readonly class HitlMappingSubscriber implements EventSubscriberInterface
     {
         return [
             'waiting_human' => 'onWaitingHuman',
+            'agent_command_applied' => ['onAgentCommandApplied', 10],
         ];
     }
 
@@ -51,6 +62,32 @@ final readonly class HitlMappingSubscriber implements EventSubscriberInterface
             runId: $runEvent->runId,
             seq: $runEvent->seq,
             payload: $payload,
+        );
+    }
+
+    public function onAgentCommandApplied(RunEventMappingEvent $event): void
+    {
+        if ($event->handled) {
+            return;
+        }
+
+        $p = $event->runEvent->payload;
+        $kind = (string) ($p['kind'] ?? '');
+
+        if ('human_response' !== $kind) {
+            return;
+        }
+
+        $event->handled = true;
+
+        $event->mappedRuntimeEvent = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::HumanInputAnswered->value,
+            runId: $event->runEvent->runId,
+            seq: $event->runEvent->seq,
+            payload: [
+                'question_id' => (string) ($p['question_id'] ?? ''),
+                'answer' => (string) ($p['answer'] ?? ''),
+            ],
         );
     }
 }

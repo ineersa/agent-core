@@ -194,6 +194,11 @@ extensions:
             # Extra command substrings to treat as dangerous (added to built-in regexes).
             dangerous_command_patterns: []
 
+            # When true and running without a TUI/controller (e.g., headless or
+            # messenger worker), return Block instead of RequireApproval for
+            # policy-relaxable categories. Set to false for controller-mode testing.
+            auto_deny_in_noninteractive: true
+
 # ---------------------------------------------------------------------------
 # Logging configuration
 # ---------------------------------------------------------------------------

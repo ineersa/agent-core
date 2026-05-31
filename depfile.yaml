@@ -412,6 +412,7 @@ parameters:
 
     AppExtension:
       - AppExtensionApi
+      - AppRuntimeContract
       - AppConfig
       - AppTool
       - AgentCore
@@ -437,6 +438,7 @@ parameters:
 
     AppExtensionBuiltin:
       - AppExtensionApi
+      - SymfonyYaml
 
     AgentCore:
       - SymfonyLock
