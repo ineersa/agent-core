@@ -435,16 +435,26 @@ depfile.yaml                                                   — new Extension
 - **Approval audit log** — separate from transcript, future work.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/safe-04-safeguard-approval-flow
+Worktree: /home/ineersa/projects/agent-core-worktrees/safe-04-safeguard-approval-flow
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-05-31T17:35:50.684Z
 Completed:
 
 ## Work log
 - Created: 2026-05-29T20:50:28.944Z
 - Updated: 2026-05-30 — Rewrote task based on architectural discovery that existing HITL interrupt flow handles the entire approval lifecycle. Removed TUI-APPROVAL-01 dependency. Detailed the pending-approval tracker approach for "Allow once" behavior and the gap analysis for "Always allow" persistence.
 - Updated: 2026-05-31 — Major rewrite: replaced time-bounded tracker hack with proper three-layer answer routing architecture. Added Layer 1 (answer event mapping fix), Layer 2 (ExtensionApi `ApprovalAnswerHookInterface`), Layer 3 (CodingAgent answer bridge subscriber). SafeGuard now receives actual human answers and can distinguish "Allow once", "Always allow", and "Deny". "Always allow" persistence included via `SafeGuardPolicyWriter`.
+
+## Task workflow update - 2026-05-31T17:35:50.684Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/safe-04-safeguard-approval-flow.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/safe-04-safeguard-approval-flow.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/safe-04-safeguard-approval-flow.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/safe-04-safeguard-approval-flow.
+
+## Task workflow update - 2026-05-31T17:58:12.714Z
+- Reviewer found critical process isolation gap: ExtensionApprovalAnswerSubscriber runs in controller process but ExtensionHookRegistry (pending approvals) lives in tool worker — onApprovalAnswered() never fires in async mode. Also flagged SafeGuardPolicyWriter silent data loss on YAML parse failure, silent @mkdir/file_put_contents failures, SafeGuardConfig bool cast footgun. Launching fix fork.

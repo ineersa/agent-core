@@ -1,51 +1,87 @@
-# TOOLS-09 Implement bash tool with OutputCap and user-controlled backgrounding
+# TOOLS-09 Implement bash tool with background-managed foreground supervision
 
 ## Goal
-Implement the `bash` tool with foreground execution, output capping, and user-controlled backgrounding.
+Implement the `bash` tool with registry-backed metadata, foreground-style execution semantics, output capping, timeout/cancellation handling, and safe user-controlled backgrounding semantics.
 
 Plan source: `.pi/plans/toolbox-design-plan.md`.
 
-Dependencies:
+Important design update: do **not** start bash as an unmanaged foreground `Symfony\Component\Process\Process` and later try to adopt/detach it. Instead, every bash command starts through `BackgroundProcessManager::start($command)` immediately, so there is only one command execution. `BashTool` then supervises that background-managed process as if it were foreground until it completes, times out, is cancelled, or the user accepts backgrounding.
+
+## Dependencies
 - Depends on TOOLS-R02 (Hatfield tool definition convention) and TOOLS-R03 (registry-backed Toolbox, settings, and allowlist wiring).
-- Depends on TOOLS-00 (`ToolExecutionContextInterface`, `ForegroundProcessRunner`, `ToolProcessRegistry`, `ToolProcessTerminator`).
+- Depends on TOOLS-00 cancellation context / `ToolRuntime` / `ToolExecutionContextInterface` equivalents currently present in the codebase.
 - Depends on TOOLS-02 (`OutputCap`).
 - Depends on TOOLS-08 (`BackgroundProcessManager`).
+- TOOLS-09B owns the production runtime/TUI question bridge for real interactive background confirmation.
 
-Scope:
+## Scope
 - Replace/complete `src/CodingAgent/Tool/BashTool.php`.
-- Provide a Hatfield tool definition/provider for `bash` instead of relying on `#[AsTool]` metadata.
-- Register `bash` as a permanent tool through the TOOLS-R02 built-in tool registrar/`ToolRegistryInterface`, including provider description, explicit JSON schema, prompt line, and concise guidelines. Execution flows through the TOOLS-R03 registry-backed Toolbox.
-- Tool definition JSON schema should match `__invoke(string $command, ?int $timeout = null)`.
-- Do NOT add `run_in_background` or any model-controlled background parameter.
-- Execute foreground commands through `ForegroundProcessRunner` using configured shell (`bash` on Unix, fallback to `sh`) and project cwd.
-- Read default timeout, background prompt threshold, output caps, and process termination grace from Hatfield tool settings introduced by TOOLS-R04; user-provided `timeout` can override within safe bounds.
-- Capture stdout+stderr and pass text through `OutputCap`.
-- Non-zero exit appends/reports `Exit code N` while still returning output.
-- Timeout kills the registered foreground process through `ToolProcessTerminator` TERM -> grace -> KILL semantics and returns partial output plus timeout message.
-- Run cancellation while foreground bash is running kills the process promptly through the TOOLS-00 controller/registry/terminator path and returns structured `cancelled=true` details rather than a generic tool failure.
-- User-controlled backgrounding behavior through the runner-level observer/detach hook from TOOLS-00, transferring ownership from `ForegroundProcessRunner` to `BackgroundProcessManager` when the user accepts:
-  - At the settings-backed background prompt threshold (default 30 seconds), proactively prompt the TUI/user: `Command still running after 30s. Move to background?`.
-  - If timeout is less than the background prompt threshold and reached first, do normal timeout kill without a background prompt.
-  - If user accepts, register process with `BackgroundProcessManager`, stream remaining output to `.hatfield/tmp/bg/`, and return `Moved to background. PID: N, Log: <path>` to the model.
-  - If user declines, keep running until timeout or completion.
-- If the project does not yet expose a direct TUI confirm service to tools, implement the foreground behavior and add a small injectable interface/adapter for the prompt with a non-interactive default that declines; document where the TUI should wire confirmation.
-- Add focused tests using fake prompt adapter and short shell commands.
+- Implement `BashTool` as a Hatfield built-in tool provider and handler:
+  - `HatfieldToolProviderInterface`
+  - `ToolHandlerInterface`
+- Register `bash` through the registry-backed permanent tool convention, not `#[AsTool]` metadata.
+- Tool definition schema must expose only:
+  - `command: string`
+  - `timeout?: integer`
+- Do **not** add `run_in_background` or any model-controlled background parameter.
+- Execute commands by calling `BackgroundProcessManager::start($command, $sessionId)` immediately.
+- Supervise the started process in a foreground wait loop by polling `BackgroundProcessManager::list($sessionId)` / process record status and reading the command log.
+- Use project/session context where available:
+  - session/run id from ambient `ToolContext` for process ownership
+  - project cwd according to existing app/runtime cwd conventions
+- Capture command output from the background process log and pass final/partial text through `OutputCap`.
+- On successful completion, return captured capped output.
+- On non-zero exit, return captured capped output plus `Exit code N`.
+- On timeout:
+  - stop the managed process through `BackgroundProcessManager::stop($pid, $sessionId)`
+  - return partial capped output plus a timeout notice.
+- On run cancellation:
+  - stop the managed process through `BackgroundProcessManager::stop($pid, $sessionId)` promptly
+  - return structured/canonical cancellation details or a clear cancellation message with partial output.
+- Add bash-specific settings if missing, for example under `tools.bash`:
+  - `default_timeout_seconds` or reuse existing tool execution timeout where appropriate
+  - `background_prompt_threshold_seconds` default `30`
+  - any poll interval / log read cap if needed
+  - reuse `tools.background_process.stop_grace_seconds` for termination grace unless a distinct bash setting is justified.
+- Add a small injectable bash background prompt abstraction, for example `BashBackgroundPromptAdapterInterface`:
+  - production default for TOOLS-09 is non-interactive and declines
+  - focused tests may inject a fake adapter that accepts or declines
+  - real TUI/runtime bridge is deferred to TOOLS-09B.
+- At the configured prompt threshold:
+  - ask the adapter: `Command still running after 30s. Move to background?`
+  - if accepted, leave the already-started `BackgroundProcessManager` process running and return `Moved to background. PID: N, Log: <path>`
+  - if declined, keep supervising until completion/timeout/cancellation.
+- Ensure accepting backgrounding never launches a second copy of the command.
+- Keep live TUI streaming/log display out of scope; the managed process already writes to `.hatfield/tmp/bg/` and TOOLS-09B/later tasks can expose it through runtime events.
 
-Out of scope:
+## Out of scope
 - No sandbox/allowlist.
 - No model-controlled backgrounding.
+- No live TUI output streaming.
+- No production runtime/TUI question bridge; TOOLS-09B owns that.
+- No direct dependency from tools/runtime code on `src/Tui/` question classes.
 - No ANSI/binary output sanitization unless already trivial.
 
 ## Acceptance criteria
 - `bash` tool is discoverable through registry-backed Symfony Toolbox metadata with only `command` and optional `timeout` parameters, and present in `ToolRegistryInterface` permanent metadata.
-- Foreground successful command returns captured output.
+- `bash` starts exactly one process through `BackgroundProcessManager::start($command, $sessionId)` for each tool call.
+- Foreground successful command returns captured capped output from the managed process log.
 - Non-zero command returns output plus exit code information.
-- Timeout kills the process and returns partial output plus timeout notice.
-- Run cancellation kills foreground bash promptly via the TOOLS-00 foreground process registry/terminator path, includes partial output where available, and marks the result as cancelled.
-- With fake prompt acceptance at the configured/default 30s threshold, command is registered in `BackgroundProcessManager` through the runner-level detach handoff and tool returns PID/log path.
-- With fake prompt decline, command continues until completion/timeout.
+- Timeout stops the managed process and returns partial capped output plus timeout notice.
+- Run cancellation stops the managed process promptly and returns partial output plus cancellation details/message.
+- With fake prompt acceptance at the configured/default 30s threshold, the already-started command remains running under `BackgroundProcessManager` and the tool returns PID/log path.
+- With fake prompt decline, command continues under foreground supervision until completion/timeout/cancellation.
+- Accepting backgrounding does not start a duplicate command.
 - Output is capped/persisted through `OutputCap`.
 - Focused tests pass with Castor/PHPUnit.
+- `castor check` is run before handoff unless environment prerequisites such as tmux or llama.cpp on port 9052 are unavailable; report exact blockers if so.
+
+## Implementation notes
+- Existing `ForegroundProcessRunner`, `ToolProcessRegistry`, and `ToolProcessTerminator` names in the original plan are stale; they are not present in the current codebase. Use the current `BackgroundProcessManager` + `ToolRuntime`/ambient cancellation context instead.
+- `BackgroundProcessManager::start($command)` starts a new process, so it must be called at the beginning of execution, not after a foreground process has already been running.
+- The supervisor loop should poll cheaply, avoid busy waiting, and always check cancellation/timeout before sleeping again.
+- Use `readLogTail()` or an equivalent log read path carefully: final output should be capped by `OutputCap`; avoid loading unbounded logs into memory where possible.
+- Logging must use structured event-style messages and must not include raw prompts, full command output, environment values, API keys, or full session content by default.
 
 ## Workflow metadata
 Status: TODO
@@ -59,3 +95,4 @@ Completed:
 
 ## Work log
 - Created: 2026-05-17T04:42:49.755Z
+- Updated: 2026-05-31 — Split production runtime/TUI confirmation bridge into TOOLS-09B. TOOLS-09 now starts every bash command through BackgroundProcessManager and supervises it as foreground to avoid duplicate execution/adoption problems.
