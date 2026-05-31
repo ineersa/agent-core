@@ -18,6 +18,7 @@ final readonly class HitlMappingSubscriber implements EventSubscriberInterface
     {
         return [
             'waiting_human' => 'onWaitingHuman',
+            'agent_command_applied' => ['onAgentCommandApplied', 10],
         ];
     }
 
@@ -51,6 +52,31 @@ final readonly class HitlMappingSubscriber implements EventSubscriberInterface
             runId: $runEvent->runId,
             seq: $runEvent->seq,
             payload: $payload,
+        );
+    }
+
+    public function onAgentCommandApplied(RunEventMappingEvent $event): void
+    {
+        if ($event->handled) {
+            return;
+        }
+
+        $runEvent = $event->runEvent;
+        $p = $runEvent->payload;
+
+        if ('human_response' !== ($p['kind'] ?? '')) {
+            return;
+        }
+
+        $event->handled = true;
+        $event->mappedRuntimeEvent = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::HumanInputAnswered->value,
+            runId: $runEvent->runId,
+            seq: $runEvent->seq,
+            payload: [
+                'question_id' => (string) ($p['question_id'] ?? ''),
+                'answer' => (string) ($p['answer'] ?? ''),
+            ],
         );
     }
 }
