@@ -36,7 +36,7 @@ final class DbalToolBatchStore implements ToolBatchStoreInterface
         }
 
         /** @var array<string, mixed> $decoded */
-        $decoded = json_decode($entity->getBatchData(), true);
+        $decoded = json_decode($entity->batchData, true);
 
         return $decoded;
     }
@@ -53,19 +53,15 @@ final class DbalToolBatchStore implements ToolBatchStoreInterface
         $entity = $this->repository->findByCompositeKey($runId, $turnNo, $stepId);
 
         if (null !== $entity) {
-            // Update existing
-            $entity->setBatchData($json);
-            $entity->setUpdatedAt($now);
+            $entity->updateBatchData($json, $now);
         } else {
-            // Create new
-            $entity = ToolBatchState::create(
-                runId: $runId,
-                turnNo: $turnNo,
-                stepId: $stepId,
-                batchData: $json,
-                createdAt: $now,
-                updatedAt: $now,
-            );
+            $entity = new ToolBatchState();
+            $entity->runId = $runId;
+            $entity->turnNo = $turnNo;
+            $entity->stepId = $stepId;
+            $entity->batchData = $json;
+            $entity->createdAt = $now;
+            $entity->updatedAt = $now;
             $this->entityManager->persist($entity);
         }
 

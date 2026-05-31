@@ -277,6 +277,17 @@ YAML);
         self::assertSame($explicitId, $meta['run_id'], 'run_id must equal session_id');
     }
 
+    public function testCreateSessionWithDuplicateExplicitIdThrows(): void
+    {
+        $explicitId = 'duplicate-session-id';
+        $this->store->createSession('first', $explicitId);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('already exists');
+
+        $this->store->createSession('second', $explicitId);
+    }
+
     public function testResolveSessionsBasePath(): void
     {
         $basePath = $this->store->resolveSessionsBasePath();

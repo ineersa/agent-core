@@ -12,11 +12,11 @@ use Psr\Log\LoggerInterface;
 /**
  * Doctrine ORM-backed durable store for background process records.
  *
- * Query operations delegate to BackgroundProcessRepository for domain queries
- * and use the built-in EntityManager::getRepository() for simple lookups.
- * Write operations (persist, flush, remove) use EntityManager directly.
+ * Query operations delegate to BackgroundProcessRepository for
+ * domain queries; EntityManager::getRepository() for simple lookups.
+ * Write operations use EntityManager directly.
  *
- * Schema is managed by Doctrine migrations — no runtime CREATE TABLE/ALTER TABLE.
+ * Schema is managed by Doctrine migrations.
  */
 final class ProcessStore
 {
@@ -30,22 +30,19 @@ final class ProcessStore
     /**
      * Insert a new process record and return its auto-incremented ID.
      *
-     * @param array<string, mixed> $fields Fields matching BackgroundProcess::create() parameters
-     *
-     * @return int Auto-generated entity ID
+     * @param array<string, mixed> $fields
      */
     public function insertRecord(array $fields): int
     {
-        $entity = BackgroundProcess::create(
-            pid: (int) ($fields['pid'] ?? 0),
-            pgid: isset($fields['pgid']) ? (int) $fields['pgid'] : null,
-            sessionId: (string) ($fields['session_id'] ?? ''),
-            command: (string) ($fields['command'] ?? ''),
-            logPath: (string) ($fields['log_path'] ?? ''),
-            statusPath: (string) ($fields['status_path'] ?? ''),
-            startedAt: (string) ($fields['started_at'] ?? ''),
-            updatedAt: (string) ($fields['updated_at'] ?? ''),
-        );
+        $entity = new BackgroundProcess();
+        $entity->pid = (int) ($fields['pid'] ?? 0);
+        $entity->pgid = isset($fields['pgid']) ? (int) $fields['pgid'] : null;
+        $entity->sessionId = (string) ($fields['session_id'] ?? '');
+        $entity->command = (string) ($fields['command'] ?? '');
+        $entity->logPath = (string) ($fields['log_path'] ?? '');
+        $entity->statusPath = (string) ($fields['status_path'] ?? '');
+        $entity->startedAt = (string) ($fields['started_at'] ?? '');
+        $entity->updatedAt = (string) ($fields['updated_at'] ?? '');
 
         $this->entityManager->persist($entity);
         $this->entityManager->flush();
@@ -123,7 +120,7 @@ final class ProcessStore
     }
 
     /**
-     * Fetch all unfinished entities (finishedAt IS NULL), optionally scoped by session.
+     * Fetch all unfinished entities, optionally scoped by session.
      *
      * @return BackgroundProcess[]
      */

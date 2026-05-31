@@ -12,14 +12,7 @@ use Symfony\Component\Yaml\Yaml;
  * Filesystem-backed session persistence using the Hatfield config system.
  *
  * Sessions are stored under the configured sessions.path (defaults to
- * .hatfield/sessions/). Each session is a directory containing:
- *
- *   <session-id>/
- *     metadata.yaml       Session metadata (session_id, run_id, parent_id, etc.)
- *     state.json          AgentCore RunState hot state cache (via SessionRunStore)
- *     events.jsonl        AgentCore RunEvent canonical stream (via SessionRunEventStore)
- *     transcript.jsonl    Append-only TUI transcript projection
- *     transcript.jsonl    Append-only TUI transcript projection
+ * .hatfield/sessions/). Each session is a directory.
  *
  * session_id === run_id in Hatfield. One directory equals one session
  * equals one agent run equals one future fork tree node.
@@ -38,71 +31,67 @@ final class HatfieldSessionStore
     /**
      * Create a new session directory and return its ID.
      *
-     * When $sessionId is provided, it becomes both the session ID and the
-     * agent-core run ID. When empty, a new 12-char hex ID is generated
-     * with collision checking (loops until a non-existing ID is found).
+     * When $sessionId is provided, it becomes both the session ID and
+     * run ID. When empty, a new 12-char hex ID is generated.
      *
-     * Session ID collision is explicitly validated:
-     * - If an explicit $sessionId is provided and already exists, a
-     *   \RuntimeException is thrown.
-     * - If a generated ID collides, the loop retries.
-     * - session_id === run_id in Hatfield.
+     * Collision checking is performed under the session lock:
+     * - For explicit IDs: acquires lock, checks existence, throws if
+     *   the session already exists.
+     * - For generated IDs: loops generating candidate IDs, acquiring
+     *   the per-candidate lock, checking existence, and retrying on
+     *   collision until a free ID is found.
      *
-     * The on-disk layout is self-contained for resume and future forking:
-     *   metadata.yaml (session_id, run_id, parent_id, root_id, etc.)
-     *   state.json (empty, written by SessionRunStore on first CAS)
-     *   events.jsonl (empty)
-     *   transcript.jsonl (empty)
+     * Once a free ID is confirmed under lock, the session directory
+     * and metadata files are created before the lock is released.
      *
      * @param string $prompt    Optional initial prompt for metadata
      * @param string $sessionId Optional pre-generated ID; auto-generated if empty
      *
      * @return string The session/run ID
+     *
+     * @throws \RuntimeException if the explicit $sessionId already exists
      */
     public function createSession(string $prompt = '', string $sessionId = ''): string
     {
-        if ('' === $sessionId) {
-            $sessionId = $this->generateSessionId(false);
-        } else {
-            // When an explicit session ID is provided, verify it does not already exist.
-            // This prevents silent overwrite of an existing session directory.
-            if ($this->exists($sessionId)) {
-                throw new \RuntimeException(\sprintf('Cannot create session "%s": a session with this ID already exists.', $sessionId));
-            }
-        }
+        $hasExplicitId = '' !== $sessionId;
 
-        $sessionPath = $this->getSessionDir($sessionId);
-        $lock = $this->lockFactory->createLock('hatfield-session-'.$sessionId);
-
-        try {
+        if ($hasExplicitId) {
+            // Explicit ID: acquire lock, check existence under lock.
+            $lock = $this->lockFactory->createLock('hatfield-session-'.$sessionId);
             $lock->acquire(true);
 
-            if (!is_dir($sessionPath)) {
-                mkdir($sessionPath, 0777, true);
+            try {
+                if ($this->exists($sessionId)) {
+                    throw new \RuntimeException(\sprintf('Cannot create session "%s": a session with this ID already exists.', $sessionId));
+                }
+
+                $this->writeSessionFiles($sessionId, $prompt);
+            } finally {
+                $lock->release();
             }
+        } else {
+            // Generated ID: loop until we find a non-existing ID, checking
+            // under each candidate's lock so two concurrent generators cannot
+            // claim the same ID.
+            while (true) {
+                $candidate = bin2hex(random_bytes(6));
 
-            // session_id === run_id in Hatfield
-            $metadata = [
-                'session_id' => $sessionId,
-                'run_id' => $sessionId,
-                'parent_id' => null,
-                'root_id' => null,
-                'created_at' => date('c'),
-                'updated_at' => date('c'),
-                'cwd' => $this->appConfig->cwd,
-                'prompt' => $prompt,
-            ];
-            file_put_contents($sessionPath.'/metadata.yaml', Yaml::dump($metadata, 4, 2));
+                $lock = $this->lockFactory->createLock('hatfield-session-'.$candidate);
+                $lock->acquire(true);
 
-            file_put_contents($sessionPath.'/state.json', '');
-            file_put_contents($sessionPath.'/events.jsonl', '');
-            file_put_contents($sessionPath.'/transcript.jsonl', '');
+                if ($this->exists($candidate)) {
+                    $lock->release();
+                    continue;
+                }
 
-            chmod($sessionPath.'/state.json', 0644);
-            chmod($sessionPath.'/events.jsonl', 0644);
-            chmod($sessionPath.'/transcript.jsonl', 0644);
-        } finally {
-            $lock->release();
+                try {
+                    $this->writeSessionFiles($candidate, $prompt);
+                    $sessionId = $candidate;
+                    break;
+                } finally {
+                    $lock->release();
+                }
+            }
         }
 
         return $sessionId;
@@ -213,19 +202,22 @@ final class HatfieldSessionStore
      * Used by InteractiveMode to pre-generate the ID before passing it
      * to both createSession() and StartRunRequest, ensuring session_id === run_id.
      *
+     * This method checks existence without holding a lock. The definitive
+     * collision check happens under lock inside createSession().
+     *
      * @return string 12-char hex ID
      */
     public function generateId(): string
     {
-        return $this->generateSessionId();
+        do {
+            $id = bin2hex(random_bytes(6));
+        } while ($this->exists($id));
+
+        return $id;
     }
 
     /**
      * Resolve the sessions base path from Hatfield config.
-     *
-     * Uses sessions.path from the fully resolved config (after defaults,
-     * home, and project layer overlay). Falls back to
-     * <cwd>/.hatfield/sessions when no explicit path is configured.
      */
     public function resolveSessionsBasePath(): string
     {
@@ -233,13 +225,37 @@ final class HatfieldSessionStore
     }
 
     /**
-     * Build the base sessions directory path from resolved config.
-     *
-     * Reads the typed {@see SessionsConfig} from AppConfig. In production
-     * the path is absolute (resolved by {@see AppConfigLoader}). For tests
-     * that construct AppConfig directly with a relative path, we resolve
-     * against the active project directory.
+     * Write session files under an already-held lock.
      */
+    private function writeSessionFiles(string $sessionId, string $prompt): void
+    {
+        $sessionPath = $this->getSessionDir($sessionId);
+
+        if (!is_dir($sessionPath)) {
+            mkdir($sessionPath, 0777, true);
+        }
+
+        $metadata = [
+            'session_id' => $sessionId,
+            'run_id' => $sessionId,
+            'parent_id' => null,
+            'root_id' => null,
+            'created_at' => date('c'),
+            'updated_at' => date('c'),
+            'cwd' => $this->appConfig->cwd,
+            'prompt' => $prompt,
+        ];
+        file_put_contents($sessionPath.'/metadata.yaml', Yaml::dump($metadata, 4, 2));
+
+        file_put_contents($sessionPath.'/state.json', '');
+        file_put_contents($sessionPath.'/events.jsonl', '');
+        file_put_contents($sessionPath.'/transcript.jsonl', '');
+
+        chmod($sessionPath.'/state.json', 0644);
+        chmod($sessionPath.'/events.jsonl', 0644);
+        chmod($sessionPath.'/transcript.jsonl', 0644);
+    }
+
     private function getSessionsDir(): string
     {
         $path = $this->appConfig->sessions->path;
@@ -256,42 +272,16 @@ final class HatfieldSessionStore
         return $path;
     }
 
-    /**
-     * Get the full path to a session directory.
-     */
     private function getSessionDir(string $sessionId): string
     {
         return $this->getSessionsDir().'/'.$sessionId;
     }
 
-    /**
-     * Ensure the session directory exists (create if needed).
-     */
     private function ensureSessionDir(string $sessionId): void
     {
         $dir = $this->getSessionDir($sessionId);
         if (!is_dir($dir)) {
             mkdir($dir, 0777, true);
         }
-    }
-
-    /**
-     * Generate a unique session ID that does not already exist on disk.
-     *
-     * When $checkExisting is true (default), loops until a non-existing
-     * ID is found. This prevents collision with existing sessions.
-     *
-     * @param bool $checkExisting When true, verify the ID does not collide with an existing session
-     *
-     * @return string 12-char hex ID
-     */
-    private function generateSessionId(bool $checkExisting = true): string
-    {
-        do {
-            // 12-char hex ID, same style as agent-core run IDs
-            $id = bin2hex(random_bytes(6));
-        } while ($checkExisting && $this->exists($id));
-
-        return $id;
     }
 }
