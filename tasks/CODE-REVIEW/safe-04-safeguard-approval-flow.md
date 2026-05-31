@@ -435,12 +435,12 @@ depfile.yaml                                                   — new Extension
 - **Approval audit log** — separate from transcript, future work.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/safe-04-safeguard-approval-flow
 Worktree: /home/ineersa/projects/agent-core-worktrees/safe-04-safeguard-approval-flow
 Fork run:
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/79
+PR Status: open
 Started: 2026-05-31T17:35:50.684Z
 Completed:
 
@@ -458,3 +458,42 @@ Completed:
 
 ## Task workflow update - 2026-05-31T17:58:12.714Z
 - Reviewer found critical process isolation gap: ExtensionApprovalAnswerSubscriber runs in controller process but ExtensionHookRegistry (pending approvals) lives in tool worker — onApprovalAnswered() never fires in async mode. Also flagged SafeGuardPolicyWriter silent data loss on YAML parse failure, silent @mkdir/file_put_contents failures, SafeGuardConfig bool cast footgun. Launching fix fork.
+
+## Task workflow update - 2026-05-31T18:25:12.901Z
+- Summary: Implementation committed as e12ff057 on branch task/safe-04-safeguard-approval-flow.
+
+Four layers:
+- Layer 1: HitlMappingSubscriber maps agent_command_applied (kind=human_response) → HumanInputAnswered. ApplyCommandHandler includes answer in event payload.
+- Layer 2: SafeGuardToolCallHook rewrite — HardBlock→Block, relaxable→RequireApproval/Block(auto_deny). ApprovalSessionTracker + SessionEventReader (reads answers from events.jsonl). SafeGuardPolicyWriter for "Always allow" persistence.
+- Layer 3: No cross-process callback — tool worker reads answers from shared events.jsonl on retry.
+- Layer 4: autoDenyInNoninteractive config flag (default true).
+
+Validation: 1555 tests, deptrac clean, cs-check clean, phpstan clean.
+Blocked: castor test:controller requires llama.cpp on port 9052.
+- Fork d0457vlt84gp implemented all 4 layers, committed as e12ff057
+- 14 files changed, 1187 insertions, 183 deletions
+- 1555 tests pass, deptrac clean, cs-check clean, phpstan clean
+
+## Task workflow update - 2026-05-31T18:32:06.587Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/safe-04-safeguard-approval-flow to origin.
+- branch 'task/safe-04-safeguard-approval-flow' set up to track 'origin/task/safe-04-safeguard-approval-flow'.
+- Created PR: https://github.com/ineersa/agent-core/pull/79
+
+## Task workflow update - 2026-05-31T18:48:42.688Z
+- Summary: Reviewer findings fixed in commit 761a8811, pushed to PR #79.
+
+Fixes:
+- CRITICAL 1: approve() called in handleAnswer for Allow once/Always allow
+- CRITICAL 2: resolvePatternForCategory() uses path for write_outside_cwd/protected_read
+- CRITICAL 3: null key or empty runId → Block instead of infinite RequireApproval loop
+- CRITICAL 4: SafeGuardPolicyWriterTest (8 tests)
+- BUG: HitlMappingSubscriberTest (5 tests)
+- BUG: parseBool(null) returns true (default)
+
+Validation: 1571 tests, deptrac clean, cs-check clean, phpstan clean.
+Remaining: castor test:controller requires llama.cpp on port 9052.
+- Reviewer found 4 criticals + 3 bugs
+- Fork ron0ojoz0q2z fixed all, committed as 761a8811
+- 1571 tests pass, deptrac clean, cs-check clean, phpstan clean
+- Pushed to PR #79
