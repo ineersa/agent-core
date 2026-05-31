@@ -10,6 +10,9 @@ parameters:
     # Services read this parameter — not the raw env directly.
     app.capture_errors: '%env(bool:HATFIELD_CAPTURE_ERRORS)%'
 
+    # Doctrine migration classes directory.
+    app.migration_dir: '%kernel.project_dir%/src/CodingAgent/Migrations'
+
 
 services:
   _defaults:
@@ -145,11 +148,9 @@ services:
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 
-  # BackgroundProcessManager — register shutdown handler in production so
-  # tests (which construct the manager directly) don't accumulate callbacks.
-  Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore:
-    arguments:
-      $denormalizer: '@background_process.object_normalizer'
+  # BackgroundProcess store — uses Doctrine ORM EntityManager,
+  # no custom normalizer. Schema is managed by Doctrine migrations.
+  Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore: ~
 
   Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle: ~
 
@@ -161,17 +162,17 @@ services:
     calls:
       - registerShutdownHandler: []
 
-  # Dedicated ObjectNormalizer with CamelCaseToSnakeCaseNameConverter
-  # for background process DB row → DTO conversion. Avoids using the
-  # global @serializer which would break other DTOs that expect exact
-  # property name matching (e.g. RunState).
-  background_process.object_normalizer:
-    class: Symfony\Component\Serializer\Normalizer\ObjectNormalizer
-    arguments:
-      $nameConverter: '@background_process.name_converter'
+  # Tool batch store — also uses Doctrine ORM EntityManager.
+  Ineersa\CodingAgent\Tool\Store\DbalToolBatchStore: ~
 
-  background_process.name_converter:
-    class: Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter
+  # Repository services for autowiring into stores/managers.
+  Ineersa\CodingAgent\Entity\BackgroundProcessRepository: ~
+
+  # Migration runner — runs pending migrations once on startup.
+  Ineersa\CodingAgent\Migrations\MigrationRunner:
+    arguments:
+      $entityManager: '@doctrine.orm.default_entity_manager'
+      $migrationDir: '%app.migration_dir%'
 
   # CodingAgentImageCapabilityChecker — wraps HatfieldModelCatalog from AppConfig.
   Ineersa\CodingAgent\Tool\ImageProcessing\CodingAgentImageCapabilityChecker:

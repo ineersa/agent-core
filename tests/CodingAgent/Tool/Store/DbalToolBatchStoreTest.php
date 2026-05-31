@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool\Store;
 
-use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
+use Doctrine\ORM\EntityManager;
+use Doctrine\ORM\ORMSetup;
+use Doctrine\ORM\Tools\SchemaTool;
 use Ineersa\CodingAgent\Tool\Store\DbalToolBatchStore;
 use PHPUnit\Framework\TestCase;
 
@@ -14,16 +16,31 @@ use PHPUnit\Framework\TestCase;
  */
 final class DbalToolBatchStoreTest extends TestCase
 {
-    private Connection $connection;
     private DbalToolBatchStore $store;
 
     protected function setUp(): void
     {
-        $this->connection = DriverManager::getConnection([
+        $connection = DriverManager::getConnection([
             'driver' => 'pdo_sqlite',
             'memory' => true,
         ]);
-        $this->store = new DbalToolBatchStore($this->connection);
+
+        $config = ORMSetup::createAttributeMetadataConfiguration(
+            paths: [__DIR__.'/../../../../src/CodingAgent/Entity'],
+            isDevMode: true,
+            proxyDir: sys_get_temp_dir(),
+        );
+
+        // Enable PHP 8.4+ native lazy objects to avoid symfony/var-exporter dependency
+        $config->enableNativeLazyObjects(true);
+
+        $entityManager = new EntityManager($connection, $config);
+
+        // Create schema from entity metadata
+        $schemaTool = new SchemaTool($entityManager);
+        $schemaTool->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
+
+        $this->store = new DbalToolBatchStore($entityManager);
     }
 
     public function testLoadReturnsNullForUnknownBatch(): void
