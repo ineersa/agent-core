@@ -339,6 +339,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 'kind' => $message->kind,
                 'idempotency_key' => $message->idempotencyKey(),
                 'question_id' => \is_string($message->payload['question_id'] ?? null) ? $message->payload['question_id'] : null,
+                'answer' => \is_string($message->payload['answer'] ?? null) ? $message->payload['answer'] : null,
                 'options' => $options,
             ],
         );

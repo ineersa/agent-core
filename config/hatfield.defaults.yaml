@@ -194,6 +194,12 @@ extensions:
             # Extra command substrings to treat as dangerous (added to built-in regexes).
             dangerous_command_patterns: []
 
+            # When true, relaxable categories (destructive, dangerous_git, sensitive_info,
+            # custom_dangerous, write_outside_cwd, protected_read) are auto-denied without
+            # prompting. Set to false to enable the interactive approval flow.
+            # HardBlock categories (sudo/su) are always blocked regardless of this setting.
+            auto_deny_in_noninteractive: true
+
 # ---------------------------------------------------------------------------
 # Logging configuration
 # ---------------------------------------------------------------------------

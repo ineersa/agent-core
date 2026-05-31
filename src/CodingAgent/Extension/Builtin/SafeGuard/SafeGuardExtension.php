@@ -16,6 +16,10 @@ use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
  * tool invocations, classifies them against policy rules, and returns a
  * block decision for dangerous/risky operations.
  *
+ * When autoDenyInNoninteractive is false, policy-relaxable categories
+ * (destructive, dangerous_git, etc.) return RequireApproval instead of
+ * Block, enabling the interactive HITL approval flow.
+ *
  * Enabled by default in hatfield.defaults.yaml under extensions.enabled.
  * Configured via extensions.settings.safe_guard in YAML config.
  *
@@ -33,9 +37,16 @@ final readonly class SafeGuardExtension implements HatfieldExtensionInterface
         $policy = SafeGuardPolicy::fromConfig($config);
         $cwd = $api->getCwd();
 
+        $eventReader = new SessionEventReader($cwd);
+        $tracker = new ApprovalSessionTracker($eventReader);
+        $policyWriter = new SafeGuardPolicyWriter($cwd.'/.hatfield/settings.yaml');
+
         $api->registerToolCallHook(new SafeGuardToolCallHook(
             classifier: $classifier,
             policy: $policy,
+            tracker: $tracker,
+            policyWriter: $policyWriter,
+            autoDenyInNoninteractive: $config->autoDenyInNoninteractive,
             cwd: $cwd,
         ));
     }

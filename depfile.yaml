@@ -437,6 +437,7 @@ parameters:
 
     AppExtensionBuiltin:
       - AppExtensionApi
+      - SymfonyYaml
 
     AgentCore:
       - SymfonyLock
