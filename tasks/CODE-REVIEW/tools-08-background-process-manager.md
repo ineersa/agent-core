@@ -42,7 +42,7 @@ Out of scope:
 Status: CODE-REVIEW
 Branch: task/tools-08-background-process-manager
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-08-background-process-manager
-Fork run: 3k12mjpvr99c
+Fork run: zp5xlq9ydjs4
 PR URL: https://github.com/ineersa/agent-core/pull/73
 PR Status: open
 Started:
@@ -124,3 +124,33 @@ Completed:
 - Recorded fork run: 3k12mjpvr99c
 - Validation: `castor test`: ok (1534 tests, 11474 assertions, 0 failures); `castor test --filter='BackgroundProcessManagerTest|BgStatusToolTest'`: ok (57 tests, 142 assertions, 0 failures); `castor deptrac`: ok (violations=0); `castor phpstan`: ok (errors=0); `castor cs-check`: ok (files_fixed=0)
 - Summary: Fork 3k12mjpvr99c completed at `abbdfb99`. Three changes: (1) BgStatusTool now injects StackToolExecutionContextAccessor and scopes all operations to current session's runId — LLM sees only its own processes. (2) BackgroundProcessManager constructor registers register_shutdown_function for automatic cleanup on exit/fatal (misses SIGKILL/OOM/segfault — correct for crash resilience). (3) HeadlessController injects BackgroundProcessManager and calls explicit session-scoped cleanup in shutdown() after consumer supervisor stops. 3 new tests for cross-session isolation. Castor validation: 1534 tests pass, deptrac 0 violations, phpstan 0 errors, cs-check clean. Pushed to PR #73.
+
+## Task workflow update - 2026-05-30T23:27:53.932Z
+- Recorded fork run: v46w1ylyqmcn
+- Validation: `castor test --filter='BackgroundProcessManagerTest|BgStatusToolTest'`: ok (23 tests, 56 assertions, 0 failures) in 9s; `castor test`: ok (1500 tests, 11388 assertions, 0 failures); `castor deptrac`: ok (violations=0); `castor phpstan`: ok (errors=0); `castor cs-check`: clean
+- Summary: Fork v46w1ylyqmcn at `7a96cdd7`. Addressed all PR #73 review comments: (1) Non-nullable LoggerInterface, (2) Created BackgroundProcess/ subnamespace with 5 files (BackgroundProcessRecord, StartResult, StopResult, LogTailResult DTOs + BackgroundProcessRecordNormalizer using Symfony Serializer), (3) Inline table name (no sprintf for const), (4) Symfony Clock replaces nowIso() one-liner, (5) Docblock clarifying register_shutdown_function doesn't conflict with messenger, (6) BgStatusTool updated for DTO property access. 9 files changed, 387+/209-. Castor: 1500 tests pass, deptrac 0, phpstan 0, cs clean. Pushed to PR #73.
+
+## Task workflow update - 2026-05-31T00:06:50.859Z
+- Recorded fork run: zjz0s7xu9mi6
+- Validation: `castor test`: ok (1500 tests, 11388 assertions, 0 failures); `castor deptrac`: ok (violations=0); `castor phpstan`: ok (errors=0); `castor cs-check`: clean; `grep BackgroundProcessRecordNormalizer src/ tests/`: zero results
+- Summary: Fork zjz0s7xu9mi6 at `a64184c3`. Deleted the 103-line hand-rolled BackgroundProcessRecordNormalizer and replaced with Symfony's built-in ObjectNormalizer + CamelCaseToSnakeCaseNameConverter as a dedicated service (not global, to avoid breaking RunState serialization). BackgroundProcessRecord DTO now has constructor defaults for ObjectNormalizer compatibility. Global @serializer unaffected. 6 files changed, 39+/128-. Castor: 1500 tests pass, deptrac 0, phpstan 0, cs clean. Pushed to PR #73.
+
+## Task workflow update - 2026-05-31T00:18:28.095Z
+- Recorded fork run: b5610f86
+- Validation: `castor test --filter='BackgroundProcessManagerTest|BgStatusToolTest'`: ok (23 tests, 56 assertions, 0 failures); `castor test`: ok (1500 tests, 11388 assertions, 0 failures); `castor deptrac`: ok (violations=0, uncovered=564); `castor phpstan`: ok (errors=0); `castor cs-check`: ok (files_fixed=0)
+- Summary: Commit b5610f86: Split BackgroundProcessManager into SRP classes and addressed all remaining reviewer findings. Created ProcessStore (308 lines, pure DB) and ProcessLifecycle (343 lines, pure OS/filesystem) in BackgroundProcess/ subnamespace. Manager reduced from 974 to 597 lines as thin facade. Reviewer fixes: stale docblock, test fidelity (bare ObjectNormalizer), snake_case service IDs, status injection comment, PGID coercion helper. Removed unused LoggerInterface from ProcessLifecycle (phpstan fix). Castor: 1500 tests pass, deptrac 0, phpstan 0, cs-clean.
+
+## Task workflow update - 2026-05-31T00:19:11.874Z
+- Recorded fork run: ljuw6o90fhpg
+- Validation: `castor test --filter='BackgroundProcessManagerTest|BgStatusToolTest'`: ok (23 tests, 56 assertions, 0 failures) in 9s; `castor test`: ok (1500 tests, 11388 assertions, 0 failures); `castor deptrac`: ok (violations=0); `castor phpstan`: ok (errors=0); `castor cs-check`: clean
+- Summary: Fork ljuw6o90fhpg at `b5610f86`. Split monolithic BackgroundProcessManager (974 LOC) into SRP classes: ProcessStore (308 LOC, DB ops), ProcessLifecycle (343 LOC, OS/filesystem ops), Manager (597 LOC, facade). Fixed all reviewer findings: stale docblock, test fidelity (bare ObjectNormalizer), service ID naming (snake_case), status injection comment, extracted coerceNullableInt() helper, removed unused Logger from ProcessLifecycle. 6 files changed, 808+/524-. Castor: 1500 tests pass, deptrac 0, phpstan 0, cs clean. Pushed to PR #73.
+
+## Task workflow update - 2026-05-31T01:30:16.351Z
+- Recorded fork run: tk7jpypgw6ex
+- Validation: `castor test`: ok (1500 tests, 11388 assertions, 0 failures); `castor deptrac`: ok (violations=0); `castor phpstan`: ok (errors=0); `castor cs-check`: clean
+- Summary: Fork tk7jpypgw6ex at `557b0ead`. All 10 reviewer findings fixed: (1) fetchById throws RuntimeException, (2) fetchAllUnfinishedPids throws RuntimeException (was fetchAllActivePids returning []), (3) deleteById returns bool with caller check, (4) dead cleanupStaleLogs removed, (5) renamed fetchAllActivePids→fetchAllUnfinishedPids, (6) cleanupStale no longer re-wraps exceptions, (7) ProcessLifecycle gets LoggerInterface for readStatusFile diagnostics, (8) @covers added for ProcessStore+ProcessLifecycle, (9) deleteRecordFiles extracted to ProcessLifecycle, (10) fetchStale() SQL pushdown replaces client-side filter. 5 files changed, 86+/52-. Castor: 1500 tests pass, deptrac 0, phpstan 0, cs clean. Pushed to PR #73.
+
+## Task workflow update - 2026-05-31T02:23:31.041Z
+- Recorded fork run: zp5xlq9ydjs4
+- Validation: `castor test`: ok (1500 tests, 11388 assertions, 0 failures); `castor deptrac`: ok (violations=0); `castor phpstan`: ok (errors=0); `castor cs-check`: clean
+- Summary: Fork zp5xlq9ydjs4 at `70b8032b`. Addressed 4 non-blocking reviewer suggestions: (1) deleteById @return docblock now mentions "no row matched", (2) ensureTable migration log uses structured component/event_type fields, (3) removed unnecessary (string) cast on $activePidSet keys, (4) removed dead deleteOlderThan() method (zero callers, superseded by fetchStale). 2 files changed, 6+/20-. Castor: 1500 tests pass, deptrac 0, phpstan 0, cs clean. Pushed to PR #73.

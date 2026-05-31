@@ -90,14 +90,14 @@ Update `TuiQuestion` ruleset to allow needed layers. `TuiScreen` may need `TuiQu
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/qh-02-question-approval-widgets
 Worktree: /home/ineersa/projects/agent-core-worktrees/qh-02-question-approval-widgets
 Fork run: 2vgd139wwmnp
 PR URL: https://github.com/ineersa/agent-core/pull/78
-PR Status: open
+PR Status: merged
 Started: 2026-05-30T22:26:13.282Z
-Completed:
+Completed: 2026-05-30T23:25:59.009Z
 
 ## Work log
 - Created: 2026-05-18T00:04:15.305Z
@@ -122,3 +122,10 @@ Completed:
 - Recorded fork run: 2vgd139wwmnp
 - Validation: castor cs-fix → ok; castor cs-check → ok; castor test --filter=Question → 43 tests, 153 assertions, 0 failures; castor deptrac → 0 violations
 - Summary: Addressed all 4 PR #78 review comments: (1) replaced 3 nullable props with TuiRuntimeContext + constructor-injected QuestionCoordinator, (2) removed local variable aliases, (3) replaced static function + $onSelectController captures with non-static closures, (4) split 96-line open() into addHeader/addTextBanner/addSelectList/mount. Bonus fix: SubmitListener::register() now actually calls setRuntimeRefs() — previously open() silently no-op'd.
+
+## Task workflow update - 2026-05-30T23:25:59.009Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/qh-02-question-approval-widgets into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/qh-02-question-approval-widgets.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
