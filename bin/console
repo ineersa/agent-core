@@ -10,6 +10,41 @@ use Symfony\Component\Dotenv\Dotenv;
 
 require_once __DIR__.'/../vendor/autoload.php';
 
+// ── Early --cwd resolution ───────────────────────────────────────────────
+// Resolve --cwd before Kernel/Application construction so getcwd() and
+// Kernel::boot() see the correct working directory from startup. This ensures
+// AppConfig uses the right CWD without requiring AgentCommand::chdir() after
+// the container has already booted.
+//
+// Supports both forms: --cwd=/path and --cwd /path.
+// Relative paths are resolved against the original shell CWD.
+{
+    $args = $_SERVER['argv'] ?? [];
+    $cwdValue = null;
+    foreach ($args as $i => $arg) {
+        if (str_starts_with($arg, '--cwd=')) {
+            $cwdValue = substr($arg, 6);
+            break;
+        }
+        if ($arg === '--cwd' && isset($args[$i + 1]) && !str_starts_with($args[$i + 1], '-')) {
+            $cwdValue = $args[$i + 1];
+            break;
+        }
+    }
+    if (null !== $cwdValue) {
+        $resolved = str_starts_with($cwdValue, '/') ? $cwdValue : getcwd().'/'.$cwdValue;
+        if (!is_dir($resolved)) {
+            fwrite(STDERR, \sprintf("Error: Working directory does not exist: %s\n", $resolved));
+            exit(1);
+        }
+        chdir($resolved);
+        $_SERVER['HATFIELD_CWD'] = $resolved;
+        $_ENV['HATFIELD_CWD'] = $resolved;
+        putenv('HATFIELD_CWD='.$resolved);
+    }
+    unset($args, $cwdValue, $resolved);
+}
+
 if (is_file(dirname(__DIR__).'/.env')) {
     (new Dotenv())->bootEnv(dirname(__DIR__).'/.env');
 }

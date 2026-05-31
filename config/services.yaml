@@ -218,6 +218,17 @@ services:
       $sink: '@Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink'
       $stdoutSink: '@Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink'
 
+  # ─── App executable locator ───
+  # Resolves the agent binary independently of the runtime working directory,
+  # so messenger consumers and controller subprocesses always use the correct
+  # binary regardless of --cwd or Hatfield project CWD.
+  Ineersa\CodingAgent\Runtime\Process\SourceTreeExecutableLocator:
+    arguments:
+      $projectDir: '%kernel.project_dir%'
+
+  Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator:
+    alias: Ineersa\CodingAgent\Runtime\Process\SourceTreeExecutableLocator
+
   # ─── Controller event loop ───
 
   Ineersa\CodingAgent\Runtime\Controller\ConsumerSupervisor: ~

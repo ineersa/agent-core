@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
+use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
+use Ineersa\CodingAgent\Runtime\Process\SourceTreeExecutableLocator;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
 use Symfony\Component\Process\Process;
@@ -33,6 +35,14 @@ use Symfony\Component\Process\Process;
  * - stderr output is captured and logged on crash for diagnostics
  * - getProcess(): exposes the first Process for a transport name so
  *   HeadlessController can read the LLM consumer's stdout
+ *
+ * App executable resolution:
+ * - Uses AppExecutableLocator to resolve the agent binary command
+ *   independently of the runtime working directory (--cwd). This ensures
+ *   messenger consumers always use the correct binary even when the
+ *   runtime CWD is an isolated Hatfield project or a test temp directory.
+ * - The consumer process CWD is set to getcwd() (runtime CWD) for
+ *   correct Hatfield project behavior (settings, sessions, logs).
  */
 final class ConsumerSupervisor
 {
@@ -52,10 +62,16 @@ final class ConsumerSupervisor
     /** Set by shutdown() to prevent pending delay callbacks from launching new consumers. */
     private bool $shuttingDown = false;
 
+    private readonly AppExecutableLocator $executableLocator;
+
     public function __construct(
         private readonly LoggerInterface $logger,
+        ?AppExecutableLocator $executableLocator = null,
         private readonly int $shutdownGraceSeconds = 5,
     ) {
+        $this->executableLocator = $executableLocator ?? new SourceTreeExecutableLocator(
+            \dirname(__DIR__, 4),
+        );
     }
 
     /**
@@ -66,25 +82,23 @@ final class ConsumerSupervisor
      */
     public function launch(string $transportName, int $instanceId = 0): void
     {
-        $entrypoint = (string) ($_SERVER['argv'][0] ?? '');
         $cwd = getcwd();
 
-        if ('' === $entrypoint || false === $cwd) {
-            $this->logger->error('Cannot launch messenger consumer: invalid entrypoint or CWD', [
+        if (false === $cwd) {
+            $this->logger->error('Cannot launch messenger consumer: no current working directory', [
                 'transport' => $transportName,
                 'instance' => $instanceId,
-                'entrypoint' => $entrypoint,
-                'cwd' => false === $cwd ? null : $cwd,
             ]);
 
             return;
         }
 
+        $appCommand = $this->executableLocator->command();
+
         try {
             $process = new Process(
                 [
-                    \PHP_BINARY,
-                    $entrypoint,
+                    ...$appCommand,
                     'messenger:consume',
                     $transportName,
                     '--no-interaction',
