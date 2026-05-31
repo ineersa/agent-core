@@ -231,7 +231,6 @@ final class QuestionController
                 ['value' => 'approve', 'label' => 'Approve'],
                 ['value' => 'reject', 'label' => 'Reject'],
             ],
-            default => [],
         };
 
         if ($request->allowOther) {
