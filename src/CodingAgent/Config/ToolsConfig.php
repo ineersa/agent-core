@@ -20,6 +20,9 @@ final readonly class ToolsConfig
         #[SerializedName('output_cap')]
         public OutputCapConfig $outputCap = new OutputCapConfig(),
 
+        #[SerializedName('background_process')]
+        public BackgroundProcessConfig $backgroundProcess = new BackgroundProcessConfig(),
+
         #[SerializedName('image')]
         public ImageToolConfig $image = new ImageToolConfig(),
     ) {

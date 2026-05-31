@@ -104,6 +104,20 @@ tools:
         # Optional session prefix for persisted output filenames.
         # session_prefix: run-abc123
 
+    background_process:
+        # Storage directory for background process log files.
+        # Relative paths resolve against the active project CWD.
+        path: .hatfield/tmp/bg
+
+        # Stale log/record retention in seconds (default 24 hours).
+        retention: 86400
+
+        # Grace period in seconds for SIGTERM before SIGKILL on stop.
+        stop_grace_seconds: 5
+
+        # Maximum characters returned by bg_status log action.
+        log_tail_chars: 5000
+
 # ---------------------------------------------------------------------------
 # Extensions
 # ---------------------------------------------------------------------------

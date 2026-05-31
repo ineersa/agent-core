@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
-use Ineersa\CodingAgent\Tool\HatfieldToolProviderInterface;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
-use Ineersa\CodingAgent\Tool\ToolDefinitionDTO;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use PHPUnit\Framework\TestCase;
@@ -36,7 +34,7 @@ final class RegistryBackedToolboxTest extends TestCase
         $registry = new ToolRegistry();
         $toolbox = new RegistryBackedToolbox($registry);
 
-        self::assertInstanceOf(ToolboxInterface::class, $toolbox);
+        $this->assertInstanceOf(ToolboxInterface::class, $toolbox);
     }
 
     /* ───────── getTools() ───────── */
@@ -46,7 +44,7 @@ final class RegistryBackedToolboxTest extends TestCase
         $registry = new ToolRegistry();
         $toolbox = new RegistryBackedToolbox($registry);
 
-        self::assertSame([], $toolbox->getTools());
+        $this->assertSame([], $toolbox->getTools());
     }
 
     public function testGetToolsConvertsPermanentToolsToSymfonyTools(): void
@@ -66,12 +64,12 @@ final class RegistryBackedToolboxTest extends TestCase
         $toolbox = new RegistryBackedToolbox($registry);
         $tools = $toolbox->getTools();
 
-        self::assertCount(1, $tools);
-        self::assertSame('read', $tools[0]->getName());
-        self::assertSame('Read file contents', $tools[0]->getDescription());
-        self::assertSame(['type' => 'object', 'properties' => ['path' => ['type' => 'string']]], $tools[0]->getParameters());
-        self::assertSame($handler::class, $tools[0]->getReference()->getClass());
-        self::assertSame('__invoke', $tools[0]->getReference()->getMethod());
+        $this->assertCount(1, $tools);
+        $this->assertSame('read', $tools[0]->getName());
+        $this->assertSame('Read file contents', $tools[0]->getDescription());
+        $this->assertSame(['type' => 'object', 'properties' => ['path' => ['type' => 'string']]], $tools[0]->getParameters());
+        $this->assertSame($handler::class, $tools[0]->getReference()->getClass());
+        $this->assertSame('__invoke', $tools[0]->getReference()->getMethod());
     }
 
     public function testGetToolsIncludesDynamicAfterPermanent(): void
@@ -95,9 +93,9 @@ final class RegistryBackedToolboxTest extends TestCase
         $toolbox = new RegistryBackedToolbox($registry);
         $tools = $toolbox->getTools();
 
-        self::assertCount(2, $tools);
-        self::assertSame('perm', $tools[0]->getName());
-        self::assertSame('dyn', $tools[1]->getName());
+        $this->assertCount(2, $tools);
+        $this->assertSame('perm', $tools[0]->getName());
+        $this->assertSame('dyn', $tools[1]->getName());
     }
 
     public function testGetToolsPreservesOrder(): void
@@ -111,7 +109,7 @@ final class RegistryBackedToolboxTest extends TestCase
         $toolbox = new RegistryBackedToolbox($registry);
         $names = array_map(static fn ($t) => $t->getName(), $toolbox->getTools());
 
-        self::assertSame(['a', 'b', 'c'], $names);
+        $this->assertSame(['a', 'b', 'c'], $names);
     }
 
     /* ───────── execute() ───────── */
@@ -134,8 +132,8 @@ final class RegistryBackedToolboxTest extends TestCase
 
         $result = $toolbox->execute($toolCall);
 
-        self::assertSame($toolCall, $result->getToolCall());
-        self::assertSame(['status' => 'ok', 'input' => 'worked'], $result->getResult());
+        $this->assertSame($toolCall, $result->getToolCall());
+        $this->assertSame(['status' => 'ok', 'input' => 'worked'], $result->getResult());
     }
 
     public function testExecuteForDynamicTool(): void
@@ -152,7 +150,7 @@ final class RegistryBackedToolboxTest extends TestCase
         $toolbox = new RegistryBackedToolbox($registry);
         $result = $toolbox->execute(new ToolCall('call-2', 'fg_tool', []));
 
-        self::assertSame('dynamic result', $result->getResult());
+        $this->assertSame('dynamic result', $result->getResult());
     }
 
     public function testExecuteForHandlerWithNoArguments(): void
@@ -165,7 +163,7 @@ final class RegistryBackedToolboxTest extends TestCase
         $toolbox = new RegistryBackedToolbox($registry);
         $result = $toolbox->execute(new ToolCall('call-3', 'ping', []));
 
-        self::assertSame('no-args result', $result->getResult());
+        $this->assertSame('no-args result', $result->getResult());
     }
 
     public function testExecuteThrowsToolNotFoundException(): void
@@ -185,21 +183,21 @@ final class RegistryBackedToolboxTest extends TestCase
 
         $dispatcher = new EventDispatcher();
         $events = [];
-        $dispatcher->addListener(ToolCallRequested::class, function (ToolCallRequested $event) use (&$events): void {
+        $dispatcher->addListener(ToolCallRequested::class, static function (ToolCallRequested $event) use (&$events): void {
             $events[] = ['requested', $event->getToolCall()->getName(), $event->getMetadata()->getName()];
         });
-        $dispatcher->addListener(ToolCallArgumentsResolved::class, function (ToolCallArgumentsResolved $event) use (&$events, $handler): void {
+        $dispatcher->addListener(ToolCallArgumentsResolved::class, static function (ToolCallArgumentsResolved $event) use (&$events, $handler): void {
             $events[] = ['arguments_resolved', $event->getTool() === $handler, $event->getArguments()];
         });
-        $dispatcher->addListener(ToolCallSucceeded::class, function (ToolCallSucceeded $event) use (&$events, $handler): void {
+        $dispatcher->addListener(ToolCallSucceeded::class, static function (ToolCallSucceeded $event) use (&$events, $handler): void {
             $events[] = ['succeeded', $event->getTool() === $handler, $event->getResult()->getResult()];
         });
 
         $toolbox = new RegistryBackedToolbox($registry, $dispatcher);
         $result = $toolbox->execute(new ToolCall('call-events', 'evented', ['query' => 'hello']));
 
-        self::assertSame('evented result', $result->getResult());
-        self::assertSame([
+        $this->assertSame('evented result', $result->getResult());
+        $this->assertSame([
             ['requested', 'evented', 'evented'],
             ['arguments_resolved', true, ['query' => 'hello']],
             ['succeeded', true, 'evented result'],
@@ -214,7 +212,7 @@ final class RegistryBackedToolboxTest extends TestCase
 
         $dispatcher = new EventDispatcher();
         $events = [];
-        $dispatcher->addListener(ToolCallRequested::class, function (ToolCallRequested $event) use (&$events): void {
+        $dispatcher->addListener(ToolCallRequested::class, static function (ToolCallRequested $event) use (&$events): void {
             $events[] = 'requested';
             $event->deny('blocked by listener');
         });
@@ -225,9 +223,9 @@ final class RegistryBackedToolboxTest extends TestCase
         $toolbox = new RegistryBackedToolbox($registry, $dispatcher);
         $result = $toolbox->execute(new ToolCall('call-denied', 'guarded', []));
 
-        self::assertSame('blocked by listener', $result->getResult());
-        self::assertSame(0, $handler->calls);
-        self::assertSame(['requested'], $events);
+        $this->assertSame('blocked by listener', $result->getResult());
+        $this->assertSame(0, $handler->calls);
+        $this->assertSame(['requested'], $events);
     }
 
     public function testToolCallRequestedCanReplaceResultAndSkipHandler(): void
@@ -244,8 +242,8 @@ final class RegistryBackedToolboxTest extends TestCase
         $toolbox = new RegistryBackedToolbox($registry, $dispatcher);
         $result = $toolbox->execute(new ToolCall('call-replaced', 'replaceable', []));
 
-        self::assertSame(['replaced' => true], $result->getResult());
-        self::assertSame(0, $handler->calls);
+        $this->assertSame(['replaced' => true], $result->getResult());
+        $this->assertSame(0, $handler->calls);
     }
 
     public function testExecuteDispatchesSymfonyAiToolFailedEvent(): void
@@ -275,16 +273,16 @@ final class RegistryBackedToolboxTest extends TestCase
 
         try {
             $toolbox->execute(new ToolCall('call-failed', 'failing', ['path' => 'x']));
-            self::fail('Expected handler exception to be re-thrown.');
+            $this->fail('Expected handler exception to be re-thrown.');
         } catch (\RuntimeException $caught) {
-            self::assertSame($exception, $caught);
+            $this->assertSame($exception, $caught);
         }
 
-        self::assertInstanceOf(ToolCallFailed::class, $failedEvent);
-        self::assertSame($handler, $failedEvent->getTool());
-        self::assertSame('failing', $failedEvent->getMetadata()->getName());
-        self::assertSame(['path' => 'x'], $failedEvent->getArguments());
-        self::assertSame($exception, $failedEvent->getException());
+        $this->assertInstanceOf(ToolCallFailed::class, $failedEvent);
+        $this->assertSame($handler, $failedEvent->getTool());
+        $this->assertSame('failing', $failedEvent->getMetadata()->getName());
+        $this->assertSame(['path' => 'x'], $failedEvent->getArguments());
+        $this->assertSame($exception, $failedEvent->getException());
     }
 
     /* ───────── Extension-registered tools are the same path ───────── */
@@ -308,7 +306,7 @@ final class RegistryBackedToolboxTest extends TestCase
         $toolbox = new RegistryBackedToolbox($registry);
         $result = $toolbox->execute(new ToolCall('call-5', 'ext_tool', ['foo' => 'bar']));
 
-        self::assertSame('extension result', $result->getResult());
+        $this->assertSame('extension result', $result->getResult());
     }
 
     /* ───────── Private helpers ───────── */

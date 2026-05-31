@@ -21,7 +21,7 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
  *  - logging    LoggingConfig (path, level, max_files)
  *  - sessions   SessionsConfig (path)
  *  - extensions ExtensionsConfig (enabled list)
- *  - tools      ToolsConfig (output_cap, …)
+ *  - tools      ToolsConfig (execution, output_cap, background_process, image, …)
  *  - ai         AiConfig (provider and model configuration)
  *
  * The raw array is kept for forward compatibility with config keys

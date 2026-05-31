@@ -373,7 +373,7 @@ DIFF;
             return false;
         }
 
-        $handle = @fopen($targetPath, 'rb');
+        $handle = @fopen($targetPath, 'r');
         if (false === $handle) {
             return false;
         }

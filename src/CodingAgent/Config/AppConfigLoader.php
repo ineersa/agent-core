@@ -170,6 +170,13 @@ final class AppConfigLoader
             );
         }
 
+        if (isset($data['tools']['background_process']['path']) && \is_string($data['tools']['background_process']['path'])) {
+            $data['tools']['background_process']['path'] = $this->pathResolver->resolve(
+                $data['tools']['background_process']['path'],
+                $cwd,
+            );
+        }
+
         return $data;
     }
 

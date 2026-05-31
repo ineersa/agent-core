@@ -31,27 +31,13 @@ final class ImageAttachmentProcessorTest extends TestCase
 
         $this->processor = new ImageAttachmentProcessor($this->config);
 
-        $this->tmpDir = \sys_get_temp_dir().'/hatfield_view_image_proc_test_'.\bin2hex(\random_bytes(8));
-        \mkdir($this->tmpDir, 0750, recursive: true);
+        $this->tmpDir = sys_get_temp_dir().'/hatfield_view_image_proc_test_'.bin2hex(random_bytes(8));
+        mkdir($this->tmpDir, 0750, recursive: true);
     }
 
     protected function tearDown(): void
     {
         $this->rmDir($this->tmpDir);
-    }
-
-    private function createPng(int $width, int $height, string $path): void
-    {
-        $img = \imagecreatetruecolor($width, $height);
-        \imagepng($img, $path);
-        // imagedestroy is no-op since PHP 8.0, removed
-    }
-
-    private function createJpeg(int $width, int $height, string $path): void
-    {
-        $img = \imagecreatetruecolor($width, $height);
-        \imagejpeg($img, $path, 90);
-        // imagedestroy is no-op since PHP 8.0, removed
     }
 
     /* ── Small images pass through unchanged ── */
@@ -63,11 +49,11 @@ final class ImageAttachmentProcessorTest extends TestCase
 
         $result = $this->processor->process($path, 'image/png', 100, 100);
 
-        self::assertFalse($result['processed'], 'Small image should not be processed');
-        self::assertSame($path, $result['path']);
-        self::assertSame(100, $result['width']);
-        self::assertSame(100, $result['height']);
-        self::assertSame('image/png', $result['media_type']);
+        $this->assertFalse($result['processed'], 'Small image should not be processed');
+        $this->assertSame($path, $result['path']);
+        $this->assertSame(100, $result['width']);
+        $this->assertSame(100, $result['height']);
+        $this->assertSame('image/png', $result['media_type']);
     }
 
     public function testSmallJpegPassesThroughUnchanged(): void
@@ -77,8 +63,8 @@ final class ImageAttachmentProcessorTest extends TestCase
 
         $result = $this->processor->process($path, 'image/jpeg', 100, 100);
 
-        self::assertFalse($result['processed'], 'Small JPEG should not be processed');
-        self::assertSame($path, $result['path']);
+        $this->assertFalse($result['processed'], 'Small JPEG should not be processed');
+        $this->assertSame($path, $result['path']);
     }
 
     /* ── Large images get resized ── */
@@ -94,11 +80,11 @@ final class ImageAttachmentProcessorTest extends TestCase
 
         $result = $this->processor->process($path, 'image/png', 3000, 2000);
 
-        self::assertTrue($result['processed'], 'Large image should be processed');
-        self::assertNotSame($path, $result['path'], 'Processed image should be a temp file, not the original');
-        self::assertLessThanOrEqual(2000, $result['width'], 'Width must be <= maxDimension');
-        self::assertLessThanOrEqual(2000, $result['height'], 'Height must be <= maxDimension');
-        self::assertFileExists($result['path']);
+        $this->assertTrue($result['processed'], 'Large image should be processed');
+        $this->assertNotSame($path, $result['path'], 'Processed image should be a temp file, not the original');
+        $this->assertLessThanOrEqual(2000, $result['width'], 'Width must be <= maxDimension');
+        $this->assertLessThanOrEqual(2000, $result['height'], 'Height must be <= maxDimension');
+        $this->assertFileExists($result['path']);
     }
 
     public function testLargeJpegIsResizedToMaxDimension(): void
@@ -112,10 +98,10 @@ final class ImageAttachmentProcessorTest extends TestCase
 
         $result = $this->processor->process($path, 'image/jpeg', 3000, 1500);
 
-        self::assertTrue($result['processed'], 'Large JPEG should be processed');
-        self::assertLessThanOrEqual(2000, $result['width']);
-        self::assertLessThanOrEqual(2000, $result['height']);
-        self::assertFileExists($result['path']);
+        $this->assertTrue($result['processed'], 'Large JPEG should be processed');
+        $this->assertLessThanOrEqual(2000, $result['width']);
+        $this->assertLessThanOrEqual(2000, $result['height']);
+        $this->assertFileExists($result['path']);
     }
 
     /* ── Aspect ratio preservation ── */
@@ -131,12 +117,12 @@ final class ImageAttachmentProcessorTest extends TestCase
 
         $result = $this->processor->process($path, 'image/png', 4000, 1000);
 
-        self::assertTrue($result['processed']);
+        $this->assertTrue($result['processed']);
         // Original aspect: 4:1. After resize to fit max 2000:
         // width = 2000 (clamped), height = 1000 * (2000/4000) = 500
-        self::assertSame(2000, $result['width']);
-        self::assertSame(500, $result['height']);
-        self::assertFileExists($result['path']);
+        $this->assertSame(2000, $result['width']);
+        $this->assertSame(500, $result['height']);
+        $this->assertFileExists($result['path']);
     }
 
     /* ── Processor handles GD-only fallback ── */
@@ -152,8 +138,8 @@ final class ImageAttachmentProcessorTest extends TestCase
 
         $result = $this->processor->process($path, 'image/png', 100, 100);
 
-        self::assertFalse($result['processed']);
-        self::assertSame($path, $result['path']);
+        $this->assertFalse($result['processed']);
+        $this->assertSame($path, $result['path']);
     }
 
     /* ── Config-driven quality candidates ── */
@@ -184,10 +170,10 @@ final class ImageAttachmentProcessorTest extends TestCase
 
         $result = $processor->process($path, 'image/png', 2500, 2000);
 
-        self::assertTrue($result['processed'], 'Image should be processed with custom quality config');
-        self::assertNotSame($path, $result['path']);
-        self::assertLessThanOrEqual(2000, $result['width']);
-        self::assertLessThanOrEqual(2000, $result['height']);
+        $this->assertTrue($result['processed'], 'Image should be processed with custom quality config');
+        $this->assertNotSame($path, $result['path']);
+        $this->assertLessThanOrEqual(2000, $result['width']);
+        $this->assertLessThanOrEqual(2000, $result['height']);
     }
 
     public function testExceedsEncodedLimitWarningPresentWhenLimitTiny(): void
@@ -216,11 +202,11 @@ final class ImageAttachmentProcessorTest extends TestCase
 
         $result = $processor->process($path, 'image/png', 20, 20);
 
-        self::assertTrue($result['processed']);
-        self::assertArrayHasKey('exceeds_encoded_limit', $result);
-        self::assertTrue($result['exceeds_encoded_limit']);
-        self::assertArrayHasKey('warning', $result);
-        self::assertStringContainsString('may exceed provider size limits', $result['warning']);
+        $this->assertTrue($result['processed']);
+        $this->assertArrayHasKey('exceeds_encoded_limit', $result);
+        $this->assertTrue($result['exceeds_encoded_limit']);
+        $this->assertArrayHasKey('warning', $result);
+        $this->assertStringContainsString('may exceed provider size limits', $result['warning']);
     }
 
     /* ── writeCache failure robustness ── */
@@ -233,7 +219,7 @@ final class ImageAttachmentProcessorTest extends TestCase
 
         // Create a file where the cache directory would be — this blocks
         // mkdir(recursive:true) because a regular file exists at that path
-        $cacheDir = \sys_get_temp_dir().'/hatfield/view_image';
+        $cacheDir = sys_get_temp_dir().'/hatfield/view_image';
         $blockingFile = $cacheDir.'.blocking';
 
         // We can't actually block the real cache dir without breaking other tests.
@@ -245,10 +231,10 @@ final class ImageAttachmentProcessorTest extends TestCase
 
         $result = $this->processor->process($path, 'image/png', 100, 100);
 
-        self::assertArrayHasKey('path', $result);
-        self::assertIsString($result['path']);
-        self::assertNotEmpty($result['path'], 'Path in result must never be null or empty');
-        self::assertFileExists($result['path'], 'If processing happened, cache file must exist');
+        $this->assertArrayHasKey('path', $result);
+        $this->assertIsString($result['path']);
+        $this->assertNotEmpty($result['path'], 'Path in result must never be null or empty');
+        $this->assertFileExists($result['path'], 'If processing happened, cache file must exist');
     }
 
     /* ── Cache cleanup ── */
@@ -265,21 +251,35 @@ final class ImageAttachmentProcessorTest extends TestCase
 
         $result = $this->processor->process($path, 'image/png', 2500, 2000);
 
-        self::assertTrue($result['processed']);
-        self::assertFileExists($result['path']);
+        $this->assertTrue($result['processed']);
+        $this->assertFileExists($result['path']);
 
         // Clean with null (delete all) — should remove the cached file
         $deleted = $this->processor->cleanCache(null);
 
-        self::assertGreaterThanOrEqual(1, $deleted, 'Should delete at least one cached file');
-        self::assertFileDoesNotExist($result['path']);
+        $this->assertGreaterThanOrEqual(1, $deleted, 'Should delete at least one cached file');
+        $this->assertFileDoesNotExist($result['path']);
+    }
+
+    private function createPng(int $width, int $height, string $path): void
+    {
+        $img = imagecreatetruecolor($width, $height);
+        imagepng($img, $path);
+        // imagedestroy is no-op since PHP 8.0, removed
+    }
+
+    private function createJpeg(int $width, int $height, string $path): void
+    {
+        $img = imagecreatetruecolor($width, $height);
+        imagejpeg($img, $path, 90);
+        // imagedestroy is no-op since PHP 8.0, removed
     }
 
     // ─── helpers ───
 
     private function rmDir(string $path): void
     {
-        if (!\is_dir($path)) {
+        if (!is_dir($path)) {
             return;
         }
 
@@ -290,10 +290,10 @@ final class ImageAttachmentProcessorTest extends TestCase
 
         foreach ($items as $item) {
             $item->isDir()
-                ? \rmdir((string) $item)
-                : \unlink((string) $item);
+                ? rmdir((string) $item)
+                : unlink((string) $item);
         }
 
-        @\rmdir($path);
+        @rmdir($path);
     }
 }
