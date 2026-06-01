@@ -92,15 +92,25 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
 
         $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'list']));
 
-        $this->assertStringContainsString('bg process', $result);
-        $this->assertStringContainsString('Total: 1', $result);
+        $data = json_decode($result, true, 512, \JSON_THROW_ON_ERROR);
+        $this->assertIsArray($data);
+        $this->assertArrayHasKey('processes', $data);
+        $this->assertCount(1, $data['processes']);
+        $this->assertStringContainsString('bg process', $data['processes'][0]['command']);
+        $this->assertArrayHasKey('pid', $data['processes'][0]);
+        $this->assertArrayHasKey('log_path', $data['processes'][0]);
+        $this->assertArrayHasKey('hint', $data);
     }
 
     public function testListEmpty(): void
     {
         $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'list']));
 
-        $this->assertStringContainsString('No background processes', $result);
+        $data = json_decode($result, true, 512, \JSON_THROW_ON_ERROR);
+        $this->assertIsArray($data);
+        $this->assertArrayHasKey('processes', $data);
+        $this->assertEmpty($data['processes']);
+        $this->assertArrayHasKey('hint', $data);
     }
 
     /* ── log action ── */
@@ -180,10 +190,16 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $resultA = $this->withContext('session-A', fn (): string => ($this->tool)(['action' => 'list']));
         $resultB = $this->withContext('session-B', fn (): string => ($this->tool)(['action' => 'list']));
 
-        $this->assertStringContainsString('A-for-test-B', $resultA);
-        $this->assertStringNotContainsString('B-for-test-A', $resultA);
-        $this->assertStringContainsString('B-for-test-A', $resultB);
-        $this->assertStringNotContainsString('A-for-test-B', $resultB);
+        $dataA = json_decode($resultA, true, 512, \JSON_THROW_ON_ERROR);
+        $dataB = json_decode($resultB, true, 512, \JSON_THROW_ON_ERROR);
+
+        $commandsA = array_column($dataA['processes'], 'command');
+        $commandsB = array_column($dataB['processes'], 'command');
+
+        $this->assertContains('echo "A-for-test-B"', $commandsA);
+        $this->assertNotContains('echo "B-for-test-A"', $commandsA);
+        $this->assertContains('echo "B-for-test-A"', $commandsB);
+        $this->assertNotContains('echo "A-for-test-B"', $commandsB);
     }
 
     /* ── Error: missing action ── */

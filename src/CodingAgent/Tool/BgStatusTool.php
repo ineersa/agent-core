@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
+use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 
 /**
  * Inspect, tail-log, and stop background processes.
@@ -105,7 +106,7 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
     // ─── Action handlers ────────────────────────────────────────────
 
     /**
-     * @return string Formatted table of background processes
+     * @return string JSON array of background processes with metadata
      */
     private function handleList(): string
     {
@@ -113,37 +114,37 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
         $entities = $this->manager->list($sessionId);
 
         if ([] === $entities) {
-            return 'No background processes tracked.';
+            return json_encode([
+                'processes' => [],
+                'hint' => 'No background processes tracked. Use bg_status with action=log or action=stop and pid=<pid> when processes are running.',
+            ], \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES);
         }
 
-        $lines = [];
-        $lines[] = \sprintf('%-6s %-8s %-6s %-22s %-12s %s', 'ID', 'PID', 'PGID', 'Status', 'Started', 'Command');
-        $lines[] = str_repeat('-', 80);
-
+        $processes = [];
         foreach ($entities as $entity) {
             $status = $entity->status->value;
-            if (\Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum::Finished === $entity->status
+            if (BackgroundProcessStatusEnum::Finished === $entity->status
                 && null !== $entity->exitCode
                 && 0 !== $entity->exitCode
             ) {
                 $status = \sprintf('finished (exit code %d)', $entity->exitCode);
             }
 
-            $lines[] = \sprintf(
-                '%-6d %-8d %-6s %-22s %-12s %s',
-                $entity->id,
-                $entity->pid,
-                $entity->pgid ?? '-',
-                $status,
-                substr($entity->startedAt, 11, 8),
-                mb_substr($entity->command, 0, 80),
-            );
+            $processes[] = [
+                'pid' => $entity->pid,
+                'pgid' => $entity->pgid,
+                'status' => $status,
+                'exit_code' => $entity->exitCode,
+                'started_at' => $entity->startedAt,
+                'command' => $entity->command,
+                'log_path' => $entity->logPath,
+            ];
         }
 
-        $lines[] = '';
-        $lines[] = \sprintf('Total: %d process(es)', \count($entities));
-
-        return implode("\n", $lines);
+        return json_encode([
+            'processes' => $processes,
+            'hint' => 'Use bg_status with action=log or action=stop and pid=<pid>.',
+        ], \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES);
     }
 
     /**
