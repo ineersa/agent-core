@@ -51,12 +51,12 @@ final class SessionAwareModelResolverTest extends TestCase
     public function testResolveReturnsModelFromSessionMetadata(): void
     {
         $resolver = $this->createResolver($this->standardAiData());
-        $this->writeSessionMetadata('sess-1', ['model' => 'llama_cpp/flash']);
+        $sessionId = $this->writeSessionMetadata('sess-1', ['model' => 'llama_cpp/flash']);
 
         $result = $resolver->resolve(
             'deepseek/deepseek-v4-pro',
             new MessageBag(),
-            new ModelInvocationInput(runId: 'sess-1'),
+            new ModelInvocationInput(runId: $sessionId),
             new ModelResolutionOptions(),
         );
 
@@ -133,12 +133,12 @@ final class SessionAwareModelResolverTest extends TestCase
     public function testResolveReturnsReasoningFromSessionMetadata(): void
     {
         $resolver = $this->createResolver($this->standardAiData());
-        $this->writeSessionMetadata('sess-2', ['model' => 'deepseek/deepseek-v4-pro', 'reasoning' => 'high']);
+        $sessionId = $this->writeSessionMetadata('sess-2', ['model' => 'deepseek/deepseek-v4-pro', 'reasoning' => 'high']);
 
         $result = $resolver->resolve(
             'deepseek/deepseek-v4-pro',
             new MessageBag(),
-            new ModelInvocationInput(runId: 'sess-2'),
+            new ModelInvocationInput(runId: $sessionId),
             new ModelResolutionOptions(),
         );
 
@@ -191,20 +191,20 @@ final class SessionAwareModelResolverTest extends TestCase
     }
 
     /**
-     * Write session metadata via the database-backed session store.
+     * Create a session entity and apply metadata.
+     *
+     * No public_id column — the integer primary key is the canonical
+     * identifier and its string form is the external session ID.
+     * Returns the session ID as a numeric string.
      */
-    private function writeSessionMetadata(string $sessionId, array $meta): void
+    private function writeSessionMetadata(string $sessionId, array $meta): string
     {
-        $repo = $this->entityManager->getRepository(HatfieldSession::class);
-        $entity = $repo->findOneBy(['publicId' => $sessionId]);
+        $entity = new HatfieldSession();
+        $entity->cwd = $this->tempDir.'/project';
+        $this->entityManager->persist($entity);
+        $this->entityManager->flush();
 
-        if (null === $entity) {
-            $entity = new HatfieldSession();
-            $entity->publicId = $sessionId;
-            $entity->cwd = $this->tempDir.'/project';
-            $this->entityManager->persist($entity);
-            $this->entityManager->flush();
-        }
+        $id = (string) $entity->id;
 
         if (isset($meta['model']) && \is_string($meta['model'])) {
             $entity->model = $meta['model'];
@@ -214,6 +214,8 @@ final class SessionAwareModelResolverTest extends TestCase
         }
 
         $this->entityManager->flush();
+
+        return $id;
     }
 
     private function removeDir(string $dir): void

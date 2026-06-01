@@ -4,31 +4,28 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Entity;
 
-use Doctrine\ORM\EntityManagerInterface;
-use Doctrine\ORM\EntityRepository;
+use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\Persistence\ManagerRegistry;
 
 /**
- * Doctrine repository for HatfieldSession entities.
+ * Standard DoctrineBundle repository for HatfieldSession entities.
  *
- * Extends EntityRepository for compatibility with both
- * EntityManager::getRepository() and container autowiring.
- * EntityManager passes EntityManagerInterface; the container
- * passes ManagerRegistry via a service definition that
- * adapts to EntityManagerInterface.
+ * Extends ServiceEntityRepository — the standard Symfony/Doctrine base
+ * for autowired repositories. Inherits find(), findOneBy(), findBy(),
+ * and createQueryBuilder().
  *
- * In production, DoctrineBundle auto-registers this repository
- * via #[ORM\Entity(repositoryClass: ...)]. The DefaultRepositoryFactory
- * constructs it with the EntityManager.
+ * DoctrineBundle auto-registers this repository via
+ * #[ORM\Entity(repositoryClass: ...)] and injects ManagerRegistry.
+ * The entity is mapped via public fields (native lazy objects).
  *
- * @extends EntityRepository<HatfieldSession>
+ * @extends ServiceEntityRepository<HatfieldSession>
  *
  * @see HatfieldSession
  */
-final class HatfieldSessionRepository extends EntityRepository
+final class HatfieldSessionRepository extends ServiceEntityRepository
 {
-    /** @param EntityManagerInterface $em */
-    public function __construct($em, \Doctrine\ORM\Mapping\ClassMetadata|string|null $class = null)
+    public function __construct(ManagerRegistry $registry)
     {
-        parent::__construct($em, $class ?? new \Doctrine\ORM\Mapping\ClassMetadata(HatfieldSession::class));
+        parent::__construct($registry, HatfieldSession::class);
     }
 }

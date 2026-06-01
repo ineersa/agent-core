@@ -105,7 +105,7 @@ final class TraceReplayTest extends TestCase
         $fixture = $this->loadFixture('successful-response.json');
 
         // Create session metadata with model and reasoning
-        $this->writeSessionMetadata('replay-session-1', [
+        $replaySessId = $this->writeSessionMetadata('', [
             'model' => $fixture['model'],
             'reasoning' => $fixture['reasoning'],
         ]);
@@ -113,7 +113,7 @@ final class TraceReplayTest extends TestCase
         // Set up run store with the turn's messages
         $runStore = new InMemoryRunStore();
         $runStore->compareAndSwap(new RunState(
-            runId: 'replay-session-1',
+            runId: $replaySessId,
             status: RunStatus::Running,
             version: 1,
             turnNo: 1,
@@ -152,7 +152,7 @@ final class TraceReplayTest extends TestCase
         $result = $adapter->invoke(new ModelInvocationRequest(
             model: 'fallback/unused',
             input: new ModelInvocationInput(
-                runId: 'replay-session-1',
+                runId: $replaySessId,
                 turnNo: 1,
                 stepId: 'turn-1-llm-1',
             ),
@@ -175,7 +175,7 @@ final class TraceReplayTest extends TestCase
         $this->assertSame($fixture['usage']['total_tokens'], $result->usage['total_tokens']);
 
         // Session metadata remains available
-        $meta = $this->sessionMetaStore->readSessionMetadata('replay-session-1');
+        $meta = $this->sessionMetaStore->readSessionMetadata($replaySessId);
         $this->assertSame($fixture['model'], $meta['model'] ?? null);
         $this->assertSame($fixture['reasoning'], $meta['reasoning'] ?? null);
     }
@@ -188,7 +188,7 @@ final class TraceReplayTest extends TestCase
     public function testResumeUsesSessionMetadataOverGlobalDefaults(): void
     {
         // Write session metadata with old model/reasoning
-        $this->writeSessionMetadata('resume-session-1', [
+        $resumeSessId = $this->writeSessionMetadata('', [
             'model' => 'llama_cpp/flash',
             'reasoning' => 'off',
         ]);
@@ -243,7 +243,7 @@ final class TraceReplayTest extends TestCase
         // → session metadata should win
         $resolvedModel = $selectionService->resolveInitialModel(
             explicitModel: null,
-            sessionId: 'resume-session-1',
+            sessionId: $resumeSessId,
         );
 
         $this->assertNotNull($resolvedModel);
@@ -255,7 +255,7 @@ final class TraceReplayTest extends TestCase
         // Reasoning should also come from session metadata
         $resolvedReasoning = $selectionService->resolveInitialReasoning(
             explicitReasoning: null,
-            sessionId: 'resume-session-1',
+            sessionId: $resumeSessId,
         );
         $this->assertSame('off', $resolvedReasoning,
             'Session metadata reasoning should win over global default');
@@ -270,19 +270,22 @@ final class TraceReplayTest extends TestCase
     {
         $selectionService = $this->createSelectionService($this->standardAiData());
 
-        // Initially no session metadata
-        $meta = $this->sessionMetaStore->readSessionMetadata('persist-session-1');
-        $this->assertSame([], $meta, 'No metadata before first change');
+        $persistSessId = $this->writeSessionMetadata('', []);
+
+        // Initially no model/reasoning metadata — only identity fields exist
+        $meta = $this->sessionMetaStore->readSessionMetadata($persistSessId);
+        $this->assertArrayNotHasKey('model', $meta, 'Model not set before change');
+        $this->assertArrayNotHasKey('reasoning', $meta, 'Reasoning not set before change');
 
         // Change model and reasoning
         $selectionService->changeModel(
             \Ineersa\CodingAgent\Config\Ai\AiModelReference::parse('deepseek/deepseek-v4-flash'),
-            'persist-session-1',
+            $persistSessId,
         );
-        $selectionService->changeReasoning('low', 'persist-session-1');
+        $selectionService->changeReasoning('low', $persistSessId);
 
         // Verify metadata was persisted
-        $meta = $this->sessionMetaStore->readSessionMetadata('persist-session-1');
+        $meta = $this->sessionMetaStore->readSessionMetadata($persistSessId);
         $this->assertSame('deepseek/deepseek-v4-flash', $meta['model'] ?? null);
         $this->assertSame('deepseek', $meta['model_provider'] ?? null);
         $this->assertSame('deepseek-v4-flash', $meta['model_name'] ?? null);
@@ -292,7 +295,7 @@ final class TraceReplayTest extends TestCase
         // Resume resolves from persisted metadata
         $resolvedModel = $selectionService->resolveInitialModel(
             explicitModel: null,
-            sessionId: 'persist-session-1',
+            sessionId: $persistSessId,
         );
         $this->assertNotNull($resolvedModel);
         $this->assertSame('deepseek/deepseek-v4-flash', $resolvedModel->toString());
@@ -316,14 +319,14 @@ final class TraceReplayTest extends TestCase
         // Use actual newlines (the fixture has literal newlines)
         $fixture['expected_text'] = "## Recursion in Programming\n\nRecursion is a technique where a function calls itself to solve smaller instances of the same problem.\n\n### Key Components\n\n1. **Base case** – a condition that stops the recursion\n2. **Recursive case** – the function calls itself with modified arguments";
 
-        $this->writeSessionMetadata('replay-thinking-session', [
+        $thinkSessId = $this->writeSessionMetadata('', [
             'model' => 'deepseek/deepseek-v4-pro',
             'reasoning' => 'high',
         ]);
 
         $runStore = new InMemoryRunStore();
         $runStore->compareAndSwap(new RunState(
-            runId: 'replay-thinking-session',
+            runId: $thinkSessId,
             status: RunStatus::Running,
             version: 1,
             turnNo: 1,
@@ -358,7 +361,7 @@ final class TraceReplayTest extends TestCase
         $result = $adapter->invoke(new ModelInvocationRequest(
             model: 'fallback/unused',
             input: new ModelInvocationInput(
-                runId: 'replay-thinking-session',
+                runId: $thinkSessId,
                 turnNo: 1,
                 stepId: 'turn-1-llm-1',
             ),
@@ -432,20 +435,19 @@ final class TraceReplayTest extends TestCase
     }
 
     /**
-     * Write session metadata via the database-backed session store.
+     * Create a session entity with auto-increment ID and apply metadata.
+     *
+     * No public_id column — the integer primary key cast to string
+     * is the session identifier.
      */
-    private function writeSessionMetadata(string $sessionId, array $meta): void
+    private function writeSessionMetadata(string $sessionId, array $meta): string
     {
-        $repo = $this->entityManager->getRepository(HatfieldSession::class);
-        $entity = $repo->findOneBy(['publicId' => $sessionId]);
+        $entity = new HatfieldSession();
+        $entity->cwd = $this->tempDir.'/project';
+        $this->entityManager->persist($entity);
+        $this->entityManager->flush();
 
-        if (null === $entity) {
-            $entity = new HatfieldSession();
-            $entity->publicId = $sessionId;
-            $entity->cwd = $this->tempDir.'/project';
-            $this->entityManager->persist($entity);
-            $this->entityManager->flush();
-        }
+        $id = (string) $entity->id;
 
         if (isset($meta['model']) && \is_string($meta['model'])) {
             $entity->model = $meta['model'];
@@ -455,6 +457,8 @@ final class TraceReplayTest extends TestCase
         }
 
         $this->entityManager->flush();
+
+        return $id;
     }
 
     private function removeDir(string $dir): void

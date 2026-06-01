@@ -63,8 +63,8 @@ and `updateMetadata()`.  The returned array shape for callers:
 ```
 
 Non-null keys are always present; nullable fields are only included when
-non-null. The `public_id` column is a unique string identifier used for
-lookups and equals the auto-increment id stringified in production.
+non-null. There is no separate public_id column — the auto-increment
+integer primary key is cast to string for all external identifiers.
 
 Future forking will add parent_id/root_id support (see [Future fork tree](#future-fork-tree)).
 
@@ -242,7 +242,7 @@ for both the TUI session context and the AgentCore run.
 php bin/console agent --prompt="Hello"
 ```
 
-1. `SessionInitializer::initialize()` calls `$sessionStore->generateId()` → 12-char hex, creates a `TuiSessionState` (in `src/Tui/Runtime/`).
+1. `SessionInitializer::initialize()` calls `$sessionStore->createSession($prompt)` → DB-issued auto-increment numeric string ID, creates a `TuiSessionState` (in `src/Tui/Runtime/`).
 2. `$sessionStore->createSession(cwd, prompt, sessionId)` creates the
    self-contained directory with empty files.
 3. A `StartRunRequest` is created with `runId: sessionId`.
@@ -321,10 +321,8 @@ session directory under `.hatfield/sessions/<id>/`.
 
 - Provides non-colliding IDs without random-generation loops.
 - Drives the invariant `session_id === run_id` at creation time.
-- Session directories remain self-contained; the DB row is only the
-  identity registry, not session-content storage.
-- Existing random 12-char hex IDs from legacy sessions are still valid
-  as opaque string identifiers; new sessions use numeric strings.
+- Session directories remain self-contained; the DB row serves as
+  the identity registry and metadata store.
 
 ## Why no SQLite yet
 
@@ -430,7 +428,7 @@ embedded IDs.
 | Session pruning/cleanup | Low | No auto-expiry or `session:prune` command. Orphaned sessions accumulate. |
 | Fork command (`session:fork`) | Medium | Planned; storage model is ready. Needs rewrite logic + CLI command. |
 | Attachments storage (`attachments/`) | Low | Directory created in layout docs but not yet used. Will store pasted files, images, diffs. |
-| Session rename / alias | Low | Session IDs are 12-char hex — not human-memorable. Aliases or titles would help. |
+| Session rename / alias | Low | Session IDs are auto-increment numeric strings — not human-memorable. Aliases or titles would help. |
 | Runtime event streaming | Medium | Current polling is synchronous full-scan. Incremental delivery would improve large sessions. |
 | Rebuild `state.json` from `events.jsonl` | Medium | Would make the materialized snapshot fully recoverable and justify treating it as a disposable cache. |
 ## Related documents

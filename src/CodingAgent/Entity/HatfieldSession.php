@@ -9,10 +9,15 @@ use Doctrine\ORM\Mapping as ORM;
 /**
  * Doctrine ORM entity for the hatfield_session table.
  *
- * Acts as the authoritative ID registry for Hatfield sessions.
- * Auto-increment primary key is converted to a string and used as
- * both the public session_id and AgentCore runId, preserving the
+ * Acts as the authoritative metadata store and ID registry for Hatfield
+ * sessions. The auto-increment primary key is converted to a string and
+ * used as both the public session_id and AgentCore runId, preserving the
  * invariant session_id === run_id.
+ *
+ * There is no separate public_id column — the auto-increment integer id
+ * is used directly and cast to string wherever an external string
+ * identifier is needed. This keeps ID allocation simple and avoids
+ * redundant columns.
  *
  * Mapped fields are public for Doctrine hydration (native lazy objects).
  * Property hooks are not yet supported for mapped fields by ORM 3.6.
@@ -33,11 +38,6 @@ class HatfieldSession
     #[ORM\GeneratedValue(strategy: 'AUTO')]
     #[ORM\Column(type: 'integer')]
     public int $id = 0;
-
-    /** External session/run identifier (string form of the auto-increment id).
-     * Nullable — populated after the first flush in createSession(). */
-    #[ORM\Column(name: 'public_id', type: 'string', unique: true, nullable: true)]
-    public ?string $publicId = null;
 
     #[ORM\Column(type: 'string')]
     public string $cwd = '';

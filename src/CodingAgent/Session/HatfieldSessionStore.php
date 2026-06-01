@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Session;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
-use Ineersa\CodingAgent\Entity\HatfieldSessionRepository;
 use Symfony\Component\Lock\LockFactory;
 
 /**
@@ -30,8 +29,9 @@ use Symfony\Component\Lock\LockFactory;
  * equals one agent run equals one future fork tree node.
  *
  * Session IDs are DB-issued auto-increment integers converted to strings.
- * session_id / run_id remain strings externally for protocol compatibility
- * even though the underlying storage key is an auto-increment integer.
+ * The integer primary key in hatfield_session is the canonical identifier;
+ * external representations (session_id / runId) use its string form.
+ * There is no separate public_id column.
  *
  * All writes are protected by a Symfony Lock (FlockStore) to prevent
  * concurrent corruption from multiple processes.
@@ -73,11 +73,9 @@ final class HatfieldSessionStore
         $this->entityManager->persist($session);
         $this->entityManager->flush();
 
-        // ID is the DB-issued auto-increment integer. Store its string
-        // form as publicId so lookups work by the external identifier.
+        // ID is the DB-issued auto-increment integer, used as
+        // both the string session ID and the AgentCore runId.
         $sessionId = (string) $session->id;
-        $session->publicId = $sessionId;
-        $this->entityManager->flush();
 
         try {
             $this->writeSessionFiles($sessionId, $prompt);
@@ -116,9 +114,7 @@ final class HatfieldSessionStore
             return null;
         }
 
-        $id = null !== $entity->publicId && '' !== $entity->publicId
-            ? $entity->publicId
-            : (string) $entity->id;
+        $id = (string) $entity->id;
         $meta = [
             'session_id' => $id,
             'run_id' => $id,
@@ -160,9 +156,10 @@ final class HatfieldSessionStore
      * Update session metadata fields on the database row.
      *
      * Creates a new HatfieldSession entity when one does not yet exist
-     * for the given publicId (supersedes the old metadata.yaml auto-create
-     * behavior).  Known keys are mapped to entity fields; unknown keys
-     * are silently ignored.
+     * given session ID. Known keys are mapped to entity fields;
+     * unknown keys are silently ignored. Does nothing when no
+     * matching session row exists — session creation is always
+     * through createSession().
      *
      * @param array<string, mixed> $meta
      */
@@ -171,10 +168,9 @@ final class HatfieldSessionStore
         $entity = $this->fetchEntityOrNull($sessionId);
 
         if (null === $entity) {
-            $entity = new HatfieldSession();
-            $entity->publicId = $sessionId;
-            $entity->cwd = $this->appConfig->cwd;
-            $this->entityManager->persist($entity);
+            // No matching session row — update is a no-op.
+            // Session rows are only created by createSession().
+            return;
         }
 
         $dirty = false;
@@ -271,7 +267,7 @@ final class HatfieldSessionStore
      * Check whether a session exists by looking up its database row.
      *
      * Only DB-issued numeric session IDs are valid. Non-numeric IDs
-     * (e.g., legacy 12-char hex) always return false.
+     * (e.g., old-style hex strings from pre-DB sessions) always return false.
      */
     public function exists(string $sessionId): bool
     {
@@ -313,17 +309,23 @@ final class HatfieldSessionStore
     }
 
     /**
-     * Fetch a HatfieldSession entity by its public session ID.
+     * Fetch a HatfieldSession entity by its string session ID.
      *
-     * Looks up via the public_id column (unique string identifier).
-     * Returns null when no row with that publicId exists.
+     * Parses the session ID as an integer and looks up the
+     * auto-increment primary key directly via the EntityManager.
+     * Non-numeric IDs always return null without any fallback.
      */
     private function fetchEntityOrNull(string $sessionId): ?HatfieldSession
     {
-        /** @var HatfieldSessionRepository $repo */
-        $repo = $this->entityManager->getRepository(HatfieldSession::class);
+        // Only numeric IDs are valid; cast to int for primary-key lookup.
+        // Non-numeric strings -> (int) -> 0, which never matches a real
+        // auto-increment ID (starts at 1 in SQLite).
+        $id = (int) $sessionId;
+        if (0 === $id) {
+            return null;
+        }
 
-        return $repo->findOneBy(['publicId' => $sessionId]);
+        return $this->entityManager->find(HatfieldSession::class, $id);
     }
 
     /**

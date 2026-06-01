@@ -11,12 +11,23 @@ use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 
 /**
- * Test helper: creates an isolated in-memory SQLite EntityManager with
- * only the CodingAgent entity mappings loaded.
+ * Test helper: creates an isolated in-memory SQLite EntityManager.
  *
- * Useful for tests that need DB-backed session metadata but do not
- * need the full Symfony kernel. Keeps ORMSetup/DriverManager/SchemaTool
- * confined to test infrastructure.
+ * Intended ONLY for unit-level tests that need session-metadata persistence
+ * but cannot boot the full Symfony kernel (e.g., ModelSelectionServiceTest,
+ * SessionAwareModelResolverTest, and AgentCore model-resolution tests).
+ * These tests manually construct HatfieldSessionStore with specific
+ * AppConfig settings, home/project directories, and YAML config files
+ * that vary per test case — incompatible with a single shared kernel boot.
+ *
+ * For integration/functional tests, use IsolatedKernelTestCase instead.
+ * That base class boots a real Symfony kernel with the proper test-
+ * environment DB, migrations, and container services.
+ *
+ * ORMSetup/DriverManager/SchemaTool are used here because the tests
+ * manage an isolated in-memory database without the full Symfony
+ * container lifecycle. The entity paths are resolved from __DIR__
+ * (assuming the standard repo layout tests/CodingAgent/TestCase/).
  */
 final class EntityManagerHelper
 {

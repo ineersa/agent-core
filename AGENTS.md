@@ -163,7 +163,7 @@ DONE without it.
 
 ## Development rules
 
-- **Do not delete comments that explain non-obvious logic, invariants, concurrency, lifecycle, compatibility, or rationale unless the described logic is removed.** When code changes, update those comments instead of deleting them. Remove only stale/noise comments that restate the obvious (e.g., "increment i" or "return the result"). Inline comments explaining why code is shaped a certain way — signal handling, crash resilience, transaction ordering, migration decisions, backward-compatibility checks, DB-to-filesystem interaction — are valuable and must be preserved or updated, never silently dropped.
+- **Do not delete comments that explain non-obvious logic, invariants, concurrency, lifecycle, or rationale unless the described logic is removed.** When code changes, update those comments instead of deleting them. Remove only stale/noise comments that restate the obvious (e.g., "increment i" or "return the result"). Inline comments explaining why code is shaped a certain way — signal handling, crash resilience, transaction ordering, migration decisions, DB-to-filesystem interaction — are valuable and must be preserved or updated, never silently dropped.
 - **No backward-compatibility code during active development.** Do not add fallback readers, migration shims, dual-format support, legacy ID handling, or compatibility paths unless the user explicitly asks for them, or the code is a published compatibility surface (e.g. `ExtensionApi`) with a documented deprecation window. Replace old behavior and update tests/docs instead of adding compatibility layers. New features should replace, not accumulate, prior implementations.
 - Use explicit semantic suffixes in type names: `EventTypeEnum`, `EventsRecordingsTrait`, `UserEventService`, `RuntimeEventMapper`, `SettingsProvider`, `TranscriptProjector`, `Repository`, `Factory`, `DTO`, etc. Avoid ambiguous bare names.
 - Prefer Symfony-native extension points and typed objects over hand-rolled routers/mappers. Before adding `instanceof` dispatch chains, stringly `match` routers, `normalize*()` arrays, or manual payload walkers, check Symfony events/subscribers/listeners, Serializer/Normalizer, Messenger handlers, or Symfony AI DTOs.
@@ -191,7 +191,7 @@ Settings precedence: built-in defaults < `~/.hatfield/settings.yaml` < project `
 - Project `.hatfield/settings.yaml` is both local config and example. Keep it and `docs/settings.md` in sync for new keys.
 - Do not recreate `.hatfield.example/`.
 - Theme selection/search paths use Hatfield settings, not container parameters.
-- `session_id === run_id`. Session metadata lives in the `hatfield_session` DB table. Session directory: `.hatfield/sessions/<id>/` with canonical `events.jsonl`, `state.json`, plus projections `transcript.jsonl` and `runtime-events.jsonl`.
+- `session_id === run_id`. Session metadata lives in the `hatfield_session` DB table. Session directory: `.hatfield/sessions/<id>/` with canonical `events.jsonl`, `state.json`, plus projections `transcript.jsonl` and `runtime-events.jsonl`. Metadata is queried from the DB; no `metadata.yaml` is written.
 - Directory name is canonical; embedded IDs are validated on read. See `docs/session-storage.md`.
 
 ## Architecture boundaries

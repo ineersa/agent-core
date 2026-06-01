@@ -112,7 +112,7 @@ final class LlamaCppSmokeTest extends TestCase
         $modelRef = $llamaCppProviderKey.'/'.$modelName;
 
         // ── Session metadata: pre-set model and reasoning ──
-        $this->writeSessionMetadata($this->sessionId, [
+        $this->sessionId = $this->writeSessionMetadata($this->sessionId, [
             'model' => $modelRef,
             'reasoning' => 'off',
         ]);
@@ -391,18 +391,22 @@ final class LlamaCppSmokeTest extends TestCase
     }
 
     /**
-     * Pre-write session metadata via the database-backed session store.
+     * Create a session entity with auto-increment ID and apply metadata.
      *
-     * @param array<string, string> $meta
+     * No public_id column — the integer primary key cast to string
+     * is the session identifier. Entity is created on first call for
+     * the given ID; if a numeric ID matches an existing entity,
+     * metadata is updated in-place.
      */
-    private function writeSessionMetadata(string $sessionId, array $meta): void
+    private function writeSessionMetadata(string $sessionId, array $meta): string
     {
-        $repo = $this->entityManager->getRepository(HatfieldSession::class);
-        $entity = $repo->findOneBy(['publicId' => $sessionId]);
+        $id = (int) $sessionId;
+        $entity = 0 !== $id
+            ? $this->entityManager->find(HatfieldSession::class, $id)
+            : null;
 
         if (null === $entity) {
             $entity = new HatfieldSession();
-            $entity->publicId = $sessionId;
             $entity->cwd = $this->tempDir.'/project';
             $this->entityManager->persist($entity);
             $this->entityManager->flush();
@@ -415,10 +419,12 @@ final class LlamaCppSmokeTest extends TestCase
             $entity->reasoning = $meta['reasoning'];
         }
         if (isset($meta['session_id']) && \is_string($meta['session_id'])) {
-            $entity->publicId = $meta['session_id'];
+            // No-op: session_id is always the auto-increment id.
         }
 
         $this->entityManager->flush();
+
+        return (string) $entity->id;
     }
 
     private function collectSessionDiagnostics(): string
@@ -429,7 +435,7 @@ final class LlamaCppSmokeTest extends TestCase
             'Session dir: '.$sessionDir,
         ];
 
-        foreach (['metadata.yaml', 'state.json', 'events.jsonl', 'transcript.jsonl', 'idempotency.jsonl'] as $file) {
+        foreach (['state.json', 'events.jsonl', 'transcript.jsonl', 'idempotency.jsonl'] as $file) {
             $path = $sessionDir.'/'.$file;
             if (!is_file($path)) {
                 $chunks[] = "--- {$file}: missing ---";
