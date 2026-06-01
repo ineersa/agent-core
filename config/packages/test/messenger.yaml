@@ -1,0 +1,24 @@
+# Test environment Messenger overrides.
+#
+# Uses in-memory transports so unit/kernel tests that boot the container
+# do not require a real Doctrine queue database for Messenger.
+# Named transports match the production config so routing works
+# identically.
+#
+# KernelTestCase automatically resets in-memory transports between tests.
+#
+# Controller E2E tests spawn their own process with APP_ENV=test but
+# override DSNs via shell env vars to use real Doctrine transports,
+# so this config does NOT affect castor test:controller / castor check.
+framework:
+    messenger:
+        transports:
+            run_control:
+                dsn: 'in-memory://'
+                # Keep native_php_serializer so StartRun (which contains
+                # complex objects like AgentMessage[] and RunMetadata)
+                # round-trips correctly through the in-memory transport
+                # in tests that assert on dispatched messages.
+                serializer: 'messenger.transport.native_php_serializer'
+            llm: 'in-memory://'
+            tool: 'in-memory://'

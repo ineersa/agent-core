@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\TestCase;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Kernel;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -17,14 +18,20 @@ use Symfony\Component\Console\Output\NullOutput;
  * Setup flow per test:
  *  1. Creates an isolated cwd under var/tests/<unique>/ with .hatfield/
  *  2. chdir() into it so Kernel::boot() picks it up as HATFIELD_CWD
- *  3. Sets required env vars (APP_ENV=test, APP_SECRET, messenger transports)
+ *  3. Sets APP_ENV=test, APP_SECRET for container compilation
  *  4. Boots the kernel — Doctrine DB path %app.cwd%/.hatfield/messenger.sqlite
  *     resolves to the isolated cwd
  *  5. Runs doctrine:migrations:migrate against the fresh DB
  *  6. Tests get services from self::getContainer()
  *
- * TearDown restores original cwd, shuts down kernel, and removes the
- * isolated directory.
+ * Messenger transports use in-memory:// via config/packages/test/messenger.yaml.
+ * No HATFIELD_*_TRANSPORT_DSN env vars are needed.
+ *
+ * TearDown closes the EntityManager (releasing the SQLite file handle),
+ * restores original CWD, shuts down kernel, and removes the isolated
+ * directory. Because config/services_test.yaml omits registerShutdownHandler
+ * from BackgroundProcessManager, no PHP shutdown functions query the
+ * deleted database.
  *
  * This replaces manual DriverManager + ORMSetup + SchemaTool setups.
  */
@@ -53,25 +60,20 @@ abstract class IsolatedKernelTestCase extends KernelTestCase
         chdir($this->isolatedCwd);
 
         // Required env vars for container compilation.
-        // Transport DSNs default to sync:// — our store/manager tests do not
-        // exercise the Messenger runtime, only Doctrine-backed stores.
+        // Messenger transport DSNs come from config/packages/test/messenger.yaml
+        // (in-memory://), not from env vars.
         $_ENV['APP_ENV'] = 'test';
         $_ENV['APP_DEBUG'] = '0';
         $_ENV['APP_SECRET'] = 'test-secret';
-        $_ENV['HATFIELD_RUN_CONTROL_TRANSPORT_DSN'] = 'sync://';
-        $_ENV['HATFIELD_LLM_TRANSPORT_DSN'] = 'sync://';
-        $_ENV['HATFIELD_TOOL_TRANSPORT_DSN'] = 'sync://';
         $_ENV['HATFIELD_CWD'] = $this->isolatedCwd;
         putenv('HATFIELD_CWD='.$this->isolatedCwd);
 
         // Boot the Symfony kernel in test environment.
-        // Container compilation happens on first boot; cached on subsequent tests.
-        // createKernel() is overridden below to avoid requiring KERNEL_CLASS env var.
-        // debug=true prevents container caching — each test gets a fresh
-        // container with the correct HATFIELD_CWD for its isolated cwd.
+        // debug=true prevents container caching — each test method gets a
+        // fresh container with the correct HATFIELD_CWD for its isolated cwd.
         self::bootKernel(['environment' => 'test', 'debug' => true]);
 
-        // Create schema from entity metadata on the fresh isolated DB.
+        // Apply database schema via built-in doctrine:migrations:migrate.
         $this->runMigrations();
     }
 
@@ -88,8 +90,22 @@ abstract class IsolatedKernelTestCase extends KernelTestCase
 
     protected function tearDown(): void
     {
+        // Close the EntityManager before removing the isolated directory.
+        // Doctrine holds an open file handle on the SQLite database; closing
+        // the EM releases it so removeDirectory() can unlink the file.
+        // (clear() is needed first to detach managed entities.)
+        if (self::$booted && self::getContainer()->has('doctrine.orm.default_entity_manager')) {
+            try {
+                /** @var EntityManagerInterface $em */
+                $em = self::getContainer()->get('doctrine.orm.default_entity_manager');
+                $em->clear();
+                $em->close();
+            } catch (\Throwable) {
+                // EM may already be closed; ignore cleanup errors.
+            }
+        }
+
         // Restore original CWD before shutting down the kernel.
-        // Kernel shutdown may trigger cleanup that depends on CWD.
         if (false !== $this->originalCwd) {
             chdir($this->originalCwd);
         }
@@ -99,8 +115,7 @@ abstract class IsolatedKernelTestCase extends KernelTestCase
         }
 
         // Clean up the isolated directory tree.
-        // Must happen after kernel shutdown so the kernel no longer holds
-        // open file handles or locks on messenger.sqlite.
+        // EntityManager is already closed; no open file handles.
         if (isset($this->isolatedCwd) && is_dir($this->isolatedCwd)) {
             $this->removeDirectory($this->isolatedCwd);
         }
@@ -114,35 +129,28 @@ abstract class IsolatedKernelTestCase extends KernelTestCase
      * Run all pending Doctrine migrations against the isolated test database.
      *
      * Uses the kernel's Console Application to invoke the built-in
-     * doctrine:migrations:migrate command. This is the same mechanism
-     * StartupDatabaseMigrator uses in production.
+     * doctrine:migrations:migrate command, identical to the production
+     * path through StartupDatabaseMigrator / AgentCommand startup.
+     *
+     * Intentionally uses the built-in migration command rather than
+     * doctrine:schema:create so tests exercise the same schema-creation
+     * path as production.
      */
     private function runMigrations(): void
     {
-        // Ensure the SQLite database file exists before schema commands run.
-        // For file-based SQLite, Doctrine creates the file automatically,
-        // but explicit touch() ensures the directory is writable.
-        $dbPath = $this->isolatedCwd.'/.hatfield/messenger.sqlite';
-        if (!file_exists($dbPath)) {
-            touch($dbPath);
-        }
-
         $application = new Application(static::$kernel);
 
-        // Create schema from entity metadata. This is the standard Symfony
-        // testing approach — produce DDL for the current entity state against
-        // an empty database. Equivalent to migrations:migrate for a fresh DB
-        // but does not require the migration version table or history.
         $input = new ArrayInput([
-            'command' => 'doctrine:schema:create',
+            'command' => 'doctrine:migrations:migrate',
             '--no-interaction' => true,
+            '--allow-no-migration' => true,
             '-q' => true,
         ]);
         $exitCode = $application->doRun($input, new NullOutput());
 
         if (0 !== $exitCode) {
             throw new \RuntimeException(
-                \sprintf('doctrine:schema:create failed with exit code %d.', $exitCode),
+                \sprintf('doctrine:migrations:migrate failed with exit code %d.', $exitCode),
             );
         }
     }
