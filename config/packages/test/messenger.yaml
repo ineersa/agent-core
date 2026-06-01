@@ -7,9 +7,8 @@
 #
 # KernelTestCase automatically resets in-memory transports between tests.
 #
-# Controller E2E tests spawn their own process with APP_ENV=test but
-# override DSNs via shell env vars to use real Doctrine transports,
-# so this config does NOT affect castor test:controller / castor check.
+# Controller/TUI E2E tests use APP_ENV=dev (not test) with real Doctrine
+# transports, so they are not affected by this config.
 framework:
     messenger:
         transports:

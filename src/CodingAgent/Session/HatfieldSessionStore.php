@@ -118,8 +118,8 @@ final class HatfieldSessionStore
         $meta = [
             'session_id' => $id,
             'run_id' => $id,
-            'created_at' => $entity->createdAt?->format(\DateTimeInterface::ATOM) ?? '',
-            'updated_at' => $entity->updatedAt?->format(\DateTimeInterface::ATOM) ?? '',
+            'created_at' => $entity->createdAt->format(\DateTimeInterface::ATOM),
+            'updated_at' => $entity->updatedAt->format(\DateTimeInterface::ATOM),
             'cwd' => $entity->cwd,
         ];
 

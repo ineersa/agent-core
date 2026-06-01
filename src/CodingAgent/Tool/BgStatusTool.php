@@ -135,7 +135,7 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
                 'pgid' => $entity->pgid,
                 'status' => $status,
                 'exit_code' => $entity->exitCode,
-                'started_at' => $entity->startedAt?->format(\DateTimeInterface::ATOM),
+                'started_at' => $entity->startedAt->format(\DateTimeInterface::ATOM),
                 'command' => $entity->command,
                 'log_path' => $entity->logPath,
             ];

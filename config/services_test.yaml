@@ -6,10 +6,10 @@
 services:
   # BackgroundProcessManager in test env: do NOT register a PHP shutdown
   # handler. In production the handler terminates running background
-  # processes on process exit. In tests, IsolatedKernelTestCase removes
-  # the SQLite database directory in tearDown() before PHP process
-  # shutdown, so a registered shutdown function that queries Doctrine
-  # would crash with "unable to open database file".
+  # processes on process exit. In tests, IsolatedKernelTestCase closes
+  # the EntityManager in tearDown(), and DAMA/DoctrineTestBundle rolls
+  # back the transaction after each test. A registered shutdown function
+  # that queries Doctrine after these operations would fail.
   #
   # Test classes that explicitly need shutdown behavior call
   # $manager->shutdownCleanup() directly.

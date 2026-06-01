@@ -12,10 +12,14 @@ use Symfony\Component\Clock\Clock;
  * updatedAt on every insert/update via ORM lifecycle callbacks.
  *
  * The owning entity must declare #[ORM\HasLifecycleCallbacks] and
- * own public \DateTimeImmutable $createdAt and $updatedAt fields.
+ * own public \DateTimeImmutable $createdAt and $updatedAt fields
+ * initialized in the constructor.
  *
  * Timestamps are DateTimeImmutable for proper Doctrine datetime
  * handling (datetime_immutable column type).
+ *
+ * PrePersist always sets both timestamps — constructor values
+ * are overridden at persist time.
  */
 trait TimestampableLifecycleTrait
 {
@@ -24,10 +28,7 @@ trait TimestampableLifecycleTrait
     {
         $now = Clock::get()->now();
 
-        if (!isset($this->createdAt)) {
-            $this->createdAt = $now;
-        }
-
+        $this->createdAt = $now;
         $this->updatedAt = $now;
     }
 

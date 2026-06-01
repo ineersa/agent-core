@@ -48,14 +48,16 @@ class ToolBatchState
     public string $batchData = '';
 
     #[ORM\Column(name: 'created_at', type: 'datetime_immutable')]
-    public ?\DateTimeImmutable $createdAt = null;
+    public \DateTimeImmutable $createdAt;
 
     #[ORM\Column(name: 'updated_at', type: 'datetime_immutable')]
-    public ?\DateTimeImmutable $updatedAt = null;
+    public \DateTimeImmutable $updatedAt;
 
-    /** No-arg constructor for Doctrine hydration. */
+    /** No-arg constructor for Doctrine hydration. Sets timestamp defaults. */
     public function __construct()
     {
+        $this->createdAt = new \DateTimeImmutable();
+        $this->updatedAt = new \DateTimeImmutable();
     }
 
     /**

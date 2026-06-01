@@ -111,7 +111,7 @@ abstract class ControllerE2eTestCase extends TestCase
         ];
 
         $env = [
-            'APP_ENV' => 'test',
+            'APP_ENV' => 'dev',
             'APP_DEBUG' => '1',
             'HATFIELD_RUN_CONTROL_TRANSPORT_DSN' => "doctrine://default?queue_name=run_control_{$this->sessionId}",
             'HATFIELD_LLM_TRANSPORT_DSN' => "doctrine://default?queue_name=llm_{$this->sessionId}",

@@ -54,7 +54,7 @@ class BackgroundProcess
     public string $statusPath = '';
 
     #[ORM\Column(name: 'started_at', type: 'datetime_immutable')]
-    public ?\DateTimeImmutable $startedAt = null;
+    public \DateTimeImmutable $startedAt;
 
     #[ORM\Column(name: 'finished_at', type: 'datetime_immutable', nullable: true)]
     public ?\DateTimeImmutable $finishedAt = null;
@@ -69,14 +69,17 @@ class BackgroundProcess
     public BackgroundProcessStatusEnum $status = BackgroundProcessStatusEnum::Running;
 
     #[ORM\Column(name: 'created_at', type: 'datetime_immutable')]
-    public ?\DateTimeImmutable $createdAt = null;
+    public \DateTimeImmutable $createdAt;
 
     #[ORM\Column(name: 'updated_at', type: 'datetime_immutable')]
-    public ?\DateTimeImmutable $updatedAt = null;
+    public \DateTimeImmutable $updatedAt;
 
-    /** No-arg constructor for Doctrine hydration. */
+    /** No-arg constructor for Doctrine hydration. Sets timestamp defaults. */
     public function __construct()
     {
+        $this->startedAt = new \DateTimeImmutable();
+        $this->createdAt = new \DateTimeImmutable();
+        $this->updatedAt = new \DateTimeImmutable();
     }
 
     /**
