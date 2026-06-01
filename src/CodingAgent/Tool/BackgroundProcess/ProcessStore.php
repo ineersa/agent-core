@@ -44,7 +44,9 @@ final class ProcessStore
         $entity->command = (string) ($fields['command'] ?? '');
         $entity->logPath = (string) ($fields['log_path'] ?? '');
         $entity->statusPath = (string) ($fields['status_path'] ?? '');
-        $entity->startedAt = (string) ($fields['started_at'] ?? '');
+        $entity->startedAt = $fields['started_at'] instanceof \DateTimeImmutable
+            ? $fields['started_at']
+            : new \DateTimeImmutable((string) ($fields['started_at'] ?? 'now'));
 
         $this->entityManager->persist($entity);
         $this->entityManager->flush();
@@ -55,7 +57,7 @@ final class ProcessStore
     /**
      * Mark a process as finished with an exit code.
      */
-    public function markFinished(int $id, ?int $exitCode, string $finishedAt): void
+    public function markFinished(int $id, ?int $exitCode, \DateTimeImmutable $finishedAt): void
     {
         $entity = $this->fetchById($id);
 
@@ -71,7 +73,7 @@ final class ProcessStore
     /**
      * Mark a process as stopped by user with finished timestamp.
      */
-    public function markStoppedByUser(int $pid, string $finishedAt): void
+    public function markStoppedByUser(int $pid, \DateTimeImmutable $finishedAt): void
     {
         $entity = $this->repository
             ->findOneBy(['pid' => $pid]);
@@ -146,7 +148,7 @@ final class ProcessStore
      *
      * @return BackgroundProcess[]
      */
-    public function fetchStale(string $cutoff): array
+    public function fetchStale(\DateTimeImmutable $cutoff): array
     {
         return $this->repository->findStale($cutoff);
     }

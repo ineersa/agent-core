@@ -29,9 +29,8 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Tests\TestCase\EntityManagerHelper;
 use PHPUnit\Framework\Attributes\Group;
-use PHPUnit\Framework\TestCase;
+use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Bridge\Generic\Factory as GenericFactory;
 use Symfony\AI\Platform\Platform;
@@ -49,8 +48,13 @@ use Symfony\Component\Yaml\Yaml;
  * this group; run it explicitly with `castor test:llm-real`.
  */
 #[Group('llm-real')]
-final class LlamaCppSmokeTest extends TestCase
+final class LlamaCppSmokeTest extends KernelTestCase
 {
+    protected static function createKernel(array $options = []): \Ineersa\CodingAgent\Kernel
+    {
+        return new \Ineersa\CodingAgent\Kernel('test', true);
+    }
+
     private string $tempDir;
     private string $homeDir;
     private string $sessionId;
@@ -68,7 +72,13 @@ final class LlamaCppSmokeTest extends TestCase
             );
         }
 
-        $projectRoot = \dirname(__DIR__, 4);
+        // Boot kernel to get EntityManager from test container.
+        // Test DB is a fixed path via config/packages/test/doctrine.yaml.
+        self::bootKernel(['environment' => 'test', 'debug' => true]);
+        $container = static::getContainer();
+        $this->entityManager = $container->get('doctrine.orm.default_entity_manager');
+
+        $projectRoot = self::getContainer()->getParameter('kernel.project_dir');
         $this->tempDir = $projectRoot.'/var/tmp/hatfield-llamacpp-'.uniqid('', true);
         $this->homeDir = $this->tempDir.'/home';
         $this->sessionId = 'llamacpp-smoke-'.uniqid('', true);
@@ -79,8 +89,7 @@ final class LlamaCppSmokeTest extends TestCase
         // Minimal home settings (no ai section — we use test-specific ai data directly)
         file_put_contents($this->homeDir.'/.hatfield/settings.yaml', "tui:\n    theme: cyberpunk\n");
 
-        // Session metadata store
-        $this->entityManager = EntityManagerHelper::createInMemorySqlite();
+        // Session metadata store using container EntityManager
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: new AppConfig(
                 tui: new TuiConfig(theme: 'default'),
@@ -98,6 +107,7 @@ final class LlamaCppSmokeTest extends TestCase
         if (isset($this->tempDir) && '' !== $this->tempDir) {
             $this->removeDir($this->tempDir);
         }
+        self::ensureKernelShutdown();
         parent::tearDown();
     }
 

@@ -167,7 +167,7 @@ final class BackgroundProcessManager
         $statusFile = $bgDir.'/'.$filePrefix.'.status';
         $logFile = $bgDir.'/'.$filePrefix.'.log';
 
-        $now = Clock::get()->now()->format('c');
+        $now = Clock::get()->now();
 
         // Launch process in new session group
         $launchResult = $this->lifecycle->launchProcess($command, $pidFile, $logFile, $statusFile);
@@ -340,7 +340,7 @@ final class BackgroundProcessManager
             'grace_seconds' => $graceSeconds,
         ]);
 
-        $now = Clock::get()->now()->format('c');
+        $now = Clock::get()->now();
         $entity->markStopped($now);
 
         // Write -1 to the status file only when the wrapper did not
@@ -377,7 +377,7 @@ final class BackgroundProcessManager
         // Refresh all unfinished so finished_at is populated
         $this->refreshAllUnfinished();
 
-        $cutoff = Clock::get()->now()->modify('-'.$this->config->retentionSeconds.' seconds')->format('c');
+        $cutoff = Clock::get()->now()->modify('-'.$this->config->retentionSeconds.' seconds');
 
         $staleEntities = $this->store->fetchStale($cutoff);
 
@@ -471,7 +471,7 @@ final class BackgroundProcessManager
         // Check status file first (process may have finished normally)
         $exitCode = $this->lifecycle->readStatusFile($entity->statusPath);
         if (null !== $exitCode) {
-            $now = Clock::get()->now()->format('c');
+            $now = Clock::get()->now();
             $entity->finish($exitCode, $now);
 
             return BackgroundProcessStatusEnum::Finished;
@@ -485,7 +485,7 @@ final class BackgroundProcessManager
         }
 
         // Process is gone but no status file written (crash / SIGKILL / unclean exit)
-        $now = Clock::get()->now()->format('c');
+        $now = Clock::get()->now();
         $entity->markFinishedUnclean($now);
 
         $this->logger->info('background_process.finished_unclean', [

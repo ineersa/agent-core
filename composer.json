@@ -40,7 +40,8 @@
         "phpstan/phpstan-strict-rules": "^2.0",
         "phpunit/phpunit": "^13.0",
         "deptrac/deptrac": "^4.6",
-        "symfony/test-pack": "^1.0"
+        "symfony/test-pack": "^1.0",
+        "dama/doctrine-test-bundle": "^8.6"
     },
     "autoload": {
         "psr-4": {

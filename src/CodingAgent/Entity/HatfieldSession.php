@@ -16,13 +16,14 @@ use Doctrine\ORM\Mapping as ORM;
  *
  * There is no separate public_id column — the auto-increment integer id
  * is used directly and cast to string wherever an external string
- * identifier is needed. This keeps ID allocation simple and avoids
- * redundant columns.
+ * identifier is needed.
  *
- * Mapped fields are public for Doctrine hydration (native lazy objects).
- * Property hooks are not yet supported for mapped fields by ORM 3.6.
+ * Mapped fields are public for Doctrine hydration via native lazy objects
+ * (DoctrineBundle 3.x default). Property hooks are supported since
+ * ORM 3.4 when enablenativelazyobjects is true.
  *
- * created_at / updated_at are maintained by TimestampableLifecycleTrait.
+ * created_at / updated_at are \DateTimeImmutable maintained by
+ * TimestampableLifecycleTrait.
  *
  * @see HatfieldSessionStore
  * @see HatfieldSessionRepository
@@ -69,11 +70,11 @@ class HatfieldSession
     #[ORM\Column(type: 'string', nullable: true)]
     public ?string $reasoning = null;
 
-    #[ORM\Column(name: 'created_at', type: 'string')]
-    public string $createdAt = '';
+    #[ORM\Column(name: 'created_at', type: 'datetime_immutable')]
+    public ?\DateTimeImmutable $createdAt = null;
 
-    #[ORM\Column(name: 'updated_at', type: 'string')]
-    public string $updatedAt = '';
+    #[ORM\Column(name: 'updated_at', type: 'datetime_immutable')]
+    public ?\DateTimeImmutable $updatedAt = null;
 
     /** No-arg constructor for Doctrine hydration. */
     public function __construct()

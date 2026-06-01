@@ -14,11 +14,12 @@ use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
  * enforced by a DB unique constraint and Symfony validation constraint
  * on (run_id, turn_no, step_id).
  *
- * Mapped fields are public for Doctrine hydration. Property hooks
- * are not yet supported by ORM 3.6 for mapped fields:
- * https://github.com/doctrine/orm/issues/11624
+ * Mapped fields are public for Doctrine hydration via native lazy objects.
+ * Property hooks are supported since ORM 3.4 when enable_native_lazy_objects
+ * is true (DoctrineBundle 3.x default).
  *
- * created_at / updated_at are maintained by TimestampableLifecycleTrait.
+ * created_at / updated_at are \DateTimeImmutable maintained by
+ * TimestampableLifecycleTrait.
  */
 #[ORM\Entity(repositoryClass: ToolBatchStateRepository::class)]
 #[ORM\Table(name: 'tool_batch_state')]
@@ -46,11 +47,11 @@ class ToolBatchState
     #[ORM\Column(name: 'batch_data', type: 'text')]
     public string $batchData = '';
 
-    #[ORM\Column(name: 'created_at', type: 'string')]
-    public string $createdAt = '';
+    #[ORM\Column(name: 'created_at', type: 'datetime_immutable')]
+    public ?\DateTimeImmutable $createdAt = null;
 
-    #[ORM\Column(name: 'updated_at', type: 'string')]
-    public string $updatedAt = '';
+    #[ORM\Column(name: 'updated_at', type: 'datetime_immutable')]
+    public ?\DateTimeImmutable $updatedAt = null;
 
     /** No-arg constructor for Doctrine hydration. */
     public function __construct()

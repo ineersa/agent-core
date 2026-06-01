@@ -10,13 +10,7 @@ use Doctrine\Persistence\ManagerRegistry;
 /**
  * Doctrine repository for BackgroundProcess entities.
  *
- * Extends ServiceEntityRepository for standard Symfony/Doctrine integration:
- * inherited find() / findOneBy() / findBy() / findAll() plus custom domain
- * queries in one place.
- *
  * @extends ServiceEntityRepository<BackgroundProcess>
- *
- * @see BackgroundProcess
  */
 final class BackgroundProcessRepository extends ServiceEntityRepository
 {
@@ -41,7 +35,6 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
                 ->setParameter('sessionId', $sessionId);
         }
 
-        /* @var BackgroundProcess[] */
         return $qb->getQuery()->getResult();
     }
 
@@ -66,9 +59,8 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
      *
      * @return BackgroundProcess[]
      */
-    public function findStale(string $cutoff): array
+    public function findStale(\DateTimeImmutable $cutoff): array
     {
-        /* @var BackgroundProcess[] */
         return $this->createQueryBuilder('bp')
             ->where('bp.finishedAt IS NOT NULL')
             ->andWhere('bp.finishedAt <= :cutoff')

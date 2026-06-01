@@ -27,8 +27,7 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Tests\TestCase\EntityManagerHelper;
-use PHPUnit\Framework\TestCase;
+use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\AI\Platform\Message\Message;
@@ -59,8 +58,13 @@ use Symfony\Component\Lock\Store\FlockStore;
  * and real model resolution from session metadata. The only faked boundary is
  * the Symfony AI ModelClient (the actual HTTP call to the provider API).
  */
-final class TraceReplayTest extends TestCase
+final class TraceReplayTest extends KernelTestCase
 {
+    protected static function createKernel(array $options = []): \Ineersa\CodingAgent\Kernel
+    {
+        return new \Ineersa\CodingAgent\Kernel('test', true);
+    }
+
     private string $tempDir;
     private string $homeDir;
     private SessionMetadataStore $sessionMetaStore;
@@ -75,7 +79,9 @@ final class TraceReplayTest extends TestCase
         mkdir($this->tempDir.'/project/.hatfield/sessions', 0777, true);
         file_put_contents($this->homeDir.'/.hatfield/settings.yaml', "tui:\n    theme: cyberpunk\n");
 
-        $this->entityManager = EntityManagerHelper::createInMemorySqlite();
+        self::bootKernel(['environment' => 'test', 'debug' => true]);
+        $container = static::getContainer();
+        $this->entityManager = $container->get('doctrine.orm.default_entity_manager');
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: new AppConfig(
                 tui: new TuiConfig(theme: 'default'),
@@ -91,6 +97,7 @@ final class TraceReplayTest extends TestCase
     protected function tearDown(): void
     {
         $this->removeDir($this->tempDir);
+        self::ensureKernelShutdown();
         parent::tearDown();
     }
 

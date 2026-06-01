@@ -9,18 +9,19 @@ use Doctrine\ORM\Mapping as ORM;
 /**
  * Doctrine ORM entity for the background_process table.
  *
- * Mapped fields are public — ORM hydrates via native lazy objects
- * (DoctrineBundle 3.x default). Property hooks are not yet supported
- * for mapped fields (UnitOfWork unset during removal raises Error):
- * https://github.com/doctrine/orm/issues/11624
+ * Mapped fields are public for Doctrine hydration via native lazy objects
+ * (DoctrineBundle 3.x default). Property hooks are supported since
+ * ORM 3.4 when enable_native_lazy_objects is true.
  *
  * Lifecycle:
- *   finish(?int $exitCode, ?string $finishedAt) — normal completion
- *   markStopped(string $finishedAt) — user-initiated stop
- *   markFinishedUnclean(string $finishedAt) — crash/unclean exit
+ *   finish(?int $exitCode, \DateTimeImmutable $finishedAt) — normal completion
+ *   markStopped(\DateTimeImmutable $finishedAt) — user-initiated stop
+ *   markFinishedUnclean(\DateTimeImmutable $finishedAt) — crash/unclean exit
  *
- * created_at / updated_at are maintained by TimestampableLifecycleTrait.
- * Semantic process times (started_at, finished_at) are set explicitly.
+ * created_at / updated_at are \DateTimeImmutable maintained by
+ * TimestampableLifecycleTrait.
+ * Semantic process times (started_at, finished_at) are set explicitly
+ * by BackgroundProcessManager.
  */
 #[ORM\Entity(repositoryClass: BackgroundProcessRepository::class)]
 #[ORM\Table(name: 'background_process')]
@@ -52,11 +53,11 @@ class BackgroundProcess
     #[ORM\Column(name: 'status_path', type: 'string')]
     public string $statusPath = '';
 
-    #[ORM\Column(name: 'started_at', type: 'string')]
-    public string $startedAt = '';
+    #[ORM\Column(name: 'started_at', type: 'datetime_immutable')]
+    public ?\DateTimeImmutable $startedAt = null;
 
-    #[ORM\Column(name: 'finished_at', type: 'string', nullable: true)]
-    public ?string $finishedAt = null;
+    #[ORM\Column(name: 'finished_at', type: 'datetime_immutable', nullable: true)]
+    public ?\DateTimeImmutable $finishedAt = null;
 
     #[ORM\Column(name: 'exit_code', type: 'integer', nullable: true)]
     public ?int $exitCode = null;
@@ -67,11 +68,11 @@ class BackgroundProcess
     #[ORM\Column(name: 'status', type: 'string', enumType: BackgroundProcessStatusEnum::class)]
     public BackgroundProcessStatusEnum $status = BackgroundProcessStatusEnum::Running;
 
-    #[ORM\Column(name: 'created_at', type: 'string')]
-    public string $createdAt = '';
+    #[ORM\Column(name: 'created_at', type: 'datetime_immutable')]
+    public ?\DateTimeImmutable $createdAt = null;
 
-    #[ORM\Column(name: 'updated_at', type: 'string')]
-    public string $updatedAt = '';
+    #[ORM\Column(name: 'updated_at', type: 'datetime_immutable')]
+    public ?\DateTimeImmutable $updatedAt = null;
 
     /** No-arg constructor for Doctrine hydration. */
     public function __construct()
@@ -81,7 +82,7 @@ class BackgroundProcess
     /**
      * Mark this process as finished with an optional exit code.
      */
-    public function finish(?int $exitCode, ?string $finishedAt): void
+    public function finish(?int $exitCode, \DateTimeImmutable $finishedAt): void
     {
         $this->exitCode = $exitCode;
         $this->finishedAt = $finishedAt;
@@ -91,7 +92,7 @@ class BackgroundProcess
     /**
      * Mark this process as stopped by the user.
      */
-    public function markStopped(string $finishedAt): void
+    public function markStopped(\DateTimeImmutable $finishedAt): void
     {
         $this->stoppedByUser = true;
         $this->finishedAt = $finishedAt;
@@ -101,7 +102,7 @@ class BackgroundProcess
     /**
      * Mark this process as finished uncleanly (crash / SIGKILL / no status file).
      */
-    public function markFinishedUnclean(string $finishedAt): void
+    public function markFinishedUnclean(\DateTimeImmutable $finishedAt): void
     {
         $this->exitCode = null;
         $this->finishedAt = $finishedAt;

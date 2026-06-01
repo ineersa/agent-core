@@ -11,19 +11,20 @@ use Symfony\Component\Clock\Clock;
  * Doctrine lifecycle trait that sets createdAt on insert and bumps
  * updatedAt on every insert/update via ORM lifecycle callbacks.
  *
- * The owning entity must declare #[ORM\HasLifecycleCallbacks].
+ * The owning entity must declare #[ORM\HasLifecycleCallbacks] and
+ * own public \DateTimeImmutable $createdAt and $updatedAt fields.
  *
- * Timestamps are ISO 8601 strings for SQLite compatibility.
+ * Timestamps are DateTimeImmutable for proper Doctrine datetime
+ * handling (datetime_immutable column type).
  */
-#[ORM\HasLifecycleCallbacks]
 trait TimestampableLifecycleTrait
 {
     #[ORM\PrePersist]
     public function onPrePersistTimestamp(): void
     {
-        $now = Clock::get()->now()->format('c');
+        $now = Clock::get()->now();
 
-        if ('' === $this->createdAt) {
+        if (!isset($this->createdAt)) {
             $this->createdAt = $now;
         }
 
@@ -33,6 +34,6 @@ trait TimestampableLifecycleTrait
     #[ORM\PreUpdate]
     public function onPreUpdateTimestamp(): void
     {
-        $this->updatedAt = Clock::get()->now()->format('c');
+        $this->updatedAt = Clock::get()->now();
     }
 }

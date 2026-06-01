@@ -21,11 +21,15 @@ use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
-use Ineersa\CodingAgent\Tests\TestCase\EntityManagerHelper;
-use PHPUnit\Framework\TestCase;
+use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
-class ModelSelectionServiceTest extends TestCase
+class ModelSelectionServiceTest extends KernelTestCase
 {
+    protected static function createKernel(array $options = []): \Ineersa\CodingAgent\Kernel
+    {
+        return new \Ineersa\CodingAgent\Kernel($options['environment'] ?? 'test', (bool) ($options['debug'] ?? false));
+    }
+
     private string $tempDir;
     private string $homeDir;
     private ModelSelectionService $service;
@@ -47,9 +51,15 @@ class ModelSelectionServiceTest extends TestCase
         // Create an empty home settings file so HomeSettingsWriter can read/write it
         file_put_contents($this->homeDir.'/.hatfield/settings.yaml', "tui:\n    theme: cyberpunk\n");
 
+        // Boot kernel to get EntityManager from test container.
+        // Test DB is a fixed path via config/packages/test/doctrine.yaml;
+        // DAMA/DoctrineTestBundle wraps each test in a transaction.
+        self::bootKernel(['environment' => 'test', 'debug' => true]);
+        $container = static::getContainer();
+        $this->entityManager = $container->get('doctrine.orm.default_entity_manager');
+
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new HomeSettingsWriter($pathResolver);
-        $this->entityManager = EntityManagerHelper::createInMemorySqlite();
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: new AppConfig(
                 tui: new TuiConfig(theme: 'default'),
@@ -77,6 +87,7 @@ class ModelSelectionServiceTest extends TestCase
     protected function tearDown(): void
     {
         $this->removeDir($this->tempDir);
+        self::ensureKernelShutdown();
         parent::tearDown();
     }
 
