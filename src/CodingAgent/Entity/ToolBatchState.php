@@ -20,7 +20,7 @@ use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
  *
  * created_at / updated_at are maintained by TimestampableLifecycleTrait.
  */
-#[ORM\Entity]
+#[ORM\Entity(repositoryClass: ToolBatchStateRepository::class)]
 #[ORM\Table(name: 'tool_batch_state')]
 #[ORM\UniqueConstraint(name: 'tool_batch_run_step', columns: ['run_id', 'turn_no', 'step_id'])]
 #[ORM\HasLifecycleCallbacks]

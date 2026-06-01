@@ -12,8 +12,8 @@ use Psr\Log\LoggerInterface;
 /**
  * Doctrine ORM-backed durable store for background process records.
  *
- * Query operations delegate to BackgroundProcessRepository for
- * domain queries; EntityManager::getRepository() for simple lookups.
+ * Query operations delegate to BackgroundProcessRepository (ServiceEntityRepository)
+ * which provides inherited find/findOneBy/findBy plus custom domain queries.
  * Write operations use EntityManager directly.
  *
  * Schema is managed by Doctrine migrations.
@@ -73,7 +73,7 @@ final class ProcessStore
      */
     public function markStoppedByUser(int $pid, string $finishedAt): void
     {
-        $entity = $this->entityManager->getRepository(BackgroundProcess::class)
+        $entity = $this->repository
             ->findOneBy(['pid' => $pid]);
 
         if (null === $entity) {
@@ -91,7 +91,7 @@ final class ProcessStore
     public function fetchByPid(int $pid): ?BackgroundProcess
     {
         /* @var ?BackgroundProcess */
-        return $this->entityManager->getRepository(BackgroundProcess::class)
+        return $this->repository
             ->findOneBy(['pid' => $pid]);
     }
 
@@ -101,7 +101,7 @@ final class ProcessStore
     public function fetchById(int $id): ?BackgroundProcess
     {
         /* @var ?BackgroundProcess */
-        return $this->entityManager->find(BackgroundProcess::class, $id);
+        return $this->repository->find($id);
     }
 
     /**
@@ -117,7 +117,7 @@ final class ProcessStore
         }
 
         /* @var BackgroundProcess[] */
-        return $this->entityManager->getRepository(BackgroundProcess::class)
+        return $this->repository
             ->findBy($criteria, ['id' => 'DESC']);
     }
 

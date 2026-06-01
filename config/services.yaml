@@ -161,16 +161,6 @@ services:
     calls:
       - registerShutdownHandler: []
 
-  # Repository services — use EntityManagerInterface directly (not ManagerRegistry)
-  # so they work in production DI and test EntityManager setups.
-  Ineersa\CodingAgent\Entity\BackgroundProcessRepository:
-    arguments:
-      $entityManager: '@doctrine.orm.default_entity_manager'
-
-  Ineersa\CodingAgent\Entity\ToolBatchStateRepository:
-    arguments:
-      $entityManager: '@doctrine.orm.default_entity_manager'
-
   # Startup database migrator — runs built-in doctrine:migrations:migrate once on startup.
   # Uses console.messenger.application (Symfony Console Application service) to invoke
   # the built-in Doctrine Migrations command programmatically.

@@ -4,22 +4,28 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Entity;
 
-use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\Persistence\ManagerRegistry;
 
 /**
- * Repository for ToolBatchState entity lookups by domain key.
+ * Doctrine repository for ToolBatchState entity lookups.
  *
  * ToolBatchState uses a surrogate auto-increment primary key.
  * Domain uniqueness (runId, turnNo, stepId) is enforced by DB unique constraint.
- * This repository wraps the findOneBy criteria for convenient DI.
+ *
+ * Extends ServiceEntityRepository for standard Symfony/Doctrine integration:
+ * inherited find() / findOneBy() / findBy() / findAll() plus the domain
+ * findByCompositeKey() method.
+ *
+ * @extends ServiceEntityRepository<ToolBatchState>
  *
  * @see ToolBatchState
  */
-final class ToolBatchStateRepository
+final class ToolBatchStateRepository extends ServiceEntityRepository
 {
-    public function __construct(
-        private readonly EntityManagerInterface $entityManager,
-    ) {
+    public function __construct(ManagerRegistry $registry)
+    {
+        parent::__construct($registry, ToolBatchState::class);
     }
 
     /**
@@ -28,11 +34,10 @@ final class ToolBatchStateRepository
     public function findByCompositeKey(string $runId, int $turnNo, string $stepId): ?ToolBatchState
     {
         /* @var ?ToolBatchState */
-        return $this->entityManager->getRepository(ToolBatchState::class)
-            ->findOneBy([
-                'runId' => $runId,
-                'turnNo' => $turnNo,
-                'stepId' => $stepId,
-            ]);
+        return $this->findOneBy([
+            'runId' => $runId,
+            'turnNo' => $turnNo,
+            'stepId' => $stepId,
+        ]);
     }
 }

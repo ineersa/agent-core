@@ -12,7 +12,8 @@ use Ineersa\CodingAgent\Entity\ToolBatchStateRepository;
 /**
  * Doctrine ORM-backed durable batch store.
  *
- * Query operations delegate to ToolBatchStateRepository.
+ * Query operations delegate to ToolBatchStateRepository (ServiceEntityRepository)
+ * which provides inherited findOneBy plus the domain findByCompositeKey() method.
  * Write operations use EntityManager directly.
  * Schema is managed by Doctrine migrations — no runtime CREATE TABLE.
  */

@@ -22,7 +22,7 @@ use Doctrine\ORM\Mapping as ORM;
  * created_at / updated_at are maintained by TimestampableLifecycleTrait.
  * Semantic process times (started_at, finished_at) are set explicitly.
  */
-#[ORM\Entity]
+#[ORM\Entity(repositoryClass: BackgroundProcessRepository::class)]
 #[ORM\Table(name: 'background_process')]
 #[ORM\HasLifecycleCallbacks]
 class BackgroundProcess
