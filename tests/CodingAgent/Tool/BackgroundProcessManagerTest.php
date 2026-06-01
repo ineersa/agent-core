@@ -4,17 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
-use Doctrine\ORM\EntityManager;
-use Doctrine\ORM\Tools\SchemaTool;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\LogTailResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\StartResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\StopResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
-use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
 /**
@@ -26,24 +24,25 @@ use Psr\Log\NullLogger;
  * @requires extension pdo_sqlite
  * @requires OS Linux
  *
- * ORM setup is centralized through OrmTestHelper — never repeat
- * hardcoded entity metadata paths across tests.
+ * DB is provided by the Symfony test container (IsolatedKernelTestCase).
+ * ProcessStore and BackgroundProcessRepository come from the container.
+ * Only BackgroundProcessConfig / ProcessLifecycle / BackgroundProcessManager
+ * are constructed with test-specific temp dirs — no manual EntityManager setup.
  */
-final class BackgroundProcessManagerTest extends TestCase
+final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
 {
     private const string TEST_SESSION = 'test-session-001';
 
-    private EntityManager $entityManager;
     private BackgroundProcessManager $manager;
     private string $tmpDir;
 
     protected function setUp(): void
     {
-        $this->entityManager = OrmTestHelper::createEntityManager();
+        parent::setUp();
 
-        $schemaTool = new SchemaTool($this->entityManager);
-        $schemaTool->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
-
+        // Temp dir for process output files (log, status, pid files).
+        // sys_get_temp_dir() is appropriate here — this is actual OS-level
+        // subprocess I/O, not ORM proxy directories.
         $this->tmpDir = sys_get_temp_dir().'/hatfield_bg_test_'.bin2hex(random_bytes(8));
         mkdir($this->tmpDir, 0750, recursive: true);
     }
@@ -52,6 +51,8 @@ final class BackgroundProcessManagerTest extends TestCase
     {
         $this->cleanupProcesses();
         $this->rmDir($this->tmpDir);
+
+        parent::tearDown();
     }
 
     /* ── start() ── */
@@ -260,6 +261,12 @@ final class BackgroundProcessManagerTest extends TestCase
 
     /* ── Helpers ── */
 
+    /**
+     * Create a BackgroundProcessManager using the container's Doctrine
+     * EntityManager and BackgroundProcessRepository (shared, real schema),
+     * but with a test-specific BackgroundProcessConfig that points storageDir
+     * to a temporary directory for subprocess output files.
+     */
     private function createManager(?string $storageDir = null, int $retentionSeconds = 86400, int $stopGraceSeconds = 1, int $logTailChars = 5000): void
     {
         $config = new BackgroundProcessConfig(
@@ -268,8 +275,9 @@ final class BackgroundProcessManagerTest extends TestCase
             stopGraceSeconds: $stopGraceSeconds,
             logTailChars: $logTailChars,
         );
-        $repository = new \Ineersa\CodingAgent\Entity\BackgroundProcessRepository($this->entityManager);
-        $store = new ProcessStore($this->entityManager, $repository, new NullLogger());
+
+        // ProcessStore uses the container's EntityManager — no manual ORM setup.
+        $store = static::getContainer()->get(ProcessStore::class);
         $lifecycle = new ProcessLifecycle($config, new NullLogger());
         $this->manager = new BackgroundProcessManager($store, $lifecycle, $config, new NullLogger());
     }

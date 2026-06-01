@@ -4,15 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
-use Doctrine\ORM\EntityManager;
-use Doctrine\ORM\Tools\SchemaTool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\CodingAgent\Tool\BgStatusTool;
-use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
 /**
@@ -25,13 +23,15 @@ use Psr\Log\NullLogger;
  * @requires extension pdo_sqlite
  * @requires OS Linux
  *
- * ORM setup is centralized through OrmTestHelper.
+ * DB is provided by the Symfony test container (IsolatedKernelTestCase).
+ * ProcessStore and BackgroundProcessRepository come from the container.
+ * Only BackgroundProcessConfig / ProcessLifecycle / BackgroundProcessManager
+ * are constructed with test-specific temp dirs — no manual EntityManager setup.
  */
-final class BgStatusToolTest extends TestCase
+final class BgStatusToolTest extends IsolatedKernelTestCase
 {
     private const string TEST_SESSION = 'test-session-001';
 
-    private EntityManager $entityManager;
     private BackgroundProcessManager $manager;
     private BackgroundProcessConfig $config;
     private StackToolExecutionContextAccessor $contextAccessor;
@@ -40,10 +40,7 @@ final class BgStatusToolTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->entityManager = OrmTestHelper::createEntityManager();
-
-        $schemaTool = new SchemaTool($this->entityManager);
-        $schemaTool->createSchema($this->entityManager->getMetadataFactory()->getAllMetadata());
+        parent::setUp();
 
         $this->tmpDir = sys_get_temp_dir().'/hatfield_bgtool_test_'.bin2hex(random_bytes(8));
         mkdir($this->tmpDir, 0750, recursive: true);
@@ -53,8 +50,9 @@ final class BgStatusToolTest extends TestCase
             stopGraceSeconds: 1,
             logTailChars: 5000,
         );
-        $repository = new \Ineersa\CodingAgent\Entity\BackgroundProcessRepository($this->entityManager);
-        $store = new ProcessStore($this->entityManager, $repository, new NullLogger());
+
+        // ProcessStore comes from the container (real Doctrine schema, no manual ORM).
+        $store = static::getContainer()->get(ProcessStore::class);
         $lifecycle = new ProcessLifecycle($this->config, new NullLogger());
         $this->manager = new BackgroundProcessManager($store, $lifecycle, $this->config, new NullLogger());
         $this->contextAccessor = new StackToolExecutionContextAccessor();
@@ -80,6 +78,8 @@ final class BgStatusToolTest extends TestCase
         }
 
         $this->rmDir($this->tmpDir);
+
+        parent::tearDown();
     }
 
     /* ── list action ── */
@@ -180,11 +180,8 @@ final class BgStatusToolTest extends TestCase
         $resultA = $this->withContext('session-A', fn (): string => ($this->tool)(['action' => 'list']));
         $resultB = $this->withContext('session-B', fn (): string => ($this->tool)(['action' => 'list']));
 
-        // Session-A should see its own process command but not session-B's
         $this->assertStringContainsString('A-for-test-B', $resultA);
         $this->assertStringNotContainsString('B-for-test-A', $resultA);
-
-        // Session-B should see its own process command but not session-A's
         $this->assertStringContainsString('B-for-test-A', $resultB);
         $this->assertStringNotContainsString('A-for-test-B', $resultB);
     }

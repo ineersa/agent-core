@@ -4,28 +4,26 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool\Store;
 
-use Doctrine\ORM\Tools\SchemaTool;
-use Ineersa\CodingAgent\Entity\ToolBatchStateRepository;
-use Ineersa\CodingAgent\Tests\Tool\OrmTestHelper;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\Store\DbalToolBatchStore;
-use PHPUnit\Framework\TestCase;
 
 /**
  * @requires extension pdo_sqlite
+ *
+ * Uses the Symfony test container to provide a real DbalToolBatchStore
+ * backed by an isolated SQLite database under var/tests/.
+ *
+ * No manual ORMSetup, DriverManager, SchemaTool, or entity metadata paths.
  */
-final class DbalToolBatchStoreTest extends TestCase
+final class DbalToolBatchStoreTest extends IsolatedKernelTestCase
 {
     private DbalToolBatchStore $store;
 
     protected function setUp(): void
     {
-        $entityManager = OrmTestHelper::createEntityManager();
+        parent::setUp();
 
-        $schemaTool = new SchemaTool($entityManager);
-        $schemaTool->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
-
-        $repository = new ToolBatchStateRepository($entityManager);
-        $this->store = new DbalToolBatchStore($entityManager, $repository);
+        $this->store = static::getContainer()->get(DbalToolBatchStore::class);
     }
 
     public function testLoadReturnsNullForUnknownBatch(): void
