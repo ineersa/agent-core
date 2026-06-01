@@ -70,6 +70,9 @@ abstract class IsolatedKernelTestCase extends KernelTestCase
         // debug=true prevents container caching — each test gets a fresh
         // container with the correct HATFIELD_CWD for its isolated cwd.
         self::bootKernel(['environment' => 'test', 'debug' => true]);
+
+        // Create schema from entity metadata on the fresh isolated DB.
+        $this->runMigrations();
     }
 
     /**
@@ -81,11 +84,6 @@ abstract class IsolatedKernelTestCase extends KernelTestCase
         $debug = (bool) ($options['debug'] ?? $_ENV['APP_DEBUG'] ?? $_SERVER['APP_DEBUG'] ?? false);
 
         return new Kernel($env, $debug);
-
-        // Run pending migrations against the isolated .hatfield/messenger.sqlite.
-        // Uses the kernel's own Symfony Console Application so migrations are
-        // discovered from the registered DoctrineMigrationsBundle.
-        $this->runMigrations();
     }
 
     protected function tearDown(): void
