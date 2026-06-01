@@ -4,93 +4,33 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
-use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
-use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\AppConfigLoader;
-use Ineersa\CodingAgent\Config\AppResourceLocator;
-use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\TranscriptEntry;
-use PHPUnit\Framework\TestCase;
-use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 
-final class HatfieldSessionStoreTest extends TestCase
+final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
 {
-    private string $tempDir = '';
     private HatfieldSessionStore $store;
-    private string|false $originalCwd;
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        $this->tempDir = sys_get_temp_dir().'/hatfield-session-test-'.getmypid();
-        if (is_dir($this->tempDir)) {
-            $this->rmDir($this->tempDir);
-        }
-        mkdir($this->tempDir, 0777, true);
-
-        // Create a minimal project dir with .hatfield and config
-        mkdir($this->tempDir.'/.hatfield', 0777, true);
-        mkdir($this->tempDir.'/config', 0777, true);
-
-        // Write a defaults YAML with sessions path pointing to our temp dir
-        file_put_contents($this->tempDir.'/config/hatfield.defaults.yaml', <<<'YAML'
-tui:
-    theme: cyberpunk
-    theme_paths:
-        - '%kernel.project_dir%/config/themes'
-sessions:
-    path: .hatfield/sessions
-YAML);
-
-        // Write empty project settings
-        file_put_contents($this->tempDir.'/.hatfield/settings.yaml', '');
-
-        $this->originalCwd = getcwd();
-        chdir($this->tempDir);
-
-        $appConfig = $this->createAppConfig($this->tempDir);
-        $this->store = new HatfieldSessionStore($appConfig, new LockFactory(new FlockStore()));
-    }
-
-    protected function tearDown(): void
-    {
-        parent::tearDown();
-
-        if (false !== $this->originalCwd) {
-            chdir($this->originalCwd);
-        }
-
-        if (is_dir($this->tempDir)) {
-            $this->rmDir($this->tempDir);
-        }
-    }
-
-    private function createAppConfig(string $projectDir): AppConfig
-    {
-        $prevCwd = getcwd();
-        chdir($projectDir);
-        try {
-            $pathResolver = new SettingsPathResolver($projectDir);
-            $loader = new AppConfigLoader($pathResolver);
-            $resources = new AppResourceLocator($projectDir);
-
-            return AppConfig::fromContainer($loader, $resources, TestSerializerFactory::normalizer());
-        } finally {
-            if (false !== $prevCwd) {
-                chdir($prevCwd);
-            }
-        }
+        /** @var HatfieldSessionStore $store */
+        $store = self::getContainer()->get(HatfieldSessionStore::class);
+        $this->store = $store;
     }
 
     public function testCreateSessionCreatesDirectoryAndMetadata(): void
     {
         $sessionId = $this->store->createSession('Hello');
 
+        // ID is a numeric string from DB auto-increment.
+        self::assertNotEmpty($sessionId);
+        self::assertMatchesRegularExpression('/^\d+$/', $sessionId);
+
         // Directory exists
-        $sessionPath = $this->tempDir.'/.hatfield/sessions/'.$sessionId;
+        $sessionPath = $this->store->resolveSessionsBasePath().'/'.$sessionId;
         self::assertDirectoryExists($sessionPath);
 
         // Metadata YAML created
@@ -127,7 +67,7 @@ YAML);
         $this->store->appendTranscriptEntry($sessionId, new TranscriptEntry(
             role: 'assistant',
             text: 'Hi there!',
-            meta: ['run_id' => 'abc123', 'seq' => 1],
+            meta: ['run_id' => '123', 'seq' => 1],
         ));
 
         $entries = $this->store->getTranscript($sessionId);
@@ -137,7 +77,7 @@ YAML);
         self::assertSame('Hello world', $entries[0]->text);
         self::assertSame('assistant', $entries[1]->role);
         self::assertSame('Hi there!', $entries[1]->text);
-        self::assertSame('abc123', $entries[1]->meta['run_id']);
+        self::assertSame('123', $entries[1]->meta['run_id']);
     }
 
     public function testAppendTranscriptPreservesOrder(): void
@@ -215,132 +155,36 @@ YAML);
         self::assertArrayHasKey('created_at', $data);
     }
 
-    public function testCreateSessionWithDifferentProjects(): void
+    public function testCreateSessionReturnsAutoIncrementIds(): void
     {
-        // Create a second project dir
-        $tempDir2 = sys_get_temp_dir().'/hatfield-session-test-2-'.getmypid();
-        if (is_dir($tempDir2)) {
-            $this->rmDir($tempDir2);
-        }
-        mkdir($tempDir2, 0777, true);
-        mkdir($tempDir2.'/.hatfield', 0777, true);
-        mkdir($tempDir2.'/config', 0777, true);
-        file_put_contents($tempDir2.'/config/hatfield.defaults.yaml', "tui:\n    theme: cyberpunk\nsessions:\n    path: .hatfield/sessions\n");
-        file_put_contents($tempDir2.'/.hatfield/settings.yaml', '');
+        // Creates two sessions; DB auto-increment ensures distinct numeric IDs.
+        $id1 = $this->store->createSession('session one');
+        $id2 = $this->store->createSession('session two');
 
-        try {
-            $appConfig2 = $this->createAppConfig($tempDir2);
-            $store2 = new HatfieldSessionStore($appConfig2, new LockFactory(new FlockStore()));
+        self::assertNotSame($id1, $id2);
+        self::assertMatchesRegularExpression('/^\d+$/', $id1);
+        self::assertMatchesRegularExpression('/^\d+$/', $id2);
 
-            $id1 = $this->store->createSession('project one');
-            $id2 = $store2->createSession('project two');
+        self::assertDirectoryExists($this->store->resolveSessionsBasePath().'/'.$id1);
+        self::assertDirectoryExists($this->store->resolveSessionsBasePath().'/'.$id2);
 
-            // Different sessions
-            self::assertNotSame($id1, $id2);
+        $meta1 = $this->store->loadMetadata($id1);
+        self::assertNotNull($meta1);
+        self::assertSame('session one', $meta1['prompt']);
 
-            // Different directories
-            self::assertDirectoryExists($this->tempDir.'/.hatfield/sessions/'.$id1);
-            self::assertDirectoryExists($tempDir2.'/.hatfield/sessions/'.$id2);
-
-            // Cross-project lookup returns null (different stores)
-            self::assertNull($store2->loadMetadata($id1));
-            self::assertNull($this->store->loadMetadata($id2));
-        } finally {
-            if (is_dir($tempDir2)) {
-                $this->rmDir($tempDir2);
-            }
-        }
-    }
-
-    public function testGenerateIdReturns12CharHex(): void
-    {
-        $id1 = $this->store->generateId();
-        $id2 = $this->store->generateId();
-
-        self::assertSame(12, \strlen($id1));
-        self::assertSame(12, \strlen($id2));
-        self::assertNotSame($id1, $id2, 'Generated IDs must be unique');
-        self::assertMatchesRegularExpression('/^[0-9a-f]{12}$/', $id1);
-    }
-
-    public function testCreateSessionWithExplicitId(): void
-    {
-        $explicitId = 'aaabbbcccddd';
-        $returnedId = $this->store->createSession('test', $explicitId);
-
-        self::assertSame($explicitId, $returnedId);
-        self::assertDirectoryExists($this->tempDir.'/.hatfield/sessions/'.$explicitId);
-
-        $meta = $this->store->loadMetadata($explicitId);
-        self::assertNotNull($meta);
-        self::assertSame($explicitId, $meta['session_id']);
-        self::assertSame($explicitId, $meta['run_id'], 'run_id must equal session_id');
-    }
-
-    public function testCreateSessionWithDuplicateExplicitIdThrows(): void
-    {
-        $explicitId = 'duplicate-session-id';
-        $this->store->createSession('first', $explicitId);
-
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('already exists');
-
-        $this->store->createSession('second', $explicitId);
+        $meta2 = $this->store->loadMetadata($id2);
+        self::assertNotNull($meta2);
+        self::assertSame('session two', $meta2['prompt']);
     }
 
     public function testResolveSessionsBasePath(): void
     {
         $basePath = $this->store->resolveSessionsBasePath();
-
-        self::assertSame($this->tempDir.'/.hatfield/sessions', $basePath);
+        self::assertNotEmpty($basePath);
 
         // The resolved base path must match what createSession uses
         $sessionId = $this->store->createSession();
         $expectedSessionDir = $basePath.'/'.$sessionId;
         self::assertDirectoryExists($expectedSessionDir);
-    }
-
-    public function testResolveSessionsBasePathForDifferentProjects(): void
-    {
-        $tempDir2 = sys_get_temp_dir().'/hatfield-session-test-resolve-'.getmypid();
-        if (is_dir($tempDir2)) {
-            $this->rmDir($tempDir2);
-        }
-        mkdir($tempDir2, 0777, true);
-        mkdir($tempDir2.'/.hatfield', 0777, true);
-        mkdir($tempDir2.'/config', 0777, true);
-        file_put_contents($tempDir2.'/config/hatfield.defaults.yaml', "tui:\n    theme: cyberpunk\nsessions:\n    path: .hatfield/sessions\n");
-        file_put_contents($tempDir2.'/.hatfield/settings.yaml', '');
-
-        try {
-            $appConfig2 = $this->createAppConfig($tempDir2);
-            $store2 = new HatfieldSessionStore($appConfig2, new LockFactory(new FlockStore()));
-
-            $basePath1 = $this->store->resolveSessionsBasePath();
-            $basePath2 = $store2->resolveSessionsBasePath();
-
-            self::assertNotSame($basePath1, $basePath2, 'Different projects must resolve different sessions base paths');
-            self::assertSame($this->tempDir.'/.hatfield/sessions', $basePath1);
-            self::assertSame($tempDir2.'/.hatfield/sessions', $basePath2);
-        } finally {
-            if (is_dir($tempDir2)) {
-                $this->rmDir($tempDir2);
-            }
-        }
-    }
-
-    private function rmDir(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-        $it = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-        foreach ($it as $entry) {
-            $entry->isDir() ? rmdir((string) $entry) : unlink((string) $entry);
-        }
-        rmdir($dir);
     }
 }

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Session;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Yaml\Yaml;
 
@@ -17,6 +19,10 @@ use Symfony\Component\Yaml\Yaml;
  * session_id === run_id in Hatfield. One directory equals one session
  * equals one agent run equals one future fork tree node.
  *
+ * Session IDs are DB-issued auto-increment integers converted to strings.
+ * The hatfield_session table acts as an authoritative ID registry; the
+ * filesystem under .hatfield/sessions/ is the canonical storage.
+ *
  * All writes are protected by a Symfony Lock (FlockStore) to prevent
  * concurrent corruption from multiple processes.
  */
@@ -25,73 +31,51 @@ final class HatfieldSessionStore
     public function __construct(
         private readonly AppConfig $appConfig,
         private readonly LockFactory $lockFactory,
+        private readonly EntityManagerInterface $entityManager,
     ) {
     }
 
     /**
-     * Create a new session directory and return its ID.
+     * Create a new session directory and return its DB-issued ID.
      *
-     * When $sessionId is provided, it becomes both the session ID and
-     * run ID. When empty, a new 12-char hex ID is generated.
+     * Inserts a HatfieldSession entity to obtain an auto-increment
+     * integer ID, then creates the session files under
+     * .hatfield/sessions/<id>/.
      *
-     * Collision checking is performed under the session lock:
-     * - For explicit IDs: acquires lock, checks existence, throws if
-     *   the session already exists.
-     * - For generated IDs: loops generating candidate IDs, acquiring
-     *   the per-candidate lock, checking existence, and retrying on
-     *   collision until a free ID is found.
+     * If file creation fails after DB insert, the session row is
+     * removed from the DB to avoid silently inconsistent state.
      *
-     * Once a free ID is confirmed under lock, the session directory
-     * and metadata files are created before the lock is released.
+     * @param string $prompt Optional initial prompt for metadata
      *
-     * @param string $prompt    Optional initial prompt for metadata
-     * @param string $sessionId Optional pre-generated ID; auto-generated if empty
+     * @return string The session/run ID (numeric string)
      *
-     * @return string The session/run ID
-     *
-     * @throws \RuntimeException if the explicit $sessionId already exists
+     * @throws \RuntimeException if session creation cannot complete
      */
-    public function createSession(string $prompt = '', string $sessionId = ''): string
+    public function createSession(string $prompt = ''): string
     {
-        $hasExplicitId = '' !== $sessionId;
+        $session = new HatfieldSession();
+        $session->cwd = $this->appConfig->cwd;
+        $session->prompt = '' !== $prompt ? $prompt : null;
 
-        if ($hasExplicitId) {
-            // Explicit ID: acquire lock, check existence under lock.
-            $lock = $this->lockFactory->createLock('hatfield-session-'.$sessionId);
-            $lock->acquire(true);
+        $this->entityManager->persist($session);
+        $this->entityManager->flush();
 
+        $sessionId = (string) $session->id;
+
+        try {
+            $this->writeSessionFiles($sessionId, $prompt);
+        } catch (\Throwable $e) {
+            // Roll back the DB row — no silently inconsistent state.
             try {
-                if ($this->exists($sessionId)) {
-                    throw new \RuntimeException(\sprintf('Cannot create session "%s": a session with this ID already exists.', $sessionId));
-                }
-
-                $this->writeSessionFiles($sessionId, $prompt);
-            } finally {
-                $lock->release();
+                $this->entityManager->remove($session);
+                $this->entityManager->flush();
+            } catch (\Throwable $cleanup) {
+                // Best-effort cleanup; log would be better but we avoid
+                // a logger dependency to keep this class focused.
+                throw new \RuntimeException(\sprintf('Failed to create session files for ID "%s" and cleanup also failed: %s. Original error: %s', $sessionId, $cleanup->getMessage(), $e->getMessage()), 0, $e);
             }
-        } else {
-            // Generated ID: loop until we find a non-existing ID, checking
-            // under each candidate's lock so two concurrent generators cannot
-            // claim the same ID.
-            while (true) {
-                $candidate = bin2hex(random_bytes(6));
 
-                $lock = $this->lockFactory->createLock('hatfield-session-'.$candidate);
-                $lock->acquire(true);
-
-                if ($this->exists($candidate)) {
-                    $lock->release();
-                    continue;
-                }
-
-                try {
-                    $this->writeSessionFiles($candidate, $prompt);
-                    $sessionId = $candidate;
-                    break;
-                } finally {
-                    $lock->release();
-                }
-            }
+            throw new \RuntimeException(\sprintf('Failed to create session files for ID "%s": %s', $sessionId, $e->getMessage()), 0, $e);
         }
 
         return $sessionId;
@@ -194,26 +178,6 @@ final class HatfieldSessionStore
     public function exists(string $sessionId): bool
     {
         return is_readable($this->getSessionDir($sessionId).'/metadata.yaml');
-    }
-
-    /**
-     * Generate a unique session/run ID without creating a directory.
-     *
-     * Used by InteractiveMode to pre-generate the ID before passing it
-     * to both createSession() and StartRunRequest, ensuring session_id === run_id.
-     *
-     * This method checks existence without holding a lock. The definitive
-     * collision check happens under lock inside createSession().
-     *
-     * @return string 12-char hex ID
-     */
-    public function generateId(): string
-    {
-        do {
-            $id = bin2hex(random_bytes(6));
-        } while ($this->exists($id));
-
-        return $id;
     }
 
     /**

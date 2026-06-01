@@ -207,6 +207,7 @@ class ModelPickerControllerTest extends TestCase
                 cwd: $this->tempDir.'/project',
             ),
             lockFactory: new LockFactory(new FlockStore()),
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
         $sessionMetaStore = new SessionMetadataStore($hatfieldSessionStore);
 

@@ -40,6 +40,7 @@ final class SessionRunEventStoreTest extends TestCase
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             lockFactory: new LockFactory(new FlockStore()),
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
 
         $this->store = new SessionRunEventStore(
@@ -133,6 +134,7 @@ final class SessionRunEventStoreTest extends TestCase
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             lockFactory: new LockFactory(new FlockStore()),
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
         $newStore = new SessionRunEventStore(
             hatfieldSessionStore: $hatfieldSessionStore,

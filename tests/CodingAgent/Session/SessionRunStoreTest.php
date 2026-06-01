@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -24,6 +25,7 @@ final class SessionRunStoreTest extends TestCase
 {
     private string $projectDir = '';
     private SessionRunStore $store;
+    private EntityManagerInterface $entityManager;
 
     protected function setUp(): void
     {
@@ -35,6 +37,8 @@ final class SessionRunStoreTest extends TestCase
         }
         mkdir($this->projectDir, 0777, true);
         mkdir($this->projectDir.'/.hatfield/sessions', 0777, true);
+
+        $this->entityManager = $this->createStub(EntityManagerInterface::class);
 
         $serializer = new Serializer(
             [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer()],
@@ -49,6 +53,7 @@ final class SessionRunStoreTest extends TestCase
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             lockFactory: new LockFactory(new FlockStore()),
+            entityManager: $this->entityManager,
         );
 
         $this->store = new SessionRunStore(
@@ -137,6 +142,7 @@ final class SessionRunStoreTest extends TestCase
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             lockFactory: new LockFactory(new FlockStore()),
+            entityManager: $this->entityManager,
         );
         $newStore = new SessionRunStore(
             hatfieldSessionStore: $hatfieldSessionStore,

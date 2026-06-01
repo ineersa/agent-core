@@ -65,6 +65,7 @@ class ModelCommandHandlerTest extends TestCase
                 cwd: $this->tempDir.'/project',
             ),
             lockFactory: new LockFactory(new FlockStore()),
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
         $this->sessionMetaStore = new SessionMetadataStore($hatfieldSessionStore);
 

@@ -334,9 +334,14 @@ final class TmuxHarness
             $snapshot,
         );
 
-        // Replace 12-char hex session IDs (e.g. in footer "session a1b2c3d4e5f6")
+        // Replace session IDs (12-char hex from legacy or numeric from DB auto-increment)
         $snapshot = preg_replace(
             '/\bsession \b[0-9a-f]{12}\b/',
+            'session <session-id>',
+            $snapshot,
+        );
+        $snapshot = preg_replace(
+            '/\bsession \b\d+\b/',
             'session <session-id>',
             $snapshot,
         );
