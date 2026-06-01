@@ -20,8 +20,9 @@ use Ineersa\CodingAgent\Config\HomeSettingsWriter;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Entity\HatfieldSession;
+use Ineersa\CodingAgent\Tests\TestCase\EntityManagerHelper;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 
 class ModelSelectionServiceTest extends TestCase
 {
@@ -29,6 +30,7 @@ class ModelSelectionServiceTest extends TestCase
     private string $homeDir;
     private ModelSelectionService $service;
     private SessionMetadataStore $sessionMetaStore;
+    private \Doctrine\ORM\EntityManagerInterface $entityManager;
 
     protected function setUp(): void
     {
@@ -45,6 +47,7 @@ class ModelSelectionServiceTest extends TestCase
 
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new HomeSettingsWriter($pathResolver);
+        $this->entityManager = EntityManagerHelper::createInMemorySqlite();
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: new AppConfig(
                 tui: new TuiConfig(theme: 'default'),
@@ -52,7 +55,7 @@ class ModelSelectionServiceTest extends TestCase
                 cwd: $this->tempDir.'/project',
             ),
             lockFactory: new LockFactory(new FlockStore()),
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            entityManager: $this->entityManager,
         );
         $this->sessionMetaStore = new SessionMetadataStore($hatfieldSessionStore);
 
@@ -130,31 +133,50 @@ class ModelSelectionServiceTest extends TestCase
     }
 
     /**
-     * Write session metadata YAML.
+     * Write session metadata via the database-backed session store.
+     *
+     * Ensures a HatfieldSession entity exists with the given publicId
+     * before applying metadata fields so callers see updates through
+     * SessionMetadataStore or HatfieldSessionStore lookups.
      */
     private function writeSessionMetadata(string $sessionId, array $meta): void
     {
-        $dir = $this->tempDir.'/project/.hatfield/sessions/'.$sessionId;
-        if (!is_dir($dir)) {
-            mkdir($dir, 0777, true);
+        $repo = $this->entityManager->getRepository(HatfieldSession::class);
+        $entity = $repo->findOneBy(['publicId' => $sessionId]);
+
+        if (null === $entity) {
+            $entity = new HatfieldSession();
+            $entity->publicId = $sessionId;
+            $entity->cwd = $this->tempDir.'/project';
+            $this->entityManager->persist($entity);
+            $this->entityManager->flush();
         }
-        file_put_contents($dir.'/metadata.yaml', Yaml::dump($meta, 4, 2));
+
+        if (isset($meta['model']) && \is_string($meta['model'])) {
+            $entity->model = $meta['model'];
+        }
+        if (isset($meta['model_provider']) && \is_string($meta['model_provider'])) {
+            $entity->modelProvider = $meta['model_provider'];
+        }
+        if (isset($meta['model_name']) && \is_string($meta['model_name'])) {
+            $entity->modelName = $meta['model_name'];
+        }
+        if (isset($meta['reasoning']) && \is_string($meta['reasoning'])) {
+            $entity->reasoning = $meta['reasoning'];
+        }
+        if (isset($meta['prompt']) && \is_string($meta['prompt'])) {
+            $entity->prompt = $meta['prompt'];
+        }
+
+        $this->entityManager->flush();
     }
 
     /**
-     * Read session metadata YAML.
+     * Read session metadata from the database.
      */
     private function readSessionMetadata(string $sessionId): array
     {
-        $path = $this->tempDir.'/project/.hatfield/sessions/'.$sessionId.'/metadata.yaml';
-
-        if (!is_readable($path)) {
-            return [];
-        }
-
-        $data = Yaml::parseFile($path);
-
-        return \is_array($data) ? $data : [];
+        return $this->sessionMetaStore->readSessionMetadata($sessionId);
     }
 
     private function homeSettingsPath(): string

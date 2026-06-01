@@ -945,7 +945,7 @@ function agent_test_diagnostics(string $testDir, string $snapshot): string
     }
     foreach ($sessionDirs as $sessionDir) {
         $out .= "Session: {$sessionDir}\n";
-        foreach (['metadata.yaml', 'state.json', 'events.jsonl', 'transcript.jsonl', 'idempotency.jsonl'] as $file) {
+        foreach (['state.json', 'events.jsonl', 'transcript.jsonl', 'idempotency.jsonl'] as $file) {
             $path = $sessionDir.'/'.$file;
             $out .= is_file($path)
                 ? "--- {$file} ---\n".(string) file_get_contents($path)."\n\n"

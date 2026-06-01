@@ -22,36 +22,51 @@
 
 ```text
 .hatfield/sessions/<id>/
-  metadata.yaml            Identity, tree, and session metadata
   state.json               AgentCore RunState materialized snapshot/checkpoint
   events.jsonl             AgentCore RunEvent canonical event stream
   transcript.jsonl         TUI/user-facing transcript projection
   attachments/             (future) pasted files, images, diffs
 ```
 
+Session metadata (identity, prompt, model, reasoning, fork tree links)
+lives in the `hatfield_session` database table, not in a metadata.yaml file.
+
 ### File purposes
 
 | File | Canonical? | Written by | Read by | Format |
 |------|-----------|------------|---------|--------|
-| `metadata.yaml` | Yes (identity/tree) | `HatfieldSessionStore` | `HatfieldSessionStore`, TUI, future fork/lister | YAML |
 | `state.json` | No — materialized snapshot/checkpoint | `SessionRunStore::compareAndSwap()` | `SessionRunStore::get()`, resume flow | JSON (Symfony Serializer) |
 | `events.jsonl` | **Yes — canonical domain event stream** | `SessionRunEventStore::append()` | `SessionRunEventStore::allFor()`, `InProcessAgentSessionClient::events()`, TUI tick callback | JSONL (EventPayloadNormalizer) |
 | `transcript.jsonl` | No — TUI projection | `HatfieldSessionStore::appendTranscriptEntry()` | `HatfieldSessionStore::getTranscript()`, resume display | JSONL (TranscriptEntry DTO) |
 
-### metadata.yaml
+### Session metadata (database)
 
-```yaml
-session_id: "42"
-run_id: "42"               # Always === session_id
-parent_id: null             # Future fork tree parent; null for root sessions
-root_id: null               # Future tree root ID; null if this session is root
-created_at: '2026-05-13T12:00:00+00:00'
-updated_at: '2026-05-13T12:05:00+00:00'
-cwd: /home/user/projects/my-app
-prompt: 'Write a README'
+Session identity and metadata are stored in the `hatfield_session` DB table
+(authoritative) and exposed through `HatfieldSessionStore::loadMetadata()`
+and `updateMetadata()`.  The returned array shape for callers:
+
+```php
+[
+    'session_id' => '42',    // DB auto-increment id as string; always === run_id
+    'run_id'     => '42',
+    'parent_id'  => null,    // Future fork tree parent
+    'root_id'    => null,    // Future fork tree root
+    'created_at' => '...',
+    'updated_at' => '...',
+    'cwd'        => '/path/to/project',
+    'prompt'     => 'Write a README',  // nullable
+    'model'      => 'deepseek/deepseek-v4-pro',  // nullable
+    'model_provider' => 'deepseek',              // nullable
+    'model_name'     => 'deepseek-v4-pro',       // nullable
+    'reasoning'  => 'medium',                    // nullable
+]
 ```
 
-Future forking will add optional keys (see [Future fork tree](#future-fork-tree)).
+Non-null keys are always present; nullable fields are only included when
+non-null. The `public_id` column is a unique string identifier used for
+lookups and equals the auto-increment id stringified in production.
+
+Future forking will add parent_id/root_id support (see [Future fork tree](#future-fork-tree)).
 
 ### Storage model at a glance
 
@@ -201,7 +216,7 @@ layer — not during persistence.
    fork logic must rewrite the embedded `runId` in:
    - `state.json` — top-level `runId` key
    - `events.jsonl` — `run_id` field in every line
-   - `metadata.yaml` — `session_id`, `run_id`; set `parent_id` and `root_id`
+   - `hatfield_session` DB row — `session_id`, `run_id`; set `parent_id` and `root_id`
    - `transcript.jsonl` — `meta.run_id` and `meta.session_id` where present
 
 ## Resume flow
@@ -333,7 +348,7 @@ a database.
 
 ### Fork metadata
 
-After a fork, `metadata.yaml` gains optional keys:
+After a fork, the `hatfield_session` DB row gains optional keys:
 
 ```yaml
 session_id: bbb222
@@ -368,17 +383,17 @@ Implementation outline:
 1. Copy `.hatfield/sessions/aaa111` to `.hatfield/sessions/bbb222`.
 2. Generate new ID `bbb222` if not specified.
 3. Rewrite all embedded IDs from `aaa111` to `bbb222` in:
-   - `metadata.yaml`
+   - `hatfield_session` DB row (set parent_id, root_id)
    - `state.json`
    - `events.jsonl`
    - `transcript.jsonl`
-4. Set `parent_id`, `root_id`, and `fork` block in the new metadata.
+4. Set `parent_id`, `root_id`, and `fork` block in DB metadata.
 5. Resume: `php bin/console agent --resume bbb222`.
 
 ### Tree listing (future)
 
 Listing all sessions and building a tree can be done by scanning
-`.hatfield/sessions/*/metadata.yaml` and reading `parent_id` / `root_id`.
+the `hatfield_session` DB table and reading `parent_id` / `root_id`.
 
 No database index is required for session counts in the range of hundreds to
 low thousands.

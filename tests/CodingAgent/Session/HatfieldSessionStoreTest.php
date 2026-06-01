@@ -33,8 +33,8 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $sessionPath = $this->store->resolveSessionsBasePath().'/'.$sessionId;
         self::assertDirectoryExists($sessionPath);
 
-        // Metadata YAML created
-        self::assertFileExists($sessionPath.'/metadata.yaml');
+        // Metadata lives in the DB, not as metadata.yaml
+        self::assertFileDoesNotExist($sessionPath.'/metadata.yaml');
         $meta = $this->store->loadMetadata($sessionId);
         self::assertNotNull($meta);
         self::assertSame($sessionId, $meta['session_id']);
@@ -44,7 +44,7 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         self::assertSame('Hello', $meta['prompt']);
         self::assertArrayHasKey('created_at', $meta);
 
-        // All files created (including agent-core store files)
+        // Core files created (no metadata.yaml)
         self::assertFileExists($sessionPath.'/state.json');
         self::assertFileExists($sessionPath.'/events.jsonl');
         self::assertFileExists($sessionPath.'/transcript.jsonl');
@@ -97,15 +97,14 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         self::assertSame('Message 5', $entries[4]->text);
     }
 
-    public function testResumeMissingSessionReturnsNull(): void
-    {
-        $meta = $this->store->loadMetadata('nonexistent');
-        self::assertNull($meta);
-    }
-
     public function testExistsReturnsFalseForMissingSession(): void
     {
-        self::assertFalse($this->store->exists('nonexistent'));
+        self::assertFalse($this->store->exists('nonexistent-session-id'));
+    }
+
+    public function testLoadMetadataReturnsNullForMissingSession(): void
+    {
+        self::assertNull($this->store->loadMetadata('nonexistent-session-id'));
     }
 
     public function testUpdateMetadataMergesFields(): void
@@ -113,15 +112,15 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $sessionId = $this->store->createSession();
 
         $this->store->updateMetadata($sessionId, [
-            'run_id' => 'run-456',
+            'run_id' => 'run-456', // ignored — run_id always equals session_id
             'model' => 'deepseek-v4',
         ]);
 
         $meta = $this->store->loadMetadata($sessionId);
         self::assertNotNull($meta);
-        self::assertSame('run-456', $meta['run_id']);
+        self::assertSame($sessionId, $meta['run_id'], 'run_id always equals session_id (id from DB)');
         self::assertSame('deepseek-v4', $meta['model']);
-        self::assertArrayHasKey('session_id', $meta); // Original field preserved
+        self::assertArrayHasKey('session_id', $meta);
         self::assertArrayHasKey('updated_at', $meta);
     }
 

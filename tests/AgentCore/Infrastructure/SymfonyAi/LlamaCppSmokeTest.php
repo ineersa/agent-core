@@ -26,8 +26,10 @@ use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\TestCase\EntityManagerHelper;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -53,6 +55,7 @@ final class LlamaCppSmokeTest extends TestCase
     private string $homeDir;
     private string $sessionId;
     private SessionMetadataStore $sessionMetaStore;
+    private \Doctrine\ORM\EntityManagerInterface $entityManager;
 
     protected function setUp(): void
     {
@@ -77,6 +80,7 @@ final class LlamaCppSmokeTest extends TestCase
         file_put_contents($this->homeDir.'/.hatfield/settings.yaml', "tui:\n    theme: cyberpunk\n");
 
         // Session metadata store
+        $this->entityManager = EntityManagerHelper::createInMemorySqlite();
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: new AppConfig(
                 tui: new TuiConfig(theme: 'default'),
@@ -84,7 +88,7 @@ final class LlamaCppSmokeTest extends TestCase
                 cwd: $this->tempDir.'/project',
             ),
             lockFactory: new LockFactory(new FlockStore()),
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            entityManager: $this->entityManager,
         );
         $this->sessionMetaStore = new SessionMetadataStore($hatfieldSessionStore);
     }
@@ -387,17 +391,34 @@ final class LlamaCppSmokeTest extends TestCase
     }
 
     /**
-     * Pre-write session metadata YAML.
+     * Pre-write session metadata via the database-backed session store.
      *
      * @param array<string, string> $meta
      */
     private function writeSessionMetadata(string $sessionId, array $meta): void
     {
-        $dir = $this->tempDir.'/project/.hatfield/sessions/'.$sessionId;
-        if (!is_dir($dir)) {
-            mkdir($dir, 0777, true);
+        $repo = $this->entityManager->getRepository(HatfieldSession::class);
+        $entity = $repo->findOneBy(['publicId' => $sessionId]);
+
+        if (null === $entity) {
+            $entity = new HatfieldSession();
+            $entity->publicId = $sessionId;
+            $entity->cwd = $this->tempDir.'/project';
+            $this->entityManager->persist($entity);
+            $this->entityManager->flush();
         }
-        file_put_contents($dir.'/metadata.yaml', Yaml::dump($meta, 4, 2));
+
+        if (isset($meta['model']) && \is_string($meta['model'])) {
+            $entity->model = $meta['model'];
+        }
+        if (isset($meta['reasoning']) && \is_string($meta['reasoning'])) {
+            $entity->reasoning = $meta['reasoning'];
+        }
+        if (isset($meta['session_id']) && \is_string($meta['session_id'])) {
+            $entity->publicId = $meta['session_id'];
+        }
+
+        $this->entityManager->flush();
     }
 
     private function collectSessionDiagnostics(): string

@@ -35,7 +35,7 @@ use Symfony\Component\Console\Output\OutputInterface;
  *
  * Session persistence:
  *   Every TUI session creates a directory under .hatfield/sessions/<session-id>/
- *   containing metadata.yaml, transcript.jsonl, state.json, and events.jsonl.
+ *   containing transcript.jsonl, state.json, and events.jsonl.
  *   Use --resume to reload a previous session with its full transcript.
  */
 #[AsCommand(name: 'agent', description: 'Agent session — TUI (default) or headless JSONL runtime')]

@@ -397,7 +397,7 @@ abstract class ControllerE2eTestCase extends TestCase
         $lines = ['Session dir: '.$sessionsDir."\nSessions: ".implode(', ', array_map('basename', $dirs))];
 
         foreach ($dirs as $sessionDir) {
-            foreach (['events.jsonl', 'state.json', 'transcript.jsonl', 'metadata.yaml', 'idempotency.jsonl'] as $file) {
+            foreach (['events.jsonl', 'state.json', 'transcript.jsonl', 'idempotency.jsonl'] as $file) {
                 $path = $sessionDir.'/'.$file;
                 if (is_file($path)) {
                     $content = (string) file_get_contents($path);

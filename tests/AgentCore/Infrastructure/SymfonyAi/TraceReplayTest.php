@@ -25,7 +25,9 @@ use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\TestCase\EntityManagerHelper;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Message\Content\Text;
@@ -49,7 +51,6 @@ use Symfony\AI\Platform\TokenUsage\TokenUsageInterface;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Application-level trace/replay tests.
@@ -63,6 +64,7 @@ final class TraceReplayTest extends TestCase
     private string $tempDir;
     private string $homeDir;
     private SessionMetadataStore $sessionMetaStore;
+    private \Doctrine\ORM\EntityManagerInterface $entityManager;
 
     protected function setUp(): void
     {
@@ -73,6 +75,7 @@ final class TraceReplayTest extends TestCase
         mkdir($this->tempDir.'/project/.hatfield/sessions', 0777, true);
         file_put_contents($this->homeDir.'/.hatfield/settings.yaml', "tui:\n    theme: cyberpunk\n");
 
+        $this->entityManager = EntityManagerHelper::createInMemorySqlite();
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: new AppConfig(
                 tui: new TuiConfig(theme: 'default'),
@@ -80,7 +83,7 @@ final class TraceReplayTest extends TestCase
                 cwd: $this->tempDir.'/project',
             ),
             lockFactory: new LockFactory(new FlockStore()),
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            entityManager: $this->entityManager,
         );
         $this->sessionMetaStore = new SessionMetadataStore($hatfieldSessionStore);
     }
@@ -429,15 +432,29 @@ final class TraceReplayTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $meta
+     * Write session metadata via the database-backed session store.
      */
     private function writeSessionMetadata(string $sessionId, array $meta): void
     {
-        $dir = $this->tempDir.'/project/.hatfield/sessions/'.$sessionId;
-        if (!is_dir($dir)) {
-            mkdir($dir, 0777, true);
+        $repo = $this->entityManager->getRepository(HatfieldSession::class);
+        $entity = $repo->findOneBy(['publicId' => $sessionId]);
+
+        if (null === $entity) {
+            $entity = new HatfieldSession();
+            $entity->publicId = $sessionId;
+            $entity->cwd = $this->tempDir.'/project';
+            $this->entityManager->persist($entity);
+            $this->entityManager->flush();
         }
-        file_put_contents($dir.'/metadata.yaml', Yaml::dump($meta, 4, 2));
+
+        if (isset($meta['model']) && \is_string($meta['model'])) {
+            $entity->model = $meta['model'];
+        }
+        if (isset($meta['reasoning']) && \is_string($meta['reasoning'])) {
+            $entity->reasoning = $meta['reasoning'];
+        }
+
+        $this->entityManager->flush();
     }
 
     private function removeDir(string $dir): void

@@ -20,14 +20,16 @@ use Ineersa\CodingAgent\Config\SessionAwareModelResolver;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Entity\HatfieldSession;
+use Ineersa\CodingAgent\Tests\TestCase\EntityManagerHelper;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Message\MessageBag;
-use Symfony\Component\Yaml\Yaml;
 
 final class SessionAwareModelResolverTest extends TestCase
 {
     private string $tempDir;
     private string $homeDir;
+    private \Doctrine\ORM\EntityManagerInterface $entityManager;
 
     protected function setUp(): void
     {
@@ -37,6 +39,7 @@ final class SessionAwareModelResolverTest extends TestCase
         mkdir($this->homeDir, 0777, true);
         mkdir($this->homeDir.'/.hatfield', 0777, true);
         file_put_contents($this->homeDir.'/.hatfield/settings.yaml', "tui:\n    theme: cyberpunk\n");
+        $this->entityManager = EntityManagerHelper::createInMemorySqlite();
     }
 
     protected function tearDown(): void
@@ -155,7 +158,7 @@ final class SessionAwareModelResolverTest extends TestCase
                 cwd: $this->tempDir.'/project',
             ),
             lockFactory: new LockFactory(new FlockStore()),
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            entityManager: $this->entityManager,
         );
         $sessionMetaStore = new SessionMetadataStore($hatfieldSessionStore);
 
@@ -187,13 +190,30 @@ final class SessionAwareModelResolverTest extends TestCase
         );
     }
 
+    /**
+     * Write session metadata via the database-backed session store.
+     */
     private function writeSessionMetadata(string $sessionId, array $meta): void
     {
-        $dir = $this->tempDir.'/project/.hatfield/sessions/'.$sessionId;
-        if (!is_dir($dir)) {
-            mkdir($dir, 0777, true);
+        $repo = $this->entityManager->getRepository(HatfieldSession::class);
+        $entity = $repo->findOneBy(['publicId' => $sessionId]);
+
+        if (null === $entity) {
+            $entity = new HatfieldSession();
+            $entity->publicId = $sessionId;
+            $entity->cwd = $this->tempDir.'/project';
+            $this->entityManager->persist($entity);
+            $this->entityManager->flush();
         }
-        file_put_contents($dir.'/metadata.yaml', Yaml::dump($meta, 4, 2));
+
+        if (isset($meta['model']) && \is_string($meta['model'])) {
+            $entity->model = $meta['model'];
+        }
+        if (isset($meta['reasoning']) && \is_string($meta['reasoning'])) {
+            $entity->reasoning = $meta['reasoning'];
+        }
+
+        $this->entityManager->flush();
     }
 
     private function removeDir(string $dir): void

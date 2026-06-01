@@ -34,11 +34,40 @@ class HatfieldSession
     #[ORM\Column(type: 'integer')]
     public int $id = 0;
 
+    /** External session/run identifier (string form of the auto-increment id).
+     * Nullable — populated after the first flush in createSession(). */
+    #[ORM\Column(name: 'public_id', type: 'string', unique: true, nullable: true)]
+    public ?string $publicId = null;
+
     #[ORM\Column(type: 'string')]
     public string $cwd = '';
 
     #[ORM\Column(type: 'string', nullable: true)]
     public ?string $prompt = null;
+
+    /** Future fork tree parent ID; null for root sessions. */
+    #[ORM\Column(name: 'parent_id', type: 'string', nullable: true)]
+    public ?string $parentId = null;
+
+    /** Future fork tree root ID; null if this session is the root. */
+    #[ORM\Column(name: 'root_id', type: 'string', nullable: true)]
+    public ?string $rootId = null;
+
+    /** Selected model reference (e.g. "deepseek/deepseek-v4-pro"). */
+    #[ORM\Column(type: 'string', nullable: true)]
+    public ?string $model = null;
+
+    /** Provider portion of the selected model (denormalized for fast display). */
+    #[ORM\Column(name: 'model_provider', type: 'string', nullable: true)]
+    public ?string $modelProvider = null;
+
+    /** Model-name portion of the selected model (denormalized for fast display). */
+    #[ORM\Column(name: 'model_name', type: 'string', nullable: true)]
+    public ?string $modelName = null;
+
+    /** Reasoning level for the current session (off/minimal/low/medium/high/xhigh). */
+    #[ORM\Column(type: 'string', nullable: true)]
+    public ?string $reasoning = null;
 
     #[ORM\Column(name: 'created_at', type: 'string')]
     public string $createdAt = '';

@@ -5,73 +5,43 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Config;
 
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Symfony\Component\Yaml\Yaml;
 
 /**
- * File-backed session metadata store.
+ * Session metadata store — delegates to HatfieldSessionStore.
  *
- * Reads and writes session metadata.yaml files under the Hatfield
- * sessions directory, using HatfieldSessionStore::resolveSessionsBasePath()
- * as the single source of truth for path resolution.
+ * Session metadata lives in the hatfield_session DB table, not
+ * in a metadata.yaml file. This class is a focused adapter so
+ * callers that need only metadata operations (e.g. ModelSelectionService)
+ * can depend on a narrow interface without importing the full session
+ * lifecycle store.
  */
 final class SessionMetadataStore
 {
-    private readonly string $sessionsBasePath;
-
     public function __construct(
-        HatfieldSessionStore $hatfieldSessionStore,
+        private readonly HatfieldSessionStore $hatfieldSessionStore,
     ) {
-        $this->sessionsBasePath = $hatfieldSessionStore->resolveSessionsBasePath();
     }
 
     /**
-     * Read session metadata from the YAML file.
+     * Read session metadata from the database.
      *
-     * @return array<string, mixed> Empty array if the file does not exist
+     * @return array<string, mixed> Empty array if the session does not exist
      */
     public function readSessionMetadata(string $sessionId): array
     {
-        $path = $this->metadataPath($sessionId);
-
-        if (!is_readable($path)) {
-            return [];
-        }
-
-        $data = Yaml::parseFile($path);
-
-        return \is_array($data) ? $data : [];
+        return $this->hatfieldSessionStore->loadMetadata($sessionId) ?? [];
     }
 
     /**
-     * Write session metadata, merging $fields into the existing file.
+     * Write session metadata fields to the database.
      *
-     * Preserves all existing metadata keys; only overwrites those
-     * present in $fields. Updates the updated_at timestamp.
+     * Delegates to HatfieldSessionStore::updateMetadata(), which maps
+     * known keys to entity columns and ignores unknown keys.
      *
      * @param array<string, string> $fields Key-value pairs to set
      */
     public function writeSessionMetadata(string $sessionId, array $fields): void
     {
-        $existing = $this->readSessionMetadata($sessionId);
-        $merged = array_merge($existing, $fields);
-        $merged['updated_at'] = date('c');
-
-        $dir = \dirname($this->metadataPath($sessionId));
-        if (!is_dir($dir)) {
-            mkdir($dir, 0777, true);
-        }
-
-        file_put_contents(
-            $this->metadataPath($sessionId),
-            Yaml::dump($merged, 4, 2),
-        );
-    }
-
-    /**
-     * Full path to a session's metadata.yaml file.
-     */
-    private function metadataPath(string $sessionId): string
-    {
-        return $this->sessionsBasePath.'/'.$sessionId.'/metadata.yaml';
+        $this->hatfieldSessionStore->updateMetadata($sessionId, $fields);
     }
 }

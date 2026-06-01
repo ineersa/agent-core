@@ -334,12 +334,7 @@ final class TmuxHarness
             $snapshot,
         );
 
-        // Replace session IDs (12-char hex from legacy or numeric from DB auto-increment)
-        $snapshot = preg_replace(
-            '/\bsession \b[0-9a-f]{12}\b/',
-            'session <session-id>',
-            $snapshot,
-        );
+        // Replace session IDs (numeric, DB-issued)
         $snapshot = preg_replace(
             '/\bsession \b\d+\b/',
             'session <session-id>',
