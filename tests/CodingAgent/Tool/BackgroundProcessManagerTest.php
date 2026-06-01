@@ -4,20 +4,16 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
-use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\DriverManager;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
-use Ineersa\CodingAgent\Tool\BackgroundProcess\BackgroundProcessRecord;
+use Ineersa\CodingAgent\Entity\BackgroundProcess;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\LogTailResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\StartResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\StopResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
-use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
-use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
-use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 
 /**
  * @covers \Ineersa\CodingAgent\Tool\BackgroundProcessManager
@@ -28,25 +24,25 @@ use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
  * @requires extension pdo_sqlite
  * @requires OS Linux
  *
- * Sleep budget: bg subprocesses use sleep 3 max, usleep 100-200ms.
- * Only 1 test blocks on the 1s grace window (testStopTerminatesWithTerm).
- * Teardown uses direct SIGKILL (.pid files) to avoid manager grace sleeps.
+ * DB is provided by the Symfony test container (IsolatedKernelTestCase).
+ * ProcessStore and BackgroundProcessRepository come from the container.
+ * Only BackgroundProcessConfig / ProcessLifecycle / BackgroundProcessManager
+ * are constructed with test-specific temp dirs — no manual EntityManager setup.
  */
-final class BackgroundProcessManagerTest extends TestCase
+final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
 {
     private const string TEST_SESSION = 'test-session-001';
 
-    private Connection $connection;
     private BackgroundProcessManager $manager;
     private string $tmpDir;
 
     protected function setUp(): void
     {
-        $this->connection = DriverManager::getConnection([
-            'driver' => 'pdo_sqlite',
-            'memory' => true,
-        ]);
+        parent::setUp();
 
+        // Temp dir for process output files (log, status, pid files).
+        // sys_get_temp_dir() is appropriate here — this is actual OS-level
+        // subprocess I/O, not ORM proxy directories.
         $this->tmpDir = sys_get_temp_dir().'/hatfield_bg_test_'.bin2hex(random_bytes(8));
         mkdir($this->tmpDir, 0750, recursive: true);
     }
@@ -55,11 +51,8 @@ final class BackgroundProcessManagerTest extends TestCase
     {
         $this->cleanupProcesses();
         $this->rmDir($this->tmpDir);
-    }
 
-    private function makeDenormalizer(): ObjectNormalizer
-    {
-        return new ObjectNormalizer(nameConverter: new CamelCaseToSnakeCaseNameConverter());
+        parent::tearDown();
     }
 
     /* ── start() ── */
@@ -72,7 +65,6 @@ final class BackgroundProcessManagerTest extends TestCase
         $this->assertInstanceOf(StartResult::class, $result);
         $this->assertGreaterThan(0, $result->id);
         $this->assertGreaterThan(0, $result->pid);
-        // PGID may be null for instant commands that exit before ps resolves it
         if (null !== $result->pgid) {
             $this->assertGreaterThan(0, $result->pgid);
             $this->assertSame($result->pid, $result->pgid);
@@ -89,25 +81,20 @@ final class BackgroundProcessManagerTest extends TestCase
     public function testListReturnsRunningAndFinished(): void
     {
         $this->createManager();
-        $this->manager->start('sleep 3', self::TEST_SESSION); // long-running
-        $this->manager->start('echo "done"', self::TEST_SESSION); // quick
+        $this->manager->start('sleep 3', self::TEST_SESSION);
+        $this->manager->start('echo "done"', self::TEST_SESSION);
 
-        // Wait for the quick echo to finish
         usleep(200_000);
 
-        $processes = $this->manager->list();
+        $entities = $this->manager->list();
 
-        $this->assertCount(2, $processes);
+        $this->assertCount(2, $entities);
 
-        // Sort by PID so order is predictable (sleep 3 started first = lower PID)
-        usort($processes, static fn (BackgroundProcessRecord $a, BackgroundProcessRecord $b): int => $a->pid <=> $b->pid);
+        usort($entities, static fn (BackgroundProcess $a, BackgroundProcess $b): int => $a->pid <=> $b->pid);
 
-        // First process (lower PID): sleep 3 — still running
-        $this->assertStringContainsString('running', $processes[0]->status);
-
-        // Second process (higher PID): echo done — finished with exit 0
-        $this->assertStringContainsString('finish', $processes[1]->status);
-        $this->assertSame(0, $processes[1]->exitCode);
+        $this->assertSame('running', $entities[0]->status->value);
+        $this->assertSame('finished', $entities[1]->status->value);
+        $this->assertSame(0, $entities[1]->exitCode);
 
         $this->manager->shutdownCleanup();
     }
@@ -171,8 +158,6 @@ final class BackgroundProcessManagerTest extends TestCase
 
     public function testStopEscalatesToKill(): void
     {
-        // grace=0: TERM is ignored, so the process is definitely alive
-        // immediately after TERM => KILL is sent. No blocking wait.
         $this->createManager(stopGraceSeconds: 0);
         $result = $this->manager->start('trap "" TERM; sleep 3', self::TEST_SESSION);
 
@@ -218,10 +203,7 @@ final class BackgroundProcessManagerTest extends TestCase
         $count = $this->manager->cleanupStale();
         $this->assertSame(1, $count);
 
-        // Log file should be gone
         $this->assertFileDoesNotExist($result->logPath);
-
-        // DB record should be gone
         $this->assertCount(0, $this->manager->list());
     }
 
@@ -255,6 +237,8 @@ final class BackgroundProcessManagerTest extends TestCase
         $this->manager->start('echo "session-a"', 'session-A');
         $this->manager->start('echo "session-b"', 'session-B');
 
+        usleep(200_000);
+
         $sessionA = $this->manager->list('session-A');
         $this->assertCount(1, $sessionA);
         $this->assertSame('session-A', $sessionA[0]->sessionId);
@@ -270,7 +254,6 @@ final class BackgroundProcessManagerTest extends TestCase
         $resX = $this->manager->start('sleep 3', 'session-X');
         $this->manager->start('sleep 3', 'session-Y');
 
-        // Stop with wrong session should throw
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('for this session');
         $this->manager->stop($resX->pid, 'session-Y');
@@ -278,6 +261,12 @@ final class BackgroundProcessManagerTest extends TestCase
 
     /* ── Helpers ── */
 
+    /**
+     * Create a BackgroundProcessManager using the container's Doctrine
+     * EntityManager and BackgroundProcessRepository (shared, real schema),
+     * but with a test-specific BackgroundProcessConfig that points storageDir
+     * to a temporary directory for subprocess output files.
+     */
     private function createManager(?string $storageDir = null, int $retentionSeconds = 86400, int $stopGraceSeconds = 1, int $logTailChars = 5000): void
     {
         $config = new BackgroundProcessConfig(
@@ -286,7 +275,9 @@ final class BackgroundProcessManagerTest extends TestCase
             stopGraceSeconds: $stopGraceSeconds,
             logTailChars: $logTailChars,
         );
-        $store = new ProcessStore($this->connection, $this->makeDenormalizer(), new NullLogger());
+
+        // ProcessStore uses the container's EntityManager — no manual ORM setup.
+        $store = static::getContainer()->get(ProcessStore::class);
         $lifecycle = new ProcessLifecycle($config, new NullLogger());
         $this->manager = new BackgroundProcessManager($store, $lifecycle, $config, new NullLogger());
     }
@@ -297,47 +288,25 @@ final class BackgroundProcessManagerTest extends TestCase
             try {
                 $this->manager->shutdownCleanup();
             } catch (\RuntimeException) {
-                // Best-effort cleanup
-            }
-        }
-
-        // Extra safety: kill any orphaned test processes
-        $pattern = sys_get_temp_dir().'/hatfield_bg_test_*';
-        foreach (glob($pattern) as $dir) {
-            if (!is_dir($dir)) {
-                continue;
-            }
-            foreach (new \FilesystemIterator($dir, \FilesystemIterator::SKIP_DOTS) as $file) {
-                if ('pid' === $file->getExtension()) {
-                    $pid = (int) file_get_contents((string) $file);
-                    if ($pid > 0 && is_dir('/proc/'.$pid)) {
-                        @exec('kill -KILL -'.$pid.' 2>/dev/null');
-                        @exec('kill -KILL '.$pid.' 2>/dev/null');
-                    }
-                }
+                // ignore cleanup errors in teardown
             }
         }
     }
 
-    private function rmDir(string $path): void
+    private function rmDir(string $dir): void
     {
-        if (!is_dir($path)) {
+        if (!is_dir($dir)) {
             return;
         }
-
-        $items = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($path, \RecursiveDirectoryIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-
-        foreach ($items as $item) {
-            if ($item->isDir()) {
-                @rmdir((string) $item);
+        $it = new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS);
+        $files = new \RecursiveIteratorIterator($it, \RecursiveIteratorIterator::CHILD_FIRST);
+        foreach ($files as $file) {
+            if ($file->isDir()) {
+                rmdir((string) $file);
             } else {
-                @unlink((string) $item);
+                unlink((string) $file);
             }
         }
-
-        @rmdir($path);
+        rmdir($dir);
     }
 }

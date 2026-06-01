@@ -26,10 +26,11 @@ use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use PHPUnit\Framework\Attributes\Group;
-use PHPUnit\Framework\TestCase;
+use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Bridge\Generic\Factory as GenericFactory;
 use Symfony\AI\Platform\Platform;
@@ -47,12 +48,18 @@ use Symfony\Component\Yaml\Yaml;
  * this group; run it explicitly with `castor test:llm-real`.
  */
 #[Group('llm-real')]
-final class LlamaCppSmokeTest extends TestCase
+final class LlamaCppSmokeTest extends KernelTestCase
 {
+    protected static function createKernel(array $options = []): \Ineersa\CodingAgent\Kernel
+    {
+        return new \Ineersa\CodingAgent\Kernel('test', true);
+    }
+
     private string $tempDir;
     private string $homeDir;
     private string $sessionId;
     private SessionMetadataStore $sessionMetaStore;
+    private \Doctrine\ORM\EntityManagerInterface $entityManager;
 
     protected function setUp(): void
     {
@@ -65,7 +72,13 @@ final class LlamaCppSmokeTest extends TestCase
             );
         }
 
-        $projectRoot = \dirname(__DIR__, 4);
+        // Boot kernel to get EntityManager from test container.
+        // Test DB is a fixed path via config/packages/test/doctrine.yaml.
+        self::bootKernel(['environment' => 'test', 'debug' => true]);
+        $container = static::getContainer();
+        $this->entityManager = $container->get('doctrine.orm.default_entity_manager');
+
+        $projectRoot = self::getContainer()->getParameter('kernel.project_dir');
         $this->tempDir = $projectRoot.'/var/tmp/hatfield-llamacpp-'.uniqid('', true);
         $this->homeDir = $this->tempDir.'/home';
         $this->sessionId = 'llamacpp-smoke-'.uniqid('', true);
@@ -76,7 +89,7 @@ final class LlamaCppSmokeTest extends TestCase
         // Minimal home settings (no ai section — we use test-specific ai data directly)
         file_put_contents($this->homeDir.'/.hatfield/settings.yaml', "tui:\n    theme: cyberpunk\n");
 
-        // Session metadata store
+        // Session metadata store using container EntityManager
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: new AppConfig(
                 tui: new TuiConfig(theme: 'default'),
@@ -84,6 +97,7 @@ final class LlamaCppSmokeTest extends TestCase
                 cwd: $this->tempDir.'/project',
             ),
             lockFactory: new LockFactory(new FlockStore()),
+            entityManager: $this->entityManager,
         );
         $this->sessionMetaStore = new SessionMetadataStore($hatfieldSessionStore);
     }
@@ -93,6 +107,7 @@ final class LlamaCppSmokeTest extends TestCase
         if (isset($this->tempDir) && '' !== $this->tempDir) {
             $this->removeDir($this->tempDir);
         }
+        self::ensureKernelShutdown();
         parent::tearDown();
     }
 
@@ -107,7 +122,7 @@ final class LlamaCppSmokeTest extends TestCase
         $modelRef = $llamaCppProviderKey.'/'.$modelName;
 
         // ── Session metadata: pre-set model and reasoning ──
-        $this->writeSessionMetadata($this->sessionId, [
+        $this->sessionId = $this->writeSessionMetadata($this->sessionId, [
             'model' => $modelRef,
             'reasoning' => 'off',
         ]);
@@ -386,17 +401,40 @@ final class LlamaCppSmokeTest extends TestCase
     }
 
     /**
-     * Pre-write session metadata YAML.
+     * Create a session entity with auto-increment ID and apply metadata.
      *
-     * @param array<string, string> $meta
+     * No public_id column — the integer primary key cast to string
+     * is the session identifier. Entity is created on first call for
+     * the given ID; if a numeric ID matches an existing entity,
+     * metadata is updated in-place.
      */
-    private function writeSessionMetadata(string $sessionId, array $meta): void
+    private function writeSessionMetadata(string $sessionId, array $meta): string
     {
-        $dir = $this->tempDir.'/project/.hatfield/sessions/'.$sessionId;
-        if (!is_dir($dir)) {
-            mkdir($dir, 0777, true);
+        $id = (int) $sessionId;
+        $entity = 0 !== $id
+            ? $this->entityManager->find(HatfieldSession::class, $id)
+            : null;
+
+        if (null === $entity) {
+            $entity = new HatfieldSession();
+            $entity->cwd = $this->tempDir.'/project';
+            $this->entityManager->persist($entity);
+            $this->entityManager->flush();
         }
-        file_put_contents($dir.'/metadata.yaml', Yaml::dump($meta, 4, 2));
+
+        if (isset($meta['model']) && \is_string($meta['model'])) {
+            $entity->model = $meta['model'];
+        }
+        if (isset($meta['reasoning']) && \is_string($meta['reasoning'])) {
+            $entity->reasoning = $meta['reasoning'];
+        }
+        if (isset($meta['session_id']) && \is_string($meta['session_id'])) {
+            // No-op: session_id is always the auto-increment id.
+        }
+
+        $this->entityManager->flush();
+
+        return (string) $entity->id;
     }
 
     private function collectSessionDiagnostics(): string
@@ -407,7 +445,7 @@ final class LlamaCppSmokeTest extends TestCase
             'Session dir: '.$sessionDir,
         ];
 
-        foreach (['metadata.yaml', 'state.json', 'events.jsonl', 'transcript.jsonl', 'idempotency.jsonl'] as $file) {
+        foreach (['state.json', 'events.jsonl', 'transcript.jsonl', 'idempotency.jsonl'] as $file) {
             $path = $sessionDir.'/'.$file;
             if (!is_file($path)) {
                 $chunks[] = "--- {$file}: missing ---";

@@ -43,9 +43,8 @@ final readonly class SessionInitializer
         $resuming = '' !== $sessionId && $this->sessionStore->exists($sessionId);
 
         if (!$resuming) {
-            $sessionId = $this->sessionStore->generateId();
             $promptText = null !== $request ? $request->prompt : '';
-            $this->sessionStore->createSession($promptText, $sessionId);
+            $sessionId = $this->sessionStore->createSession($promptText);
         }
 
         $state = new TuiSessionState($sessionId, $resuming);

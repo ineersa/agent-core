@@ -1,0 +1,6 @@
+# Test environment overrides.
+#
+# Enables framework.test so KernelTestCase::getContainer() works,
+# and configures the test client if needed by any test.
+framework:
+    test: true

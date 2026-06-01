@@ -1,0 +1,15 @@
+# Test environment: use a fixed SQLite path instead of
+# the production %app.cwd%/.hatfield/messenger.sqlite so
+# DAMA/DoctrineTestBundle can maintain a static connection
+# for transaction-rollback test isolation.
+#
+# Schema is created once before tests via migrations.
+# Individual test changes are rolled back by DAMA's
+# PHPUnitExtension between test methods.
+doctrine:
+    dbal:
+        default_connection: default
+        connections:
+            default:
+                driver: pdo_sqlite
+                path: '%kernel.project_dir%/var/test/app_test.sqlite'

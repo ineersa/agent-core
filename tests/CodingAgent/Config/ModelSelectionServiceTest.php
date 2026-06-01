@@ -20,15 +20,23 @@ use Ineersa\CodingAgent\Config\HomeSettingsWriter;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
-use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
+use Ineersa\CodingAgent\Entity\HatfieldSession;
+use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
-class ModelSelectionServiceTest extends TestCase
+class ModelSelectionServiceTest extends KernelTestCase
 {
+    protected static function createKernel(array $options = []): \Ineersa\CodingAgent\Kernel
+    {
+        return new \Ineersa\CodingAgent\Kernel($options['environment'] ?? 'test', (bool) ($options['debug'] ?? false));
+    }
+
     private string $tempDir;
     private string $homeDir;
     private ModelSelectionService $service;
     private SessionMetadataStore $sessionMetaStore;
+    private \Doctrine\ORM\EntityManagerInterface $entityManager;
+    /** Session ID from auto-increment entity created in setUp. */
+    private string $sessionId;
 
     protected function setUp(): void
     {
@@ -43,6 +51,13 @@ class ModelSelectionServiceTest extends TestCase
         // Create an empty home settings file so HomeSettingsWriter can read/write it
         file_put_contents($this->homeDir.'/.hatfield/settings.yaml', "tui:\n    theme: cyberpunk\n");
 
+        // Boot kernel to get EntityManager from test container.
+        // Test DB is a fixed path via config/packages/test/doctrine.yaml;
+        // DAMA/DoctrineTestBundle wraps each test in a transaction.
+        self::bootKernel(['environment' => 'test', 'debug' => true]);
+        $container = static::getContainer();
+        $this->entityManager = $container->get('doctrine.orm.default_entity_manager');
+
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new HomeSettingsWriter($pathResolver);
         $hatfieldSessionStore = new HatfieldSessionStore(
@@ -52,8 +67,18 @@ class ModelSelectionServiceTest extends TestCase
                 cwd: $this->tempDir.'/project',
             ),
             lockFactory: new LockFactory(new FlockStore()),
+            entityManager: $this->entityManager,
         );
         $this->sessionMetaStore = new SessionMetadataStore($hatfieldSessionStore);
+
+        // Create a session entity for test metadata (auto-increment ID).
+        // No public_id column — the integer primary key cast to string
+        // is the session identifier.
+        $entity = new HatfieldSession();
+        $entity->cwd = $this->tempDir.'/project';
+        $this->entityManager->persist($entity);
+        $this->entityManager->flush();
+        $this->sessionId = (string) $entity->id;
 
         // Create a default AppConfig (no AI section — tests will call buildService() explicitly)
         $this->service = $this->buildService([]);
@@ -62,6 +87,7 @@ class ModelSelectionServiceTest extends TestCase
     protected function tearDown(): void
     {
         $this->removeDir($this->tempDir);
+        self::ensureKernelShutdown();
         parent::tearDown();
     }
 
@@ -129,31 +155,57 @@ class ModelSelectionServiceTest extends TestCase
     }
 
     /**
-     * Write session metadata YAML.
+     * Create a session entity with auto-increment ID and apply metadata.
+     *
+     * No public_id column — the integer primary key is the canonical
+     * identifier and its string form is the external session ID.
+     * Returns the session ID as a numeric string for use in assertions
+     * and metadata lookups.
+     *
+     * If $sessionId is a numeric string of an existing entity, updates it.
+     * If empty or non-numeric, creates a new entity to obtain an ID.
      */
-    private function writeSessionMetadata(string $sessionId, array $meta): void
+    private function writeSessionMetadata(string $sessionId, array $meta): string
     {
-        $dir = $this->tempDir.'/project/.hatfield/sessions/'.$sessionId;
-        if (!is_dir($dir)) {
-            mkdir($dir, 0777, true);
+        $id = (int) $sessionId;
+        $entity = 0 !== $id
+            ? $this->entityManager->find(HatfieldSession::class, $id)
+            : null;
+
+        if (null === $entity) {
+            $entity = new HatfieldSession();
+            $entity->cwd = $this->tempDir.'/project';
+            $this->entityManager->persist($entity);
+            $this->entityManager->flush();
         }
-        file_put_contents($dir.'/metadata.yaml', Yaml::dump($meta, 4, 2));
+
+        if (isset($meta['model']) && \is_string($meta['model'])) {
+            $entity->model = $meta['model'];
+        }
+        if (isset($meta['model_provider']) && \is_string($meta['model_provider'])) {
+            $entity->modelProvider = $meta['model_provider'];
+        }
+        if (isset($meta['model_name']) && \is_string($meta['model_name'])) {
+            $entity->modelName = $meta['model_name'];
+        }
+        if (isset($meta['reasoning']) && \is_string($meta['reasoning'])) {
+            $entity->reasoning = $meta['reasoning'];
+        }
+        if (isset($meta['prompt']) && \is_string($meta['prompt'])) {
+            $entity->prompt = $meta['prompt'];
+        }
+
+        $this->entityManager->flush();
+
+        return (string) $entity->id;
     }
 
     /**
-     * Read session metadata YAML.
+     * Read session metadata from the database.
      */
     private function readSessionMetadata(string $sessionId): array
     {
-        $path = $this->tempDir.'/project/.hatfield/sessions/'.$sessionId.'/metadata.yaml';
-
-        if (!is_readable($path)) {
-            return [];
-        }
-
-        $data = Yaml::parseFile($path);
-
-        return \is_array($data) ? $data : [];
+        return $this->sessionMetaStore->readSessionMetadata($sessionId);
     }
 
     private function homeSettingsPath(): string
@@ -228,9 +280,9 @@ class ModelSelectionServiceTest extends TestCase
     public function testExplicitModelWinsOverAllOtherPriorities(): void
     {
         $service = $this->buildService($this->standardAiData());
-        $this->writeSessionMetadata('abc123', ['model' => 'llama_cpp/flash']);
+        $this->writeSessionMetadata($this->sessionId, ['model' => 'llama_cpp/flash']);
 
-        $result = $service->resolveInitialModel('deepseek/deepseek-v4-pro', 'abc123');
+        $result = $service->resolveInitialModel('deepseek/deepseek-v4-pro', $this->sessionId);
 
         self::assertNotNull($result);
         self::assertSame('deepseek', $result->providerId);
@@ -240,9 +292,9 @@ class ModelSelectionServiceTest extends TestCase
     public function testSessionMetadataWinsOverDefaultAndFirstAvailable(): void
     {
         $service = $this->buildService($this->standardAiData());
-        $this->writeSessionMetadata('abc123', ['model' => 'llama_cpp/flash']);
+        $this->writeSessionMetadata($this->sessionId, ['model' => 'llama_cpp/flash']);
 
-        $result = $service->resolveInitialModel(null, 'abc123');
+        $result = $service->resolveInitialModel(null, $this->sessionId);
 
         self::assertNotNull($result);
         self::assertSame('llama_cpp', $result->providerId);
@@ -312,9 +364,9 @@ class ModelSelectionServiceTest extends TestCase
     public function testExplicitReasoningWinsOverMetadataAndDefault(): void
     {
         $service = $this->buildService($this->standardAiData());
-        $this->writeSessionMetadata('abc123', ['reasoning' => 'low']);
+        $this->writeSessionMetadata($this->sessionId, ['reasoning' => 'low']);
 
-        $result = $service->resolveInitialReasoning('xhigh', 'abc123');
+        $result = $service->resolveInitialReasoning('xhigh', $this->sessionId);
 
         self::assertSame('xhigh', $result);
     }
@@ -322,9 +374,9 @@ class ModelSelectionServiceTest extends TestCase
     public function testSessionReasoningWinsOverDefault(): void
     {
         $service = $this->buildService($this->standardAiData());
-        $this->writeSessionMetadata('abc123', ['reasoning' => 'xhigh']);
+        $this->writeSessionMetadata($this->sessionId, ['reasoning' => 'xhigh']);
 
-        $result = $service->resolveInitialReasoning(null, 'abc123');
+        $result = $service->resolveInitialReasoning(null, $this->sessionId);
 
         self::assertSame('xhigh', $result);
     }
@@ -358,10 +410,10 @@ class ModelSelectionServiceTest extends TestCase
         $service = $this->buildService($this->standardAiData());
         $ref = new AiModelReference('deepseek', 'deepseek-v4-flash');
 
-        $service->changeModel($ref, 'abc123');
+        $service->changeModel($ref, $this->sessionId);
 
         // Check session metadata
-        $meta = $this->readSessionMetadata('abc123');
+        $meta = $this->readSessionMetadata($this->sessionId);
         self::assertSame('deepseek/deepseek-v4-flash', $meta['model']);
         self::assertSame('deepseek', $meta['model_provider']);
         self::assertSame('deepseek-v4-flash', $meta['model_name']);
@@ -375,7 +427,7 @@ class ModelSelectionServiceTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('not available');
 
-        $service->changeModel($ref, 'abc123');
+        $service->changeModel($ref, $this->sessionId);
     }
 
     // ──────────────────────────────────────────────
@@ -386,10 +438,10 @@ class ModelSelectionServiceTest extends TestCase
     {
         $service = $this->buildService($this->standardAiData());
 
-        $service->changeReasoning('xhigh', 'abc123');
+        $service->changeReasoning('xhigh', $this->sessionId);
 
         // Check session metadata
-        $meta = $this->readSessionMetadata('abc123');
+        $meta = $this->readSessionMetadata($this->sessionId);
         self::assertSame('xhigh', $meta['reasoning']);
     }
 
@@ -400,7 +452,7 @@ class ModelSelectionServiceTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Invalid reasoning level');
 
-        $service->changeReasoning('super-genius', 'abc123');
+        $service->changeReasoning('super-genius', $this->sessionId);
     }
 
     // ──────────────────────────────────────────────
@@ -424,9 +476,9 @@ class ModelSelectionServiceTest extends TestCase
     {
         $service = $this->buildService($this->standardAiData());
         // Write session metadata with a model that doesn't exist
-        $this->writeSessionMetadata('abc123', ['model' => 'garbage/invalid']);
+        $this->writeSessionMetadata($this->sessionId, ['model' => 'garbage/invalid']);
 
-        $result = $service->resolveInitialModel(null, 'abc123');
+        $result = $service->resolveInitialModel(null, $this->sessionId);
 
         // Should fall through to default
         self::assertNotNull($result);
@@ -438,18 +490,18 @@ class ModelSelectionServiceTest extends TestCase
     {
         $service = $this->buildService($this->standardAiData());
         // Pre-populate session metadata
-        $this->writeSessionMetadata('abc123', [
-            'session_id' => 'abc123',
-            'run_id' => 'abc123',
+        $this->writeSessionMetadata($this->sessionId, [
+            'session_id' => $this->sessionId,
+            'run_id' => $this->sessionId,
             'cwd' => '/some/path',
             'model' => 'deepseek/deepseek-v4-pro',
         ]);
 
-        $service->changeReasoning('high', 'abc123');
+        $service->changeReasoning('high', $this->sessionId);
 
-        $meta = $this->readSessionMetadata('abc123');
+        $meta = $this->readSessionMetadata($this->sessionId);
         self::assertSame('high', $meta['reasoning']);
-        self::assertSame('abc123', $meta['session_id']);
+        self::assertSame($this->sessionId, $meta['session_id']);
         self::assertSame('deepseek/deepseek-v4-pro', $meta['model']);
     }
 
@@ -606,7 +658,7 @@ class ModelSelectionServiceTest extends TestCase
 
         // Current model is default: deepseek/deepseek-v4-pro (first favorite)
         // Cycling should go to the newly added second favorite
-        $next = $service->cycleFavoriteModel('abc123');
+        $next = $service->cycleFavoriteModel($this->sessionId);
 
         self::assertNotNull($next);
         self::assertSame('llama_cpp', $next->providerId);
@@ -660,7 +712,7 @@ class ModelSelectionServiceTest extends TestCase
         $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro', 'llama_cpp/flash'];
         $service = $this->buildService($aiData);
 
-        $next = $service->cycleFavoriteModel('abc123');
+        $next = $service->cycleFavoriteModel($this->sessionId);
 
         self::assertNotNull($next);
         // Current defaults to default_model (deepseek/deepseek-v4-pro), which is first in favorites
@@ -676,9 +728,9 @@ class ModelSelectionServiceTest extends TestCase
         $service = $this->buildService($aiData);
 
         // First set current to the last favorite
-        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), $this->sessionId);
 
-        $next = $service->cycleFavoriteModel('abc123');
+        $next = $service->cycleFavoriteModel($this->sessionId);
 
         self::assertNotNull($next);
         // Should wrap to first
@@ -690,7 +742,7 @@ class ModelSelectionServiceTest extends TestCase
     {
         $service = $this->buildService($this->standardAiData());
 
-        $next = $service->cycleFavoriteModel('abc123');
+        $next = $service->cycleFavoriteModel($this->sessionId);
 
         self::assertNull($next);
     }
@@ -722,9 +774,9 @@ class ModelSelectionServiceTest extends TestCase
     public function testGetCurrentModelResolvesFromSessionMetadata(): void
     {
         $service = $this->buildService($this->standardAiData());
-        $this->writeSessionMetadata('abc123', ['model' => 'llama_cpp/flash']);
+        $this->writeSessionMetadata($this->sessionId, ['model' => 'llama_cpp/flash']);
 
-        $current = $service->getCurrentModel('abc123');
+        $current = $service->getCurrentModel($this->sessionId);
 
         self::assertNotNull($current);
         self::assertSame('llama_cpp', $current->providerId);
@@ -734,9 +786,9 @@ class ModelSelectionServiceTest extends TestCase
     public function testGetCurrentReasoningResolvesFromSessionMetadata(): void
     {
         $service = $this->buildService($this->standardAiData());
-        $this->writeSessionMetadata('abc123', ['reasoning' => 'xhigh']);
+        $this->writeSessionMetadata($this->sessionId, ['reasoning' => 'xhigh']);
 
-        $current = $service->getCurrentReasoning('abc123');
+        $current = $service->getCurrentReasoning($this->sessionId);
 
         self::assertSame('xhigh', $current);
     }
@@ -774,7 +826,7 @@ class ModelSelectionServiceTest extends TestCase
         $service = $this->buildService($aiData);
 
         // Act: change model to a different one
-        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'restart-session');
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), $this->sessionId);
 
         // Assert: home settings file was updated
         $homeContent = file_get_contents($this->homeDir.'/.hatfield/settings.yaml');
@@ -790,7 +842,7 @@ class ModelSelectionServiceTest extends TestCase
         $newService = $this->buildService($aiDataWithoutDefault);
 
         // The resolved model should be the one persisted to home settings
-        $resolved = $newService->getCurrentModel('restart-session');
+        $resolved = $newService->getCurrentModel($this->sessionId);
         self::assertNotNull($resolved);
         self::assertSame('llama_cpp', $resolved->providerId);
         self::assertSame('flash', $resolved->modelName);
@@ -808,13 +860,13 @@ class ModelSelectionServiceTest extends TestCase
         $service = $this->buildService($aiData);
 
         // Persist to home via changeModel
-        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), $this->sessionId);
 
         // Re-create service with aiData that has NO default_model
         // (simulating project without default_model override)
         $newService = $this->buildService($aiData);
 
-        $resolved = $newService->getCurrentModel('abc123');
+        $resolved = $newService->getCurrentModel($this->sessionId);
         self::assertNotNull($resolved);
         self::assertSame('llama_cpp', $resolved->providerId);
         self::assertSame('flash', $resolved->modelName);
@@ -829,16 +881,16 @@ class ModelSelectionServiceTest extends TestCase
         $service = $this->buildService($this->standardAiData());
 
         // deepseek/deepseek-v4-pro has reasoning=true and provider supportsThinkingLevels=true (default)
-        self::assertTrue($service->supportsThinkingLevelsForSession('abc123'));
+        self::assertTrue($service->supportsThinkingLevelsForSession($this->sessionId));
     }
 
     public function testSupportsThinkingLevelsForSessionReturnsFalseForNonReasoningModel(): void
     {
         $service = $this->buildService($this->standardAiData());
         // Switch to llama_cpp/flash which has reasoning=false
-        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), $this->sessionId);
 
-        self::assertFalse($service->supportsThinkingLevelsForSession('abc123'));
+        self::assertFalse($service->supportsThinkingLevelsForSession($this->sessionId));
     }
 
     public function testSupportsThinkingLevelsForSessionReturnsFalseWhenProviderDisabled(): void
@@ -847,9 +899,9 @@ class ModelSelectionServiceTest extends TestCase
         // llama_cpp with supports_thinking_levels explicitly false
         $aiData['providers']['llama_cpp']['supports_thinking_levels'] = false;
         $service = $this->buildService($aiData);
-        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), $this->sessionId);
 
-        self::assertFalse($service->supportsThinkingLevelsForSession('abc123'));
+        self::assertFalse($service->supportsThinkingLevelsForSession($this->sessionId));
     }
 
     public function testCycleReasoningForCurrentModelSuccess(): void
@@ -857,13 +909,13 @@ class ModelSelectionServiceTest extends TestCase
         $service = $this->buildService($this->standardAiData());
 
         // deepseek/deepseek-v4-pro supports reasoning, current is 'medium'
-        $result = $service->cycleReasoningForCurrentModel('abc123');
+        $result = $service->cycleReasoningForCurrentModel($this->sessionId);
 
         self::assertNotNull($result);
         self::assertSame('high', $result);
 
         // Verify persistence
-        $meta = $this->readSessionMetadata('abc123');
+        $meta = $this->readSessionMetadata($this->sessionId);
         self::assertSame('high', $meta['reasoning']);
     }
 
@@ -871,9 +923,9 @@ class ModelSelectionServiceTest extends TestCase
     {
         $service = $this->buildService($this->standardAiData());
         // Switch to a model that doesn't support reasoning
-        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), $this->sessionId);
 
-        $result = $service->cycleReasoningForCurrentModel('abc123');
+        $result = $service->cycleReasoningForCurrentModel($this->sessionId);
 
         self::assertNull($result);
     }
@@ -883,9 +935,9 @@ class ModelSelectionServiceTest extends TestCase
         $aiData = $this->standardAiData();
         $aiData['providers']['llama_cpp']['supports_thinking_levels'] = false;
         $service = $this->buildService($aiData);
-        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), $this->sessionId);
 
-        $result = $service->cycleReasoningForCurrentModel('abc123');
+        $result = $service->cycleReasoningForCurrentModel($this->sessionId);
 
         self::assertNull($result);
     }
@@ -898,24 +950,24 @@ class ModelSelectionServiceTest extends TestCase
     {
         $service = $this->buildService($this->standardAiData());
         // deepseek/deepseek-v4-pro supports reasoning, current defaults to medium
-        self::assertSame('medium', $service->getDisplayReasoning('abc123'));
+        self::assertSame('medium', $service->getDisplayReasoning($this->sessionId));
 
-        $service->changeReasoning('xhigh', 'abc123');
-        self::assertSame('xhigh', $service->getDisplayReasoning('abc123'));
+        $service->changeReasoning('xhigh', $this->sessionId);
+        self::assertSame('xhigh', $service->getDisplayReasoning($this->sessionId));
     }
 
     public function testGetDisplayReasoningReturnsOffForNonThinkingModel(): void
     {
         $service = $this->buildService($this->standardAiData());
         // Switch to a model that doesn't support reasoning, but set reasoning high first
-        $service->changeReasoning('high', 'abc123');
-        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+        $service->changeReasoning('high', $this->sessionId);
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), $this->sessionId);
 
         // Display reasoning should be 'off' even though session metadata still has 'high'
-        self::assertSame('off', $service->getDisplayReasoning('abc123'));
+        self::assertSame('off', $service->getDisplayReasoning($this->sessionId));
 
         // Persisted reasoning still high (cycleReasoning would re-enable it on a thinking model)
-        self::assertSame('high', $service->getCurrentReasoning('abc123'));
+        self::assertSame('high', $service->getCurrentReasoning($this->sessionId));
     }
 
     public function testGetDisplayReasoningReturnsOffWhenProviderThinkingLevelsDisabled(): void
@@ -923,34 +975,34 @@ class ModelSelectionServiceTest extends TestCase
         $aiData = $this->standardAiData();
         $aiData['providers']['llama_cpp']['supports_thinking_levels'] = false;
         $service = $this->buildService($aiData);
-        $service->changeReasoning('xhigh', 'abc123');
-        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+        $service->changeReasoning('xhigh', $this->sessionId);
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), $this->sessionId);
 
-        self::assertSame('off', $service->getDisplayReasoning('abc123'));
+        self::assertSame('off', $service->getDisplayReasoning($this->sessionId));
     }
 
     public function testGetDisplayReasoningReturnsOffWhenNoCatalog(): void
     {
         $service = $this->buildService([]);
 
-        self::assertSame('off', $service->getDisplayReasoning('abc123'));
+        self::assertSame('off', $service->getDisplayReasoning($this->sessionId));
     }
 
     public function testGetDisplayReasoningReturnsOffForUnknownModel(): void
     {
         // Switch to a non-thinking model, then set reasoning high
         $service = $this->buildService($this->standardAiData());
-        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
-        $service->changeReasoning('high', 'abc123');
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), $this->sessionId);
+        $service->changeReasoning('high', $this->sessionId);
 
         // Switching back from llama (non-thinking) to deepseek (thinking) should
         // restore the persisted 'high' display reasoning
-        $service->changeModel(new AiModelReference('deepseek', 'deepseek-v4-pro'), 'abc123');
-        self::assertSame('high', $service->getDisplayReasoning('abc123'));
+        $service->changeModel(new AiModelReference('deepseek', 'deepseek-v4-pro'), $this->sessionId);
+        self::assertSame('high', $service->getDisplayReasoning($this->sessionId));
 
         // Switching back to non-thinking model resets to off
-        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
-        self::assertSame('off', $service->getDisplayReasoning('abc123'));
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), $this->sessionId);
+        self::assertSame('off', $service->getDisplayReasoning($this->sessionId));
     }
 
     // ──────────────────────────────────────────────
@@ -962,7 +1014,7 @@ class ModelSelectionServiceTest extends TestCase
         // deepseek/deepseek-v4-pro has 5 thinking levels + off = 6
         $service = $this->buildService($this->standardAiData());
 
-        $levels = $service->getSupportedReasoningLevels('abc123');
+        $levels = $service->getSupportedReasoningLevels($this->sessionId);
 
         self::assertContains('off', $levels);
         self::assertContains('minimal', $levels);
@@ -978,9 +1030,9 @@ class ModelSelectionServiceTest extends TestCase
     {
         $service = $this->buildService($this->standardAiData());
         // Switch to llama_cpp/flash (reasoning: false, empty thinkingLevelMap)
-        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), 'abc123');
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), $this->sessionId);
 
-        $levels = $service->getSupportedReasoningLevels('abc123');
+        $levels = $service->getSupportedReasoningLevels($this->sessionId);
 
         // Empty thinkingLevelMap → only 'off'
         self::assertSame(['off'], $levels);
@@ -990,7 +1042,7 @@ class ModelSelectionServiceTest extends TestCase
     {
         $service = $this->buildService([]);
 
-        $levels = $service->getSupportedReasoningLevels('abc123');
+        $levels = $service->getSupportedReasoningLevels($this->sessionId);
 
         // No catalog → fall back to global LEVELS
         self::assertSame(ModelSelectionService::LEVELS, $levels);
@@ -1031,15 +1083,15 @@ class ModelSelectionServiceTest extends TestCase
         $service = $this->buildService($aiData);
 
         // Change model to z.ai glm-5.1 and set reasoning to 'high'
-        $service->changeModel(new AiModelReference('zai', 'glm-5.1'), 'abc123');
-        $service->changeReasoning('high', 'abc123');
+        $service->changeModel(new AiModelReference('zai', 'glm-5.1'), $this->sessionId);
+        $service->changeReasoning('high', $this->sessionId);
 
         // Cycling should wrap to 'off' (not 'xhigh')
-        $result = $service->cycleReasoningForCurrentModel('abc123');
+        $result = $service->cycleReasoningForCurrentModel($this->sessionId);
         self::assertSame('off', $result);
 
         // The next cycle after off goes to minimal
-        $result = $service->cycleReasoningForCurrentModel('abc123');
+        $result = $service->cycleReasoningForCurrentModel($this->sessionId);
         self::assertSame('minimal', $result);
     }
 }

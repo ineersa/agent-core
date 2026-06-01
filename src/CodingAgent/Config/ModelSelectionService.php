@@ -11,7 +11,7 @@ use Ineersa\CodingAgent\Config\Ai\AiModelReference;
  *
  * Model resolution priority:
  *  1. explicit request (CLI --model, StartRunRequest.model)
- *  2. session metadata (model key in metadata.yaml)
+ *  2. session metadata (model key in the hatfield_session DB table)
  *  3. Hatfield ai.default_model
  *  4. first available configured model
  *

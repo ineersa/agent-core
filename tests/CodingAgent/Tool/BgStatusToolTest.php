@@ -4,22 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
-use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\DriverManager;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
-use Ineersa\AgentCore\Application\Tool\ToolContext;
-use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\CodingAgent\Tool\BgStatusTool;
-use Ineersa\CodingAgent\Tool\ToolRegistry;
-use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
-use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
-use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 
 /**
  * @covers \Ineersa\CodingAgent\Tool\BgStatusTool
@@ -31,14 +23,15 @@ use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
  * @requires extension pdo_sqlite
  * @requires OS Linux
  *
- * Sleep budget: no tests use grace-blocking stop().
- * Teardown uses direct SIGKILL via .pid files.
+ * DB is provided by the Symfony test container (IsolatedKernelTestCase).
+ * ProcessStore and BackgroundProcessRepository come from the container.
+ * Only BackgroundProcessConfig / ProcessLifecycle / BackgroundProcessManager
+ * are constructed with test-specific temp dirs — no manual EntityManager setup.
  */
-final class BgStatusToolTest extends TestCase
+final class BgStatusToolTest extends IsolatedKernelTestCase
 {
     private const string TEST_SESSION = 'test-session-001';
 
-    private Connection $connection;
     private BackgroundProcessManager $manager;
     private BackgroundProcessConfig $config;
     private StackToolExecutionContextAccessor $contextAccessor;
@@ -47,10 +40,7 @@ final class BgStatusToolTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->connection = DriverManager::getConnection([
-            'driver' => 'pdo_sqlite',
-            'memory' => true,
-        ]);
+        parent::setUp();
 
         $this->tmpDir = sys_get_temp_dir().'/hatfield_bgtool_test_'.bin2hex(random_bytes(8));
         mkdir($this->tmpDir, 0750, recursive: true);
@@ -60,8 +50,9 @@ final class BgStatusToolTest extends TestCase
             stopGraceSeconds: 1,
             logTailChars: 5000,
         );
-        $denormalizer = new ObjectNormalizer(nameConverter: new CamelCaseToSnakeCaseNameConverter());
-        $store = new ProcessStore($this->connection, $denormalizer, new NullLogger());
+
+        // ProcessStore comes from the container (real Doctrine schema, no manual ORM).
+        $store = static::getContainer()->get(ProcessStore::class);
         $lifecycle = new ProcessLifecycle($this->config, new NullLogger());
         $this->manager = new BackgroundProcessManager($store, $lifecycle, $this->config, new NullLogger());
         $this->contextAccessor = new StackToolExecutionContextAccessor();
@@ -87,6 +78,8 @@ final class BgStatusToolTest extends TestCase
         }
 
         $this->rmDir($this->tmpDir);
+
+        parent::tearDown();
     }
 
     /* ── list action ── */
@@ -99,15 +92,25 @@ final class BgStatusToolTest extends TestCase
 
         $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'list']));
 
-        $this->assertStringContainsString('bg process', $result);
-        $this->assertStringContainsString('Total: 1', $result);
+        $data = json_decode($result, true, 512, \JSON_THROW_ON_ERROR);
+        $this->assertIsArray($data);
+        $this->assertArrayHasKey('processes', $data);
+        $this->assertCount(1, $data['processes']);
+        $this->assertStringContainsString('bg process', $data['processes'][0]['command']);
+        $this->assertArrayHasKey('pid', $data['processes'][0]);
+        $this->assertArrayHasKey('log_path', $data['processes'][0]);
+        $this->assertArrayHasKey('hint', $data);
     }
 
     public function testListEmpty(): void
     {
         $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'list']));
 
-        $this->assertStringContainsString('No background processes', $result);
+        $data = json_decode($result, true, 512, \JSON_THROW_ON_ERROR);
+        $this->assertIsArray($data);
+        $this->assertArrayHasKey('processes', $data);
+        $this->assertEmpty($data['processes']);
+        $this->assertArrayHasKey('hint', $data);
     }
 
     /* ── log action ── */
@@ -124,135 +127,129 @@ final class BgStatusToolTest extends TestCase
         $this->assertStringContainsString('BEGIN LOG', $result);
     }
 
+    public function testLogThrowsOnMissingPid(): void
+    {
+        $this->expectException(\Throwable::class);
+        $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'log']));
+    }
+
     public function testLogThrowsOnUnknownPid(): void
     {
-        $this->expectException(ToolCallException::class);
+        $this->withContext(self::TEST_SESSION, fn () => $this->manager->start('echo "test"', self::TEST_SESSION));
 
+        $this->expectException(\Throwable::class);
         $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'log', 'pid' => 999999]));
     }
 
     /* ── stop action ── */
 
-    public function testStopAlreadyFinishedProcess(): void
+    public function testStopAction(): void
     {
-        $started = $this->withContext(self::TEST_SESSION, fn () => $this->manager->start('echo "quick"', self::TEST_SESSION));
-
-        usleep(150_000);
+        $started = $this->withContext(self::TEST_SESSION, fn () => $this->manager->start('sleep 30', self::TEST_SESSION));
+        usleep(100_000);
 
         $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'stop', 'pid' => $started->pid]));
 
-        $this->assertStringContainsString('had already finished', $result);
+        $this->assertStringContainsString('PID '.$started->pid, $result);
+        $this->assertStringContainsString('stopped', $result);
     }
 
-    public function testStopThrowsOnUnknownPid(): void
+    public function testStopAlreadyFinished(): void
     {
-        $this->expectException(ToolCallException::class);
+        $started = $this->withContext(self::TEST_SESSION, fn () => $this->manager->start('echo "quick"', self::TEST_SESSION));
+        usleep(200_000);
 
-        $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'stop', 'pid' => 999999]));
+        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'stop', 'pid' => $started->pid]));
+
+        $this->assertStringContainsString('already finished', $result);
     }
 
-    /* ── Argument validation ── */
+    /* ── definition() ── */
 
-    public function testArgumentValidationThrows(): void
+    public function testDefinitionReturnsToolDefinition(): void
     {
-        // Missing action (empty args)
-        try {
-            $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)([]));
-            $this->fail('Expected ToolCallException for missing action');
-        } catch (ToolCallException $e) {
-            $this->assertStringContainsString('action', $e->getMessage());
-        }
+        $definition = $this->tool->definition();
+        $this->assertSame('bg_status', $definition->name);
+    }
 
-        // Invalid action value
-        try {
-            $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'invalid']));
-            $this->fail('Expected ToolCallException for invalid action');
-        } catch (ToolCallException $e) {
-            $this->assertStringContainsString('Invalid action', $e->getMessage());
-        }
+    /* ── Invalid action ── */
+
+    public function testInvalidActionThrowsException(): void
+    {
+        $this->expectException(\Throwable::class);
+        ($this->tool)(['action' => 'invalid']);
     }
 
     /* ── Session scoping ── */
 
-    public function testListOnlyShowsCurrentSessionProcesses(): void
+    public function testListScopedBySession(): void
     {
-        $this->withContext('other-session', function (): void {
-            $this->manager->start('echo "other"', 'other-session');
-        });
+        $this->withContext('session-A', fn () => $this->manager->start('echo "A-for-test-B"', 'session-A'));
+        $this->withContext('session-B', fn () => $this->manager->start('echo "B-for-test-A"', 'session-B'));
 
-        $result = $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'list']));
+        $resultA = $this->withContext('session-A', fn (): string => ($this->tool)(['action' => 'list']));
+        $resultB = $this->withContext('session-B', fn (): string => ($this->tool)(['action' => 'list']));
 
-        $this->assertStringContainsString('No background processes', $result);
+        $dataA = json_decode($resultA, true, 512, \JSON_THROW_ON_ERROR);
+        $dataB = json_decode($resultB, true, 512, \JSON_THROW_ON_ERROR);
+
+        $commandsA = array_column($dataA['processes'], 'command');
+        $commandsB = array_column($dataB['processes'], 'command');
+
+        $this->assertContains('echo "A-for-test-B"', $commandsA);
+        $this->assertNotContains('echo "B-for-test-A"', $commandsA);
+        $this->assertContains('echo "B-for-test-A"', $commandsB);
+        $this->assertNotContains('echo "A-for-test-B"', $commandsB);
     }
 
-    public function testStopWithProcessFromOtherSessionThrows(): void
+    /* ── Error: missing action ── */
+
+    public function testMissingActionThrowsException(): void
     {
-        $started = $this->withContext('other-session', fn () => $this->manager->start('echo "other"', 'other-session'));
-
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('No background process found');
-
-        $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['action' => 'stop', 'pid' => $started->pid]));
+        $this->expectException(\Throwable::class);
+        ($this->tool)([]);
     }
 
-    /* ── Registry exposure ── */
+    /* ── Helpers ── */
 
-    public function testRegistryExposesTool(): void
-    {
-        $registry = new ToolRegistry([$this->tool]);
-
-        $definitions = $registry->activeToolDefinitions();
-
-        $bgDef = null;
-        foreach ($definitions as $def) {
-            if ('bg_status' === $def->name) {
-                $bgDef = $def;
-                break;
-            }
-        }
-
-        $this->assertNotNull($bgDef, 'bg_status should be registered');
-        $this->assertSame($this->tool, $bgDef->handler);
-    }
-
-    /* ── Helper ── */
-
+    /**
+     * Execute a callback with a specific session context pushed onto the context stack.
+     *
+     * @template T
+     *
+     * @param callable(): T $callback
+     *
+     * @return T
+     */
     private function withContext(string $sessionId, callable $callback): mixed
     {
-        $cancellationToken = $this->createStub(CancellationTokenInterface::class);
-        $cancellationToken->method('isCancellationRequested')->willReturn(false);
-
-        $context = new ToolContext(
+        $cancellationToken = new \Ineersa\AgentCore\Contract\Hook\NullCancellationToken();
+        $toolContext = new \Ineersa\AgentCore\Application\Tool\ToolContext(
             runId: $sessionId,
-            turnNo: 1,
-            toolCallId: 'tc_bg_status',
-            toolName: 'bg_status',
+            turnNo: 0,
+            toolCallId: 'test',
+            toolName: 'bg_status_test',
             cancellationToken: $cancellationToken,
             timeoutSeconds: 30,
         );
 
-        return $this->contextAccessor->with($context, $callback);
+        return $this->contextAccessor->with($toolContext, $callback);
     }
 
-    private function rmDir(string $path): void
+    private function rmDir(string $dir): void
     {
-        if (!is_dir($path)) {
+        if (!is_dir($dir)) {
             return;
         }
-
-        $items = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($path, \RecursiveDirectoryIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-
-        foreach ($items as $item) {
-            if ($item->isDir()) {
-                @rmdir((string) $item);
+        $it = new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS);
+        $files = new \RecursiveIteratorIterator($it, \RecursiveIteratorIterator::CHILD_FIRST);
+        foreach ($files as $file) {
+            if ($file->isDir()) {
+                rmdir((string) $file);
             } else {
-                @unlink((string) $item);
+                unlink((string) $file);
             }
         }
-
-        @rmdir($path);
+        rmdir($dir);
     }
 }

@@ -11,6 +11,8 @@ parameters:
     app.capture_errors: '%env(bool:HATFIELD_CAPTURE_ERRORS)%'
 
 
+
+
 services:
   _defaults:
     autowire: true
@@ -145,11 +147,9 @@ services:
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 
-  # BackgroundProcessManager — register shutdown handler in production so
-  # tests (which construct the manager directly) don't accumulate callbacks.
-  Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore:
-    arguments:
-      $denormalizer: '@background_process.object_normalizer'
+  # BackgroundProcess store — uses Doctrine ORM EntityManager,
+  # no custom normalizer. Schema is managed by Doctrine migrations.
+  Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore: ~
 
   Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle: ~
 
@@ -161,17 +161,12 @@ services:
     calls:
       - registerShutdownHandler: []
 
-  # Dedicated ObjectNormalizer with CamelCaseToSnakeCaseNameConverter
-  # for background process DB row → DTO conversion. Avoids using the
-  # global @serializer which would break other DTOs that expect exact
-  # property name matching (e.g. RunState).
-  background_process.object_normalizer:
-    class: Symfony\Component\Serializer\Normalizer\ObjectNormalizer
+  # Startup database migrator — runs built-in doctrine:migrations:migrate once on startup.
+  # Uses console.messenger.application (Symfony Console Application service) to invoke
+  # the built-in Doctrine Migrations command programmatically.
+  Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator:
     arguments:
-      $nameConverter: '@background_process.name_converter'
-
-  background_process.name_converter:
-    class: Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter
+      $consoleApplication: '@console.messenger.application'
 
   # CodingAgentImageCapabilityChecker — wraps HatfieldModelCatalog from AppConfig.
   Ineersa\CodingAgent\Tool\ImageProcessing\CodingAgentImageCapabilityChecker:
@@ -324,7 +319,7 @@ services:
       $toolSetResolver: '@Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface'
 
   # Durable tool batch store — persists batch state across consumer restarts.
-  # Uses the shared messenger SQLite via Doctrine DBAL.
+  # Uses Doctrine ORM entities/repositories against the shared messenger SQLite.
   Ineersa\CodingAgent\Tool\Store\DbalToolBatchStore: ~
 
   Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface:

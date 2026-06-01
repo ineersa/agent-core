@@ -28,7 +28,10 @@
         "symfony/doctrine-messenger": "^8.0",
         "doctrine/doctrine-bundle": "^3.2",
         "league/mime-type-detection": "^1.15",
-        "symfony/expression-language": "^8.1"
+        "symfony/expression-language": "^8.1",
+        "doctrine/orm": "^3.6",
+        "symfony/var-exporter": "^8.1",
+        "doctrine/doctrine-migrations-bundle": "^3.0"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.94",
@@ -37,7 +40,8 @@
         "phpstan/phpstan-strict-rules": "^2.0",
         "phpunit/phpunit": "^13.0",
         "deptrac/deptrac": "^4.6",
-        "symfony/test-pack": "^1.0"
+        "symfony/test-pack": "^1.0",
+        "dama/doctrine-test-bundle": "^8.6"
     },
     "autoload": {
         "psr-4": {

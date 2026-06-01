@@ -112,6 +112,16 @@ function deptrac(): void
 #[AsTask(description: 'Run PHPUnit tests (excludes tmux e2e and real LLM smoke tests)')]
 function test(string $filter = ''): void
 {
+    // Ensure test database schema is up-to-date before running tests.
+    // DAMA/DoctrineTestBundle wraps each test in a transaction;
+    // this step creates the schema once on fresh checkout.
+    $migrate = run_quiet_command(
+        'APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
+    );
+    if (0 !== $migrate->getExitCode()) {
+        fail_quality('test database migration failed: '.$migrate->getErrorOutput());
+    }
+
     $cmd = 'vendor/bin/phpunit --exclude-group tui-e2e --exclude-group llm-real';
     if ('' !== $filter) {
         $cmd .= ' --filter='.escapeshellarg($filter);
@@ -945,7 +955,7 @@ function agent_test_diagnostics(string $testDir, string $snapshot): string
     }
     foreach ($sessionDirs as $sessionDir) {
         $out .= "Session: {$sessionDir}\n";
-        foreach (['metadata.yaml', 'state.json', 'events.jsonl', 'transcript.jsonl', 'idempotency.jsonl'] as $file) {
+        foreach (['state.json', 'events.jsonl', 'transcript.jsonl', 'idempotency.jsonl'] as $file) {
             $path = $sessionDir.'/'.$file;
             $out .= is_file($path)
                 ? "--- {$file} ---\n".(string) file_get_contents($path)."\n\n"

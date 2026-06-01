@@ -1,0 +1,19 @@
+# Doctrine Migrations Bundle configuration.
+#
+# Migration files are stored under the project root 'migrations/' directory.
+# They must be generated via Symfony console (bin/console doctrine:migrations:diff)
+# from entity metadata — never hand-written.
+#
+# The storage table lives in the shared .hatfield/messenger.sqlite database.
+doctrine_migrations:
+    migrations_paths:
+        # Namespace must NOT conflict with src/ PSR-4 auto-discovery
+        'DoctrineMigrations': '%kernel.project_dir%/migrations'
+
+    storage:
+        table_storage:
+            table_name: 'doctrine_migration_versions'
+
+    all_or_nothing: true
+    transactional: true
+    check_database_platform: true
