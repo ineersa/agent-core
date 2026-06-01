@@ -18,10 +18,52 @@ use Symfony\Component\Clock\Clock;
 /**
  * Durable, ORM-backed manager for background processes.
  *
- * Lifecycle: start → list/readLogTail → stop (TERM → grace → KILL) → cleanup.
+ * This is a facade that delegates database operations to ProcessStore
+ * and OS/filesystem operations to ProcessLifecycle.
  *
- * Every process stores an optional session_id for ownership scoping.
- * BgStatusTool resolves the current session from StackToolExecutionContextAccessor.
+ * Process lifecycle:
+ *  1. start() persists a BackgroundProcess entity and launches the
+ *     command in a new session/process group via setsid. A shell
+ *     wrapper backgrounds the command as a distinct child process,
+ *     redirects stdout/stderr to a log file, and records exit status
+ *     to a status file on completion. The wrapper traps SIGTERM and
+ *     forwards it to the child so TERM reaches the actual workload.
+ *  2. The process runs independently — the PHP tool worker exits while
+ *     the child continues in its own session.
+ *  3. On subsequent list() calls, resolveEntityStatus() checks
+ *     liveness via /proc/<pid> on Linux or the status file.
+ *  4. stop() sends SIGTERM to the process group (negative PGID), waits
+ *     the configured grace period, sends SIGKILL if still alive.
+ *  5. cleanupStale() removes DB records and log files older than
+ *     retention once the process has finished.
+ *
+ * Session ownership: every process stores an optional session_id.
+ * Methods that accept ?string $sessionId scope operations to that
+ * session when provided; null means unscoped/admin (show all,
+ * operate on any process regardless of session).
+ * BgStatusTool resolves the current session from the ambient
+ * StackToolExecutionContextAccessor so operations are scoped.
+ *
+ * Shutdown handling:
+ * Call registerShutdownHandler() from production wiring (services.yaml)
+ * to register a PHP shutdown function that calls shutdownCleanup() with
+ * no session filter, killing ALL running background processes when this
+ * PHP process exits. This covers graceful exit (Ctrl+C, quit command,
+ * normal script end) and fatal errors.
+ *
+ * In test environment (config/services_test.yaml), the shutdown handler
+ * is intentionally omitted. IsolatedKernelTestCase removes the SQLite
+ * database directory in tearDown() before PHP process shutdown, so a
+ * registered shutdown function that queries Doctrine would crash with
+ * "unable to open database file".
+ *
+ * Crash resilience: SIGKILL, OOM, or segfault bypass the shutdown
+ * function, so background processes survive unexpected controller
+ * death. The user can inspect logs on the next session resume.
+ *
+ * setsid is required. If setsid is unavailable, start() fails with a
+ * clear exception rather than falling back to unsafe single-PID mode
+ * that cannot reliably propagate signals to child workloads.
  *
  * Schema is managed by Doctrine migrations — no runtime DDL.
  * Migrations run once at AgentCommand startup before any manager call.
@@ -36,11 +78,29 @@ final class BackgroundProcessManager
         private readonly BackgroundProcessConfig $config,
         private readonly LoggerInterface $logger,
     ) {
+        // Shutdown handler is NOT registered here. Call
+        // registerShutdownHandler() from production wiring
+        // (config/services.yaml) to enable automatic cleanup.
+        // This avoids accumulating shutdown callbacks in tests
+        // where many manager instances are constructed.
     }
 
     /**
      * Register a PHP shutdown function that terminates all running
      * background processes when this PHP process exits.
+     *
+     * On graceful shutdown (exit, Ctrl+C, fatal error), this calls
+     * shutdownCleanup() which TERM→grace→KILLs all tracked processes.
+     * On hard crash (SIGKILL, OOM, segfault), the shutdown function
+     * does not fire — BG processes survive for inspection or resume.
+     *
+     * Safe to call multiple times — idempotent.
+     *
+     * This does NOT conflict with Symfony Messenger workers:
+     * BackgroundProcessManager is only constructed in the
+     * controller/in-process agent paths, never inside
+     * messenger:consume worker processes. Each agent process
+     * registers exactly one shutdown function.
      */
     public function registerShutdownHandler(): void
     {
@@ -60,15 +120,48 @@ final class BackgroundProcessManager
     /**
      * Start a background process and register it in the durable store.
      *
-     * @param string      $command   shell command to run in background
-     * @param string|null $sessionId optional session/run identifier
+     * The command is launched in a new session/process group via setsid
+     * and wrapped in a shell harness that:
+     *  - Records the wrapper PID to a .pid file
+     *  - Redirects stdout/stderr to a .log file
+     *  - Backgrounds the user command as a distinct child process so it
+     *    inherits default SIGTERM handling (not SIG_IGN)
+     *  - Traps SIGTERM and forwards it to the child process, then waits
+     *    for the child and writes its exit code to a .status file
+     *  - Also writes the child exit code after normal completion
+     *
+     * Forwarding TERM via a trap ensures $command receives a deliverable
+     * signal with default disposition, while the wrapper survives long
+     * enough to write the status sidecar.  When stop() sends SIGKILL
+     * (after grace expires) the wrapper dies immediately and the status
+     * file is not written; resolveEntityStatus() marks that scenario as
+     * "finished (unclean)".
+     *
+     * setsid is required.  If setsid is not available or fails, this
+     * method throws rather than falling back to single-PID mode that
+     * cannot safely propagate TERM to child workloads.
+     *
+     * @param string      $command   shell command to run in background.
+     *                               Must already be escaped if it contains
+     *                               user-controlled tokens.
+     * @param string|null $sessionId optional session/run identifier for
+     *                               ownership scoping. When provided, the
+     *                               process is bound to this session.
+     *                               Pass null for unscoped operation.
+     *
+     * @warning This method accepts raw shell commands and executes them via
+     *          bash -c. Callers MUST escape all user-controlled tokens with
+     *          escapeshellarg() before passing to start(). Do not pass
+     *          unsanitized input or arguments as a flat string.
      *
      * @throws \RuntimeException on storage/launch failure
      */
     public function start(string $command, ?string $sessionId = null): StartResult
     {
+        // Ensure storage directory exists
         $bgDir = $this->lifecycle->ensureStorageDir();
 
+        // Generate unique file prefix and file paths
         $filePrefix = bin2hex(random_bytes(8));
         $pidFile = $bgDir.'/'.$filePrefix.'.pid';
         $statusFile = $bgDir.'/'.$filePrefix.'.status';
@@ -76,10 +169,12 @@ final class BackgroundProcessManager
 
         $now = Clock::get()->now()->format('c');
 
+        // Launch process in new session group
         $launchResult = $this->lifecycle->launchProcess($command, $pidFile, $logFile, $statusFile);
         $pid = $launchResult['pid'];
         $pgid = $launchResult['pgid'];
 
+        // Persist entity with auto-increment DB id
         $dbId = $this->store->insertRecord([
             'pid' => $pid,
             'pgid' => $pgid,
@@ -117,9 +212,15 @@ final class BackgroundProcessManager
     /**
      * List all tracked background processes with refreshed status.
      *
-     * Status is resolved from filesystem state and persisted on the entity.
+     * Resolves status from filesystem state (/proc/<pid> or status file)
+     * and persists any changes on the entity before returning.  This is
+     * the canonical way to get current process state — entities returned
+     * by fetchAll() may have stale in-memory status.
      *
-     * @param string|null $sessionId optional session filter
+     * @param string|null $sessionId optional session filter. When
+     *                               provided, only processes for that
+     *                               session are returned. Pass null for
+     *                               all processes.
      *
      * @return list<BackgroundProcess>
      */
@@ -161,10 +262,23 @@ final class BackgroundProcessManager
     /**
      * Stop a background process: TERM → grace → KILL.
      *
-     * @throws \RuntimeException when process not found, session mismatch, or PID invalid
+     * Targets the entire process group via negative PGID
+     * (kill -TERM -<PGID>) when a PGID is available.  Falls back
+     * to single-PID signalling only when the PGID could not be
+     * determined — a rare race window immediately after process launch.
+     *
+     * @param int         $pid       Process PID to stop. Must be > 0.
+     * @param string|null $sessionId optional session ownership check.
+     *                               When provided, only a process belonging
+     *                               to this session will be stopped.
+     *
+     * @throws \RuntimeException when process not found, session mismatch,
+     *                           or PID is invalid
      */
     public function stop(int $pid, ?string $sessionId = null): StopResult
     {
+        // Defence-in-depth: reject non-positive PIDs that could cause
+        // kill(0) or kill(-negative) to broadcast signals to the caller.
         if ($pid <= 0) {
             throw new \RuntimeException(\sprintf('Invalid PID %d for stop.', $pid));
         }
@@ -179,8 +293,11 @@ final class BackgroundProcessManager
             throw new \RuntimeException(\sprintf('No background process found with PID %d for this session.', $pid));
         }
 
+        // Refresh status before acting — the process may have finished
+        // since the last list() call (status file written, /proc gone).
         $this->refreshEntity($entity);
 
+        // Re-fetch after refresh (entity may have been marked finished)
         $entity = $this->store->fetchByPid($pid);
         if (null === $entity) {
             throw new \RuntimeException(\sprintf('Background process with PID %d disappeared during refresh.', $pid));
@@ -199,13 +316,16 @@ final class BackgroundProcessManager
         $pgid = $entity->pgid;
         $graceSeconds = $this->config->stopGraceSeconds;
 
+        // TERM signal — target process group (negative PGID)
         $signalSent = 'term';
         $this->lifecycle->sendTerm($pid, $pgid);
 
+        // Wait grace period
         if ($graceSeconds > 0) {
             sleep($graceSeconds);
         }
 
+        // Check if still alive and KILL if needed
         if ($this->lifecycle->isAlive($pid)) {
             $signalSent = 'term+kill';
             $this->lifecycle->sendKill($pid, $pgid);
@@ -223,6 +343,10 @@ final class BackgroundProcessManager
         $now = Clock::get()->now()->format('c');
         $entity->markStopped($now);
 
+        // Write -1 to the status file only when the wrapper did not
+        // already write a real exit code (KILL path). When TERM succeeds
+        // the wrapper's trap handler writes the child's real exit code
+        // before exiting; overwriting would corrupt forensic evidence.
         $statusPath = $entity->statusPath;
         if ('' !== $statusPath) {
             $this->lifecycle->writeStopMarker($statusPath);
@@ -242,10 +366,15 @@ final class BackgroundProcessManager
     /**
      * Remove stale (finished) records and log files older than retention.
      *
+     * First refreshes all unfinished records so finished_at is populated
+     * for processes that completed without a list() call, then queries
+     * for stale entities.
+     *
      * @return int Number of cleaned records
      */
     public function cleanupStale(): int
     {
+        // Refresh all unfinished so finished_at is populated
         $this->refreshAllUnfinished();
 
         $cutoff = Clock::get()->now()->modify('-'.$this->config->retentionSeconds.' seconds')->format('c');
@@ -257,13 +386,16 @@ final class BackgroundProcessManager
             $logPath = $entity->logPath;
             $statusPath = $entity->statusPath;
 
+            // Delete log and status files
             $this->lifecycle->deleteRecordFiles($logPath, $statusPath);
 
+            // Delete DB record
             if ($this->store->deleteById($entity->id)) {
                 ++$count;
             }
         }
 
+        // Also clean up orphaned .pid files (from crashed processes)
         $activePids = $this->store->fetchAllUnfinishedPids();
         $activePidSet = [];
         foreach ($activePids as $activePid) {
@@ -276,6 +408,16 @@ final class BackgroundProcessManager
 
     /**
      * Terminate all currently tracked running processes.
+     *
+     * Called automatically via register_shutdown_function() on PHP process
+     * exit (graceful or fatal). Also callable explicitly from test tearDown
+     * or controller lifecycle hooks. Safe to call multiple times — only
+     * processes still marked running are affected.
+     *
+     * @param string|null $sessionId optional session filter. When provided,
+     *                               only processes for that session are
+     *                               stopped. Pass null to stop all running
+     *                               processes (default, unscoped).
      *
      * @return int Number of processes terminated
      */
@@ -290,6 +432,7 @@ final class BackgroundProcessManager
                 $this->stop($pid);
                 ++$count;
             } catch (\RuntimeException $e) {
+                // Process may have exited between fetch and stop; log and continue
                 $this->logger->warning('background_process.shutdown_cleanup_error', [
                     'component' => 'tool.background_process',
                     'event_type' => 'background_process.shutdown_cleanup_error',
@@ -304,6 +447,18 @@ final class BackgroundProcessManager
 
     // ─── Private helpers ─────────────────────────────────────────────
 
+    /**
+     * Resolve the runtime status of a background process entity.
+     *
+     * Check order:
+     *  1. DB finished_at — already resolved, trust the persisted status.
+     *  2. Status file   — process finished normally, wrapper wrote exit code.
+     *  3. /proc/<pid>   — still alive, mark as Running.
+     *  4. None of above — process is gone without a status file
+     *     (crash / SIGKILL / unclean exit). Mark as FinishedUnclean.
+     *
+     * Mutates the entity in place; caller is responsible for flush.
+     */
     private function resolveEntityStatus(BackgroundProcess $entity): BackgroundProcessStatusEnum
     {
         // Already resolved in DB
@@ -342,12 +497,23 @@ final class BackgroundProcessManager
         return BackgroundProcessStatusEnum::FinishedUnclean;
     }
 
+    /**
+     * Refresh a single entity's status from filesystem state.
+     *
+     * Resolves and persists the current status; used before stop()
+     * to avoid acting on a process that already finished since last
+     * list() call.
+     */
     private function refreshEntity(BackgroundProcess $entity): void
     {
         $this->resolveEntityStatus($entity);
         $this->store->flush();
     }
 
+    /**
+     * Refresh all unfinished entities so finished_at is populated
+     * for processes that completed without a list() call.
+     */
     private function refreshAllUnfinished(): void
     {
         $entities = $this->store->fetchAllUnfinished();

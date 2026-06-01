@@ -163,6 +163,7 @@ DONE without it.
 
 ## Development rules
 
+- **Do not delete comments that explain non-obvious logic, invariants, concurrency, lifecycle, compatibility, or rationale unless the described logic is removed.** When code changes, update those comments instead of deleting them. Remove only stale/noise comments that restate the obvious (e.g., "increment i" or "return the result"). Inline comments explaining why code is shaped a certain way — signal handling, crash resilience, transaction ordering, migration decisions, backward-compatibility checks, DB-to-filesystem interaction — are valuable and must be preserved or updated, never silently dropped.
 - Use explicit semantic suffixes in type names: `EventTypeEnum`, `EventsRecordingsTrait`, `UserEventService`, `RuntimeEventMapper`, `SettingsProvider`, `TranscriptProjector`, `Repository`, `Factory`, `DTO`, etc. Avoid ambiguous bare names.
 - Prefer Symfony-native extension points and typed objects over hand-rolled routers/mappers. Before adding `instanceof` dispatch chains, stringly `match` routers, `normalize*()` arrays, or manual payload walkers, check Symfony events/subscribers/listeners, Serializer/Normalizer, Messenger handlers, or Symfony AI DTOs.
 - Never add production APIs or code paths solely for tests. Use production constructors/factories or test-local fixtures/builders.

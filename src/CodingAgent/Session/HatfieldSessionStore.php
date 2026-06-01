@@ -14,7 +14,13 @@ use Symfony\Component\Yaml\Yaml;
  * Filesystem-backed session persistence using the Hatfield config system.
  *
  * Sessions are stored under the configured sessions.path (defaults to
- * .hatfield/sessions/). Each session is a directory.
+ * .hatfield/sessions/). Each session is a directory containing:
+ *
+ *   <session-id>/
+ *     metadata.yaml       Session metadata (session_id, run_id, parent_id,etc.)
+ *     state.json          AgentCore RunState hot state cache (via SessionRunStore)
+ *     events.jsonl        AgentCore RunEvent canonical stream (via SessionRunEventStore)
+ *     transcript.jsonl    Append-only TUI transcript projection
  *
  * session_id === run_id in Hatfield. One directory equals one session
  * equals one agent run equals one future fork tree node.
@@ -22,6 +28,8 @@ use Symfony\Component\Yaml\Yaml;
  * Session IDs are DB-issued auto-increment integers converted to strings.
  * The hatfield_session table acts as an authoritative ID registry; the
  * filesystem under .hatfield/sessions/ is the canonical storage.
+ * session_id / run_id remain strings externally for protocol compatibility
+ * even though the underlying storage key is an auto-increment integer.
  *
  * All writes are protected by a Symfony Lock (FlockStore) to prevent
  * concurrent corruption from multiple processes.
@@ -42,6 +50,12 @@ final class HatfieldSessionStore
      * integer ID, then creates the session files under
      * .hatfield/sessions/<id>/.
      *
+     * The on-disk layout is self-contained for resume and future forking:
+     *   metadata.yaml (session_id, run_id, parent_id, root_id, etc.)
+     *   state.json (empty, written by SessionRunStore on first CAS)
+     *   events.jsonl (empty)
+     *   transcript.jsonl (empty)
+     *
      * If file creation fails after DB insert, the session row is
      * removed from the DB to avoid silently inconsistent state.
      *
@@ -60,6 +74,8 @@ final class HatfieldSessionStore
         $this->entityManager->persist($session);
         $this->entityManager->flush();
 
+        // ID is the DB-issued auto-increment integer, used as
+        // both the string session ID and the AgentCore runId.
         $sessionId = (string) $session->id;
 
         try {
@@ -174,6 +190,13 @@ final class HatfieldSessionStore
 
     /**
      * Check whether a session exists.
+     *
+     * Checks the filesystem (metadata.yaml), not the DB. The DB-backed
+     * hatfield_session table is the authoritative ID registry for new
+     * sessions created with createSession(), but existence is still
+     * determined by the session directory to preserve backward
+     * compatibility with legacy 12-char hex sessions that pre-date the
+     * DB registry. SessionInitializer uses this method for --resume.
      */
     public function exists(string $sessionId): bool
     {
@@ -182,6 +205,10 @@ final class HatfieldSessionStore
 
     /**
      * Resolve the sessions base path from Hatfield config.
+     *
+     * Uses sessions.path from the fully resolved config (after defaults,
+     * home, and project layer overlay). Falls back to
+     * <cwd>/.hatfield/sessions when no explicit path is configured.
      */
     public function resolveSessionsBasePath(): string
     {
@@ -199,6 +226,7 @@ final class HatfieldSessionStore
             mkdir($sessionPath, 0777, true);
         }
 
+        // session_id === run_id in Hatfield
         $metadata = [
             'session_id' => $sessionId,
             'run_id' => $sessionId,
@@ -220,6 +248,14 @@ final class HatfieldSessionStore
         chmod($sessionPath.'/transcript.jsonl', 0644);
     }
 
+    /**
+     * Build the base sessions directory path from resolved config.
+     *
+     * Reads the typed SessionsConfig from AppConfig. In production
+     * the path is absolute (resolved by AppConfigLoader). For tests
+     * that construct AppConfig directly with a relative path, we resolve
+     * against the active project directory.
+     */
     private function getSessionsDir(): string
     {
         $path = $this->appConfig->sessions->path;
@@ -236,11 +272,17 @@ final class HatfieldSessionStore
         return $path;
     }
 
+    /**
+     * Get the full path to a session directory.
+     */
     private function getSessionDir(string $sessionId): string
     {
         return $this->getSessionsDir().'/'.$sessionId;
     }
 
+    /**
+     * Ensure the session directory exists (create if needed).
+     */
     private function ensureSessionDir(string $sessionId): void
     {
         $dir = $this->getSessionDir($sessionId);
