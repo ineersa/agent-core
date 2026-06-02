@@ -1072,31 +1072,30 @@ function run_quality_step(string $stepName, string $command, string $junitFilena
     $process = run_quiet_command($command.' --colors=never --no-progress --log-junit='.$junitPath);
     persist_process_output($process, $logFilename);
 
-    $summary = '';
-    $junitXml = @file_get_contents($junitPath);
-    if (false !== $junitXml && '' !== $junitXml) {
-        $summary = summarize_junit_xml($junitXml);
-    }
+    $summary = summarize_junit_xml($junitPath);
 
+    $summaryWithRisky = $summary;
     $riskySummary = phpunit_risky_summary($logPath);
     if ('' !== $riskySummary) {
-        $summary = '' !== $summary ? $summary.', '.$riskySummary : $riskySummary;
+        $summaryWithRisky = $summary.', '.$riskySummary;
     }
 
     if (0 !== $process->getExitCode()) {
         $excerpt = phpunit_failure_excerpt($junitPath, $logFilename);
-        $reportLine = $summary;
-        if ('' !== $excerpt) {
-            $reportLine .= '; '.$excerpt;
-        }
-        $reportLine .= ' ('.relative_report_path($junitFilename).', '.relative_report_path($logFilename).')';
-        fail_quality($stepName, $reportLine);
+        fail_quality(sprintf(
+            '%s failed (%s); junit=%s; log=%s%s',
+            $stepName,
+            $summaryWithRisky,
+            relative_report_path($junitFilename),
+            relative_report_path($logFilename),
+            $excerpt,
+        ));
     }
 
     echo sprintf(
-        '%s: ok (%s) (%s, %s)',
+        '%s: ok (%s); junit=%s; log=%s',
         $stepName,
-        $summary,
+        $summaryWithRisky,
         relative_report_path($junitFilename),
         relative_report_path($logFilename),
     ).\PHP_EOL;
