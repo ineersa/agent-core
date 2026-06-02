@@ -1,9 +1,9 @@
 ---
-description: Finish an IN-PROGRESS task, run validation, and move to CODE-REVIEW
+description: Prepare an IN-PROGRESS task for PR by reviewing, recording, and moving to CODE-REVIEW
 argument-hint: "<task>"
 ---
 
-/task-finish <task>
+/task-to-pr <task>
 
 Prepare a tracked task for code review:
 
@@ -15,7 +15,7 @@ Prepare a tracked task for code review:
 
 2. **Review quality**
    - Run the reviewer subagent on the worktree (subagent agent="reviewer" cwd=worktree).
-   - If reviewer returns REQUEST CHANGES, analyze the blockers, create a plan, and launch a fork.
+   - If reviewer returns REQUEST CHANGES, analyze the blockers, create exact fork instructions, and launch a fork.
    - Repeat until reviewer returns APPROVED for current HEAD.
 
 3. **Run focused local validation**
@@ -33,10 +33,7 @@ Prepare a tracked task for code review:
 5. **Move to CODE-REVIEW**
    - Call `move_task` with the task slug and `to="CODE-REVIEW"`. This runs the
      Castor quality gate (`LLM_MODE=true castor check`) on the task branch at its
-     current HEAD before pushing and creating the PR, unless explicitly bypassed
-     with a non-empty `skipCastorCheckReason`.
+     current HEAD before pushing and creating or updating the PR.
    - Record the PR URL returned in the notes.
-   - If the Castor gate fails: the task remains IN-PROGRESS. Analyze the failure.
-     If it is a known pre-existing issue unrelated to the task's changes, document
-     exact evidence (command output, error excerpts) and retry `move_task` only
-     with an explicit non-empty `skipCastorCheckReason`.
+   - If the Castor gate fails, the task remains IN-PROGRESS. Analyze and fix the
+     failure, then retry only after the full gate can pass. There is no bypass.

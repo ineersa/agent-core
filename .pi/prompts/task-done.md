@@ -33,4 +33,6 @@ Complete a reviewed task by merging the PR and running post-merge validation:
    - `move_task` with `to="DONE"` cleans up the worktree by default
      (cleanupWorktree defaults to true). The task branch is kept by default unless
      `deleteBranch: true` was explicitly passed.
+   - Check whether the worktree directory still exists; if cleanup missed it,
+     delete the surviving worktree directory after verifying it has no needed changes.
    - Confirm `git status` on integration checkout is clean.
