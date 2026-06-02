@@ -63,7 +63,7 @@ const MoveTaskParams = Type.Object({
 	prBody: Type.Optional(Type.String({ description: "Body for GitHub PR when moving to CODE-REVIEW." })),
 	prBaseBranch: Type.Optional(Type.String({ description: "Base branch for PR. Defaults to repository default branch." })),
 	pushOnly: Type.Optional(Type.Boolean({ description: "Push branch but skip PR creation. Default false." })),
-	castorCheckTimeoutSeconds: Type.Optional(Type.Number({ description: "Timeout in seconds for the Castor quality gate. Min " + CASTOR_CHECK_TIMEOUT_MIN + ", max " + CASTOR_CHECK_TIMEOUT_MAX + ". Default " + CASTOR_CHECK_TIMEOUT_DEFAULT + "." })),
+	castorCheckTimeoutSeconds: Type.Optional(Type.Number({ description: "Timeout in seconds for the Castor quality gate (LLM suite soft timeout). The OS-level `timeout` command sends SIGTERM after this duration, with a 15s SIGKILL grace period (--kill-after). Min " + CASTOR_CHECK_TIMEOUT_MIN + ", max " + CASTOR_CHECK_TIMEOUT_MAX + ", default " + CASTOR_CHECK_TIMEOUT_DEFAULT + "." })),
 	skipCastorCheckReason: Type.Optional(Type.String({ description: "Non-empty reason to bypass the Castor quality gate. Gate is skipped and reason logged. Empty/whitespace throws." })),
 });
 
@@ -150,6 +150,20 @@ function validateCastorTimeout(seconds: number): number {
 	return Math.floor(seconds);
 }
 
+/*
+ * Run the Castor quality gate in the given directory.
+ *
+ * Timeout semantics:
+ *   timeout --kill-after=15s ${timeout}s env LLM_MODE=true castor check
+ *   - Soft timeout: the `timeout` command sends SIGTERM after `timeout` seconds.
+ *   - Kill escalation: SIGKILL follows after the `--kill-after` grace period (15s).
+ *   - pi.exec timeout is set slightly above both (30s buffer) so OS timeout fires first.
+ *   - Default timeout is 240s, which means the LLM suite has 240s to complete
+ *     before the gate is killed.
+ *
+ * Returns { passed, output, code, label } where label is one of
+ * "timed out", "aborted", "failed", or "passed".
+ */
 async function runCastorCheckGate(
 	pi: ExtensionAPI,
 	gateDir: string,
@@ -158,6 +172,7 @@ async function runCastorCheckGate(
 ): Promise<{ passed: boolean; output: string; code: number; label: string }> {
 	const timeout = validateCastorTimeout(timeoutSeconds);
 	const killAfter = 15;
+	// pi.exec timeout = soft (timeout) + kill grace (killAfter) + 30s buffer
 	const execTimeoutMs = (timeout + killAfter + 30) * 1000;
 
 	// Check for required commands
@@ -195,6 +210,113 @@ async function runCastorCheckGate(
 		code: result.code,
 		label,
 	};
+}
+
+// ── Task file commit helpers ─────────────────────────────────────────────────
+
+/*
+ * Validate that a path is under tasks/ and return the repo-relative path.
+ * Throws if the path is outside the allowed tasks/ tree.
+ */
+function taskRelPath(root: string, absPath: string): string {
+	const relPath = rel(root, absPath);
+	if (!relPath.startsWith("tasks/")) {
+		throw new Error(`Task commit path must be under tasks/, got: ${relPath}`);
+	}
+	return relPath;
+}
+
+/*
+ * Check whether the current branch has an upstream configured.
+ */
+async function hasUpstream(pi: ExtensionAPI, root: string, signal?: AbortSignal): Promise<boolean> {
+	const result = await git(pi, root, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], signal);
+	return result.code === 0;
+}
+
+/*
+ * Commit exact task file changes and optional push.
+ *
+ * Stages ONLY the given paths (validated under tasks/), verifies no other
+ * staged changes exist, commits if there is a diff, and pushes if the
+ * current branch has an upstream configured and requirePush is true.
+ * If requirePush is false, push is best-effort (recorded as note on failure).
+ *
+ * Returns notes suitable for appending to a task-workflow log.
+ */
+async function commitTaskFileChanges(
+	pi: ExtensionAPI,
+	root: string,
+	paths: string[],
+	message: string,
+	signal?: AbortSignal,
+	requirePush: boolean = true,
+): Promise<string[]> {
+	const notes: string[] = [];
+
+	// Validate and deduplicate paths
+	const taskPaths = [...new Set(paths.map((p) => taskRelPath(root, p)))];
+
+	// Refuse if other changes are already staged
+	const stagedResult = await git(pi, root, ["diff", "--cached", "--name-only"], signal);
+	const existingStaged = stagedResult.stdout.trim().split("\n").filter(Boolean);
+	if (existingStaged.length > 0) {
+		throw new Error(
+			`Unrelated changes are already staged. Commit or reset them before moving tasks.\n` +
+			`Staged files: ${existingStaged.join(", ")}`,
+		);
+	}
+
+	// Stage exact task paths
+	await gitOk(pi, root, ["add", "--", ...taskPaths], signal);
+
+	// Verify staged diff only contains allowed paths
+	const stagedDiff = await gitOk(pi, root, ["diff", "--cached", "--name-only"], signal);
+	const stagedOnly = stagedDiff.stdout.trim().split("\n").filter(Boolean);
+	const extraFiles = stagedOnly.filter((f) => !taskPaths.includes(f));
+	if (extraFiles.length > 0) {
+		// Something unexpected got staged — unstage our paths and abort
+		await gitOk(pi, root, ["reset", "HEAD", "--", ...taskPaths], signal);
+		throw new Error(
+			`Stage included unexpected files alongside task paths.\n` +
+			`Task paths: ${taskPaths.join(", ")}\n` +
+			`Unexpected: ${extraFiles.join(", ")}`,
+		);
+	}
+
+	// No-op check
+	const noDiff = await git(pi, root, ["diff", "--cached", "--quiet"], signal);
+	if (noDiff.code === 0) {
+		await gitOk(pi, root, ["reset", "HEAD", "--", ...taskPaths], signal);
+		return notes;
+	}
+
+	// Commit
+	const commitResult = await gitOk(pi, root, ["commit", "-m", message], signal);
+	const shaMatch = commitResult.stdout.match(/\[[^\]]+ ([a-f0-9]+)\]/);
+	const sha = shaMatch ? shaMatch[1] : commitResult.stdout.trim();
+	notes.push(`Committed task metadata: ${sha} \u2014 ${message}`);
+
+	// Push if upstream configured
+	if (await hasUpstream(pi, root, signal)) {
+		const pushResult = await git(pi, root, ["push"], signal);
+		if (pushResult.code !== 0) {
+			if (requirePush) {
+				throw new Error(
+					`Task metadata committed locally but push failed.\n` +
+					`The integration branch is ahead of remote. Push manually before creating more worktrees.\n` +
+					`${pushResult.stderr || pushResult.stdout}`,
+				);
+			}
+			notes.push(`Warning: push failed — ${(pushResult.stderr || pushResult.stdout).trim()}`);
+		} else {
+			notes.push(`Pushed task metadata commit to remote.`);
+		}
+	} else {
+		notes.push(`No upstream configured; task metadata committed locally only.`);
+	}
+
+	return notes;
 }
 
 async function repoRoot(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<string> {
@@ -628,7 +750,9 @@ export default function (pi: ExtensionAPI) {
 			const path = join(root, TASK_ROOT, "TODO", `${slug}.md`);
 			if (existsSync(path)) throw new Error(`Task already exists: ${rel(root, path)}`);
 			await writeFile(path, renderTask(params.title, params.body, params.acceptance), "utf8");
-			return { content: [{ type: "text", text: `Created ${rel(root, path)}` }], details: { path } };
+
+			const commitNotes = await commitTaskFileChanges(pi, root, [path], `Add task ${slug}`, signal, true);
+			return { content: [{ type: "text", text: [`Created ${rel(root, path)}`, ...commitNotes].join("\n") }], details: { path, commitNotes } };
 		},
 	});
 
@@ -817,6 +941,12 @@ export default function (pi: ExtensionAPI) {
 				text = appendLog(text, notes);
 
 				const target = await moveFileWithMetadata(task, to, text, root);
+
+				// Auto-commit task file changes so integration checkout stays clean
+				const slug = task.file.replace(/\.md$/, "");
+				const commitNotes = await commitTaskFileChanges(pi, root, [task.path, target], `Move task ${slug} to ${to.toLowerCase()}`, signal, true);
+				notes.push(...commitNotes);
+
 				return {
 					content: [{ type: "text", text: [`Moved task to ${rel(root, target)}.`, ...notes].join("\n") }],
 					details: { from: task.status, to, path: target, notes },
@@ -873,6 +1003,11 @@ export default function (pi: ExtensionAPI) {
 
 				text = appendLog(text, notes);
 				await writeFile(task.path, text, "utf8");
+
+				// Auto-commit task file changes so integration checkout stays clean
+				const slug = task.file.replace(/\.md$/, "");
+				const commitNotes = await commitTaskFileChanges(pi, root, [task.path], `Update task ${slug} metadata`, signal, false);
+				notes.push(...commitNotes);
 
 				return {
 					content: [{ type: "text", text: [`Updated ${rel(root, task.path)}.`, ...notes].join("\n") }],
