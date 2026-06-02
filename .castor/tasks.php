@@ -115,6 +115,8 @@ function test(string $filter = ''): void
     // Ensure test database schema is up-to-date before running tests.
     // DAMA/DoctrineTestBundle wraps each test in a transaction;
     // this step creates the schema once on fresh checkout.
+    // Create the directory first so SQLite can write the DB file.
+    @mkdir('var/test', 0755, true);
     $migrate = run_quiet_command(
         'APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
     );

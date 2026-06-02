@@ -162,11 +162,12 @@ services:
       - registerShutdownHandler: []
 
   # Startup database migrator — runs built-in doctrine:migrations:migrate once on startup.
-  # Uses console.messenger.application (Symfony Console Application service) to invoke
-  # the built-in Doctrine Migrations command programmatically.
+  # Uses the doctrine_migrations.migrate_command service directly (not a full Console
+  # Application) so migration execution avoids recursive Application::doRun() that
+  # blocks controller/TUI startup when stdout is a pipe.
   Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator:
     arguments:
-      $consoleApplication: '@console.messenger.application'
+      $migrateCommand: '@doctrine_migrations.migrate_command'
 
   # CodingAgentImageCapabilityChecker — wraps HatfieldModelCatalog from AppConfig.
   Ineersa\CodingAgent\Tool\ImageProcessing\CodingAgentImageCapabilityChecker:
