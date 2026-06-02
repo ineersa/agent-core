@@ -456,7 +456,7 @@ final class TuiAgentSmokeTest extends TestCase
             $ai = [];
         }
         $ai['default_model'] = 'llama_cpp_test/test';
-        unset($ai['default_reasoning']);
+        $ai['default_reasoning'] = 'off';
         $settings['ai'] = $ai;
 
         // Force SafeGuard enabled with blocking defaults for all TUI E2E tests.
