@@ -63,7 +63,7 @@ const MoveTaskParams = Type.Object({
 	prBody: Type.Optional(Type.String({ description: "Body for GitHub PR when moving to CODE-REVIEW." })),
 	prBaseBranch: Type.Optional(Type.String({ description: "Base branch for PR. Defaults to repository default branch." })),
 	pushOnly: Type.Optional(Type.Boolean({ description: "Push branch but skip PR creation. Default false." })),
-	castorCheckTimeoutSeconds: Type.Optional(Type.Number({ description: "Timeout in seconds for the Castor quality gate (LLM suite soft timeout). The OS-level `timeout` command sends SIGTERM after this duration, with a 15s SIGKILL grace period (--kill-after). Min " + CASTOR_CHECK_TIMEOUT_MIN + ", max " + CASTOR_CHECK_TIMEOUT_MAX + ", default " + CASTOR_CHECK_TIMEOUT_DEFAULT + "." })),
+	castorCheckTimeoutSeconds: Type.Optional(Type.Number({ description: "Timeout in seconds for the Castor quality gate (full castor check soft timeout). The OS-level `timeout` command sends SIGTERM after this duration, with a 15s SIGKILL grace period (--kill-after). Min " + CASTOR_CHECK_TIMEOUT_MIN + ", max " + CASTOR_CHECK_TIMEOUT_MAX + ", default " + CASTOR_CHECK_TIMEOUT_DEFAULT + "." })),
 	skipCastorCheckReason: Type.Optional(Type.String({ description: "Non-empty reason to bypass the Castor quality gate. Gate is skipped and reason logged. Empty/whitespace throws." })),
 });
 
@@ -254,6 +254,11 @@ async function commitTaskFileChanges(
 ): Promise<string[]> {
 	const notes: string[] = [];
 
+	// No paths means nothing to commit
+	if (paths.length === 0) {
+		return notes;
+	}
+
 	// Validate and deduplicate paths
 	const taskPaths = [...new Set(paths.map((p) => taskRelPath(root, p)))];
 
@@ -303,8 +308,9 @@ async function commitTaskFileChanges(
 		if (pushResult.code !== 0) {
 			if (requirePush) {
 				throw new Error(
-					`Task metadata committed locally but push failed.\n` +
-					`The integration branch is ahead of remote. Push manually before creating more worktrees.\n` +
+					`Task metadata has already been committed locally but push failed.\n` +
+					`The integration checkout is now ahead of remote. A manual git push is required before continuing.\n` +
+					`Run: git push\n` +
 					`${pushResult.stderr || pushResult.stdout}`,
 				);
 			}
@@ -746,13 +752,17 @@ export default function (pi: ExtensionAPI) {
 		async execute(_toolCallId, params, signal, _onUpdate, ctx: ExtensionContext) {
 			const root = await repoRoot(pi, ctx.cwd, signal);
 			await ensureTaskDirs(root);
-			const slug = slugify(params.id || `${today()}-${params.title}`);
-			const path = join(root, TASK_ROOT, "TODO", `${slug}.md`);
-			if (existsSync(path)) throw new Error(`Task already exists: ${rel(root, path)}`);
-			await writeFile(path, renderTask(params.title, params.body, params.acceptance), "utf8");
+			const lockPath = join(root, TASK_ROOT, ".task-workflow.lock");
 
-			const commitNotes = await commitTaskFileChanges(pi, root, [path], `Add task ${slug}`, signal, true);
-			return { content: [{ type: "text", text: [`Created ${rel(root, path)}`, ...commitNotes].join("\n") }], details: { path, commitNotes } };
+			return withFileMutationQueue(lockPath, async () => {
+				const slug = slugify(params.id || `${today()}-${params.title}`);
+				const path = join(root, TASK_ROOT, "TODO", `${slug}.md`);
+				if (existsSync(path)) throw new Error(`Task already exists: ${rel(root, path)}`);
+				await writeFile(path, renderTask(params.title, params.body, params.acceptance), "utf8");
+
+				const commitNotes = await commitTaskFileChanges(pi, root, [path], `Add task ${slug}`, signal, true);
+				return { content: [{ type: "text", text: [`Created ${rel(root, path)}`, ...commitNotes].join("\n") }], details: { path, commitNotes } };
+			});
 		},
 	});
 
