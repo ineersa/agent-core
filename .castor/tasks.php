@@ -130,30 +130,34 @@ function test(string $filter = ''): void
     }
 
     if (!is_llm_mode()) {
-        run($cmd.' --colors=always');
+        run($cmd.' --fail-on-risky --colors=always');
 
         return;
     }
 
     $junitPath = report_path('phpunit.junit.xml');
-    $process = run_quiet_command($cmd.' --colors=never --no-progress --fail-on-phpunit-notice --display-phpunit-notices --display-warnings --log-junit '.$junitPath);
+    $process = run_quiet_command($cmd.' --colors=never --no-progress --fail-on-risky --fail-on-phpunit-notice --display-phpunit-notices --display-warnings --log-junit '.$junitPath);
     persist_process_output($process, 'phpunit.log');
 
     $summary = summarize_junit_xml($junitPath);
 
     if (0 !== $process->getExitCode()) {
+        $riskyInfo = phpunit_risky_summary(report_path('phpunit.log'));
+        $summaryWithRisky = '' !== $riskyInfo ? $summary.', '.$riskyInfo : $summary;
         fail_quality(sprintf(
             'test failed (%s); junit=%s; log=%s%s',
-            $summary,
+            $summaryWithRisky,
             relative_report_path('phpunit.junit.xml'),
             relative_report_path('phpunit.log'),
             phpunit_failure_excerpt($junitPath, 'phpunit.log'),
         ));
     }
 
+    $riskyInfo = phpunit_risky_summary(report_path('phpunit.log'));
+    $summaryWithRisky = '' !== $riskyInfo ? $summary.', '.$riskyInfo : $summary;
     echo sprintf(
         'test: ok (%s); junit=%s',
-        $summary,
+        $summaryWithRisky,
         relative_report_path('phpunit.junit.xml'),
     ).\PHP_EOL;
 }
@@ -559,7 +563,13 @@ function resolve_worktree_target(string $root, array $worktrees, string $target)
 #[AsTask(name: 'test:tui', description: 'Run TUI e2e snapshot tests (requires tmux)')]
 function test_tui(): void
 {
-    run('vendor/bin/phpunit --group tui-e2e --colors=always');
+    if (is_llm_mode()) {
+        run_quality_step('test:tui', 'vendor/bin/phpunit --fail-on-risky --group tui-e2e', 'phpunit-tui.junit.xml', 'phpunit-tui.log');
+
+        return;
+    }
+
+    run('vendor/bin/phpunit --fail-on-risky --group tui-e2e --colors=always');
 }
 
 /**
@@ -583,7 +593,13 @@ function test_tui(): void
 #[AsTask(name: 'test:llm-real', description: 'Run opt-in real llama.cpp smoke test against configured llama_cpp provider')]
 function test_llm_real(): void
 {
-    run('LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit --group llm-real --colors=always');
+    if (is_llm_mode()) {
+        run_quality_step('test:llm-real', 'LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit --fail-on-risky --group llm-real', 'phpunit-llm-real.junit.xml', 'phpunit-llm-real.log');
+
+        return;
+    }
+
+    run('LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit --fail-on-risky --group llm-real --colors=always');
 }
 
 /**
@@ -600,13 +616,25 @@ function test_llm_real(): void
 #[AsTask(name: 'test:controller', description: 'Run controller E2E smoke test (spawns --controller, sends JSONL)')]
 function test_controller(): void
 {
-    run('LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit --filter ControllerSmokeTest --colors=always');
+    if (is_llm_mode()) {
+        run_quality_step('test:controller', 'LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit --fail-on-risky --filter ControllerSmokeTest', 'phpunit-controller.junit.xml', 'phpunit-controller.log');
+
+        return;
+    }
+
+    run('LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit --fail-on-risky --filter ControllerSmokeTest --colors=always');
 }
 
 #[AsTask(name: 'test:tui-update', description: 'Run TUI e2e tests and update golden snapshots')]
 function test_tui_update(): void
 {
-    run('HATFIELD_UPDATE_SNAPSHOTS=1 vendor/bin/phpunit --group tui-e2e --colors=always');
+    if (is_llm_mode()) {
+        run_quality_step('test:tui-update', 'HATFIELD_UPDATE_SNAPSHOTS=1 vendor/bin/phpunit --fail-on-risky --group tui-e2e', 'phpunit-tui-update.junit.xml', 'phpunit-tui-update.log');
+
+        return;
+    }
+
+    run('HATFIELD_UPDATE_SNAPSHOTS=1 vendor/bin/phpunit --fail-on-risky --group tui-e2e --colors=always');
 }
 
 /**
@@ -990,6 +1018,88 @@ function fail_quality(string $message): never
     }
 
     throw new RuntimeException($message);
+}
+
+function phpunit_risky_summary(string $logPath): string
+{
+    if (!is_file($logPath) || !is_readable($logPath)) {
+        return '';
+    }
+
+    $log = (string) file_get_contents($logPath);
+    if ('' === $log) {
+        return '';
+    }
+
+    if (!preg_match('/There were (\d+) risky tests?:/s', $log, $countMatch)) {
+        return '';
+    }
+
+    $riskyCount = (int) $countMatch[1];
+    if (0 === $riskyCount) {
+        return '';
+    }
+
+    if (!preg_match('/There were \d+ risky tests?:.*?(?=\n\nOK, |\n\nFAILURES!|\n\nERRORS!|\z)/s', $log, $blockMatch)) {
+        return 'risky='.$riskyCount;
+    }
+
+    $block = trim($blockMatch[0]);
+    $names = [];
+    foreach (explode("\n", $block) as $line) {
+        if (preg_match('/^\d+\)\s+(.+)/', $line, $nameMat)) {
+            $names[] = trim($nameMat[1]);
+        }
+    }
+
+    $excerpt = 'risky='.$riskyCount;
+    if ([] !== $names) {
+        $excerpt .= '; '.implode(', ', array_slice($names, 0, 5));
+        if (count($names) > 5) {
+            $excerpt .= ' (+'.(count($names) - 5).' more)';
+        }
+    }
+
+    return $excerpt;
+}
+
+function run_quality_step(string $stepName, string $command, string $junitFilename, string $logFilename): void
+{
+    $junitPath = report_path($junitFilename);
+    $logPath = report_path($logFilename);
+    @mkdir(dirname($junitPath), 0755, true);
+
+    $process = run_quiet_command($command.' --colors=never --no-progress --log-junit='.$junitPath);
+    persist_process_output($process, $logFilename);
+
+    $summary = '';
+    $junitXml = @file_get_contents($junitPath);
+    if (false !== $junitXml && '' !== $junitXml) {
+        $summary = summarize_junit_xml($junitXml);
+    }
+
+    $riskySummary = phpunit_risky_summary($logPath);
+    if ('' !== $riskySummary) {
+        $summary = '' !== $summary ? $summary.', '.$riskySummary : $riskySummary;
+    }
+
+    if (0 !== $process->getExitCode()) {
+        $excerpt = phpunit_failure_excerpt($junitPath, $logFilename);
+        $reportLine = $summary;
+        if ('' !== $excerpt) {
+            $reportLine .= '; '.$excerpt;
+        }
+        $reportLine .= ' ('.relative_report_path($junitFilename).', '.relative_report_path($logFilename).')';
+        fail_quality($stepName, $reportLine);
+    }
+
+    echo sprintf(
+        '%s: ok (%s) (%s, %s)',
+        $stepName,
+        $summary,
+        relative_report_path($junitFilename),
+        relative_report_path($logFilename),
+    ).\PHP_EOL;
 }
 
 function phpunit_failure_excerpt(string $junitPath, string $logFilename): string
