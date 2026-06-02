@@ -82,15 +82,9 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
      */
     private array $restartTimestamps = [];
 
-    private readonly AppExecutableLocator $executableLocator;
-
     public function __construct(
-        ?AppExecutableLocator $executableLocator = null,
+        private readonly RuntimeProcessConfig $runtimeConfig,
     ) {
-        $this->executableLocator = $executableLocator ?? new SourceTreeExecutableLocator(
-            \dirname(__DIR__, 4),
-        );
-
         $this->eventBuffer = new \SplQueue();
     }
 
@@ -303,16 +297,13 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
      */
     private function spawnProcess(): void
     {
-        $consolePath = $this->executableLocator->path();
+        $consolePath = $this->runtimeConfig->executablePath();
 
         if (!is_file($consolePath)) {
-            throw new \RuntimeException(\sprintf('Console not found at %s (checked via %s)', $consolePath, $this->executableLocator::class));
+            throw new \RuntimeException(\sprintf('Console not found at %s', $consolePath));
         }
 
-        $runtimeCwd = getcwd();
-        if (false === $runtimeCwd) {
-            throw new \RuntimeException('No current working directory available for controller process.');
-        }
+        $runtimeCwd = $this->runtimeConfig->runtimeCwd();
 
         $descriptors = [
             0 => ['pipe', 'r'], // stdin: parent writes JSONL commands
@@ -341,7 +332,10 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
         $pipes = [];
         $process = @proc_open(
-            [\PHP_BINARY, $consolePath, 'agent', '--controller', '--cwd='.$runtimeCwd],
+            [
+                ...$this->runtimeConfig->executableCommand(),
+                'agent', '--controller', '--cwd='.$runtimeCwd,
+            ],
             $descriptors,
             $pipes,
             $runtimeCwd,

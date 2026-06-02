@@ -52,7 +52,13 @@ final class LlamaCppSmokeTest extends KernelTestCase
 {
     protected static function createKernel(array $options = []): \Ineersa\CodingAgent\Kernel
     {
-        return new \Ineersa\CodingAgent\Kernel('test', true);
+        // Use debug from options (default false) to prevent Symfony ErrorHandler
+        // from registering exception handlers that trigger PHPUnit's risky
+        // 'did not remove its own exception handlers' warning.
+        return new \Ineersa\CodingAgent\Kernel(
+            $options['environment'] ?? 'test',
+            $options['debug'] ?? false,
+        );
     }
 
     private string $tempDir;
@@ -74,7 +80,7 @@ final class LlamaCppSmokeTest extends KernelTestCase
 
         // Boot kernel to get EntityManager from test container.
         // Test DB is a fixed path via config/packages/test/doctrine.yaml.
-        self::bootKernel(['environment' => 'test', 'debug' => true]);
+        self::bootKernel(['environment' => 'test', 'debug' => false]);
         $container = static::getContainer();
         $this->entityManager = $container->get('doctrine.orm.default_entity_manager');
 
@@ -104,16 +110,19 @@ final class LlamaCppSmokeTest extends KernelTestCase
 
     protected function tearDown(): void
     {
-        // Shut down kernel before removing temp directory so no
-        // open DB/session resources remain when the filesystem
-        // cleanup runs.
-        self::ensureKernelShutdown();
+        // Let parent tearDown handle kernel shutdown — it calls
+        // ensureKernelShutdown() exactly once, preventing a double-reboot
+        // (each re-boot re-registers Symfony's ErrorHandler exception
+        // handler). Then we pop the extra handler and remove temp dir.
+        parent::tearDown();
+
+        // Pop the exception handler that was re-pushed by
+        // ensureKernelShutdown's kernel re-boot.
+        restore_exception_handler();
 
         if (isset($this->tempDir) && '' !== $this->tempDir) {
             $this->removeDir($this->tempDir);
         }
-
-        parent::tearDown();
     }
 
     public function testRealLlamaCppInvocation(): void

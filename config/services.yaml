@@ -230,6 +230,13 @@ services:
   Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator:
     alias: Ineersa\CodingAgent\Runtime\Process\SourceTreeExecutableLocator
 
+  # Centralized runtime process context for subprocess spawning.
+  # Injected into JsonlProcessAgentSessionClient and ConsumerSupervisor.
+  Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig:
+    arguments:
+      $executableLocator: '@Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator'
+      $runtimeCwd: '%app.cwd%'
+
   # ─── Controller event loop ───
 
   Ineersa\CodingAgent\Runtime\Controller\ConsumerSupervisor: ~

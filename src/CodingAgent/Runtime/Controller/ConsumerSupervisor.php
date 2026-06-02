@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
-use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
-use Ineersa\CodingAgent\Runtime\Process\SourceTreeExecutableLocator;
+use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
 use Symfony\Component\Process\Process;
@@ -36,13 +35,12 @@ use Symfony\Component\Process\Process;
  * - getProcess(): exposes the first Process for a transport name so
  *   HeadlessController can read the LLM consumer's stdout
  *
- * App executable resolution:
- * - Uses AppExecutableLocator to resolve the agent binary command
- *   independently of the runtime working directory (--cwd). This ensures
- *   messenger consumers always use the correct binary even when the
- *   runtime CWD is an isolated Hatfield project or a test temp directory.
- * - The consumer process CWD is set to getcwd() (runtime CWD) for
- *   correct Hatfield project behavior (settings, sessions, logs).
+ * App executable and runtime CWD resolution:
+ * - Uses RuntimeProcessConfig to provide both the agent binary command
+ *   (via AppExecutableLocator) and the canonical runtime working directory
+ *   (from %app.cwd% / HATFIELD_CWD), so messenger consumers always use the
+ *   correct binary and Hatfield project CWD regardless of the controller's
+ *   own --cwd or the parent process CWD
  */
 final class ConsumerSupervisor
 {
@@ -62,16 +60,11 @@ final class ConsumerSupervisor
     /** Set by shutdown() to prevent pending delay callbacks from launching new consumers. */
     private bool $shuttingDown = false;
 
-    private readonly AppExecutableLocator $executableLocator;
-
     public function __construct(
         private readonly LoggerInterface $logger,
-        ?AppExecutableLocator $executableLocator = null,
+        private readonly RuntimeProcessConfig $runtimeConfig,
         private readonly int $shutdownGraceSeconds = 5,
     ) {
-        $this->executableLocator = $executableLocator ?? new SourceTreeExecutableLocator(
-            \dirname(__DIR__, 4),
-        );
     }
 
     /**
@@ -82,18 +75,8 @@ final class ConsumerSupervisor
      */
     public function launch(string $transportName, int $instanceId = 0): void
     {
-        $cwd = getcwd();
-
-        if (false === $cwd) {
-            $this->logger->error('Cannot launch messenger consumer: no current working directory', [
-                'transport' => $transportName,
-                'instance' => $instanceId,
-            ]);
-
-            return;
-        }
-
-        $appCommand = $this->executableLocator->command();
+        $cwd = $this->runtimeConfig->runtimeCwd();
+        $appCommand = $this->runtimeConfig->executableCommand();
 
         try {
             $process = new Process(
