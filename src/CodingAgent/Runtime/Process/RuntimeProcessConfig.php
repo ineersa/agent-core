@@ -24,16 +24,10 @@ final class RuntimeProcessConfig
         private readonly AppExecutableLocator $executableLocator,
         ?string $runtimeCwd = null,
     ) {
-        // Resolve runtime working directory from injected value (container
-        // parameter %app.cwd%) or fall back to actual getcwd(). The fallback
-        // covers the bootstrap boundary where the container is not yet
-        // available (e.g. tests constructing this manually, or PHP 8.4+
-        // getcwd() returning the kernel project dir from compile-time).
-        // Resolve runtime working directory from injected value (container
-        // parameter %app.cwd%) or fall back to actual getcwd(). The fallback
-        // covers the bootstrap boundary where the container is not yet
-        // available (e.g. tests constructing this manually, or PHP 8.4+
-        // getcwd() returning the kernel project dir from compile-time).
+        // Resolve runtime working directory from the injected %app.cwd%
+        // container parameter or fall back to getcwd() for the bootstrap
+        // boundary where the container is not yet available (e.g. tests,
+        // or PHP 8.4+ compile-time resolution).
         if (null !== $runtimeCwd) {
             $this->runtimeCwd = $runtimeCwd;
         } else {
