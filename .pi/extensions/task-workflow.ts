@@ -155,19 +155,45 @@ async function runCastorCheckGate(
 	gateDir: string,
 	timeoutSeconds: number,
 	signal?: AbortSignal,
-): Promise<{ passed: boolean; output: string; code: number }> {
+): Promise<{ passed: boolean; output: string; code: number; label: string }> {
 	const timeout = validateCastorTimeout(timeoutSeconds);
-	const killAfter = Math.min(15, Math.max(5, Math.floor(timeout * 0.1)));
+	const killAfter = 15;
 	const execTimeoutMs = (timeout + killAfter + 30) * 1000;
+
+	// Check for required commands
+	for (const cmd of ["timeout", "castor"]) {
+		const which = await run(pi, "which", [cmd], gateDir, signal);
+		if (which.code !== 0) {
+			return {
+				passed: false,
+				output: `Required command not found: ${cmd}`,
+				code: 127,
+				label: "failed",
+			};
+		}
+	}
 
 	const result = await run(pi, "timeout", [`--kill-after=${killAfter}s`, `${timeout}s`, "env", "LLM_MODE=true", "castor", "check"], gateDir, signal, execTimeoutMs);
 
-	const killed = result.killed || result.code === 124 || result.code === 137;
+	const isTimeout = result.code === 124 || result.code === 137;
+	const killed = result.killed ?? false;
+
+	let label: string;
+	if (isTimeout) {
+		label = "timed out";
+	} else if (killed) {
+		label = "aborted";
+	} else if (result.code !== 0) {
+		label = "failed";
+	} else {
+		label = "passed";
+	}
 
 	return {
-		passed: !killed && result.code === 0,
+		passed: !killed && !isTimeout && result.code === 0,
 		output: result.stdout + "\n" + result.stderr,
-		code: killed ? 124 : result.code,
+		code: result.code,
+		label,
 	};
 }
 
@@ -266,12 +292,7 @@ function renderTask(title: string, body?: string, acceptance?: string[]): string
 		"PR Status:",
 		"Started:",
 		"Completed:",
-		"Castor Check Status:",
-		"Castor Check Commit:",
-		"Castor Check Command:",
-		"Castor Check Timeout:",
-		"Castor Check Completed:",
-		"Castor Check Output SHA256:",
+
 		"",
 		"## Work log",
 		"- Created: " + new Date().toISOString(),
@@ -662,13 +683,20 @@ export default function (pi: ExtensionAPI) {
 						throw new Error("Task has no Branch metadata. Was it moved to IN-PROGRESS via move_task?");
 					}
 
-					// Step 1: verify worktree is clean
+					// Pre-check: worktree must exist
 					const worktree = task.worktree;
-					if (worktree && existsSync(worktree)) {
-						const wtStatus = await gitOk(pi, worktree, ["status", "--porcelain"], signal);
-						if (wtStatus.stdout.trim() !== "") {
-							throw new Error(`Worktree has uncommitted changes; commit them before moving to CODE-REVIEW.\n${worktree}\n${wtStatus.stdout}`);
-						}
+					if (!worktree || !existsSync(worktree)) {
+						throw new Error(
+							`Task worktree is missing or does not exist. Cannot run quality gate or push without a worktree.\n` +
+							`Worktree: ${worktree || "(not set)"}\n` +
+							`Claim the task with move_task(to="IN-PROGRESS") to create a worktree first.`,
+						);
+					}
+
+					// Step 1: verify worktree is clean
+					const wtStatus = await gitOk(pi, worktree, ["status", "--porcelain"], signal);
+					if (wtStatus.stdout.trim() !== "") {
+						throw new Error(`Worktree has uncommitted changes; commit them before moving to CODE-REVIEW.\n${worktree}\n${wtStatus.stdout}`);
 					}
 
 					// Step 2: Castor quality gate
@@ -689,21 +717,19 @@ export default function (pi: ExtensionAPI) {
 						text = updateField(text, "Castor Check Completed", new Date().toISOString());
 						text = updateField(text, "Castor Check Output SHA256", "");
 					} else {
-						const gateDir = worktree && existsSync(worktree) ? worktree : root;
-						const preHead = await currentHead(pi, gateDir, signal);
+						const preHead = await currentHead(pi, worktree, signal);
 
-						const gateResult = await runCastorCheckGate(pi, gateDir, castorTimeout, signal);
+						const gateResult = await runCastorCheckGate(pi, worktree, castorTimeout, signal);
 
 						if (!gateResult.passed) {
-							const label = gateResult.code === 124 ? "timed out" : "failed";
 							throw new Error(
-								`Castor quality gate ${label} (exit code ${gateResult.code}). Task remains IN-PROGRESS.\n\n` +
+								`Castor quality gate ${gateResult.label} (exit code ${gateResult.code}). Task remains IN-PROGRESS.\n\n` +
 								tailForError(gateResult.output, 40),
 							);
 						}
 
 						// Verify no changes during gate execution
-						const postHead = await currentHead(pi, gateDir, signal);
+						const postHead = await currentHead(pi, worktree, signal);
 						if (preHead !== postHead) {
 							throw new Error(
 								`Castor quality gate passed but HEAD changed during execution (${preHead.slice(0, 12)} → ${postHead.slice(0, 12)}).\n` +
@@ -711,14 +737,12 @@ export default function (pi: ExtensionAPI) {
 							);
 						}
 
-						if (worktree && existsSync(worktree)) {
-							const postStatus = await gitOk(pi, worktree, ["status", "--porcelain"], signal);
-							if (postStatus.stdout.trim() !== "") {
-								throw new Error(
-									`Castor quality gate passed but worktree became dirty during execution.\n` +
-									`Aborting CODE-REVIEW transition.\n${worktree}\n${postStatus.stdout}`,
-								);
-							}
+						const postStatus = await gitOk(pi, worktree, ["status", "--porcelain"], signal);
+						if (postStatus.stdout.trim() !== "") {
+							throw new Error(
+								`Castor quality gate passed but worktree became dirty during execution.\n` +
+								`Aborting CODE-REVIEW transition.\n${worktree}\n${postStatus.stdout}`,
+							);
 						}
 
 						// Record commit-bound receipt
