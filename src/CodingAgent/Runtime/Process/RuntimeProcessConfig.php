@@ -9,11 +9,11 @@ namespace Ineersa\CodingAgent\Runtime\Process;
  * for spawning controller and messenger consumer subprocesses.
  *
  * Provides the app executable command/path (from AppExecutableLocator)
- * and the canonical runtime CWD (from %%app.cwd%% / HATFIELD_CWD) so that
+ * and the canonical runtime CWD (from %app.cwd% / HATFIELD_CWD) so that
  * subprocess-spawning code never needs ambient getcwd() or fallback
  * SourceTreeExecutableLocator construction with dirname(__DIR__, 4).
  *
- * $runtimeCwd must be injected from %%app.cwd%% in production (via
+ * $runtimeCwd must be injected from %app.cwd% in production (via
  * services.yaml); the constructor does not fall back to getcwd().
  *
  * Future PHAR packaging only needs a different AppExecutableLocator
@@ -26,7 +26,7 @@ final class RuntimeProcessConfig
         private readonly string $runtimeCwd = '',
     ) {
         if ('' === $this->runtimeCwd) {
-            throw new \InvalidArgumentException('RuntimeProcessConfig requires a non-empty $runtimeCwd. Use %%app.cwd%% in DI configuration.');
+            throw new \InvalidArgumentException('RuntimeProcessConfig requires a non-empty $runtimeCwd. Use %app.cwd% in DI configuration.');
         }
     }
 

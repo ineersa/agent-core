@@ -35,10 +35,10 @@ use Symfony\Component\Yaml\Yaml;
  *    whole-list replace is intended.
  *
  * Path resolution:
- *  - %%kernel.project_dir%% → app install directory (via SettingsPathResolver::$appRoot)
+ *  - %kernel.project_dir% → app install directory (via SettingsPathResolver::$appRoot)
  *  - ~ → home directory
  *  - Relative paths resolve against the canonical runtime cwd passed to
- *    {@see load()}, which comes from the %%app.cwd%% container parameter
+ *    {@see load()}, which comes from the %app.cwd% container parameter
  *    (resolved from HATFIELD_CWD or kernel.project_dir).
  */
 final class AppConfigLoader
@@ -53,12 +53,16 @@ final class AppConfigLoader
      *
      * @param string $defaultsPath Path to built-in defaults YAML
      * @param string $cwd          Canonical runtime working directory
-     *                             (from %%app.cwd%% / HATFIELD_CWD)
+     *                             (from %app.cwd% / HATFIELD_CWD)
      *
      * @return array<string, mixed>
      */
     public function load(string $defaultsPath, string $cwd): array
     {
+        if ('' === $cwd) {
+            throw new \InvalidArgumentException(\sprintf('%s::load() requires a non-empty $cwd. Pass %s from the container or an explicit absolute path.', self::class, '%app.cwd%'));
+        }
+
         // Layer 1: Built-in defaults (shipped with the app)
         $merged = $this->loadYamlFile($defaultsPath);
 

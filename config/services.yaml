@@ -82,7 +82,7 @@ services:
 
   # AppConfig is a value object, not an autowireable service.
   # The container uses the fromContainer() factory to construct it.
-  # Canonical runtime cwd is injected from %%app.cwd%% rather than relying
+  # Canonical runtime cwd is injected from %app.cwd% rather than relying
   # on ambient getcwd(), ensuring all config services use the same canonical
   # runtime working directory (resolved from HATFIELD_CWD or kernel.project_dir).
   Ineersa\CodingAgent\Config\AppConfig:

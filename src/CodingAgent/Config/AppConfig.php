@@ -42,7 +42,7 @@ final class AppConfig
         public array $raw = [],
         public ?HatfieldModelCatalog $catalog = null,
         /**
-         * Canonical runtime working directory injected from %%app.cwd%%,
+         * Canonical runtime working directory injected from %app.cwd%,
          * never from ambient getcwd(). Set during DI factory construction.
          */
         public string $cwd = '',
@@ -54,19 +54,17 @@ final class AppConfig
      * using Symfony Serializer denormalization for known sections.
      *
      * The canonical runtime cwd is injected from the container parameter
-     * %%app.cwd%% (which is resolved from HATFIELD_CWD or kernel.project_dir),
+     * %app.cwd% (which is resolved from HATFIELD_CWD or kernel.project_dir),
      * not from ambient getcwd(). This ensures the cwd is consistent across
      * all services regardless of when they are constructed.
      *
      * Used by the Symfony container via services.yaml factory definition.
-     *
-     * @throws \RuntimeException when the current working directory is unavailable
      */
     public static function fromContainer(
         AppConfigLoader $loader,
         AppResourceLocator $resources,
         DenormalizerInterface $denormalizer,
-        string $cwd = '',
+        string $cwd,
     ): self {
         $data = $loader->load($resources->getDefaultsPath(), $cwd);
         $ai = AiConfig::optionalFromArray($data);

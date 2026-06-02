@@ -49,7 +49,7 @@ class Kernel extends BaseKernel
         // changed by the early --cwd handling above. When the kernel is
         // booted directly (e.g. tests), this ensures HATFIELD_CWD is set
         // to the actual process CWD even without the bin/console bootstrap.
-        // Service-level code must use %%app.cwd%% (from this env/parameter),
+        // Service-level code must use %app.cwd% (from this env/parameter),
         // not ambient getcwd().
         $cwd = getcwd();
         if (false !== $cwd) {
