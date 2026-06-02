@@ -104,10 +104,15 @@ final class LlamaCppSmokeTest extends KernelTestCase
 
     protected function tearDown(): void
     {
+        // Shut down kernel before removing temp directory so no
+        // open DB/session resources remain when the filesystem
+        // cleanup runs.
+        self::ensureKernelShutdown();
+
         if (isset($this->tempDir) && '' !== $this->tempDir) {
             $this->removeDir($this->tempDir);
         }
-        self::ensureKernelShutdown();
+
         parent::tearDown();
     }
 

@@ -17,6 +17,9 @@ use PHPUnit\Framework\TestCase;
  *
  * After capture, sends Ctrl+D to exit the interactive TUI cleanly.
  *
+ * Runs in an isolated project directory under var/tmp/tui-e2e-*
+ * so it does NOT hit the stale project-root .hatfield/messenger.sqlite.
+ *
  * @group tui-e2e
  */
 #[Group('tui-e2e')]
@@ -24,6 +27,8 @@ final class TuiStartupSnapshotTest extends TestCase
 {
     private TmuxHarness $tmux;
     private string $goldenPath;
+    private string $projectRoot;
+    private string $testProjectDir;
 
     protected function setUp(): void
     {
@@ -32,13 +37,18 @@ final class TuiStartupSnapshotTest extends TestCase
         }
 
         $this->tmux = new TmuxHarness();
-        $this->goldenPath = __DIR__.'/../Snapshots/startup-120x40.txt';
+        $this->projectRoot = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
+        $this->goldenPath = $this->projectRoot.'/tests/Tui/Snapshots/startup-120x40.txt';
+        $this->testProjectDir = $this->createIsolatedProjectDir();
     }
 
     protected function tearDown(): void
     {
         if (isset($this->tmux)) {
             $this->tmux->killAll();
+        }
+        if (isset($this->testProjectDir)) {
+            $this->removeDir($this->testProjectDir);
         }
     }
 
@@ -53,8 +63,9 @@ final class TuiStartupSnapshotTest extends TestCase
     public function testStartupLayoutMatchesGoldenSnapshot(): void
     {
         $pane = $this->tmux->startDetached(
-            command: 'php bin/console agent --model=llama_cpp_test/test --prompt="hello from tmux e2e"; echo; echo "── TUI exited ──"; exec sleep 3600',
+            command: $this->agentCommand(),
             prefix: 'hatfield-startup',
+            cwd: $this->testProjectDir,
         );
 
         // Wait for the TUI to render — looking for the Hatfield logo
@@ -114,8 +125,9 @@ final class TuiStartupSnapshotTest extends TestCase
     public function testStartupContainsExpectedElements(): void
     {
         $pane = $this->tmux->startDetached(
-            command: 'php bin/console agent --model=llama_cpp_test/test --prompt="hello from tmux e2e"; echo; echo "── TUI exited ──"; exec sleep 3600',
+            command: $this->agentCommand(),
             prefix: 'hatfield-startup-elements',
+            cwd: $this->testProjectDir,
         );
 
         $capture = $this->tmux->waitForCaptureContains(
@@ -142,6 +154,61 @@ final class TuiStartupSnapshotTest extends TestCase
         self::assertStringContainsString('Welcome', $capture, 'Welcome message missing');
     }
     // ── helpers ────────────────────────────────────────────
+
+    private function agentCommand(): string
+    {
+        return \sprintf(
+            'APP_ENV=dev HOME=%s %s %s agent --model=llama_cpp_test/test --prompt="hello from tmux e2e" 2>&1; echo; echo "── TUI exited ──"; exec sleep 3600',
+            \escapeshellarg($this->testProjectDir.'/home'),
+            \escapeshellarg(\PHP_BINARY),
+            \escapeshellarg($this->projectRoot.'/bin/console'),
+        );
+    }
+
+    private function createIsolatedProjectDir(): string
+    {
+        $dir = \sprintf('%s/var/tmp/tui-e2e-%s', $this->projectRoot, \bin2hex(\random_bytes(6)));
+        @\mkdir($dir.'/.hatfield', 0o777, true);
+        @\mkdir($dir.'/home/.hatfield', 0o777, true);
+
+        $projectSettings = $this->projectRoot.'/.hatfield/settings.yaml';
+        if (\is_readable($projectSettings)) {
+            $settings = (string) \file_get_contents($projectSettings);
+            $settings = \preg_replace(
+                '/^ai:\n/m',
+                "ai:\n    default_model: llama_cpp_test/test\n    default_reasoning: off\n",
+                $settings,
+                1,
+            ) ?? $settings;
+            \file_put_contents($dir.'/.hatfield/settings.yaml', $settings);
+            \file_put_contents($dir.'/home/.hatfield/settings.yaml', $settings);
+        }
+
+        return $dir;
+    }
+
+    private function removeDir(string $dir): void
+    {
+        if (!\is_dir($dir)) {
+            return;
+        }
+
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST,
+        );
+
+        foreach ($iterator as $file) {
+            if ($file->isDir()) {
+                \rmdir($file->getPathname());
+            } else {
+                @\chmod($file->getPathname(), 0o644);
+                \unlink($file->getPathname());
+            }
+        }
+
+        \rmdir($dir);
+    }
 
     private function shouldUpdateSnapshots(): bool
     {

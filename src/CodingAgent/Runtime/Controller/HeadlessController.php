@@ -190,9 +190,12 @@ final class HeadlessController
             }
 
             // Snapshot active run IDs to avoid modification during iteration.
+            // PHP auto-casts numeric-string array keys to ints, so cast back
+            // to string before passing to string-typed methods like events().
             $activeRuns = array_keys($this->runEventCursors);
 
             foreach ($activeRuns as $runId) {
+                $runId = (string) $runId;
                 $cursor = $this->runEventCursors[$runId] ?? null;
                 if (null === $cursor) {
                     continue; // Run was cleaned up during iteration.
