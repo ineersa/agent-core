@@ -35,9 +35,11 @@ use Symfony\Component\Yaml\Yaml;
  *    whole-list replace is intended.
  *
  * Path resolution:
- *  - %kernel.project_dir% → app install directory (via SettingsPathResolver::$appRoot)
+ *  - %%kernel.project_dir%% → app install directory (via SettingsPathResolver::$appRoot)
  *  - ~ → home directory
- *  - Relative paths resolve against the active project directory (getcwd())
+ *  - Relative paths resolve against the canonical runtime cwd passed to
+ *    {@see load()}, which comes from the %%app.cwd%% container parameter
+ *    (resolved from HATFIELD_CWD or kernel.project_dir).
  */
 final class AppConfigLoader
 {
@@ -50,13 +52,13 @@ final class AppConfigLoader
      * Load and merge all settings layers into a single resolved config.
      *
      * @param string $defaultsPath Path to built-in defaults YAML
+     * @param string $cwd          Canonical runtime working directory
+     *                             (from %%app.cwd%% / HATFIELD_CWD)
      *
      * @return array<string, mixed>
      */
-    public function load(string $defaultsPath): array
+    public function load(string $defaultsPath, string $cwd): array
     {
-        $cwd = self::resolveCurrentWorkingDirectory();
-
         // Layer 1: Built-in defaults (shipped with the app)
         $merged = $this->loadYamlFile($defaultsPath);
 
@@ -82,7 +84,7 @@ final class AppConfigLoader
             $merged = $this->overlayConfig($merged, $projectSettings);
         }
 
-        return $this->resolveConfigPaths($merged);
+        return $this->resolveConfigPaths($merged, $cwd);
     }
 
     /**
@@ -134,10 +136,8 @@ final class AppConfigLoader
      *
      * @return array<string, mixed>
      */
-    private function resolveConfigPaths(array $data): array
+    private function resolveConfigPaths(array $data, string $cwd): array
     {
-        $cwd = self::resolveCurrentWorkingDirectory();
-
         if (isset($data['tui']['theme_paths']) && \is_array($data['tui']['theme_paths'])) {
             $resolved = [];
             foreach ($data['tui']['theme_paths'] as $path) {
@@ -234,22 +234,5 @@ final class AppConfigLoader
         }
 
         copy($defaultsPath, $homeSettingsPath);
-    }
-
-    /**
-     * Throws early when the process has no working directory rather than
-     * silently falling back to "/" and producing broken paths downstream.
-     *
-     * @throws \RuntimeException
-     */
-    private static function resolveCurrentWorkingDirectory(): string
-    {
-        $cwd = getcwd();
-
-        if (false === $cwd) {
-            throw new \RuntimeException('No current working directory available.');
-        }
-
-        return $cwd;
     }
 }

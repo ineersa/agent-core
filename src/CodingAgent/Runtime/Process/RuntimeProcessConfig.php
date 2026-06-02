@@ -9,33 +9,24 @@ namespace Ineersa\CodingAgent\Runtime\Process;
  * for spawning controller and messenger consumer subprocesses.
  *
  * Provides the app executable command/path (from AppExecutableLocator)
- * and the canonical runtime CWD (from %app.cwd% / HATFIELD_CWD) so that
+ * and the canonical runtime CWD (from %%app.cwd%% / HATFIELD_CWD) so that
  * subprocess-spawning code never needs ambient getcwd() or fallback
  * SourceTreeExecutableLocator construction with dirname(__DIR__, 4).
+ *
+ * $runtimeCwd must be injected from %%app.cwd%% in production (via
+ * services.yaml); the constructor does not fall back to getcwd().
  *
  * Future PHAR packaging only needs a different AppExecutableLocator
  * implementation; this context class and all callers stay unchanged.
  */
 final class RuntimeProcessConfig
 {
-    private readonly string $runtimeCwd;
-
     public function __construct(
         private readonly AppExecutableLocator $executableLocator,
-        ?string $runtimeCwd = null,
+        private readonly string $runtimeCwd = '',
     ) {
-        // Resolve runtime working directory from the injected %app.cwd%
-        // container parameter or fall back to getcwd() for the bootstrap
-        // boundary where the container is not yet available (e.g. tests,
-        // or PHP 8.4+ compile-time resolution).
-        if (null !== $runtimeCwd) {
-            $this->runtimeCwd = $runtimeCwd;
-        } else {
-            $cwd = getcwd();
-            if (false === $cwd) {
-                throw new \RuntimeException('No current working directory available. Set $runtimeCwd explicitly or ensure getcwd() succeeds.');
-            }
-            $this->runtimeCwd = $cwd;
+        if ('' === $this->runtimeCwd) {
+            throw new \InvalidArgumentException('RuntimeProcessConfig requires a non-empty $runtimeCwd. Use %%app.cwd%% in DI configuration.');
         }
     }
 
@@ -49,8 +40,9 @@ final class RuntimeProcessConfig
 
     /**
      * Command array to run the app executable, e.g. [PHP_BINARY, '/path/to/bin/console'].
+     *
+     * @return list<string>
      */
-    /** @return list<string> */
     public function executableCommand(): array
     {
         return $this->executableLocator->command();
