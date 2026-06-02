@@ -26,7 +26,7 @@ final class ProjectDir
         if (null === self::$dir) {
             // Instantiate the kernel without booting — getProjectDir()
             // walks up from Kernel.php until it finds composer.json.
-            self::$dir = (new Kernel('test', true))->getProjectDir();
+            self::$dir = (new Kernel('test', false))->getProjectDir();
         }
 
         return self::$dir;

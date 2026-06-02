@@ -54,7 +54,7 @@ class ModelSelectionServiceTest extends KernelTestCase
         // Boot kernel to get EntityManager from test container.
         // Test DB is a fixed path via config/packages/test/doctrine.yaml;
         // DAMA/DoctrineTestBundle wraps each test in a transaction.
-        self::bootKernel(['environment' => 'test', 'debug' => true]);
+        self::bootKernel(['environment' => 'test', 'debug' => false]);
         $container = static::getContainer();
         $this->entityManager = $container->get('doctrine.orm.default_entity_manager');
 
@@ -89,6 +89,11 @@ class ModelSelectionServiceTest extends KernelTestCase
         $this->removeDir($this->tempDir);
         self::ensureKernelShutdown();
         parent::tearDown();
+        // Pop the exception handler that FrameworkBundle::boot() registered
+        // during kernel boot/shutdown. Parent tearDown calls
+        // ensureKernelShutdown() which may re-boot and re-register, so
+        // this must run after parent::tearDown().
+        restore_exception_handler();
     }
 
     private function removeDir(string $dir): void

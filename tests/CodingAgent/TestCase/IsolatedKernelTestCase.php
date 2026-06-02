@@ -59,13 +59,14 @@ abstract class IsolatedKernelTestCase extends KernelTestCase
 
         // Required env vars for container compilation.
         $_ENV['APP_ENV'] = 'test';
-        $_ENV['APP_DEBUG'] = '1';
+        $_ENV['APP_DEBUG'] = '0';
         $_ENV['APP_SECRET'] = 'test-secret';
         $_ENV['HATFIELD_CWD'] = $this->isolatedCwd;
         putenv('HATFIELD_CWD='.$this->isolatedCwd);
 
-        // Boot the Symfony kernel in test environment.
-        self::bootKernel(['environment' => 'test', 'debug' => true]);
+        // Boot without debug mode so Symfony ErrorHandler does not leave
+        // exception handlers on PHPUnit's stack and mark tests risky.
+        self::bootKernel(['environment' => 'test', 'debug' => false]);
     }
 
     /**
@@ -108,6 +109,12 @@ abstract class IsolatedKernelTestCase extends KernelTestCase
         }
 
         parent::tearDown();
+
+        // Pop the exception handler that FrameworkBundle::boot() registered
+        // during kernel boot/shutdown. KernelTestCase::tearDown() calls
+        // ensureKernelShutdown() which may re-boot the kernel and re-register
+        // the handler, so we must restore after parent::tearDown().
+        restore_exception_handler();
     }
 
     // ─── Utility ─────────────────────────────────────────────────────

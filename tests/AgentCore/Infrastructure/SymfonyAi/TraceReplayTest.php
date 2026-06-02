@@ -62,7 +62,10 @@ final class TraceReplayTest extends KernelTestCase
 {
     protected static function createKernel(array $options = []): \Ineersa\CodingAgent\Kernel
     {
-        return new \Ineersa\CodingAgent\Kernel('test', true);
+        $env = $options['environment'] ?? 'test';
+        $debug = (bool) ($options['debug'] ?? false);
+
+        return new \Ineersa\CodingAgent\Kernel($env, $debug);
     }
 
     private string $tempDir;
@@ -79,7 +82,7 @@ final class TraceReplayTest extends KernelTestCase
         mkdir($this->tempDir.'/project/.hatfield/sessions', 0777, true);
         file_put_contents($this->homeDir.'/.hatfield/settings.yaml', "tui:\n    theme: cyberpunk\n");
 
-        self::bootKernel(['environment' => 'test', 'debug' => true]);
+        self::bootKernel(['environment' => 'test', 'debug' => false]);
         $container = static::getContainer();
         $this->entityManager = $container->get('doctrine.orm.default_entity_manager');
         $hatfieldSessionStore = new HatfieldSessionStore(
@@ -96,9 +99,15 @@ final class TraceReplayTest extends KernelTestCase
 
     protected function tearDown(): void
     {
-        $this->removeDir($this->tempDir);
-        self::ensureKernelShutdown();
+        // Let KernelTestCase::tearDown() handle kernel shutdown.
+        // It calls ensureKernelShutdown() which may re-boot the kernel,
+        // which re-registers the exception handler.
         parent::tearDown();
+        // Pop the exception handler that FrameworkBundle::boot() registered
+        // during kernel boot/shutdown. The error handler is automatically
+        // popped by ErrorHandler::register() because $replace=false.
+        restore_exception_handler();
+        $this->removeDir($this->tempDir);
     }
 
     // ──────────────────────────────────────────────
