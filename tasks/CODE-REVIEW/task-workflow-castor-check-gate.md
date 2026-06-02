@@ -75,3 +75,23 @@ Completed:
 - PR already exists: https://github.com/ineersa/agent-core/pull/83
 - Validation: reviewer subagent => APPROVED at HEAD 8c999c40; LLM_MODE=true castor check => PASS all steps: deptrac, test, test:controller, test:llm-real, test:tui, phpstan, cs-check, quality ok; castor test => PASS (1462 tests, 4273 assertions); castor deptrac => PASS (0 violations); castor phpstan => PASS (0 errors); castor cs-check => PASS (0 files fixed)
 - Summary: Updated PR #83 branch with auto-commit/auto-push task-file mutation support plus reviewer fixes. New behavior: create_task/move_task/update_task commit exact touched `tasks/...` paths after mutation, verify no unrelated staged files are included, auto-push when upstream exists, and fail loudly for create_task/move_task push failures so checkout-ahead state is visible. create_task now participates in the same mutation lock as move/update; empty path arrays are a no-op; timeout wording clarifies 240s is the full castor check soft timeout and `--kill-after=15s` is only kill grace.
+
+## Task workflow update - 2026-06-02T23:08:49.067Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: Pulled PR #83 back from CODE-REVIEW for an additional approved ergonomics change: add project prompt templates named with `/task-*` prefix so workflow commands are easy to find by prefix. Planned templates: `/task-start`, `/task-finish`, `/task-review-iterate`, `/task-done`. These are soft prompts complementing the hard gates in `.pi/extensions/task-workflow.ts`.
+
+## Task workflow update - 2026-06-02T23:14:31.671Z
+- Validation: LLM_MODE=true castor check at 05d627cd => PASS: deptrac ok; test ok (1462 tests, 4273 assertions); test:controller ok; test:llm-real ok; test:tui ok (5 tests, 18 assertions); phpstan ok; cs-check ok; quality ok; reviewer subagent at 05d627cd => REQUEST CHANGES for prompt template wording/accuracy
+- Summary: Prompt templates commit was amended locally to 05d627cd (typo fix) and parent ran reviewer + full check. Full `LLM_MODE=true castor check` passed at 05d627cd. Reviewer subagent returned REQUEST CHANGES on prompt template accuracy: remove PR #83-specific wording; avoid duplicate full Castor check in `/task-finish` because move_task already gates; replace flake-normalizing wording with explicit failure analysis/skipCastorCheckReason; clarify `/task-done` branch deletion default; add explicit task-file/worktree metadata retrieval in `/task-review-iterate`. Need small follow-up prompt-only fix before pushing.
+
+## Task workflow update - 2026-06-02T23:19:54.300Z
+- Validation: Prompt-only validation: git diff --check HEAD~1..HEAD PASS; Fork validation before final wording amend: git diff --check PASS; castor cs-check PASS (0 files fixed); Previous full validation at prompt commit 05d627cd: LLM_MODE=true castor check PASS all steps; Skipped rerunning full castor check after prompt-only final wording edit per user instruction; no PHP/TS/extension code changed
+- Summary: Prompt-template follow-up fork qtl33omv2emj completed and parent amended tiny wording typo in task-done prompt. Current worktree HEAD is 1e33bd88. Prompt fixes address reviewer comments: no PR #83 wording, no duplicate full castor check in `/task-finish`, gate failure handling requires analysis and explicit skipCastorCheckReason, `/task-done` cleanup defaults are accurate, `/task-review-iterate` reads task metadata/worktree, `/task-start` says typically in TODO. User explicitly approved skipping another full castor check because only prompt Markdown changed after previous full pass.
+
+## Task workflow update - 2026-06-02T23:20:05.722Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/task-workflow-castor-check-gate to origin.
+- branch 'task/task-workflow-castor-check-gate' set up to track 'origin/task/task-workflow-castor-check-gate'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/83
+- Validation: Prompt-only validation: git diff --check HEAD~1..HEAD PASS; Fork validation: git diff --check PASS; castor cs-check PASS (0 files fixed); Previous full validation before final prompt-only wording changes: LLM_MODE=true castor check PASS all steps; Skipped final full castor check per user instruction because only Markdown prompt templates changed
+- Summary: Updated PR #83 branch with `/task-*` prompt templates plus final prompt wording fixes. Templates added: `/task-start`, `/task-finish`, `/task-review-iterate`, `/task-done` under `.pi/prompts/`. They provide soft workflow guidance for claiming tasks, finishing tasks, iterating PR review comments, and moving approved work to DONE, complementing the hard Castor gate and task metadata auto-commit behavior in the extension.
