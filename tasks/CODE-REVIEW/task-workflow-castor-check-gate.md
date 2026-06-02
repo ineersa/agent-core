@@ -16,7 +16,7 @@ Update `.pi/extensions/task-workflow.ts` so moving a task from IN-PROGRESS to CO
 Status: CODE-REVIEW
 Branch: task/task-workflow-castor-check-gate
 Worktree: /home/ineersa/projects/agent-core-worktrees/task-workflow-castor-check-gate
-Fork run: qj8usxjrkcvn
+Fork run: 9cu31535t48h
 PR URL: https://github.com/ineersa/agent-core/pull/83
 PR Status: open
 Started: 2026-06-02T21:36:06.120Z
@@ -95,3 +95,27 @@ Completed:
 - PR already exists: https://github.com/ineersa/agent-core/pull/83
 - Validation: Prompt-only validation: git diff --check HEAD~1..HEAD PASS; Fork validation: git diff --check PASS; castor cs-check PASS (0 files fixed); Previous full validation before final prompt-only wording changes: LLM_MODE=true castor check PASS all steps; Skipped final full castor check per user instruction because only Markdown prompt templates changed
 - Summary: Updated PR #83 branch with `/task-*` prompt templates plus final prompt wording fixes. Templates added: `/task-start`, `/task-finish`, `/task-review-iterate`, `/task-done` under `.pi/prompts/`. They provide soft workflow guidance for claiming tasks, finishing tasks, iterating PR review comments, and moving approved work to DONE, complementing the hard Castor gate and task metadata auto-commit behavior in the extension.
+
+## Task workflow update - 2026-06-02T23:28:46.470Z
+- Recorded fork run: z6cbc79kvti2
+- Summary: Additional review change requested while PR #83 is in code review: launched fork z6cbc79kvti2 to stabilize TUI multiturn smoke by changing prompts to explicit chat-only responses and forcing Hatfield SafeGuard extension enabled with blocking defaults in isolated TUI E2E settings. Scope limited to tests/Tui/E2E/TuiAgentSmokeTest.php; validation requested via castor test:llm-real, castor test:tui, and castor cs-check.
+
+## Task workflow update - 2026-06-02T23:29:28.666Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+
+## Task workflow update - 2026-06-02T23:43:09.162Z
+- Recorded fork run: 9cu31535t48h
+- Validation: fork reported: castor cs-check PASS; fork reported: castor test:controller PASS (1 test, 7 assertions); fork reported: castor test:tui PASS (5 tests, 18 assertions); fork reported: castor test:llm-real PASS (7 tests, 40 assertions); parent spot-check: branch clean, HEAD fd0fd787 ahead of origin by 1; diff touches only tests/CodingAgent/Runtime/Controller/E2E/ControllerE2eTestCase.php and tests/Tui/E2E/TuiStartupSnapshotTest.php
+- Summary: Fork 9cu31535t48h completed commit fd0fd787: forced Hatfield SafeGuard enabled with blocking defaults in all agent-runtime E2E test-generated settings. Updated TuiStartupSnapshotTest to use Symfony YAML parse/merge/dump and added SafeGuard settings to ControllerE2eTestCase heredoc; TuiAgentSmokeTest already had explicit SafeGuard from prior commit. Preserved existing reasoning behavior per helper (TuiStartupSnapshotTest and ControllerE2eTestCase keep default_reasoning: off; TuiAgentSmokeTest remains as previously reverted).
+
+## Task workflow update - 2026-06-02T23:56:52.043Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Pushed task/task-workflow-castor-check-gate to origin.
+- branch 'task/task-workflow-castor-check-gate' set up to track 'origin/task/task-workflow-castor-check-gate'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/83
+- Validation: castor cs-check PASS; fork 9cu31535t48h reported castor test:controller PASS, castor test:tui PASS, castor test:llm-real PASS for SafeGuard test-setting changes
+- Summary: Addressed PR #83 review comments: removed Castor gate bypass support entirely from task-workflow.ts, renamed /task-finish prompt to /task-to-pr, revised workflow prompts per review (task-start no plan-file/double-validation/waiting guidance, task-review-iterate moves PR tasks back to IN-PROGRESS before implementation and passes exact fork instructions, task-done checks for surviving worktree cleanup), and added explicit Hatfield SafeGuard defaults in agent-runtime E2E test settings.
+
+## Task workflow update - 2026-06-02T23:58:13.566Z
+- Validation: LLM_MODE=true castor check PASS on /home/ineersa/projects/agent-core-worktrees/task-workflow-castor-check-gate: deptrac ok; test ok (1462 tests, 4273 assertions); test:controller ok (1 test, 7 assertions); test:llm-real ok (7 tests, 40 assertions); test:tui ok (5 tests, 18 assertions); phpstan ok; cs-check ok; quality ok
+- Summary: Post-review validation after pushing commits fd0fd787 and a7081f50: full Castor gate passed manually because the currently loaded move_task implementation did not print a gate receipt for the pushed branch.
