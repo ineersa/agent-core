@@ -25,6 +25,7 @@ final class ControllerCommandEvent extends Event
     public function __construct(
         public readonly RuntimeCommand $command,
         private readonly mixed $emit,
+        public readonly string $sessionId = '',
     ) {
     }
 

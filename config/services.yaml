@@ -82,12 +82,16 @@ services:
 
   # AppConfig is a value object, not an autowireable service.
   # The container uses the fromContainer() factory to construct it.
+  # Canonical runtime cwd is injected from %app.cwd% rather than relying
+  # on ambient getcwd(), ensuring all config services use the same canonical
+  # runtime working directory (resolved from HATFIELD_CWD or kernel.project_dir).
   Ineersa\CodingAgent\Config\AppConfig:
     factory: ['Ineersa\CodingAgent\Config\AppConfig', 'fromContainer']
     arguments:
-      - '@Ineersa\CodingAgent\Config\AppConfigLoader'
-      - '@Ineersa\CodingAgent\Config\AppResourceLocator'
-      - '@Symfony\Component\Serializer\SerializerInterface'
+      $loader: '@Ineersa\CodingAgent\Config\AppConfigLoader'
+      $resources: '@Ineersa\CodingAgent\Config\AppResourceLocator'
+      $denormalizer: '@Symfony\Component\Serializer\SerializerInterface'
+      $cwd: '%app.cwd%'
 
   # ─── Extension wiring ───
 
@@ -162,11 +166,12 @@ services:
       - registerShutdownHandler: []
 
   # Startup database migrator — runs built-in doctrine:migrations:migrate once on startup.
-  # Uses console.messenger.application (Symfony Console Application service) to invoke
-  # the built-in Doctrine Migrations command programmatically.
+  # Uses the doctrine_migrations.migrate_command service directly (not a full Console
+  # Application) so migration execution avoids recursive Application::doRun() that
+  # blocks controller/TUI startup when stdout is a pipe.
   Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator:
     arguments:
-      $consoleApplication: '@console.messenger.application'
+      $migrateCommand: '@doctrine_migrations.migrate_command'
 
   # CodingAgentImageCapabilityChecker — wraps HatfieldModelCatalog from AppConfig.
   Ineersa\CodingAgent\Tool\ImageProcessing\CodingAgentImageCapabilityChecker:
@@ -217,6 +222,24 @@ services:
     arguments:
       $sink: '@Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink'
       $stdoutSink: '@Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink'
+
+  # ─── App executable locator ───
+  # Resolves the agent binary independently of the runtime working directory,
+  # so messenger consumers and controller subprocesses always use the correct
+  # binary regardless of --cwd or Hatfield project CWD.
+  Ineersa\CodingAgent\Runtime\Process\SourceTreeExecutableLocator:
+    arguments:
+      $projectDir: '%kernel.project_dir%'
+
+  Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator:
+    alias: Ineersa\CodingAgent\Runtime\Process\SourceTreeExecutableLocator
+
+  # Centralized runtime process context for subprocess spawning.
+  # Injected into JsonlProcessAgentSessionClient and ConsumerSupervisor.
+  Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig:
+    arguments:
+      $executableLocator: '@Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator'
+      $runtimeCwd: '%app.cwd%'
 
   # ─── Controller event loop ───
 

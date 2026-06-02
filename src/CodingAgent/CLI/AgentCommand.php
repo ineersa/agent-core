@@ -102,6 +102,13 @@ final class AgentCommand
                     throw new \RuntimeException(\sprintf('Working directory does not exist: %s', $cwd));
                 }
                 chdir($cwd);
+
+                // Keep HATFIELD_CWD env var in sync with the resolved CWD so
+                // any service that reads it lazily (e.g. via %%env(HATFIELD_CWD)%%)
+                // gets the correct value even though Kernel::boot() already ran with
+                // the original CWD.
+                $_ENV['HATFIELD_CWD'] = $cwd;
+                putenv('HATFIELD_CWD='.$cwd);
             }
 
             // Populate skills config from CLI options before any session starts.
@@ -113,7 +120,7 @@ final class AgentCommand
             // Run pending database migrations once on agent startup.
             // StartupDatabaseMigrator is idempotent per process lifetime and
             // safe for concurrent controller+consumer processes.
-            // Runs built-in doctrine:migrations:migrate via Symfony Console Application.
+            // Runs built-in doctrine:migrations:migrate via the MigrateCommand service.
             // Running here ensures migrations complete before any
             // controller/TUI/headless path accesses the DB.
             if (null !== $this->startupDatabaseMigrator) {

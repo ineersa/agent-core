@@ -4,18 +4,18 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Migrations;
 
+use Doctrine\Migrations\Tools\Console\Command\MigrateCommand;
 use Psr\Log\LoggerInterface;
-use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\NullOutput;
 
 /**
  * Runs the built-in Doctrine Migrations migrate command once on agent startup.
  *
- * Uses the Symfony Console Application service (console.messenger.application)
- * to invoke the standard doctrine:migrations:migrate command programmatically.
- * This avoids reinventing migration execution — no custom DependencyFactory,
- * no manual MigrationPlanCalculator, no bespoke runner logic.
+ * Uses the doctrine_migrations.migrate_command service directly (instead of
+ * a full Console Application) to invoke the standard Doctrine Migrations
+ * command programmatically. This avoids the recursive Application::doRun()
+ * that previously blocked controller/TUI startup when stdout was a pipe.
  *
  * Safe for concurrent controller+consumer processes because the migration
  * command acquires a lock on the versions table during execution.
@@ -26,7 +26,7 @@ final class StartupDatabaseMigrator
     private bool $ran = false;
 
     public function __construct(
-        private readonly Application $consoleApplication,
+        private readonly MigrateCommand $migrateCommand,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -46,14 +46,13 @@ final class StartupDatabaseMigrator
 
         try {
             $input = new ArrayInput([
-                'command' => 'doctrine:migrations:migrate',
-                '--no-interaction' => true,
                 '--allow-no-migration' => true,
             ]);
+            $input->setInteractive(false);
 
             $output = new NullOutput();
 
-            $exitCode = $this->consoleApplication->doRun($input, $output);
+            $exitCode = $this->migrateCommand->run($input, $output);
 
             if (0 !== $exitCode) {
                 throw new \RuntimeException(\sprintf('Database migration command exited with code %d.', $exitCode));

@@ -39,7 +39,7 @@ final class TuiAgentSmokeTest extends TestCase
         }
 
         $this->tmux = new TmuxHarness();
-        $this->projectRoot = \realpath(__DIR__ . '/../../..');
+        $this->projectRoot = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
         $this->testProjectDir = $this->createIsolatedProjectDir();
         $this->snapshotDir = $this->testProjectDir . '/.hatfield/tmp/tui/smoke';
         @\mkdir($this->snapshotDir, 0o777, true);

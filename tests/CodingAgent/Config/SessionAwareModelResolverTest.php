@@ -39,7 +39,7 @@ final class SessionAwareModelResolverTest extends KernelTestCase
     {
         parent::setUp();
         
-        self::bootKernel(['environment' => 'test', 'debug' => true]);
+        self::bootKernel(['environment' => 'test', 'debug' => false]);
         $container = static::getContainer();
         $this->entityManager = $container->get('doctrine.orm.default_entity_manager');
         
@@ -55,6 +55,11 @@ final class SessionAwareModelResolverTest extends KernelTestCase
         $this->removeDir($this->tempDir);
         self::ensureKernelShutdown();
         parent::tearDown();
+        // Pop the exception handler that FrameworkBundle::boot() registered
+        // during kernel boot/shutdown. Parent tearDown calls
+        // ensureKernelShutdown() which may re-boot and re-register, so
+        // this must run after parent::tearDown().
+        restore_exception_handler();
     }
 
     public function testResolveReturnsModelFromSessionMetadata(): void

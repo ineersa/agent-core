@@ -69,10 +69,7 @@ abstract class ControllerE2eTestCase extends TestCase
             );
         }
 
-        $this->projectDir = \realpath(__DIR__.'/../../../../..');
-        if (false === $this->projectDir) {
-            throw new \RuntimeException('Cannot resolve project root.');
-        }
+        $this->projectDir = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
 
         $this->sessionId = substr(bin2hex(random_bytes(16)), 0, 12);
         $this->tempDir = $this->projectDir.'/var/tmp/'.$this->tempDirPrefix().'-'.uniqid('', true);
