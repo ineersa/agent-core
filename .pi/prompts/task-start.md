@@ -8,7 +8,7 @@ argument-hint: "<task>"
 Start a tracked task in the project task workflow:
 
 1. **Inspect task context**
-   - Use `task_list` to find the task file in `tasks/TODO/`.
+   - Use `task_list` to find the task file (typically in `tasks/TODO/`).
    - Read the task file to understand what it's about, its body, and acceptance criteria.
    - Read any docs, plans, or referenced artifacts the task body mentions.
 

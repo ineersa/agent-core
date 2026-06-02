@@ -9,6 +9,8 @@ Address code review feedback on a task PR:
 
 1. **Read all PR comments**
    - Use `gh pr view <number> --comments` or the task's PR URL from task metadata.
+   - Read the task file (usually under `tasks/CODE-REVIEW/`) to retrieve worktree
+     path, PR URL, and other metadata needed for the iteration.
    - Read every inline review comment — do not guess or summarize from memory.
    - Identify the task slug from the PR branch name (pattern: `task/<slug>`).
 

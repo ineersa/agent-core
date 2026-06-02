@@ -30,5 +30,7 @@ Complete a reviewed task by merging the PR and running post-merge validation:
 
 5. **Clean up**
    - Ensure task-board commits are pushed to main (so main is not ahead of origin).
-   - The `move_task` with to="DONE" should have cleaned up the worktree and deleted the branch (depending on cleanupWorktree/deleteBranch settings).
+   - `move_task` with `to="DONE"` cleans up the worktree by default
+     (cleanupWorktree defaults to true). The task branch is kept by default unless
+     `deleteBranch: true` was explicitly passed.
    - Confirm `git status` on integration checkout is clean.
