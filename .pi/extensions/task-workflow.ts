@@ -165,7 +165,7 @@ async function runCastorCheckGate(
 	const killed = result.killed || result.code === 124 || result.code === 137;
 
 	return {
-		passed: result.code === 0,
+		passed: !killed && result.code === 0,
 		output: result.stdout + "\n" + result.stderr,
 		code: killed ? 124 : result.code,
 	};
@@ -673,7 +673,12 @@ export default function (pi: ExtensionAPI) {
 
 					// Step 2: Castor quality gate
 					const castorTimeout = params.castorCheckTimeoutSeconds ?? CASTOR_CHECK_TIMEOUT_DEFAULT;
+					const hasSkipReason = params.skipCastorCheckReason !== undefined;
 					const skipReason = params.skipCastorCheckReason?.trim();
+
+					if (hasSkipReason && !skipReason) {
+						throw new Error("skipCastorCheckReason must be non-empty when provided.");
+					}
 
 					if (skipReason) {
 						notes.push(`⚠️ Castor quality gate SKIPPED — reason: ${skipReason}`);
