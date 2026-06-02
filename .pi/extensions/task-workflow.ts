@@ -7,10 +7,15 @@ import { Type } from "typebox";
 import { existsSync } from "node:fs";
 import { cp, mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import { createHash } from "node:crypto";
 
 const TASK_ROOT = "tasks";
 const STATUSES = ["TODO", "IN-PROGRESS", "CODE-REVIEW", "DONE"] as const;
 type TaskStatus = (typeof STATUSES)[number];
+
+const CASTOR_CHECK_TIMEOUT_DEFAULT = 240;
+const CASTOR_CHECK_TIMEOUT_MIN = 60;
+const CASTOR_CHECK_TIMEOUT_MAX = 900;
 
 type ExecResult = {
 	stdout: string;
@@ -58,6 +63,8 @@ const MoveTaskParams = Type.Object({
 	prBody: Type.Optional(Type.String({ description: "Body for GitHub PR when moving to CODE-REVIEW." })),
 	prBaseBranch: Type.Optional(Type.String({ description: "Base branch for PR. Defaults to repository default branch." })),
 	pushOnly: Type.Optional(Type.Boolean({ description: "Push branch but skip PR creation. Default false." })),
+	castorCheckTimeoutSeconds: Type.Optional(Type.Number({ description: "Timeout in seconds for the Castor quality gate. Min " + CASTOR_CHECK_TIMEOUT_MIN + ", max " + CASTOR_CHECK_TIMEOUT_MAX + ". Default " + CASTOR_CHECK_TIMEOUT_DEFAULT + "." })),
+	skipCastorCheckReason: Type.Optional(Type.String({ description: "Non-empty reason to bypass the Castor quality gate. Gate is skipped and reason logged. Empty/whitespace throws." })),
 });
 
 const UpdateTaskParams = Type.Object({
@@ -96,8 +103,8 @@ function rel(repoRoot: string, path: string): string {
 	return relative(repoRoot, path) || ".";
 }
 
-async function run(pi: ExtensionAPI, command: string, args: string[], cwd: string, signal?: AbortSignal): Promise<ExecResult> {
-	const result = await pi.exec(command, args, { cwd, signal, timeout: 120_000 });
+async function run(pi: ExtensionAPI, command: string, args: string[], cwd: string, signal?: AbortSignal, timeoutMs?: number): Promise<ExecResult> {
+	const result = await pi.exec(command, args, { cwd, signal, timeout: timeoutMs ?? 120_000 });
 	return result as ExecResult;
 }
 
@@ -111,6 +118,57 @@ async function gitOk(pi: ExtensionAPI, repoRoot: string, args: string[], signal?
 		throw new Error(`git ${args.join(" ")} failed\n${result.stderr || result.stdout}`.trim());
 	}
 	return result;
+}
+
+// ── Quality gate helpers ─────────────────────────────────────────────────────
+
+async function currentHead(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<string> {
+	const result = await gitOk(pi, cwd, ["rev-parse", "HEAD"], signal);
+	return result.stdout.trim();
+}
+
+function sha256Hex(data: string): string {
+	return createHash("sha256").update(data, "utf8").digest("hex");
+}
+
+function tailForError(output: string, maxLines: number = 30): string {
+	const lines = output.trimEnd().split("\n");
+	if (lines.length <= maxLines) return output;
+	return "... (truncated, showing last " + maxLines + " lines) ...\n" + lines.slice(-maxLines).join("\n");
+}
+
+function validateCastorTimeout(seconds: number): number {
+	if (typeof seconds !== "number" || isNaN(seconds) || !isFinite(seconds)) {
+		throw new Error(`castorCheckTimeoutSeconds must be a valid number, got ${JSON.stringify(seconds)}`);
+	}
+	if (seconds < CASTOR_CHECK_TIMEOUT_MIN) {
+		throw new Error(`castorCheckTimeoutSeconds must be at least ${CASTOR_CHECK_TIMEOUT_MIN}s, got ${seconds}s`);
+	}
+	if (seconds > CASTOR_CHECK_TIMEOUT_MAX) {
+		throw new Error(`castorCheckTimeoutSeconds must be at most ${CASTOR_CHECK_TIMEOUT_MAX}s, got ${seconds}s`);
+	}
+	return Math.floor(seconds);
+}
+
+async function runCastorCheckGate(
+	pi: ExtensionAPI,
+	gateDir: string,
+	timeoutSeconds: number,
+	signal?: AbortSignal,
+): Promise<{ passed: boolean; output: string; code: number }> {
+	const timeout = validateCastorTimeout(timeoutSeconds);
+	const killAfter = Math.min(15, Math.max(5, Math.floor(timeout * 0.1)));
+	const execTimeoutMs = (timeout + killAfter + 30) * 1000;
+
+	const result = await run(pi, "timeout", [`--kill-after=${killAfter}s`, `${timeout}s`, "env", "LLM_MODE=true", "castor", "check"], gateDir, signal, execTimeoutMs);
+
+	const killed = result.killed || result.code === 124 || result.code === 137;
+
+	return {
+		passed: result.code === 0,
+		output: result.stdout + "\n" + result.stderr,
+		code: killed ? 124 : result.code,
+	};
 }
 
 async function repoRoot(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<string> {
@@ -208,6 +266,12 @@ function renderTask(title: string, body?: string, acceptance?: string[]): string
 		"PR Status:",
 		"Started:",
 		"Completed:",
+		"Castor Check Status:",
+		"Castor Check Commit:",
+		"Castor Check Command:",
+		"Castor Check Timeout:",
+		"Castor Check Completed:",
+		"Castor Check Output SHA256:",
 		"",
 		"## Work log",
 		"- Created: " + new Date().toISOString(),
@@ -498,7 +562,7 @@ This project uses a repo-local lightweight issue tracker under tasks/TODO, tasks
 - Use update_task to update task metadata or append work log entries without moving the task file.
 - Use move_task to change task status instead of moving task files manually.
 - When claiming a task, call move_task with to="IN-PROGRESS". This requires a clean integration checkout (commit/stash first). It creates a task/<slug> git branch and sibling worktree at ../<repo>-worktrees/<slug>, copies vendor/ and .vera/ into the worktree when they exist, then records metadata in the task file.
-- When implementation is complete and committed, the parent/orchestrator/user calls move_task with to="CODE-REVIEW". This pushes the task branch to the remote and creates a GitHub PR via the gh CLI. The PR URL is stored in the task metadata.
+- When implementation is complete and committed, the parent/orchestrator/user calls move_task with to="CODE-REVIEW". This runs the Castor quality gate (LLM_MODE=true castor check) at the task branch HEAD, then pushes the branch and creates a GitHub PR via the gh CLI. The gate status and commit-bound receipt are recorded in the task metadata. The gate can be bypassed with skipCastorCheckReason for emergencies. The PR URL is stored in the task metadata.
 - After code review and PR approval, the parent/orchestrator/user calls move_task with to="DONE". It attempts a git merge back into the integration checkout and reports conflicts without moving the task to DONE if the merge fails. After a successful merge, it runs git pull to sync with remote changes from GitHub PR merges.
 - move_task with to="DONE" requires a clean integration checkout by default. If it reports stale AD entries from staged additions deleted in the worktree, retry with cleanupStaleIndexEntries=true; do not commit unrelated staged changes just to satisfy the task workflow.
 - IDE tools are scoped to the current checkout and may not index sibling worktrees. move_task copies .vera when available so semantic-search can work in the worktree, but prefer absolute-path read/edit/bash operations or open a separate pi session rooted at the worktree when IDE indexes are unavailable.
@@ -607,12 +671,69 @@ export default function (pi: ExtensionAPI) {
 						}
 					}
 
-					// Step 2: push branch
+					// Step 2: Castor quality gate
+					const castorTimeout = params.castorCheckTimeoutSeconds ?? CASTOR_CHECK_TIMEOUT_DEFAULT;
+					const skipReason = params.skipCastorCheckReason?.trim();
+
+					if (skipReason) {
+						notes.push(`⚠️ Castor quality gate SKIPPED — reason: ${skipReason}`);
+						text = updateField(text, "Castor Check Status", "skipped");
+						text = updateField(text, "Castor Check Commit", "");
+						text = updateField(text, "Castor Check Command", "");
+						text = updateField(text, "Castor Check Timeout", "");
+						text = updateField(text, "Castor Check Completed", new Date().toISOString());
+						text = updateField(text, "Castor Check Output SHA256", "");
+					} else {
+						const gateDir = worktree && existsSync(worktree) ? worktree : root;
+						const preHead = await currentHead(pi, gateDir, signal);
+
+						const gateResult = await runCastorCheckGate(pi, gateDir, castorTimeout, signal);
+
+						if (!gateResult.passed) {
+							const label = gateResult.code === 124 ? "timed out" : "failed";
+							throw new Error(
+								`Castor quality gate ${label} (exit code ${gateResult.code}). Task remains IN-PROGRESS.\n\n` +
+								tailForError(gateResult.output, 40),
+							);
+						}
+
+						// Verify no changes during gate execution
+						const postHead = await currentHead(pi, gateDir, signal);
+						if (preHead !== postHead) {
+							throw new Error(
+								`Castor quality gate passed but HEAD changed during execution (${preHead.slice(0, 12)} → ${postHead.slice(0, 12)}).\n` +
+								`Aborting CODE-REVIEW transition. Commit before validating.`,
+							);
+						}
+
+						if (worktree && existsSync(worktree)) {
+							const postStatus = await gitOk(pi, worktree, ["status", "--porcelain"], signal);
+							if (postStatus.stdout.trim() !== "") {
+								throw new Error(
+									`Castor quality gate passed but worktree became dirty during execution.\n` +
+									`Aborting CODE-REVIEW transition.\n${worktree}\n${postStatus.stdout}`,
+								);
+							}
+						}
+
+						// Record commit-bound receipt
+						const outputHash = sha256Hex(gateResult.output);
+						const completedAt = new Date().toISOString();
+						text = updateField(text, "Castor Check Status", "passed");
+						text = updateField(text, "Castor Check Commit", preHead);
+						text = updateField(text, "Castor Check Command", "LLM_MODE=true castor check");
+						text = updateField(text, "Castor Check Timeout", `${castorTimeout}s`);
+						text = updateField(text, "Castor Check Completed", completedAt);
+						text = updateField(text, "Castor Check Output SHA256", outputHash);
+						notes.push(`Castor quality gate passed (${castorTimeout}s timeout). Commit: ${preHead.slice(0, 12)}.`);
+					}
+
+					// Step 3: push branch
 					const pushResult = await pushTaskBranch(pi, root, branch, signal);
 					notes.push(`Pushed ${branch} to origin.`);
 					notes.push(pushResult.trim());
 
-					// Step 3: create/update PR (unless pushOnly)
+					// Step 4: create/update PR (unless pushOnly)
 					if (!params.pushOnly) {
 						const ghStatus = await ghAvailable(pi, root, signal);
 						if (!ghStatus.available) {
