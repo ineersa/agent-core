@@ -61,6 +61,11 @@ final class LlamaCppSmokeTest extends KernelTestCase
         );
     }
 
+    /** Set to true after setUp() successfully boots the kernel, to guard
+     * restore_exception_handler() in tearDown() against the skipped case
+     * where no handler was pushed. */
+    private bool $kernelBooted = false;
+
     private string $tempDir;
     private string $homeDir;
     private string $sessionId;
@@ -81,6 +86,7 @@ final class LlamaCppSmokeTest extends KernelTestCase
         // Boot kernel to get EntityManager from test container.
         // Test DB is a fixed path via config/packages/test/doctrine.yaml.
         self::bootKernel(['environment' => 'test', 'debug' => false]);
+        $this->kernelBooted = true;
         $container = static::getContainer();
         $this->entityManager = $container->get('doctrine.orm.default_entity_manager');
 
@@ -116,9 +122,15 @@ final class LlamaCppSmokeTest extends KernelTestCase
         // handler). Then we pop the extra handler and remove temp dir.
         parent::tearDown();
 
-        // Pop the exception handler that was re-pushed by
-        // ensureKernelShutdown's kernel re-boot.
-        restore_exception_handler();
+        // Pop the exception handler that may be pushed by
+        // ensureKernelShutdown's re-boot, but only if this setUp()
+        // actually booted the kernel. When the test is skipped
+        // (LLAMA_CPP_SMOKE_TEST unset), no kernel was booted and
+        // no handler was pushed, so restore_exception_handler()
+        // would corrupt PHPUnit's handler stack.
+        if ($this->kernelBooted) {
+            restore_exception_handler();
+        }
 
         if (isset($this->tempDir) && '' !== $this->tempDir) {
             $this->removeDir($this->tempDir);
