@@ -27,7 +27,8 @@ If you catch yourself about to open an editor, write a file, or run a code chang
 2. **Review quality**
    - Run the reviewer subagent on the worktree (subagent agent="reviewer" cwd=worktree).
    - Use the researcher subagent for web searches or web-based research when up-to-date external information is needed.
-   - If reviewer returns REQUEST CHANGES, analyze the blockers, create exact fork instructions, and launch a fork.
+   - If reviewer returns REQUEST CHANGES or APPROVE WITH SUGGESTIONS, analyze **all actionable findings** (not only CRITICAL/BUG), create exact fork instructions, and launch a fork.
+   - Address all sensible findings across severity levels: CRITICAL, BUG, EDGE CASE, SEC, CONVENTION, SIMPLIFY, NAMING, DEAD CODE, and reasonable NTH items. Skip only clearly subjective style preferences or items the reviewer explicitly marks as non-actionable.
    - Repeat until reviewer returns APPROVED for current HEAD.
 
 3. **Run focused local validation**

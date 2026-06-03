@@ -30,8 +30,9 @@ If you catch yourself about to open an editor, write a file, or run a code chang
    - Use the existing task worktree from metadata. If it is missing, recreate or recover it before implementation.
 
 3. **Classify feedback**
-   - Separate blockers (bugs, design flaws, safety issues) from nice-to-have notes.
-   - Note which comments intersect with already-identified blockers on the task.
+   - Classify findings by actionability, not just severity. Address all sensible findings across severity levels: CRITICAL, BUG, EDGE CASE, SEC, CONVENTION, SIMPLIFY, NAMING, DEAD CODE, and reasonable NTH items.
+   - Skip only clearly subjective style preferences or items the reviewer explicitly marks as non-actionable.
+   - Note which comments intersect with already-identified issues on the task.
    - If a comment references external docs (e.g. Doctrine release notes, Symfony changelog), read those too.
    - Use the researcher subagent for web searches or web-based research when up-to-date external information is needed.
 
