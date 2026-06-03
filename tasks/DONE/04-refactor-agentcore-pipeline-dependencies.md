@@ -19,14 +19,14 @@ Scope:
 - Run and report Castor validation: castor test --filter for affected pipeline handlers, castor deptrac, and castor check, or exact environmental blockers.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/04-refactor-agentcore-pipeline-dependencies
 Worktree: /home/ineersa/projects/agent-core-worktrees/04-refactor-agentcore-pipeline-dependencies
 Fork run: ovne33fzhgdm
 PR URL: https://github.com/ineersa/agent-core/pull/87
-PR Status: open
+PR Status: merged
 Started: 2026-06-03T16:09:54.694Z
-Completed:
+Completed: 2026-06-03T16:34:44.570Z
 
 ## Work log
 - Created: 2026-06-03T00:31:44.294Z
@@ -107,3 +107,25 @@ Castor Check Output SHA256: 9519153e5435886880453c89184ee65af3eb0453a14c687dbbfe
 - Pushed task/04-refactor-agentcore-pipeline-dependencies to origin.
 - branch 'task/04-refactor-agentcore-pipeline-dependencies' set up to track 'origin/task/04-refactor-agentcore-pipeline-dependencies'.
 - Created PR: https://github.com/ineersa/agent-core/pull/87
+
+## Task workflow update - 2026-06-03T16:34:44.570Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/04-refactor-agentcore-pipeline-dependencies into integration checkout.
+- Merge made by the 'ort' strategy.
+ .../Application/Pipeline/AdvanceRunHandler.php     |  9 +-
+ .../Application/Pipeline/ApplyCommandHandler.php   | 17 ++--
+ .../Application/Pipeline/LlmStepResultHandler.php  | 28 ++++---
+ .../Application/Pipeline/RunMessageStateTools.php  | 97 ----------------------
+ .../Application/Pipeline/StartRunHandler.php       |  5 +-
+ .../Application/Pipeline/ToolCallResultHandler.php | 24 +++---
+ .../Application/Pipeline/AdvanceRunHandlerTest.php |  8 +-
+ .../Pipeline/ApplyCommandHandlerTest.php           | 21 +++--
+ .../Pipeline/CommandMailboxPolicyTest.php          | 18 ++--
+ .../Pipeline/LlmStepResultHandlerTest.php          |  8 +-
+ .../Application/Pipeline/StartRunHandlerTest.php   |  6 +-
+ .../Pipeline/ToolCallResultHandlerTest.php         |  8 +-
+ 12 files changed, 90 insertions(+), 159 deletions(-)
+ delete mode 100644 src/AgentCore/Application/Pipeline/RunMessageStateTools.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/04-refactor-agentcore-pipeline-dependencies.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Summary: PR #87 merged by ineersa. Post-merge validation pending.
