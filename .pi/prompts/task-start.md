@@ -33,3 +33,10 @@ If the task argument is empty or still the literal placeholder `<task>`, ask the
    - When the fork report arrives, verify the commit exists, inspect `git diff --stat`, and confirm the expected files changed.
    - Record fork run id, summary, and validation results via `update_task`.
    - If the fork failed or produced unacceptable output, re-launch with narrower instructions.
+
+6. **STOP — do not proceed to PR or code review**
+   - Your responsibility ends with implementation and recording the fork result.
+   - Do NOT run `castor check`, `move_task(to="CODE-REVIEW")`, `gh pr create`, `git push`, or any review/gate step.
+   - Do NOT run the reviewer subagent.
+   - PR preparation, Castor quality gate, review, and push are handled by the `task-to-pr` prompt — not this one.
+   - Inform the user the implementation is done and they should run `task-to-pr` when ready.
