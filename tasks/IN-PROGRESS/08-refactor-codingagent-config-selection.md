@@ -22,7 +22,7 @@ Scope:
 Status: IN-PROGRESS
 Branch: task/08-refactor-codingagent-config-selection
 Worktree: /home/ineersa/projects/agent-core-worktrees/08-refactor-codingagent-config-selection
-Fork run:
+Fork run: o63kpl9vykso
 PR URL:
 PR Status:
 Started: 2026-06-03T20:50:07.554Z
@@ -43,3 +43,7 @@ Completed:
 - Created worktree /home/ineersa/projects/agent-core-worktrees/08-refactor-codingagent-config-selection.
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/08-refactor-codingagent-config-selection.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/08-refactor-codingagent-config-selection.
+
+## Task workflow update - 2026-06-03T20:53:03.323Z
+- Recorded fork run: o63kpl9vykso
+- Summary: Fork launched (o63kpl9vykso) to implement task 08. Scope: create ModelResolver (read-only) and ModelSettingsPersister (write-only), rewrite ModelSelectionService as coordinator, replace AppConfigLoader resolveConfigPaths() with declarative path map using Symfony PropertyAccess, create ModelResolverTest (pure unit), simplify ModelSelectionServiceTest (8 tests), update 4 other test files, update services.yaml.
