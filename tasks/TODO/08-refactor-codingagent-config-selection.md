@@ -30,3 +30,6 @@ Completed:
 
 ## Work log
 - Created: 2026-06-03T00:32:17.712Z
+
+## Task workflow update - 2026-06-03T20:42:28.906Z
+- Summary: Finalized plan with user decisions: (1) SessionMetadataStore stays in ModelResolver as-is, (2) favorites stay in ModelSelectionService, (3) ModelSelectionService validates before delegating to persister, (4) flat dot-notation path map with Symfony PropertyAccess for AppConfigLoader, (5) test migration with simplification — collapse resolution tests into data providers, reduce from 56 tests to ~20 focused tests.
