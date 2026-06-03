@@ -6,8 +6,8 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
-use Ineersa\AgentCore\Domain\Event\CoreLifecycleEventType;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
@@ -48,7 +48,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                 runId: $runId,
                 seq: $nextState->lastSeq,
                 turnNo: $state->turnNo,
-                type: 'stale_result_ignored',
+                type: RunEventTypeEnum::StaleResultIgnored->value,
                 payload: [
                     'result' => 'tool_call_result',
                     'tool_call_id' => $message->toolCallId,
@@ -67,7 +67,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
         if (RunStatus::Cancelling === $state->status) {
             $eventSpecs = [
                 [
-                    'type' => 'stale_result_ignored',
+                    'type' => RunEventTypeEnum::StaleResultIgnored->value,
                     'payload' => [
                         'result' => 'tool_call_result',
                         'tool_call_id' => $message->toolCallId,
@@ -77,7 +77,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                     ],
                 ],
                 [
-                    'type' => CoreLifecycleEventType::AGENT_END,
+                    'type' => RunEventTypeEnum::AgentEnd->value,
                     'payload' => [
                         'reason' => 'cancelled',
                     ],
@@ -118,7 +118,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                 runId: $runId,
                 seq: $nextState->lastSeq,
                 turnNo: $state->turnNo,
-                type: 'stale_result_ignored',
+                type: RunEventTypeEnum::StaleResultIgnored->value,
                 payload: [
                     'result' => 'tool_call_result',
                     'tool_call_id' => $message->toolCallId,
@@ -134,7 +134,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
 
         $eventSpecs = [
             [
-                'type' => 'tool_call_result_received',
+                'type' => RunEventTypeEnum::ToolCallResultReceived->value,
                 'payload' => [
                     'tool_call_id' => $message->toolCallId,
                     'order_index' => $message->orderIndex,
@@ -142,7 +142,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                 ],
             ],
             [
-                'type' => CoreLifecycleEventType::TOOL_EXECUTION_END,
+                'type' => RunEventTypeEnum::ToolExecutionEnd->value,
                 'payload' => [
                     'tool_call_id' => $message->toolCallId,
                     'order_index' => $message->orderIndex,
@@ -169,7 +169,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                 $messages[] = $this->messageNormalizer->toolMessage($orderedResult);
 
                 $eventSpecs[] = [
-                    'type' => CoreLifecycleEventType::MESSAGE_START,
+                    'type' => RunEventTypeEnum::MessageStart->value,
                     'payload' => [
                         'message_role' => 'tool',
                         'tool_call_id' => $orderedResult->toolCallId,
@@ -177,7 +177,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                 ];
 
                 $eventSpecs[] = [
-                    'type' => CoreLifecycleEventType::MESSAGE_END,
+                    'type' => RunEventTypeEnum::MessageEnd->value,
                     'payload' => [
                         'message_role' => 'tool',
                         'tool_call_id' => $orderedResult->toolCallId,
@@ -188,7 +188,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             }
 
             $eventSpecs[] = [
-                'type' => 'tool_batch_committed',
+                'type' => RunEventTypeEnum::ToolBatchCommitted->value,
                 'payload' => [
                     'count' => \count($outcome->orderedResults),
                 ],
@@ -199,7 +199,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             if (null !== $interruptPayload) {
                 $status = RunStatus::WaitingHuman;
                 $eventSpecs[] = [
-                    'type' => 'waiting_human',
+                    'type' => RunEventTypeEnum::WaitingHuman->value,
                     'payload' => $interruptPayload,
                 ];
             }

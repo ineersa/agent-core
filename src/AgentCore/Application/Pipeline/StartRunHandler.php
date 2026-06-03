@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -55,7 +56,7 @@ final readonly class StartRunHandler implements RunMessageHandler
             runId: $message->runId(),
             seq: $nextState->lastSeq,
             turnNo: $nextState->turnNo,
-            type: 'run_started',
+            type: RunEventTypeEnum::RunStarted->value,
             payload: [
                 'step_id' => $message->stepId(),
                 'payload' => $this->normalizePayload($message),

@@ -6,8 +6,8 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
-use Ineersa\AgentCore\Domain\Event\CoreLifecycleEventType;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -49,7 +49,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             $eventSpecs = [
                 ...$boundaryEventSpecs,
                 [
-                    'type' => CoreLifecycleEventType::AGENT_END,
+                    'type' => RunEventTypeEnum::AgentEnd->value,
                     'payload' => ['reason' => 'cancelled'],
                 ],
             ];
@@ -143,7 +143,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         $eventSpecs = [
             ...$boundaryEventSpecs,
             [
-                'type' => 'turn_advanced',
+                'type' => RunEventTypeEnum::TurnAdvanced->value,
                 'turn_no' => $nextTurnNo,
                 'payload' => [
                     'step_id' => $nextStepId,

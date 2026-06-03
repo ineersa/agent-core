@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Protocol;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Normalizes agent-core RunEvent domain events into stable runtime protocol RuntimeEvent DTOs.
@@ -13,18 +12,13 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
  * This is the sole bridge between agent-core event types and the runtime protocol.
  * TUI code must never import RunEvent or AgentCore internals directly.
  *
- * The mapper dispatches each RunEvent through a Symfony EventDispatcher:
- * family-specific subscribers (in Runtime\Mapping\) handle known event types
- * while internal bookkeeping events are dropped and unknown events fall back
- * to status.updated with debug metadata.
+ * Delegates mapping to RuntimeEventTranslator which uses an explicit dispatch
+ * table keyed by RunEventTypeEnum.
  */
 final class RuntimeEventMapper
 {
-    private const string DEBUG_RAW_TYPE = 'debug.raw_type';
-    private const string DEBUG_RAW_PAYLOAD = 'debug.raw_payload';
-
     public function __construct(
-        private readonly EventDispatcherInterface $dispatcher = new \Symfony\Component\EventDispatcher\EventDispatcher(),
+        private readonly RuntimeEventTranslator $translator,
     ) {
     }
 
@@ -36,26 +30,7 @@ final class RuntimeEventMapper
      */
     public function toRuntimeEvent(RunEvent $runEvent): ?RuntimeEvent
     {
-        $mappingEvent = new RunEventMappingEvent($runEvent);
-
-        // Dispatch by raw AgentCore event type string. Subscribers handle
-        // known types; unknown types fall through to the fallback below.
-        $this->dispatcher->dispatch($mappingEvent, $runEvent->type);
-
-        if ($mappingEvent->handled) {
-            return $mappingEvent->mappedRuntimeEvent; // null = drop
-        }
-
-        // Unknown event type → status.updated with debug metadata.
-        return new RuntimeEvent(
-            type: RuntimeEventTypeEnum::StatusUpdated->value,
-            runId: $runEvent->runId,
-            seq: $runEvent->seq,
-            payload: [
-                self::DEBUG_RAW_TYPE => $runEvent->type,
-                self::DEBUG_RAW_PAYLOAD => $runEvent->payload,
-            ],
-        );
+        return $this->translator->translate($runEvent);
     }
 
     /**

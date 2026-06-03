@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Event\Lifecycle;
 
-use Ineersa\AgentCore\Domain\Event\CoreLifecycleEventType;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 
 final readonly class MessageEndEvent extends AbstractLifecycleRunEvent
 {
-    public const string TYPE = CoreLifecycleEventType::MESSAGE_END;
+    public const string TYPE = RunEventTypeEnum::MessageEnd->value;
 }

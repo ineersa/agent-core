@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -104,7 +105,7 @@ final readonly class CommandMailboxPolicy
             if (isset($supersededSteerKeys[$pendingCommand->idempotencyKey])) {
                 $this->commandStore->markSuperseded($state->runId, $pendingCommand->idempotencyKey, 'Superseded by a newer steer command.');
                 $eventSpecs[] = [
-                    'type' => 'agent_command_superseded',
+                    'type' => RunEventTypeEnum::AgentCommandSuperseded->value,
                     'payload' => [
                         'kind' => CoreCommandKind::Steer,
                         'idempotency_key' => $pendingCommand->idempotencyKey,
@@ -120,7 +121,7 @@ final readonly class CommandMailboxPolicy
                 if (!\is_array($messagePayload)) {
                     $this->commandStore->markRejected($state->runId, $pendingCommand->idempotencyKey, 'Invalid command payload: missing message envelope.');
                     $eventSpecs[] = [
-                        'type' => 'agent_command_rejected',
+                        'type' => RunEventTypeEnum::AgentCommandRejected->value,
                         'payload' => [
                             'kind' => $pendingCommand->kind,
                             'idempotency_key' => $pendingCommand->idempotencyKey,
@@ -135,7 +136,7 @@ final readonly class CommandMailboxPolicy
                 if (null === $hydratedMessage) {
                     $this->commandStore->markRejected($state->runId, $pendingCommand->idempotencyKey, 'Invalid command payload: malformed message envelope.');
                     $eventSpecs[] = [
-                        'type' => 'agent_command_rejected',
+                        'type' => RunEventTypeEnum::AgentCommandRejected->value,
                         'payload' => [
                             'kind' => $pendingCommand->kind,
                             'idempotency_key' => $pendingCommand->idempotencyKey,
@@ -149,7 +150,7 @@ final readonly class CommandMailboxPolicy
                 $messages[] = $hydratedMessage;
                 $this->commandStore->markApplied($state->runId, $pendingCommand->idempotencyKey);
                 $eventSpecs[] = [
-                    'type' => 'agent_command_applied',
+                    'type' => RunEventTypeEnum::AgentCommandApplied->value,
                     'payload' => [
                         'kind' => $pendingCommand->kind,
                         'idempotency_key' => $pendingCommand->idempotencyKey,
@@ -191,7 +192,7 @@ final readonly class CommandMailboxPolicy
             $this->commandStore->markRejected($state->runId, $command->idempotencyKey, 'No extension command handler registered.');
 
             return [[
-                'type' => 'agent_command_rejected',
+                'type' => RunEventTypeEnum::AgentCommandRejected->value,
                 'payload' => [
                     'kind' => $command->kind,
                     'idempotency_key' => $command->idempotencyKey,
@@ -213,7 +214,7 @@ final readonly class CommandMailboxPolicy
             $this->commandStore->markRejected($state->runId, $command->idempotencyKey, $throwable->getMessage());
 
             return [[
-                'type' => 'agent_command_rejected',
+                'type' => RunEventTypeEnum::AgentCommandRejected->value,
                 'payload' => [
                     'kind' => $command->kind,
                     'idempotency_key' => $command->idempotencyKey,
@@ -225,7 +226,7 @@ final readonly class CommandMailboxPolicy
         $this->commandStore->markApplied($state->runId, $command->idempotencyKey);
 
         $eventSpecs = [[
-            'type' => 'agent_command_applied',
+            'type' => RunEventTypeEnum::AgentCommandApplied->value,
             'payload' => [
                 'kind' => $command->kind,
                 'idempotency_key' => $command->idempotencyKey,

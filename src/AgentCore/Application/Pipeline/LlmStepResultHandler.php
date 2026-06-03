@@ -10,8 +10,8 @@ use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
-use Ineersa\AgentCore\Domain\Event\CoreLifecycleEventType;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
@@ -61,7 +61,7 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
                 runId: $runId,
                 seq: $nextState->lastSeq,
                 turnNo: $state->turnNo,
-                type: 'stale_result_ignored',
+                type: RunEventTypeEnum::StaleResultIgnored->value,
                 payload: [
                     'result' => 'llm_step_result',
                     'step_id' => $message->stepId(),
@@ -83,7 +83,7 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
 
             $eventSpecs = [
                 [
-                    'type' => 'llm_step_aborted',
+                    'type' => RunEventTypeEnum::LlmStepAborted->value,
                     'payload' => [
                         'step_id' => $message->stepId(),
                         'stop_reason' => $message->stopReason ?? 'aborted',
@@ -91,7 +91,7 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
                     ],
                 ],
                 [
-                    'type' => CoreLifecycleEventType::AGENT_END,
+                    'type' => RunEventTypeEnum::AgentEnd->value,
                     'payload' => [
                         'reason' => 'cancelled',
                     ],
@@ -148,7 +148,7 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
                 runId: $runId,
                 seq: $nextState->lastSeq,
                 turnNo: $nextState->turnNo,
-                type: 'llm_step_failed',
+                type: RunEventTypeEnum::LlmStepFailed->value,
                 payload: [
                     'error' => $message->error,
                     'retryable' => $retryable,
@@ -204,7 +204,7 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
         }
 
         $eventSpecs = [[
-            'type' => 'llm_step_completed',
+            'type' => RunEventTypeEnum::LlmStepCompleted->value,
             'payload' => [
                 'step_id' => $message->stepId(),
                 'stop_reason' => $message->stopReason,
@@ -247,7 +247,7 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
 
             if (!$shouldContinue) {
                 $eventSpecs[] = [
-                    'type' => CoreLifecycleEventType::AGENT_END,
+                    'type' => RunEventTypeEnum::AgentEnd->value,
                     'payload' => [
                         'reason' => 'completed',
                     ],
@@ -289,7 +289,7 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
 
         foreach ($effects as $effect) {
             $eventSpecs[] = [
-                'type' => CoreLifecycleEventType::TOOL_EXECUTION_START,
+                'type' => RunEventTypeEnum::ToolExecutionStart->value,
                 'payload' => [
                     'tool_call_id' => $effect->toolCallId,
                     'tool_name' => $effect->toolName,
