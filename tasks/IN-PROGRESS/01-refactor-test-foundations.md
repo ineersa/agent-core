@@ -19,14 +19,22 @@ Scope:
 - Run and report Castor validation: at minimum castor test plus castor check, or exact environmental blockers.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/01-refactor-test-foundations
+Worktree: /home/ineersa/projects/agent-core-worktrees/01-refactor-test-foundations
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-03T00:45:17.864Z
 Completed:
 
 ## Work log
 - Created: 2026-06-03T00:31:43.125Z
+
+## Task workflow update - 2026-06-03T00:45:17.864Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/01-refactor-test-foundations.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/01-refactor-test-foundations.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/01-refactor-test-foundations.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/01-refactor-test-foundations.
+- Summary: Claimed task after reading task file, architecture refactor plan, tests architecture report, and Castor skill instructions. Integration checkout was clean on main before claim.
