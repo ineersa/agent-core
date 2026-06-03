@@ -19,7 +19,7 @@ Scope:
 - Run and report Castor validation: castor test --filter=ModelSelectionService/AppConfigLoader relevant tests plus castor check, or exact environmental blockers.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/08-refactor-codingagent-config-selection
 Worktree: /home/ineersa/projects/agent-core-worktrees/08-refactor-codingagent-config-selection
 Fork run: o63kpl9vykso
@@ -69,3 +69,6 @@ Castor Check Output SHA256: e4f2d9cf8324acd44b1aa2da3b829fad8800939f2276457479d4
 - Pushed task/08-refactor-codingagent-config-selection to origin.
 - branch 'task/08-refactor-codingagent-config-selection' set up to track 'origin/task/08-refactor-codingagent-config-selection'.
 - Created PR: https://github.com/ineersa/agent-core/pull/90
+
+## Task workflow update - 2026-06-03T21:29:43.726Z
+- Moved CODE-REVIEW → IN-PROGRESS.
