@@ -3,9 +3,9 @@ description: Prepare an IN-PROGRESS task for PR by reviewing, recording, and mov
 argument-hint: "<task>"
 ---
 
-/task-to-pr <task>
+Prepare tracked task for PR/code review: `$ARGUMENTS`
 
-Prepare a tracked task for code review:
+If the task argument is empty or still the literal placeholder `<task>`, ask the user for the task slug instead of guessing. Otherwise, prepare the tracked task named by `$ARGUMENTS` for code review:
 
 1. **Inspect worktree state**
    - `task_list` or read the task file to confirm it is IN-PROGRESS with worktree metadata.
@@ -32,7 +32,7 @@ Prepare a tracked task for code review:
    - Append a work log entry summarizing the fork commits and reviewer outcome.
 
 5. **Move to CODE-REVIEW**
-   - Call `move_task` with the task slug and `to="CODE-REVIEW"`. This runs the
+   - Call `move_task` with the task slug from `$ARGUMENTS` and `to="CODE-REVIEW"`. This runs the
      Castor quality gate (`LLM_MODE=true castor check`) on the task branch at its
      current HEAD before pushing and creating or updating the PR.
    - Record the PR URL returned in the notes.

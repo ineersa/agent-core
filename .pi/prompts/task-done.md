@@ -3,9 +3,9 @@ description: Merge a reviewed and approved task to DONE
 argument-hint: "<task>"
 ---
 
-/task-done <task>
+Complete reviewed task: `$ARGUMENTS`
 
-Complete a reviewed task by merging the PR and running post-merge validation:
+If the task argument is empty or still the literal placeholder `<task>`, ask the user for the task slug instead of guessing. Otherwise, complete the reviewed task named by `$ARGUMENTS` by merging the PR and running post-merge validation:
 
 1. **Confirm PR is approved/merged**
    - Check task metadata for PR URL and PR Status.
@@ -13,7 +13,7 @@ Complete a reviewed task by merging the PR and running post-merge validation:
    - If the user merged via the GitHub UI, the integration checkout may be behind; pull main first (`git pull`).
 
 2. **Move to DONE**
-   - Call `move_task` with task slug and `to="DONE"`.
+   - Call `move_task` with the task slug from `$ARGUMENTS` and `to="DONE"`.
    - This attempts to merge the task branch into the integration checkout.
    - It runs `git pull` after merging to sync with remote.
    - If merge conflicts occur, `move_task` reports them and keeps the task at CODE-REVIEW — do not force.

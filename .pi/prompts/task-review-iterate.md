@@ -3,9 +3,9 @@ description: Respond to PR review comments with analysis, implementation iterati
 argument-hint: "<task-or-pr>"
 ---
 
-/task-review-iterate <task-or-pr>
+Address code review feedback for task or PR: `$ARGUMENTS`
 
-Address code review feedback on a task PR:
+If the argument is empty or still the literal placeholder `<task-or-pr>`, ask the user for the task slug or PR URL/number instead of guessing. Otherwise, address code review feedback for the task or PR identified by `$ARGUMENTS`:
 
 1. **Read all PR comments and task metadata**
    - Use `gh pr view <number> --comments` or the task's PR URL from task metadata.

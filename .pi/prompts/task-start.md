@@ -3,9 +3,9 @@ description: Start a tracked task by moving TODO -> IN-PROGRESS and launching a 
 argument-hint: "<task>"
 ---
 
-/task-start <task>
+Start tracked task: `$ARGUMENTS`
 
-Start a tracked task in the project task workflow:
+If the task argument is empty or still the literal placeholder `<task>`, ask the user for the task slug instead of guessing. Otherwise, start the tracked task named by `$ARGUMENTS` in the project task workflow:
 
 1. **Inspect task context**
    - Use `task_list` to find the task file (typically in `tasks/TODO/`).
@@ -13,7 +13,7 @@ Start a tracked task in the project task workflow:
    - Read any docs, plans, or referenced artifacts the task body mentions.
 
 2. **Claim the task**
-   - Call `move_task` with task slug and `to="IN-PROGRESS"`. This creates a task worktree branch.
+   - Call `move_task` with the task slug from `$ARGUMENTS` and `to="IN-PROGRESS"`. This creates a task worktree branch.
    - Record the worktree path returned in the notes.
 
 3. **Prepare exact fork instructions**
