@@ -19,12 +19,12 @@ Scope:
 - Run and report Castor validation: castor test --filter=RuntimeEventMapper plus castor test:controller/castor check where prerequisites allow, or exact environmental blockers.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/06-refactor-codingagent-runtime-events
 Worktree: /home/ineersa/projects/agent-core-worktrees/06-refactor-codingagent-runtime-events
 Fork run:
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/88
+PR Status: open
 Started: 2026-06-03T17:15:31.493Z
 Completed:
 
@@ -89,3 +89,17 @@ Completed:
 ## Task workflow update - 2026-06-03T17:39:32.506Z
 - Validation: castor test — 1587 tests, 4734 assertions, 0 failures; castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — clean
 - Summary: Fork zlhq2oqqcowr completed — commit 743e52b2 on branch task/06-refactor-codingagent-runtime-events, 31 files changed (+534/-741 lines). Created RunEventTypeEnum (23-case backed enum), LifecycleOrderValidator, RuntimeEventTranslator (dispatch table); deleted CoreLifecycleEventType, RunEventMappingEvent, 5 mapping subscribers + Mapping/ dir; updated 10 lifecycle events, 6 pipeline handlers, 2 test files, 2 config files. Validation: castor test 1587/4734 PASS, deptrac 0 violations, phpstan 0 errors, cs-check clean. Key discovery: ExtensionApprovalAnswerSubscriber was a hidden dependency on RunEventMappingEvent — updated to accept RunEvent directly; EventDispatcher kept in translator for extension subscriber compatibility.
+Castor Check Status: passed
+Castor Check Commit: 72180502ec5ba3c9dc3360f6ed297501a342a3fd
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 240s
+Castor Check Completed: 2026-06-03T17:49:44.604Z
+Castor Check Output SHA256: 9b242a301ed51e83653ff77081ab1bfe0b9e4e83d8da40e01129f074a84f4c36
+
+## Task workflow update - 2026-06-03T17:49:48.596Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (240s timeout). Commit: 72180502ec5b.
+- Pushed task/06-refactor-codingagent-runtime-events to origin.
+- branch 'task/06-refactor-codingagent-runtime-events' set up to track 'origin/task/06-refactor-codingagent-runtime-events'.
+- Created PR: https://github.com/ineersa/agent-core/pull/88
+- Summary: Commit 72180502 on branch task/06-refactor-codingagent-runtime-events, 33 files changed (+574/-761 lines). Review fixes applied: 5 missed raw string literals → RunEventTypeEnum values, stale depfile.yaml regex cleaned, AGENTS.md docs updated, HITL human_response test added. Validation: castor test 1588/4738 PASS, deptrac 0 violations, phpstan 0 errors, cs-check clean. Review verdict: fixes address all critical issues (raw strings) + stale config/docs + test gap.
