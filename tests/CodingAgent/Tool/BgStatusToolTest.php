@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
@@ -42,8 +43,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
     {
         parent::setUp();
 
-        $this->tmpDir = sys_get_temp_dir().'/hatfield_bgtool_test_'.bin2hex(random_bytes(8));
-        mkdir($this->tmpDir, 0750, recursive: true);
+        $this->tmpDir = TestDirectoryIsolation::createOsTempDir('hatfield_bgtool_test', 0o750);
 
         $this->config = new BackgroundProcessConfig(
             storageDir: $this->tmpDir,
@@ -77,7 +77,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
             }
         }
 
-        $this->rmDir($this->tmpDir);
+        TestDirectoryIsolation::removeDirectory($this->tmpDir);
 
         parent::tearDown();
     }
@@ -236,20 +236,4 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         return $this->contextAccessor->with($toolContext, $callback);
     }
 
-    private function rmDir(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-        $it = new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS);
-        $files = new \RecursiveIteratorIterator($it, \RecursiveIteratorIterator::CHILD_FIRST);
-        foreach ($files as $file) {
-            if ($file->isDir()) {
-                rmdir((string) $file);
-            } else {
-                unlink((string) $file);
-            }
-        }
-        rmdir($dir);
-    }
 }

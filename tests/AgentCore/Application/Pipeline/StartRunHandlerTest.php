@@ -9,9 +9,9 @@ use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\StartRun;
-use Ineersa\AgentCore\Domain\Message\StartRunPayload;
-use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
+use Ineersa\AgentCore\Tests\Support\Builder\StartRunMessageBuilder;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Messenger\Envelope;
@@ -26,35 +26,30 @@ final class StartRunHandlerTest extends TestCase
             normalizer: TestSerializerFactory::normalizer(),
         );
 
-        $state = new RunState(
-            runId: 'run-start-handler-1',
-            status: RunStatus::Queued,
-            version: 4,
-            turnNo: 3,
-            lastSeq: 9,
-            isStreaming: true,
-            streamingMessage: ['chunk' => 'old'],
-            pendingToolCalls: ['legacy-call' => true],
-            errorMessage: 'old error',
-            messages: [new AgentMessage(role: 'assistant', content: [])],
-            activeStepId: 'legacy-step',
-            retryableFailure: true,
-        );
+        $state = RunStateBuilder::create('run-start-handler-1')
+            ->withStatus(RunStatus::Queued)
+            ->withVersion(4)
+            ->withTurnNo(3)
+            ->withLastSeq(9)
+            ->withIsStreaming(true)
+            ->withStreamingMessage(['chunk' => 'old'])
+            ->withPendingToolCalls(['legacy-call' => true])
+            ->withErrorMessage('old error')
+            ->withMessages([new AgentMessage(role: 'assistant', content: [])])
+            ->withActiveStepId('legacy-step')
+            ->withRetryableFailure(true)
+            ->build();
 
-        $message = new StartRun(
-            runId: 'run-start-handler-1',
-            turnNo: 0,
-            stepId: 'start-step-1',
-            attempt: 1,
-            idempotencyKey: 'start-idempotency-1',
-            payload: new StartRunPayload(messages: [new AgentMessage(
+        $message = StartRunMessageBuilder::create('run-start-handler-1')
+            ->withIdempotencyKey('start-idempotency-1')
+            ->withPayloadMessages([new AgentMessage(
                 role: 'user',
                 content: [[
                     'type' => 'text',
                     'text' => 'hello from start handler',
                 ]],
-            )]),
-        );
+            )])
+            ->build();
 
         $result = $handler->handle($message, $state);
 
@@ -93,23 +88,12 @@ final class StartRunHandlerTest extends TestCase
             commandBus: $commandBus,
         );
 
-        $state = new RunState(
-            runId: 'run-start-handler-2',
-            status: RunStatus::Queued,
-            version: 0,
-            turnNo: 0,
-            lastSeq: 0,
-            messages: [],
-        );
+        $state = RunStateBuilder::queued('run-start-handler-2')->build();
 
-        $message = new StartRun(
-            runId: 'run-start-handler-2',
-            turnNo: 0,
-            stepId: 'start-step-2',
-            attempt: 1,
-            idempotencyKey: 'start-idempotency-2',
-            payload: new StartRunPayload(messages: []),
-        );
+        $message = StartRunMessageBuilder::create('run-start-handler-2')
+            ->withStepId('start-step-2')
+            ->withIdempotencyKey('start-idempotency-2')
+            ->build();
 
         $result = $handler->handle($message, $state);
 

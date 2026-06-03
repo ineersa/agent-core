@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\E2E;
 
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
@@ -48,7 +49,7 @@ final class TuiStartupSnapshotTest extends TestCase
             $this->tmux->killAll();
         }
         if (isset($this->testProjectDir)) {
-            $this->removeDir($this->testProjectDir);
+            TestDirectoryIsolation::removeDirectory($this->testProjectDir);
         }
     }
 
@@ -167,9 +168,9 @@ final class TuiStartupSnapshotTest extends TestCase
 
     private function createIsolatedProjectDir(): string
     {
-        $dir = \sprintf('%s/var/tmp/tui-e2e-%s', $this->projectRoot, \bin2hex(\random_bytes(6)));
-        @\mkdir($dir.'/.hatfield', 0o777, true);
-        @\mkdir($dir.'/home/.hatfield', 0o777, true);
+        $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e', 0o777);
+        TestDirectoryIsolation::createHatfieldTree($dir);
+        TestDirectoryIsolation::createHatfieldTree($dir.'/home');
 
         $settings = [];
         $projectSettings = $this->projectRoot.'/.hatfield/settings.yaml';
@@ -235,29 +236,6 @@ final class TuiStartupSnapshotTest extends TestCase
         \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
         return $dir;
-    }
-
-    private function removeDir(string $dir): void
-    {
-        if (!\is_dir($dir)) {
-            return;
-        }
-
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-
-        foreach ($iterator as $file) {
-            if ($file->isDir()) {
-                \rmdir($file->getPathname());
-            } else {
-                @\chmod($file->getPathname(), 0o644);
-                \unlink($file->getPathname());
-            }
-        }
-
-        \rmdir($dir);
     }
 
     private function shouldUpdateSnapshots(): bool

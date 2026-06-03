@@ -21,6 +21,8 @@ use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
+use Ineersa\AgentCore\Tests\Support\Builder\AdvanceRunMessageBuilder;
+use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use PHPUnit\Framework\TestCase;
 
 final class AdvanceRunHandlerTest extends TestCase
@@ -40,22 +42,19 @@ final class AdvanceRunHandlerTest extends TestCase
             metrics: $metrics,
         );
 
-        $state = new RunState(
-            runId: 'run-advance-handler-1',
-            status: RunStatus::Running,
-            version: 7,
-            turnNo: 2,
-            lastSeq: 11,
-            activeStepId: 'turn-2-step',
-        );
+        $state = RunStateBuilder::create('run-advance-handler-1')
+            ->withStatus(RunStatus::Running)
+            ->withVersion(7)
+            ->withTurnNo(2)
+            ->withLastSeq(11)
+            ->withActiveStepId('turn-2-step')
+            ->build();
 
-        $message = new AdvanceRun(
-            runId: 'run-advance-handler-1',
-            turnNo: 2,
-            stepId: 'turn-3-step',
-            attempt: 1,
-            idempotencyKey: 'advance-idempotency-1',
-        );
+        $message = AdvanceRunMessageBuilder::create('run-advance-handler-1')
+            ->withTurnNo(2)
+            ->withStepId('turn-3-step')
+            ->withIdempotencyKey('advance-idempotency-1')
+            ->build();
 
         $result = $handler->handle($message, $state);
 
@@ -106,22 +105,19 @@ final class AdvanceRunHandlerTest extends TestCase
             stateTools: new RunMessageStateTools(new EventFactory(), new ToolCallExtractor()),
         );
 
-        $state = new RunState(
-            runId: 'run-cancel-advance',
-            status: RunStatus::Cancelled,
-            version: 3,
-            turnNo: 1,
-            lastSeq: 10,
-            messages: [new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'Hello']])],
-        );
+        $state = RunStateBuilder::create('run-cancel-advance')
+            ->withStatus(RunStatus::Cancelled)
+            ->withVersion(3)
+            ->withTurnNo(1)
+            ->withLastSeq(10)
+            ->withMessages([new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'Hello']])])
+            ->build();
 
-        $message = new AdvanceRun(
-            runId: 'run-cancel-advance',
-            turnNo: 1,
-            stepId: 'turn-2-step',
-            attempt: 1,
-            idempotencyKey: 'advance-cancel-1',
-        );
+        $message = AdvanceRunMessageBuilder::create('run-cancel-advance')
+            ->withTurnNo(1)
+            ->withStepId('turn-2-step')
+            ->withIdempotencyKey('advance-cancel-1')
+            ->build();
 
         $result = $handler->handle($message, $state);
 
@@ -154,22 +150,19 @@ final class AdvanceRunHandlerTest extends TestCase
             stateTools: new RunMessageStateTools(new EventFactory(), new ToolCallExtractor()),
         );
 
-        $state = new RunState(
-            runId: 'run-cancel-noop',
-            status: RunStatus::Cancelled,
-            version: 3,
-            turnNo: 1,
-            lastSeq: 10,
-            messages: [new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'Hello']])],
-        );
+        $state = RunStateBuilder::create('run-cancel-noop')
+            ->withStatus(RunStatus::Cancelled)
+            ->withVersion(3)
+            ->withTurnNo(1)
+            ->withLastSeq(10)
+            ->withMessages([new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'Hello']])])
+            ->build();
 
-        $message = new AdvanceRun(
-            runId: 'run-cancel-noop',
-            turnNo: 1,
-            stepId: 'noop-step',
-            attempt: 1,
-            idempotencyKey: 'advance-noop-1',
-        );
+        $message = AdvanceRunMessageBuilder::create('run-cancel-noop')
+            ->withTurnNo(1)
+            ->withStepId('noop-step')
+            ->withIdempotencyKey('advance-noop-1')
+            ->build();
 
         $result = $handler->handle($message, $state);
 
