@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
@@ -122,7 +123,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             runId: $runId,
             seq: $nextState->lastSeq,
             turnNo: $nextState->turnNo,
-            type: 'agent_command_queued',
+            type: RunEventTypeEnum::AgentCommandQueued->value,
             payload: [
                 'kind' => $message->kind,
                 'idempotency_key' => $message->idempotencyKey(),
@@ -170,7 +171,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             runId: $runId,
             seq: $nextState->lastSeq,
             turnNo: $nextState->turnNo,
-            type: 'agent_command_rejected',
+            type: RunEventTypeEnum::AgentCommandRejected->value,
             payload: [
                 'kind' => $message->kind,
                 'reason' => $reason,
@@ -199,7 +200,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         );
 
         $eventSpecs = [[
-            'type' => 'agent_command_applied',
+            'type' => RunEventTypeEnum::AgentCommandApplied->value,
             'payload' => [
                 'kind' => $message->kind,
                 'idempotency_key' => $message->idempotencyKey(),
@@ -209,7 +210,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
 
         foreach ($rejectedContinueCommands as $rejectedContinueCommand) {
             $eventSpecs[] = [
-                'type' => 'agent_command_rejected',
+                'type' => RunEventTypeEnum::AgentCommandRejected->value,
                 'payload' => [
                     'kind' => CoreCommandKind::Continue,
                     'idempotency_key' => $rejectedContinueCommand->idempotencyKey,
@@ -273,7 +274,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             runId: $runId,
             seq: $nextState->lastSeq,
             turnNo: $nextState->turnNo,
-            type: 'agent_command_applied',
+            type: RunEventTypeEnum::AgentCommandApplied->value,
             payload: [
                 'kind' => $message->kind,
                 'idempotency_key' => $message->idempotencyKey(),
@@ -337,7 +338,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             runId: $runId,
             seq: $nextState->lastSeq,
             turnNo: $nextState->turnNo,
-            type: 'agent_command_applied',
+            type: RunEventTypeEnum::AgentCommandApplied->value,
             payload: [
                 'kind' => $message->kind,
                 'idempotency_key' => $message->idempotencyKey(),

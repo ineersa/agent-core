@@ -258,11 +258,14 @@ services:
   Ineersa\AgentCore\Contract\Hook\LlmStreamObserverInterface:
     alias: Ineersa\CodingAgent\Runtime\Stream\LlmStreamDispatchObserver
 
-  # The mapper now dispatches through the shared Symfony dispatcher
-  # so mapping subscribers (registered via autoconfigure) receive events.
-  Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper:
+  # RuntimeEventMapper uses RuntimeEventTranslator with an explicit dispatch table.
+  # EventDispatcher is still passed for extension subscribers that observe the
+  # mapping flow (e.g. ExtensionApprovalAnswerSubscriber).
+  Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator:
     arguments:
-      $dispatcher: '@event_dispatcher'
+      $eventDispatcher: '@event_dispatcher'
+
+  Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper: ~
 
   Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface:
     alias: Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector

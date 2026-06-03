@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Contract;
 
-use Ineersa\AgentCore\Domain\Event\CoreLifecycleEventType;
 use Ineersa\AgentCore\Domain\Event\Lifecycle\AgentEndEvent;
+use Ineersa\AgentCore\Domain\Event\LifecycleOrderValidator;
 use Ineersa\AgentCore\Domain\Event\Lifecycle\AgentStartEvent;
 use Ineersa\AgentCore\Domain\Event\Lifecycle\MessageEndEvent;
 use Ineersa\AgentCore\Domain\Event\Lifecycle\MessageStartEvent;
@@ -24,7 +24,7 @@ final class LifecycleEventContractTest extends TestCase
     #[DataProvider('validFlowProvider')]
     public function testLifecycleOrderForMainFlows(array $events): void
     {
-        self::assertSame([], CoreLifecycleEventType::validateOrder($events));
+        self::assertSame([], LifecycleOrderValidator::validateOrder($events));
     }
 
     /**
@@ -128,7 +128,7 @@ final class LifecycleEventContractTest extends TestCase
             new AgentEndEvent($runId, 7, 1),
         ];
 
-        self::assertSame([], CoreLifecycleEventType::validateOrder($events));
+        self::assertSame([], LifecycleOrderValidator::validateOrder($events));
     }
 
     public function testExtensionEventCannotCrossAssistantToolBarrier(): void
@@ -147,7 +147,7 @@ final class LifecycleEventContractTest extends TestCase
             new AgentEndEvent($runId, 9, 1),
         ];
 
-        $violations = CoreLifecycleEventType::validateOrder($events);
+        $violations = LifecycleOrderValidator::validateOrder($events);
 
         self::assertNotEmpty($violations);
         self::assertStringContainsString(
@@ -161,7 +161,7 @@ final class LifecycleEventContractTest extends TestCase
     #[DataProvider('invalidFlowProvider')]
     public function testLifecycleOrderViolationsForEdgeCases(array $events, string $expectedSubstring): void
     {
-        $violations = CoreLifecycleEventType::validateOrder($events);
+        $violations = LifecycleOrderValidator::validateOrder($events);
 
         self::assertNotEmpty($violations);
         self::assertStringContainsString(
