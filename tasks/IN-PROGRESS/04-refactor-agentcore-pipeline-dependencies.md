@@ -22,7 +22,7 @@ Scope:
 Status: IN-PROGRESS
 Branch: task/04-refactor-agentcore-pipeline-dependencies
 Worktree: /home/ineersa/projects/agent-core-worktrees/04-refactor-agentcore-pipeline-dependencies
-Fork run:
+Fork run: ovne33fzhgdm
 PR URL:
 PR Status:
 Started: 2026-06-03T16:09:54.694Z
@@ -65,3 +65,27 @@ Completed:
 - - Claimed task, moved to IN-PROGRESS, worktree: /home/ineersa/projects/agent-core-worktrees/04-refactor-agentcore-pipeline-dependencies
 - - All source and test files read, exact constructor signatures and call sites mapped
 - - Launching fork for implementation
+
+## Task workflow update - 2026-06-03T16:20:06.333Z
+- Recorded fork run: ovne33fzhgdm
+- Validation: castor test → 1587 tests, 4734 assertions, 0 failures; castor deptrac → 0 violations, 591 uncovered, 856 allowed; castor phpstan → 0 errors, 0 file_errors
+- Summary: Implementation complete. Commit e08fb44f on branch task/04-refactor-agentcore-pipeline-dependencies.
+
+**Changes (12 files: +90 / -159 lines):**
+- Deleted `RunMessageStateTools.php` (84-line god-class facade)
+- Rewrote 5 handler constructors to inject focused deps:
+  - StartRunHandler → `EventFactory`
+  - AdvanceRunHandler → `EventFactory`
+  - LlmStepResultHandler → `EventFactory`, `ToolCallExtractor`, `AgentMessageNormalizer`
+  - ToolCallResultHandler → `EventFactory`, `ToolCallExtractor`, `AgentMessageNormalizer`
+  - ApplyCommandHandler → `EventFactory`, `AgentMessageNormalizer`
+- Inlined `isStaleResult()` 2-line condition into LlmStepResultHandler and ToolCallResultHandler
+- Updated 6 test files (constructor calls + imports)
+
+**Validation:**
+- Focused tests: 20 tests across 6 test classes, all PASS
+- `castor test` — 1587 tests, 4734 assertions, PASS
+- `castor deptrac` — 0 violations
+- `castor phpstan` — 0 errors
+
+**Notes:** Symfony AI Domain coupling is intentional and stays per user decision.
