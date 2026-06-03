@@ -19,12 +19,12 @@ Scope:
 - Run and report Castor validation: castor test --filter=ModelSelectionService/AppConfigLoader relevant tests plus castor check, or exact environmental blockers.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/08-refactor-codingagent-config-selection
 Worktree: /home/ineersa/projects/agent-core-worktrees/08-refactor-codingagent-config-selection
 Fork run: o63kpl9vykso
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/90
+PR Status: open
 Started: 2026-06-03T20:50:07.554Z
 Completed:
 
@@ -56,3 +56,16 @@ Completed:
 ## Task workflow update - 2026-06-03T21:19:38.905Z
 - Validation: castor test — 1588 tests, 4732 assertions, 0 failures; castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — clean; Re-review verdict: APPROVED
 - Summary: Review fix fork 4x9nsfqz50m9 completed. Amended commit to afdd0c8f. Resolved all 8 review findings: restored 7 session metadata tests, z.ai reasoning test, ModelSettingsPersisterTest (4 tests), provider thinking_levels tests, favorites-filter test, rationale comments, z.ai docblock. 1588 tests pass (+16), 0 deptrac/phpstan/cs issues. Re-review: APPROVED (no critical/regular issues; convention note on persister docblock, simplify note on newInstanceWithoutConstructor).
+Castor Check Status: passed
+Castor Check Commit: afdd0c8f6bda0fa36cf64a0209204aab5f6a4dab
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 600s
+Castor Check Completed: 2026-06-03T21:24:39.564Z
+Castor Check Output SHA256: e4f2d9cf8324acd44b1aa2da3b829fad8800939f2276457479d47402afbb2ee8
+
+## Task workflow update - 2026-06-03T21:24:43.242Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (600s timeout). Commit: afdd0c8f6bda.
+- Pushed task/08-refactor-codingagent-config-selection to origin.
+- branch 'task/08-refactor-codingagent-config-selection' set up to track 'origin/task/08-refactor-codingagent-config-selection'.
+- Created PR: https://github.com/ineersa/agent-core/pull/90
