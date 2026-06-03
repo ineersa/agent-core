@@ -18,13 +18,13 @@ Scope:
 - Run and report Castor validation: castor test --filter=CommandMailboxPolicy plus castor check, or exact environmental blockers.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/03-refactor-agentcore-mailbox-policy
+Worktree: /home/ineersa/projects/agent-core-worktrees/03-refactor-agentcore-mailbox-policy
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-03T15:16:57.156Z
 Completed:
 
 ## Work log
@@ -46,3 +46,10 @@ Completed:
 6. Validate: `castor test --filter=CommandMailboxPolicy`, `castor test`, `castor check`
 
 **No external contract changes.** Callers (AdvanceRunHandler, LlmStepResultHandler) untouched.
+
+## Task workflow update - 2026-06-03T15:16:57.156Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/03-refactor-agentcore-mailbox-policy.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/03-refactor-agentcore-mailbox-policy.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/03-refactor-agentcore-mailbox-policy.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/03-refactor-agentcore-mailbox-policy.
