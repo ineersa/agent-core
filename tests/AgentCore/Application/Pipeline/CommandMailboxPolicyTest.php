@@ -17,7 +17,7 @@ use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
-use Ineersa\AgentCore\Application\Pipeline\RunMessageStateTools;
+
 use Ineersa\AgentCore\Application\Pipeline\RunOrchestrator;
 use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
@@ -420,7 +420,6 @@ final class CommandMailboxPolicyTest extends TestCase
             commandRouter: $commandRouter,
             steerDrainMode: $steerDrainMode,
         );
-        $stateTools = new RunMessageStateTools(new \Ineersa\AgentCore\Domain\Event\EventFactory(), new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor());
         $toolBatchCollector = new ToolBatchCollector();
 
         $runCommit = new RunCommit(
@@ -442,31 +441,36 @@ final class CommandMailboxPolicyTest extends TestCase
             logger: new NullLogger(),
             handlers: [
                 new StartRunHandler(
-                    stateTools: $stateTools,
+                    eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
                     normalizer: TestSerializerFactory::normalizer(),
                 ),
                 new ApplyCommandHandler(
                     commandStore: $commandStore,
                     commandRouter: $commandRouter,
                     commandMailboxPolicy: $commandMailboxPolicy,
-                    stateTools: $stateTools,
+                    eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
+                    messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
                     maxPendingCommands: $maxPendingCommands,
                     commandBus: $commandBus,
                 ),
                 new AdvanceRunHandler(
                     commandMailboxPolicy: $commandMailboxPolicy,
-                    stateTools: $stateTools,
+                    eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
                 ),
                 new LlmStepResultHandler(
                     toolBatchCollector: $toolBatchCollector,
                     commandMailboxPolicy: $commandMailboxPolicy,
-                    stateTools: $stateTools,
+                    eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
+                    toolCallExtractor: new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor(),
+                    messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
                     stepDispatcher: $stepDispatcher,
                     commandBus: $commandBus,
                 ),
                 new ToolCallResultHandler(
                     toolBatchCollector: $toolBatchCollector,
-                    stateTools: $stateTools,
+                    eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
+                    toolCallExtractor: new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor(),
+                    messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
                 ),
             ],
         );
