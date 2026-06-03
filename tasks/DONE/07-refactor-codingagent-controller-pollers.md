@@ -82,14 +82,14 @@ Shrink HeadlessController by extracting self-contained event-emitter and stdout-
 - Validation: castor test (all), castor deptrac, castor phpstan, castor cs-check.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/07-refactor-codingagent-controller-pollers
 Worktree: /home/ineersa/projects/agent-core-worktrees/07-refactor-codingagent-controller-pollers
 Fork run: vs33eermxfqy
 PR URL: https://github.com/ineersa/agent-core/pull/89
-PR Status: open
+PR Status: merged
 Started: 2026-06-03T18:50:30.763Z
-Completed:
+Completed: 2026-06-03T20:26:48.078Z
 
 ## Work log
 - Created: 2026-06-03T00:32:14.231Z
@@ -127,3 +127,10 @@ Castor Check Output SHA256: 019aa6a28711ab309a95c495cfa7fcd173d69f0f52db2e3c4499
 - Pushed task/07-refactor-codingagent-controller-pollers to origin.
 - branch 'task/07-refactor-codingagent-controller-pollers' set up to track 'origin/task/07-refactor-codingagent-controller-pollers'.
 - Created PR: https://github.com/ineersa/agent-core/pull/89
+
+## Task workflow update - 2026-06-03T20:26:48.079Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/07-refactor-codingagent-controller-pollers into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/07-refactor-codingagent-controller-pollers.
+- Pulled integration checkout: Already up to date..
