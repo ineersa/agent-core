@@ -110,3 +110,7 @@ Completed:
 - Recorded fork run: vs33eermxfqy
 - Validation: castor test — 1594 tests, 4745 assertions, 0 failures; castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — clean
 - Summary: Fork vs33eermxfqy completed. Commit 8e802af4 on task/07-refactor-codingagent-controller-pollers. 6 files changed (+568/-324). HeadlessController shrunk from 650→353 lines (-45%). Created RuntimeEventEmitter (237 lines) and LlmStdoutPoller (146 lines). 6 new tests (1594 total, up from 1588). castor test PASS, deptrac 0 violations, phpstan 0 errors, cs-check clean.
+
+## Task workflow update - 2026-06-03T20:10:03.297Z
+- Validation: castor test — 1594 tests, 4745 assertions, 0 failures; castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — clean
+- Summary: Review feedback addressed in commit 1b990d99 (amended). 3 review iterations: (1) CRITICAL shutdown regression — added setFatalShutdownHandler() callback so stdout write failure triggers full controller shutdown; (2) empty catch in feedPersister() — added debug logging; (3) empty catch in persistTranscripts() — added debug logging; (4) error_get_last() race in emitInternal() — captured immediately after @fwrite. 6 files changed (+603/-324). 1594 tests pass, 0 deptrac violations, 0 phpstan errors, cs-check clean.
