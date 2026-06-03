@@ -47,3 +47,8 @@ Completed:
 ## Task workflow update - 2026-06-03T20:53:03.323Z
 - Recorded fork run: o63kpl9vykso
 - Summary: Fork launched (o63kpl9vykso) to implement task 08. Scope: create ModelResolver (read-only) and ModelSettingsPersister (write-only), rewrite ModelSelectionService as coordinator, replace AppConfigLoader resolveConfigPaths() with declarative path map using Symfony PropertyAccess, create ModelResolverTest (pure unit), simplify ModelSelectionServiceTest (8 tests), update 4 other test files, update services.yaml.
+
+## Task workflow update - 2026-06-03T21:00:01.226Z
+- Recorded fork run: o63kpl9vykso
+- Validation: castor test — 1572 tests, 4694 assertions, 0 failures; castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — clean
+- Summary: Fork o63kpl9vykso completed task 08. Commit 60665817 on task/08-refactor-codingagent-config-selection. 13 files changed (+831/-971): created ModelResolver (235 lines, read-only), ModelSettingsPersister (63 lines, write-only), rewrote ModelSelectionService (243 lines, was 360, coordinator), replaced 5 hardcoded if-blocks in AppConfigLoader with PATH_CONFIG constant + PropertyAccess, created ModelResolverTest (26 pure unit tests), simplified ModelSelectionServiceTest (14 tests, was 56), updated 6 test files, updated services.yaml. 1572 tests pass, 0 deptrac violations, 0 phpstan errors, cs-check clean. Test count dropped from 1594 to 1572 (expected — resolution tests moved from kernel-boot integration to pure unit).
