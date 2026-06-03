@@ -124,3 +124,7 @@ Castor Check Output SHA256: e4f2d9cf8324acd44b1aa2da3b829fad8800939f2276457479d4
  create mode 100644 tests/CodingAgent/Config/ModelSettingsPersisterTest.php
 - Removed worktree /home/ineersa/projects/agent-core-worktrees/08-refactor-codingagent-config-selection.
 - Pulled integration checkout: Merge made by the 'ort' strategy..
+
+## Task workflow update - 2026-06-03T23:38:14.088Z
+- Validation: castor test — 1588/4732 pass; castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — clean
+- Summary: Task 08 completed. PR #90 merged by ineersa. Post-merge validation on main: castor test 1588/4732 pass, deptrac 0 violations, phpstan 0 errors, cs-check clean. Worktree cleaned up, integration checkout clean and pushed.
