@@ -155,4 +155,135 @@ final class LifecycleEventContractTest extends TestCase
             implode("\n", $violations),
         );
     }
+
+    /* ─── Negative edge cases ─── */
+
+    #[DataProvider('invalidFlowProvider')]
+    public function testLifecycleOrderViolationsForEdgeCases(array $events, string $expectedSubstring): void
+    {
+        $violations = CoreLifecycleEventType::validateOrder($events);
+
+        self::assertNotEmpty($violations);
+        self::assertStringContainsString(
+            $expectedSubstring,
+            implode("\n", $violations),
+        );
+    }
+
+    /**
+     * @return array<string, array{0: list<RunEvent>, 1: string}>
+     */
+    public static function invalidFlowProvider(): array
+    {
+        $runId = 'run-edge';
+
+        return [
+            'empty stream' => [
+                [],
+                'Lifecycle stream cannot be empty',
+            ],
+            'missing agent_start' => [
+                [
+                    new TurnStartEvent($runId, 1, 0),
+                    new TurnEndEvent($runId, 2, 0),
+                    new AgentEndEvent($runId, 3, 0),
+                ],
+                'must contain exactly one "agent_start"',
+            ],
+            'missing agent_end' => [
+                [
+                    new AgentStartEvent($runId, 1, 0),
+                    new TurnStartEvent($runId, 2, 1),
+                    new TurnEndEvent($runId, 3, 1),
+                ],
+                'must contain exactly one "agent_end"',
+            ],
+            'agent_start not first' => [
+                [
+                    new TurnStartEvent($runId, 1, 0),
+                    new AgentStartEvent($runId, 2, 0),
+                    new TurnEndEvent($runId, 3, 0),
+                    new AgentEndEvent($runId, 4, 0),
+                ],
+                'must be the first event',
+            ],
+            'agent_end not last' => [
+                [
+                    new AgentStartEvent($runId, 1, 0),
+                    new AgentEndEvent($runId, 2, 0),
+                    new TurnStartEvent($runId, 3, 1),
+                ],
+                'must be the final event',
+            ],
+            'nested turn_start' => [
+                [
+                    new AgentStartEvent($runId, 1, 0),
+                    new TurnStartEvent($runId, 2, 1),
+                    new TurnStartEvent($runId, 3, 1),
+                    new TurnEndEvent($runId, 4, 1),
+                    new AgentEndEvent($runId, 5, 1),
+                ],
+                'Nested "turn_start" is not allowed',
+            ],
+            'turn_end without open turn' => [
+                [
+                    new AgentStartEvent($runId, 1, 0),
+                    new TurnEndEvent($runId, 2, 1),
+                    new AgentEndEvent($runId, 3, 1),
+                ],
+                'without an open turn',
+            ],
+            'turn_end before mandatory tool preflight' => [
+                [
+                    new AgentStartEvent($runId, 1, 0),
+                    new TurnStartEvent($runId, 2, 1),
+                    new MessageStartEvent($runId, 3, 1, ['message_role' => 'assistant']),
+                    new MessageEndEvent($runId, 4, 1, ['message_role' => 'assistant', 'has_tool_calls' => true]),
+                    new TurnEndEvent($runId, 5, 1),
+                    new AgentEndEvent($runId, 6, 1),
+                ],
+                'before mandatory tool preflight',
+            ],
+            'core message event outside open turn' => [
+                [
+                    new AgentStartEvent($runId, 1, 0),
+                    new MessageStartEvent($runId, 2, 0),
+                    new AgentEndEvent($runId, 3, 0),
+                ],
+                'must be emitted inside an open turn',
+            ],
+            'tool_execution_start without assistant message_end barrier' => [
+                [
+                    new AgentStartEvent($runId, 1, 0),
+                    new TurnStartEvent($runId, 2, 1),
+                    new ToolExecutionStartEvent($runId, 3, 1, ['tool_call_id' => 't1', 'order_index' => 0]),
+                    new TurnEndEvent($runId, 4, 1),
+                    new AgentEndEvent($runId, 5, 1),
+                ],
+                'requires assistant "message_end" barrier',
+            ],
+            'non-monotonic tool_execution_end order_index' => [
+                [
+                    new AgentStartEvent($runId, 1, 0),
+                    new TurnStartEvent($runId, 2, 1),
+                    new MessageStartEvent($runId, 3, 1, ['message_role' => 'assistant']),
+                    new MessageEndEvent($runId, 4, 1, ['message_role' => 'assistant', 'has_tool_calls' => true]),
+                    new ToolExecutionStartEvent($runId, 5, 1, ['tool_call_id' => 't1', 'order_index' => 0]),
+                    new ToolExecutionEndEvent($runId, 6, 1, ['tool_call_id' => 't1', 'order_index' => 1]),
+                    new ToolExecutionEndEvent($runId, 7, 1, ['tool_call_id' => 't2', 'order_index' => 0]),
+                    new TurnEndEvent($runId, 8, 1),
+                    new AgentEndEvent($runId, 9, 1),
+                ],
+                'order_index must be monotonic',
+            ],
+            'unclosed turn' => [
+                [
+                    new AgentStartEvent($runId, 1, 0),
+                    new TurnStartEvent($runId, 2, 1),
+                    new AgentEndEvent($runId, 3, 1),
+                ],
+                'unclosed turn',
+            ],
+        ];
+    }
 }
