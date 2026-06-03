@@ -4,19 +4,82 @@
 Plan: .pi/plans/architecture-refactor-plan.md
 Reports: .pi/reports/coding-agent-architecture.md, .pi/reports/tests-architecture.md
 
-Shrink HeadlessController by extracting self-contained event-drain and stdout-stream polling services. Preserve controller-mode event ordering, partial-line JSONL buffering, transcript persistence, and process supervision behavior.
+Shrink HeadlessController by extracting self-contained event-emitter and stdout-polling services. Preserve controller-mode event ordering, partial-line JSONL buffering, transcript persistence, and process supervision behavior.
 
-Scope:
-- Extract EventDrainPoller for canonical runtime events: cursoring, mapping, stdout emit, transcript persistence feed.
-- Extract StdoutStreamPoller/JsonlLineBuffer for transient LLM stdout deltas and partial-line/error handling.
-- Move orphan-consumer cleanup or process supervision details toward ConsumerSupervisor if safe.
-- Add fast unit tests for pollers while keeping controller E2E as smoke coverage.
+## Design decisions
+- **RuntimeEventEmitter** (not "drainer" or "poller") — owns stdout resource, cursor tracking, transcript persistence feed, and emit pipeline. The drain loop is its internal concern (drains from InProcessAgentSessionClient → emit). All event writes go through this class.
+- **LlmStdoutPoller** — polls LLM child process stdout pipe, parses partial-line JSONL buffers, delegates to RuntimeEventEmitter->emit(). Direct dependency (no callable indirection).
+- **Stdout ownership**: RuntimeEventEmitter owns stdout. HeadlessController uses $emitter->emit() for ALL event writes including command ACKs and RuntimeReady.
+- **Process supervision stays in HeadlessController** — killOrphanedConsumers() and shutdown() are lifecycle concerns, not extraction targets.
+
+## Scope
+
+### New files
+1. **`src/CodingAgent/Runtime/Controller/RuntimeEventEmitter.php`** (~180 lines)
+   - Constructor: `InProcessAgentSessionClient $eventClient, TranscriptPersistenceService $transcriptPersistence, RuntimeExceptionBoundary $boundary, LoggerInterface $logger`
+   - Owns: `$stdout` resource, `$runEventCursors` array
+   - Public API:
+     - `openStdout(): void` — opens php://stdout
+     - `emit(RuntimeEvent): void` — auto cursor register/release on lifecycle events + emitInternal
+     - `startDrainLoop(float $interval = 0.05): void` — registers EventLoop::repeat, drains eventClient per run, cursor-gated, error recovery
+     - `closeStdout(): void` — cleanup
+   - Private: `emitInternal()`, `feedPersister()`, `persistTranscripts()`
+   - Cursor auto-registration on: RunStarted, RunResumed, RunResuming
+   - Cursor release on: RunCompleted, RunFailed, RunCancelled
+   - Error handling: boundary catch → ProtocolError emit → cursor release → retry next tick
+
+2. **`src/CodingAgent/Runtime/Controller/LlmStdoutPoller.php`** (~120 lines)
+   - Constructor: `ConsumerSupervisor $consumerSupervisor, RuntimeEventEmitter $emitter, RuntimeExceptionBoundary $boundary, LoggerInterface $logger, int $maxBadLines = 10`
+   - Owns: `$llmStdoutBuffer` string, `$consecutiveBadLlmLines` int
+   - Public API:
+     - `startPollLoop(float $interval = 0.01): void` — registers EventLoop::repeat
+   - Private: `pollLlmStdout()` — partial-line accumulation, RuntimeEvent::fromArray parsing, noise filtering, bad-line threshold
+   - Direct dependency on RuntimeEventEmitter (calls $emitter->emit())
+
+3. **`tests/CodingAgent/Runtime/Controller/RuntimeEventEmitterTest.php`** (~150 lines)
+   - Test cursor auto-register/release on lifecycle events
+   - Test drain loop iterates eventClient with cursor gating
+   - Test seq=0 transient skip
+   - Test error recovery (boundary catch, ProtocolError emit, cursor release, retry)
+   - Test transcript persistence after drain
+   - Test emit writes to stdout
+
+4. **`tests/CodingAgent/Runtime/Controller/LlmStdoutPollerTest.php`** (~120 lines)
+   - Test partial-line buffer accumulation and line completion
+   - Test valid RuntimeEvent JSONL parsing and emit delegation
+   - Test non-JSONL noise filtering
+   - Test consecutive bad line counting and ProtocolError threshold
+   - Test empty output short-circuit
+
+### Modified files
+5. **`src/CodingAgent/Runtime/Controller/HeadlessController.php`** (650→~370 lines, ~-280)
+   - Constructor simplified: removes eventClient, transcriptPersistence, adds RuntimeEventEmitter
+   - `run()` reduced to: openStdout via emitter, killOrphanedConsumers, RuntimeReady emit via emitter, launch consumers, register stdin watcher, create LlmStdoutPoller + start loops, register supervision + signal watchers
+   - Command ACK/rejected events use `$emitter->emit()` instead of local emit
+   - Remove: emit(), emitInternal(), feedPersister(), persistTranscripts(), pollLlmStdout(), $runEventCursors, $llmStdoutBuffer, $consecutiveBadLlmLines
+   - Keep: handleCommandLine(), decodeCommand(), ackCommand(), emitCommandRejected(), killOrphanedConsumers(), shutdown()
+
+6. **`config/services.yaml`** (~+5 lines)
+   - Wire RuntimeEventEmitter with InProcessAgentSessionClient, TranscriptPersistenceService
+   - Wire LlmStdoutPoller with ConsumerSupervisor, RuntimeEventEmitter
+
+7. **`tests/CodingAgent/Runtime/Controller/E2E/ControllerSmokeTest.php`** — no changes (E2E smoke coverage unchanged)
+
+### Implementation order
+1. Create RuntimeEventEmitter with emit(), emitInternal(), cursor tracking, stdout open/close
+2. Create RuntimeEventEmitterTest — unit tests for cursor, drain, emit, error recovery, transcript persistence
+3. Create LlmStdoutPoller with pollLlmStdout(), partial-line buffer, bad-line tracking
+4. Create LlmStdoutPollerTest — unit tests for buffer, parsing, noise, threshold
+5. Rewrite HeadlessController to delegate to emitter + poller
+6. Update config/services.yaml DI wiring
+7. Validate: castor test, castor deptrac, castor phpstan, castor cs-check
 
 ## Acceptance criteria
-- HeadlessController is reduced to lifecycle/wiring responsibilities with poller services handling drain/stdout work.
-- Partial JSONL buffering and canonical-event cursoring have focused unit tests.
+- HeadlessController reduced from ~650 to ~370 lines; event emit and stdout poll logic in focused services.
+- RuntimeEventEmitter has focused unit tests covering cursor lifecycle, drain loop, error recovery, transcript persistence.
+- LlmStdoutPoller has focused unit tests covering partial-line buffer, JSONL parsing, noise filtering, bad-line threshold.
 - ControllerSmokeTest and related controller E2E behavior remain unchanged.
-- Run and report Castor validation: poller tests, castor test:controller, and castor check, or exact environmental blockers.
+- Validation: castor test (all), castor deptrac, castor phpstan, castor cs-check.
 
 ## Workflow metadata
 Status: TODO
@@ -30,3 +93,4 @@ Completed:
 
 ## Work log
 - Created: 2026-06-03T00:32:14.231Z
+- Updated: 2026-06-03 — Full implementation plan with RuntimeEventEmitter + LlmStdoutPoller extraction, naming decisions, DI wiring, test strategy
