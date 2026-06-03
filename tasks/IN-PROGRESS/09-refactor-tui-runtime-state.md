@@ -19,13 +19,13 @@ Scope:
 - Run and report Castor validation: new TUI runtime tests, castor test:tui and castor check where prerequisites allow, or exact environmental blockers.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/09-refactor-tui-runtime-state
+Worktree: /home/ineersa/projects/agent-core-worktrees/09-refactor-tui-runtime-state
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-03T23:47:17.633Z
 Completed:
 
 ## Work log
@@ -136,3 +136,10 @@ castor phpstan
 castor cs-check
 castor test:tui      # if tmux prerequisites available
 ```
+
+## Task workflow update - 2026-06-03T23:47:17.633Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/09-refactor-tui-runtime-state.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/09-refactor-tui-runtime-state.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/09-refactor-tui-runtime-state.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/09-refactor-tui-runtime-state.
