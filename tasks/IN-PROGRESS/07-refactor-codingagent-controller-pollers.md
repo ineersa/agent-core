@@ -85,7 +85,7 @@ Shrink HeadlessController by extracting self-contained event-emitter and stdout-
 Status: IN-PROGRESS
 Branch: task/07-refactor-codingagent-controller-pollers
 Worktree: /home/ineersa/projects/agent-core-worktrees/07-refactor-codingagent-controller-pollers
-Fork run:
+Fork run: vs33eermxfqy
 PR URL:
 PR Status:
 Started: 2026-06-03T18:50:30.763Z
@@ -105,3 +105,8 @@ Completed:
 ## Task workflow update - 2026-06-03T18:53:53.796Z
 - Claimed task, moved to IN-PROGRESS, branch task/07-refactor-codingagent-controller-pollers, worktree at /home/ineersa/projects/agent-core-worktrees/07-refactor-codingagent-controller-pollers
 - Launched fork vs33eermxfqy — extracting RuntimeEventEmitter + LlmStdoutPoller from HeadlessController (650→~370 lines), creating 2 new services + 2 test files, updating services.yaml DI wiring
+
+## Task workflow update - 2026-06-03T18:59:00.957Z
+- Recorded fork run: vs33eermxfqy
+- Validation: castor test — 1594 tests, 4745 assertions, 0 failures; castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — clean
+- Summary: Fork vs33eermxfqy completed. Commit 8e802af4 on task/07-refactor-codingagent-controller-pollers. 6 files changed (+568/-324). HeadlessController shrunk from 650→353 lines (-45%). Created RuntimeEventEmitter (237 lines) and LlmStdoutPoller (146 lines). 6 new tests (1594 total, up from 1588). castor test PASS, deptrac 0 violations, phpstan 0 errors, cs-check clean.
