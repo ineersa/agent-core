@@ -10,9 +10,6 @@ parameters:
     # Services read this parameter — not the raw env directly.
     app.capture_errors: '%env(bool:HATFIELD_CAPTURE_ERRORS)%'
 
-
-
-
 services:
   _defaults:
     autowire: true
@@ -76,10 +73,6 @@ services:
     arguments:
       $appRoot: '%kernel.project_dir%'
 
-  Ineersa\CodingAgent\Config\HomeSettingsWriter: ~
-
-  Ineersa\CodingAgent\Config\AppConfigLoader: ~
-
   # AppConfig is a value object, not an autowireable service.
   # The container uses the fromContainer() factory to construct it.
   # Canonical runtime cwd is injected from %app.cwd% rather than relying
@@ -95,20 +88,12 @@ services:
 
   # ─── Extension wiring ───
 
-  Ineersa\CodingAgent\Extension\ExtensionHookRegistry: ~
-
   Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge:
     arguments:
       $appConfig: '@Ineersa\CodingAgent\Config\AppConfig'
 
   Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface:
     alias: Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge
-
-  # Retained for backward compat (referenced in extension manager tests).
-  # No longer the primary ExtensionApiInterface implementation.
-  Ineersa\CodingAgent\Extension\ExtensionApiBridge:
-    arguments:
-      $cwd: '@=service("Ineersa\\CodingAgent\\Config\\AppConfig").cwd'
 
   Ineersa\CodingAgent\Extension\ExtensionToolHookEventSubscriber:
     arguments:
@@ -117,10 +102,6 @@ services:
   Ineersa\CodingAgent\Extension\ExtensionManager:
     arguments:
       $extensionApi: '@Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface'
-
-  # Loads extensions on every console command (including messenger:consume workers)
-  # so extension hooks are available in tool execution processes.
-  Ineersa\CodingAgent\Extension\ExtensionLoaderSubscriber: ~
 
   # LoggingConfig is derived from AppConfig and autowireable.
   Ineersa\CodingAgent\Config\LoggingConfig:
@@ -153,10 +134,6 @@ services:
 
   # BackgroundProcess store — uses Doctrine ORM EntityManager,
   # no custom normalizer. Schema is managed by Doctrine migrations.
-  Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore: ~
-
-  Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle: ~
-
   Ineersa\CodingAgent\Tool\BackgroundProcessManager:
     arguments:
       $store: '@Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore'
@@ -182,12 +159,6 @@ services:
   Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface:
     alias: Ineersa\CodingAgent\Tool\ImageProcessing\CodingAgentImageCapabilityChecker
 
-  # Image gating is handled by ImageGatingConvertHook (a ConvertToLlmHook),
-  # not by AgentMessageConverter. The hook checks model capabilities upstream
-  # and strips image_ref content parts before the converter runs.
-
-  Ineersa\CodingAgent\Session\HatfieldSessionStore: ~
-
   Ineersa\AgentCore\Infrastructure\SymfonyAi\BeforeProviderRequestSubscriber:
     arguments:
       $hooks: !tagged_iterator agent_core.before_provider_request_hook
@@ -198,12 +169,8 @@ services:
 
   # ─── Runtime stream wiring ───
 
-  Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink: ~
-
   Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface:
     alias: Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink
-
-  Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink: ~
 
   # Stream subscribers: autowiring cannot resolve RuntimeEventSinkInterface
   # because there are two implementations (in-process and STDOUT). Explicitly
@@ -243,8 +210,6 @@ services:
 
   # ─── Controller event loop ───
 
-  Ineersa\CodingAgent\Runtime\Controller\ConsumerSupervisor: ~
-
   Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter:
     arguments:
       $eventClient: '@Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient'
@@ -268,8 +233,6 @@ services:
   Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator:
     arguments:
       $eventDispatcher: '@event_dispatcher'
-
-  Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper: ~
 
   Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface:
     alias: Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector
@@ -307,8 +270,6 @@ services:
     alias: Ineersa\CodingAgent\Tool\ToolRegistry
 
   # CodingAgent ToolSetResolver — bridges ToolRegistry to AgentCore resolver seam.
-  Ineersa\CodingAgent\Tool\CodingAgentToolSetResolver: ~
-
   Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface:
     alias: Ineersa\CodingAgent\Tool\CodingAgentToolSetResolver
 
@@ -324,8 +285,6 @@ services:
     alias: Ineersa\CodingAgent\Tool\RegistryBackedToolbox
 
   # ─── TOOLS-00 Tool cancellation context bridge ───
-
-  Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor: ~
 
   # ToolSettings resolves tools.execution defaults from typed AppConfig DTOs.
   Ineersa\CodingAgent\Config\ToolSettings:
@@ -350,23 +309,13 @@ services:
 
   # Durable tool batch store — persists batch state across consumer restarts.
   # Uses Doctrine ORM entities/repositories against the shared messenger SQLite.
-  Ineersa\CodingAgent\Tool\Store\DbalToolBatchStore: ~
-
   Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface:
     alias: Ineersa\CodingAgent\Tool\Store\DbalToolBatchStore
 
-  # ToolExecutionPolicyResolver is created inline by ToolExecutor and no longer
-  # needs a standalone service definition since LlmStepResultHandler now resolves
-  # execution mode from ActiveToolSet (sourced from ToolDefinitionDTO).
-
   # ─── AI-10 Per-turn model/reasoning routing ───
-
-  Ineersa\CodingAgent\Config\SessionAwareModelResolver: ~
 
   Ineersa\AgentCore\Contract\Model\ModelResolverInterface:
     alias: Ineersa\CodingAgent\Config\SessionAwareModelResolver
-
-  Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderRegistry: ~
 
   Ineersa\AgentCore\Contract\Model\ProviderRegistryInterface:
     alias: Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderRegistry

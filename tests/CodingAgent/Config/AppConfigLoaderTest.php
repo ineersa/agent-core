@@ -385,6 +385,56 @@ YAML
         self::assertNotContains('/app/config/themes', $config['tui']['theme_paths']);
     }
 
+    // ──────────────────────────────────────────────
+    //  Path map declarative tests
+    // ──────────────────────────────────────────────
+
+    public function testPathMapResolvesAllEntries(): void
+    {
+        // Given a config with all path-bearing keys
+        $cwd = $this->tmpDir.'/project';
+        @mkdir($cwd, 0755, true);
+
+        $config = $this->loader->load($this->defaultsPath, $cwd);
+
+        // All path-bearing keys should be resolved (not containing placeholders)
+        // theme_paths is a list — each entry should be resolved
+        foreach ($config['tui']['theme_paths'] as $path) {
+            self::assertStringNotContainsString('%', $path);
+            self::assertStringNotContainsString('~', $path);
+        }
+
+        // sessions.path should be an absolute path
+        self::assertStringStartsWith('/', $config['sessions']['path']);
+
+        // logging.path should be resolved
+        self::assertStringStartsWith('/', $config['logging']['path']);
+    }
+
+    public function testPathMapHandlesMissingKeysGracefully(): void
+    {
+        // Given a minimal config without any path keys
+        $cwd = $this->tmpDir.'/project';
+        @mkdir($cwd, 0755, true);
+
+        // Load defaults WITHOUT path keys
+        $minimalDefaults = $this->tmpDir.'/minimal-defaults.yaml';
+        file_put_contents($minimalDefaults, <<<'YAML'
+tui:
+    theme: cyberpunk
+YAML
+        );
+
+        // Should not throw despite missing sessions.path, logging.path, etc.
+        $config = $this->loader->load($minimalDefaults, $cwd);
+
+        // Path keys that don't exist in YAML should be absent from result
+        // but the loader should not throw or crash.
+        self::assertArrayNotHasKey('sessions', $config);
+        self::assertArrayNotHasKey('logging', $config);
+        self::assertSame('cyberpunk', $config['tui']['theme']);
+    }
+
     private function removeDir(string $dir): void
     {
         if (!is_dir($dir)) {

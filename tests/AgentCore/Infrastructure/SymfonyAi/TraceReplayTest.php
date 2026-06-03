@@ -413,7 +413,7 @@ final class TraceReplayTest extends KernelTestCase
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new HomeSettingsWriter($pathResolver);
         $appConfig = $this->makeAppConfig($aiData);
-        $selectionService = new ModelSelectionService($appConfig, $homeWriter, $this->sessionMetaStore);
+        $selectionService = new ModelSelectionService($appConfig, new \Ineersa\CodingAgent\Config\ModelResolver($appConfig, $this->sessionMetaStore), new \Ineersa\CodingAgent\Config\ModelSettingsPersister($homeWriter, $this->sessionMetaStore));
 
         return new SessionAwareModelResolver($selectionService);
     }
@@ -424,7 +424,7 @@ final class TraceReplayTest extends KernelTestCase
         $homeWriter = new HomeSettingsWriter($pathResolver);
         $appConfig = $this->makeAppConfig($aiData);
 
-        return new ModelSelectionService($appConfig, $homeWriter, $this->sessionMetaStore);
+        return new ModelSelectionService($appConfig, new \Ineersa\CodingAgent\Config\ModelResolver($appConfig, $this->sessionMetaStore), new \Ineersa\CodingAgent\Config\ModelSettingsPersister($homeWriter, $this->sessionMetaStore));
     }
 
     /**
