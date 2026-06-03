@@ -479,6 +479,21 @@ ai:
                     tool_calling: {$toolCalling}
                     reasoning: false
                     cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
+
+extensions:
+    enabled:
+        - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
+    settings:
+        safe_guard:
+            tool_names:
+                bash: bash
+                write: write
+                edit: edit
+                read: read
+            allow_command_patterns: []
+            allow_write_outside_cwd: []
+            protected_read_patterns: []
+            dangerous_command_patterns: []
 YAML;
 
         file_put_contents($this->tempDir.'/.hatfield/settings.yaml', $settings);
