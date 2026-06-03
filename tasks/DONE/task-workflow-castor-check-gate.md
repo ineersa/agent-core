@@ -13,14 +13,14 @@ Update `.pi/extensions/task-workflow.ts` so moving a task from IN-PROGRESS to CO
 - Validation via Castor passes, including tests covering gate pass/fail/timeout/bypass behavior if practical.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/task-workflow-castor-check-gate
 Worktree: /home/ineersa/projects/agent-core-worktrees/task-workflow-castor-check-gate
 Fork run: 9cu31535t48h
 PR URL: https://github.com/ineersa/agent-core/pull/83
-PR Status: open
+PR Status: merged
 Started: 2026-06-02T21:36:06.120Z
-Completed:
+Completed: 2026-06-03T00:13:24.025Z
 
 ## Work log
 - Created: 2026-06-02T21:35:52.947Z
@@ -127,3 +127,16 @@ Completed:
 ## Task workflow update - 2026-06-03T00:07:11.420Z
 - Validation: castor cs-check PASS for prompt-only changes
 - Summary: Added researcher subagent guidance to prompt templates in commit feed310a: task-start, task-to-pr, and task-review-iterate now instruct using researcher for web searches or web-based research when up-to-date external information is needed; scout wording narrowed to codebase context.
+
+## Task workflow update - 2026-06-03T00:13:24.025Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/task-workflow-castor-check-gate into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/task-workflow-castor-check-gate.
+- Pulled integration checkout: Already up to date..
+- Validation: git pull --ff-only on main updated 75714466..2ad15ece with PR #83 changes
+- Summary: PR #83 merged on GitHub and main fast-forwarded to 2ad15ece. Moving task to DONE after successful merge.
+
+## Task workflow update - 2026-06-03T00:14:47.737Z
+- Validation: LLM_MODE=true castor check PASS on main: deptrac ok; test ok (1462 tests, 4273 assertions); test:controller ok (1 test, 7 assertions); test:llm-real ok (7 tests, 40 assertions); test:tui ok (5 tests, 18 assertions); phpstan ok; cs-check ok; quality ok
+- Summary: Post-merge validation on main passed after PR #83 merge.
