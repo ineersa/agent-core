@@ -19,13 +19,13 @@ Scope:
 - Run and report Castor validation: castor test --filter=RuntimeEventMapper plus castor test:controller/castor check where prerequisites allow, or exact environmental blockers.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/06-refactor-codingagent-runtime-events
+Worktree: /home/ineersa/projects/agent-core-worktrees/06-refactor-codingagent-runtime-events
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-03T17:15:31.493Z
 Completed:
 
 ## Work log
@@ -74,3 +74,10 @@ Completed:
 **Implementation order:** Create enum → Create validator → Update Lifecycle events → Update pipeline handlers → Update test → Delete CoreLifecycleEventType → Create translator → Rewrite mapper → Delete subscribers + MappingEvent → Update DI config → Validate
 
 **Validation:** castor test --filter=RuntimeEventMapper, castor test --filter=LifecycleEventContract, castor test, castor deptrac, castor phpstan, castor cs-check
+
+## Task workflow update - 2026-06-03T17:15:31.493Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/06-refactor-codingagent-runtime-events.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/06-refactor-codingagent-runtime-events.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/06-refactor-codingagent-runtime-events.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/06-refactor-codingagent-runtime-events.
