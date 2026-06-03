@@ -30,133 +30,9 @@ final readonly class CommandMailboxPolicy
      */
     public function applyPendingTurnStartCommands(RunState $state): array
     {
-        $pendingCommands = $this->commandStore->pending($state->runId);
-        if ([] === $pendingCommands) {
-            return [$state, []];
-        }
+        $result = $this->applyPendingCommands($state, CommandApplicationBoundary::TurnStart);
 
-        $messages = $state->messages;
-        $eventSpecs = [];
-        $supersededSteerKeys = $this->supersededSteerKeys($pendingCommands);
-
-        foreach ($pendingCommands as $pendingCommand) {
-            if (isset($supersededSteerKeys[$pendingCommand->idempotencyKey])) {
-                $this->commandStore->markSuperseded($state->runId, $pendingCommand->idempotencyKey, 'Superseded by a newer steer command.');
-                $eventSpecs[] = [
-                    'type' => 'agent_command_superseded',
-                    'payload' => [
-                        'kind' => CoreCommandKind::Steer,
-                        'idempotency_key' => $pendingCommand->idempotencyKey,
-                        'reason' => 'Superseded by a newer steer command.',
-                    ],
-                ];
-
-                continue;
-            }
-
-            if (CoreCommandKind::Steer === $pendingCommand->kind) {
-                $messagePayload = $pendingCommand->payload['message'] ?? null;
-                if (!\is_array($messagePayload)) {
-                    $this->commandStore->markRejected($state->runId, $pendingCommand->idempotencyKey, 'Invalid steer payload: missing message.');
-                    $eventSpecs[] = [
-                        'type' => 'agent_command_rejected',
-                        'payload' => [
-                            'kind' => CoreCommandKind::Steer,
-                            'idempotency_key' => $pendingCommand->idempotencyKey,
-                            'reason' => 'Invalid steer payload: missing message.',
-                        ],
-                    ];
-
-                    continue;
-                }
-
-                $hydratedMessage = AgentMessage::fromPayload($messagePayload);
-                if (null === $hydratedMessage) {
-                    $this->commandStore->markRejected($state->runId, $pendingCommand->idempotencyKey, 'Invalid steer payload: malformed message envelope.');
-                    $eventSpecs[] = [
-                        'type' => 'agent_command_rejected',
-                        'payload' => [
-                            'kind' => CoreCommandKind::Steer,
-                            'idempotency_key' => $pendingCommand->idempotencyKey,
-                            'reason' => 'Invalid steer payload: malformed message envelope.',
-                        ],
-                    ];
-
-                    continue;
-                }
-
-                $messages[] = $hydratedMessage;
-                $this->commandStore->markApplied($state->runId, $pendingCommand->idempotencyKey);
-                $eventSpecs[] = [
-                    'type' => 'agent_command_applied',
-                    'payload' => [
-                        'kind' => CoreCommandKind::Steer,
-                        'idempotency_key' => $pendingCommand->idempotencyKey,
-                        'options' => [
-                            'cancel_safe' => $pendingCommand->options->safe,
-                        ],
-                    ],
-                ];
-
-                continue;
-            }
-
-            if (CoreCommandKind::FollowUp === $pendingCommand->kind) {
-                $messagePayload = $pendingCommand->payload['message'] ?? null;
-                if (!\is_array($messagePayload)) {
-                    $this->commandStore->markRejected($state->runId, $pendingCommand->idempotencyKey, 'Invalid follow_up payload: missing message.');
-                    $eventSpecs[] = [
-                        'type' => 'agent_command_rejected',
-                        'payload' => [
-                            'kind' => CoreCommandKind::FollowUp,
-                            'idempotency_key' => $pendingCommand->idempotencyKey,
-                            'reason' => 'Invalid follow_up payload: missing message.',
-                        ],
-                    ];
-
-                    continue;
-                }
-
-                $hydratedMessage = AgentMessage::fromPayload($messagePayload);
-                if (null === $hydratedMessage) {
-                    $this->commandStore->markRejected($state->runId, $pendingCommand->idempotencyKey, 'Invalid follow_up payload: malformed message envelope.');
-                    $eventSpecs[] = [
-                        'type' => 'agent_command_rejected',
-                        'payload' => [
-                            'kind' => CoreCommandKind::FollowUp,
-                            'idempotency_key' => $pendingCommand->idempotencyKey,
-                            'reason' => 'Invalid follow_up payload: malformed message envelope.',
-                        ],
-                    ];
-
-                    continue;
-                }
-
-                $messages[] = $hydratedMessage;
-                $this->commandStore->markApplied($state->runId, $pendingCommand->idempotencyKey);
-                $eventSpecs[] = [
-                    'type' => 'agent_command_applied',
-                    'payload' => [
-                        'kind' => CoreCommandKind::FollowUp,
-                        'idempotency_key' => $pendingCommand->idempotencyKey,
-                        'options' => [
-                            'cancel_safe' => $pendingCommand->options->safe,
-                        ],
-                    ],
-                ];
-
-                continue;
-            }
-
-            if (!CoreCommandKind::isCore($pendingCommand->kind)) {
-                $eventSpecs = [
-                    ...$eventSpecs,
-                    ...$this->applyExtensionCommand($state, $pendingCommand),
-                ];
-            }
-        }
-
-        return [$this->copyState($state, ['messages' => $messages]), $eventSpecs];
+        return [$result->state, $result->eventSpecs];
     }
 
     /**
@@ -164,9 +40,59 @@ final readonly class CommandMailboxPolicy
      */
     public function applyPendingStopBoundaryCommands(RunState $state): array
     {
+        $result = $this->applyPendingCommands($state, CommandApplicationBoundary::StopBoundary);
+
+        return [$result->state, $result->eventSpecs, $result->shouldContinue];
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     */
+    public function isCancelSafeExtensionCommand(string $kind, array $options): bool
+    {
+        return !CoreCommandKind::isCore($kind)
+            && true === ($options['cancel_safe'] ?? false);
+    }
+
+    public function continueRejectionReason(RunState $state): ?string
+    {
+        if (\in_array($state->status, [RunStatus::Running, RunStatus::Completed, RunStatus::Cancelled, RunStatus::Cancelling], true)) {
+            return \sprintf('continue command is not allowed while run is %s.', $state->status->value);
+        }
+
+        if (RunStatus::Failed !== $state->status) {
+            return 'continue command is only allowed from failed runs.';
+        }
+
+        if (!$state->retryableFailure) {
+            return 'continue command requires a retryable failure state.';
+        }
+
+        $lastRole = $this->lastMessageRole($state);
+        if (!\in_array($lastRole, ['user', 'tool'], true)) {
+            return \sprintf(
+                'continue command rejected: last message role must be "user" or "tool", got "%s".',
+                $lastRole ?? 'none',
+            );
+        }
+
+        return null;
+    }
+
+    /**
+     * Unified command application loop parameterized by boundary semantics.
+     *
+     * Both applyPendingTurnStartCommands() and applyPendingStopBoundaryCommands()
+     * delegate here. The CommandApplicationBoundary controls the shouldContinue
+     * tracking that distinguishes stop-boundary from turn-start behavior.
+     *
+     * @return CommandApplicationResult containing mutated state, event specs, and shouldContinue flag
+     */
+    private function applyPendingCommands(RunState $state, CommandApplicationBoundary $boundary): CommandApplicationResult
+    {
         $pendingCommands = $this->commandStore->pending($state->runId);
         if ([] === $pendingCommands) {
-            return [$state, [], false];
+            return new CommandApplicationResult($state, [], false);
         }
 
         $messages = $state->messages;
@@ -233,7 +159,9 @@ final readonly class CommandMailboxPolicy
                     ],
                 ];
 
-                $shouldContinue = true;
+                if (CommandApplicationBoundary::StopBoundary === $boundary) {
+                    $shouldContinue = true;
+                }
 
                 continue;
             }
@@ -246,41 +174,11 @@ final readonly class CommandMailboxPolicy
             }
         }
 
-        return [$this->copyState($state, ['messages' => $messages]), $eventSpecs, $shouldContinue];
-    }
-
-    /**
-     * @param array<string, mixed> $options
-     */
-    public function isCancelSafeExtensionCommand(string $kind, array $options): bool
-    {
-        return !CoreCommandKind::isCore($kind)
-            && true === ($options['cancel_safe'] ?? false);
-    }
-
-    public function continueRejectionReason(RunState $state): ?string
-    {
-        if (\in_array($state->status, [RunStatus::Running, RunStatus::Completed, RunStatus::Cancelled, RunStatus::Cancelling], true)) {
-            return \sprintf('continue command is not allowed while run is %s.', $state->status->value);
-        }
-
-        if (RunStatus::Failed !== $state->status) {
-            return 'continue command is only allowed from failed runs.';
-        }
-
-        if (!$state->retryableFailure) {
-            return 'continue command requires a retryable failure state.';
-        }
-
-        $lastRole = $this->lastMessageRole($state);
-        if (!\in_array($lastRole, ['user', 'tool'], true)) {
-            return \sprintf(
-                'continue command rejected: last message role must be "user" or "tool", got "%s".',
-                $lastRole ?? 'none',
-            );
-        }
-
-        return null;
+        return new CommandApplicationResult(
+            $this->copyState($state, ['messages' => $messages]),
+            $eventSpecs,
+            $shouldContinue,
+        );
     }
 
     /**
