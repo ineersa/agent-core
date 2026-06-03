@@ -75,3 +75,10 @@ Completed:
 - `castor deptrac` — 0 violations
 
 **No callers changed** (AdvanceRunHandler, LlmStepResultHandler, ApplyCommandHandler untouched).
+
+## Task workflow update - 2026-06-03T15:30:35.231Z
+- Validation: castor test → 1587 tests, 4734 assertions, 0 failures; castor deptrac → 0 violations, 591 uncovered, 856 allowed; castor phpstan → 0 errors, 0 file_errors; castor cs-check → ok, files_fixed=0
+- Summary: Reviewer verdict: APPROVE WITH SUGGESTIONS (no blockers). Suggestions are cosmetic/nice-to-have: enum naming convention, docblock clarity, additional negative-path tests. All local validation passes: castor test (1587/4734), deptrac (0 violations), phpstan (0 errors), cs-check (0 fixes).
+- - Reviewer: APPROVE WITH SUGGESTIONS — behavioral equivalence verified, no critical issues
+- - Local validation: castor test + deptrac + phpstan + cs-check all clean
+- - Moving to CODE-REVIEW for Castor quality gate + PR
