@@ -29,3 +29,20 @@ Completed:
 
 ## Work log
 - Created: 2026-06-03T00:31:40.751Z
+
+## Task workflow update - 2026-06-03T15:16:12.383Z
+- Summary: Implementation plan agreed:
+
+**Decisions:**
+- Rejection reason strings: unify to generic `"Invalid command payload:..."` for both boundaries
+- `CommandApplicationBoundary` enum and `CommandApplicationResult` DTO as standalone files in `src/AgentCore/Application/Pipeline/`
+
+**Steps:**
+1. Create `CommandApplicationBoundary` enum (TurnStart | StopBoundary)
+2. Create `CommandApplicationResult` readonly DTO (state, eventSpecs, shouldContinue)
+3. Extract shared `applyPendingCommands(RunState, CommandApplicationBoundary): CommandApplicationResult` private method — unified loop using StopBoundary's combined `\in_array()` style with dynamic `$pendingCommand->kind`
+4. Rewrite both public methods as thin delegates preserving exact signatures and positional-array returns
+5. Add focused boundary-mode tests (TurnStart never sets shouldContinue; StopBoundary sets it on follow-up apply; StopBoundary false when no commands)
+6. Validate: `castor test --filter=CommandMailboxPolicy`, `castor test`, `castor check`
+
+**No external contract changes.** Callers (AdvanceRunHandler, LlmStepResultHandler) untouched.
