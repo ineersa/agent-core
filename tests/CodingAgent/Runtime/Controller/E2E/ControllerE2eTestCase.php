@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -72,7 +73,7 @@ abstract class ControllerE2eTestCase extends TestCase
         $this->projectDir = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
 
         $this->sessionId = substr(bin2hex(random_bytes(16)), 0, 12);
-        $this->tempDir = $this->projectDir.'/var/tmp/'.$this->tempDirPrefix().'-'.uniqid('', true);
+        $this->tempDir = TestDirectoryIsolation::createProjectTempDir($this->tempDirPrefix());
 
         $this->createIsolatedProjectDir();
 
@@ -88,7 +89,7 @@ abstract class ControllerE2eTestCase extends TestCase
         $this->stopProcess();
 
         if (isset($this->tempDir) && '' !== $this->tempDir) {
-            $this->removeDir($this->tempDir);
+            TestDirectoryIsolation::removeDirectory($this->tempDir);
         }
 
         parent::tearDown();
@@ -446,7 +447,7 @@ abstract class ControllerE2eTestCase extends TestCase
 
     protected function createIsolatedProjectDir(): void
     {
-        mkdir($this->tempDir.'/.hatfield/sessions', 0777, true);
+        TestDirectoryIsolation::createHatfieldTree($this->tempDir, withSessions: true, permissions: 0o777);
 
         $modelConfig = $this->modelConfig();
         $input = implode(', ', array_map(
@@ -500,26 +501,4 @@ YAML;
         file_put_contents($this->tempDir.'/.hatfield/.gitignore', "*\n");
     }
 
-    protected function removeDir(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-
-        foreach ($iterator as $file) {
-            if ($file->isDir()) {
-                rmdir($file->getPathname());
-            } else {
-                @chmod($file->getPathname(), 0644);
-                unlink($file->getPathname());
-            }
-        }
-
-        rmdir($dir);
-    }
 }

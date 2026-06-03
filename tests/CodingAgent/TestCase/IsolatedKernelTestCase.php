@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\TestCase;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Kernel;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 /**
@@ -45,10 +46,8 @@ abstract class IsolatedKernelTestCase extends KernelTestCase
 
         // Create isolated cwd with a .hatfield/ directory.
         // Each test method gets a unique directory for filesystem isolation.
-        $projectDir = static::getProjectDirFromKernel();
-        $this->isolatedCwd = $projectDir.'/var/tests/hatfield-test-'.bin2hex(random_bytes(8));
-        mkdir($this->isolatedCwd, 0750, true);
-        mkdir($this->isolatedCwd.'/.hatfield', 0750, true);
+        $this->isolatedCwd = TestDirectoryIsolation::createProjectTempDir('hatfield-test', 0o750);
+        TestDirectoryIsolation::createHatfieldTree($this->isolatedCwd);
 
         // Save original cwd so we can restore it in tearDown.
         $this->originalCwd = getcwd();
@@ -105,7 +104,7 @@ abstract class IsolatedKernelTestCase extends KernelTestCase
 
         // Clean up the isolated directory tree.
         if (isset($this->isolatedCwd) && is_dir($this->isolatedCwd)) {
-            $this->removeDirectory($this->isolatedCwd);
+            TestDirectoryIsolation::removeDirectory($this->isolatedCwd);
         }
 
         parent::tearDown();
@@ -118,42 +117,4 @@ abstract class IsolatedKernelTestCase extends KernelTestCase
     }
 
     // ─── Utility ─────────────────────────────────────────────────────
-
-    /**
-     * Resolve the project directory from the kernel class.
-     *
-     * Reads Kernel::getProjectDir() which returns the project root
-     * without hardcoded dirname() path walking.
-     */
-    private static function getProjectDirFromKernel(): string
-    {
-        // Before kernel boot, resolve project dir from the kernel class file path.
-        // The Kernel class is always at the project root, so
-        // we use its own file location to discover the root.
-        $reflection = new \ReflectionClass(Kernel::class);
-
-        return \dirname($reflection->getFileName(), 2);
-    }
-
-    /**
-     * Recursively remove a directory tree.
-     */
-    private function removeDirectory(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-
-        $it = new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS);
-        $files = new \RecursiveIteratorIterator($it, \RecursiveIteratorIterator::CHILD_FIRST);
-        foreach ($files as $file) {
-            if ($file->isDir()) {
-                rmdir((string) $file);
-            } else {
-                unlink((string) $file);
-            }
-        }
-
-        rmdir($dir);
-    }
 }

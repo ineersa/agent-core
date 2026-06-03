@@ -8,9 +8,9 @@ use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageStateTools;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
-use Ineersa\AgentCore\Domain\Message\ToolCallResult;
-use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
+use Ineersa\AgentCore\Tests\Support\Builder\ToolCallResultBuilder;
 use PHPUnit\Framework\TestCase;
 
 final class ToolCallResultHandlerTest extends TestCase
@@ -56,34 +56,28 @@ final class ToolCallResultHandlerTest extends TestCase
             stateTools: new RunMessageStateTools(new \Ineersa\AgentCore\Domain\Event\EventFactory(), new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor()),
         );
 
-        $state = new RunState(
-            runId: 'run-tool-handler-1',
-            status: RunStatus::Running,
-            version: 5,
-            turnNo: 1,
-            lastSeq: 6,
-            pendingToolCalls: [
+        $state = RunStateBuilder::running('run-tool-handler-1')
+            ->withVersion(5)
+            ->withTurnNo(1)
+            ->withLastSeq(6)
+            ->withPendingToolCalls([
                 'tool-a' => false,
                 'tool-b' => false,
-            ],
-            activeStepId: 'turn-1-step',
-        );
+            ])
+            ->withActiveStepId('turn-1-step')
+            ->build();
 
-        $message = new ToolCallResult(
-            runId: 'run-tool-handler-1',
-            turnNo: 1,
-            stepId: 'turn-1-step',
-            attempt: 1,
-            idempotencyKey: 'tool-result-a',
-            toolCallId: 'tool-a',
-            orderIndex: 0,
-            result: [
+        $message = ToolCallResultBuilder::success('run-tool-handler-1')
+            ->withTurnNo(1)
+            ->withStepId('turn-1-step')
+            ->withIdempotencyKey('tool-result-a')
+            ->withToolCallId('tool-a')
+            ->withOrderIndex(0)
+            ->withResult([
                 'tool_name' => 'alpha',
                 'content' => [['type' => 'text', 'text' => 'A']],
-            ],
-            isError: false,
-            error: null,
-        );
+            ])
+            ->build();
 
         $result = $handler->handle($message, $state);
 
