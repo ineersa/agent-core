@@ -18,12 +18,12 @@ Scope:
 - Run and report Castor validation: at minimum castor test --filter for new tests plus castor check, or exact environmental blockers.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/02-refactor-domain-boundary-tests
 Worktree: /home/ineersa/projects/agent-core-worktrees/02-refactor-domain-boundary-tests
 Fork run: q97fkoum8ive
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/85
+PR Status: open
 Started: 2026-06-03T01:31:49.557Z
 Completed:
 
@@ -48,3 +48,18 @@ Completed:
 - Recorded fork run: q97fkoum8ive
 - Summary: Launched implementation fork q97fkoum8ive in background on worktree `/home/ineersa/projects/agent-core-worktrees/02-refactor-domain-boundary-tests`. Fork instructions are test-only: add focused pure PHPUnit AgentCore domain boundary tests for RunState/RunStatus, RunEvent/EventFactory, ToolCall/ToolResult/policy, model invocation DTOs, command DTOs, bus message contracts, AgentMessage toArray/custom role behavior, and lifecycle ordering edge cases. Fork must use Castor-only validation, run focused tests plus `castor test` and `LLM_MODE=true castor check` (or exact environmental blockers), commit changes, and return a dense handoff.
 - Implementation fork q97fkoum8ive launched with exact file targets, boundaries, and validation commands. Parent will verify commit/diff and record validation when fork reports back.
+Castor Check Status: passed
+Castor Check Commit: 0382f2a2771cf2a8b4dc6705fce23999274df8a1
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 900s
+Castor Check Completed: 2026-06-03T01:47:59.221Z
+Castor Check Output SHA256: 80bf59c9aec8d8fe422a085d91a73f7debcdb0a93bc88551bbe3b673e20b4bcf
+
+## Task workflow update - 2026-06-03T01:48:02.495Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: 0382f2a2771c.
+- Pushed task/02-refactor-domain-boundary-tests to origin.
+- branch 'task/02-refactor-domain-boundary-tests' set up to track 'origin/task/02-refactor-domain-boundary-tests'.
+- Created PR: https://github.com/ineersa/agent-core/pull/85
+- Validation: Fork validation reported: `castor test --filter=RunStateTest\|EventFactoryAndRunEventTest\|ToolBoundaryTest\|ModelInvocationContractTest\|CommandBoundaryTest\|AgentBusMessageContractTest\|AgentMessageTest\|LifecycleEventContractTest` passed (113 tests, 350 assertions).; Fork validation reported: `castor test` passed (1584 tests, 4723 assertions).; Fork validation reported: `castor deptrac` passed (0 violations, 0 errors).; Fork validation reported: `castor phpstan` passed (0 errors).; Fork validation reported: `castor cs-check` passed (0 files fixed).; Fork validation reported: `LLM_MODE=true castor check` passed all 7 stages (deptrac, phpunit, controller E2E, real LLM E2E, TUI E2E, phpstan, cs-check).; Parent verification: `git status --short --branch` in worktree showed `## task/02-refactor-domain-boundary-tests` with no changes; `git diff --name-only HEAD~1..HEAD` listed only the 8 test files.
+- Summary: Implementation complete at commit 0382f2a2 (`test: add AgentCore domain boundary coverage`) on branch task/02-refactor-domain-boundary-tests. Added focused pure PHPUnit AgentCore domain boundary coverage for RunState/RunStatus, RunEvent/EventFactory, ToolCall/ToolResult/ToolExecutionMode/ToolExecutionPolicy, ProviderRequest/model invocation DTOs, CoreCommandKind/RoutedCommand/PendingCommand, bus message accessors across concrete message classes, AgentMessage toArray/custom-role behavior, and lifecycle ordering negative edge cases. Parent verification inspected the commit: 8 files changed, 1232 insertions, all under tests/, no production files changed, worktree clean.
