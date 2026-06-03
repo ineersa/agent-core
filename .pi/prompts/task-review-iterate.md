@@ -22,6 +22,7 @@ Address code review feedback on a task PR:
    - Separate blockers (bugs, design flaws, safety issues) from nice-to-have notes.
    - Note which comments intersect with already-identified blockers on the task.
    - If a comment references external docs (e.g. Doctrine release notes, Symfony changelog), read those too.
+   - Use the researcher subagent for web searches or web-based research when up-to-date external information is needed.
 
 4. **Prepare exact fork instructions**
    - Write exact implementation instructions covering each actionable comment.

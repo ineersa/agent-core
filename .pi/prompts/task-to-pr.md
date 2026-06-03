@@ -15,6 +15,7 @@ Prepare a tracked task for code review:
 
 2. **Review quality**
    - Run the reviewer subagent on the worktree (subagent agent="reviewer" cwd=worktree).
+   - Use the researcher subagent for web searches or web-based research when up-to-date external information is needed.
    - If reviewer returns REQUEST CHANGES, analyze the blockers, create exact fork instructions, and launch a fork.
    - Repeat until reviewer returns APPROVED for current HEAD.
 

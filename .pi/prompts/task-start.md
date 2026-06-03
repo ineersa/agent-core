@@ -18,7 +18,8 @@ Start a tracked task in the project task workflow:
 
 3. **Prepare exact fork instructions**
    - Read the task file again if moved, then collect the required code, config, test, and docs context.
-   - Launch scout subagents when useful to gather focused context before implementation.
+   - Launch scout subagents when useful to gather focused codebase context before implementation.
+   - Use the researcher subagent for web searches or web-based research when up-to-date external information is needed.
    - Create exact implementation instructions for the fork: files to touch, old/new patterns, validation commands, and boundaries.
    - Record useful context or updates on the task with `update_task` when helpful.
 
