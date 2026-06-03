@@ -18,12 +18,12 @@ Scope:
 - Run and report Castor validation: castor test --filter=CommandMailboxPolicy plus castor check, or exact environmental blockers.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/03-refactor-agentcore-mailbox-policy
 Worktree: /home/ineersa/projects/agent-core-worktrees/03-refactor-agentcore-mailbox-policy
 Fork run: h13xzm03mjmw
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/86
+PR Status: open
 Started: 2026-06-03T15:16:57.156Z
 Completed:
 
@@ -82,3 +82,16 @@ Completed:
 - - Reviewer: APPROVE WITH SUGGESTIONS — behavioral equivalence verified, no critical issues
 - - Local validation: castor test + deptrac + phpstan + cs-check all clean
 - - Moving to CODE-REVIEW for Castor quality gate + PR
+Castor Check Status: passed
+Castor Check Commit: 04fa701375425ce229285d217cc541c5bfabf456
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 240s
+Castor Check Completed: 2026-06-03T15:42:20.062Z
+Castor Check Output SHA256: 9519153e5435886880453c89184ee65af3eb0453a14c687dbbfee836c27eb337
+
+## Task workflow update - 2026-06-03T15:42:24.843Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (240s timeout). Commit: 04fa70137542.
+- Pushed task/03-refactor-agentcore-mailbox-policy to origin.
+- branch 'task/03-refactor-agentcore-mailbox-policy' set up to track 'origin/task/03-refactor-agentcore-mailbox-policy'.
+- Created PR: https://github.com/ineersa/agent-core/pull/86
