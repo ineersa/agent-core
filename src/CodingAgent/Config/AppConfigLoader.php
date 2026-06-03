@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
+use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -43,6 +44,23 @@ use Symfony\Component\Yaml\Yaml;
  */
 final class AppConfigLoader
 {
+    /**
+     * Path-bearing config keys resolved at load time.
+     *
+     * Keys use Symfony PropertyAccess bracket notation for array access.
+     * The value indicates whether the resolved value is a list (each element
+     * resolved individually) or a string (resolved as a single path).
+     *
+     * Add new path-bearing config keys here — no more hardcoded if-blocks.
+     */
+    private const PATH_CONFIG = [
+        '[tui][theme_paths]' => 'list',
+        '[sessions][path]' => 'string',
+        '[logging][path]' => 'string',
+        '[tools][output_cap][path]' => 'string',
+        '[tools][background_process][path]' => 'string',
+    ];
+
     public function __construct(
         private readonly SettingsPathResolver $pathResolver,
     ) {
@@ -132,9 +150,9 @@ final class AppConfigLoader
     /**
      * Resolve path placeholders in the merged config.
      *
-     * Currently resolves {@see tui::$themePaths}, {@see sessions.path},
-     * and {@see logging.path}. Extend as more path-containing config keys
-     * are added.
+     * Uses a declarative PATH_CONFIG constant instead of hardcoded if-blocks.
+     * Each path entry is resolved through SettingsPathResolver which handles
+     * %kernel.project_dir%, ~, and relative path normalization.
      *
      * @param array<string, mixed> $data
      *
@@ -142,43 +160,28 @@ final class AppConfigLoader
      */
     private function resolveConfigPaths(array $data, string $cwd): array
     {
-        if (isset($data['tui']['theme_paths']) && \is_array($data['tui']['theme_paths'])) {
-            $resolved = [];
-            foreach ($data['tui']['theme_paths'] as $path) {
-                if (!\is_string($path)) {
-                    continue;
-                }
-                $resolved[] = $this->pathResolver->resolve($path, $cwd);
+        $accessor = PropertyAccess::createPropertyAccessor();
+
+        foreach (self::PATH_CONFIG as $path => $type) {
+            try {
+                $value = $accessor->getValue($data, $path);
+            } catch (\Exception) {
+                // Path does not exist in config — skip.
+                continue;
             }
-            $data['tui']['theme_paths'] = $resolved;
-        }
 
-        if (isset($data['sessions']['path']) && \is_string($data['sessions']['path'])) {
-            $data['sessions']['path'] = $this->pathResolver->resolve(
-                $data['sessions']['path'],
-                $cwd,
-            );
-        }
-
-        if (isset($data['logging']['path']) && \is_string($data['logging']['path'])) {
-            $data['logging']['path'] = $this->pathResolver->resolve(
-                $data['logging']['path'],
-                $cwd,
-            );
-        }
-
-        if (isset($data['tools']['output_cap']['path']) && \is_string($data['tools']['output_cap']['path'])) {
-            $data['tools']['output_cap']['path'] = $this->pathResolver->resolve(
-                $data['tools']['output_cap']['path'],
-                $cwd,
-            );
-        }
-
-        if (isset($data['tools']['background_process']['path']) && \is_string($data['tools']['background_process']['path'])) {
-            $data['tools']['background_process']['path'] = $this->pathResolver->resolve(
-                $data['tools']['background_process']['path'],
-                $cwd,
-            );
+            if ('list' === $type && \is_array($value)) {
+                $resolved = [];
+                foreach ($value as $item) {
+                    if (!\is_string($item)) {
+                        continue;
+                    }
+                    $resolved[] = $this->pathResolver->resolve($item, $cwd);
+                }
+                $accessor->setValue($data, $path, $resolved);
+            } elseif ('string' === $type && \is_string($value)) {
+                $accessor->setValue($data, $path, $this->pathResolver->resolve($value, $cwd));
+            }
         }
 
         return $data;
