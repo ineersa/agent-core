@@ -11,7 +11,9 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\HomeSettingsWriter;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
+use Ineersa\CodingAgent\Config\ModelSettingsPersister;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -70,7 +72,7 @@ class ModelCommandHandlerTest extends TestCase
         $this->sessionMetaStore = new SessionMetadataStore($hatfieldSessionStore);
 
         $appConfig = $this->makeAppConfig($this->standardAiData());
-        $this->modelService = new ModelSelectionService($appConfig, $homeWriter, $this->sessionMetaStore);
+        $this->modelService = new ModelSelectionService($appConfig, new ModelResolver($appConfig, $this->sessionMetaStore), new ModelSettingsPersister($homeWriter, $this->sessionMetaStore));
 
         $this->state = new TuiSessionState('test-session');
     }
@@ -242,7 +244,7 @@ class ModelCommandHandlerTest extends TestCase
         // Rebuild modelService with favorites
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new HomeSettingsWriter($pathResolver);
-        $this->modelService = new ModelSelectionService($appConfig, $homeWriter, $this->sessionMetaStore);
+        $this->modelService = new ModelSelectionService($appConfig, new ModelResolver($appConfig, $this->sessionMetaStore), new ModelSettingsPersister($homeWriter, $this->sessionMetaStore));
         $pickerController = new ModelPickerController($this->modelService, $appConfig, new NullLogger());
         $favPickerController = new FavoritePickerController($this->modelService, new NullLogger());
         $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, $favPickerController, new NullLogger());
@@ -325,7 +327,7 @@ class ModelCommandHandlerTest extends TestCase
         $appConfig = $this->makeAppConfig($aiData);
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new HomeSettingsWriter($pathResolver);
-        $this->modelService = new ModelSelectionService($appConfig, $homeWriter, $this->sessionMetaStore);
+        $this->modelService = new ModelSelectionService($appConfig, new ModelResolver($appConfig, $this->sessionMetaStore), new ModelSettingsPersister($homeWriter, $this->sessionMetaStore));
         $pickerController = new ModelPickerController($this->modelService, $appConfig, new NullLogger());
         $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, new FavoritePickerController($this->modelService, new NullLogger()), new NullLogger());
 
@@ -369,7 +371,7 @@ class ModelCommandHandlerTest extends TestCase
         $appConfig = $this->makeAppConfig($aiData);
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new HomeSettingsWriter($pathResolver);
-        $this->modelService = new ModelSelectionService($appConfig, $homeWriter, $this->sessionMetaStore);
+        $this->modelService = new ModelSelectionService($appConfig, new ModelResolver($appConfig, $this->sessionMetaStore), new ModelSettingsPersister($homeWriter, $this->sessionMetaStore));
         $pickerController = new ModelPickerController($this->modelService, $appConfig, new NullLogger());
         $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, new FavoritePickerController($this->modelService, new NullLogger()), new NullLogger());
 
