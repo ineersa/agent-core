@@ -22,7 +22,7 @@ Scope:
 Status: IN-PROGRESS
 Branch: task/08-refactor-codingagent-config-selection
 Worktree: /home/ineersa/projects/agent-core-worktrees/08-refactor-codingagent-config-selection
-Fork run: kejg2rqdmwcj
+Fork run: rz1ztwxqcsba
 PR URL: https://github.com/ineersa/agent-core/pull/90
 PR Status: open
 Started: 2026-06-03T20:50:07.554Z
@@ -77,3 +77,8 @@ Castor Check Output SHA256: e4f2d9cf8324acd44b1aa2da3b829fad8800939f2276457479d4
 - Recorded fork run: kejg2rqdmwcj
 - Validation: castor test — 1588/4732 pass; castor phpstan — 0 errors; castor cs-check — clean
 - Summary: Review fix fork kejg2rqdmwcj: removed redundant ModelResolver: ~ and ModelSettingsPersister: ~ from config/services.yaml per PR #90 inline feedback. Autowiring handles both classes via resource binding. Commit amended to 3eada3a7, now 13 files changed (+1152/-905). 1588 tests pass, 0 phpstan errors, cs-check clean.
+
+## Task workflow update - 2026-06-03T21:38:06.600Z
+- Recorded fork run: rz1ztwxqcsba
+- Validation: castor test — 1588/4732 pass; castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — clean
+- Summary: Review fix fork rz1ztwxqcsba: removed 16 of 17 redundant ~ service definitions from config/services.yaml per PR #90 reviewer feedback. Only StringTemplateRenderer: ~ preserved (vendor class outside src/ resource paths). Commit amended to 718c068f, 14 files changed (+1152/-937). 1588 tests pass, 0 deptrac/phpstan/cs issues.
