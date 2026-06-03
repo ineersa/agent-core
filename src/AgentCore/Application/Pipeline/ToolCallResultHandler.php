@@ -7,8 +7,6 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Domain\Event\CoreLifecycleEventType;
-use Ineersa\AgentCore\Domain\Event\EventFactory;
-use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -20,9 +18,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
 {
     public function __construct(
         private ToolBatchCollector $toolBatchCollector,
-        private EventFactory $eventFactory,
-        private ToolCallExtractor $toolCallExtractor,
-        private AgentMessageNormalizer $messageNormalizer,
+        private RunMessageStateTools $stateTools,
         private ?RunMetrics $metrics = null,
         private ?MessageBusInterface $commandBus = null,
     ) {
@@ -41,10 +37,10 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
 
         $runId = $message->runId();
 
-        if (($state->turnNo !== $message->turnNo() || (null !== $state->activeStepId && $state->activeStepId !== $message->stepId()))
+        if ($this->stateTools->isStaleResult($state, $message->turnNo(), $message->stepId())
             || RunStatus::Cancelled === $state->status) {
-            $nextState = $this->eventFactory->incrementStateVersion($state, eventCount: 1);
-            $event = $this->eventFactory->event(
+            $nextState = $this->stateTools->incrementStateVersion($state, eventCount: 1);
+            $event = $this->stateTools->event(
                 runId: $runId,
                 seq: $nextState->lastSeq,
                 turnNo: $state->turnNo,
@@ -84,7 +80,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                 ],
             ];
 
-            $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
+            $events = $this->stateTools->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
             $nextState = new RunState(
                 runId: $state->runId,
                 status: RunStatus::Cancelled,
@@ -113,8 +109,8 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
         }
 
         if (!$outcome->accepted) {
-            $nextState = $this->eventFactory->incrementStateVersion($state, eventCount: 1);
-            $event = $this->eventFactory->event(
+            $nextState = $this->stateTools->incrementStateVersion($state, eventCount: 1);
+            $event = $this->stateTools->event(
                 runId: $runId,
                 seq: $nextState->lastSeq,
                 turnNo: $state->turnNo,
@@ -166,7 +162,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             $interruptPayload = null;
 
             foreach ($outcome->orderedResults as $orderedResult) {
-                $messages[] = $this->messageNormalizer->toolMessage($orderedResult);
+                $messages[] = $this->stateTools->toolMessage($orderedResult);
 
                 $eventSpecs[] = [
                     'type' => CoreLifecycleEventType::MESSAGE_START,
@@ -184,7 +180,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                     ],
                 ];
 
-                $interruptPayload ??= $this->toolCallExtractor->interruptPayloadFromToolResult($orderedResult);
+                $interruptPayload ??= $this->stateTools->interruptPayloadFromToolResult($orderedResult);
             }
 
             $eventSpecs[] = [
@@ -214,7 +210,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             }
         }
 
-        $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
+        $events = $this->stateTools->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
 
         $nextState = new RunState(
             runId: $state->runId,

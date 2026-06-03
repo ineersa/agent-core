@@ -9,6 +9,8 @@ use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
+use Ineersa\AgentCore\Application\Pipeline\RunMessageStateTools;
+use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
@@ -36,7 +38,7 @@ final class AdvanceRunHandlerTest extends TestCase
 
         $handler = new AdvanceRunHandler(
             commandMailboxPolicy: $commandMailboxPolicy,
-            eventFactory: new EventFactory(),
+            stateTools: new RunMessageStateTools(new EventFactory(), new ToolCallExtractor()),
             metrics: $metrics,
         );
 
@@ -100,7 +102,7 @@ final class AdvanceRunHandlerTest extends TestCase
 
         $handler = new AdvanceRunHandler(
             commandMailboxPolicy: $commandMailboxPolicy,
-            eventFactory: new EventFactory(),
+            stateTools: new RunMessageStateTools(new EventFactory(), new ToolCallExtractor()),
         );
 
         $state = RunStateBuilder::create('run-cancel-advance')
@@ -145,7 +147,7 @@ final class AdvanceRunHandlerTest extends TestCase
 
         $handler = new AdvanceRunHandler(
             commandMailboxPolicy: $commandMailboxPolicy,
-            eventFactory: new EventFactory(),
+            stateTools: new RunMessageStateTools(new EventFactory(), new ToolCallExtractor()),
         );
 
         $state = RunStateBuilder::create('run-cancel-noop')

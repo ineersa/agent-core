@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Pipeline;
 
-use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -17,7 +16,7 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 final readonly class StartRunHandler implements RunMessageHandler
 {
     public function __construct(
-        private EventFactory $eventFactory,
+        private RunMessageStateTools $stateTools,
         private NormalizerInterface $normalizer,
         private ?MessageBusInterface $commandBus = null,
     ) {
@@ -51,7 +50,7 @@ final readonly class StartRunHandler implements RunMessageHandler
             retryableFailure: false,
         );
 
-        $event = $this->eventFactory->event(
+        $event = $this->stateTools->event(
             runId: $message->runId(),
             seq: $nextState->lastSeq,
             turnNo: $nextState->turnNo,

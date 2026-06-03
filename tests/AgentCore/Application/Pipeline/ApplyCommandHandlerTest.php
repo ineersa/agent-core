@@ -8,8 +8,9 @@ use Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
+use Ineersa\AgentCore\Application\Pipeline\RunMessageStateTools;
+use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
-use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -38,8 +39,7 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             commandRouter: $commandRouter,
             commandMailboxPolicy: $commandMailboxPolicy,
-            eventFactory: new EventFactory(),
-            messageNormalizer: new AgentMessageNormalizer(),
+            stateTools: new RunMessageStateTools(new EventFactory(), new ToolCallExtractor()),
             maxPendingCommands: 10,
             commandBus: $commandBus,
         );
@@ -104,8 +104,7 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             commandRouter: $commandRouter,
             commandMailboxPolicy: $commandMailboxPolicy,
-            eventFactory: new EventFactory(),
-            messageNormalizer: new AgentMessageNormalizer(),
+            stateTools: new RunMessageStateTools(new EventFactory(), new ToolCallExtractor()),
             maxPendingCommands: 10,
             commandBus: $commandBus,
         );
@@ -159,8 +158,7 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             commandRouter: $commandRouter,
             commandMailboxPolicy: $commandMailboxPolicy,
-            eventFactory: new EventFactory(),
-            messageNormalizer: new AgentMessageNormalizer(),
+            stateTools: new RunMessageStateTools(new EventFactory(), new ToolCallExtractor()),
             maxPendingCommands: 10,
         );
 
@@ -207,8 +205,7 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             commandRouter: $commandRouter,
             commandMailboxPolicy: $commandMailboxPolicy,
-            eventFactory: new EventFactory(),
-            messageNormalizer: new AgentMessageNormalizer(),
+            stateTools: new RunMessageStateTools(new EventFactory(), new ToolCallExtractor()),
             maxPendingCommands: 10,
         );
 
@@ -255,8 +252,7 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             commandRouter: $commandRouter,
             commandMailboxPolicy: $commandMailboxPolicy,
-            eventFactory: new EventFactory(),
-            messageNormalizer: new AgentMessageNormalizer(),
+            stateTools: new RunMessageStateTools(new EventFactory(), new ToolCallExtractor()),
             maxPendingCommands: 10,
         );
 
@@ -303,8 +299,7 @@ final class ApplyCommandHandlerTest extends TestCase
             commandStore: $commandStore,
             commandRouter: $commandRouter,
             commandMailboxPolicy: $commandMailboxPolicy,
-            eventFactory: new EventFactory(),
-            messageNormalizer: new AgentMessageNormalizer(),
+            stateTools: new RunMessageStateTools(new EventFactory(), new ToolCallExtractor()),
             maxPendingCommands: 10,
         );
 

@@ -5,10 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
-use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
+use Ineersa\AgentCore\Application\Pipeline\RunMessageStateTools;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
-use Ineersa\AgentCore\Domain\Event\EventFactory;
-use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
@@ -55,9 +53,7 @@ final class ToolCallResultHandlerTest extends TestCase
 
         $handler = new ToolCallResultHandler(
             toolBatchCollector: $collector,
-            eventFactory: new EventFactory(),
-            toolCallExtractor: new ToolCallExtractor(),
-            messageNormalizer: new AgentMessageNormalizer(),
+            stateTools: new RunMessageStateTools(new \Ineersa\AgentCore\Domain\Event\EventFactory(), new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor()),
         );
 
         $state = RunStateBuilder::running('run-tool-handler-1')

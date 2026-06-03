@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 
-use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Application\Pipeline\RunMessageStateTools;
 use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -22,7 +22,7 @@ final class StartRunHandlerTest extends TestCase
     public function testHandleBuildsRunStartedTransitionWithoutReducer(): void
     {
         $handler = new StartRunHandler(
-            eventFactory: new EventFactory(),
+            stateTools: new RunMessageStateTools(new \Ineersa\AgentCore\Domain\Event\EventFactory(), new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor()),
             normalizer: TestSerializerFactory::normalizer(),
         );
 
@@ -83,7 +83,7 @@ final class StartRunHandlerTest extends TestCase
         $commandBus = new StartRunRecordingBus();
 
         $handler = new StartRunHandler(
-            eventFactory: new EventFactory(),
+            stateTools: new RunMessageStateTools(new \Ineersa\AgentCore\Domain\Event\EventFactory(), new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor()),
             normalizer: TestSerializerFactory::normalizer(),
             commandBus: $commandBus,
         );
