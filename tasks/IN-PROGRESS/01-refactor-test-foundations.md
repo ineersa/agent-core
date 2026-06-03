@@ -38,3 +38,9 @@ Completed:
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/01-refactor-test-foundations.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/01-refactor-test-foundations.
 - Summary: Claimed task after reading task file, architecture refactor plan, tests architecture report, and Castor skill instructions. Integration checkout was clean on main before claim.
+
+## Task workflow update - 2026-06-03T00:49:48.470Z
+- Validation: Pre-claim integration checkout clean: `git status --porcelain=v1 && git branch --show-current` output only `main` (no changed files).; Required validation for implementation: `castor test --filter=AdvanceRunHandlerTest`, `castor test --filter=StartRunHandlerTest`, `castor test --filter=ToolExecutorTest`, `castor test --filter=BgStatusToolTest`, `castor test:tui`, `castor test`, `castor check` (or exact tmux/llama.cpp blockers).
+- Summary: Preparation context gathered. Worktree: /home/ineersa/projects/agent-core-worktrees/01-refactor-test-foundations. Read task, .pi/plans/architecture-refactor-plan.md, .pi/reports/tests-architecture.md, Castor/subagent skills, composer autoload, target domain DTO constructors, representative noisy tests, and filesystem isolation bases. Scout recon identified builder targets in RunState/StartRun/AdvanceRun/ToolCall/ToolCallResult and shared filesystem duplication across IsolatedKernelTestCase, BgStatusToolTest, ControllerE2eTestCase, and TUI E2E tests. Full scout artifact: /home/ineersa/.pi/agent/tmp/2026-06--115d84a6.txt.
+- Claimed task and created worktree/branch via move_task.
+- Ran two scout subagents for builder and filesystem-isolation reconnaissance; no code edits made by parent.
