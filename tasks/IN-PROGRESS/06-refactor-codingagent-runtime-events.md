@@ -81,3 +81,7 @@ Completed:
 - Created worktree /home/ineersa/projects/agent-core-worktrees/06-refactor-codingagent-runtime-events.
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/06-refactor-codingagent-runtime-events.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/06-refactor-codingagent-runtime-events.
+
+## Task workflow update - 2026-06-03T17:19:55.797Z
+- Task claimed, moved to IN-PROGRESS. Branch task/06-refactor-codingagent-runtime-events, worktree at /home/ineersa/projects/agent-core-worktrees/06-refactor-codingagent-runtime-events
+- Fork zlhq2oqqcowr launched for implementation — 12 steps: create RunEventTypeEnum, create LifecycleOrderValidator, update 10 lifecycle events, update 6 pipeline handlers, update LifecycleEventContractTest, delete CoreLifecycleEventType, create RuntimeEventTranslator, rewrite RuntimeEventMapper, delete 5 subscribers + RunEventMappingEvent, update RuntimeEventMapperTest, update DI config, validate
