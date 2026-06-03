@@ -82,12 +82,12 @@ Shrink HeadlessController by extracting self-contained event-emitter and stdout-
 - Validation: castor test (all), castor deptrac, castor phpstan, castor cs-check.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/07-refactor-codingagent-controller-pollers
 Worktree: /home/ineersa/projects/agent-core-worktrees/07-refactor-codingagent-controller-pollers
 Fork run: vs33eermxfqy
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/89
+PR Status: open
 Started: 2026-06-03T18:50:30.763Z
 Completed:
 
@@ -114,3 +114,16 @@ Completed:
 ## Task workflow update - 2026-06-03T20:10:03.297Z
 - Validation: castor test — 1594 tests, 4745 assertions, 0 failures; castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — clean
 - Summary: Review feedback addressed in commit 1b990d99 (amended). 3 review iterations: (1) CRITICAL shutdown regression — added setFatalShutdownHandler() callback so stdout write failure triggers full controller shutdown; (2) empty catch in feedPersister() — added debug logging; (3) empty catch in persistTranscripts() — added debug logging; (4) error_get_last() race in emitInternal() — captured immediately after @fwrite. 6 files changed (+603/-324). 1594 tests pass, 0 deptrac violations, 0 phpstan errors, cs-check clean.
+Castor Check Status: passed
+Castor Check Commit: 1b990d994eaff086c809da66339009970fa83658
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 240s
+Castor Check Completed: 2026-06-03T20:11:07.982Z
+Castor Check Output SHA256: 019aa6a28711ab309a95c495cfa7fcd173d69f0f52db2e3c4499fb4d1c0f54c3
+
+## Task workflow update - 2026-06-03T20:11:12.118Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (240s timeout). Commit: 1b990d994eaf.
+- Pushed task/07-refactor-codingagent-controller-pollers to origin.
+- branch 'task/07-refactor-codingagent-controller-pollers' set up to track 'origin/task/07-refactor-codingagent-controller-pollers'.
+- Created PR: https://github.com/ineersa/agent-core/pull/89
