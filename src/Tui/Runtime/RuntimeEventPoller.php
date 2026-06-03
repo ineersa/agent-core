@@ -81,8 +81,13 @@ final class RuntimeEventPoller
                 }
                 $hasNew = true;
 
-                self::extractFooterUsage($state, $runtimeEvent);
-                self::updateActivity($state, $runtimeEvent);
+                if (RuntimeEventTypeEnum::TurnStarted->value === $runtimeEvent->type) {
+                    $state->usage->resetTurn();
+                } elseif (RuntimeEventTypeEnum::AssistantMessageCompleted->value === $runtimeEvent->type) {
+                    $state->usage->accumulate($runtimeEvent);
+                }
+
+                $state->activity = ActivityStateMachine::transition($state->activity, $runtimeEvent);
                 $this->projector->accept($runtimeEvent->toArray());
 
                 if (!$processingRemoved) {
@@ -235,118 +240,6 @@ final class RuntimeEventPoller
         $last = $state->transcript[$lastIdx];
         if (TranscriptBlockKindEnum::System === $last->kind && str_contains($last->text, 'Processing...')) {
             array_pop($state->transcript);
-        }
-    }
-
-    /**
-     * Update TUI activity state based on the runtime event type.
-     *
-     * This is the authoritative transition source for run activity.
-     * SubmitListener sets Starting/Cancelling optimistically on send/cancel;
-     * this method confirms and advances to the confirmed state from events.
-     */
-    private static function updateActivity(TuiSessionState $state, RuntimeEvent $event): void
-    {
-        if ($state->activity->isTerminal()) {
-            return; // Terminal states are never overridden by later events.
-        }
-
-        $type = $event->type;
-
-        match ($type) {
-            RuntimeEventTypeEnum::RunStarted->value,
-            RuntimeEventTypeEnum::TurnStarted->value,
-            RuntimeEventTypeEnum::TurnCompleted->value,
-            RuntimeEventTypeEnum::AssistantMessageStarted->value,
-            RuntimeEventTypeEnum::AssistantTextStarted->value,
-            RuntimeEventTypeEnum::AssistantTextDelta->value,
-            RuntimeEventTypeEnum::AssistantTextCompleted->value,
-            RuntimeEventTypeEnum::AssistantThinkingStarted->value,
-            RuntimeEventTypeEnum::AssistantThinkingDelta->value,
-            RuntimeEventTypeEnum::AssistantThinkingCompleted->value,
-            RuntimeEventTypeEnum::AssistantMessageCompleted->value,
-            RuntimeEventTypeEnum::ToolCallStarted->value,
-            RuntimeEventTypeEnum::ToolCallArgumentsDelta->value,
-            RuntimeEventTypeEnum::ToolCallArgumentsCompleted->value,
-            RuntimeEventTypeEnum::ToolExecutionStarted->value,
-            RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
-            RuntimeEventTypeEnum::ToolExecutionCompleted->value,
-            RuntimeEventTypeEnum::ToolExecutionFailed->value,
-            RuntimeEventTypeEnum::UserMessageSubmitted->value,
-            RuntimeEventTypeEnum::HumanInputAnswered->value,
-            RuntimeEventTypeEnum::ApprovalApproved->value,
-            RuntimeEventTypeEnum::ApprovalRejected->value,
-            RuntimeEventTypeEnum::HumanInputRejected->value => $state->activity = RunActivityStateEnum::Running,
-
-            RuntimeEventTypeEnum::HumanInputRequested->value,
-            RuntimeEventTypeEnum::ApprovalRequested->value => $state->activity = RunActivityStateEnum::WaitingHuman,
-
-            RuntimeEventTypeEnum::CancellationRequested->value,
-            RuntimeEventTypeEnum::OperationCancelled->value,
-            RuntimeEventTypeEnum::ToolExecutionCancelled->value => $state->activity = RunActivityStateEnum::Cancelling,
-
-            RuntimeEventTypeEnum::RunCompleted->value => $state->activity = RunActivityStateEnum::Completed,
-
-            RuntimeEventTypeEnum::RunFailed->value,
-            RuntimeEventTypeEnum::TurnFailed->value,
-            RuntimeEventTypeEnum::AssistantMessageFailed->value => $state->activity = RunActivityStateEnum::Failed,
-
-            RuntimeEventTypeEnum::RunCancelled->value,
-            RuntimeEventTypeEnum::TurnCancelled->value => $state->activity = RunActivityStateEnum::Cancelled,
-
-            default => null, // No transition for unknown/streaming/internal events
-        };
-    }
-
-    /**
-     * Extract token usage and cost from runtime events, track LLM timing,
-     * and update footer state.
-     *
-     * Per-turn metrics (turnOutputTokens, turnStartTime) are reset on
-     * TurnStarted. The latestInputTokens field stores the most recent
-     * input_tokens from AssistantMessageCompleted (not accumulated) for
-     * accurate context window display. Accumulated inputTokens/outputTokens
-     * are kept for the billing display.
-     */
-    private static function extractFooterUsage(TuiSessionState $state, RuntimeEvent $event): void
-    {
-        // Reset per-turn metrics when a new turn starts
-        if (RuntimeEventTypeEnum::TurnStarted->value === $event->type) {
-            $state->turnOutputTokens = 0;
-            $state->turnStartTime = microtime(true);
-            $state->llmEndTime = 0.0;
-            $state->latestInputTokens = 0;
-
-            return;
-        }
-
-        if (RuntimeEventTypeEnum::AssistantMessageCompleted->value !== $event->type) {
-            return;
-        }
-
-        // Record LLM end time when the response completes
-        $state->llmEndTime = microtime(true);
-
-        $usage = $event->payload['usage'] ?? [];
-        if (!\is_array($usage)) {
-            return;
-        }
-
-        // Latest input_tokens (not accumulated) for context window display
-        $state->latestInputTokens = (int) ($usage['input_tokens'] ?? $usage['prompt_tokens'] ?? 0);
-
-        // Accumulated totals for the billing display (running sum across the session)
-        $state->inputTokens += $state->latestInputTokens;
-
-        $outputTokens = (int) ($usage['output_tokens'] ?? $usage['completion_tokens'] ?? 0);
-        $state->outputTokens += $outputTokens;
-
-        // Per-turn output tokens for t/s calculation
-        $state->turnOutputTokens += $outputTokens;
-
-        $cost = $usage['cost'] ?? $usage['total_cost'] ?? null;
-        if (\is_float($cost) || \is_int($cost)) {
-            $state->totalCost += (float) $cost;
         }
     }
 }

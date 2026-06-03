@@ -17,6 +17,9 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
  *
  * Transcript blocks are stored as plain projection DTOs; rendering
  * (theme colors, prefixes) is applied by ChatScreen at display time.
+ *
+ * Footer usage/token state lives in the UsageProjection sub-object,
+ * which enforces per-turn reset and session-level accumulation invariants.
  */
 final class TuiSessionState
 {
@@ -51,24 +54,18 @@ final class TuiSessionState
     // Updated by FooterStateListener on each poll.
     public string $footerModel = '';
     public string $footerReasoning = '';
-    public int $inputTokens = 0;
-    public int $outputTokens = 0;
-    /** Running cost estimate in dollars (accumulated from usage). */
-    public float $totalCost = 0.0;
     /** Context window size of the current model, or 0 when unknown. */
     public int $contextWindow = 0;
-    /** Timestamp when the LLM response completes (set on AssistantMessageCompleted, reset per-turn on TurnStarted). */
-    public float $llmEndTime = 0.0;
 
-    // ── Per-turn metrics ──
-    // Reset each time a new TurnStarted event arrives, so throughput
-    // and context usage reflect the current turn only.
-    /** Output tokens generated in the current turn (accumulated per-turn). */
-    public int $turnOutputTokens = 0;
-    /** Timestamp when the current turn started (set on TurnStarted). */
-    public float $turnStartTime = 0.0;
-    /** Latest input_tokens from the most recent AssistantMessageCompleted (not accumulated — represents current context size). */
-    public int $latestInputTokens = 0;
+    /**
+     * Usage/token projection for the TUI footer.
+     *
+     * Holds both session-level accumulated metrics (inputTokens, outputTokens,
+     * totalCost) and per-turn metrics (turnOutputTokens, turnStartTime,
+     * llmEndTime, latestInputTokens). Per-turn fields are reset on each
+     * TurnStarted event; session fields accumulate across the entire session.
+     */
+    public UsageProjection $usage;
 
     public float $sessionStartTime = 0.0;
     public string $cwd = '';
@@ -80,5 +77,6 @@ final class TuiSessionState
     ) {
         $this->sessionId = $sessionId;
         $this->resuming = $resuming;
+        $this->usage = new UsageProjection();
     }
 }
