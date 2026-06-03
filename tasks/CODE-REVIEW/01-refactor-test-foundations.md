@@ -19,12 +19,12 @@ Scope:
 - Run and report Castor validation: at minimum castor test plus castor check, or exact environmental blockers.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/01-refactor-test-foundations
 Worktree: /home/ineersa/projects/agent-core-worktrees/01-refactor-test-foundations
 Fork run: jfz8t9x4iqzu
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/84
+PR Status: open
 Started: 2026-06-03T00:45:17.864Z
 Completed:
 
@@ -55,3 +55,18 @@ Completed:
 - Validation: Parent verification: `git rev-parse --verify 8d22148c^{commit}` => 8d22148c1e0951b4347d8bb60e27abd637a19a1f.; Parent verification: `git branch --show-current` in worktree => task/01-refactor-test-foundations; `git status --porcelain=v1` => clean.; Parent verification: `git diff --stat HEAD~1..HEAD` => 16 files changed, 1426 insertions(+), 345 deletions(-).; Parent verification: changed files are all under tests/; no production files changed.; Fork validation: `castor test --filter=DomainMessageBuildersTest` passed (tests=15, assertions=111).; Fork validation: `castor test --filter=TestDirectoryIsolationTest` passed (tests=9, assertions=15).; Fork validation: `castor test --filter=AdvanceRunHandlerTest` passed.; Fork validation: `castor test --filter=StartRunHandlerTest` passed.; Fork validation: `castor test --filter=ToolCallResultHandlerTest` passed (tests=1, assertions=14).; Fork validation: `castor test --filter=ToolExecutorTest` passed (tests=14, assertions=52).; Fork validation: `castor test --filter=BgStatusToolTest` passed (tests=11, assertions=25).; Fork validation: `castor test` passed (tests=1486, assertions=4399).; Fork validation: `castor check` passed all stages: deptrac, phpunit, controller E2E, real LLM E2E, TUI E2E, phpstan, cs-check.
 - Summary: Fork jfz8t9x4iqzu completed successfully. Parent verification confirmed worktree branch task/01-refactor-test-foundations is clean at commit 8d22148c (`test: add builders and directory isolation helper`), commit exists, and diff matches expected task scope: 16 test files changed with new AgentCore builders, CodingAgent TestDirectoryIsolation helper, representative builder migrations, and filesystem-isolation migrations. `git diff --name-only HEAD~1..HEAD | grep -v '^tests/'` returned no production-file changes. Ready for CODE-REVIEW when the parent/user chooses to open the PR.
 - Fork handoff verified by parent: commit exists, worktree clean, expected test-only diff confirmed.
+Castor Check Status: passed
+Castor Check Commit: 8d22148c1e0951b4347d8bb60e27abd637a19a1f
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 900s
+Castor Check Completed: 2026-06-03T01:00:56.320Z
+Castor Check Output SHA256: c603c3c01db3f2a6eeb72fcf21b403a93a7cc97262466083d303370e2ca4adc8
+
+## Task workflow update - 2026-06-03T01:00:59.681Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: 8d22148c1e09.
+- Pushed task/01-refactor-test-foundations to origin.
+- branch 'task/01-refactor-test-foundations' set up to track 'origin/task/01-refactor-test-foundations'.
+- Created PR: https://github.com/ineersa/agent-core/pull/84
+- Validation: Commit verified: 8d22148c1e0951b4347d8bb60e27abd637a19a1f (`test: add builders and directory isolation helper`).; Diff verified: 16 files changed, 1426 insertions(+), 345 deletions(-), all under tests/.; Fork validation passed: focused builder/isolation/migrated tests, `castor test`, and `castor check` all successful.
+- Summary: Implementation complete at commit 8d22148c. Parent verified the worktree is clean on branch task/01-refactor-test-foundations, the expected 16 test-only files changed, and no production files changed. Fork validation reported successful focused Castor tests, full `castor test`, and full `castor check`.
