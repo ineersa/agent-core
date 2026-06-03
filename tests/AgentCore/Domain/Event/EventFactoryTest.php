@@ -5,69 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Domain\Event;
 
 use Ineersa\AgentCore\Domain\Event\EventFactory;
-use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
-final class EventFactoryAndRunEventTest extends TestCase
+final class EventFactoryTest extends TestCase
 {
-    /* ─── RunEvent::extension() ─── */
-
-    public function testExtensionEventFactoryCreatesExtensionEvent(): void
-    {
-        $event = RunEvent::extension(
-            runId: 'run-ext',
-            seq: 1,
-            turnNo: 0,
-            type: 'ext_compaction_start',
-            payload: ['strategy' => 'summary'],
-        );
-
-        self::assertInstanceOf(RunEvent::class, $event);
-        self::assertSame('run-ext', $event->runId);
-        self::assertSame(1, $event->seq);
-        self::assertSame(0, $event->turnNo);
-        self::assertSame('ext_compaction_start', $event->type);
-        self::assertSame(['strategy' => 'summary'], $event->payload);
-    }
-
-    public function testIsExtensionEventWithDefaultPrefix(): void
-    {
-        $event = new RunEvent(runId: 'r', seq: 1, turnNo: 0, type: 'ext_foo');
-
-        self::assertTrue($event->isExtensionEvent());
-    }
-
-    public function testIsExtensionEventWithCustomPrefix(): void
-    {
-        $event = new RunEvent(runId: 'r', seq: 1, turnNo: 0, type: 'hook_pre_llm');
-
-        self::assertTrue($event->isExtensionEvent('hook_'));
-        self::assertFalse($event->isExtensionEvent('ext_'));
-    }
-
-    public function testIsExtensionEventForCoreType(): void
-    {
-        $event = new RunEvent(runId: 'r', seq: 1, turnNo: 0, type: 'agent_start');
-
-        self::assertFalse($event->isExtensionEvent());
-    }
-
-    public function testExtensionEventWithInvalidPrefixThrowsInvalidArgumentException(): void
-    {
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('must use');
-
-        RunEvent::extension(
-            runId: 'run-ext',
-            seq: 1,
-            turnNo: 0,
-            type: 'my_custom_event',
-        );
-    }
-
     /* ─── EventFactory::event() ─── */
 
     public function testEventFactoryCreatesRunEvent(): void
@@ -150,16 +93,16 @@ final class EventFactoryAndRunEventTest extends TestCase
 
         self::assertSame('run-version', $newState->runId);
         self::assertSame(RunStatus::Running, $newState->status);
-        self::assertSame(6, $newState->version);      // 5 + 1
-        self::assertSame(3, $newState->turnNo);         // unchanged
-        self::assertSame(13, $newState->lastSeq);       // 10 + 3
-        self::assertTrue($newState->isStreaming);        // unchanged
-        self::assertSame(['delta' => 'abc'], $newState->streamingMessage); // unchanged
-        self::assertSame(['call-1' => true], $newState->pendingToolCalls);  // unchanged
-        self::assertSame('prev error', $newState->errorMessage);            // unchanged
-        self::assertSame([], $newState->messages);                          // unchanged (was empty)
-        self::assertSame('step-99', $newState->activeStepId);               // unchanged
-        self::assertTrue($newState->retryableFailure);                       // unchanged
+        self::assertSame(6, $newState->version);       // 5 + 1
+        self::assertSame(3, $newState->turnNo);          // unchanged
+        self::assertSame(13, $newState->lastSeq);        // 10 + 3
+        self::assertTrue($newState->isStreaming);         // unchanged
+        self::assertSame(['delta' => 'abc'], $newState->streamingMessage);  // unchanged
+        self::assertSame(['call-1' => true], $newState->pendingToolCalls);   // unchanged
+        self::assertSame('prev error', $newState->errorMessage);             // unchanged
+        self::assertSame([], $newState->messages);                           // unchanged (was empty)
+        self::assertSame('step-99', $newState->activeStepId);                // unchanged
+        self::assertTrue($newState->retryableFailure);                        // unchanged
     }
 
     public function testIncrementStateVersionWithZeroEventCount(): void
@@ -168,7 +111,7 @@ final class EventFactoryAndRunEventTest extends TestCase
         $factory = new EventFactory();
         $newState = $factory->incrementStateVersion($state, 0);
 
-        self::assertSame(4, $newState->version);  // 3 + 1 always
-        self::assertSame(7, $newState->lastSeq);   // 7 + 0
+        self::assertSame(4, $newState->version);   // 3 + 1 always
+        self::assertSame(7, $newState->lastSeq);    // 7 + 0
     }
 }

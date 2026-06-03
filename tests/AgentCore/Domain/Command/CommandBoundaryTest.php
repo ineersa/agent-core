@@ -35,11 +35,11 @@ final class CommandBoundaryTest extends TestCase
     public static function coreCommandKindIsCoreProvider(): array
     {
         return [
-            'steer' => ['steer', true],
-            'follow_up' => ['follow_up', true],
-            'cancel' => ['cancel', true],
-            'human_response' => ['human_response', true],
-            'continue' => ['continue', true],
+            'steer' => [CoreCommandKind::Steer, true],
+            'follow_up' => [CoreCommandKind::FollowUp, true],
+            'cancel' => [CoreCommandKind::Cancel, true],
+            'human_response' => [CoreCommandKind::HumanResponse, true],
+            'continue' => [CoreCommandKind::Continue, true],
             'ext_custom' => ['ext_custom', false],
             'unknown' => ['unknown', false],
             'empty_string' => ['', false],

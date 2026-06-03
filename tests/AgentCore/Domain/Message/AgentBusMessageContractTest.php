@@ -118,7 +118,14 @@ final class AgentBusMessageContractTest extends TestCase
         ];
     }
 
-    /* ─── Class-specific payload fields ─── */
+    /* ─── Class-specific payload fields ───
+     *
+     * The data-driven busMessageProvider above tests that all 7 concrete message
+     * classes implement the 5 AbstractAgentBusMessage accessors correctly. The
+     * individual tests below verify class-specific public fields (payload, kind,
+     * options, refs, etc.) that are unique to each concrete class, not covered
+     * by the shared provider.
+     */
 
     public function testStartRunPreservesStartRunPayload(): void
     {

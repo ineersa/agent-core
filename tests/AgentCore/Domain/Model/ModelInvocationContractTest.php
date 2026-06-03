@@ -184,15 +184,23 @@ final class ModelInvocationContractTest extends TestCase
      */
     private function createCancellationToken(bool $cancelled): CancellationTokenInterface
     {
-        return new class($cancelled) implements CancellationTokenInterface {
-            public function __construct(private readonly bool $cancelled)
-            {
-            }
+        return new TestCancellationTokenStub($cancelled);
+    }
+}
 
-            public function isCancellationRequested(): bool
-            {
-                return $this->cancelled;
-            }
-        };
+/**
+ * Small named stub implementing CancellationTokenInterface for use in
+ * ModelInvocationContractTest. Defined in the same file to keep the stub close
+ * to its sole consumer while avoiding anonymous-class overhead in stack traces.
+ */
+final readonly class TestCancellationTokenStub implements CancellationTokenInterface
+{
+    public function __construct(private bool $cancelled)
+    {
+    }
+
+    public function isCancellationRequested(): bool
+    {
+        return $this->cancelled;
     }
 }
