@@ -17,8 +17,9 @@ Start a tracked task in the project task workflow:
    - Record the worktree path returned in the notes.
 
 3. **Prepare exact fork instructions**
-   - Read the task file again if moved, then read related code, config, tests, and AGENTS.md rules.
-   - Create an exact implementation plan for the fork: files to touch, old/new patterns, validation commands, and boundaries.
+   - Read the task file again if moved, then collect the required code, config, test, and docs context.
+   - Launch scout subagents when useful to gather focused context before implementation.
+   - Create exact implementation instructions for the fork: files to touch, old/new patterns, validation commands, and boundaries.
    - Record useful context or updates on the task with `update_task` when helpful.
 
 4. **Launch a fork/worker**

@@ -35,5 +35,6 @@ Prepare a tracked task for code review:
      Castor quality gate (`LLM_MODE=true castor check`) on the task branch at its
      current HEAD before pushing and creating or updating the PR.
    - Record the PR URL returned in the notes.
-   - If the Castor gate fails, the task remains IN-PROGRESS. Analyze and fix the
-     failure, then retry only after the full gate can pass. There is no bypass.
+   - If the Castor gate fails, the task remains IN-PROGRESS. Analyze the failure,
+     prepare exact implementation details, and pass them to a fork to fix it.
+     Retry only after the full gate can pass. There is no bypass.

@@ -27,7 +27,7 @@ Address code review feedback on a task PR:
    - Write exact implementation instructions covering each actionable comment.
    - Group nearby changes into single edits where possible.
    - Specify exact files, old/new text patterns, validation steps, and limits of authority.
-   - Pass those instructions directly to the fork; do not vaguely ask it to "write a plan".
+   - Pass those instructions directly to the fork.
 
 5. **Launch a fork**
    - Launch a single fork with `cwd` set to the task worktree (from task metadata).
