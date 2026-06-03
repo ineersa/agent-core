@@ -30,3 +30,109 @@ Completed:
 
 ## Work log
 - Created: 2026-06-03T00:32:15.420Z
+- Plan finalized: 2026-06-03 (user decisions: mutable UsageProjection, single usage object, throttle/dedup inline in RuntimeEventPoller)
+
+## Implementation Plan
+
+### Extractions (3)
+
+**1. ActivityStateMachine** (~80 lines)
+- Pure state transition function: `transition(RunActivityStateEnum, RuntimeEvent): RunActivityStateEnum`
+- Terminal state guard built-in (`Completed`, `Failed`, `Cancelled` are sticky)
+- ~24 event type transitions (RunStarted, TurnStarted/Completed, AssistantMessageStarted/Completed, etc.)
+- No side effects — pure determinism from (state, event) → next state
+
+**2. UsageProjection** (mutable, ~60 lines)
+- Single object holds BOTH session-level and per-turn metrics
+- Session: `inputTokens`, `outputTokens`, `totalCost`
+- Per-turn: `turnOutputTokens`, `turnStartTime`, `llmEndTime`, `latestInputTokens`
+- Methods:
+  - `resetTurn()` — called on TurnStarted; resets turnOutputTokens=0, turnStartTime=microtime(), llmEndTime=0.0, latestInputTokens=0
+  - `accumulate(RuntimeEvent)` — called on AssistantMessageCompleted; reads usage payload with fallback keys, accumulates tokens/cost
+- Invariant: `resetTurn()` must be called before `accumulate()` on a new turn (enforced by the single call site in poller)
+
+**3. RuntimeEventPoller rewrite** (~200 lines, from 344)
+- Thin poll loop in `poll()`:
+  - Throttling stays inline (50ms `lastPoll` check)
+  - Dedup stays inline (seq > 0 && seq <= lastSeq → skip)
+  - Delegates activity transitions to ActivityStateMachine.transition()
+  - Delegates usage extraction to UsageProjection.resetTurn()/accumulate()
+  - Projector ingestion stays in poller
+  - Placeholder removal stays in poller (`removeProcessingPlaceholder()`)
+  - Projection sync stays in poller (`synchronizeProjectedBlocks()`)
+  - Error handling stays in poller (fatal/non-fatal classification, boundary delegation)
+
+**NOT extracted**: SequenceTracker (dedup is trivial 3-line inline check). Throttling stays inline. TurnMetrics merged into UsageProjection.
+
+### TuiSessionState restructure
+
+Replace 8 flat properties with a single `UsageProjection $usage` sub-object:
+
+| Removed properties | Replacement |
+|---|---|
+| `$inputTokens` | `$usage->inputTokens` |
+| `$outputTokens` | `$usage->outputTokens` |
+| `$totalCost` | `$usage->totalCost` |
+| `$turnOutputTokens` | `$usage->turnOutputTokens` |
+| `$turnStartTime` | `$usage->turnStartTime` |
+| `$llmEndTime` | `$usage->llmEndTime` |
+| `$latestInputTokens` | `$usage->latestInputTokens` |
+
+Other properties remain flat on TuiSessionState:
+- `$sessionId`, `$resuming` (identity, constructor-only)
+- `$handle`, `$request` (run handle)
+- `$activity` (RunActivityStateEnum)
+- `$transcript` (TranscriptBlock[])
+- `$lastSeq`, `$lastPoll` (poller-owned inline)
+- `$runtimePollErrorCount`, `$lastRuntimePollError` (poller-owned)
+- `$footerModel`, `$footerReasoning`, `$contextWindow` (set-once by FooterStateInitializer)
+- `$cwd`, `$branch`, `$sessionStartTime` (environment, set-once)
+
+### Caller updates (mechanical)
+
+6 files change `$state-><flatProp>` → `$state->usage-><prop>`:
+- `src/Tui/Listener/TickPollListener.php`
+- `src/Tui/Listener/SubmitListener.php`
+- `src/Tui/Listener/FooterStateSegmentProvider.php`
+- `src/Tui/Listener/FooterStateInitializer.php`
+- `src/Tui/Picker/ModelPickerController.php`
+- `src/Tui/Picker/FavoritePickerController.php`
+
+### New test files
+
+| Test file | Tests | Coverage |
+|---|---|---|
+| `tests/Tui/Runtime/ActivityStateMachineTest.php` | ~24 | All event-type transitions, terminal guard, default fallback |
+| `tests/Tui/Runtime/UsageProjectionTest.php` | ~10 | Accumulation, per-turn reset, cost calculation, edge cases (missing payload keys, zero values) |
+| `tests/Tui/Runtime/RuntimeEventPollerTest.php` | ~5 | Integration with mocked ActivityStateMachine/UsageProjection, error handling, empty poll, dedup |
+
+### Design decisions
+
+- **UsageProjection is mutable** (hot path — accumulate/reset methods are simpler and more natural than immutable with() copies)
+- **Single UsageProjection** holds both session and per-turn metrics (not separate TurnMetrics + SessionMetrics DTOs)
+- **Throttling stays inline** in RuntimeEventPoller (not extracted to a separate class)
+- **Dedup stays inline** in RuntimeEventPoller (trivial 3-line check, not extracted)
+
+### Implementation order
+
+1. Create `ActivityStateMachine` — pure transition function, no deps
+2. Create `UsageProjection` — mutable accumulator, no deps
+3. Add `ActivityStateMachineTest` + `UsageProjectionTest` — validate in isolation
+4. Restructure `TuiSessionState` — replace 8 properties with `UsageProjection` sub-object; constructor + public read accessors
+5. Update all callers — 6 files, mechanical property path changes
+6. Rewrite `RuntimeEventPoller::poll()` — thin loop delegating to new components; throttling/dedup/error handling stay
+7. Add `RuntimeEventPollerTest` — integration with mocks
+8. Validate — run full QA suite
+
+### Validation commands
+
+```
+castor test --filter=ActivityStateMachine
+castor test --filter=UsageProjection
+castor test --filter=RuntimeEventPoller
+castor test
+castor deptrac
+castor phpstan
+castor cs-check
+castor test:tui      # if tmux prerequisites available
+```
