@@ -18,14 +18,14 @@ Scope:
 - Run and report Castor validation: at minimum castor test --filter for new tests plus castor check, or exact environmental blockers.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/02-refactor-domain-boundary-tests
 Worktree: /home/ineersa/projects/agent-core-worktrees/02-refactor-domain-boundary-tests
 Fork run: w899qe4fkt2h
 PR URL: https://github.com/ineersa/agent-core/pull/85
-PR Status: open
+PR Status: merged
 Started: 2026-06-03T01:31:49.557Z
-Completed:
+Completed: 2026-06-03T02:13:14.815Z
 
 ## Work log
 - Created: 2026-06-03T00:31:45.476Z
@@ -74,3 +74,12 @@ Castor Check Output SHA256: 80bf59c9aec8d8fe422a085d91a73f7debcdb0a93bc88551bbe3
 - Validation: Parent verification after fork: `git fetch origin && git status --short --branch` in worktree showed branch synced with origin/task/02-refactor-domain-boundary-tests at 73994f10.; Parent verification: `git diff --name-status origin/main...HEAD` lists only 9 test files under tests/AgentCore; no task files or production files.; Parent focused validation after latest commit: `castor test --filter='RunEventTest|EventFactoryTest|CommandBoundaryTest|ModelInvocationContractTest|AgentBusMessageContractTest|AgentMessageTest|LifecycleEventContractTest|RunStateTest|ToolBoundaryTest'` passed (113 tests, 350 assertions).; Parent full `LLM_MODE=true castor check` rerun after latest commit exited nonzero due unrelated E2E/runtime flakes; deptrac ok, full phpunit ok (1584 tests/4723 assertions), controller ok, phpstan ok, cs-check ok; failure details saved at /home/ineersa/.pi/agent/tmp/2026-06--7993d995.txt and included ViewImageToolE2eTest LLM output variance plus TuiAgentSmokeTest timeout/CWD confusion. Reviewer explicitly assessed these flakes as unrelated and non-blocking for this test-only PR.
 - Summary: Re-reviewer approved updated PR #85 at HEAD 73994f10. Reviewer confirmed previous stale task-file blocker is resolved: PR diff against origin/main contains no `tasks/` paths and no production files; only tests/AgentCore changes remain. Reviewer confirmed all prior requested changes are addressed (event tests split, named cancellation token stub, CoreCommandKind constants in positive provider, AgentBusMessageContractTest clarification). Verdict: APPROVE, with one non-blocking trivial suggestion to remove an unused `StartRunMessageBuilder` import in `AgentBusMessageContractTest.php`. No status move performed; task remains CODE-REVIEW.
 - Reviewer subagent re-ran review on updated branch and returned APPROVE.
+
+## Task workflow update - 2026-06-03T02:13:14.815Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/02-refactor-domain-boundary-tests into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/02-refactor-domain-boundary-tests.
+- Pulled integration checkout: Already up to date..
+- Validation: Pre-completion GitHub check: `gh pr view 85 --json url,state,mergedAt,headRefName,baseRefName,headRefOid` reported state=MERGED, mergedAt=2026-06-03T02:12:15Z, headRefName=task/02-refactor-domain-boundary-tests, headRefOid=73994f106bd0962a16b972b23aa2efa98d1dfda2.; Pre-completion integration sync: `git pull --ff-only` updated main from 2233b73b to 7aaf6df6 and pulled the 9 test-file PR changes.; Reviewer approval recorded: re-reviewer verdict APPROVED; no tasks/ paths and no production files in PR diff; focused Castor tests passed (113 tests, 350 assertions).
+- Summary: Completing reviewed task after PR #85 was merged on GitHub. Confirmed GitHub PR state MERGED (mergedAt 2026-06-03T02:12:15Z) for branch task/02-refactor-domain-boundary-tests, then fast-forward pulled integration checkout from 2233b73b to 7aaf6df6 to pick up the merged test-only changes. Reviewer subagent approval was recorded before completion. Implementation adds focused AgentCore domain boundary tests under tests/AgentCore only; no production files were changed.
