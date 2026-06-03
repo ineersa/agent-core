@@ -8,8 +8,10 @@ use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
+use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
+use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -22,7 +24,8 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         private CommandStoreInterface $commandStore,
         private CommandRouter $commandRouter,
         private CommandMailboxPolicy $commandMailboxPolicy,
-        private RunMessageStateTools $stateTools,
+        private EventFactory $eventFactory,
+        private AgentMessageNormalizer $messageNormalizer,
         private int $maxPendingCommands = 100,
         private ?MessageBusInterface $commandBus = null,
     ) {
@@ -115,7 +118,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             retryableFailure: $state->retryableFailure,
         );
 
-        $queuedEvent = $this->stateTools->event(
+        $queuedEvent = $this->eventFactory->event(
             runId: $runId,
             seq: $nextState->lastSeq,
             turnNo: $nextState->turnNo,
@@ -163,7 +166,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             retryableFailure: $state->retryableFailure,
         );
 
-        $event = $this->stateTools->event(
+        $event = $this->eventFactory->event(
             runId: $runId,
             seq: $nextState->lastSeq,
             turnNo: $nextState->turnNo,
@@ -215,7 +218,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             ];
         }
 
-        $events = $this->stateTools->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
+        $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
 
         $nextState = new RunState(
             runId: $state->runId,
@@ -266,7 +269,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             retryableFailure: false,
         );
 
-        $event = $this->stateTools->event(
+        $event = $this->eventFactory->event(
             runId: $runId,
             seq: $nextState->lastSeq,
             turnNo: $nextState->turnNo,
@@ -304,7 +307,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             );
         }
 
-        $humanResponseMessage = $this->stateTools->humanResponseMessage($message->payload);
+        $humanResponseMessage = $this->messageNormalizer->humanResponseMessage($message->payload);
         if (null === $humanResponseMessage) {
             return $this->rejectCommand($state, $message, 'Invalid human_response payload: missing answer.');
         }
@@ -330,7 +333,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             retryableFailure: false,
         );
 
-        $event = $this->stateTools->event(
+        $event = $this->eventFactory->event(
             runId: $runId,
             seq: $nextState->lastSeq,
             turnNo: $nextState->turnNo,

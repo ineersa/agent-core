@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Domain\Event\CoreLifecycleEventType;
+use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -16,7 +17,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
 {
     public function __construct(
         private CommandMailboxPolicy $commandMailboxPolicy,
-        private RunMessageStateTools $stateTools,
+        private EventFactory $eventFactory,
         private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
     ) {
@@ -53,7 +54,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 ],
             ];
 
-            $events = $this->stateTools->eventsFromSpecs($runId, $preparedState->turnNo, $state->lastSeq + 1, $eventSpecs);
+            $events = $this->eventFactory->eventsFromSpecs($runId, $preparedState->turnNo, $state->lastSeq + 1, $eventSpecs);
             $nextState = new RunState(
                 runId: $preparedState->runId,
                 status: RunStatus::Cancelled,
@@ -103,7 +104,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                     return new HandlerResult();
                 }
 
-                $events = $this->stateTools->eventsFromSpecs($runId, $preparedState->turnNo, $state->lastSeq + 1, $boundaryEventSpecs);
+                $events = $this->eventFactory->eventsFromSpecs($runId, $preparedState->turnNo, $state->lastSeq + 1, $boundaryEventSpecs);
                 $nextState = new RunState(
                     runId: $preparedState->runId,
                     status: $preparedState->status,
@@ -151,7 +152,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             ],
         ];
 
-        $events = $this->stateTools->eventsFromSpecs($runId, $preparedState->turnNo, $state->lastSeq + 1, $eventSpecs);
+        $events = $this->eventFactory->eventsFromSpecs($runId, $preparedState->turnNo, $state->lastSeq + 1, $eventSpecs);
 
         $nextState = new RunState(
             runId: $preparedState->runId,
