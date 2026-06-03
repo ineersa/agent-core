@@ -18,14 +18,14 @@ Scope:
 - Run and report Castor validation: castor test --filter=CommandMailboxPolicy plus castor check, or exact environmental blockers.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/03-refactor-agentcore-mailbox-policy
 Worktree: /home/ineersa/projects/agent-core-worktrees/03-refactor-agentcore-mailbox-policy
 Fork run: h13xzm03mjmw
 PR URL: https://github.com/ineersa/agent-core/pull/86
-PR Status: open
+PR Status: merged
 Started: 2026-06-03T15:16:57.156Z
-Completed:
+Completed: 2026-06-03T15:57:42.407Z
 
 ## Work log
 - Created: 2026-06-03T00:31:40.751Z
@@ -95,3 +95,17 @@ Castor Check Output SHA256: 9519153e5435886880453c89184ee65af3eb0453a14c687dbbfe
 - Pushed task/03-refactor-agentcore-mailbox-policy to origin.
 - branch 'task/03-refactor-agentcore-mailbox-policy' set up to track 'origin/task/03-refactor-agentcore-mailbox-policy'.
 - Created PR: https://github.com/ineersa/agent-core/pull/86
+
+## Task workflow update - 2026-06-03T15:57:42.407Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/03-refactor-agentcore-mailbox-policy into integration checkout.
+- Merge made by the 'ort' strategy.
+ .../Pipeline/CommandApplicationBoundary.php        |  14 ++
+ .../Pipeline/CommandApplicationResult.php          |  27 +++
+ .../Application/Pipeline/CommandMailboxPolicy.php  | 210 ++++++---------------
+ .../Pipeline/CommandMailboxPolicyTest.php          | 161 ++++++++++++++++
+ 4 files changed, 256 insertions(+), 156 deletions(-)
+ create mode 100644 src/AgentCore/Application/Pipeline/CommandApplicationBoundary.php
+ create mode 100644 src/AgentCore/Application/Pipeline/CommandApplicationResult.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/03-refactor-agentcore-mailbox-policy.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
