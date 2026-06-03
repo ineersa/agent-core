@@ -19,14 +19,14 @@ Scope:
 - Run and report Castor validation: at minimum castor test plus castor check, or exact environmental blockers.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/01-refactor-test-foundations
 Worktree: /home/ineersa/projects/agent-core-worktrees/01-refactor-test-foundations
 Fork run: jfz8t9x4iqzu
 PR URL: https://github.com/ineersa/agent-core/pull/84
-PR Status: open
+PR Status: merged
 Started: 2026-06-03T00:45:17.864Z
-Completed:
+Completed: 2026-06-03T01:24:14.459Z
 
 ## Work log
 - Created: 2026-06-03T00:31:43.125Z
@@ -75,3 +75,37 @@ Castor Check Output SHA256: c603c3c01db3f2a6eeb72fcf21b403a93a7cc97262466083d303
 - Validation: Inspect: `git status --short --branch` => `## task/01-refactor-test-foundations...origin/task/01-refactor-test-foundations` with no changes.; Inspect: `git log --oneline --decorate -10` shows HEAD `8d22148c (HEAD -> task/01-refactor-test-foundations, origin/task/01-refactor-test-foundations) test: add builders and directory isolation helper`.; Inspect: `git diff --stat origin/main...HEAD` => 16 files changed, 1426 insertions(+), 345 deletions(-).; Reviewer subagent decision: APPROVED for current HEAD; no critical issues or request-changes findings.; `castor test` => ok (tests=1486, assertions=4399, errors=0, failures=0, skipped=0); junit=var/reports/phpunit.junit.xml.; `castor deptrac` => ok (violations=0, errors=0, uncovered=591, allowed=856).; `castor phpstan` => ok (errors=0, file_errors=0).; `castor cs-check` => ok (files_fixed=0).
 - Summary: PR/code-review preparation check completed after task was already in CODE-REVIEW. Worktree `/home/ineersa/projects/agent-core-worktrees/01-refactor-test-foundations` is clean on branch `task/01-refactor-test-foundations` tracking `origin/task/01-refactor-test-foundations`; current HEAD is 8d22148c (`test: add builders and directory isolation helper`). Full diff remains 16 test-only files changed (+1426/-345). Reviewer subagent returned APPROVED for current HEAD; only non-blocking observations were noted (minor redundancy/comments/naming conventions). Focused local Castor validation passed: `castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`. Task was not moved again because it is already CODE-REVIEW with open PR https://github.com/ineersa/agent-core/pull/84 and the move_task quality gate already passed for commit 8d22148c.
 - PR preparation audit rerun: inspected branch/log/diff, reviewer approved current HEAD, and fast Castor validation passed. No new commits or fixes were needed.
+
+## Task workflow update - 2026-06-03T01:24:14.459Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/01-refactor-test-foundations into integration checkout.
+- Merge made by the 'ort' strategy.
+ .../Application/Handler/ToolExecutorTest.php       | 220 ++++++++--------
+ .../Application/Pipeline/AdvanceRunHandlerTest.php |  85 +++---
+ .../Application/Pipeline/StartRunHandlerTest.php   |  68 ++---
+ .../Pipeline/ToolCallResultHandlerTest.php         |  44 ++--
+ .../Support/Builder/AdvanceRunMessageBuilder.php   |  97 +++++++
+ .../Support/Builder/DomainMessageBuildersTest.php  | 285 +++++++++++++++++++++
+ .../AgentCore/Support/Builder/RunStateBuilder.php  | 192 ++++++++++++++
+ .../Support/Builder/StartRunMessageBuilder.php     | 123 +++++++++
+ .../AgentCore/Support/Builder/ToolCallBuilder.php  | 125 +++++++++
+ .../Support/Builder/ToolCallResultBuilder.php      | 161 ++++++++++++
+ .../Controller/E2E/ControllerE2eTestCase.php       |  29 +--
+ .../CodingAgent/Support/TestDirectoryIsolation.php | 134 ++++++++++
+ .../Support/TestDirectoryIsolationTest.php         | 107 ++++++++
+ .../TestCase/IsolatedKernelTestCase.php            |  47 +---
+ tests/CodingAgent/Tool/BgStatusToolTest.php        |  22 +-
+ tests/Tui/E2E/TuiStartupSnapshotTest.php           |  32 +--
+ 16 files changed, 1426 insertions(+), 345 deletions(-)
+ create mode 100644 tests/AgentCore/Support/Builder/AdvanceRunMessageBuilder.php
+ create mode 100644 tests/AgentCore/Support/Builder/DomainMessageBuildersTest.php
+ create mode 100644 tests/AgentCore/Support/Builder/RunStateBuilder.php
+ create mode 100644 tests/AgentCore/Support/Builder/StartRunMessageBuilder.php
+ create mode 100644 tests/AgentCore/Support/Builder/ToolCallBuilder.php
+ create mode 100644 tests/AgentCore/Support/Builder/ToolCallResultBuilder.php
+ create mode 100644 tests/CodingAgent/Support/TestDirectoryIsolation.php
+ create mode 100644 tests/CodingAgent/Support/TestDirectoryIsolationTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/01-refactor-test-foundations.
+- Pulled integration checkout: Already up to date..
+- Validation: Task metadata before completion: Status=CODE-REVIEW, PR URL=https://github.com/ineersa/agent-core/pull/84, PR Status=open.; GitHub PR check: state=OPEN, isDraft=false, mergeStateStatus=CLEAN, mergedAt=null, headRefName=task/01-refactor-test-foundations, baseRefName=main.; Integration checkout before completion: `git status --short --branch` => `## main...origin/main` with no changes.
+- Summary: Completing reviewed task per user request. PR https://github.com/ineersa/agent-core/pull/84 was open, non-draft, mergeStateStatus=CLEAN, head task/01-refactor-test-foundations, base main; user explicitly requested task completion/merge. Moving to DONE to merge task branch into integration checkout and clean up worktree.
