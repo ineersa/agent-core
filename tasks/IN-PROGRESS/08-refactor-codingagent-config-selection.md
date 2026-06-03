@@ -22,7 +22,7 @@ Scope:
 Status: IN-PROGRESS
 Branch: task/08-refactor-codingagent-config-selection
 Worktree: /home/ineersa/projects/agent-core-worktrees/08-refactor-codingagent-config-selection
-Fork run: rz1ztwxqcsba
+Fork run: scout-cleanup-services-yaml
 PR URL: https://github.com/ineersa/agent-core/pull/90
 PR Status: open
 Started: 2026-06-03T20:50:07.554Z
@@ -82,3 +82,8 @@ Castor Check Output SHA256: e4f2d9cf8324acd44b1aa2da3b829fad8800939f2276457479d4
 - Recorded fork run: rz1ztwxqcsba
 - Validation: castor test — 1588/4732 pass; castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — clean
 - Summary: Review fix fork rz1ztwxqcsba: removed 16 of 17 redundant ~ service definitions from config/services.yaml per PR #90 reviewer feedback. Only StringTemplateRenderer: ~ preserved (vendor class outside src/ resource paths). Commit amended to 718c068f, 14 files changed (+1152/-937). 1588 tests pass, 0 deptrac/phpstan/cs issues.
+
+## Task workflow update - 2026-06-03T21:47:48.960Z
+- Recorded fork run: scout-cleanup-services-yaml
+- Validation: castor test — 1588/4732 pass; castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — clean
+- Summary: config/services.yaml cleanup: removed extra blank lines (parameters→services), dead ExtensionApiBridge backward-compat definition, misplaced extension comment above LoggingConfig, orphan Image gating comment block, stale ToolExecutionPolicyResolver comment. Commit amended to 8fbb31cd. services.yaml diff now -51 lines (was -32). Only 1 ~ remains (StringTemplateRenderer — vendor class). 1588 tests pass, 0 deptrac/phpstan/cs issues.
