@@ -19,13 +19,13 @@ Scope:
 - Run and report Castor validation: castor test --filter for affected pipeline handlers, castor deptrac, and castor check, or exact environmental blockers.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/04-refactor-agentcore-pipeline-dependencies
+Worktree: /home/ineersa/projects/agent-core-worktrees/04-refactor-agentcore-pipeline-dependencies
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-03T16:09:54.694Z
 Completed:
 
 ## Work log
@@ -53,3 +53,10 @@ Completed:
 
 **Files changed:** 5 handlers (edit), 1 facade (delete), 6 test files (edit)
 - - Plan discussed: RunMessageStateTools removal, Symfony AI Domain coupling is intentional, isStaleResult inlined
+
+## Task workflow update - 2026-06-03T16:09:54.694Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/04-refactor-agentcore-pipeline-dependencies.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/04-refactor-agentcore-pipeline-dependencies.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/04-refactor-agentcore-pipeline-dependencies.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/04-refactor-agentcore-pipeline-dependencies.
