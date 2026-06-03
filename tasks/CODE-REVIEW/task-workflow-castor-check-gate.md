@@ -123,3 +123,7 @@ Completed:
 ## Task workflow update - 2026-06-03T00:04:39.311Z
 - Validation: castor cs-check PASS for prompt-only changes; grep check: no remaining "write a plan", "Analyze and fix", or "AGENTS.md rules" wording in .pi/prompts
 - Summary: Addressed latest PR #83 prompt-template review comments in commit f7e8aa13: task-start now suggests scout subagents for context collection instead of re-reading AGENTS.md; task-review-iterate removed the "do not ask it to write a plan" wording; task-to-pr now says the parent analyzes gate failures, prepares exact implementation details, and passes them to a fork rather than coding the fix directly.
+
+## Task workflow update - 2026-06-03T00:07:11.420Z
+- Validation: castor cs-check PASS for prompt-only changes
+- Summary: Added researcher subagent guidance to prompt templates in commit feed310a: task-start, task-to-pr, and task-review-iterate now instruct using researcher for web searches or web-based research when up-to-date external information is needed; scout wording narrowed to codebase context.
