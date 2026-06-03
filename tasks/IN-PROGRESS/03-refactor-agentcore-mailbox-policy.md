@@ -21,7 +21,7 @@ Scope:
 Status: IN-PROGRESS
 Branch: task/03-refactor-agentcore-mailbox-policy
 Worktree: /home/ineersa/projects/agent-core-worktrees/03-refactor-agentcore-mailbox-policy
-Fork run:
+Fork run: h13xzm03mjmw
 PR URL:
 PR Status:
 Started: 2026-06-03T15:16:57.156Z
@@ -57,3 +57,21 @@ Completed:
 ## Task workflow update - 2026-06-03T15:18:28.325Z
 - - Claimed task, moved to IN-PROGRESS, worktree: /home/ineersa/projects/agent-core-worktrees/03-refactor-agentcore-mailbox-policy
 - - Fork launched: h13xzm03mjmw — implementing the unified CommandMailboxPolicy refactor
+
+## Task workflow update - 2026-06-03T15:22:51.755Z
+- Recorded fork run: h13xzm03mjmw
+- Validation: castor test --filter=CommandMailboxPolicy → 7 tests, 24 assertions, PASS; castor test → 1587 tests, 4734 assertions, 0 failures; castor deptrac → 0 violations, 591 uncovered, 856 allowed
+- Summary: Implementation complete. Commit 04fa7013 on branch task/03-refactor-agentcore-mailbox-policy.
+
+**Changes (4 files):**
+- Created `CommandApplicationBoundary` enum (TurnStart | StopBoundary)
+- Created `CommandApplicationResult` readonly DTO (state, eventSpecs, shouldContinue)
+- Rewrote `CommandMailboxPolicy.php`: ~200 lines of duplicated logic collapsed into unified `applyPendingCommands()` private method; both public methods are now thin delegates preserving exact signatures
+- Added 3 new boundary-mode tests in `CommandMailboxPolicyTest.php`
+
+**Validation:**
+- `castor test --filter=CommandMailboxPolicy` — 7 tests, 24 assertions, PASS
+- `castor test` — 1587 tests, 4734 assertions, PASS
+- `castor deptrac` — 0 violations
+
+**No callers changed** (AdvanceRunHandler, LlmStepResultHandler, ApplyCommandHandler untouched).
