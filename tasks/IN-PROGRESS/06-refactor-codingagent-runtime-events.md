@@ -19,7 +19,7 @@ Scope:
 - Run and report Castor validation: castor test --filter=RuntimeEventMapper plus castor test:controller/castor check where prerequisites allow, or exact environmental blockers.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/06-refactor-codingagent-runtime-events
 Worktree: /home/ineersa/projects/agent-core-worktrees/06-refactor-codingagent-runtime-events
 Fork run:
@@ -103,3 +103,6 @@ Castor Check Output SHA256: 9b242a301ed51e83653ff77081ab1bfe0b9e4e83d8da40e01129
 - branch 'task/06-refactor-codingagent-runtime-events' set up to track 'origin/task/06-refactor-codingagent-runtime-events'.
 - Created PR: https://github.com/ineersa/agent-core/pull/88
 - Summary: Commit 72180502 on branch task/06-refactor-codingagent-runtime-events, 33 files changed (+574/-761 lines). Review fixes applied: 5 missed raw string literals → RunEventTypeEnum values, stale depfile.yaml regex cleaned, AGENTS.md docs updated, HITL human_response test added. Validation: castor test 1588/4738 PASS, deptrac 0 violations, phpstan 0 errors, cs-check clean. Review verdict: fixes address all critical issues (raw strings) + stale config/docs + test gap.
+
+## Task workflow update - 2026-06-03T18:23:53.061Z
+- Moved CODE-REVIEW → IN-PROGRESS.
