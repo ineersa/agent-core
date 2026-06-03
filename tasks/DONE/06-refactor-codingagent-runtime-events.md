@@ -19,14 +19,14 @@ Scope:
 - Run and report Castor validation: castor test --filter=RuntimeEventMapper plus castor test:controller/castor check where prerequisites allow, or exact environmental blockers.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/06-refactor-codingagent-runtime-events
 Worktree: /home/ineersa/projects/agent-core-worktrees/06-refactor-codingagent-runtime-events
 Fork run:
 PR URL: https://github.com/ineersa/agent-core/pull/88
-PR Status: open
+PR Status: merged
 Started: 2026-06-03T17:15:31.493Z
-Completed:
+Completed: 2026-06-03T18:32:57.604Z
 
 ## Work log
 - Created: 2026-06-03T00:32:13.067Z
@@ -117,3 +117,53 @@ Castor Check Output SHA256: 9b242a301ed51e83653ff77081ab1bfe0b9e4e83d8da40e01129
 - Pushed task/06-refactor-codingagent-runtime-events to origin.
 - branch 'task/06-refactor-codingagent-runtime-events' set up to track 'origin/task/06-refactor-codingagent-runtime-events'.
 - PR already exists: https://github.com/ineersa/agent-core/pull/88
+
+## Task workflow update - 2026-06-03T18:32:57.604Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/06-refactor-codingagent-runtime-events into integration checkout.
+- Merge made by the 'ort' strategy.
+ config/packages/agent_core.yaml                    |   2 -
+ config/services.yaml                               |  11 +-
+ depfile.yaml                                       |   2 +-
+ .../Application/Pipeline/AdvanceRunHandler.php     |   6 +-
+ .../Application/Pipeline/ApplyCommandHandler.php   |  13 +-
+ .../Application/Pipeline/CommandMailboxPolicy.php  |  15 +-
+ .../Application/Pipeline/LlmStepResultHandler.php  |  16 +-
+ .../Application/Pipeline/StartRunHandler.php       |   3 +-
+ .../Application/Pipeline/ToolCallResultHandler.php |  22 +-
+ src/AgentCore/Domain/Event/AGENTS.md               |  30 +-
+ .../Domain/Event/Lifecycle/AgentEndEvent.php       |   4 +-
+ .../Domain/Event/Lifecycle/AgentStartEvent.php     |   4 +-
+ .../Domain/Event/Lifecycle/MessageEndEvent.php     |   4 +-
+ .../Domain/Event/Lifecycle/MessageStartEvent.php   |   4 +-
+ .../Domain/Event/Lifecycle/MessageUpdateEvent.php  |   4 +-
+ .../Event/Lifecycle/ToolExecutionEndEvent.php      |   4 +-
+ .../Event/Lifecycle/ToolExecutionStartEvent.php    |   4 +-
+ .../Event/Lifecycle/ToolExecutionUpdateEvent.php   |   4 +-
+ .../Domain/Event/Lifecycle/TurnEndEvent.php        |   4 +-
+ .../Domain/Event/Lifecycle/TurnStartEvent.php      |   4 +-
+ ...leEventType.php => LifecycleOrderValidator.php} | 105 ++----
+ src/AgentCore/Domain/Event/RunEventTypeEnum.php    |  62 ++++
+ .../ExtensionApprovalAnswerSubscriber.php          |  30 +-
+ .../Mapping/AssistantMessageMappingSubscriber.php  | 141 --------
+ .../Mapping/CancelAndFallbackMappingSubscriber.php | 100 ------
+ .../Runtime/Mapping/HitlMappingSubscriber.php      |  93 ------
+ .../Mapping/RunLifecycleMappingSubscriber.php      |  93 ------
+ .../Mapping/ToolExecutionMappingSubscriber.php     |  75 -----
+ .../Runtime/Protocol/RunEventMappingEvent.php      |  36 --
+ .../Runtime/Protocol/RuntimeEventMapper.php        |  33 +-
+ .../Runtime/Protocol/RuntimeEventTranslator.php    | 370 +++++++++++++++++++++
+ .../Contract/LifecycleEventContractTest.php        |  10 +-
+ .../CodingAgent/Runtime/RuntimeEventMapperTest.php |  36 +-
+ 33 files changed, 582 insertions(+), 762 deletions(-)
+ rename src/AgentCore/Domain/Event/{CoreLifecycleEventType.php => LifecycleOrderValidator.php} (55%)
+ create mode 100644 src/AgentCore/Domain/Event/RunEventTypeEnum.php
+ delete mode 100644 src/CodingAgent/Runtime/Mapping/AssistantMessageMappingSubscriber.php
+ delete mode 100644 src/CodingAgent/Runtime/Mapping/CancelAndFallbackMappingSubscriber.php
+ delete mode 100644 src/CodingAgent/Runtime/Mapping/HitlMappingSubscriber.php
+ delete mode 100644 src/CodingAgent/Runtime/Mapping/RunLifecycleMappingSubscriber.php
+ delete mode 100644 src/CodingAgent/Runtime/Mapping/ToolExecutionMappingSubscriber.php
+ delete mode 100644 src/CodingAgent/Runtime/Protocol/RunEventMappingEvent.php
+ create mode 100644 src/CodingAgent/Runtime/Protocol/RuntimeEventTranslator.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/06-refactor-codingagent-runtime-events.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
