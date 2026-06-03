@@ -1,5 +1,5 @@
 // @ts-ignore
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@mariozechner/pi-coding-agent";
 // @ts-ignore
 import { withFileMutationQueue } from "@mariozechner/pi-coding-agent";
 import { StringEnum } from "@mariozechner/pi-ai";
@@ -1008,4 +1008,30 @@ export default function (pi: ExtensionAPI) {
 			});
 		},
 	});
+
+	// --- Slash commands for listing tasks by status ---
+
+	const taskCommand = (status: TaskStatus | undefined, label: string) => ({
+		description: `List ${label} tasks`,
+		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+			try {
+				const root = await repoRoot(pi, ctx.cwd);
+				const tasks = await listTasks(root, status);
+				if (tasks.length === 0) {
+					ctx.ui.notify(`No ${label} tasks.`, "info");
+					return;
+				}
+				const text = taskListText(tasks, root);
+				ctx.ui.notify(text, "info");
+			} catch (err: any) {
+				ctx.ui.notify(`Error: ${err.message}`, "error");
+			}
+		},
+	});
+
+	pi.registerCommand("tasks", taskCommand(undefined, "all"));
+	pi.registerCommand("tasks-todo", taskCommand("TODO", "TODO"));
+	pi.registerCommand("tasks-in-progress", taskCommand("IN-PROGRESS", "IN-PROGRESS"));
+	pi.registerCommand("tasks-code-review", taskCommand("CODE-REVIEW", "CODE-REVIEW"));
+	pi.registerCommand("tasks-done", taskCommand("DONE", "DONE"));
 }
