@@ -33,3 +33,6 @@ Completed:
 
 ## Task workflow update - 2026-06-03T20:42:28.906Z
 - Summary: Finalized plan with user decisions: (1) SessionMetadataStore stays in ModelResolver as-is, (2) favorites stay in ModelSelectionService, (3) ModelSelectionService validates before delegating to persister, (4) flat dot-notation path map with Symfony PropertyAccess for AppConfigLoader, (5) test migration with simplification — collapse resolution tests into data providers, reduce from 56 tests to ~20 focused tests.
+
+## Task workflow update - 2026-06-03T20:46:53.090Z
+- Summary: Implementation plan finalized. Architecture: ModelResolver (read-only, ~120 lines, deps: AppConfig + SessionMetadataStore), ModelSettingsPersister (write-only, ~60 lines, deps: HomeSettingsWriter + SessionMetadataStore, trusts input — no validation), ModelSelectionService (coordinator, ~150 lines, owns favorites + favRaw cache + validation before delegating). AppConfigLoader path map: flat constant using Symfony PropertyAccess bracket notation ([tui][theme_paths] => 'list', etc.), 5 if-blocks collapse into single loop. Tests: ~25 focused tests across ModelResolverTest (pure unit, ~10 tests with data providers), ModelSettingsPersisterTest (~4 tests), ModelSelectionServiceTest (~8 coordinator-level), AppConfigLoaderTest (add path-map coverage). No external contract changes.
