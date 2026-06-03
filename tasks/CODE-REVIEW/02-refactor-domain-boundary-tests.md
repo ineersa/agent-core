@@ -21,7 +21,7 @@ Scope:
 Status: CODE-REVIEW
 Branch: task/02-refactor-domain-boundary-tests
 Worktree: /home/ineersa/projects/agent-core-worktrees/02-refactor-domain-boundary-tests
-Fork run: q97fkoum8ive
+Fork run: w899qe4fkt2h
 PR URL: https://github.com/ineersa/agent-core/pull/85
 PR Status: open
 Started: 2026-06-03T01:31:49.557Z
@@ -63,3 +63,9 @@ Castor Check Output SHA256: 80bf59c9aec8d8fe422a085d91a73f7debcdb0a93bc88551bbe3
 - Created PR: https://github.com/ineersa/agent-core/pull/85
 - Validation: Fork validation reported: `castor test --filter=RunStateTest\|EventFactoryAndRunEventTest\|ToolBoundaryTest\|ModelInvocationContractTest\|CommandBoundaryTest\|AgentBusMessageContractTest\|AgentMessageTest\|LifecycleEventContractTest` passed (113 tests, 350 assertions).; Fork validation reported: `castor test` passed (1584 tests, 4723 assertions).; Fork validation reported: `castor deptrac` passed (0 violations, 0 errors).; Fork validation reported: `castor phpstan` passed (0 errors).; Fork validation reported: `castor cs-check` passed (0 files fixed).; Fork validation reported: `LLM_MODE=true castor check` passed all 7 stages (deptrac, phpunit, controller E2E, real LLM E2E, TUI E2E, phpstan, cs-check).; Parent verification: `git status --short --branch` in worktree showed `## task/02-refactor-domain-boundary-tests` with no changes; `git diff --name-only HEAD~1..HEAD` listed only the 8 test files.
 - Summary: Implementation complete at commit 0382f2a2 (`test: add AgentCore domain boundary coverage`) on branch task/02-refactor-domain-boundary-tests. Added focused pure PHPUnit AgentCore domain boundary coverage for RunState/RunStatus, RunEvent/EventFactory, ToolCall/ToolResult/ToolExecutionMode/ToolExecutionPolicy, ProviderRequest/model invocation DTOs, CoreCommandKind/RoutedCommand/PendingCommand, bus message accessors across concrete message classes, AgentMessage toArray/custom-role behavior, and lifecycle ordering negative edge cases. Parent verification inspected the commit: 8 files changed, 1232 insertions, all under tests/, no production files changed, worktree clean.
+
+## Task workflow update - 2026-06-03T01:56:38.629Z
+- Recorded fork run: w899qe4fkt2h
+- Validation: Reviewer verdict: REQUEST CHANGES due to stale task-file workflow regression in PR diff; test code itself had no correctness issues.; Parent pre-fork remediation: `git fetch origin && git rebase origin/main` in worktree succeeded; new local HEAD c7bb0490 rebased onto main 366af205.; Parent pre-fork verification: `git diff --name-status origin/main...HEAD` showed only the 8 test files and no `tasks/` paths.; Parent pre-fork validation: `LLM_MODE=true castor check` passed all stages after rebase (deptrac, phpunit 1584 tests/4723 assertions, controller E2E, real LLM E2E, TUI E2E, phpstan, cs-check).
+- Summary: Reviewer subagent completed and found one blocker plus minor suggestions. Blocker: PR diff included stale task workflow changes because branch was based before the task metadata move; it would re-add `tasks/TODO/02-refactor-domain-boundary-tests.md` and delete the live CODE-REVIEW task file. Parent rebased the worktree branch onto `origin/main` and verified `git diff --name-status origin/main...HEAD` now lists only test files; `LLM_MODE=true castor check` passed after the rebase. Launched follow-up fork w899qe4fkt2h to address all reviewer findings, verify the task-file blocker stays gone, implement low-risk test cleanup suggestions, run Castor validation, commit/push the PR branch, and return a handoff.
+- Follow-up fork w899qe4fkt2h launched to address reviewer findings and update the PR branch.
