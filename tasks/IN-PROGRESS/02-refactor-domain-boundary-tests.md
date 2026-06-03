@@ -21,7 +21,7 @@ Scope:
 Status: IN-PROGRESS
 Branch: task/02-refactor-domain-boundary-tests
 Worktree: /home/ineersa/projects/agent-core-worktrees/02-refactor-domain-boundary-tests
-Fork run:
+Fork run: q97fkoum8ive
 PR URL:
 PR Status:
 Started: 2026-06-03T01:31:49.557Z
@@ -43,3 +43,8 @@ Completed:
 - Validation: Worktree created: /home/ineersa/projects/agent-core-worktrees/02-refactor-domain-boundary-tests on branch task/02-refactor-domain-boundary-tests.; Worktree inspected: `git status --short --branch` => `## task/02-refactor-domain-boundary-tests`; no changed files.; Scout artifact for detailed recon: /home/ineersa/.pi/agent/tmp/2026-06--2cb16335.txt.
 - Summary: Preparation context gathered for implementation fork. Read the moved task file, Domain/Event/Message AGENTS notes, referenced architecture/test reports, relevant AgentCore domain classes, existing domain/lifecycle tests, and task-01 builders. Ran 3 scout subagents in the task worktree to map domain constructors/behaviors, lifecycle ordering gaps, and test-layout/helper patterns. Implementation should stay test-only and pure PHPUnit: add focused AgentCore domain boundary tests, use task-01 builders where helpful, extend existing AgentMessage/Lifecycle tests, and avoid invented invariants where production constructors intentionally do not validate.
 - Preparation/scout phase complete. Key targets identified: RunState/EventFactory/RunEvent, ToolCall/ToolResult/policy enum contracts, ModelInvocation/ProviderRequest DTO contracts, CoreCommandKind/RoutedCommand/PendingCommand, AgentBusMessage accessors, AgentMessage toArray/custom roles, and lifecycle validateOrder negative edge cases.
+
+## Task workflow update - 2026-06-03T01:38:52.003Z
+- Recorded fork run: q97fkoum8ive
+- Summary: Launched implementation fork q97fkoum8ive in background on worktree `/home/ineersa/projects/agent-core-worktrees/02-refactor-domain-boundary-tests`. Fork instructions are test-only: add focused pure PHPUnit AgentCore domain boundary tests for RunState/RunStatus, RunEvent/EventFactory, ToolCall/ToolResult/policy, model invocation DTOs, command DTOs, bus message contracts, AgentMessage toArray/custom role behavior, and lifecycle ordering edge cases. Fork must use Castor-only validation, run focused tests plus `castor test` and `LLM_MODE=true castor check` (or exact environmental blockers), commit changes, and return a dense handoff.
+- Implementation fork q97fkoum8ive launched with exact file targets, boundaries, and validation commands. Parent will verify commit/diff and record validation when fork reports back.
