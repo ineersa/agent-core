@@ -89,3 +89,8 @@ Completed:
 - `castor phpstan` — 0 errors
 
 **Notes:** Symfony AI Domain coupling is intentional and stays per user decision.
+
+## Task workflow update - 2026-06-03T16:29:02.808Z
+- - CS fix: 2 files (import ordering + redundant parens), commit amended to 3a67b84f
+- - Code review: APPROVE WITH SUGGESTIONS — no critical issues, no issues. Suggestions: (1) EventFactory.incrementStateVersion() layering concern tracked for future, (2) FQN inconsistency in CommandMailboxPolicyTest pre-existing, (3) test coverage gaps in LlmStepResultHandler/ToolCallResultHandler pre-existing.
+- - Local validation: castor test 1587/4734 PASS, deptrac 0 violations, phpstan 0 errors, cs-check clean
