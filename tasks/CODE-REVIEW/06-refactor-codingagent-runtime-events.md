@@ -19,7 +19,7 @@ Scope:
 - Run and report Castor validation: castor test --filter=RuntimeEventMapper plus castor test:controller/castor check where prerequisites allow, or exact environmental blockers.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/06-refactor-codingagent-runtime-events
 Worktree: /home/ineersa/projects/agent-core-worktrees/06-refactor-codingagent-runtime-events
 Fork run:
@@ -90,10 +90,10 @@ Completed:
 - Validation: castor test — 1587 tests, 4734 assertions, 0 failures; castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — clean
 - Summary: Fork zlhq2oqqcowr completed — commit 743e52b2 on branch task/06-refactor-codingagent-runtime-events, 31 files changed (+534/-741 lines). Created RunEventTypeEnum (23-case backed enum), LifecycleOrderValidator, RuntimeEventTranslator (dispatch table); deleted CoreLifecycleEventType, RunEventMappingEvent, 5 mapping subscribers + Mapping/ dir; updated 10 lifecycle events, 6 pipeline handlers, 2 test files, 2 config files. Validation: castor test 1587/4734 PASS, deptrac 0 violations, phpstan 0 errors, cs-check clean. Key discovery: ExtensionApprovalAnswerSubscriber was a hidden dependency on RunEventMappingEvent — updated to accept RunEvent directly; EventDispatcher kept in translator for extension subscriber compatibility.
 Castor Check Status: passed
-Castor Check Commit: 72180502ec5ba3c9dc3360f6ed297501a342a3fd
+Castor Check Commit: 98fc6a7abcd6743186e6f009364073f754267022
 Castor Check Command: LLM_MODE=true castor check
 Castor Check Timeout: 240s
-Castor Check Completed: 2026-06-03T17:49:44.604Z
+Castor Check Completed: 2026-06-03T18:32:15.102Z
 Castor Check Output SHA256: 9b242a301ed51e83653ff77081ab1bfe0b9e4e83d8da40e01129f074a84f4c36
 
 ## Task workflow update - 2026-06-03T17:49:48.596Z
@@ -110,3 +110,10 @@ Castor Check Output SHA256: 9b242a301ed51e83653ff77081ab1bfe0b9e4e83d8da40e01129
 ## Task workflow update - 2026-06-03T18:26:22.785Z
 - Validation: castor test — 1588 tests, 4738 assertions, 0 failures; castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — clean
 - Summary: PR #88 review feedback addressed in commit 98fc6a7a (amended). 4 comments resolved: (1) added RunEventTypeEnum::isLifecycleType() static method replacing raw-string LIFECYCLE_TYPES constant in LifecycleOrderValidator, (2) made EventDispatcherInterface non-nullable in RuntimeEventTranslator + RuntimeEventMapper constructors since it's always autowired, (3) updated RuntimeEventMapperTest setUp to provide explicit EventDispatcher. 33 files changed (+582/-762). Validation: castor test 1588/4738 PASS, deptrac 0 violations, phpstan 0 errors, cs-check clean.
+
+## Task workflow update - 2026-06-03T18:32:16.522Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (240s timeout). Commit: 98fc6a7abcd6.
+- Pushed task/06-refactor-codingagent-runtime-events to origin.
+- branch 'task/06-refactor-codingagent-runtime-events' set up to track 'origin/task/06-refactor-codingagent-runtime-events'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/88
