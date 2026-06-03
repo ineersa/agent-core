@@ -101,3 +101,7 @@ Completed:
 - Created worktree /home/ineersa/projects/agent-core-worktrees/07-refactor-codingagent-controller-pollers.
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/07-refactor-codingagent-controller-pollers.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/07-refactor-codingagent-controller-pollers.
+
+## Task workflow update - 2026-06-03T18:53:53.796Z
+- Claimed task, moved to IN-PROGRESS, branch task/07-refactor-codingagent-controller-pollers, worktree at /home/ineersa/projects/agent-core-worktrees/07-refactor-codingagent-controller-pollers
+- Launched fork vs33eermxfqy — extracting RuntimeEventEmitter + LlmStdoutPoller from HeadlessController (650→~370 lines), creating 2 new services + 2 test files, updating services.yaml DI wiring
