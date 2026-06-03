@@ -30,3 +30,26 @@ Completed:
 
 ## Work log
 - Created: 2026-06-03T00:31:44.294Z
+
+## Task workflow update - 2026-06-03T16:08:09.850Z
+- Summary: Revised implementation plan agreed:
+
+**Decisions:**
+- Symfony AI coupling in Domain is intentional and stays — no AgentMessageNormalizer move
+- `isStaleResult()` inlined directly into the two handlers (no private method extraction)
+- No new files, no namespace changes, no file moves — pure facade removal + constructor rewiring
+
+**Steps:**
+1. Rewrite 5 handler constructors — replace `RunMessageStateTools $stateTools` with focused deps:
+   - StartRunHandler → `EventFactory`
+   - AdvanceRunHandler → `EventFactory`
+   - LlmStepResultHandler → `EventFactory`, `ToolCallExtractor`, `AgentMessageNormalizer`
+   - ToolCallResultHandler → `EventFactory`, `ToolCallExtractor`, `AgentMessageNormalizer`
+   - ApplyCommandHandler → `EventFactory`, `AgentMessageNormalizer`
+2. Rewrite handler bodies — `$this->stateTools->x()` → `$this->eventFactory->x()` / `$this->toolCallExtractor->x()` / `$this->messageNormalizer->x()`
+3. Inline `isStaleResult()` 2-line condition directly in LlmStepResultHandler and ToolCallResultHandler
+4. Update 6 test files — replace `new RunMessageStateTools(...)` with individual deps
+5. Delete `RunMessageStateTools.php`
+
+**Files changed:** 5 handlers (edit), 1 facade (delete), 6 test files (edit)
+- - Plan discussed: RunMessageStateTools removal, Symfony AI Domain coupling is intentional, isStaleResult inlined
