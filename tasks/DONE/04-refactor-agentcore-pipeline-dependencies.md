@@ -129,3 +129,14 @@ Castor Check Output SHA256: 9519153e5435886880453c89184ee65af3eb0453a14c687dbbfe
 - Removed worktree /home/ineersa/projects/agent-core-worktrees/04-refactor-agentcore-pipeline-dependencies.
 - Pulled integration checkout: Merge made by the 'ort' strategy..
 - Summary: PR #87 merged by ineersa. Post-merge validation pending.
+
+## Task workflow update - 2026-06-03T16:35:53.518Z
+- Validation: castor test → 1587 tests, 4734 assertions, 0 failures; castor deptrac → 0 violations, 591 uncovered, 856 allowed; castor phpstan → 0 errors, 0 file_errors; castor cs-check → ok (files_fixed=0)
+- Summary: Task complete. PR #87 merged by ineersa.
+
+**Post-merge validation on main:**
+- `castor test` — 1587 tests, 4734 assertions, 0 failures
+- `castor deptrac` — 0 violations
+- `castor phpstan` — 0 errors
+- `castor cs-check` — clean
+- Worktree cleaned up, integration checkout clean and pushed.
