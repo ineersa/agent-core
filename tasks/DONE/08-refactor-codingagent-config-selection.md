@@ -19,14 +19,14 @@ Scope:
 - Run and report Castor validation: castor test --filter=ModelSelectionService/AppConfigLoader relevant tests plus castor check, or exact environmental blockers.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/08-refactor-codingagent-config-selection
 Worktree: /home/ineersa/projects/agent-core-worktrees/08-refactor-codingagent-config-selection
 Fork run: z7hlpxpmqexl
 PR URL: https://github.com/ineersa/agent-core/pull/90
-PR Status: open
+PR Status: merged
 Started: 2026-06-03T20:50:07.554Z
-Completed:
+Completed: 2026-06-03T23:37:17.715Z
 
 ## Work log
 - Created: 2026-06-03T00:32:17.712Z
@@ -99,3 +99,28 @@ Castor Check Output SHA256: e4f2d9cf8324acd44b1aa2da3b829fad8800939f2276457479d4
 - Pushed task/08-refactor-codingagent-config-selection to origin.
 - branch 'task/08-refactor-codingagent-config-selection' set up to track 'origin/task/08-refactor-codingagent-config-selection'.
 - PR already exists: https://github.com/ineersa/agent-core/pull/90
+
+## Task workflow update - 2026-06-03T23:37:17.715Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/08-refactor-codingagent-config-selection into integration checkout.
+- Merge made by the 'ort' strategy.
+ config/services.yaml                               |  51 --
+ src/CodingAgent/Config/AppConfigLoader.php         |  79 +--
+ src/CodingAgent/Config/ModelResolver.php           | 240 ++++++-
+ src/CodingAgent/Config/ModelSelectionService.php   | 243 +------
+ src/CodingAgent/Config/ModelSettingsPersister.php  |  63 ++
+ .../Infrastructure/SymfonyAi/LlamaCppSmokeTest.php |   2 +-
+ .../Infrastructure/SymfonyAi/TraceReplayTest.php   |   4 +-
+ tests/CodingAgent/Config/AppConfigLoaderTest.php   |  50 ++
+ tests/CodingAgent/Config/ModelResolverTest.php     | 456 +++++++++++++
+ .../Config/ModelSelectionServiceTest.php           | 727 +++------------------
+ .../Config/ModelSettingsPersisterTest.php          | 173 +++++
+ .../Config/SessionAwareModelResolverTest.php       |   6 +-
+ tests/Tui/Listener/ModelCommandHandlerTest.php     |  10 +-
+ tests/Tui/Picker/ModelPickerControllerTest.php     |   4 +-
+ 14 files changed, 1152 insertions(+), 956 deletions(-)
+ create mode 100644 src/CodingAgent/Config/ModelSettingsPersister.php
+ create mode 100644 tests/CodingAgent/Config/ModelResolverTest.php
+ create mode 100644 tests/CodingAgent/Config/ModelSettingsPersisterTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/08-refactor-codingagent-config-selection.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
