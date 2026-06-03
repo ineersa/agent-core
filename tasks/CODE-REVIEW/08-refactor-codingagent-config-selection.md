@@ -19,7 +19,7 @@ Scope:
 - Run and report Castor validation: castor test --filter=ModelSelectionService/AppConfigLoader relevant tests plus castor check, or exact environmental blockers.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/08-refactor-codingagent-config-selection
 Worktree: /home/ineersa/projects/agent-core-worktrees/08-refactor-codingagent-config-selection
 Fork run: z7hlpxpmqexl
@@ -57,10 +57,10 @@ Completed:
 - Validation: castor test — 1588 tests, 4732 assertions, 0 failures; castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — clean; Re-review verdict: APPROVED
 - Summary: Review fix fork 4x9nsfqz50m9 completed. Amended commit to afdd0c8f. Resolved all 8 review findings: restored 7 session metadata tests, z.ai reasoning test, ModelSettingsPersisterTest (4 tests), provider thinking_levels tests, favorites-filter test, rationale comments, z.ai docblock. 1588 tests pass (+16), 0 deptrac/phpstan/cs issues. Re-review: APPROVED (no critical/regular issues; convention note on persister docblock, simplify note on newInstanceWithoutConstructor).
 Castor Check Status: passed
-Castor Check Commit: afdd0c8f6bda0fa36cf64a0209204aab5f6a4dab
+Castor Check Commit: 8fbb31cde7e8289f1541129234df9f4f04c557b6
 Castor Check Command: LLM_MODE=true castor check
 Castor Check Timeout: 600s
-Castor Check Completed: 2026-06-03T21:24:39.564Z
+Castor Check Completed: 2026-06-03T23:36:31.732Z
 Castor Check Output SHA256: e4f2d9cf8324acd44b1aa2da3b829fad8800939f2276457479d47402afbb2ee8
 
 ## Task workflow update - 2026-06-03T21:24:43.242Z
@@ -92,3 +92,10 @@ Castor Check Output SHA256: e4f2d9cf8324acd44b1aa2da3b829fad8800939f2276457479d4
 - Recorded fork run: z7hlpxpmqexl
 - Validation: castor test — 1588/4732 pass; castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — clean
 - Summary: Review fix fork z7hlpxpmqexl: cleaned up config/services.yaml — removed dead ExtensionApiBridge wiring (backward-compat, no production refs), orphan ToolExecutionPolicyResolver comment, orphan Image gating comment, misplaced extension comment above LoggingConfig, and fixed 4→1 blank lines between parameters/services. services.yaml now -51 lines total. Commit amended to 8fbb31cd, 14 files changed (+1152/-956).
+
+## Task workflow update - 2026-06-03T23:36:33.039Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (600s timeout). Commit: 8fbb31cde7e8.
+- Pushed task/08-refactor-codingagent-config-selection to origin.
+- branch 'task/08-refactor-codingagent-config-selection' set up to track 'origin/task/08-refactor-codingagent-config-selection'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/90
