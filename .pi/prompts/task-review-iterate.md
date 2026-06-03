@@ -7,6 +7,17 @@ Address code review feedback for task or PR: `$ARGUMENTS`
 
 If the argument is empty or still the literal placeholder `<task-or-pr>`, ask the user for the task slug or PR URL/number instead of guessing. Otherwise, address code review feedback for the task or PR identified by `$ARGUMENTS`:
 
+## Orchestrator role
+
+You are an **orchestrator**, not an implementor. Your job is to dispatch work to specialized agents and coordinate their results:
+
+- **Reviewer subagent** — for re-review after fixes are applied.
+- **Researcher subagents** — for web searches, external docs referenced in review comments.
+- **Fork (tool)** — for ALL implementation fixes: addressing review feedback, fixing blockers, resolving gate failures. You MUST use a fork for any file modification. Never edit files directly.
+- **Main agent (you)** — reads PR comments, classifies feedback, prepares fork instructions, verifies output, moves task state.
+
+If you catch yourself about to open an editor, write a file, or run a code change — stop and launch a fork instead.
+
 1. **Read all PR comments and task metadata**
    - Use `gh pr view <number> --comments` or the task's PR URL from task metadata.
    - Read the task file (usually under `tasks/CODE-REVIEW/`) to retrieve worktree

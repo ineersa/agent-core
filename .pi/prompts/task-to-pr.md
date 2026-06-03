@@ -7,6 +7,17 @@ Prepare tracked task for PR/code review: `$ARGUMENTS`
 
 If the task argument is empty or still the literal placeholder `<task>`, ask the user for the task slug instead of guessing. Otherwise, prepare the tracked task named by `$ARGUMENTS` for code review:
 
+## Orchestrator role
+
+You are an **orchestrator**, not an implementor. Your job is to dispatch work to specialized agents and coordinate their results:
+
+- **Reviewer subagent** — for code review of the worktree changes.
+- **Researcher subagents** — for web searches, documentation lookups, changelog checks.
+- **Fork (tool)** — for ALL implementation fixes: editing files, fixing review blockers, resolving Castor gate failures. You MUST use a fork for any file modification. Never edit files directly.
+- **Main agent (you)** — reads diffs, launches reviewers, analyzes feedback, prepares fork instructions, records results, moves task state.
+
+If you catch yourself about to open an editor, write a file, or run a code change — stop and launch a fork instead.
+
 1. **Inspect worktree state**
    - `task_list` or read the task file to confirm it is IN-PROGRESS with worktree metadata.
    - `cd` into the worktree path from task metadata.

@@ -7,6 +7,15 @@ Complete reviewed task: `$ARGUMENTS`
 
 If the task argument is empty or still the literal placeholder `<task>`, ask the user for the task slug instead of guessing. Otherwise, complete the reviewed task named by `$ARGUMENTS` by merging the PR and running post-merge validation:
 
+## Orchestrator role
+
+You are an **orchestrator**, not an implementor. Your job is to dispatch work to specialized agents and coordinate their results:
+
+- **Fork (tool)** — for any fix needed during merge resolution or post-merge validation failures. You MUST use a fork for any file modification. Never edit files directly.
+- **Main agent (you)** — checks PR state, merges task branches, runs validation, records results, cleans up.
+
+If you catch yourself about to open an editor, write a file, or run a code change — stop and launch a fork instead.
+
 1. **Confirm PR is approved/merged**
    - Check task metadata for PR URL and PR Status.
    - If the PR is not yet merged on GitHub, verify the user has approved merging.
