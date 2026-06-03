@@ -82,15 +82,22 @@ Shrink HeadlessController by extracting self-contained event-emitter and stdout-
 - Validation: castor test (all), castor deptrac, castor phpstan, castor cs-check.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/07-refactor-codingagent-controller-pollers
+Worktree: /home/ineersa/projects/agent-core-worktrees/07-refactor-codingagent-controller-pollers
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-03T18:50:30.763Z
 Completed:
 
 ## Work log
 - Created: 2026-06-03T00:32:14.231Z
 - Updated: 2026-06-03 — Full implementation plan with RuntimeEventEmitter + LlmStdoutPoller extraction, naming decisions, DI wiring, test strategy
+
+## Task workflow update - 2026-06-03T18:50:30.763Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/07-refactor-codingagent-controller-pollers.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/07-refactor-codingagent-controller-pollers.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/07-refactor-codingagent-controller-pollers.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/07-refactor-codingagent-controller-pollers.
