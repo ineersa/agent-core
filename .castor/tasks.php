@@ -586,15 +586,17 @@ function phar_ensure(): void
 }
 
 /**
- * Remove the built PHAR at /tmp/bin/hatfield.phar.
+ * Remove the built PHAR.
  */
 #[AsTask(name: 'phar:clean', description: 'Remove built hatfield.phar')]
 function phar_clean(): void
 {
-    $pharPath = '/tmp/bin/hatfield.phar';
+    $pharPath = \CastorTasks\hatfield_phar_path();
     if (is_file($pharPath)) {
         unlink($pharPath);
         echo "Removed {$pharPath}\n";
+    } else {
+        echo "No PHAR found at {$pharPath}\n";
     }
     echo 'PHAR cleaned.'."\n";
 }

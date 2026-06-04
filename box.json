@@ -19,5 +19,5 @@
     "check-requirements": false,
     "exclude-composer-files": false,
     "exclude-dev-files": true,
-    "blacklist": []
+    "annotations": false
 }

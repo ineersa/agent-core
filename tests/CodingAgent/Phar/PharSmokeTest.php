@@ -25,6 +25,13 @@ use PHPUnit\Framework\TestCase;
  */
 final class PharSmokeTest extends TestCase
 {
+    /**
+     * Default PHAR path used in skip messages.
+     *
+     * The actual path is resolved via HATFIELD_BINARY_PATH env var
+     * (set by Castor tasks) or AgentTestExecutable.  This constant mirrors
+     * the build default from .castor/helpers.php:hatfield_phar_path().
+     */
     private const string DEFAULT_PHAR_PATH = '/tmp/bin/hatfield.phar';
 
     public function testPharBootingToAgentList(): void

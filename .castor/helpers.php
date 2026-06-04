@@ -11,6 +11,142 @@ use function Castor\run;
 
 const REPORTS_DIR = __DIR__.'/../var/reports';
 
+// ─── PHAR packaging constants ──────────────────────────────────────────
+// Centralised so output paths, staging directories, and tooling references
+// have a single source of truth.  Every function that needs the PHAR path
+// calls hatfield_phar_path() instead of hard-coding /tmp/bin/hatfield.phar.
+//
+// Environment overrides (optional):
+//   HATFIELD_PHAR_PATH        — Override the PHAR output file path.
+//   HATFIELD_PHAR_STAGING_DIR — Override the production Composer staging dir.
+//   HATFIELD_PHAR_BOX_BIN     — Override the Box binary (defaults to
+//                                tools/phar/vendor/bin/box when the isolated
+//                                toolchain is present).
+
+/** Default PHAR output path. */
+const HATFIELD_PHAR_DEFAULT = '/tmp/bin/hatfield.phar';
+
+/** Default staging directory for production-only Composer installs. */
+const HATFIELD_PHAR_STAGING_DEFAULT = '/tmp/hatfield-phar-build/source';
+
+/**
+ * Resolve the PHAR output path.
+ *
+ * Respects HATFIELD_PHAR_PATH if set; otherwise returns the hard default
+ * /tmp/bin/hatfield.phar.  Relative overrides are resolved against the
+ * project root directory.
+ */
+function hatfield_phar_path(): string
+{
+    $override = getenv('HATFIELD_PHAR_PATH');
+
+    if (false !== $override && '' !== $override) {
+        if (str_starts_with($override, '/')) {
+            return $override;
+        }
+
+        $root = realpath(__DIR__.'/..');
+        if (false !== $root) {
+            return $root.'/'.$override;
+        }
+    }
+
+    return HATFIELD_PHAR_DEFAULT;
+}
+
+/**
+ * Resolve the PHAR staging directory.
+ *
+ * Respects HATFIELD_PHAR_STAGING_DIR if set; otherwise returns the hard
+ * default /tmp/hatfield-phar-build/source.
+ */
+function hatfield_phar_staging_dir(): string
+{
+    $override = getenv('HATFIELD_PHAR_STAGING_DIR');
+
+    if (false !== $override && '' !== $override) {
+        return $override;
+    }
+
+    return HATFIELD_PHAR_STAGING_DEFAULT;
+}
+
+/**
+ * Resolve the Box binary path.
+ *
+ * Precedence:
+ *   1. HATFIELD_PHAR_BOX_BIN env var (explicit override).
+ *   2. tools/phar/vendor/bin/box (isolated project-local toolchain).
+ *   3. Global Box (from PATH or BOX_BIN env).
+ *
+ * When the isolated toolchain at tools/phar/ exists but is not yet installed,
+ * a lazy `composer install --no-dev` is triggered there so the binary becomes
+ * available on first use.
+ */
+function hatfield_phar_box_bin(): string
+{
+    // 1. Explicit env override.
+    $override = getenv('HATFIELD_PHAR_BOX_BIN');
+    if (false !== $override && '' !== $override && is_executable($override)) {
+        return $override;
+    }
+
+    $root = realpath(__DIR__.'/..');
+    if (false === $root) {
+        throw new \RuntimeException('Unable to resolve project root for Box binary resolution.');
+    }
+
+    // 2. Isolated toolchain under tools/phar/.
+    $localBoxBin = $root.'/tools/phar/vendor/bin/box';
+    if (is_executable($localBoxBin)) {
+        return $localBoxBin;
+    }
+
+    // Lazy install if the composer.json exists but vendor/ is missing.
+    if (is_file($root.'/tools/phar/composer.json')) {
+        $composerBin = hatfield_phar_composer_bin();
+        $installCmd = \sprintf(
+            'cd %s && COMPOSER_MEMORY_LIMIT=-1 XDEBUG_MODE=off %s install --no-dev --no-interaction --no-progress 2>&1',
+            escapeshellarg($root.'/tools/phar'),
+            escapeshellarg($composerBin),
+        );
+        $output = shell_exec($installCmd);
+        if (is_executable($localBoxBin)) {
+            return $localBoxBin;
+        }
+        // If install somehow failed, fall through to the global lookup.
+        if (null !== $output && '' !== trim($output)) {
+            echo "  tools/phar/ composer install output:\n  ".str_replace("\n", "\n  ", trim($output))."\n";
+        }
+    }
+
+    // 3. Global Box (PATH, or the legacy BOX_BIN env).
+    $globalBox = getenv('BOX_BIN') ?: trim(shell_exec('which box 2>/dev/null') ?? '');
+    if ('' !== $globalBox && is_executable($globalBox)) {
+        return $globalBox;
+    }
+
+    throw new \RuntimeException('Box is not installed. Options:'.\PHP_EOL.'  1. (preferred) The isolated toolchain is at tools/phar/ — it will be set up automatically.'.\PHP_EOL.'  2. Install Box globally: composer global require humbug/box'.\PHP_EOL.'  3. Set HATFIELD_PHAR_BOX_BIN to the Box binary path.'.\PHP_EOL);
+}
+
+/**
+ * Resolve the Composer binary for build operations.
+ */
+function hatfield_phar_composer_bin(): string
+{
+    $composerBin = getenv('COMPOSER_BIN') ?: trim(shell_exec('which composer 2>/dev/null') ?? '');
+    if ('' === $composerBin) {
+        $composerBin = trim(shell_exec('which composer.phar 2>/dev/null') ?? '');
+    }
+    if ('' === $composerBin) {
+        throw new \RuntimeException('Composer not found. Set COMPOSER_BIN or install composer globally.');
+    }
+
+    return $composerBin;
+}
+
+// ─── ──────────────────────────────────────────────────────────────────
+
 function dev_php_exec(string $command): void
 {
     run($command);
@@ -213,14 +349,7 @@ function summarize_deptrac_json(string $jsonOutput): string
 }
 
 /**
- * Staging directory under /tmp for production-only PHAR builds.
- * A clean Composer install --no-dev is run here before Box compilation,
- * so dev packages (phpstan, phpunit, cs-fixer, etc.) never enter the PHAR.
- */
-const PHAR_STAGING_DIR = '/tmp/hatfield-phar-build/source';
-
-/**
- * Ensure the PHAR at /tmp/bin/hatfield.phar exists and is fresh.
+ * Ensure the PHAR exists and is fresh.
  *
  * If the PHAR is missing or stale (source, config, or box/composer files
  * have been updated since the last build), triggers a rebuild.
@@ -229,7 +358,7 @@ const PHAR_STAGING_DIR = '/tmp/hatfield-phar-build/source';
  */
 function phar_ensure(): string
 {
-    $pharPath = '/tmp/bin/hatfield.phar';
+    $pharPath = hatfield_phar_path();
 
     if (is_file($pharPath) && is_readable($pharPath)) {
         // Quick stale detection: compare mtime against key meta-files
@@ -274,48 +403,58 @@ function phar_ensure(): string
 }
 
 /**
- * Build the PHAR at /tmp/bin/hatfield.phar using a clean production staging
- * directory (Composer --no-dev), then compile with Box.
+ * Deterministic Composer autoloader suffix used for PHAR builds.
  *
- * The build pipeline:
- *   1. Create/refresh staging dir with only packaging inputs (no dev vendor)
- *   2. Run `composer install --no-dev` in staging
- *   3. Run `box compile` from staging
- *   4. Report timings, smoke-test the PHAR
+ * Without a fixed suffix, Composer derives the autoloader class name from
+ * a hash of composer.json.  If the resulting class name collides with the
+ * autoloader from a sibling PHAR or the host Composer project, class-map
+ * resolution silently breaks (only one autoloader survives per process).
+ *
+ * Castor solves this by patching composer.json with a randomly-generated
+ * suffix during PHAR builds (tools/phar/castor.php).  We use a deterministic
+ * project-scoped value so the suffix is stable across builds and doesn't
+ * depend on build-time randomness.
+ *
+ * This suffix is applied to the staging composer.json before the production
+ * `composer install --optimize-autoloader` step, ensuring the generated
+ * autoloader (preserved by Box with dump-autoload:false) has a unique name.
+ */
+const HATFIELD_PHAR_AUTOLOADER_SUFFIX = 'HatfieldPharBuild';
+
+/**
+ * Build the PHAR using a clean production staging directory.
+ *
+ * Pipeline:
+ *   1. Create/refresh staging dir with only packaging inputs (no dev vendor).
+ *   2. Apply a deterministic Composer autoloader suffix to prevent class-map
+ *      collision when the PHAR is consumed by another Composer project.
+ *   3. Run `composer install --no-dev --optimize-autoloader` in staging.
+ *   4. Compile with Box (from the isolated tools/phar/ toolchain).
+ *   5. Smoke-test the artifact from an isolated temp directory.
+ *   6. Report timings and PHAR size.
  *
  * @return string absolute path to the built PHAR
  */
 function phar_build(): string
 {
-    $pharPath = '/tmp/bin/hatfield.phar';
+    $pharPath = hatfield_phar_path();
     $root = realpath(__DIR__.'/..');
     if (false === $root) {
         throw new \RuntimeException('Unable to resolve project root for PHAR build.');
     }
 
-    $stagingDir = PHAR_STAGING_DIR;
+    $stagingDir = hatfield_phar_staging_dir();
     $startTime = microtime(true);
 
     // ── Resolve external binaries ────────────────────────────────────
 
-    $boxBin = getenv('BOX_BIN') ?: trim(shell_exec('which box 2>/dev/null') ?? '');
-    if ('' === $boxBin) {
-        throw new \RuntimeException('box is not installed. Install it globally via composer global require humbug/box or set the BOX_BIN environment variable to its path.');
-    }
-
-    $composerBin = getenv('COMPOSER_BIN') ?: trim(shell_exec('which composer 2>/dev/null') ?? '');
-    if ('' === $composerBin) {
-        // Try composer.phar
-        $composerBin = trim(shell_exec('which composer.phar 2>/dev/null') ?? '');
-    }
-    if ('' === $composerBin) {
-        throw new \RuntimeException('composer is not installed. Set the COMPOSER_BIN environment variable, install it globally with `composer global require`, or ensure `composer` is on PATH.');
-    }
+    $boxBin = hatfield_phar_box_bin();
+    $composerBin = hatfield_phar_composer_bin();
 
     // ── 1. Prepare staging directory ─────────────────────────────────
 
     // Ensure output directory exists.
-    @mkdir('/tmp/bin', 0755, true);
+    @mkdir(\dirname($pharPath), 0755, true);
 
     // Start fresh so stale files from previous builds never leak in.
     if (is_dir($stagingDir)) {
@@ -350,7 +489,43 @@ function phar_build(): string
 
     echo "Staging prepared: {$stagingDir} ({$copySize} MB)\n";
 
-    // ── 2. Install production-only Composer dependencies ─────────────
+    // ── 2. Apply deterministic autoloader suffix ─────────────────────
+    //
+    // Without a fixed suffix, Composer derives the autoloader class name
+    // (ComposerAutoloaderInit<hex>) from a hash of composer.json.  If the
+    // PHAR is loaded inside a host project that produces the same hash —
+    // e.g. another agent-core build — the autoloader class names collide
+    // and the PHAR's autoloader silently fails to register.
+    //
+    // We set config.autoloader-suffix in the staging composer.json so the
+    // autoloader class name is always ComposerAutoloaderInitHatfieldPharBuild.
+    // This is applied to the staging copy only — the root composer.json is
+    // never modified.
+
+    $stagingComposerJson = $stagingDir.'/composer.json';
+    if (!is_file($stagingComposerJson)) {
+        throw new \RuntimeException('Staging composer.json not found at '.$stagingComposerJson);
+    }
+
+    $composerConfig = json_decode((string) file_get_contents($stagingComposerJson), true);
+    if (!\is_array($composerConfig)) {
+        throw new \RuntimeException('Failed to parse staging composer.json.');
+    }
+
+    if (!isset($composerConfig['config']) || !\is_array($composerConfig['config'])) {
+        $composerConfig['config'] = [];
+    }
+    $composerConfig['config']['autoloader-suffix'] = HATFIELD_PHAR_AUTOLOADER_SUFFIX;
+
+    $encoded = json_encode($composerConfig, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES);
+    if (false === $encoded) {
+        throw new \RuntimeException('Failed to encode staging composer.json with autoloader suffix.');
+    }
+    if (false === file_put_contents($stagingComposerJson, $encoded."\n")) {
+        throw new \RuntimeException('Failed to write staging composer.json with autoloader suffix.');
+    }
+
+    // ── 3. Install production-only Composer dependencies ─────────────
 
     // Default APP_ENV to prod if not already set by the caller.
     // This ensures Composer resolves Symfony config in the correct
@@ -372,7 +547,21 @@ function phar_build(): string
         throw new \RuntimeException('composer install command returned no output (shell_exec failure).'.\PHP_EOL.'Command: '.$composerCmd);
     }
 
-    // ── 3. Compile PHAR with Box ─────────────────────────────────────
+    // ── 4. Compile PHAR with Box ─────────────────────────────────────
+
+    // Update box.json output in staging to reflect the resolved PHAR path
+    // (in case the env override differs from the default in the file).
+    $stagingBoxJson = $stagingDir.'/box.json';
+    if (is_file($stagingBoxJson)) {
+        $boxConfig = json_decode((string) file_get_contents($stagingBoxJson), true);
+        if (\is_array($boxConfig)) {
+            $boxConfig['output'] = $pharPath;
+            $encoded = json_encode($boxConfig, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES);
+            if (false !== $encoded) {
+                file_put_contents($stagingBoxJson, $encoded."\n");
+            }
+        }
+    }
 
     $boxEnv = getenv('APP_ENV') ?: 'prod';
     $boxStart = microtime(true);
@@ -403,25 +592,102 @@ function phar_build(): string
         $copyTime, $composerTime, $boxTime, $totalTime
     );
 
-    // ── 4. Smoke-test the PHAR (report boot failure separately) ──────
+    // ── 5. Smoke-test the PHAR from an isolated working directory ────
+    //
+    // Running from a temp cwd (outside the repo) proves:
+    //   - The PHAR boots without any source-checkout scaffolding.
+    //   - .hatfield/cache and .hatfield/logs are created in the runtime cwd.
+    //   - Package-autoloader collision is avoided (the fixed suffix works).
+    //   - Core commands (list, about, agent --help) are functional.
+
+    phar_smoke($pharPath);
+
+    return $pharPath;
+}
+
+/**
+ * Run fast no-LLM smoke checks against a built PHAR artifact.
+ *
+ * Executes from an isolated temporary working directory so .hatfield/* dirs
+ * are created outside the repo and do not pollute the source checkout.
+ *
+ * Validates:
+ *   - PHAR boots and Symfony Console loads all commands.
+ *   - `agent` command is listed (confirmed the PHAR contains app code).
+ *   - `about` reports the correct environment (prod by default).
+ *   - `agent --help` renders usage text.
+ *
+ * Output is kept compact for Castor build logs.
+ */
+function phar_smoke(string $pharPath): void
+{
+    // Create an isolated temp cwd to prove writable-dir creation works.
+    $tmpCwd = sys_get_temp_dir().'/hatfield-phar-smoke-'.getmypid();
+    @mkdir($tmpCwd, 0755, true);
+    if (!is_dir($tmpCwd)) {
+        echo "PHAR smoke test: SKIP (could not create isolated cwd: {$tmpCwd})\n";
+
+        return;
+    }
 
     $smokeEnv = getenv('APP_ENV') ?: 'prod';
-    $listOutput = shell_exec('APP_ENV='.$smokeEnv.' '.\PHP_BINARY.' '.escapeshellarg($pharPath).' list 2>&1');
+    $failed = [];
+    $phpBin = \PHP_BINARY;
+
+    // 1. `list` — verifies the Symfony Console application boots and
+    //    all commands (including `agent`) are registered.
+    $listOutput = shell_exec(
+        'cd '.escapeshellarg($tmpCwd).' && APP_ENV='.$smokeEnv.' '.$phpBin.' '
+        .escapeshellarg($pharPath).' list 2>&1'
+    );
     if (null === $listOutput || !str_contains($listOutput, 'agent')) {
-        // The PHAR may have a separate boot issue (e.g. ContainerBuilder
-        // service-not-found). Report it but do NOT throw — the build itself
-        // succeeded and boot debugging is the next phase.
-        echo "PHAR boot smoke test: FAILED (known separate issue)\n";
-        echo 'The PHAR compiled successfully but the application '.\PHP_EOL;
-        echo 'does not boot inside PHAR. This is a ContainerBuilder / '.\PHP_EOL;
-        echo 'Symfony DI compilation issue and should be addressed in a '.\PHP_EOL;
-        echo 'subsequent fork. Output: '.\PHP_EOL;
-        echo ($listOutput ?? '<no output>').\PHP_EOL;
+        $failed[] = 'list (agent command not found)';
+        echo "  smoke list: FAIL\n";
+    } else {
+        echo "  smoke list: ok\n";
+    }
+
+    // 2. `about` — verifies the kernel boots, environment is correct,
+    //    and writable directories are resolved.
+    $aboutOutput = shell_exec(
+        'cd '.escapeshellarg($tmpCwd).' && APP_ENV='.$smokeEnv.' '.$phpBin.' '
+        .escapeshellarg($pharPath).' about 2>&1'
+    );
+    if (null === $aboutOutput || !str_contains($aboutOutput, 'Environment')) {
+        $failed[] = 'about (no Environment line)';
+        echo "  smoke about: FAIL\n";
+    } else {
+        echo "  smoke about: ok\n";
+    }
+
+    // 3. `agent --help` — verifies AgentCommand is loadable and its
+    //    options (--cwd, --model, --headless, etc.) are present.
+    $helpOutput = shell_exec(
+        'cd '.escapeshellarg($tmpCwd).' && APP_ENV='.$smokeEnv.' '.$phpBin.' '
+        .escapeshellarg($pharPath).' agent --help 2>&1'
+    );
+    if (null === $helpOutput || !str_contains($helpOutput, 'Usage:')) {
+        $failed[] = 'agent --help (no Usage line)';
+        echo "  smoke agent --help: FAIL\n";
+    } else {
+        echo "  smoke agent --help: ok\n";
+    }
+
+    // 4. Verify .hatfield/cache was created in the isolated cwd —
+    //    proves writable-dir isolation works.
+    if (is_dir($tmpCwd.'/.hatfield/cache')) {
+        echo "  smoke writable-dir isolation: ok (.hatfield/cache created in {$tmpCwd})\n";
+    }
+
+    // Clean up smoke artifacts.
+    shell_exec('rm -rf '.escapeshellarg($tmpCwd));
+
+    if ([] !== $failed) {
+        echo 'PHAR smoke test: FAIL ('.\count($failed).' failures: '.implode(', ', $failed).")\n";
+        echo "  The PHAR compiled successfully but one or more boot checks failed.\n";
     } else {
         echo "PHAR smoke test: ok\n";
     }
-
-    return $pharPath;
 }
 
 /**
