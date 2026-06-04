@@ -105,7 +105,7 @@ Create `tests/CodingAgent/Phar/PharSmokeTest.php` following the same pattern as 
 Status: IN-PROGRESS
 Branch: task/phar-packaging
 Worktree: /home/ineersa/projects/agent-core-worktrees/phar-packaging
-Fork run:
+Fork run: 8nxese4ug8s1
 PR URL:
 PR Status:
 Started: 2026-06-04T18:43:54.659Z
@@ -132,3 +132,7 @@ Completed:
 
 ## Task workflow update - 2026-06-04T18:48:18.541Z
 - Task-start preparation complete. Loaded task-workflow/testing/castor skills, claimed task to branch `task/phar-packaging` with worktree `/home/ineersa/projects/agent-core-worktrees/phar-packaging`, reread the task, and launched focused scout prep in the worktree. Additional scout artifact: `/home/ineersa/.pi/agent/tmp/2026-06--5a82d8af.txt`. Fork implementation instructions will use resolved decisions: `/tmp/bin/hatfield.phar`, HATFIELD_* writable-dir env overrides, runtime-cwd `.hatfield/logs` and `.hatfield/cache`, and mandatory PHAR use for CLI/controller/TUI subprocess flows.
+
+## Task workflow update - 2026-06-04T18:49:54.895Z
+- Recorded fork run: 8nxese4ug8s1
+- Implementation fork launched in worktree `/home/ineersa/projects/agent-core-worktrees/phar-packaging` as run `8nxese4ug8s1`. Fork instructions cover Box config, runtime-cwd writable dirs, PHAR executable locator/wiring, Castor `phar:build`/`phar:ensure`, mandatory PHAR usage for Castor run/controller/TUI subprocess tests, focused validation, and commit requirements.
