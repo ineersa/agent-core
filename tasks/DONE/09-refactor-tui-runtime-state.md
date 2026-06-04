@@ -19,14 +19,14 @@ Scope:
 - Run and report Castor validation: new TUI runtime tests, castor test:tui and castor check where prerequisites allow, or exact environmental blockers.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/09-refactor-tui-runtime-state
 Worktree: /home/ineersa/projects/agent-core-worktrees/09-refactor-tui-runtime-state
 Fork run: nh1ndqls53r7
 PR URL: https://github.com/ineersa/agent-core/pull/91
-PR Status: open
+PR Status: merged
 Started: 2026-06-03T23:47:17.633Z
-Completed:
+Completed: 2026-06-04T16:57:42.673Z
 
 ## Work log
 - Created: 2026-06-03T00:32:15.420Z
@@ -166,3 +166,10 @@ Castor Check Output SHA256: b3796d30cf730c9fb4e8c7ef76d2aa1632d255cb120bee31773a
 - Pushed task/09-refactor-tui-runtime-state to origin.
 - branch 'task/09-refactor-tui-runtime-state' set up to track 'origin/task/09-refactor-tui-runtime-state'.
 - Created PR: https://github.com/ineersa/agent-core/pull/91
+
+## Task workflow update - 2026-06-04T16:57:42.674Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/09-refactor-tui-runtime-state into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/09-refactor-tui-runtime-state.
+- Pulled integration checkout: Already up to date..
