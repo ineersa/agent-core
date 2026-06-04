@@ -106,7 +106,7 @@ Branch: task/10-refactor-tui-screen-picker
 Worktree: /home/ineersa/projects/agent-core-worktrees/10-refactor-tui-screen-picker
 Fork run: kxoxu19e7fx7
 PR URL:
-PR Status:
+PR Status: APPROVE WITH SUGGESTIONS — all 5 findings fixed (mount guard, close null symmetry, docblock, overlay null in controllers, 2 new tests)
 Started: 2026-06-04T17:10:01.925Z
 Completed:
 
@@ -125,3 +125,8 @@ Completed:
 - Recorded fork run: kxoxu19e7fx7
 - Validation: castor test — 1656/4891 pass (+7 new); castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — clean
 - Summary: Fork kxoxu19e7fx7 completed task 10 — commit 74150e53 on branch task/10-refactor-tui-screen-picker, 6 files changed (+288/-156). Created PickerOverlay (88 lines, shared mount/close lifecycle), rewrote ModelPickerController (362→~295, overlay delegation + simplified applySelectEffect from 5-param to 1-param), rewrote FavoritePickerController (250→~201, overlay delegation), deleted 2 dead stubs (PromptInputWidget, ToolOutputWidget), created PickerOverlayTest (7 tests). 1656 tests pass (+7 new), 0 deptrac violations, 0 phpstan errors, cs-check clean. QuestionController left unchanged (lifecycle differs too much). TranscriptWidget kept (has real callers). ChatScreen not touched.
+
+## Task workflow update - 2026-06-04T17:27:50.406Z
+- Updated PR Status: APPROVE WITH SUGGESTIONS — all 5 findings fixed (mount guard, close null symmetry, docblock, overlay null in controllers, 2 new tests)
+- Validation: castor test — 1658/4899 pass (+9 new); castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — clean
+- Summary: Code review: APPROVE WITH SUGGESTIONS — 5 actionable findings all fixed via fork hilao8x6oyhu (commit amended to 11f0abb9). BUG/EDGE: mount guard added. DESIGN: close() nulls all refs. CONVENTION: closePicker() nulls overlay. SIMPLIFY: docblock updated. NTH: 2 new tests (close-before-mount no-op, mount assertion). Local validation: castor test 1658/4899, deptrac 0, phpstan 0, cs-check clean.
