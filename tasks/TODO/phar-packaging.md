@@ -113,3 +113,6 @@ Completed:
 
 ## Work log
 - Created: 2026-05-22T18:43:48.232Z
+
+## Task workflow update - 2026-06-04T17:49:28.833Z
+- PHAR readiness scout recon completed (3 scouts). Key findings: no Box/PHAR tooling exists yet; Kernel/bin entrypoint/cache/log/config paths are the first PHAR blockers; runtime process abstraction exists but only SourceTreeExecutableLocator is wired; AgentProcessSupervisor and Castor run/log tasks still hardcode bin/console; Controller/TUI E2E tests hardcode bin/console and should use a PHAR built to a stable /tmp/bin path. Scout artifact: /home/ineersa/.pi/agent/tmp/2026-06--3741ac4e.txt
