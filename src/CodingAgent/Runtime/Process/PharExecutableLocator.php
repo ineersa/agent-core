@@ -37,9 +37,6 @@ final class PharExecutableLocator implements AppExecutableLocator
             return $pharPath;
         }
 
-        throw new \RuntimeException(
-            'PharExecutableLocator requires running inside a PHAR. '
-            .'Use SourceTreeExecutableLocator or ChainExecutableLocator for source-checkout environments.'
-        );
+        throw new \RuntimeException('PharExecutableLocator requires running inside a PHAR. Use SourceTreeExecutableLocator or ChainExecutableLocator for source-checkout environments.');
     }
 }

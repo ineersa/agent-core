@@ -162,7 +162,7 @@ final class ThemeRegistry
         }
 
         foreach ($entries as $entry) {
-            if ($entry === '.' || $entry === '..') {
+            if ('.' === $entry || '..' === $entry) {
                 continue;
             }
             if (!str_ends_with($entry, '.yaml') && !str_ends_with($entry, '.yml')) {

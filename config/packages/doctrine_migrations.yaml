@@ -8,7 +8,7 @@
 doctrine_migrations:
     migrations_paths:
         # Namespace must NOT conflict with src/ PSR-4 auto-discovery
-        'DoctrineMigrations': '%env(HATFIELD_MIGRATIONS_DIR)%'
+        'DoctrineMigrations': '%kernel.project_dir%/migrations'
 
     storage:
         table_storage:

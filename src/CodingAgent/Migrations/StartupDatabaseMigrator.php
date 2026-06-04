@@ -4,21 +4,23 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Migrations;
 
-use Doctrine\Migrations\Tools\Console\Command\MigrateCommand;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\Console\Input\ArrayInput;
-use Symfony\Component\Console\Output\NullOutput;
 
 /**
- * Runs the built-in Doctrine Migrations migrate command once on agent startup.
+ * Runs pending database schema migrations once on agent startup.
  *
- * Uses the doctrine_migrations.migrate_command service directly (instead of
- * a full Console Application) to invoke the standard Doctrine Migrations
- * command programmatically. This avoids the recursive Application::doRun()
- * that previously blocked controller/TUI startup when stdout was a pipe.
+ * Delegates to ApplicationMigrationExecutor which applies known migration
+ * classes directly via DBAL without filesystem scanning or the Symfony
+ * Doctrine Migrations console command.
+ *
+ * This approach avoids:
+ *   - Extracting migration files from the PHAR to a writable directory
+ *   - Running the Symfony console command recursively via proc_open
+ *   - Relying on GlobResource/Finder which uses realpath() (broken inside
+ *     phar:// stream wrappers)
  *
  * Safe for concurrent controller+consumer processes because the migration
- * command acquires a lock on the versions table during execution.
+ * executor records applied versions in the doctrine_migration_versions table.
  * Only one process executes migrations; others skip when already applied.
  */
 final class StartupDatabaseMigrator
@@ -26,7 +28,7 @@ final class StartupDatabaseMigrator
     private bool $ran = false;
 
     public function __construct(
-        private readonly MigrateCommand $migrateCommand,
+        private readonly ApplicationMigrationExecutor $executor,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -45,18 +47,7 @@ final class StartupDatabaseMigrator
         $this->ran = true;
 
         try {
-            $input = new ArrayInput([
-                '--allow-no-migration' => true,
-            ]);
-            $input->setInteractive(false);
-
-            $output = new NullOutput();
-
-            $exitCode = $this->migrateCommand->run($input, $output);
-
-            if (0 !== $exitCode) {
-                throw new \RuntimeException(\sprintf('Database migration command exited with code %d.', $exitCode));
-            }
+            ($this->executor)();
 
             $this->logger->info('migration_runner.completed', [
                 'component' => 'migration_runner',

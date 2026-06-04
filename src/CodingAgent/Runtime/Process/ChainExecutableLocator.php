@@ -24,7 +24,7 @@ final class ChainExecutableLocator implements AppExecutableLocator
 
     /**
      * @param AppExecutableLocator ...$locators Ordered list of locators to try.
-     *                                           The first successful one wins.
+     *                                          The first successful one wins.
      */
     public function __construct(AppExecutableLocator ...$locators)
     {
@@ -59,9 +59,6 @@ final class ChainExecutableLocator implements AppExecutableLocator
             }
         }
 
-        throw new \RuntimeException(
-            'All executable locators in the chain failed: '.\PHP_EOL
-            .implode(\PHP_EOL, $exceptions)
-        );
+        throw new \RuntimeException('All executable locators in the chain failed: '.\PHP_EOL.implode(\PHP_EOL, $exceptions));
     }
 }

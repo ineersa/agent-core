@@ -42,10 +42,7 @@ final class ConfigExecutableLocator implements AppExecutableLocator
     {
         $binaryPath = getenv('HATFIELD_BINARY_PATH');
         if (false === $binaryPath || '' === $binaryPath) {
-            throw new \RuntimeException(
-                'HATFIELD_BINARY_PATH is not set. '
-                .'Set it to an absolute or runtime-cwd-relative path to an agent executable.'
-            );
+            throw new \RuntimeException('HATFIELD_BINARY_PATH is not set. Set it to an absolute or runtime-cwd-relative path to an agent executable.');
         }
 
         // Resolve relative paths against the runtime cwd.
@@ -57,15 +54,11 @@ final class ConfigExecutableLocator implements AppExecutableLocator
         }
 
         if (!is_file($binaryPath)) {
-            throw new \RuntimeException(
-                \sprintf('HATFIELD_BINARY_PATH resolved to a non-existent file: %s', $binaryPath)
-            );
+            throw new \RuntimeException(\sprintf('HATFIELD_BINARY_PATH resolved to a non-existent file: %s', $binaryPath));
         }
 
         if (!is_readable($binaryPath)) {
-            throw new \RuntimeException(
-                \sprintf('HATFIELD_BINARY_PATH resolved to a non-readable file: %s', $binaryPath)
-            );
+            throw new \RuntimeException(\sprintf('HATFIELD_BINARY_PATH resolved to a non-readable file: %s', $binaryPath));
         }
 
         return $binaryPath;

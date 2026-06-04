@@ -225,7 +225,7 @@ const PHAR_STAGING_DIR = '/tmp/hatfield-phar-build/source';
  * If the PHAR is missing or stale (source, config, or box/composer files
  * have been updated since the last build), triggers a rebuild.
  *
- * @return string Absolute path to the existing or freshly built PHAR.
+ * @return string absolute path to the existing or freshly built PHAR
  */
 function phar_ensure(): string
 {
@@ -283,7 +283,7 @@ function phar_ensure(): string
  *   3. Run `box compile` from staging
  *   4. Report timings, smoke-test the PHAR
  *
- * @return string Absolute path to the built PHAR.
+ * @return string absolute path to the built PHAR
  */
 function phar_build(): string
 {
@@ -300,10 +300,7 @@ function phar_build(): string
 
     $boxBin = getenv('BOX_BIN') ?: trim(shell_exec('which box 2>/dev/null') ?? '');
     if ('' === $boxBin) {
-        throw new \RuntimeException(
-            'box is not installed. Install it globally via composer global require humbug/box '
-            .'or set the BOX_BIN environment variable to its path.'
-        );
+        throw new \RuntimeException('box is not installed. Install it globally via composer global require humbug/box or set the BOX_BIN environment variable to its path.');
     }
 
     $composerBin = getenv('COMPOSER_BIN') ?: trim(shell_exec('which composer 2>/dev/null') ?? '');
@@ -312,10 +309,7 @@ function phar_build(): string
         $composerBin = trim(shell_exec('which composer.phar 2>/dev/null') ?? '');
     }
     if ('' === $composerBin) {
-        throw new \RuntimeException(
-            'composer is not installed. Set the COMPOSER_BIN environment variable, install it '
-            .'globally with `composer global require`, or ensure `composer` is on PATH.'
-        );
+        throw new \RuntimeException('composer is not installed. Set the COMPOSER_BIN environment variable, install it globally with `composer global require`, or ensure `composer` is on PATH.');
     }
 
     // ── 1. Prepare staging directory ─────────────────────────────────
@@ -375,10 +369,7 @@ function phar_build(): string
     $composerTime = microtime(true) - $composerStart;
 
     if (null === $composerOutput) {
-        throw new \RuntimeException(
-            'composer install command returned no output (shell_exec failure).'
-            .\PHP_EOL.'Command: '.$composerCmd
-        );
+        throw new \RuntimeException('composer install command returned no output (shell_exec failure).'.\PHP_EOL.'Command: '.$composerCmd);
     }
 
     // ── 3. Compile PHAR with Box ─────────────────────────────────────
@@ -396,8 +387,10 @@ function phar_build(): string
 
     if (!is_file($pharPath)) {
         $error = 'PHAR build failed.'.\PHP_EOL;
-        $error .= 'Composer output:'.\PHP_EOL; $error .= ($composerOutput ?? '<no output>').\PHP_EOL;
-        $error .= 'Box output:'.\PHP_EOL; $error .= ($boxOutput ?? '<no output>').\PHP_EOL;
+        $error .= 'Composer output:'.\PHP_EOL;
+        $error .= ($composerOutput ?? '<no output>').\PHP_EOL;
+        $error .= 'Box output:'.\PHP_EOL;
+        $error .= ($boxOutput ?? '<no output>').\PHP_EOL;
         $error .= 'Box command: '.$boxCmd.\PHP_EOL;
         throw new \RuntimeException($error);
     }

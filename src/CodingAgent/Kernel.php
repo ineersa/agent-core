@@ -72,6 +72,21 @@ class Kernel extends BaseKernel
         return $this->getProjectDir().'/config';
     }
 
+    public function getCacheDir(): string
+    {
+        return $this->resolveWritableDir('HATFIELD_CACHE_DIR', self::HATFIELD_CACHE_DIR).'/'.$this->environment;
+    }
+
+    public function getBuildDir(): string
+    {
+        return $this->getCacheDir();
+    }
+
+    public function getLogDir(): string
+    {
+        return $this->resolveWritableDir('HATFIELD_LOG_DIR', self::HATFIELD_LOG_DIR);
+    }
+
     /**
      * Return the runtime cwd resolved from HATFIELD_CWD or getcwd().
      *
@@ -114,20 +129,5 @@ class Kernel extends BaseKernel
         }
 
         return $this->getRuntimeDir().'/'.$default;
-    }
-
-    public function getCacheDir(): string
-    {
-        return $this->resolveWritableDir('HATFIELD_CACHE_DIR', self::HATFIELD_CACHE_DIR).'/'.$this->environment;
-    }
-
-    public function getBuildDir(): string
-    {
-        return $this->getCacheDir();
-    }
-
-    public function getLogDir(): string
-    {
-        return $this->resolveWritableDir('HATFIELD_LOG_DIR', self::HATFIELD_LOG_DIR);
     }
 }

@@ -129,7 +129,7 @@ function test(string $filter = ''): void
     $pharPath = '';
     try {
         $pharPath = \CastorTasks\phar_ensure();
-    } catch (\Throwable $e) {
+    } catch (Throwable $e) {
         echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
     }
 
@@ -616,7 +616,7 @@ function test_tui(): void
 {
     try {
         $pharPath = \CastorTasks\phar_ensure();
-    } catch (\Throwable $e) {
+    } catch (Throwable $e) {
         echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
         $pharPath = '';
     }
@@ -662,7 +662,7 @@ function test_llm_real(): void
 {
     try {
         $pharPath = \CastorTasks\phar_ensure();
-    } catch (\Throwable $e) {
+    } catch (Throwable $e) {
         echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
         $pharPath = '';
     }
@@ -694,7 +694,7 @@ function test_controller(): void
 {
     try {
         $pharPath = \CastorTasks\phar_ensure();
-    } catch (\Throwable $e) {
+    } catch (Throwable $e) {
         echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
         $pharPath = '';
     }
@@ -715,7 +715,7 @@ function test_tui_update(): void
 {
     try {
         $pharPath = \CastorTasks\phar_ensure();
-    } catch (\Throwable $e) {
+    } catch (Throwable $e) {
         echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
         $pharPath = '';
     }
