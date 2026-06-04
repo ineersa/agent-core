@@ -105,7 +105,7 @@ Create `tests/CodingAgent/Phar/PharSmokeTest.php` following the same pattern as 
 Status: IN-PROGRESS
 Branch: task/phar-packaging
 Worktree: /home/ineersa/projects/agent-core-worktrees/phar-packaging
-Fork run: 0w078vuuyvan
+Fork run: 87swgqa7p0ti
 PR URL:
 PR Status:
 Started: 2026-06-04T18:43:54.659Z
@@ -161,3 +161,7 @@ Completed:
 - Recorded fork run: 0w078vuuyvan
 - Validation: Verified commit exists: `8a919674 Fix PHAR boot: resource path wildcards, APP_ENV/autoloader fixes`.; Verified worktree status clean after fork commit.; Verified commit stat: 3 files changed, 17 insertions, 9 deletions (`.castor/helpers.php`, `bin/console`, `config/services.yaml`).; Fork validation reported: `php -l .castor/helpers.php` OK; helper require OK; `php -l bin/console` OK; full PHAR build via helper OK (~33.6s, 5.9MB); `php /tmp/bin/hatfield.phar list` OK with all commands listed including `agent`; `php /tmp/bin/hatfield.phar about` OK (`Environment: prod`, `Debug: false`); `castor phar:build` OK; `castor phar:ensure` fresh path OK (~7ms).; Fork intentionally did not run full `castor check` or E2E tests; `APP_ENV=test` PHAR execution fails as expected because test-only bundle/dependencies are absent from production vendor.
 - Summary: Continuation fork `0w078vuuyvan` completed and committed `8a919674` (`Fix PHAR boot: resource path wildcards, APP_ENV/autoloader fixes`). PHAR now boots successfully. Root causes fixed: Symfony DI `resource:` imports using bare directory paths do not register services reliably inside `phar://`, so `config/services.yaml` resource/exclude paths were changed to `%kernel.project_dir%/.../**/*.php` wildcard patterns; `bin/console` now defaults unset `APP_ENV` to `prod`; staging Composer install removed `--classmap-authoritative` and build/smoke commands set default `APP_ENV=prod` while preserving caller-controlled `APP_DEBUG`. Verified worktree clean after commit. Latest commit changes `.castor/helpers.php`, `bin/console`, and `config/services.yaml` with 17 insertions / 9 deletions. Remaining work before PR: run selected Castor validation/reviewer in the next task-to-pr phase per workflow; no full validation was run during implementation phase.
+
+## Task workflow update - 2026-06-04T20:46:59.246Z
+- Recorded fork run: 87swgqa7p0ti
+- Validation/fix fork launched as `87swgqa7p0ti` in `/home/ineersa/projects/agent-core-worktrees/phar-packaging` to verify PHAR subprocess test behavior and Castor validation. Instructions: inspect PHAR test/Castor wiring; verify tests execute `/tmp/bin/hatfield.phar` from isolated `var/tmp/test-*` cwd; verify `.hatfield/settings.yaml`, logs/cache/tmp/session artifacts are created under isolated cwd; run Castor-focused validation and full `castor check` if prerequisites are available; implement/commit minimal fixes only if PHAR/test isolation issues are found; do not push, PR, move tasks, or run reviewer.
