@@ -19,12 +19,12 @@ Scope:
 - Run and report Castor validation: new TUI runtime tests, castor test:tui and castor check where prerequisites allow, or exact environmental blockers.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/09-refactor-tui-runtime-state
 Worktree: /home/ineersa/projects/agent-core-worktrees/09-refactor-tui-runtime-state
 Fork run: nh1ndqls53r7
-PR URL:
-PR Status: APPROVE
+PR URL: https://github.com/ineersa/agent-core/pull/91
+PR Status: open
 Started: 2026-06-03T23:47:17.633Z
 Completed:
 
@@ -153,3 +153,16 @@ castor test:tui      # if tmux prerequisites available
 - Updated PR Status: APPROVE
 - Validation: castor test — 1649/4876 pass; castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — clean
 - Summary: Code review verdict: APPROVE — no critical issues, no issues. NTH/CONVENTION/SIMPLIFY suggestions only (redundant accumulate guard, AllowMockObjectsWithoutExpectations convention, naming/centralization minor notes). Local validation: castor test 1649/4876 pass, deptrac 0 violations, phpstan 0 errors, cs-check clean.
+Castor Check Status: passed
+Castor Check Commit: a6dddbe3f702d66cac78f8f92a51360ae13a6490
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 600s
+Castor Check Completed: 2026-06-04T00:07:25.498Z
+Castor Check Output SHA256: b3796d30cf730c9fb4e8c7ef76d2aa1632d255cb120bee31773ad9f1b67aa9ae
+
+## Task workflow update - 2026-06-04T00:07:29.406Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (600s timeout). Commit: a6dddbe3f702.
+- Pushed task/09-refactor-tui-runtime-state to origin.
+- branch 'task/09-refactor-tui-runtime-state' set up to track 'origin/task/09-refactor-tui-runtime-state'.
+- Created PR: https://github.com/ineersa/agent-core/pull/91
