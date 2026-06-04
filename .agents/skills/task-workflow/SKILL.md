@@ -1,6 +1,6 @@
 ---
 name: task-workflow
-description: Step-by-step procedures for each task workflow phase. Load this skill when: starting any task phase (task-start, task-to-pr, task-review-iterate, task-done), after compaction when you see `<current_task>` and need to recall exact steps, preparing fork instructions, or running reviewer workflows. Covers orchestrator model, phase procedures, and compaction resilience.
+description: "Step-by-step procedures for each task workflow phase. Load this skill when: starting any task phase (task-start, task-to-pr, task-review-iterate, task-done), after compaction when you see `<current_task>` and need to recall exact steps, preparing fork instructions, or running reviewer workflows. Covers orchestrator model, phase procedures, and compaction resilience."
 ---
 
 # Task Workflow Procedures
