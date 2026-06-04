@@ -24,7 +24,7 @@ Branch: task/09-refactor-tui-runtime-state
 Worktree: /home/ineersa/projects/agent-core-worktrees/09-refactor-tui-runtime-state
 Fork run: nh1ndqls53r7
 PR URL:
-PR Status:
+PR Status: APPROVE
 Started: 2026-06-03T23:47:17.633Z
 Completed:
 
@@ -148,3 +148,8 @@ castor test:tui      # if tmux prerequisites available
 - Recorded fork run: nh1ndqls53r7
 - Validation: castor test — 1649/4876 pass (+61 new); castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — clean
 - Summary: Fork nh1ndqls53r7 completed task 09 — commit a6dddbe3 on branch task/09-refactor-tui-runtime-state, 8 files changed (+967/-137 lines). Created ActivityStateMachine (80 lines, pure transition function with 22 event→Running, 2→WaitingHuman, 3→Cancelling, 1→Completed, 3→Failed, 2→Cancelled + terminal guard), UsageProjection (94 lines, mutable accumulator with resetTurn/accumulate methods), restructured TuiSessionState (8 flat properties → single UsageProjection sub-object), rewrote RuntimeEventPoller (344→~260 lines, delegates to extracted components), updated FooterStateSegmentProvider (7 property redirects). Added 3 test files: ActivityStateMachineTest (41 tests), UsageProjectionTest (9 tests), RuntimeEventPollerTest (11 tests). 1649 tests pass (+61 new), 0 deptrac violations, 0 phpstan errors, cs-check clean. Note: only FooterStateSegmentProvider needed caller updates — other 5 callers from plan don't touch usage properties. TUI E2E not validated (no tmux/llama.cpp in worktree).
+
+## Task workflow update - 2026-06-04T00:06:13.758Z
+- Updated PR Status: APPROVE
+- Validation: castor test — 1649/4876 pass; castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — clean
+- Summary: Code review verdict: APPROVE — no critical issues, no issues. NTH/CONVENTION/SIMPLIFY suggestions only (redundant accumulate guard, AllowMockObjectsWithoutExpectations convention, naming/centralization minor notes). Local validation: castor test 1649/4876 pass, deptrac 0 violations, phpstan 0 errors, cs-check clean.
