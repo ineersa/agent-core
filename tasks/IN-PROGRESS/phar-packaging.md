@@ -102,13 +102,13 @@ Create `tests/CodingAgent/Phar/PharSmokeTest.php` following the same pattern as 
 - castor check passes
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/phar-packaging
+Worktree: /home/ineersa/projects/agent-core-worktrees/phar-packaging
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-04T18:43:54.659Z
 Completed:
 
 ## Work log
@@ -122,3 +122,10 @@ Completed:
 
 ## Task workflow update - 2026-06-04T18:43:06.454Z
 - Open PHAR design questions resolved: build output should be the stable PHAR file `/tmp/bin/hatfield.phar` for now, leaving an unqualified `/tmp/bin/hatfield` wrapper/binary name available later. Writable directory override env vars should use the Hatfield namespace (`HATFIELD_LOG_DIR`, `HATFIELD_CACHE_DIR`, and analogous names if tmp/session overrides are needed), with relative override values resolved against runtime cwd. PHAR execution should be mandatory for CLI/controller/TUI subprocess tests and Castor run flows; pure in-process/unit tests may continue to run source code unless implementation discovers a strong reason to route them through PHAR too.
+
+## Task workflow update - 2026-06-04T18:43:54.659Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/phar-packaging.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/phar-packaging.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/phar-packaging.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/phar-packaging.
