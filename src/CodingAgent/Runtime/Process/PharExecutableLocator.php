@@ -11,9 +11,13 @@ namespace Ineersa\CodingAgent\Runtime\Process;
  * command array [PHP_BINARY, <phar-path>]. This allows subprocess spawning
  * (controller, messenger consumers) to self-reference the same PHAR.
  *
- * Works in all environments where the code is running as a PHAR. When not
- * inside a PHAR (e.g. source checkout), throws an informative exception
- * so the caller can fall back to another locator.
+ * Works in all environments where the code is running as a PHAR, including
+ * Box 4.x-compiled PHARs that use an internal PHAR alias (where
+ * Phar::running() returns empty). Falls back to extracting the physical
+ * PHAR path from __FILE__ when standard detection fails.
+ *
+ * When not inside a PHAR (e.g. source checkout), throws an informative
+ * exception so the caller can fall back to another locator in the chain.
  */
 final class PharExecutableLocator implements AppExecutableLocator
 {
@@ -32,9 +36,33 @@ final class PharExecutableLocator implements AppExecutableLocator
      */
     private function doResolve(): string
     {
+        // 1. Standard PHAR detection — works for most PHAR archives including
+        //    manually created ones and PHARs with a proper filesystem alias.
         $pharPath = \Phar::running(false);
         if ('' !== $pharPath) {
             return $pharPath;
+        }
+
+        // 2. Box 4.x+ PHAR detection via __FILE__ prefix.
+        //    Box uses an internal auto-generated alias (Phar::mapPhar(...) with
+        //    an alias name, not a filesystem path). When the PHAR stub requires
+        //    the inner bin/console, __FILE__ becomes a phar:// URL like:
+        //      phar://box-auto-generated-alias-XXXX/bin/console
+        //    Phar::running() returns empty in this context because the PHP
+        //    recognised PHAR stream does not expose the physical PHAR path.
+        //
+        //    We construct a Phar object from the phar:// URL, which resolves
+        //    back to the physical PHAR file on disk.
+        if (str_starts_with(__FILE__, 'phar://')) {
+            try {
+                $phar = new \Phar(__FILE__);
+                $physicalPath = $phar->getPath();
+                if ('' !== $physicalPath && is_file($physicalPath)) {
+                    return $physicalPath;
+                }
+            } catch (\Throwable $e) {
+                // Fall through to exception below.
+            }
         }
 
         throw new \RuntimeException('PharExecutableLocator requires running inside a PHAR. Use SourceTreeExecutableLocator or ChainExecutableLocator for source-checkout environments.');

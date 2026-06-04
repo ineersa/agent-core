@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Migrations;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\Migrations\AbstractMigration;
+use Doctrine\Migrations\Query\Query;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -253,9 +254,8 @@ final class ApplicationMigrationExecutor
      * $plannedSql property. We use reflection to access it since
      * there is no public accessor for the planned SQL list.
      *
-     * This is the same SQL that Doctrine Migrations' executor would
-     * collect and execute, but without needing the full DependencyFactory
-     * or filesystem discovery.
+     * In Doctrine Migrations 3.9+, the property contains Query objects
+     * (not plain arrays), so we handle both formats.
      *
      * @return list<string>
      */
@@ -264,11 +264,11 @@ final class ApplicationMigrationExecutor
         $ref = new \ReflectionProperty(AbstractMigration::class, 'plannedSql');
         $ref->setAccessible(true);
 
-        /** @var list<array{sql: string, params: array<string, mixed>, types: array<string, mixed>}> $planned */
+        /** @var list<array{sql: string, params: array<string, mixed>, types: array<string, mixed>}|Query> $planned */
         $planned = $ref->getValue($migration);
 
         return array_map(
-            static fn (array $entry): string => $entry['sql'],
+            static fn (array|Query $entry): string => $entry instanceof Query ? $entry->getStatement() : $entry['sql'],
             $planned,
         );
     }
