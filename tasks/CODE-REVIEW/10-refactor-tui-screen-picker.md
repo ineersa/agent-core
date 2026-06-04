@@ -101,12 +101,12 @@ Final class owning shared overlay lifecycle:
 | **Net** | **8 files** | **~+180/-296** |
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/10-refactor-tui-screen-picker
 Worktree: /home/ineersa/projects/agent-core-worktrees/10-refactor-tui-screen-picker
 Fork run: kxoxu19e7fx7
-PR URL:
-PR Status: APPROVE WITH SUGGESTIONS — all 5 findings fixed (mount guard, close null symmetry, docblock, overlay null in controllers, 2 new tests)
+PR URL: https://github.com/ineersa/agent-core/pull/92
+PR Status: open
 Started: 2026-06-04T17:10:01.925Z
 Completed:
 
@@ -130,3 +130,16 @@ Completed:
 - Updated PR Status: APPROVE WITH SUGGESTIONS — all 5 findings fixed (mount guard, close null symmetry, docblock, overlay null in controllers, 2 new tests)
 - Validation: castor test — 1658/4899 pass (+9 new); castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — clean
 - Summary: Code review: APPROVE WITH SUGGESTIONS — 5 actionable findings all fixed via fork hilao8x6oyhu (commit amended to 11f0abb9). BUG/EDGE: mount guard added. DESIGN: close() nulls all refs. CONVENTION: closePicker() nulls overlay. SIMPLIFY: docblock updated. NTH: 2 new tests (close-before-mount no-op, mount assertion). Local validation: castor test 1658/4899, deptrac 0, phpstan 0, cs-check clean.
+Castor Check Status: passed
+Castor Check Commit: 11f0abb9d8a404ab16a32af0ade06592b8ab8dba
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 600s
+Castor Check Completed: 2026-06-04T17:28:59.623Z
+Castor Check Output SHA256: 0b174dd999e492f52713615390ec52020ac8597174dc7a88371f54ad10c238a2
+
+## Task workflow update - 2026-06-04T17:29:03.085Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (600s timeout). Commit: 11f0abb9d8a4.
+- Pushed task/10-refactor-tui-screen-picker to origin.
+- branch 'task/10-refactor-tui-screen-picker' set up to track 'origin/task/10-refactor-tui-screen-picker'.
+- Created PR: https://github.com/ineersa/agent-core/pull/92
