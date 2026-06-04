@@ -54,8 +54,8 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
         );
 
         // ── Group 2: Token stats block (priorities 10-12) ──
-        $in = self::fmt($s->inputTokens);
-        $out = self::fmt($s->outputTokens);
+        $in = self::fmt($s->usage->inputTokens);
+        $out = self::fmt($s->usage->outputTokens);
         $segments[] = new FooterSegment(
             text: \sprintf('%s/%s', $in, $out),
             priority: 10,
@@ -63,7 +63,7 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
         );
 
         $segments[] = new FooterSegment(
-            text: \sprintf('$%.2f', $s->totalCost),
+            text: \sprintf('$%.2f', $s->usage->totalCost),
             priority: 11,
             color: ThemeColorEnum::Warning,
         );
@@ -72,7 +72,7 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
             // Context window usage uses the latest input_tokens value
             // (not accumulated) — this represents the actual context size
             // sent to the API for the latest turn.
-            $used = $s->latestInputTokens;
+            $used = $s->usage->latestInputTokens;
             $pct = $used > 0 ? min(100, ($used / $s->contextWindow) * 100) : 0.0;
             $pctColor = $pct > 75 ? ThemeColorEnum::Error : ($pct > 50 ? ThemeColorEnum::Warning : ThemeColorEnum::Success);
             $ctxDetail = \sprintf('%.0f%% %s/%s', $pct, self::fmt($used), self::fmt($s->contextWindow));
@@ -91,11 +91,11 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
         // AND LLM has started streaming. Uses per-turn timing
         // (turnStartTime/llmEndTime) so the figure reflects only the
         // current turn's throughput and freezes once the response completes.
-        if ($s->turnOutputTokens > 0 && $s->turnStartTime > 0) {
-            $endTime = $s->llmEndTime > 0.0 ? $s->llmEndTime : microtime(true);
-            $elapsed = $endTime - $s->turnStartTime;
+        if ($s->usage->turnOutputTokens > 0 && $s->usage->turnStartTime > 0) {
+            $endTime = $s->usage->llmEndTime > 0.0 ? $s->usage->llmEndTime : microtime(true);
+            $elapsed = $endTime - $s->usage->turnStartTime;
             if ($elapsed > 0) {
-                $tps = $s->turnOutputTokens / $elapsed;
+                $tps = $s->usage->turnOutputTokens / $elapsed;
                 $segments[] = new FooterSegment(
                     text: \sprintf('⚡ %.1f t/s', $tps),
                     priority: 15,
