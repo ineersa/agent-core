@@ -105,7 +105,7 @@ Create `tests/CodingAgent/Phar/PharSmokeTest.php` following the same pattern as 
 Status: IN-PROGRESS
 Branch: task/phar-packaging
 Worktree: /home/ineersa/projects/agent-core-worktrees/phar-packaging
-Fork run: 35m0818sv7jc
+Fork run: 0w078vuuyvan
 PR URL:
 PR Status:
 Started: 2026-06-04T18:43:54.659Z
@@ -152,3 +152,7 @@ Completed:
 
 ## Task workflow update - 2026-06-04T20:15:10.042Z
 - Additional PHAR env design decision: do not bundle `.env`; Kernel-level `APP_ENV`/`APP_DEBUG` must come from the process environment before Hatfield settings load. The PHAR artifact is built from production dependencies (`composer install --no-dev --optimize-autoloader` in staging), but runtime env should remain overridable: default `APP_ENV` can be `prod` when unset, while tests/Castor may set `APP_ENV=test` where appropriate; `APP_DEBUG` should not be forcibly disabled because it is useful for exception traces during Castor/test debugging. Hatfield settings continue to own app-level logging/model behavior, not Kernel environment selection.
+
+## Task workflow update - 2026-06-04T20:16:21.724Z
+- Recorded fork run: 0w078vuuyvan
+- Continuation fork launched as `0w078vuuyvan` in `/home/ineersa/projects/agent-core-worktrees/phar-packaging` to adjust PHAR build/runtime env and debug boot. Instructions: remove `--classmap-authoritative`, preserve caller-controlled `APP_ENV`/`APP_DEBUG` with optional PHAR default `APP_ENV=prod`, do not bundle `.env`, rebuild via Castor, investigate the `SessionRunStore` missing service root cause, implement minimal robust boot fix, validate PHAR `list`, and commit changes.
