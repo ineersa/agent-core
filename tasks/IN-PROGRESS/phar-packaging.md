@@ -129,3 +129,6 @@ Completed:
 - Created worktree /home/ineersa/projects/agent-core-worktrees/phar-packaging.
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/phar-packaging.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/phar-packaging.
+
+## Task workflow update - 2026-06-04T18:48:18.541Z
+- Task-start preparation complete. Loaded task-workflow/testing/castor skills, claimed task to branch `task/phar-packaging` with worktree `/home/ineersa/projects/agent-core-worktrees/phar-packaging`, reread the task, and launched focused scout prep in the worktree. Additional scout artifact: `/home/ineersa/.pi/agent/tmp/2026-06--5a82d8af.txt`. Fork implementation instructions will use resolved decisions: `/tmp/bin/hatfield.phar`, HATFIELD_* writable-dir env overrides, runtime-cwd `.hatfield/logs` and `.hatfield/cache`, and mandatory PHAR use for CLI/controller/TUI subprocess flows.
