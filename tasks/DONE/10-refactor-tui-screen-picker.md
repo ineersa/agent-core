@@ -101,14 +101,14 @@ Final class owning shared overlay lifecycle:
 | **Net** | **8 files** | **~+180/-296** |
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/10-refactor-tui-screen-picker
 Worktree: /home/ineersa/projects/agent-core-worktrees/10-refactor-tui-screen-picker
 Fork run: kxoxu19e7fx7
 PR URL: https://github.com/ineersa/agent-core/pull/92
-PR Status: open
+PR Status: merged
 Started: 2026-06-04T17:10:01.925Z
-Completed:
+Completed: 2026-06-04T17:33:27.462Z
 
 ## Work log
 - Created: 2026-06-03T00:32:16.525Z
@@ -143,3 +143,10 @@ Castor Check Output SHA256: 0b174dd999e492f52713615390ec52020ac8597174dc7a88371f
 - Pushed task/10-refactor-tui-screen-picker to origin.
 - branch 'task/10-refactor-tui-screen-picker' set up to track 'origin/task/10-refactor-tui-screen-picker'.
 - Created PR: https://github.com/ineersa/agent-core/pull/92
+
+## Task workflow update - 2026-06-04T17:33:27.462Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/10-refactor-tui-screen-picker into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/10-refactor-tui-screen-picker.
+- Pulled integration checkout: Already up to date..
