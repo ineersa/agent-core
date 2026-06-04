@@ -101,15 +101,22 @@ Final class owning shared overlay lifecycle:
 | **Net** | **8 files** | **~+180/-296** |
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/10-refactor-tui-screen-picker
+Worktree: /home/ineersa/projects/agent-core-worktrees/10-refactor-tui-screen-picker
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-04T17:10:01.925Z
 Completed:
 
 ## Work log
 - Created: 2026-06-03T00:32:16.525Z
 - Plan finalized: 2026-06-04 — Scope narrowed to PickerOverlay + dead stubs only; ChatScreen splitting skipped (extraction not justified)
+
+## Task workflow update - 2026-06-04T17:10:01.926Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/10-refactor-tui-screen-picker.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/10-refactor-tui-screen-picker.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/10-refactor-tui-screen-picker.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/10-refactor-tui-screen-picker.
