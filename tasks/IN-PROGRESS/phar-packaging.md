@@ -105,7 +105,7 @@ Create `tests/CodingAgent/Phar/PharSmokeTest.php` following the same pattern as 
 Status: IN-PROGRESS
 Branch: task/phar-packaging
 Worktree: /home/ineersa/projects/agent-core-worktrees/phar-packaging
-Fork run: rl2qcti5mdwt
+Fork run: gql9ozouj7u4
 PR URL:
 PR Status:
 Started: 2026-06-04T18:43:54.659Z
@@ -185,3 +185,7 @@ Completed:
 - Recorded fork run: rl2qcti5mdwt
 - Validation: Fork `rl2qcti5mdwt` reported failed: `Fork terminated before producing result.json [pid_died]`.
 - Summary: Fork `rl2qcti5mdwt` failed/terminated before producing result.json because the parent manually stopped it after the migration design question. No result was accepted and no commit from that fork should be relied on. Revised design direction: do not remove migration generation/versioning tooling blindly. Prefer keeping DoctrineMigrationsBundle as dev/test tooling for diff/generate workflows while replacing PHAR/runtime migration execution with an app-owned migrator that has its own version table and does not require filesystem scanning/extraction in the PHAR.
+
+## Task workflow update - 2026-06-04T21:29:55.470Z
+- Recorded fork run: gql9ozouj7u4
+- Recovery/implementation fork launched as `gql9ozouj7u4` in `/home/ineersa/projects/agent-core-worktrees/phar-packaging` after killed fork left dirty changes. Corrected scope: keep Doctrine migrations system/tooling/versioning/generation (bundle/config/migration classes/deps) but remove runtime startup dependency on the Symfony `doctrine:migrations:migrate` command. Fork instructions: inspect and clean dirty state from killed fork; restore migration files/config/bundle as needed; implement custom `StartupDatabaseMigrator` path using known migration classes and standard `doctrine_migration_versions` table without PHAR filesystem scanning/extraction; remove PHAR migration extraction and `HATFIELD_MIGRATIONS_DIR` if no longer needed; preserve existing PHAR build/boot/runtime fixes; run focused Castor validation and commit.
