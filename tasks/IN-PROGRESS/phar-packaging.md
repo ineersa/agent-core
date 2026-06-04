@@ -105,7 +105,7 @@ Create `tests/CodingAgent/Phar/PharSmokeTest.php` following the same pattern as 
 Status: IN-PROGRESS
 Branch: task/phar-packaging
 Worktree: /home/ineersa/projects/agent-core-worktrees/phar-packaging
-Fork run: 87swgqa7p0ti
+Fork run: rl2qcti5mdwt
 PR URL:
 PR Status:
 Started: 2026-06-04T18:43:54.659Z
@@ -173,3 +173,7 @@ Completed:
 
 ## Task workflow update - 2026-06-04T21:19:43.837Z
 - Read-only scout completed for replacing DoctrineMigrationsBundle/PHAR migration extraction with an app-owned startup migrator. Findings: only migration file is `migrations/Version20260601152619.php`, creating `hatfield_session`, `background_process`, and `tool_batch_state` plus unique index `(run_id, turn_no, step_id)`; DoctrineMigrationsBundle is only used by `StartupDatabaseMigrator` via `doctrine_migrations.migrate_command` and by Castor test bootstrap; runtime entry point is already `AgentCommand` before controller/headless/TUI starts, while messenger consumers rely on AgentCommand running migrations before launch; current PHAR workaround is `bin/console` extracting migrations to `/tmp/hatfield-phar-runtime/migrations/` and `doctrine_migrations.yaml` reading `HATFIELD_MIGRATIONS_DIR`; likely replacement touches `StartupDatabaseMigrator`, `services.yaml`, `.castor/tasks.php`, removes DoctrineMigrationsBundle config/bundle registration and PHAR extraction block, and can delete the `migrations/` filesystem dependency.
+
+## Task workflow update - 2026-06-04T21:23:51.525Z
+- Recorded fork run: rl2qcti5mdwt
+- Implementation fork launched as `rl2qcti5mdwt` in `/home/ineersa/projects/agent-core-worktrees/phar-packaging` to replace DoctrineMigrationsBundle/filesystem migrations with an app-owned custom startup migrator. Instructions: remove PHAR migrations extraction and `HATFIELD_MIGRATIONS_DIR`, replace `StartupDatabaseMigrator` with idempotent DBAL/schema logic equivalent to `Version20260601152619.php`, update Castor test bootstrap to use app migrator path/command instead of `doctrine:migrations:migrate`, remove unused Doctrine migrations bundle/config/files/dependencies, rebuild/smoke PHAR, run focused Castor validation (`castor test`, phpstan, deptrac, cs-check, phar build/ensure), and commit changes.
