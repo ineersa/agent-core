@@ -104,7 +104,7 @@ Final class owning shared overlay lifecycle:
 Status: IN-PROGRESS
 Branch: task/10-refactor-tui-screen-picker
 Worktree: /home/ineersa/projects/agent-core-worktrees/10-refactor-tui-screen-picker
-Fork run:
+Fork run: kxoxu19e7fx7
 PR URL:
 PR Status:
 Started: 2026-06-04T17:10:01.925Z
@@ -120,3 +120,8 @@ Completed:
 - Created worktree /home/ineersa/projects/agent-core-worktrees/10-refactor-tui-screen-picker.
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/10-refactor-tui-screen-picker.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/10-refactor-tui-screen-picker.
+
+## Task workflow update - 2026-06-04T17:18:08.696Z
+- Recorded fork run: kxoxu19e7fx7
+- Validation: castor test — 1656/4891 pass (+7 new); castor deptrac — 0 violations; castor phpstan — 0 errors; castor cs-check — clean
+- Summary: Fork kxoxu19e7fx7 completed task 10 — commit 74150e53 on branch task/10-refactor-tui-screen-picker, 6 files changed (+288/-156). Created PickerOverlay (88 lines, shared mount/close lifecycle), rewrote ModelPickerController (362→~295, overlay delegation + simplified applySelectEffect from 5-param to 1-param), rewrote FavoritePickerController (250→~201, overlay delegation), deleted 2 dead stubs (PromptInputWidget, ToolOutputWidget), created PickerOverlayTest (7 tests). 1656 tests pass (+7 new), 0 deptrac violations, 0 phpstan errors, cs-check clean. QuestionController left unchanged (lifecycle differs too much). TranscriptWidget kept (has real callers). ChatScreen not touched.
