@@ -124,7 +124,18 @@ function test(string $filter = ''): void
         fail_quality('test database migration failed: '.$migrate->getErrorOutput());
     }
 
-    $cmd = 'vendor/bin/phpunit --exclude-group tui-e2e --exclude-group llm-real';
+    // Ensure the PHAR is built so subprocess tests can reference it when
+    // HATFIELD_BINARY_PATH is set. Pure in-process tests ignore the env var.
+    $pharPath = '';
+    try {
+        $pharPath = \CastorTasks\phar_ensure();
+    } catch (\Throwable $e) {
+        echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
+    }
+
+    $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
+
+    $cmd = $pharEnv.'vendor/bin/phpunit --exclude-group tui-e2e --exclude-group llm-real';
     if ('' !== $filter) {
         $cmd .= ' --filter='.escapeshellarg($filter);
     }
@@ -548,6 +559,46 @@ function resolve_worktree_target(string $root, array $worktrees, string $target)
     return $matches[0];
 }
 
+// ─── PHAR tasks ────────────────────────────────────────────────
+
+/**
+ * Build the PHAR at /tmp/bin/hatfield.phar using box.
+ *
+ * Requires humbug/box to be installed globally or available via PATH
+ * or the BOX_BIN environment variable.
+ */
+#[AsTask(name: 'phar:build', description: 'Build hatfield.phar at /tmp/bin/hatfield.phar')]
+function phar_build(): void
+{
+    \CastorTasks\phar_build();
+}
+
+/**
+ * Ensure the PHAR exists (builds if missing).
+ *
+ * Can be added as a dependency to run/test tasks so the PHAR is always
+ * available before subprocess spawning.
+ */
+#[AsTask(name: 'phar:ensure', description: 'Ensure hatfield.phar exists (build if missing)')]
+function phar_ensure(): void
+{
+    \CastorTasks\phar_ensure();
+}
+
+/**
+ * Remove the built PHAR at /tmp/bin/hatfield.phar.
+ */
+#[AsTask(name: 'phar:clean', description: 'Remove built hatfield.phar')]
+function phar_clean(): void
+{
+    $pharPath = '/tmp/bin/hatfield.phar';
+    if (is_file($pharPath)) {
+        unlink($pharPath);
+        echo "Removed {$pharPath}\n";
+    }
+    echo 'PHAR cleaned.'."\n";
+}
+
 // ─── tmux TUI tasks ───────────────────────────────────────
 
 // ─── tmux TUI e2e test tasks ─────────────────────────────
@@ -560,17 +611,33 @@ function resolve_worktree_target(string $root, array $worktrees, string $target)
  * included in "castor check" because TUI/runtime behavior must
  * be validated with real user-visible workflows.
  */
-#[AsTask(name: 'test:tui', description: 'Run TUI e2e snapshot tests (requires tmux)')]
+#[AsTask(name: 'test:tui', description: 'Run TUI e2e snapshot tests (requires tmux), using the built PHAR')]
 function test_tui(): void
 {
+    try {
+        $pharPath = \CastorTasks\phar_ensure();
+    } catch (\Throwable $e) {
+        echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
+        $pharPath = '';
+    }
+
+    $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
+
     if (is_llm_mode()) {
-        run_quality_step('test:tui', 'vendor/bin/phpunit --fail-on-risky --group tui-e2e', 'phpunit-tui.junit.xml', 'phpunit-tui.log');
+        run_quality_step('test:tui', $pharEnv.'vendor/bin/phpunit --fail-on-risky --group tui-e2e', 'phpunit-tui.junit.xml', 'phpunit-tui.log');
 
         return;
     }
 
-    run('vendor/bin/phpunit --fail-on-risky --group tui-e2e --colors=always');
+    run($pharEnv.'vendor/bin/phpunit --fail-on-risky --group tui-e2e --colors=always');
 }
+
+/**
+ * Run TUI e2e tests and UPDATE golden snapshots.
+ *
+ * Use after intentional rendering changes.  Review the diff
+ * before committing updated fixtures.
+ */
 
 /**
  * Run TUI e2e tests and UPDATE golden snapshots.
@@ -593,13 +660,22 @@ function test_tui(): void
 #[AsTask(name: 'test:llm-real', description: 'Run opt-in real llama.cpp smoke test against configured llama_cpp provider')]
 function test_llm_real(): void
 {
+    try {
+        $pharPath = \CastorTasks\phar_ensure();
+    } catch (\Throwable $e) {
+        echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
+        $pharPath = '';
+    }
+
+    $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
+
     if (is_llm_mode()) {
-        run_quality_step('test:llm-real', 'LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit --fail-on-risky --group llm-real', 'phpunit-llm-real.junit.xml', 'phpunit-llm-real.log');
+        run_quality_step('test:llm-real', $pharEnv.'LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit --fail-on-risky --group llm-real', 'phpunit-llm-real.junit.xml', 'phpunit-llm-real.log');
 
         return;
     }
 
-    run('LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit --fail-on-risky --group llm-real --colors=always');
+    run($pharEnv.'LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit --fail-on-risky --group llm-real --colors=always');
 }
 
 /**
@@ -616,25 +692,43 @@ function test_llm_real(): void
 #[AsTask(name: 'test:controller', description: 'Run controller E2E smoke test (spawns --controller, sends JSONL)')]
 function test_controller(): void
 {
+    try {
+        $pharPath = \CastorTasks\phar_ensure();
+    } catch (\Throwable $e) {
+        echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
+        $pharPath = '';
+    }
+
+    $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
+
     if (is_llm_mode()) {
-        run_quality_step('test:controller', 'LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit --fail-on-risky --filter ControllerSmokeTest', 'phpunit-controller.junit.xml', 'phpunit-controller.log');
+        run_quality_step('test:controller', $pharEnv.'LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit --fail-on-risky --filter ControllerSmokeTest', 'phpunit-controller.junit.xml', 'phpunit-controller.log');
 
         return;
     }
 
-    run('LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit --fail-on-risky --filter ControllerSmokeTest --colors=always');
+    run($pharEnv.'LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit --fail-on-risky --filter ControllerSmokeTest --colors=always');
 }
 
 #[AsTask(name: 'test:tui-update', description: 'Run TUI e2e tests and update golden snapshots')]
 function test_tui_update(): void
 {
+    try {
+        $pharPath = \CastorTasks\phar_ensure();
+    } catch (\Throwable $e) {
+        echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
+        $pharPath = '';
+    }
+
+    $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
+
     if (is_llm_mode()) {
-        run_quality_step('test:tui-update', 'HATFIELD_UPDATE_SNAPSHOTS=1 vendor/bin/phpunit --fail-on-risky --group tui-e2e', 'phpunit-tui-update.junit.xml', 'phpunit-tui-update.log');
+        run_quality_step('test:tui-update', $pharEnv.'HATFIELD_UPDATE_SNAPSHOTS=1 vendor/bin/phpunit --fail-on-risky --group tui-e2e', 'phpunit-tui-update.junit.xml', 'phpunit-tui-update.log');
 
         return;
     }
 
-    run('HATFIELD_UPDATE_SNAPSHOTS=1 vendor/bin/phpunit --fail-on-risky --group tui-e2e --colors=always');
+    run($pharEnv.'HATFIELD_UPDATE_SNAPSHOTS=1 vendor/bin/phpunit --fail-on-risky --group tui-e2e --colors=always');
 }
 
 /**
@@ -763,19 +857,22 @@ function datadog_env_command(bool $enabled): string
  *
  * No relaunch loop — the TUI runs once and exits naturally.
  */
-#[AsTask(name: 'run:agent', description: 'Launch the agent TUI in a tmux session (hatfield-agent)')]
+#[AsTask(name: 'run:agent', description: 'Launch the agent TUI in a tmux session (hatfield-agent), using the built PHAR')]
 function run_agent(): void
 {
     check_tmux();
+
+    $phar = \CastorTasks\phar_ensure();
 
     $root = realpath(__DIR__.'/..');
     $session = 'hatfield-agent';
     $insideTmux = false !== getenv('TMUX');
 
     $innerCmd = sprintf(
-        'cd %s && exec %s php bin/console agent',
+        'cd %s && exec %s php %s agent',
         escapeshellarg($root),
         datadog_env_command(datadog_auto_enabled()),
+        escapeshellarg($phar),
     );
 
     if ($insideTmux) {
@@ -797,19 +894,22 @@ function run_agent(): void
 /**
  * Launch the agent TUI with Datadog APM/traces enabled for this run.
  */
-#[AsTask(name: 'run:agent-datadog', description: 'Launch the agent TUI with Datadog APM enabled')]
+#[AsTask(name: 'run:agent-datadog', description: 'Launch the agent TUI with Datadog APM enabled, using the built PHAR')]
 function run_agent_datadog(): void
 {
     check_tmux();
+
+    $phar = \CastorTasks\phar_ensure();
 
     $root = realpath(__DIR__.'/..');
     $session = 'hatfield-agent-datadog';
     $insideTmux = false !== getenv('TMUX');
 
     $innerCmd = sprintf(
-        'cd %s && exec %s php bin/console agent',
+        'cd %s && exec %s php %s agent',
         escapeshellarg($root),
         datadog_env_command(true),
+        escapeshellarg($phar),
     );
 
     if ($insideTmux) {
@@ -879,13 +979,15 @@ function run_agent_test(): void
     // Tear down any previous test session
     shell_exec(sprintf('tmux kill-session -t %s 2>/dev/null', escapeshellarg($session)));
 
+    $phar = \CastorTasks\phar_ensure();
+
     $innerCmd = sprintf(
         'cd %s && APP_ENV=dev HOME=%s %s %s %s agent --prompt=%s --model=llama_cpp_test/test --reasoning=off 2>&1',
         escapeshellarg($testDir),
         escapeshellarg($homeDir),
         datadog_env_command(false),
         escapeshellarg(\PHP_BINARY),
-        escapeshellarg($root.'/bin/console'),
+        escapeshellarg($phar),
         escapeshellarg('Say exactly: hello')
     );
 

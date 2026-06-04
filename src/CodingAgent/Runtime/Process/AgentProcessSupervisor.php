@@ -10,6 +10,8 @@ use Symfony\Component\Process\Process;
  * Supervises the lifecycle of a headless agent process.
  *
  * Handles spawning, health-check heartbeats, restart-on-crash, and graceful shutdown.
+ * Uses an AppExecutableLocator to resolve the agent binary, supporting both
+ * source-checkout (bin/console) and PHAR deployment transparently.
  *
  * @todo Implement restart policy, heartbeat monitoring, stderr log capture,
  *       and reconnection logic.
@@ -21,7 +23,7 @@ final class AgentProcessSupervisor
     private int $restartCount = 0;
 
     public function __construct(
-        private readonly string $consolePath,
+        private readonly AppExecutableLocator $executableLocator,
     ) {
     }
 
@@ -36,8 +38,12 @@ final class AgentProcessSupervisor
             return;
         }
 
+        $command = $this->executableLocator->command();
+        $command[] = 'agent';
+        $command[] = '--headless';
+
         $this->process = new Process(
-            command: ['php', $this->consolePath, 'agent', '--headless'],
+            command: $command,
         );
 
         $this->process->setTimeout(null);

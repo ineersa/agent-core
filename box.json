@@ -1,0 +1,21 @@
+{
+    "directories": [
+        "bin",
+        "src",
+        "config",
+        "vendor",
+        "migrations"
+    ],
+    "files": [
+        "bin/console",
+        "composer.json",
+        "composer.lock"
+    ],
+    "output": "/tmp/bin/hatfield.phar",
+    "compression": "GZ",
+    "algorithm": "SHA256",
+    "main": "bin/console",
+    "exclude-composer-files": false,
+    "exclude-dev-files": true,
+    "blacklist": []
+}

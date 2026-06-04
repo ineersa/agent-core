@@ -212,6 +212,71 @@ function summarize_deptrac_json(string $jsonOutput): string
     );
 }
 
+function phar_ensure(): string
+{
+    $pharPath = '/tmp/bin/hatfield.phar';
+
+    if (is_file($pharPath) && is_readable($pharPath)) {
+        return $pharPath;
+    }
+
+    // Build if missing.
+    phar_build();
+
+    return $pharPath;
+}
+
+/**
+ * Build the PHAR at /tmp/bin/hatfield.phar using box.
+ *
+ * @return string Absolute path to the built PHAR.
+ */
+function phar_build(): string
+{
+    $pharPath = '/tmp/bin/hatfield.phar';
+    $boxBin = getenv('BOX_BIN') ?: trim(shell_exec('which box 2>/dev/null') ?? '');
+
+    if ('' === $boxBin) {
+        throw new \RuntimeException(
+            'box is not installed. Install it globally via composer global require humbug/box '
+            .'or set the BOX_BIN environment variable to its path.'
+        );
+    }
+
+    $root = realpath(__DIR__.'/..');
+    if (false === $root) {
+        throw new \RuntimeException('Unable to resolve project root for PHAR build.');
+    }
+
+    // Ensure output directory exists.
+    @mkdir('/tmp/bin', 0755, true);
+
+    $cmd = \sprintf('cd %s && %s compile 2>&1', escapeshellarg($root), escapeshellarg($boxBin));
+    $output = shell_exec($cmd);
+
+    if (!is_file($pharPath)) {
+        throw new \RuntimeException(
+            'PHAR build failed. Box output:\n'.($output ?? '<no output>')
+            .\PHP_EOL.'Command: '.$cmd
+        );
+    }
+
+    $sizeMb = \sprintf('%.1f', filesize($pharPath) / 1024 / 1024);
+    echo "PHAR built: {$pharPath} ({$sizeMb} MB)\n";
+
+    // Smoke-test: run list command to verify it boots.
+    $listOutput = shell_exec(\PHP_BINARY.' '.escapeshellarg($pharPath).' list 2>&1');
+    if (null === $listOutput || !str_contains($listOutput, 'agent')) {
+        throw new \RuntimeException(
+            'PHAR smoke test failed: list command did not include agent. Output:\n'.($listOutput ?? '<no output>')
+        );
+    }
+
+    echo "PHAR smoke test: ok\n";
+
+    return $pharPath;
+}
+
 function xml_escape(string $value): string
 {
     return htmlspecialchars($value, \ENT_XML1 | \ENT_QUOTES, 'UTF-8');
