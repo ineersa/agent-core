@@ -43,14 +43,14 @@ services:
       tags: ['hatfield.tool_provider']
 
   Ineersa\CodingAgent\:
-    resource: '../src/CodingAgent/'
-    exclude: '../src/CodingAgent/ExtensionApi/'
+    resource: '%kernel.project_dir%/src/CodingAgent/**/*.php'
+    exclude: '%kernel.project_dir%/src/CodingAgent/ExtensionApi/**/*.php'
 
   Ineersa\AgentCore\:
-    resource: '../src/AgentCore/'
+    resource: '%kernel.project_dir%/src/AgentCore/**/*.php'
 
   Ineersa\Tui\:
-    resource: '../src/Tui/'
+    resource: '%kernel.project_dir%/src/Tui/**/*.php'
 
   # ─── Session stores — resolved via HatfieldSessionStore for path ───
 

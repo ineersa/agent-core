@@ -358,12 +358,17 @@ function phar_build(): string
 
     // ── 2. Install production-only Composer dependencies ─────────────
 
+    // Default APP_ENV to prod if not already set by the caller.
+    // This ensures Composer resolves Symfony config in the correct
+    // environment (e.g. bundle registration) without forcing APP_DEBUG.
+    $composerEnv = getenv('APP_ENV') ?: 'prod';
     $composerStart = microtime(true);
     $composerCmd = \sprintf(
-        'cd %s && COMPOSER_MEMORY_LIMIT=-1 XDEBUG_MODE=off %s install'
+        'cd %s && APP_ENV=%s COMPOSER_MEMORY_LIMIT=-1 XDEBUG_MODE=off %s install'
         .' --no-dev --prefer-dist --no-interaction --no-progress'
-        .' --optimize-autoloader --classmap-authoritative 2>&1',
+        .' --optimize-autoloader 2>&1',
         escapeshellarg($stagingDir),
+        escapeshellarg($composerEnv),
         escapeshellarg($composerBin)
     );
     $composerOutput = shell_exec($composerCmd);
@@ -378,10 +383,12 @@ function phar_build(): string
 
     // ── 3. Compile PHAR with Box ─────────────────────────────────────
 
+    $boxEnv = getenv('APP_ENV') ?: 'prod';
     $boxStart = microtime(true);
     $boxCmd = \sprintf(
-        'cd %s && php -d memory_limit=-1 -d xdebug.mode=off %s compile 2>&1',
+        'cd %s && APP_ENV=%s php -d memory_limit=-1 -d xdebug.mode=off %s compile 2>&1',
         escapeshellarg($stagingDir),
+        escapeshellarg($boxEnv),
         escapeshellarg($boxBin)
     );
     $boxOutput = shell_exec($boxCmd);
@@ -405,7 +412,8 @@ function phar_build(): string
 
     // ── 4. Smoke-test the PHAR (report boot failure separately) ──────
 
-    $listOutput = shell_exec(\PHP_BINARY.' '.escapeshellarg($pharPath).' list 2>&1');
+    $smokeEnv = getenv('APP_ENV') ?: 'prod';
+    $listOutput = shell_exec('APP_ENV='.$smokeEnv.' '.\PHP_BINARY.' '.escapeshellarg($pharPath).' list 2>&1');
     if (null === $listOutput || !str_contains($listOutput, 'agent')) {
         // The PHAR may have a separate boot issue (e.g. ContainerBuilder
         // service-not-found). Report it but do NOT throw — the build itself
