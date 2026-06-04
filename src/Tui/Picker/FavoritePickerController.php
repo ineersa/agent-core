@@ -16,7 +16,6 @@ use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Input\Key;
 use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Tui;
-use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 
@@ -30,9 +29,7 @@ use Symfony\Component\Tui\Widget\TextWidget;
  */
 final class FavoritePickerController
 {
-    private ?SelectListWidget $listWidget = null;
-    private ?ContainerWidget $container = null;
-    private bool $isOpen = false;
+    private ?PickerOverlay $overlay = null;
 
     private ?Tui $tui = null;
     private ?ChatScreen $screen = null;
@@ -53,7 +50,11 @@ final class FavoritePickerController
 
     public function open(): void
     {
-        if ($this->isOpen || null === $this->tui || null === $this->screen || null === $this->state) {
+        if ($this->overlay?->isOpen() ?? false) {
+            return;
+        }
+
+        if (null === $this->tui || null === $this->screen || null === $this->state) {
             return;
         }
 
@@ -82,21 +83,17 @@ final class FavoritePickerController
 
         $items = $this->buildItems();
 
-        $this->listWidget = new SelectListWidget(
+        $listWidget = new SelectListWidget(
             items: $items,
             maxVisible: 10,
             keybindings: $kb,
         );
 
-        // ── Container wrapping header + list ──
-        $this->container = new ContainerWidget();
-
         // ── Space toggles favorite ──
         $modelService = $this->modelService;
-        $listWidget = $this->listWidget;
         $logger = $this->logger;
 
-        $this->listWidget->onInput(static function (string $data) use (
+        $listWidget->onInput(static function (string $data) use (
             $modelService, $listWidget, $screen, $logger,
         ): bool {
             // We handle space via select_toggle_fav in keybindings,
@@ -149,56 +146,34 @@ final class FavoritePickerController
         });
 
         // ── Enter → close ──
-        $onSelectTui = $tui;
-        $onSelectList = $this->listWidget;
-        $onSelectController = $this;
+        $controller = $this;
 
-        $this->listWidget->onSelect(static function (SelectEvent $event) use (
-            $onSelectTui, $onSelectList, $onSelectController,
-        ): void {
-            $onSelectController->applyCloseEffect($onSelectTui, $onSelectList);
+        $listWidget->onSelect(static function (SelectEvent $event) use ($controller): void {
+            $controller->closePicker();
         });
 
         // ── Escape → close ──
-        $onCancelTui = $tui;
-        $onCancelList = $this->listWidget;
-        $onCancelController = $this;
-
-        $this->listWidget->onCancel(static function (CancelEvent $event) use (
-            $onCancelTui, $onCancelList, $onCancelController,
-        ): void {
-            $onCancelController->applyCloseEffect($onCancelTui, $onCancelList);
+        $listWidget->onCancel(static function (CancelEvent $event) use ($controller): void {
+            $controller->closePicker();
         });
 
-        // Mount and focus
-        $this->container->add($header);
-        $this->container->add($this->listWidget);
-        $tui->add($this->container);
-        $tui->setFocus($this->listWidget);
-        $tui->requestRender(true);
-        $this->isOpen = true;
+        // ── Mount via PickerOverlay ──
+        $this->overlay = new PickerOverlay();
+        $this->overlay->mount($tui, $screen, $listWidget, $header);
     }
 
     public function isOpen(): bool
     {
-        return $this->isOpen;
+        return $this->overlay?->isOpen() ?? false;
     }
 
     /**
-     * Remove the picker widgets and mark the controller as closed.
-     *
-     * @internal called from static closures within {@see open()}
+     * Close the picker overlay (no-op if already closed).
      */
-    public function applyCloseEffect(Tui $tui, SelectListWidget $listWidget): void
+    public function closePicker(): void
     {
-        if (null !== $this->container) {
-            $tui->remove($this->container);
-            $this->container = null;
-        }
-        if ($listWidget === $this->listWidget) {
-            $this->listWidget = null;
-        }
-        $this->isOpen = false;
+        $this->overlay?->close();
+        $this->overlay = null;
     }
 
     /**
