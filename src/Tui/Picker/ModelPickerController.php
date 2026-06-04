@@ -18,7 +18,6 @@ use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Input\Key;
 use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Tui;
-use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 
@@ -35,9 +34,7 @@ use Symfony\Component\Tui\Widget\TextWidget;
  */
 final class ModelPickerController
 {
-    private ?SelectListWidget $listWidget = null;
-    private ?ContainerWidget $container = null;
-    private bool $isOpen = false;
+    private ?PickerOverlay $overlay = null;
 
     private ?Tui $tui = null;
     private ?ChatScreen $screen = null;
@@ -65,12 +62,16 @@ final class ModelPickerController
      * Open the interactive model picker on the TUI (no-arg, uses references
      * previously set via {@see setRuntimeRefs()}).
      *
-     * Builds a SelectListWidget, adds it to the root container, sets
-     * focus, and wires selection/cancellation/favorite-toggle callbacks.
+     * Builds a SelectListWidget, mounts via PickerOverlay, sets focus, and
+     * wires selection/cancellation/favorite-toggle callbacks.
      */
     public function open(): void
     {
-        if ($this->isOpen || null === $this->tui || null === $this->screen || null === $this->state) {
+        if ($this->overlay?->isOpen() ?? false) {
+            return;
+        }
+
+        if (null === $this->tui || null === $this->screen || null === $this->state) {
             return;
         }
 
@@ -101,21 +102,17 @@ final class ModelPickerController
         // ── Build items: favorites-first with markers ──
         $items = $this->buildItems();
 
-        $this->listWidget = new SelectListWidget(
+        $listWidget = new SelectListWidget(
             items: $items,
             maxVisible: 10,
             keybindings: $kb,
         );
 
-        // ── Container wrapping header + list ──
-        $this->container = new ContainerWidget();
-
         // ── Ctrl+F favorite toggle ──
         $modelService = $this->modelService;
-        $listWidget = $this->listWidget;
         $logger = $this->logger;
 
-        $this->listWidget->onInput(static function (string $data) use (
+        $listWidget->onInput(static function (string $data) use (
             $screen, $state, $modelService, $listWidget, $logger,
         ): bool {
             // Ctrl+F sends \x06 in most terminals
@@ -163,53 +160,28 @@ final class ModelPickerController
             return true; // consumed
         });
 
-        // ── Selection change handled by the widget itself ──
-        // (no-op listener preserved for potential future use)
-
         // ── Enter → select model, persist, close ──
-        $onSelectService = $this->modelService;
-        $onSelectAppConfig = $this->appConfig;
-        $onSelectState = $this->state;
-        $onSelectScreen = $screen;
-        $onSelectTui = $tui;
-        $onSelectList = $this->listWidget;
-        $onSelectController = $this;
+        $controller = $this;
 
-        $this->listWidget->onSelect(static function (SelectEvent $event) use (
-            $onSelectService, $onSelectAppConfig, $onSelectState,
-            $onSelectScreen, $onSelectTui, $onSelectList, $onSelectController,
-        ): void {
+        $listWidget->onSelect(static function (SelectEvent $event) use ($controller): void {
             $item = $event->getItem();
             $ref = AiModelReference::tryParse($item['value']);
             if (null === $ref) {
                 return;
             }
 
-            $onSelectController->applySelectEffect(
-                $ref, $onSelectService, $onSelectAppConfig,
-                $onSelectState, $onSelectScreen,
-            );
-            $onSelectController->applyCloseEffect($onSelectTui, $onSelectList);
+            $controller->applySelectEffect($ref);
+            $controller->closePicker();
         });
 
         // ── Escape / Ctrl+C → close without change ──
-        $onCancelTui = $tui;
-        $onCancelList = $this->listWidget;
-        $onCancelController = $this;
-
-        $this->listWidget->onCancel(static function (CancelEvent $event) use (
-            $onCancelTui, $onCancelList, $onCancelController,
-        ): void {
-            $onCancelController->applyCloseEffect($onCancelTui, $onCancelList);
+        $listWidget->onCancel(static function (CancelEvent $event) use ($controller): void {
+            $controller->closePicker();
         });
 
-        // ── Mount and focus ──
-        $this->container->add($header);
-        $this->container->add($this->listWidget);
-        $tui->add($this->container);
-        $tui->setFocus($this->listWidget);
-        $tui->requestRender(true);
-        $this->isOpen = true;
+        // ── Mount via PickerOverlay ──
+        $this->overlay = new PickerOverlay();
+        $this->overlay->mount($tui, $screen, $listWidget, $header);
     }
 
     /**
@@ -217,7 +189,7 @@ final class ModelPickerController
      */
     public function isOpen(): bool
     {
-        return $this->isOpen;
+        return $this->overlay?->isOpen() ?? false;
     }
 
     /**
@@ -289,20 +261,15 @@ final class ModelPickerController
     /**
      * Execute model selection, persist, and update footer state.
      *
-     * Called from within a static closure on SelectEvent — all
-     * dependencies are passed explicitly.
+     * Uses controller-owned dependencies set via the constructor and
+     * per-run refs set via {@see setRuntimeRefs()}.
      *
      * @internal called from static closures within {@see open()}
      */
-    public function applySelectEffect(
-        AiModelReference $ref,
-        ModelSelectionService $modelService,
-        AppConfig $appConfig,
-        TuiSessionState $state,
-        ChatScreen $screen,
-    ): void {
+    public function applySelectEffect(AiModelReference $ref): void
+    {
         try {
-            $modelService->changeModel($ref, $state->sessionId);
+            $this->modelService->changeModel($ref, $this->state->sessionId);
         } catch (\RuntimeException $e) {
             $this->logger->warning('Failed to change model from picker', [
                 'exception' => $e,
@@ -310,42 +277,31 @@ final class ModelPickerController
             ]);
 
             // Make the error visible in the TUI status bar.
-            $screen->setStatus('error', 'Error: '.$e->getMessage());
+            $this->screen->setStatus('error', 'Error: '.$e->getMessage());
 
             return;
         }
 
         // Update footer state — reset reasoning to off when model doesn't support thinking
-        $state->footerModel = FooterStateInitializer::shortModelName(
+        $this->state->footerModel = FooterStateInitializer::shortModelName(
             $ref->providerId.'/'.$ref->modelName,
         );
-        $state->footerReasoning = $modelService->getDisplayReasoning($state->sessionId);
-        $state->contextWindow = FooterStateInitializer::resolveContextWindowForRef($appConfig, $ref);
+        $this->state->footerReasoning = $this->modelService->getDisplayReasoning($this->state->sessionId);
+        $this->state->contextWindow = FooterStateInitializer::resolveContextWindowForRef($this->appConfig, $ref);
 
-        $screen->refresh();
+        $this->screen->refresh();
     }
 
     /**
-     * Remove the picker widgets and mark the controller as closed.
+     * Close the picker overlay.
      *
-     * Removing the container from the TUI automatically detaches all
-     * children (header + list) via the WidgetTree lifecycle.
-     *
-     * Called from within a static closure on SelectEvent/CancelEvent —
-     * all dependencies are passed explicitly.
-     *
-     * @internal called from static closures within {@see open()}
+     * Delegates to PickerOverlay::close() which removes the container
+     * from the TUI and resets internal state.
      */
-    public function applyCloseEffect(Tui $tui, SelectListWidget $listWidget): void
+    public function closePicker(): void
     {
-        if (null !== $this->container) {
-            $tui->remove($this->container);
-            $this->container = null;
-        }
-        if ($listWidget === $this->listWidget) {
-            $this->listWidget = null;
-        }
-        $this->isOpen = false;
+        $this->overlay?->close();
+        $this->overlay = null;
     }
 
     // ── Internal helpers ──
