@@ -16,6 +16,45 @@ $isPhar = \str_starts_with(__FILE__, 'phar://');
 
 require_once __DIR__.'/../vendor/autoload.php';
 
+// ── PHAR runtime: extract filesystem-dependent resources ────────────────
+// Inside a PHAR, certain Symfony/Doctrine components use realpath() or
+// filesystem-based directory iteration that does not work with phar://
+// stream paths (e.g. Doctrine Migrations finder). Extract such resources
+// to a real filesystem path once per PHAR version.
+//
+// The extracted directory is reused across runs and cleaned on PHAR rebuild.
+if ($isPhar) {
+    $pharPath = (string) ($_SERVER['SCRIPT_FILENAME'] ?? __FILE__);
+    $pharPrefix = 'phar://'.$pharPath;
+    $extractDir = '/tmp/hatfield-phar-runtime';
+    $extractStamp = $extractDir.'/.extracted';
+    if (!is_dir($extractDir) || !is_file($extractStamp)) {
+        @mkdir($extractDir.'/migrations', 0755, true);
+        // Extract migration files using phar:// stream (not Phar object),
+        // because opening the running PHAR with new Phar() triggers an
+        // internal conflict with the already-loaded PHAR archive.
+        $migrationFiles = scandir($pharPrefix.'/migrations');
+        if (false !== $migrationFiles) {
+            foreach ($migrationFiles as $mf) {
+                if ($mf === '.' || $mf === '..') {
+                    continue;
+                }
+                copy($pharPrefix.'/migrations/'.$mf, $extractDir.'/migrations/'.$mf);
+            }
+        }
+        file_put_contents($extractStamp, date('c')."\n");
+    }
+    $_SERVER['HATFIELD_MIGRATIONS_DIR'] = $extractDir.'/migrations';
+    $_ENV['HATFIELD_MIGRATIONS_DIR'] = $extractDir.'/migrations';
+    putenv('HATFIELD_MIGRATIONS_DIR='.$extractDir.'/migrations');
+} else {
+    // Non-PHAR mode: point directly to the checkout migrations directory.
+    $migrationsDir = \dirname(__DIR__).'/migrations';
+    $_SERVER['HATFIELD_MIGRATIONS_DIR'] = $migrationsDir;
+    $_ENV['HATFIELD_MIGRATIONS_DIR'] = $migrationsDir;
+    putenv('HATFIELD_MIGRATIONS_DIR='.$migrationsDir);
+}
+
 // ── Early --cwd resolution ───────────────────────────────────────────────
 // Resolve --cwd before Kernel/Application construction so getcwd() and
 // Kernel::boot() see the correct working directory from startup. This ensures
