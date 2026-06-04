@@ -54,15 +54,20 @@ final class PharExecutableLocator implements AppExecutableLocator
         //    We construct a Phar object from the phar:// URL, which resolves
         //    back to the physical PHAR file on disk.
         if (str_starts_with(__FILE__, 'phar://')) {
+            $previous = null;
             try {
                 $phar = new \Phar(__FILE__);
                 $physicalPath = $phar->getPath();
                 if ('' !== $physicalPath && is_file($physicalPath)) {
                     return $physicalPath;
                 }
+
+                throw new \RuntimeException(\sprintf('Phar path "%s" from %s does not exist or is not a file.', $physicalPath, __FILE__));
             } catch (\Throwable $e) {
-                // Fall through to exception below.
+                $previous = $e;
             }
+
+            throw new \RuntimeException(\sprintf('Running inside a PHAR (%s) but unable to resolve the physical PHAR path. Phar::running() returned empty (Box auto-generated alias), and constructing a Phar object from __FILE__ failed: %s', __FILE__, $previous->getMessage()), 0, $previous);
         }
 
         throw new \RuntimeException('PharExecutableLocator requires running inside a PHAR. Use SourceTreeExecutableLocator or ChainExecutableLocator for source-checkout environments.');

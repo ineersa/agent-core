@@ -48,11 +48,6 @@ final class StartupDatabaseMigrator
 
         try {
             ($this->executor)();
-
-            $this->logger->info('migration_runner.completed', [
-                'component' => 'migration_runner',
-                'event_type' => 'migration_runner.completed',
-            ]);
         } catch (\Throwable $e) {
             $this->logger->error('migration_runner.failed', [
                 'component' => 'migration_runner',

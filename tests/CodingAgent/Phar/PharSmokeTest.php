@@ -64,7 +64,7 @@ final class PharSmokeTest extends TestCase
         echo \sprintf("\nPHAR smoke test ok: %s (%.1f MB)\n", $pharPath, $sizeMb);
     }
 
-    public function testPharListWithModelFilter(): void
+    public function testPharAgentHelp(): void
     {
         $pharPath = AgentTestExecutable::path();
         $isPhar = str_ends_with($pharPath, '.phar');

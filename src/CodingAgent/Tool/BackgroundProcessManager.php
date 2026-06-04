@@ -430,7 +430,13 @@ final class BackgroundProcessManager
             // Database tables have not been created yet (e.g. during PHAR boot
             // before migrations run, or for pure CLI commands like list/about
             // that do not go through AgentCommand). No background processes can
-            // be running in this case, so silently return.
+            // be running in this case.
+            $this->logger->debug('background_process.shutdown_no_table', [
+                'component' => 'background_process_manager',
+                'event_type' => 'shutdown_cleanup_table_not_found',
+                'session_id' => $sessionId,
+            ]);
+
             return 0;
         }
 

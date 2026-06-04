@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Migrations;
 
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Schema\Schema;
 use Doctrine\Migrations\AbstractMigration;
-use Doctrine\Migrations\Query\Query;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -28,8 +28,8 @@ use Psr\Log\LoggerInterface;
  * list of known migration classes. It:
  *   - Creates the doctrine_migration_versions tracking table if absent.
  *   - For each known migration class not yet recorded as applied:
- *     - Instantiates the migration and extracts its planned SQL via
- *       the AbstractMigration::$plannedSql property (set by addSql()).
+ *     - Instantiates the migration, calls up(), and reads its planned
+ *       SQL via the public AbstractMigration::getSql() method.
  *     - Executes the SQL statements in a transaction.
  *     - Records the version in doctrine_migration_versions so dev
  *       doctrine:migrations:status commands remain consistent.
@@ -101,11 +101,6 @@ final class ApplicationMigrationExecutor
 
             $this->executeMigration($class, $versionId);
         }
-
-        $this->logger->info('migration_runner.completed', [
-            'component' => 'migration_runner',
-            'event_type' => 'migration_runner.completed',
-        ]);
     }
 
     // ─── Schema ───────────────────────────────────────────────────────────
@@ -190,17 +185,34 @@ final class ApplicationMigrationExecutor
         /** @var AbstractMigration $migration */
         $migration = new $class($this->connection, $logger);
 
-        // Collect SQL via the migration's up() method.
-        // AbstractMigration stores addSql() statements in private
-        // $plannedSql property. We extract them via reflection.
-        $migration->up($this->createEmptySchema());
+        // Collect SQL via the public AbstractMigration::getSql() after
+        // calling up(). The migration populates its planned SQL list via
+        // addSql() calls inside up(); getSql() is the public accessor.
+        $schemaBefore = $this->createEmptySchema();
+        $migration->up($schemaBefore);
 
-        $plannedSql = $this->extractPlannedSql($migration);
+        $plannedSql = $migration->getSql();
 
         if ([] === $plannedSql) {
-            $logger->warning('migration_runner.no_sql', [
+            // No SQL produced. Check whether the migration attempted Schema
+            // object manipulation (tables/sequences/namespaces) without addSql().
+            // Such migrations are not supported by this PHAR-safe executor;
+            // migrations must use addSql() to produce explicit SQL.
+            if ($this->schemaWasMutated($schemaBefore)) {
+                throw new \RuntimeException(\sprintf('Migration %s used Schema object manipulation without addSql(). Schema-based migrations are not supported by the PHAR-safe startup executor. Use addSql() to produce explicit SQL statements.', $versionId));
+            }
+
+            // Truly no-op migration (no SQL, no schema mutation).
+            // Record it as applied so it is not re-attempted on every boot.
+            $this->connection->insert('doctrine_migration_versions', [
+                'version' => $versionId,
+                'executed_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
+                'execution_time' => 0,
+            ]);
+
+            $logger->info('migration_runner.no_op', [
                 'component' => 'migration_runner',
-                'event_type' => 'migration_runner.no_sql',
+                'event_type' => 'migration_runner.no_op',
                 'version' => $versionId,
             ]);
 
@@ -213,11 +225,11 @@ final class ApplicationMigrationExecutor
         $this->connection->beginTransaction();
 
         try {
-            foreach ($plannedSql as $sql) {
-                $this->connection->executeStatement($sql);
+            foreach ($plannedSql as $query) {
+                $this->connection->executeStatement($query->getStatement());
             }
 
-            $executionTime = (int) ((microtime(true) - $startTime) * 1000000);
+            $executionTime = (int) ((microtime(true) - $startTime) * 1000);
 
             $this->connection->insert('doctrine_migration_versions', [
                 'version' => $versionId,
@@ -248,46 +260,29 @@ final class ApplicationMigrationExecutor
     }
 
     /**
-     * Extract planned SQL statements from an AbstractMigration instance.
+     * Create an empty Schema object for the migration's up() method.
      *
-     * AbstractMigration stores addSql() calls in a private
-     * $plannedSql property. We use reflection to access it since
-     * there is no public accessor for the planned SQL list.
-     *
-     * In Doctrine Migrations 3.9+, the property contains Query objects
-     * (not plain arrays), so we handle both formats.
-     *
-     * @return list<string>
+     * We pass an empty Schema because this executor only supports
+     * migrations that use addSql() to produce explicit SQL statements.
+     * Schema-based migrations (createTable/ addSequence/ etc.) will be
+     * detected and rejected with a clear error message.
      */
-    private function extractPlannedSql(AbstractMigration $migration): array
+    private function createEmptySchema(): Schema
     {
-        $ref = new \ReflectionProperty(AbstractMigration::class, 'plannedSql');
-        $ref->setAccessible(true);
-
-        /** @var list<array{sql: string, params: array<string, mixed>, types: array<string, mixed>}|Query> $planned */
-        $planned = $ref->getValue($migration);
-
-        return array_map(
-            static fn (array|Query $entry): string => $entry instanceof Query ? $entry->getStatement() : $entry['sql'],
-            $planned,
-        );
+        return new Schema();
     }
 
     /**
-     * Create an empty Schema object for the migration's up() method.
+     * Detect whether a Schema was mutated during a migration's up() call.
      *
-     * Since our migrator executes only the addSql() statements (not
-     * Schema object manipulation), we pass an empty Schema. This
-     * prevents errors if the migration happens to call
-     * $schema->createTable() etc. (though the current migration at
-     * Version20260601152619 uses only addSql()).
-     *
-     * If a future migration uses Schema manipulation without addSql(),
-     * this method must be updated to introspect+clone+diff the schema.
-     * See the class docblock for the alternative Schema-based path.
+     * Checks for tables, sequences, and namespaces added to the Schema.
+     * This detects migrations that use the Schema API without addSql(),
+     * which we do not support.
      */
-    private function createEmptySchema(): \Doctrine\DBAL\Schema\Schema
+    private function schemaWasMutated(Schema $schema): bool
     {
-        return new \Doctrine\DBAL\Schema\Schema();
+        return [] !== $schema->getTables()
+            || [] !== $schema->getSequences()
+            || [] !== $schema->getNamespaces();
     }
 }

@@ -635,19 +635,6 @@ function test_tui(): void
 }
 
 /**
- * Run TUI e2e tests and UPDATE golden snapshots.
- *
- * Use after intentional rendering changes.  Review the diff
- * before committing updated fixtures.
- */
-
-/**
- * Run TUI e2e tests and UPDATE golden snapshots.
- *
- * Use after intentional rendering changes.  Review the diff
- * before committing updated fixtures.
- */
-/**
  * Run the opt-in real llama.cpp smoke test.
  *
  * Uses project Hatfield settings by default:

@@ -265,10 +265,11 @@ services:
   # so no explicit arguments are needed here.
 
   # Explicit service definition for the platform factory so the DI container
-  # can resolve the service ID during compilation, even when Box's optimized
-  # autoloader may not discover PSR-4 classes during container compilation.
-  # The class is also auto-registered by the resource import; this explicit
-  # definition ensures it survives in Box 4.x PHAR builds.
+  # can resolve the service ID during compilation. The class is also
+  # auto-registered by the resource import, but the explicit definition
+  # guarantees it survives when the PHAR resource path uses wildcard
+  # patterns (phar:// paths require **/*.php globs for reliable Symfony DI
+  # service discovery — bare directory paths register 0 services).
   Ineersa\CodingAgent\Infrastructure\SymfonyAi\ConfiguredSymfonyAiPlatformFactory: ~
 
   Symfony\AI\Platform\PlatformInterface:

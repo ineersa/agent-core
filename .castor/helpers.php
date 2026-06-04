@@ -24,10 +24,10 @@ const REPORTS_DIR = __DIR__.'/../var/reports';
 //                                toolchain is present).
 
 /** Default PHAR output path. */
-const HATFIELD_PHAR_DEFAULT = '/tmp/bin/hatfield.phar';
+const HATFIELD_PHAR_PATH_DEFAULT = '/tmp/bin/hatfield.phar';
 
 /** Default staging directory for production-only Composer installs. */
-const HATFIELD_PHAR_STAGING_DEFAULT = '/tmp/hatfield-phar-build/source';
+const HATFIELD_PHAR_STAGING_DIR_DEFAULT = '/tmp/hatfield-phar-build/source';
 
 /**
  * Resolve the PHAR output path.
@@ -51,7 +51,7 @@ function hatfield_phar_path(): string
         }
     }
 
-    return HATFIELD_PHAR_DEFAULT;
+    return HATFIELD_PHAR_PATH_DEFAULT;
 }
 
 /**
@@ -68,7 +68,7 @@ function hatfield_phar_staging_dir(): string
         return $override;
     }
 
-    return HATFIELD_PHAR_STAGING_DEFAULT;
+    return HATFIELD_PHAR_STAGING_DIR_DEFAULT;
 }
 
 /**
@@ -622,7 +622,9 @@ function phar_build(): string
 function phar_smoke(string $pharPath): void
 {
     // Create an isolated temp cwd to prove writable-dir creation works.
-    $tmpCwd = sys_get_temp_dir().'/hatfield-phar-smoke-'.getmypid();
+    // Use a random suffix (not just getpid) to avoid collisions when
+    // multiple build processes or Castor invocations share a temp dir.
+    $tmpCwd = sys_get_temp_dir().'/hatfield-phar-smoke-'.bin2hex(random_bytes(8));
     @mkdir($tmpCwd, 0755, true);
     if (!is_dir($tmpCwd)) {
         echo "PHAR smoke test: SKIP (could not create isolated cwd: {$tmpCwd})\n";

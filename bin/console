@@ -14,6 +14,27 @@ use Symfony\Component\Dotenv\Dotenv;
 // for require_once. The .env file is never bundled and must be skipped.
 $isPhar = \str_starts_with(__FILE__, 'phar://');
 
+// ── Early PHAR platform check ────────────────────────────────────────────
+// Box build config sets check-requirements:false, so verify the required
+// PHP extensions are loaded before deep DBAL/Symfony errors obscure the
+// root cause. Source/dev execution skips this check entirely.
+if ($isPhar) {
+    $requiredExtensions = ['pdo_sqlite', 'mbstring', 'xml'];
+    $missing = [];
+    foreach ($requiredExtensions as $ext) {
+        if (!\extension_loaded($ext)) {
+            $missing[] = $ext;
+        }
+    }
+    if ([] !== $missing) {
+        \fwrite(STDERR, \sprintf(
+            "Error: Hatfield PHAR requires the following PHP extensions: %s\n",
+            \implode(', ', $missing),
+        ));
+        exit(1);
+    }
+}
+
 require_once __DIR__.'/../vendor/autoload.php';
 
 // ── Early --cwd resolution ───────────────────────────────────────────────

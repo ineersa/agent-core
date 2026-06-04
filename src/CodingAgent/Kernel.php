@@ -106,8 +106,7 @@ class Kernel extends BaseKernel
             return $cwd;
         }
 
-        // Last resort: fall back to project dir (unlikely to reach here).
-        return $this->getProjectDir();
+        throw new \RuntimeException('Unable to determine runtime working directory. Set HATFIELD_CWD or ensure getcwd() returns a valid path.');
     }
 
     /**
