@@ -116,3 +116,6 @@ Completed:
 
 ## Task workflow update - 2026-06-04T17:49:28.833Z
 - PHAR readiness scout recon completed (3 scouts). Key findings: no Box/PHAR tooling exists yet; Kernel/bin entrypoint/cache/log/config paths are the first PHAR blockers; runtime process abstraction exists but only SourceTreeExecutableLocator is wired; AgentProcessSupervisor and Castor run/log tasks still hardcode bin/console; Controller/TUI E2E tests hardcode bin/console and should use a PHAR built to a stable /tmp/bin path. Scout artifact: /home/ineersa/.pi/agent/tmp/2026-06--3741ac4e.txt
+
+## Task workflow update - 2026-06-04T18:41:13.395Z
+- Design decision captured before implementation: PHAR/source app root must be treated as read-only/install root. Runtime writable paths should resolve from the runtime cwd, not kernel.project_dir. Defaults should use existing project-local Hatfield runtime tree: logs at <cwd>/.hatfield/logs, cache at <cwd>/.hatfield/cache, tmp at <cwd>/.hatfield/tmp as needed. Optional env overrides may exist for unusual deployments, but should be resolved relative to runtime cwd when relative and should not be required. This avoids PHAR/source-tree contamination and aligns tests/runs around isolated cwd behavior.
