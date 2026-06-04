@@ -177,3 +177,6 @@ Completed:
 ## Task workflow update - 2026-06-04T21:23:51.525Z
 - Recorded fork run: rl2qcti5mdwt
 - Implementation fork launched as `rl2qcti5mdwt` in `/home/ineersa/projects/agent-core-worktrees/phar-packaging` to replace DoctrineMigrationsBundle/filesystem migrations with an app-owned custom startup migrator. Instructions: remove PHAR migrations extraction and `HATFIELD_MIGRATIONS_DIR`, replace `StartupDatabaseMigrator` with idempotent DBAL/schema logic equivalent to `Version20260601152619.php`, update Castor test bootstrap to use app migrator path/command instead of `doctrine:migrations:migrate`, remove unused Doctrine migrations bundle/config/files/dependencies, rebuild/smoke PHAR, run focused Castor validation (`castor test`, phpstan, deptrac, cs-check, phar build/ensure), and commit changes.
+
+## Task workflow update - 2026-06-04T21:27:45.958Z
+- Implementation fork `rl2qcti5mdwt` was manually interrupted/stopped after user raised a design question about preserving migration versions/generation before removing DoctrineMigrationsBundle. The fork had started running validation/build commands; no fork result/commit has been accepted yet. Next action should revise the migration strategy before launching another implementation fork.
