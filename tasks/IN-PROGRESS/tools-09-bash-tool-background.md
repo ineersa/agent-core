@@ -87,7 +87,7 @@ Important design update: do **not** start bash as an unmanaged foreground `Symfo
 Status: IN-PROGRESS
 Branch: task/tools-09-bash-tool-background
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-09-bash-tool-background
-Fork run: dfc9tpb60hvm
+Fork run: f9bcl8iphu1w
 PR URL:
 PR Status:
 Started: 2026-05-31T18:06:23.023Z
@@ -112,3 +112,7 @@ Completed:
 - Recorded fork run: dfc9tpb60hvm
 - Validation: castor test --filter=BashTool: PASS (18 tests, 56 assertions); castor test: PASS (1558 tests, 11584 assertions); castor deptrac: PASS (0 violations); castor phpstan scoped/all changed files: PASS (0 errors); castor cs-check: PASS; castor check: BLOCKED/FAIL — deptrac + unit/integration pass; ControllerSmokeTest fails on pre-existing log path resolution issue (`//agent-2026-05-31.log` with empty project_dir); llm-real/TUI E2E fails on pre-existing tmux pane issue (`%14 not found`). Per repo instructions, task remains IN-PROGRESS until full castor check can pass or blocker is resolved.
 - Summary: Implementation fork completed TOOLS-09 and committed 94321e4d842e0b89778d47f93a74e122e65e6ecd on branch task/tools-09-bash-tool-background. Implemented BashTool as registry-backed Hatfield provider/handler; every command starts through BackgroundProcessManager::start() and is supervised foreground-style. Added BashToolConfig, default declining prompt adapter, settings/defaults, service wiring, and focused tests. Deferred TOOLS-09B runtime/TUI confirmation bridge and live streaming as planned.
+
+## Task workflow update - 2026-06-05T00:45:35.424Z
+- Recorded fork run: f9bcl8iphu1w
+- Reviving stale TOOLS-09 branch after PHAR packaging landed on main. Current branch `task/tools-09-bash-tool-background` was at `94321e4d`, 249 commits behind `main`/`origin/main` (`a5e25bfe`) and 1 commit ahead, with diff vs main limited to the TOOLS-09 implementation files. Launched implementation fork `f9bcl8iphu1w` with model `deepseek/deepseek-v4-pro` to merge/rebase current main into the task branch, resolve any conflicts, inspect/fix drift against current BackgroundProcessManager/runtime APIs, run focused Castor validation (`castor test --filter=BashTool`, `castor test` if practical, `castor deptrac`, `castor phpstan`, `castor cs-check`), commit, and leave the worktree clean. Fork explicitly instructed not to push, not to open PR, and not to run full `castor check`.
