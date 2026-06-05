@@ -42,7 +42,18 @@ final class ChainExecutableLocator implements AppExecutableLocator
     }
 
     /**
-     * @return list<string>
+     * Try each locator in the chain for the given method.
+     *
+     * The $method parameter is always one of the interface methods:
+     *   - 'command' → locator->command() → list<string> (PHP binary + args)
+     *   - 'path'    → locator->path()    → string (absolute executable path)
+     *
+     * The return type is a union only because PHP doesn't support
+     * conditional return types at the language level. In practice the
+     * caller (command() or path()) always matches the method being
+     * dispatched, so the runtime type is well-known.
+     *
+     * @return list<string>|string
      */
     private function resolve(string $method): array|string
     {

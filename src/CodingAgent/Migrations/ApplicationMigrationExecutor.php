@@ -198,7 +198,7 @@ final class ApplicationMigrationExecutor
             // object manipulation (tables/sequences/namespaces) without addSql().
             // Such migrations are not supported by this PHAR-safe executor;
             // migrations must use addSql() to produce explicit SQL.
-            if ($this->schemaWasMutated($schemaBefore)) {
+            if ($this->hasSchemaChanges($schemaBefore)) {
                 throw new \RuntimeException(\sprintf('Migration %s used Schema object manipulation without addSql(). Schema-based migrations are not supported by the PHAR-safe startup executor. Use addSql() to produce explicit SQL statements.', $versionId));
             }
 
@@ -219,12 +219,13 @@ final class ApplicationMigrationExecutor
             return;
         }
 
-        // Execute SQL in a transaction.
         $startTime = microtime(true);
-
-        $this->connection->beginTransaction();
+        $transactionActive = false;
 
         try {
+            $this->connection->beginTransaction();
+            $transactionActive = true;
+
             foreach ($plannedSql as $query) {
                 $this->connection->executeStatement($query->getStatement());
             }
@@ -239,7 +240,9 @@ final class ApplicationMigrationExecutor
 
             $this->connection->commit();
         } catch (\Throwable $e) {
-            $this->connection->rollBack();
+            if ($transactionActive) {
+                $this->connection->rollBack();
+            }
 
             $logger->error('migration_runner.execution_failed', [
                 'component' => 'migration_runner',
@@ -279,7 +282,7 @@ final class ApplicationMigrationExecutor
      * This detects migrations that use the Schema API without addSql(),
      * which we do not support.
      */
-    private function schemaWasMutated(Schema $schema): bool
+    private function hasSchemaChanges(Schema $schema): bool
     {
         return [] !== $schema->getTables()
             || [] !== $schema->getSequences()

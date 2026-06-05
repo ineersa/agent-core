@@ -99,6 +99,9 @@ if (!$isPhar) {
     }
 }
 
+// Default APP_ENV to 'prod' because the PHAR is a distribution artefact.
+// Callers (e.g. Castor tasks, tests, development) may override APP_ENV
+// and APP_DEBUG via the process environment before launching the PHAR.
 $kernel = new Kernel($_SERVER['APP_ENV'] ?? 'prod', (bool) ($_SERVER['APP_DEBUG'] ?? false));
 $application = new Application($kernel);
 $application->run(new ArgvInput());

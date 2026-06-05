@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Phar;
 
 use Ineersa\CodingAgent\Tests\Support\AgentTestExecutable;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -23,6 +24,7 @@ use PHPUnit\Framework\TestCase;
  *
  *   castor phar:build && HATFIELD_BINARY_PATH=/tmp/bin/hatfield.phar vendor/bin/phpunit --filter PharSmokeTest
  */
+#[Group('phar')]
 final class PharSmokeTest extends TestCase
 {
     /**
@@ -36,7 +38,7 @@ final class PharSmokeTest extends TestCase
 
     public function testPharBootingToAgentList(): void
     {
-        $pharPath = AgentTestExecutable::path();
+        [$php, $pharPath] = AgentTestExecutable::command();
         $isPhar = str_ends_with($pharPath, '.phar');
 
         if (!$isPhar) {
@@ -50,7 +52,7 @@ final class PharSmokeTest extends TestCase
         self::assertFileExists($pharPath, 'PHAR not found at '.$pharPath);
         self::assertFileIsReadable($pharPath);
 
-        $output = shell_exec(\PHP_BINARY.' '.escapeshellarg($pharPath).' list 2>&1');
+        $output = shell_exec($php.' '.escapeshellarg($pharPath).' list 2>&1');
         self::assertNotNull($output, 'PHAR list command produced no output');
         self::assertStringContainsString('agent', $output, 'PHAR list output should contain the agent command');
 
@@ -66,15 +68,19 @@ final class PharSmokeTest extends TestCase
 
     public function testPharAgentHelp(): void
     {
-        $pharPath = AgentTestExecutable::path();
+        [$php, $pharPath] = AgentTestExecutable::command();
         $isPhar = str_ends_with($pharPath, '.phar');
 
         if (!$isPhar) {
-            self::markTestSkipped('Not running from PHAR');
+            self::markTestSkipped(\sprintf(
+                'HATFIELD_BINARY_PATH not set or not a PHAR. Resolved to %s. '
+                .'Run: castor phar:build && HATFIELD_BINARY_PATH=/tmp/bin/hatfield.phar vendor/bin/phpunit --filter PharSmokeTest',
+                $pharPath,
+            ));
         }
 
         // Also verify that --help works on the agent command
-        $output = shell_exec(\PHP_BINARY.' '.escapeshellarg($pharPath).' agent --help 2>&1');
+        $output = shell_exec($php.' '.escapeshellarg($pharPath).' agent --help 2>&1');
         self::assertNotNull($output, 'PHAR agent --help produced no output');
         self::assertStringContainsString('Usage:', $output);
     }
