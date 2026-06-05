@@ -111,17 +111,27 @@ function hatfield_phar_box_bin(): string
             escapeshellarg($composerBin),
         );
         $output = shell_exec($installCmd);
+        // After composer install, re-check the binary with a fresh
+        // stat cache — composer install creates the file on disk.
+        clearstatcache(true, $localBoxBin);
         if (is_executable($localBoxBin)) {
             return $localBoxBin;
         }
-        // If install somehow failed, fall through to the global lookup.
-        if (null !== $output && '' !== trim($output)) {
-            echo "  tools/phar/ composer install output:\n  ".str_replace("\n", "\n  ", trim($output))."\n";
+        // If install produced output but the binary still isn't
+        // executable — show diagnostic output before falling through
+        // to the global Box lookup.
+        $diagnostic = \is_string($output) ? trim($output) : '';
+        if ('' !== $diagnostic) {
+            echo "  tools/phar/ composer install output:\n  ".str_replace("\n", "\n  ", $diagnostic)."\n";
         }
     }
 
     // 3. Global Box (PATH, or the legacy BOX_BIN env).
-    $globalBox = getenv('BOX_BIN') ?: trim(shell_exec('which box 2>/dev/null') ?? '');
+    $globalBox = getenv('BOX_BIN');
+    if (false === $globalBox || '' === $globalBox) {
+        $whichBox = shell_exec('which box 2>/dev/null');
+        $globalBox = \is_string($whichBox) ? trim($whichBox) : '';
+    }
     if ('' !== $globalBox && is_executable($globalBox)) {
         return $globalBox;
     }
@@ -134,7 +144,11 @@ function hatfield_phar_box_bin(): string
  */
 function hatfield_phar_composer_bin(): string
 {
-    $composerBin = getenv('COMPOSER_BIN') ?: trim(shell_exec('which composer 2>/dev/null') ?? '');
+    $composerBin = getenv('COMPOSER_BIN');
+    if (false === $composerBin || '' === $composerBin) {
+        $whichComposer = shell_exec('which composer 2>/dev/null');
+        $composerBin = \is_string($whichComposer) ? trim($whichComposer) : '';
+    }
     if ('' === $composerBin) {
         $composerBin = trim(shell_exec('which composer.phar 2>/dev/null') ?? '');
     }
@@ -530,7 +544,8 @@ function phar_build(): string
     // Default APP_ENV to prod if not already set by the caller.
     // This ensures Composer resolves Symfony config in the correct
     // environment (e.g. bundle registration) without forcing APP_DEBUG.
-    $composerEnv = getenv('APP_ENV') ?: 'prod';
+    $composerEnv = getenv('APP_ENV');
+    $composerEnv = (false !== $composerEnv && '' !== $composerEnv) ? $composerEnv : 'prod';
     $composerStart = microtime(true);
     $composerCmd = \sprintf(
         'cd %s && APP_ENV=%s COMPOSER_MEMORY_LIMIT=-1 XDEBUG_MODE=off %s install'
@@ -563,7 +578,8 @@ function phar_build(): string
         }
     }
 
-    $boxEnv = getenv('APP_ENV') ?: 'prod';
+    $boxEnv = getenv('APP_ENV');
+    $boxEnv = (false !== $boxEnv && '' !== $boxEnv) ? $boxEnv : 'prod';
     $boxStart = microtime(true);
     $boxCmd = \sprintf(
         'cd %s && APP_ENV=%s php -d memory_limit=-1 -d xdebug.mode=off %s compile 2>&1',
@@ -577,7 +593,7 @@ function phar_build(): string
     if (!is_file($pharPath)) {
         $error = 'PHAR build failed.'.\PHP_EOL;
         $error .= 'Composer output:'.\PHP_EOL;
-        $error .= ($composerOutput ?? '<no output>').\PHP_EOL;
+        $error .= $composerOutput.\PHP_EOL;
         $error .= 'Box output:'.\PHP_EOL;
         $error .= ($boxOutput ?? '<no output>').\PHP_EOL;
         $error .= 'Box command: '.$boxCmd.\PHP_EOL;
@@ -632,7 +648,8 @@ function phar_smoke(string $pharPath): void
         return;
     }
 
-    $smokeEnv = getenv('APP_ENV') ?: 'prod';
+    $smokeEnv = getenv('APP_ENV');
+    $smokeEnv = (false !== $smokeEnv && '' !== $smokeEnv) ? $smokeEnv : 'prod';
     $failed = [];
     $phpBin = \PHP_BINARY;
 

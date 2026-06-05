@@ -47,7 +47,7 @@ final class ConfigExecutableLocator implements AppExecutableLocator
 
         // Resolve relative paths against the runtime cwd.
         if (!str_starts_with($binaryPath, '/')) {
-            $cwd = '' !== $this->runtimeCwd ? $this->runtimeCwd : (getcwd() ?: '');
+            $cwd = '' !== $this->runtimeCwd ? $this->runtimeCwd : ((false !== ($c = getcwd())) ? $c : '');
             if ('' !== $cwd) {
                 $binaryPath = $cwd.'/'.$binaryPath;
             }

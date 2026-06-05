@@ -48,6 +48,10 @@ final class ChainExecutableLocator implements AppExecutableLocator
      *   - 'command' → locator->command() → list<string> (PHP binary + args)
      *   - 'path'    → locator->path()    → string (absolute executable path)
      *
+     * An explicit match branch dispatches the call instead of a dynamic
+     * method call, which satisfies PHPStan's forbidDynamicMethodCall
+     * and keeps type expectations clear in both branches.
+     *
      * The return type is a union only because PHP doesn't support
      * conditional return types at the language level. In practice the
      * caller (command() or path()) always matches the method being
@@ -62,7 +66,11 @@ final class ChainExecutableLocator implements AppExecutableLocator
         foreach ($this->locators as $locator) {
             try {
                 /** @var list<string>|string $result */
-                $result = $locator->{$method}();
+                $result = match ($method) {
+                    'command' => $locator->command(),
+                    'path' => $locator->path(),
+                    default => throw new \InvalidArgumentException(\sprintf('Unknown method: %s', $method)),
+                };
 
                 return $result;
             } catch (\Throwable $e) {
