@@ -87,7 +87,7 @@ Important design update: do **not** start bash as an unmanaged foreground `Symfo
 Status: IN-PROGRESS
 Branch: task/tools-09-bash-tool-background
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-09-bash-tool-background
-Fork run: 4qczwp4pfffp
+Fork run: irp07mnx11h2
 PR URL:
 PR Status:
 Started: 2026-05-31T18:06:23.023Z
@@ -130,3 +130,7 @@ Completed:
 - Recorded fork run: 4qczwp4pfffp
 - Validation: Verified worktree status clean on branch `task/tools-09-bash-tool-background`.; Verified latest commit: `7b5a7dea TOOLS-09: Add --tools/--tools-excluded CLI options for tool filtering`.; Verified commit stat: 7 files changed, 324 insertions, 8 deletions (`AgentCommand`, `ToolRegistry`, `ToolRegistryInterface`, controller/TUI E2E test launch sites, `ToolRegistryTest`).; Fork validation reported: `castor test --filter=ToolRegistryTest` OK (45 tests, 101 assertions); `castor test --filter='BashToolTest|ToolRegistryTest|RegistryBackedToolboxTest'` OK (76 tests, 184 assertions); `castor deptrac` OK (0 violations, 0 errors); `castor phpstan` OK (0 errors, 0 file_errors); `castor cs-fix && castor cs-check` OK (2 files auto-fixed, then clean); `castor test` OK (1688 tests, 4984 assertions).; Full `LLM_MODE=true castor check` and real LLM/controller/TUI E2E intentionally not run in implementation phase; gate/reviewer workflow will handle that during task-to-pr.
 - Summary: Implementation fork `4qczwp4pfffp` completed and committed `7b5a7dea` (`TOOLS-09: Add --tools/--tools-excluded CLI options for tool filtering`). Verified commit exists at worktree HEAD and worktree is clean. Added per-run CLI tool filtering via `AgentCommand` options `--tools` and `--tools-excluded`, registry-level allowlist/denylist methods on `ToolRegistryInterface`/`ToolRegistry`, and 11 `ToolRegistryTest` cases. Real LLM/controller/TUI subprocess-spawning tests now pass `--tools-excluded=bash` so the bash tool is not exposed during real-LLM E2E flows; PHAR smoke and in-process LlamaCpp smoke are intentionally unchanged. Diff vs current main now includes the TOOLS-09 bash implementation plus filtering changes: 16 files, 1390 insertions, 10 deletions.
+
+## Task workflow update - 2026-06-05T01:33:50.593Z
+- Recorded fork run: irp07mnx11h2
+- Reviewer subagent returned REQUEST CHANGES on current HEAD `7b5a7dea`. Findings: critical PHPDoc corruption in `ToolRegistryInterface` around `activeToolNames()`/filter methods; critical cancellation path in `BashTool` bypassed `OutputCap`; plus actionable improvements around dead deadline null-check, dynamic background threshold wording, stopped-by-user ordering, possible targeted process lookup to avoid O(n) polling, and documenting raw shell execution intent. Launched implementation fork `irp07mnx11h2` with model `deepseek/deepseek-v4-pro` to address all sensible actionable findings, validate with focused Castor commands, commit, and leave worktree clean.
