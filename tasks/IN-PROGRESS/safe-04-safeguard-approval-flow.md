@@ -438,7 +438,7 @@ depfile.yaml                                                   — new Extension
 Status: IN-PROGRESS
 Branch: task/safe-04-safeguard-approval-flow
 Worktree: /home/ineersa/projects/agent-core-worktrees/safe-04-safeguard-approval-flow
-Fork run: k4asjabf6nxb
+Fork run: nmwaj6hwht4b
 PR URL: https://github.com/ineersa/agent-core/pull/79
 PR Status: open
 Started: 2026-05-31T17:35:50.684Z
@@ -505,3 +505,78 @@ Remaining: castor test:controller requires llama.cpp on port 9052.
 ## Task workflow update - 2026-06-05T20:16:45.027Z
 - Recorded fork run: k4asjabf6nxb
 - Summary: Launched fork k4asjabf6nxb to merge current origin/main into revived SAFE-04 branch, resolve drift/conflicts, audit implementation state against acceptance criteria, run Castor validation, and commit any required fixes.
+
+## Task workflow update - 2026-06-05T20:35:37.941Z
+- Recorded fork run: k4asjabf6nxb
+- Validation: fork: castor test --filter='SafeGuard\|HitlMapping\|ExtensionApproval\|Question\|HumanInput' passed (186 tests, 427 assertions); fork: castor test passed (1724 tests, 5046 assertions); fork: castor deptrac passed (0 violations, 0 errors); fork: castor phpstan passed (0 errors, 0 file_errors); fork: castor cs-check passed (0 files fixed); fork: LLM_MODE=true castor check passed including controller, llm-real, and tui gates
+- Summary: Fork k4asjabf6nxb completed SAFE-04 revival. Merged origin/main fb5078c1 into branch task/safe-04-safeguard-approval-flow, resolving 8 conflicts. Resulting task worktree is clean at HEAD fe0e15e9 after merge commit 2f60dce1 and test-fix commit fe0e15e9. The fork accepted current main's callback-based SafeGuard approval architecture over the older event-store polling variant and adapted tests to current ApprovalSessionTracker/SafeGuardPolicyWriter APIs. Current diff vs origin/main is limited to 5 files: SessionEventReader.php, ApprovalSessionTrackerTest.php, SafeGuardExtensionTest.php, SafeGuardPolicyWriterTest.php, SessionEventReaderTest.php. Open decision before task-to-pr: SessionEventReader.php and SessionEventReaderTest.php appear to be dead code kept by merge; only the test references the class, and current main had removed it in favor of ApprovalAnswerHookInterface callback routing. Recommended to remove those dead-code files in a follow-up implementation fork before review, unless user wants to keep them for a future polling design.
+
+## Task workflow update - 2026-06-05T20:36:40.843Z
+- Recorded fork run: xsqccsnst3qy
+- Summary: Launched cleanup fork xsqccsnst3qy to remove dead SessionEventReader.php and SessionEventReaderTest.php remnants from the old event-store polling SafeGuard design, validate with Castor focused/full non-check gates, and commit without pushing.
+
+## Task workflow update - 2026-06-05T20:40:23.523Z
+- Recorded fork run: xsqccsnst3qy
+- Validation: fork: rg confirmed SessionEventReader had zero production consumers; only its own source and test referenced it; fork: castor test --filter='SafeGuard\|ExtensionApproval\|Question\|HumanInput\|ApprovalSessionTracker\|PolicyWriter' passed (179 tests, 420 assertions); fork: castor test passed (1717 tests, 5039 assertions); fork: castor deptrac passed (0 violations, 0 errors); fork: castor phpstan passed (0 errors, 0 file_errors); fork: castor cs-check passed (0 files fixed); not run: castor check per IN-PROGRESS implementation-phase boundary
+- Summary: Cleanup fork xsqccsnst3qy completed. Removed dead SessionEventReader.php and SessionEventReaderTest.php from the old event-store polling SafeGuard design after confirming only the deleted test referenced the class and no production code used it. Worktree is clean at HEAD 0a2b5f87. Current diff vs origin/main is now test-only: ApprovalSessionTrackerTest.php, SafeGuardExtensionTest.php, SafeGuardPolicyWriterTest.php (3 files, 256 insertions, 43 deletions). Ready for task-to-pr/re-review when user requests it.
+
+## Task workflow update - 2026-06-05T20:48:13.958Z
+- Recorded fork run: 7ktp19cm8bij
+- Summary: Reviewer returned APPROVE WITH SUGGESTIONS on HEAD 0a2b5f87. Launched fork 7ktp19cm8bij to address all sensible findings: add direct SafeGuardToolCallHook::onApprovalAnswered coverage for Allow once/Always allow/Deny/empty operation_key, rename misleading SafeGuardPolicyWriter unparseable-YAML test, make SafeGuardExtension custom-settings test assert alias+auto-deny behavior, document auto_deny_in_noninteractive in docs/settings.md and .hatfield/settings.yaml example, then run Castor non-check validation and commit without pushing.
+
+## Task workflow update - 2026-06-05T20:53:22.368Z
+- Recorded fork run: 7ktp19cm8bij
+- Validation: fork: castor test --filter='SafeGuardToolCallHook\|SafeGuardExtension\|SafeGuardPolicyWriter' passed (36 tests, 92 assertions); fork: castor test passed (1722 tests, 5062 assertions); fork: castor deptrac passed (0 violations, 0 errors); fork: castor phpstan passed (0 errors, 0 file_errors); fork: castor cs-check passed (0 files fixed); not run: LLM_MODE=true castor check per IN-PROGRESS/task-to-pr boundary; move_task(to=CODE-REVIEW) will run it
+- Summary: Fork 7ktp19cm8bij completed reviewer-suggestion fixes. Commit 9ddcacb4 added direct SafeGuardToolCallHook::onApprovalAnswered coverage for Allow once, Deny, Always allow with policy persistence, and empty/missing operation_key no-ops; improved SafeGuardExtensionTest to exercise custom alias plus auto-deny=false behavior; renamed the misleading SafeGuardPolicyWriter unparseable-YAML test; documented auto_deny_in_noninteractive in docs/settings.md and the project .hatfield/settings.yaml example. Worktree clean at HEAD 9ddcacb4. Ready for re-review.
+
+## Task workflow update - 2026-06-05T20:58:19.509Z
+- Recorded fork run: eor8103xc9r6
+- Summary: Re-review of HEAD 9ddcacb4 returned APPROVE WITH SUGGESTIONS with no blockers. Launched fork eor8103xc9r6 to apply the small sensible cleanup items: use addToAssertionCount for no-exception policy-writer test, strengthen empty/missing operation_key noop tests with real pending approval/retry behavior, add a brief comment for auto_deny_in_noninteractive in the project settings example, validate with Castor non-check gates, and commit without pushing.
+
+## Task workflow update - 2026-06-05T21:01:12.108Z
+- Recorded fork run: eor8103xc9r6
+- Validation: fork: castor test --filter='SafeGuardToolCallHook|SafeGuardPolicyWriter' passed (32 tests, 89 assertions); fork: castor test passed (1722 tests, 5070 assertions); fork: castor deptrac passed (0 violations, 0 errors); fork: castor phpstan passed (0 errors, 0 file_errors); fork: castor cs-check passed (0 files fixed)
+- Summary: Fork eor8103xc9r6 completed the final cleanup suggestions from re-review. Commit b88e60d4 changed only tests and settings example docs: replaced the no-exception policy-writer assertion with addToAssertionCount(1), strengthened empty/missing operation_key noop tests to first create a real pending approval and verify retry still requires approval, and added a short commented explanation for auto_deny_in_noninteractive in .hatfield/settings.yaml. Worktree reported clean at HEAD b88e60d4. Ready for user-initiated task-to-pr.
+
+## Task workflow update - 2026-06-05T21:07:11.405Z
+- Validation: reviewer: APPROVE WITH SUGGESTIONS on HEAD b88e60d4, no critical issues, no bugs, no blockers; castor test passed (1722 tests, 5070 assertions, 0 failures, 0 errors); castor deptrac passed (0 violations, 0 errors); castor phpstan passed (0 errors, 0 file_errors); castor cs-check passed (0 files fixed)
+- Summary: Task-to-pr final review on HEAD b88e60d4 returned APPROVE WITH SUGGESTIONS with no blockers or issues. Reviewer confirmed prior suggestions are addressed: onApprovalAnswered() coverage is meaningful, SafeGuardExtensionTest proves custom alias plus auto_deny_in_noninteractive=false wiring, and docs/settings examples are clear. Remaining comments are non-blocking decorative/nice-to-have only (implicit no-exception addToAssertionCount, optional direct SafeGuardConfig parsing test). Local focused Castor validation passed on HEAD b88e60d4; worktree clean. Proceeding to move task to CODE-REVIEW / push PR #79.
+Castor Check Status: passed
+Castor Check Commit: b88e60d486b69f32dbf6a6f0ec5fcf7862c28b42
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 900s
+Castor Check Completed: 2026-06-05T21:09:23.372Z
+Castor Check Output SHA256: d02306dc21bc1679b045a7da2193d34b746d1dc81fdb9ca69707cdfa2762ca8f
+
+## Task workflow update - 2026-06-05T21:09:25.199Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: b88e60d486b6.
+- Pushed task/safe-04-safeguard-approval-flow to origin.
+- branch 'task/safe-04-safeguard-approval-flow' set up to track 'origin/task/safe-04-safeguard-approval-flow'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/79
+
+## Task workflow update - 2026-06-05T21:14:53.636Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Validation: previous CODE-REVIEW gate passed at b88e60d4 before this runtime follow-up
+- Summary: User found a runtime issue while manually trying SAFE-04 in the worktree: when the model attempts a blocked action, no SafeGuard confirmation dialog appears. Moving back to IN-PROGRESS for task-review-iterate investigation/fix. Next step: fork will run the actual agent/TUI flow in the SAFE-04 worktree, verify whether confirmation is shown and answer handling works, diagnose why it is missing if reproduced, and fix only if the issue is task-caused.
+
+## Task workflow update - 2026-06-05T21:15:31.491Z
+- Recorded fork run: l87wgx8i3144
+- Summary: Launched fork l87wgx8i3144 to run the actual agent/TUI/controller path in the SAFE-04 worktree after the user reported no SafeGuard confirmation dialog for a blocked action. Fork scope: verify real confirmation prompt/answer behavior; diagnose whether missing prompt is due to config/noninteractive auto-deny/tool filtering/model not calling tool/HITL bridge/TUI rendering; fix and test only if a SAFE-04 branch bug is reproduced; otherwise report exact evidence and user-facing explanation. No pushing or task-file edits.
+
+## Task workflow update - 2026-06-05T21:19:10.376Z
+- Recorded fork run: l87wgx8i3144
+- Validation: fork_retrieve l87wgx8i3144 returned no output; post-run git status: no new commit; untracked test-safeguard.md present; no validation results provided by fork
+- Summary: Fork l87wgx8i3144 completed with no result output; fork_retrieve also returned no output. Post-run inspection showed no new commit (HEAD remains b88e60d4) and the worktree is dirty with an untracked file `test-safeguard.md` containing the text `hello, we are testing safeguard so do just with write tool`. There is no usable evidence that the fork ran the actual agent/TUI/controller flow, verified SafeGuard confirmation behavior, diagnosed the missing dialog, or ran validation. Treat this fork as failed/inconclusive; worktree needs cleanup/retry before task-to-pr.
+
+## Task workflow update - 2026-06-05T21:27:40.753Z
+- Validation: scout: read-only investigation of SafeGuardToolCallHook, extension hook registry/subscribers, HITL runtime event translation, TUI QuestionCoordinator/QuestionController/SubmitListener, and headless/controller paths; finding: no production code currently creates/enqueues QuestionRequest from HumanInputRequested runtime events
+- Summary: Read-only scout investigation after user reported no confirmation dialog and asked about noninteractive/headless semantics. Key finding: current SAFE-04 core approval pipeline can produce ToolCallDecisionDTO::RequireApproval only when auto_deny_in_noninteractive=false; default true converts relaxable SafeGuard decisions into Block/auto_denied. More importantly, the existing runtime/HITL answer transport exists (WaitingHuman/HumanInputRequested events, answer_human command, ExtensionApprovalAnswerSubscriber routing back to ApprovalAnswerHookInterface), but the TUI question overlay is not wired to HumanInputRequested events: QuestionCoordinator/QuestionController exist, yet no code enqueues a QuestionRequest from HumanInputRequested, so the TUI can display transcript/projection state but no confirmation dialog opens. For future headless/subagent usage, SafeGuard can work only if the headless/subagent host provides an approval-capable channel: propagate HumanInputRequested to a parent/UI/policy broker and send answer_human back; truly unattended noninteractive mode should fail closed/auto-block. Recommended next implementation fork: wire TUI HumanInputRequested -> QuestionCoordinator approval overlay -> answer_human command, and clarify config naming/docs around approval-capable vs unattended noninteractive behavior.
+
+## Task workflow update - 2026-06-05T21:33:31.175Z
+- Validation: user explicitly approved the three-mode architecture: interactive prompts, approval-capable headless propagation, unattended auto-block
+- Summary: User confirmed desired SAFE-04 architecture: (1) Interactive TUI must show confirmation dialogs for relaxable SafeGuard blocks; (2) headless/subagent contexts can use SafeGuard if they are approval-capable, meaning they propagate HumanInputRequested to a parent/UI/policy broker and send answer_human back; (3) truly unattended noninteractive contexts cannot ask and must fail closed/auto-block. Implementation should treat `auto_deny_in_noninteractive` as fail-closed only when no approval channel is available, not as a blanket disablement of confirmations in TUI/controller flows. Next fork should implement TUI HumanInputRequested -> QuestionCoordinator/QuestionController overlay -> answer_human command, controller answer_human handling, approval-channel signaling for TUI-spawned controller/workers, docs/tests, and cleanup of failed fork's untracked file.
+
+## Task workflow update - 2026-06-05T21:34:22.302Z
+- Recorded fork run: nmwaj6hwht4b
+- Summary: Launched implementation fork nmwaj6hwht4b for the user-confirmed architecture. Scope: clean failed fork artifact; make auto_deny_in_noninteractive fail-closed only when no approval channel is available; signal approval capability from TUI-spawned controller/workers; add controller answer_human handling; wire TUI human_input.requested events into QuestionCoordinator/QuestionController and answer_human dispatch with exact SafeGuard answer strings; update docs/settings comments; add tests; run focused/full Castor validation and actual agent/TUI validation if feasible; commit without pushing.
