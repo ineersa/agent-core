@@ -438,7 +438,7 @@ depfile.yaml                                                   — new Extension
 Status: IN-PROGRESS
 Branch: task/safe-04-safeguard-approval-flow
 Worktree: /home/ineersa/projects/agent-core-worktrees/safe-04-safeguard-approval-flow
-Fork run: xsqccsnst3qy
+Fork run: 7ktp19cm8bij
 PR URL: https://github.com/ineersa/agent-core/pull/79
 PR Status: open
 Started: 2026-05-31T17:35:50.684Z
@@ -519,3 +519,7 @@ Remaining: castor test:controller requires llama.cpp on port 9052.
 - Recorded fork run: xsqccsnst3qy
 - Validation: fork: rg confirmed SessionEventReader had zero production consumers; only its own source and test referenced it; fork: castor test --filter='SafeGuard\|ExtensionApproval\|Question\|HumanInput\|ApprovalSessionTracker\|PolicyWriter' passed (179 tests, 420 assertions); fork: castor test passed (1717 tests, 5039 assertions); fork: castor deptrac passed (0 violations, 0 errors); fork: castor phpstan passed (0 errors, 0 file_errors); fork: castor cs-check passed (0 files fixed); not run: castor check per IN-PROGRESS implementation-phase boundary
 - Summary: Cleanup fork xsqccsnst3qy completed. Removed dead SessionEventReader.php and SessionEventReaderTest.php from the old event-store polling SafeGuard design after confirming only the deleted test referenced the class and no production code used it. Worktree is clean at HEAD 0a2b5f87. Current diff vs origin/main is now test-only: ApprovalSessionTrackerTest.php, SafeGuardExtensionTest.php, SafeGuardPolicyWriterTest.php (3 files, 256 insertions, 43 deletions). Ready for task-to-pr/re-review when user requests it.
+
+## Task workflow update - 2026-06-05T20:48:13.958Z
+- Recorded fork run: 7ktp19cm8bij
+- Summary: Reviewer returned APPROVE WITH SUGGESTIONS on HEAD 0a2b5f87. Launched fork 7ktp19cm8bij to address all sensible findings: add direct SafeGuardToolCallHook::onApprovalAnswered coverage for Allow once/Always allow/Deny/empty operation_key, rename misleading SafeGuardPolicyWriter unparseable-YAML test, make SafeGuardExtension custom-settings test assert alias+auto-deny behavior, document auto_deny_in_noninteractive in docs/settings.md and .hatfield/settings.yaml example, then run Castor non-check validation and commit without pushing.
