@@ -438,7 +438,7 @@ depfile.yaml                                                   — new Extension
 Status: IN-PROGRESS
 Branch: task/safe-04-safeguard-approval-flow
 Worktree: /home/ineersa/projects/agent-core-worktrees/safe-04-safeguard-approval-flow
-Fork run: 7ktp19cm8bij
+Fork run: eor8103xc9r6
 PR URL: https://github.com/ineersa/agent-core/pull/79
 PR Status: open
 Started: 2026-05-31T17:35:50.684Z
@@ -528,3 +528,7 @@ Remaining: castor test:controller requires llama.cpp on port 9052.
 - Recorded fork run: 7ktp19cm8bij
 - Validation: fork: castor test --filter='SafeGuardToolCallHook\|SafeGuardExtension\|SafeGuardPolicyWriter' passed (36 tests, 92 assertions); fork: castor test passed (1722 tests, 5062 assertions); fork: castor deptrac passed (0 violations, 0 errors); fork: castor phpstan passed (0 errors, 0 file_errors); fork: castor cs-check passed (0 files fixed); not run: LLM_MODE=true castor check per IN-PROGRESS/task-to-pr boundary; move_task(to=CODE-REVIEW) will run it
 - Summary: Fork 7ktp19cm8bij completed reviewer-suggestion fixes. Commit 9ddcacb4 added direct SafeGuardToolCallHook::onApprovalAnswered coverage for Allow once, Deny, Always allow with policy persistence, and empty/missing operation_key no-ops; improved SafeGuardExtensionTest to exercise custom alias plus auto-deny=false behavior; renamed the misleading SafeGuardPolicyWriter unparseable-YAML test; documented auto_deny_in_noninteractive in docs/settings.md and the project .hatfield/settings.yaml example. Worktree clean at HEAD 9ddcacb4. Ready for re-review.
+
+## Task workflow update - 2026-06-05T20:58:19.509Z
+- Recorded fork run: eor8103xc9r6
+- Summary: Re-review of HEAD 9ddcacb4 returned APPROVE WITH SUGGESTIONS with no blockers. Launched fork eor8103xc9r6 to apply the small sensible cleanup items: use addToAssertionCount for no-exception policy-writer test, strengthen empty/missing operation_key noop tests with real pending approval/retry behavior, add a brief comment for auto_deny_in_noninteractive in the project settings example, validate with Castor non-check gates, and commit without pushing.
