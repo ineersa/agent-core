@@ -84,14 +84,14 @@ Important design update: do **not** start bash as an unmanaged foreground `Symfo
 - Logging must use structured event-style messages and must not include raw prompts, full command output, environment values, API keys, or full session content by default.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/tools-09-bash-tool-background
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-09-bash-tool-background
 Fork run: y787iksgy2zt
 PR URL: https://github.com/ineersa/agent-core/pull/94
-PR Status: open
+PR Status: merged
 Started: 2026-05-31T18:06:23.023Z
-Completed:
+Completed: 2026-06-05T15:37:25.832Z
 
 ## Work log
 - Created: 2026-05-17T04:42:49.755Z
@@ -198,3 +198,35 @@ Castor Check Output SHA256: d270c0be584ffffb4144e689a7abe97a4ff09bc605d216a2ba7a
 - Updated PR Status: open
 - Validation: CODE-REVIEW transition gate: `LLM_MODE=true castor check` passed at commit `b6f3449e0055` (900s timeout).; Branch pushed: `origin/task/tools-09-bash-tool-background`.; PR created: https://github.com/ineersa/agent-core/pull/94.
 - Summary: Task moved to CODE-REVIEW. Full Castor quality gate passed during transition (900s timeout) at commit `b6f3449e0055`; branch `task/tools-09-bash-tool-background` pushed to origin; PR created: https://github.com/ineersa/agent-core/pull/94.
+
+## Task workflow update - 2026-06-05T15:37:25.832Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/tools-09-bash-tool-background into integration checkout.
+- Merge made by the 'ort' strategy.
+ .hatfield/settings.yaml                            |   7 +
+ config/hatfield.defaults.yaml                      |  20 +
+ config/services.yaml                               |  13 +
+ docs/settings.md                                   |  38 ++
+ src/CodingAgent/CLI/AgentCommand.php               |  57 ++
+ src/CodingAgent/Config/BashToolConfig.php          |  56 ++
+ src/CodingAgent/Config/ToolsConfig.php             |   3 +
+ src/CodingAgent/Tool/BackgroundProcessManager.php  |  44 ++
+ .../Tool/BashBackgroundPromptAdapterInterface.php  |  39 ++
+ .../Tool/BashBackgroundPromptDeclineAdapter.php    |  22 +
+ src/CodingAgent/Tool/BashTool.php                  | 393 ++++++++++++-
+ src/CodingAgent/Tool/ToolRegistry.php              | 104 +++-
+ src/CodingAgent/Tool/ToolRegistryInterface.php     |  50 +-
+ .../Controller/E2E/ControllerE2eTestCase.php       |   2 +-
+ tests/CodingAgent/Tool/BashToolTest.php            | 636 +++++++++++++++++++++
+ tests/CodingAgent/Tool/ToolRegistryTest.php        | 126 ++++
+ tests/Tui/E2E/TuiAgentSmokeTest.php                |   2 +-
+ tests/Tui/E2E/TuiStartupSnapshotTest.php           |   2 +-
+ 18 files changed, 1599 insertions(+), 15 deletions(-)
+ create mode 100644 src/CodingAgent/Config/BashToolConfig.php
+ create mode 100644 src/CodingAgent/Tool/BashBackgroundPromptAdapterInterface.php
+ create mode 100644 src/CodingAgent/Tool/BashBackgroundPromptDeclineAdapter.php
+ create mode 100644 tests/CodingAgent/Tool/BashToolTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/tools-09-bash-tool-background.
+- Pulled integration checkout: Already up to date..
+- Validation: Pre-merge PR check: https://github.com/ineersa/agent-core/pull/94 state=OPEN, mergeStateStatus=CLEAN, mergedAt=null, base=main, head=task/tools-09-bash-tool-background.; Integration checkout pre-merge status: clean on `main` tracking `origin/main`.
+- Summary: User requested completion of reviewed task `tools-09-bash-tool-background`. PR #94 was open and mergeable (`mergeStateStatus=CLEAN`); user request provided merge approval. Merging task branch into integration checkout and moving task to DONE.
