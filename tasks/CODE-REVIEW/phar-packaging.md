@@ -102,12 +102,12 @@ Create `tests/CodingAgent/Phar/PharSmokeTest.php` following the same pattern as 
 - castor check passes
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/phar-packaging
 Worktree: /home/ineersa/projects/agent-core-worktrees/phar-packaging
 Fork run: aur5mngapkz1
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/93
+PR Status: open
 Started: 2026-06-04T18:43:54.659Z
 Completed:
 
@@ -260,3 +260,16 @@ Completed:
 ## Task workflow update - 2026-06-05T00:26:14.748Z
 - Validation: Reviewer: APPROVED on current HEAD `cb131fc9`; no critical issues, no issues, no security notes; task can proceed to CODE-REVIEW.; `castor test`: OK. Rebuilt stale PHAR first (`/tmp/bin/hatfield.phar`, 5.9MB, timings copy=0.0s composer=1.4s box=1.3s total=2.8s); PHAR smokes OK (`list`, `about`, `agent --help`, writable-dir isolation); PHPUnit OK (1660 tests, 4907 assertions, 0 errors, 0 failures, 0 skipped).; `castor deptrac`: OK (violations=0, errors=0, uncovered=618, allowed=818).; `castor phpstan`: OK (errors=0, file_errors=0).; `castor cs-check`: OK (files_fixed=0).
 - Summary: Final reviewer subagent decision on current HEAD `cb131fc9`: APPROVED — no blockers; task can proceed to CODE-REVIEW. Reviewer verified the final rename commit and broader PHAR changeset, with only cosmetic non-blocking notes (commit subject typo and harmless `$resolved` scope note). Local task-to-pr validation completed successfully after final HEAD.
+Castor Check Status: passed
+Castor Check Commit: cb131fc92c202ce976082a7f6073f3402bdf18d8
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 900s
+Castor Check Completed: 2026-06-05T00:28:22.008Z
+Castor Check Output SHA256: 8773ab120b38b281b0eaa2028933e1e63b59214e9d9a67b9c3eba0778d6e4472
+
+## Task workflow update - 2026-06-05T00:28:26.131Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: cb131fc92c20.
+- Pushed task/phar-packaging to origin.
+- branch 'task/phar-packaging' set up to track 'origin/task/phar-packaging'.
+- Created PR: https://github.com/ineersa/agent-core/pull/93
