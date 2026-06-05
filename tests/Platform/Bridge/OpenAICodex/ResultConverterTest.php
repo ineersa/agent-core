@@ -216,6 +216,30 @@ final class ResultConverterTest extends TestCase
         $this->assertSame('final', $result->getContent());
     }
 
+    public function testConvertRefusalResult(): void
+    {
+        $converter = new ResultConverter();
+        $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('toArray')->willReturn([
+            'output' => [
+                [
+                    'type' => 'message',
+                    'role' => 'assistant',
+                    'content' => [[
+                        'type' => 'refusal',
+                        'refusal' => 'I cannot help with that request.',
+                    ]],
+                ],
+            ],
+        ]);
+
+        $result = $converter->convert(new RawHttpResult($httpResponse));
+
+        $this->assertInstanceOf(TextResult::class, $result);
+        $this->assertStringContainsString('refused to generate', $result->getContent());
+        $this->assertStringContainsString('I cannot help with that request.', $result->getContent());
+    }
+
     public function testContentFilterException(): void
     {
         $converter = new ResultConverter();

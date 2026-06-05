@@ -11,7 +11,6 @@ use Symfony\AI\Platform\Exception\RateLimitExceededException;
 use Symfony\AI\Platform\Exception\RuntimeException;
 use Symfony\AI\Platform\Model;
 use Symfony\AI\Platform\Result\MultiPartResult;
-use Symfony\AI\Platform\Result\RawHttpResult;
 use Symfony\AI\Platform\Result\RawResultInterface;
 use Symfony\AI\Platform\Result\ResultInterface;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
@@ -42,23 +41,23 @@ final class ResultConverter implements ResultConverterInterface
         return $model instanceof CodexModel;
     }
 
-    public function convert(RawResultInterface|RawHttpResult $result, array $options = []): ResultInterface
+    public function convert(RawResultInterface $result, array $options = []): ResultInterface
     {
         $response = $result->getObject();
 
         if (401 === $response->getStatusCode()) {
-            $errorMessage = json_decode($response->getContent(false), true)['error']['message'];
-            throw new AuthenticationException($errorMessage);
+            $body = json_decode($response->getContent(false), true);
+            throw new AuthenticationException($body['error']['message'] ?? 'Unauthorized');
         }
 
         if (400 === $response->getStatusCode()) {
-            $errorMessage = json_decode($response->getContent(false), true)['error']['message'] ?? 'Bad Request';
-            throw new BadRequestException($errorMessage);
+            $body = json_decode($response->getContent(false), true);
+            throw new BadRequestException($body['error']['message'] ?? 'Bad Request');
         }
 
         if (429 === $response->getStatusCode()) {
-            $errorMessage = json_decode($response->getContent(false), true)['error']['message'] ?? null;
-            throw new RateLimitExceededException(null, $errorMessage);
+            $body = json_decode($response->getContent(false), true);
+            throw new RateLimitExceededException(null, $body['error']['message'] ?? null);
         }
 
         if ($options['stream'] ?? false) {
@@ -127,7 +126,7 @@ final class ResultConverter implements ResultConverterInterface
         };
     }
 
-    private function convertStream(RawResultInterface|RawHttpResult $result): \Generator
+    private function convertStream(RawResultInterface $result): \Generator
     {
         $currentThinking = null;
 
@@ -202,6 +201,7 @@ final class ResultConverter implements ResultConverterInterface
             return;
         }
 
+        // Responses API messages contain exactly one content block per message.
         $content = array_pop($content);
         if ('refusal' === $content['type']) {
             yield new TextResult(\sprintf('Model refused to generate output: %s', $content['refusal']));
