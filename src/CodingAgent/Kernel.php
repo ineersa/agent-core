@@ -9,6 +9,13 @@ use Symfony\Component\HttpKernel\Kernel as BaseKernel;
 
 class Kernel extends BaseKernel
 {
+    // Runtime-writable directory names under the Hatfield project cwd.
+    // Never write to kernel.project_dir — it may point to a read-only
+    // PHAR or shared source checkout. These dirs are created on demand
+    // if they don't already exist.
+    private const string HATFIELD_CACHE_DIR = '.hatfield/cache';
+    private const string HATFIELD_LOG_DIR = '.hatfield/logs';
+
     /**
      * @return iterable<\Symfony\Component\HttpKernel\Bundle\BundleInterface>
      */
@@ -67,7 +74,7 @@ class Kernel extends BaseKernel
 
     public function getCacheDir(): string
     {
-        return $this->getProjectDir().'/var/cache/'.$this->environment;
+        return $this->resolveWritableDir('HATFIELD_CACHE_DIR', self::HATFIELD_CACHE_DIR).'/'.$this->environment;
     }
 
     public function getBuildDir(): string
@@ -77,6 +84,49 @@ class Kernel extends BaseKernel
 
     public function getLogDir(): string
     {
-        return $this->getProjectDir().'/var/log';
+        return $this->resolveWritableDir('HATFIELD_LOG_DIR', self::HATFIELD_LOG_DIR);
+    }
+
+    /**
+     * Return the runtime cwd resolved from HATFIELD_CWD or getcwd().
+     *
+     * The runtime cwd is where .hatfield/ settings, sessions, logs, cache,
+     * and the messenger DB live. It is NOT the app install root
+     * (kernel.project_dir), which may be a read-only PHAR path.
+     */
+    private function getRuntimeDir(): string
+    {
+        $cwd = getenv('HATFIELD_CWD');
+        if (false !== $cwd && '' !== $cwd) {
+            return $cwd;
+        }
+
+        $cwd = getcwd();
+        if (false !== $cwd) {
+            return $cwd;
+        }
+
+        throw new \RuntimeException('Unable to determine runtime working directory. Set HATFIELD_CWD or ensure getcwd() returns a valid path.');
+    }
+
+    /**
+     * Resolve a writable directory under the runtime cwd.
+     *
+     * Checks HATFIELD_{NAME}_DIR env override first. If the override is a
+     * relative path it is resolved against the runtime cwd. Falls back to
+     * a default path under .hatfield/.
+     */
+    private function resolveWritableDir(string $envName, string $default): string
+    {
+        $override = getenv($envName);
+        if (false !== $override && '' !== $override) {
+            if (str_starts_with($override, '/')) {
+                return $override;
+            }
+
+            return $this->getRuntimeDir().'/'.$override;
+        }
+
+        return $this->getRuntimeDir().'/'.$default;
     }
 }

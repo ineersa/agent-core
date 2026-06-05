@@ -31,7 +31,8 @@
         "symfony/expression-language": "^8.1",
         "doctrine/orm": "^3.6",
         "symfony/var-exporter": "^8.1",
-        "doctrine/doctrine-migrations-bundle": "^3.0"
+        "doctrine/doctrine-migrations-bundle": "^3.0",
+        "symfony/process": "^8.1"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.94",
@@ -48,7 +49,8 @@
             "Ineersa\\AgentCore\\": "src/AgentCore/",
             "Ineersa\\CodingAgent\\": "src/CodingAgent/",
             "Ineersa\\Hatfield\\ExtensionApi\\": "src/CodingAgent/ExtensionApi/",
-            "Ineersa\\Tui\\": "src/Tui/"
+            "Ineersa\\Tui\\": "src/Tui/",
+            "DoctrineMigrations\\": "migrations/"
         }
     },
     "autoload-dev": {

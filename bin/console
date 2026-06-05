@@ -8,6 +8,33 @@ use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Component\Console\Input\ArgvInput;
 use Symfony\Component\Dotenv\Dotenv;
 
+// Detect PHAR mode early. Box uses an internal PHAR alias (not Phar::running())
+// so we check __FILE__ for the phar:// scheme instead.
+// Inside a PHAR, __DIR__ points to phar://<alias>/bin which resolves correctly
+// for require_once. The .env file is never bundled and must be skipped.
+$isPhar = \str_starts_with(__FILE__, 'phar://');
+
+// ── Early PHAR platform check ────────────────────────────────────────────
+// Box build config sets check-requirements:false, so verify the required
+// PHP extensions are loaded before deep DBAL/Symfony errors obscure the
+// root cause. Source/dev execution skips this check entirely.
+if ($isPhar) {
+    $requiredExtensions = ['pdo_sqlite', 'mbstring', 'xml'];
+    $missing = [];
+    foreach ($requiredExtensions as $ext) {
+        if (!\extension_loaded($ext)) {
+            $missing[] = $ext;
+        }
+    }
+    if ([] !== $missing) {
+        \fwrite(STDERR, \sprintf(
+            "Error: Hatfield PHAR requires the following PHP extensions: %s\n",
+            \implode(', ', $missing),
+        ));
+        exit(1);
+    }
+}
+
 require_once __DIR__.'/../vendor/autoload.php';
 
 // ── Early --cwd resolution ───────────────────────────────────────────────
@@ -62,10 +89,19 @@ require_once __DIR__.'/../vendor/autoload.php';
     unset($args, $cwdValue, $cwdIndex, $resolved);
 }
 
-if (is_file(dirname(__DIR__).'/.env')) {
-    (new Dotenv())->bootEnv(dirname(__DIR__).'/.env');
+// In PHAR mode, .env is never bundled (no secrets in the archive).
+// Tolerate its absence gracefully — env vars should be set by the
+// parent process or system environment.
+if (!$isPhar) {
+    $envPath = dirname(__DIR__).'/.env';
+    if (is_file($envPath)) {
+        (new Dotenv())->bootEnv($envPath);
+    }
 }
 
-$kernel = new Kernel($_SERVER['APP_ENV'] ?? 'dev', (bool) ($_SERVER['APP_DEBUG'] ?? false));
+// Default APP_ENV to 'prod' because the PHAR is a distribution artefact.
+// Callers (e.g. Castor tasks, tests, development) may override APP_ENV
+// and APP_DEBUG via the process environment before launching the PHAR.
+$kernel = new Kernel($_SERVER['APP_ENV'] ?? 'prod', (bool) ($_SERVER['APP_DEBUG'] ?? false));
 $application = new Application($kernel);
 $application->run(new ArgvInput());

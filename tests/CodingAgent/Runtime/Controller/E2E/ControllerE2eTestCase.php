@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 
+use Ineersa\CodingAgent\Tests\Support\AgentTestExecutable;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 
@@ -99,8 +100,8 @@ abstract class ControllerE2eTestCase extends TestCase
 
     protected function spawnController(): void
     {
-        $consolePath = $this->projectDir.'/bin/console';
-        self::assertFileExists($consolePath, 'Console entry point not found');
+        [$php, $script] = AgentTestExecutable::command();
+        self::assertFileExists($script, 'Agent executable not found at '.$script);
 
         $descriptors = [
             0 => ['pipe', 'r'],
@@ -120,7 +121,7 @@ abstract class ControllerE2eTestCase extends TestCase
 
         $pipes = [];
         $process = @proc_open(
-            [\PHP_BINARY, $consolePath, 'agent', '--controller', '--cwd='.$this->tempDir],
+            [$php, $script, 'agent', '--controller', '--cwd='.$this->tempDir],
             $descriptors,
             $pipes,
             $this->tempDir,

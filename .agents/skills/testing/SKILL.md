@@ -20,6 +20,9 @@ castor phpstan [path]       # static analysis (optionally scoped to a path)
 castor phpstan:baseline     # regenerate phpstan baseline
 castor cs-fix [path]        # auto-fix coding style
 castor cs-check             # check coding style (dry-run)
+castor phar:build           # Build hatfield.phar at /tmp/bin/hatfield.phar
+castor phar:ensure           # Ensure PHAR exists (build if missing or stale)
+castor phar:clean            # Remove built hatfield.phar
 ```
 
 ## Test LLM
@@ -30,6 +33,25 @@ All E2E tests use `llama_cpp_test/test` (port 9052). This is a fast local model 
 
 - `#[Group('llm-real')]` — all tests that hit a real LLM endpoint
 - `#[Group('tui-e2e')]` — TUI tmux snapshot tests
+- `#[Group('phar')]` — PHAR smoke tests (PharSmokeTest)
+
+## PHAR-based testing
+
+Controller/TUI subprocess tests run against the built PHAR, not the source
+tree. Castor test tasks (`test:tui`, `test:llm-real`, `test:controller`)
+automatically call `phar:ensure` first and set `HATFIELD_BINARY_PATH` so
+`AgentTestExecutable` resolves the PHAR path. If PHAR build fails, these
+test tasks skip gracefully (PHAR ensure failure is non-fatal).
+
+Pure unit/integration tests (`castor test`) remain source-based and do not
+require PHAR. PHAR smoke tests (`#[Group('phar')]`) validate the built
+artifact boots and responds to basic commands.
+
+Run PHAR smoke tests manually:
+```bash
+castor phar:build
+HATFIELD_BINARY_PATH=/tmp/bin/hatfield.phar vendor/bin/phpunit --group phar
+```
 
 ## Isolation
 

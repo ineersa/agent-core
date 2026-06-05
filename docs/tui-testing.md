@@ -160,10 +160,17 @@ castor test:tui
 castor test:tui-update
 ```
 
+These tests run against the built PHAR, not the source tree. The `castor
+phar:ensure` prerequisite builds or validates the PHAR, and
+`HATFIELD_BINARY_PATH` is set so `AgentTestExecutable` resolves the PHAR
+path. If PHAR build fails, the test task skips gracefully.
+
 These are NOT included in `castor check` by default — they require
 tmux and are environment-sensitive. Run them explicitly when testing
 TUI rendering. Any intentional footer/header/layout change should be followed
 by `castor test:tui-update` and a review of the golden snapshot diff.
+
+Pure unit/integration tests (`castor test`) remain source-based.
 
 ### How it works
 

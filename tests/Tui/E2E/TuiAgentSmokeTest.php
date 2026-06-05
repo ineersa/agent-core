@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\E2E;
 
+use Ineersa\CodingAgent\Tests\Support\AgentTestExecutable;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
@@ -428,11 +429,13 @@ final class TuiAgentSmokeTest extends TestCase
 
     private function agentCommand(): string
     {
+        [$php, $script] = AgentTestExecutable::command();
+
         return \sprintf(
             'APP_ENV=dev HOME=%s %s %s agent --model=llama_cpp_test/test 2>&1',
             \escapeshellarg($this->testProjectDir.'/home'),
-            \escapeshellarg(\PHP_BINARY),
-            \escapeshellarg($this->projectRoot.'/bin/console'),
+            \escapeshellarg($php),
+            \escapeshellarg($script),
         );
     }
 

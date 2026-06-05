@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\E2E;
 
+use Ineersa\CodingAgent\Tests\Support\AgentTestExecutable;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -158,11 +159,13 @@ final class TuiStartupSnapshotTest extends TestCase
 
     private function agentCommand(): string
     {
+        [$php, $script] = AgentTestExecutable::command();
+
         return \sprintf(
             'APP_ENV=dev HOME=%s %s %s agent --model=llama_cpp_test/test --prompt="hello from tmux e2e" 2>&1; echo; echo "── TUI exited ──"; exec sleep 3600',
             \escapeshellarg($this->testProjectDir.'/home'),
-            \escapeshellarg(\PHP_BINARY),
-            \escapeshellarg($this->projectRoot.'/bin/console'),
+            \escapeshellarg($php),
+            \escapeshellarg($script),
         );
     }
 

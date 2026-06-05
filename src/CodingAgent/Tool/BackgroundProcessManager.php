@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
+use Doctrine\DBAL\Exception\TableNotFoundException;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
@@ -423,7 +424,21 @@ final class BackgroundProcessManager
      */
     public function shutdownCleanup(?string $sessionId = null): int
     {
-        $entities = $this->store->fetchAllUnfinished($sessionId);
+        try {
+            $entities = $this->store->fetchAllUnfinished($sessionId);
+        } catch (TableNotFoundException) {
+            // Database tables have not been created yet (e.g. during PHAR boot
+            // before migrations run, or for pure CLI commands like list/about
+            // that do not go through AgentCommand). No background processes can
+            // be running in this case.
+            $this->logger->debug('background_process.shutdown_no_table', [
+                'component' => 'background_process_manager',
+                'event_type' => 'shutdown_cleanup_table_not_found',
+                'session_id' => $sessionId,
+            ]);
+
+            return 0;
+        }
 
         $count = 0;
         foreach ($entities as $entity) {

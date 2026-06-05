@@ -43,14 +43,14 @@ services:
       tags: ['hatfield.tool_provider']
 
   Ineersa\CodingAgent\:
-    resource: '../src/CodingAgent/'
-    exclude: '../src/CodingAgent/ExtensionApi/'
+    resource: '%kernel.project_dir%/src/CodingAgent/**/*.php'
+    exclude: '%kernel.project_dir%/src/CodingAgent/ExtensionApi/**/*.php'
 
   Ineersa\AgentCore\:
-    resource: '../src/AgentCore/'
+    resource: '%kernel.project_dir%/src/AgentCore/**/*.php'
 
   Ineersa\Tui\:
-    resource: '../src/Tui/'
+    resource: '%kernel.project_dir%/src/Tui/**/*.php'
 
   # ─── Session stores — resolved via HatfieldSessionStore for path ───
 
@@ -142,13 +142,14 @@ services:
     calls:
       - registerShutdownHandler: []
 
-  # Startup database migrator — runs built-in doctrine:migrations:migrate once on startup.
-  # Uses the doctrine_migrations.migrate_command service directly (not a full Console
-  # Application) so migration execution avoids recursive Application::doRun() that
-  # blocks controller/TUI startup when stdout is a pipe.
+  # Startup database migrator — runs known migration classes at startup via DBAL.
+  # Uses the app-owned ApplicationMigrationExecutor instead of the Symfony
+  # doctrine:migrations:migrate console command to avoid phar:// filesystem
+  # scanning issues inside the PHAR. Dev doctrine:migrations commands are
+  # still available from the source checkout.
   Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator:
     arguments:
-      $migrateCommand: '@doctrine_migrations.migrate_command'
+      $executor: '@Ineersa\CodingAgent\Migrations\ApplicationMigrationExecutor'
 
   # CodingAgentImageCapabilityChecker — wraps HatfieldModelCatalog from AppConfig.
   Ineersa\CodingAgent\Tool\ImageProcessing\CodingAgentImageCapabilityChecker:
@@ -190,16 +191,34 @@ services:
       $sink: '@Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink'
       $stdoutSink: '@Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink'
 
-  # ─── App executable locator ───
+  # ─── App executable locator chain ───
   # Resolves the agent binary independently of the runtime working directory,
   # so messenger consumers and controller subprocesses always use the correct
   # binary regardless of --cwd or Hatfield project CWD.
+  #
+  # Ordered fallback:
+  #   1. ConfigExecutableLocator — HATFIELD_BINARY_PATH env override
+  #   2. PharExecutableLocator — current PHAR self-reference
+  #   3. SourceTreeExecutableLocator — source checkout with bin/console
+  Ineersa\CodingAgent\Runtime\Process\ConfigExecutableLocator:
+    arguments:
+      $runtimeCwd: '%app.cwd%'
+
+  Ineersa\CodingAgent\Runtime\Process\PharExecutableLocator: ~
+
   Ineersa\CodingAgent\Runtime\Process\SourceTreeExecutableLocator:
     arguments:
       $projectDir: '%kernel.project_dir%'
 
+  Ineersa\CodingAgent\Runtime\Process\ChainExecutableLocator:
+    class: Ineersa\CodingAgent\Runtime\Process\ChainExecutableLocator
+    arguments:
+      - '@Ineersa\CodingAgent\Runtime\Process\ConfigExecutableLocator'
+      - '@Ineersa\CodingAgent\Runtime\Process\PharExecutableLocator'
+      - '@Ineersa\CodingAgent\Runtime\Process\SourceTreeExecutableLocator'
+
   Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator:
-    alias: Ineersa\CodingAgent\Runtime\Process\SourceTreeExecutableLocator
+    alias: Ineersa\CodingAgent\Runtime\Process\ChainExecutableLocator
 
   # Centralized runtime process context for subprocess spawning.
   # Injected into JsonlProcessAgentSessionClient and ConsumerSupervisor.
@@ -244,6 +263,14 @@ services:
   # ─── Symfony AI Platform wiring ───
   # PlatformInterface reads Hatfield config from autowired AppConfig,
   # so no explicit arguments are needed here.
+
+  # Explicit service definition for the platform factory so the DI container
+  # can resolve the service ID during compilation. The class is also
+  # auto-registered by the resource import, but the explicit definition
+  # guarantees it survives when the PHAR resource path uses wildcard
+  # patterns (phar:// paths require **/*.php globs for reliable Symfony DI
+  # service discovery — bare directory paths register 0 services).
+  Ineersa\CodingAgent\Infrastructure\SymfonyAi\ConfiguredSymfonyAiPlatformFactory: ~
 
   Symfony\AI\Platform\PlatformInterface:
     factory: ['@Ineersa\CodingAgent\Infrastructure\SymfonyAi\ConfiguredSymfonyAiPlatformFactory', 'createPlatform']
