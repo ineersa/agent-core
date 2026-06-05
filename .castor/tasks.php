@@ -857,8 +857,12 @@ function run_agent(): void
     $session = 'hatfield-agent';
     $insideTmux = false !== getenv('TMUX');
 
+    // Force APP_ENV=prod — the PHAR is a production artifact with no dev
+    // dependencies. Inheriting APP_ENV=dev from Castor's .env loading would
+    // cause the PHAR to reuse stale source-checkout dev caches, which embed
+    // filesystem vendor paths that collide with the PHAR's bundled autoloader.
     $innerCmd = sprintf(
-        'cd %s && exec %s php %s agent',
+        'cd %s && APP_ENV=prod exec %s php %s agent',
         escapeshellarg($root),
         datadog_env_command(datadog_auto_enabled()),
         escapeshellarg($phar),
@@ -895,7 +899,7 @@ function run_agent_datadog(): void
     $insideTmux = false !== getenv('TMUX');
 
     $innerCmd = sprintf(
-        'cd %s && exec %s php %s agent',
+        'cd %s && APP_ENV=prod exec %s php %s agent',
         escapeshellarg($root),
         datadog_env_command(true),
         escapeshellarg($phar),

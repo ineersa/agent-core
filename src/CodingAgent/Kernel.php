@@ -74,7 +74,20 @@ class Kernel extends BaseKernel
 
     public function getCacheDir(): string
     {
-        return $this->resolveWritableDir('HATFIELD_CACHE_DIR', self::HATFIELD_CACHE_DIR).'/'.$this->environment;
+        $base = $this->resolveWritableDir('HATFIELD_CACHE_DIR', self::HATFIELD_CACHE_DIR).'/'.$this->environment;
+
+        // When running inside a PHAR, isolate the cache from source-checkout
+        // caches compiled at the same runtime CWD. A source-checkout project_dir
+        // and PHAR project_dir differ (filesystem vs phar:// URI), and stale
+        // source-checkout caches embed filesystem paths that collide with the
+        // PHAR's bundled vendor autoloader, causing Cannot-redeclare-class
+        // fatals in subprocess controllers.
+        if ($this->isPhar()) {
+            $pharHash = substr(md5(__FILE__), 0, 8);
+            $base .= '-'.$pharHash;
+        }
+
+        return $base;
     }
 
     public function getBuildDir(): string
@@ -85,6 +98,17 @@ class Kernel extends BaseKernel
     public function getLogDir(): string
     {
         return $this->resolveWritableDir('HATFIELD_LOG_DIR', self::HATFIELD_LOG_DIR);
+    }
+
+    /**
+     * Whether the current process is running inside a PHAR archive.
+     *
+     * Detects Box-compiled PHARs where __FILE__ starts with phar://.
+     * Used for cache isolation and writable-dir resolution.
+     */
+    private function isPhar(): bool
+    {
+        return str_starts_with(__FILE__, 'phar://');
     }
 
     /**
