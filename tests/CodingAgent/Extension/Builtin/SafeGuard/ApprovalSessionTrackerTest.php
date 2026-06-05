@@ -9,42 +9,27 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Tests for ApprovalSessionTracker — verifies in-memory pending/approved
- * state lifecycle and forced answer resolution.
+ * state lifecycle.
  */
 final class ApprovalSessionTrackerTest extends TestCase
 {
-    public function testMarkPendingAndHasPending(): void
+    public function testMarkPendingAndApproveByQuestionId(): void
     {
         $tracker = new ApprovalSessionTracker();
-        $this->assertFalse($tracker->hasPending('bash:rm -rf /tmp'));
+        $this->assertFalse($tracker->isApproved('bash:rm -rf /tmp'));
 
-        $tracker->markPending('bash:rm -rf /tmp', 'q-1', 'run-1');
-        $this->assertTrue($tracker->hasPending('bash:rm -rf /tmp'));
+        $tracker->markPending('q-1', 'bash:rm -rf /tmp');
+        $tracker->approveByQuestionId('q-1');
+
+        $this->assertTrue($tracker->isApproved('bash:rm -rf /tmp'));
     }
 
-    public function testForceAnswerResolvesOnFirstCall(): void
+    public function testApproveByQuestionIdForUnknownQuestionIsNoop(): void
     {
         $tracker = new ApprovalSessionTracker();
-        $tracker->markPending('bash:rm -rf /tmp', 'q-1', 'run-1');
-        $tracker->forceAnswer('bash:rm -rf /tmp', 'Allow once');
-
-        // First resolveAnswer returns the forced answer
-        $answer = $tracker->resolveAnswer('bash:rm -rf /tmp');
-        $this->assertSame('Allow once', $answer);
-
-        // Second resolve returns null (consumed)
-        $this->assertNull($tracker->resolveAnswer('bash:rm -rf /tmp'));
-    }
-
-    public function testForceAnswerRemovesPending(): void
-    {
-        $tracker = new ApprovalSessionTracker();
-        $tracker->markPending('bash:rm -rf /tmp', 'q-1', 'run-1');
-        $tracker->forceAnswer('bash:rm -rf /tmp', 'Allow once');
-
-        // After resolve, pending is gone
-        $tracker->resolveAnswer('bash:rm -rf /tmp');
-        $this->assertFalse($tracker->hasPending('bash:rm -rf /tmp'));
+        $tracker->approveByQuestionId('nonexistent');
+        // No error, nothing approved
+        $this->assertFalse($tracker->isApproved('key1'));
     }
 
     public function testApproveAndConsume(): void
@@ -65,42 +50,48 @@ final class ApprovalSessionTrackerTest extends TestCase
         $this->assertFalse($tracker->consumeApproval('bash:rm -rf /tmp'));
     }
 
-    public function testRemoveCleansUpAllStates(): void
+    public function testRemoveCleansUpApprovedState(): void
     {
         $tracker = new ApprovalSessionTracker();
-        $tracker->markPending('key1', 'q-1', 'run-1');
         $tracker->approve('key1');
-        $tracker->forceAnswer('key1', 'Deny');
+        $this->assertTrue($tracker->isApproved('key1'));
 
         $tracker->remove('key1');
 
-        $this->assertFalse($tracker->hasPending('key1'));
         $this->assertFalse($tracker->isApproved('key1'));
-        $this->assertNull($tracker->resolveAnswer('key1'));
+        $this->assertFalse($tracker->consumeApproval('key1'));
     }
 
-    public function testResolveAnswerWithoutEventReaderReturnsNull(): void
+    public function testRemoveCleansUpPendingState(): void
     {
         $tracker = new ApprovalSessionTracker();
-        $tracker->markPending('bash:rm -rf /tmp', 'q-1', 'run-1');
+        $tracker->markPending('q-1', 'key1');
+        $tracker->remove('key1');
 
-        // No event reader, no forced answer → null
-        $answer = $tracker->resolveAnswer('bash:rm -rf /tmp');
-        $this->assertNull($answer);
+        // Removing pending → approveByQuestionId should be a noop
+        $tracker->approveByQuestionId('q-1');
+        $this->assertFalse($tracker->isApproved('key1'));
     }
 
-    public function testResolveAnswerRemovesPendingRegardlessOfResult(): void
+    public function testRemoveByQuestionId(): void
     {
         $tracker = new ApprovalSessionTracker();
-        $tracker->markPending('bash:rm -rf /tmp', 'q-1', 'run-1');
+        $tracker->markPending('q-1', 'key1');
+        $tracker->removeByQuestionId('q-1');
 
-        $tracker->resolveAnswer('bash:rm -rf /tmp');
-        $this->assertFalse($tracker->hasPending('bash:rm -rf /tmp'));
+        $tracker->approveByQuestionId('q-1');
+        $this->assertFalse($tracker->isApproved('key1'));
     }
 
-    public function testResolveAnswerReturnsNullForUnknownKey(): void
+    public function testConsumeApprovalReturnsFalseForUnknownKey(): void
     {
         $tracker = new ApprovalSessionTracker();
-        $this->assertNull($tracker->resolveAnswer('nonexistent-key'));
+        $this->assertFalse($tracker->consumeApproval('nonexistent'));
+    }
+
+    public function testIsApprovedReturnsFalseForUnknownKey(): void
+    {
+        $tracker = new ApprovalSessionTracker();
+        $this->assertFalse($tracker->isApproved('nonexistent'));
     }
 }

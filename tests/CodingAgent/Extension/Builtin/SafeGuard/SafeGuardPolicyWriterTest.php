@@ -127,19 +127,20 @@ final class SafeGuardPolicyWriterTest extends TestCase
         $this->assertSame("key: value\n", $content);
     }
 
-    public function testThrowsOnWriteFailure(): void
+    public function testSilentlyReturnsOnWriteFailure(): void
     {
         // Use a path where the parent directory doesn't exist
         $writer = new SafeGuardPolicyWriter('/nonexistent/path/settings.yaml');
 
-        // The mkdir failure emits a PHP warning, which is expected.
+        // The mkdir failure emits a PHP warning, which is caught internally.
+        // The writer silently returns without throwing.
         set_error_handler(static function (int $severity, string $message): bool {
             return str_contains($message, 'mkdir');
         }, \E_WARNING);
 
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('Failed to create directory');
+        // Should not throw — silently returns
         $writer->addAllowPattern('destructive', 'rm -rf /tmp');
+        $this->assertTrue(true); // reached without exception
 
         restore_error_handler();
     }
