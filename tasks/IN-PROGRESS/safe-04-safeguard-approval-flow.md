@@ -604,3 +604,7 @@ Castor Check Output SHA256: d8a14786d0d604503009cfa92106210b3e0dca4cc12d39d2ef44
 ## Task workflow update - 2026-06-05T23:00:03.684Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: Task-review-iterate: user/manual smoke found `castor run:agent` does not start after SAFE-04. Reproduced in worktree logs: PHAR `/tmp/bin/hatfield.phar` version 73574244 reuses stale `.hatfield/cache/prod-ce27bacc` container compiled for older `TickPollListener` constructor, causing `ArgumentCountError` (1 arg passed, 3 expected). PR #79 has no GitHub review comments; this is manual smoke/code-review feedback. Moving back to IN-PROGRESS for forked fix.
+
+## Task workflow update - 2026-06-05T23:15:56.151Z
+- Validation: reviewer subagent on HEAD 7a6fa754: APPROVE WITH SUGGESTIONS; no critical/bug/security blockers
+- Summary: Reviewer subagent checked PHAR cache invalidation fix commit 7a6fa754. Final decision: APPROVE WITH SUGGESTIONS; no critical issues, no bugs, no security blockers. Reviewer confirmed the core fix correctly changes PHAR cache suffix from stable md5(__FILE__) to content-based hash_file('sha256', physical PHAR path), with Box 4 fallback and fail-loud error handling. Remaining suggestions are non-blocking polish: comment/remove minor divergence from PharExecutableLocator is_file guard, slightly clarify fallback error message, make phar_smoke() no-cache-dir case a hard failure, add exact hash match assertion to PharSmokeTest, and optional memoization if PHAR boot becomes slow.
