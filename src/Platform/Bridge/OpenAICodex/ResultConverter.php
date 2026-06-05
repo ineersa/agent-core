@@ -60,7 +60,7 @@ final class ResultConverter implements ResultConverterInterface
             throw new RateLimitExceededException(null, $body['error']['message'] ?? null);
         }
 
-        if ($options['stream'] ?? false) {
+        if (true === ($options['stream'] ?? false)) {
             return new StreamResult($this->convertStream($result));
         }
 
@@ -103,7 +103,7 @@ final class ResultConverter implements ResultConverterInterface
                 $results[] = $result;
             }
         }
-        if ($toolCallResult) {
+        if (null !== $toolCallResult) {
             $results[] = $toolCallResult;
         }
 
@@ -161,7 +161,7 @@ final class ResultConverter implements ResultConverterInterface
 
             [$toolCallResult] = $this->extractFunctionCalls($event['response'][self::KEY_OUTPUT] ?? []);
 
-            if ($toolCallResult && 'response.completed' === $type) {
+            if (null !== $toolCallResult && 'response.completed' === $type) {
                 yield new ToolCallComplete($toolCallResult->getContent());
             }
         }
@@ -182,7 +182,7 @@ final class ResultConverter implements ResultConverterInterface
             }
         }
 
-        $toolCallResult = $functionCalls ? new ToolCallResult(
+        $toolCallResult = [] !== $functionCalls ? new ToolCallResult(
             array_map($this->convertFunctionCall(...), $functionCalls)
         ) : null;
 

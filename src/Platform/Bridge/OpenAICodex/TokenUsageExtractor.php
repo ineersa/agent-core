@@ -12,7 +12,7 @@ final class TokenUsageExtractor implements TokenUsageExtractorInterface
 {
     public function extract(RawResultInterface $rawResult, array $options = []): ?TokenUsage
     {
-        if ($options['stream'] ?? false) {
+        if (true === ($options['stream'] ?? false)) {
             return null;
         }
 
