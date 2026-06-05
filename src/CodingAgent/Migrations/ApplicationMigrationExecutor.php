@@ -188,8 +188,8 @@ final class ApplicationMigrationExecutor
         // Collect SQL via the public AbstractMigration::getSql() after
         // calling up(). The migration populates its planned SQL list via
         // addSql() calls inside up(); getSql() is the public accessor.
-        $schemaBefore = $this->createEmptySchema();
-        $migration->up($schemaBefore);
+        $migrationSchema = $this->createEmptySchema();
+        $migration->up($migrationSchema);
 
         $plannedSql = $migration->getSql();
 
@@ -198,7 +198,7 @@ final class ApplicationMigrationExecutor
             // object manipulation (tables/sequences/namespaces) without addSql().
             // Such migrations are not supported by this PHAR-safe executor;
             // migrations must use addSql() to produce explicit SQL.
-            if ($this->hasSchemaChanges($schemaBefore)) {
+            if ($this->hasSchemaChanges($migrationSchema)) {
                 throw new \RuntimeException(\sprintf('Migration %s used Schema object manipulation without addSql(). Schema-based migrations are not supported by the PHAR-safe startup executor. Use addSql() to produce explicit SQL statements.', $versionId));
             }
 
