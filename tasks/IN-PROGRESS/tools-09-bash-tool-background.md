@@ -87,7 +87,7 @@ Important design update: do **not** start bash as an unmanaged foreground `Symfo
 Status: IN-PROGRESS
 Branch: task/tools-09-bash-tool-background
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-09-bash-tool-background
-Fork run: f9bcl8iphu1w
+Fork run: 4qczwp4pfffp
 PR URL:
 PR Status:
 Started: 2026-05-31T18:06:23.023Z
@@ -121,3 +121,7 @@ Completed:
 - Recorded fork run: f9bcl8iphu1w
 - Validation: Verified worktree status clean on branch `task/tools-09-bash-tool-background`.; Verified HEAD commit: `85eb8625 Merge origin/main into task/tools-09-bash-tool-background`.; Verified focused diff vs main: 9 files, 1066 insertions, 2 deletions (TOOLS-09 implementation only).; Fork validation reported: `composer install --prefer-dist --no-interaction` OK; `castor deptrac` OK (0 violations, 0 errors); `castor phpstan` OK (0 errors, 0 file_errors); `castor cs-check` OK (files_fixed=0); `castor test --filter=BashTool` OK (18 tests, 56 assertions); `castor test` OK (1677 tests, 4959 assertions).; Full `castor check` intentionally not run in implementation phase per workflow/user instructions.
 - Summary: Revival fork `f9bcl8iphu1w` completed. Verified latest worktree HEAD `85eb8625` (`Merge origin/main into task/tools-09-bash-tool-background`) and clean worktree. The fork merged current `origin/main` into the stale task branch, resolved one `config/services.yaml` conflict, adapted TOOLS-09 to current main APIs (ORM-backed `ProcessStore`, `BackgroundProcess` entity, `BackgroundProcessStatusEnum`), and rewrote `BashToolTest` to use the kernel/container-backed ORM testing pattern. Diff vs current main remains focused on 9 TOOLS-09 files: `.hatfield/settings.yaml`, `config/hatfield.defaults.yaml`, `config/services.yaml`, `BashToolConfig`, `ToolsConfig`, prompt adapter interface/default adapter, `BashTool`, and `BashToolTest`. Worktree is clean; fork did not push or open PR.
+
+## Task workflow update - 2026-06-05T01:11:44.622Z
+- Recorded fork run: 4qczwp4pfffp
+- User requested that the new `bash` tool not be included in real LLM tests, and proposed adding CLI parameters `--tools` and `--tools-excluded` with tests always passing `bash` excluded. Launched implementation fork `4qczwp4pfffp` with model `deepseek/deepseek-v4-pro` to add per-run tool filtering options, wire them into tool registry/toolbox exposure (not model-visible schema), make real LLM/controller/TUI subprocess tests exclude `bash` by default, add focused tests/docs as appropriate, run focused Castor validation, commit, and leave the worktree clean. Fork instructed not to push, open PR, or run full `castor check`.
