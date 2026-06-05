@@ -278,7 +278,6 @@ class QuestionControllerTest extends TestCase
     private function invokeBuildItems(QuestionRequest $request): array
     {
         $ref = new \ReflectionMethod($this->controller, 'buildItems');
-        $ref->setAccessible(true);
 
         /** @var list<array{value: string, label: string, description?: string}> $result */
         $result = $ref->invoke($this->controller, $request);

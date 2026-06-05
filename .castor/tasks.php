@@ -141,13 +141,13 @@ function test(string $filter = ''): void
     }
 
     if (!is_llm_mode()) {
-        run($cmd.' --fail-on-risky --colors=always');
+        run($cmd.' '.phpunit_strict_issue_flags().' --colors=always');
 
         return;
     }
 
     $junitPath = report_path('phpunit.junit.xml');
-    $process = run_quiet_command($cmd.' --colors=never --no-progress --fail-on-risky --fail-on-phpunit-notice --display-phpunit-notices --display-warnings --log-junit '.$junitPath);
+    $process = run_quiet_command($cmd.' '.phpunit_strict_issue_flags().' --colors=never --no-progress --log-junit '.$junitPath);
     persist_process_output($process, 'phpunit.log');
 
     $summary = summarize_junit_xml($junitPath);
@@ -626,12 +626,12 @@ function test_tui(): void
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
     if (is_llm_mode()) {
-        run_quality_step('test:tui', $pharEnv.'vendor/bin/phpunit --fail-on-risky --group tui-e2e', 'phpunit-tui.junit.xml', 'phpunit-tui.log');
+        run_quality_step('test:tui', $pharEnv.'vendor/bin/phpunit --group tui-e2e', 'phpunit-tui.junit.xml', 'phpunit-tui.log');
 
         return;
     }
 
-    run($pharEnv.'vendor/bin/phpunit --fail-on-risky --group tui-e2e --colors=always');
+    run($pharEnv.'vendor/bin/phpunit '.phpunit_strict_issue_flags().' --group tui-e2e --colors=always');
 }
 
 /**
@@ -659,12 +659,12 @@ function test_llm_real(): void
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
     if (is_llm_mode()) {
-        run_quality_step('test:llm-real', $pharEnv.'LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit --fail-on-risky --group llm-real', 'phpunit-llm-real.junit.xml', 'phpunit-llm-real.log');
+        run_quality_step('test:llm-real', $pharEnv.'LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit --group llm-real', 'phpunit-llm-real.junit.xml', 'phpunit-llm-real.log');
 
         return;
     }
 
-    run($pharEnv.'LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit --fail-on-risky --group llm-real --colors=always');
+    run($pharEnv.'LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit '.phpunit_strict_issue_flags().' --group llm-real --colors=always');
 }
 
 /**
@@ -691,12 +691,12 @@ function test_controller(): void
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
     if (is_llm_mode()) {
-        run_quality_step('test:controller', $pharEnv.'LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit --fail-on-risky --filter ControllerSmokeTest', 'phpunit-controller.junit.xml', 'phpunit-controller.log');
+        run_quality_step('test:controller', $pharEnv.'LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit --filter ControllerSmokeTest', 'phpunit-controller.junit.xml', 'phpunit-controller.log');
 
         return;
     }
 
-    run($pharEnv.'LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit --fail-on-risky --filter ControllerSmokeTest --colors=always');
+    run($pharEnv.'LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit '.phpunit_strict_issue_flags().' --filter ControllerSmokeTest --colors=always');
 }
 
 #[AsTask(name: 'test:tui-update', description: 'Run TUI e2e tests and update golden snapshots')]
@@ -712,12 +712,12 @@ function test_tui_update(): void
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
     if (is_llm_mode()) {
-        run_quality_step('test:tui-update', $pharEnv.'HATFIELD_UPDATE_SNAPSHOTS=1 vendor/bin/phpunit --fail-on-risky --group tui-e2e', 'phpunit-tui-update.junit.xml', 'phpunit-tui-update.log');
+        run_quality_step('test:tui-update', $pharEnv.'HATFIELD_UPDATE_SNAPSHOTS=1 vendor/bin/phpunit --group tui-e2e', 'phpunit-tui-update.junit.xml', 'phpunit-tui-update.log');
 
         return;
     }
 
-    run($pharEnv.'HATFIELD_UPDATE_SNAPSHOTS=1 vendor/bin/phpunit --fail-on-risky --group tui-e2e --colors=always');
+    run($pharEnv.'HATFIELD_UPDATE_SNAPSHOTS=1 vendor/bin/phpunit '.phpunit_strict_issue_flags().' --group tui-e2e --colors=always');
 }
 
 /**
@@ -1158,13 +1158,28 @@ function phpunit_risky_summary(string $logPath): string
     return $excerpt;
 }
 
+/**
+ * Strict PHPUnit flags applied to every Castor PHPUnit invocation (both
+ * LLM and interactive modes) so deprecations, notices, warnings, risky
+ * tests, and PHPUnit diagnostic issues produce non-zero exits rather
+ * than being silently tolerated.
+ *
+ * PHPUnit 13 supports --fail-on-all-issues --display-all-issues which
+ * covers every category (risky, warnings, notices, deprecations,
+ * PHPUnit-internal deprecations/notices/warnings).
+ */
+function phpunit_strict_issue_flags(): string
+{
+    return '--fail-on-all-issues --display-all-issues';
+}
+
 function run_quality_step(string $stepName, string $command, string $junitFilename, string $logFilename): void
 {
     $junitPath = report_path($junitFilename);
     $logPath = report_path($logFilename);
     @mkdir(dirname($junitPath), 0755, true);
 
-    $process = run_quiet_command($command.' --colors=never --no-progress --log-junit='.$junitPath);
+    $process = run_quiet_command($command.' '.phpunit_strict_issue_flags().' --colors=never --no-progress --log-junit='.$junitPath);
     persist_process_output($process, $logFilename);
 
     $summary = summarize_junit_xml($junitPath);
