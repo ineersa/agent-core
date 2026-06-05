@@ -135,3 +135,10 @@ All Castor checks pass: test (25/25), deptrac (0 violations), phpstan (0 errors)
 - PHPStan fix fork tm1rv0k6lqlt completed: 5 strict-type errors fixed, committed d25c1f7c
 - Fast Castor validation: test ✅ deptrac ✅ phpstan ✅ cs-check ✅
 - Implementation phase complete — ready for task-to-pr
+
+## Task workflow update - 2026-06-05T23:58:08.777Z
+- Validation: castor test → 25 tests, 91 assertions, 0 failures; castor deptrac → violations=0, errors=0; castor phpstan → errors=0, file_errors=0; castor cs-check → files_fixed=0
+- Summary: Second review round: APPROVE WITH SUGGESTIONS. One EDGE CASE fixed (ContentFilterException null fallback). Commit 29a5f325. All Castor checks pass: test ✅ deptrac ✅ phpstan ✅ cs-check ✅. Ready for CODE-REVIEW.
+- Re-review: APPROVE WITH SUGGESTIONS — 0 CRITICAL, 0 BUG, 1 EDGE CASE (ContentFilterException missing ?? fallback), rest NTH
+- Fork q7lwxi3uk4ze fixed ContentFilterException fallback, committed 29a5f325
+- Castor validation: test ✅ deptrac ✅ phpstan ✅ cs-check ✅
