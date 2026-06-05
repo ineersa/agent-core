@@ -105,7 +105,7 @@ Create `tests/CodingAgent/Phar/PharSmokeTest.php` following the same pattern as 
 Status: IN-PROGRESS
 Branch: task/phar-packaging
 Worktree: /home/ineersa/projects/agent-core-worktrees/phar-packaging
-Fork run: aur5mngapkz1
+Fork run: ieupyrxuq2tz
 PR URL: https://github.com/ineersa/agent-core/pull/93
 PR Status: open
 Started: 2026-06-04T18:43:54.659Z
@@ -277,3 +277,7 @@ Castor Check Output SHA256: 8773ab120b38b281b0eaa2028933e1e63b59214e9d9a67b9c3eb
 ## Task workflow update - 2026-06-05T00:31:31.389Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: PR review iteration requested by user: PR is otherwise acceptable, but documentation is missing. Moving back to IN-PROGRESS to add/update docs and applicable agent skill/test guidance before returning to code review.
+
+## Task workflow update - 2026-06-05T00:31:55.251Z
+- Recorded fork run: ieupyrxuq2tz
+- Launched documentation fork `ieupyrxuq2tz` with model `deepseek/deepseek-v4-pro` to address PR review gap: add/update PHAR packaging documentation and applicable testing skill guidance. Scope includes documenting `/tmp/bin/hatfield.phar`, Castor `phar:*` commands, staging/toolchain architecture, runtime cwd and `.hatfield` writable dirs, test/run PHAR usage via `HATFIELD_BINARY_PATH`, startup migration behavior without extraction/console command, non-goals, and troubleshooting.
