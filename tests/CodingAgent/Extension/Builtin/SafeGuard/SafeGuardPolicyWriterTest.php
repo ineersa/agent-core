@@ -84,7 +84,7 @@ final class SafeGuardPolicyWriterTest extends TestCase
         $this->assertStringContainsString('/etc/hosts', $content);
     }
 
-    public function testDoesNotOverwriteUnparseableFile(): void
+    public function testTreatsUnparseableYamlAsEmpty(): void
     {
         file_put_contents(
             $this->settingsPath,

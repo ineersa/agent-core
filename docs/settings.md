@@ -490,6 +490,7 @@ Settings are read at extension load time through
 | `allow_destructive_in_paths` | list | `[]` | Reserved for serialization compatibility. Not currently wired to classification logic. |
 | `protected_read_patterns` | list | `[]` | Additional filename/path patterns requiring confirmation to read. Added **on top** of built-in defaults — defaults cannot be removed. |
 | `dangerous_command_patterns` | list | `[]` | Extra command substrings treated as dangerous, added to built-in regexes. |
+| `auto_deny_in_noninteractive` | bool | `true` | When `true`, noninteractive/headless/messenger-worker mode blocks policy-relaxable operations instead of requesting HITL approval. Set to `false` for controller/TUI/testing flows where answers can be supplied. |
 
 **Example:**
 
@@ -510,6 +511,7 @@ extensions:
                 - .env.production
             dangerous_command_patterns:
                 - python -c "import os"
+            auto_deny_in_noninteractive: true
 ```
 
 ### `ai.default_model`
