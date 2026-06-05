@@ -619,6 +619,13 @@ final class BashToolTest extends IsolatedKernelTestCase
 
 /**
  * Test-only prompt adapter that always declines.
+ *
+ * This is a test-local duplicate of the production
+ * BashBackgroundPromptDeclineAdapter. It exists to keep test code
+ * independent of production defaults — per AGENTS.md, test helpers
+ * belong in tests. The behavior is identical, but wiring a different
+ * class in each test function is simpler than binding the production
+ * adapter as a default and overriding it per test.
  */
 final class BashToolDeclineAdapter implements BashBackgroundPromptAdapterInterface
 {

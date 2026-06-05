@@ -138,6 +138,12 @@ services:
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 
+  # BashTool — TOOLS-09 registry-backed bash execution with foreground supervision.
+  # The prompt adapter defaults to BashBackgroundPromptDeclineAdapter (always
+  # declines backgrounding). TOOLS-09B should bind BashBackgroundPromptAdapterInterface
+  # explicitly to a production runtime/TUI bridge implementation in this file.
+  Ineersa\CodingAgent\Tool\BashTool: ~
+
   # BackgroundProcess store — uses Doctrine ORM EntityManager,
   # no custom normalizer. Schema is managed by Doctrine migrations.
   # ProcessStore and ProcessLifecycle are autowired by Symfony DI.

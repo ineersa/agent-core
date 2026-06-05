@@ -169,11 +169,12 @@ interface ToolRegistryInterface
     public function activeToolNames(): array;
 
     /**
-     * Return active tool definitions as immutable snapshots.
+     * Return active tool definitions as immutable value objects.
      *
      * Permanent tools first (registration order), then dynamic tools
-     * (insertion order). Returns copies of internal DTOs so callers
-     * cannot mutate registry state.
+     * (insertion order). ToolDefinitionDTOs are readonly immutable value
+     * objects — callers receive the canonical instance and cannot mutate
+     * registry state.
      *
      * @return list<ToolDefinitionDTO>
      */
@@ -182,8 +183,8 @@ interface ToolRegistryInterface
     /**
      * Look up a single tool definition by name.
      *
-     * Searches permanent tools first, then dynamic tools. Returns an
-     * immutable snapshot copy, not an internal reference.
+     * Searches permanent tools first, then dynamic tools. Returns the
+     * canonical immutable ToolDefinitionDTO directly, not a copy.
      *
      * @return ToolDefinitionDTO|null The definition, or null if no tool
      *                                with the given name is registered

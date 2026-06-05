@@ -114,13 +114,14 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
             while (true) {
                 // 1. Cooperative cancellation check from ambient ToolContext.
                 //
-                // The process is stopped, but the returned message is discarded:
+                // The process is stopped, but the return value is discarded:
                 // ToolRuntime::run() throws a RuntimeException for stale results
                 // when it detects cancellation after the callback returns (see
                 // src/AgentCore/Application/Handler/ToolExecutor.php which also
                 // converts post-execution cancellation to an error result).
-                // The meaningful work here is stop() + structured log — return
-                // value only serves local control flow.
+                // The meaningful work here is stop() + structured log; the
+                // return value only serves local control flow and is never
+                // user-visible.
                 if (null !== $cancelToken && $cancelToken->isCancellationRequested()) {
                     $this->manager->stop($pid, $sessionId);
 
@@ -130,7 +131,7 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                         'process_pid' => $pid,
                     ]);
 
-                    return 'cancelled'; // discarded by ToolRuntime; meaningful action is stop() above
+                    return ''; // discarded by ToolRuntime; meaningful action is stop() above
                 }
 
                 // 2. Monotonic timeout deadline

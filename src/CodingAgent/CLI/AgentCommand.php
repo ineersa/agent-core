@@ -374,20 +374,28 @@ final class AgentCommand
         }
 
         if ('' !== $tools) {
-            $names = array_filter(
-                array_map('\trim', explode(',', $tools)),
-                static fn (string $n): bool => '' !== $n,
-            );
-            $this->toolRegistry->setAllowedToolNames(array_values($names));
+            $this->toolRegistry->setAllowedToolNames(self::parseToolNameList($tools));
         }
 
         if ('' !== $toolsExcluded) {
-            $names = array_filter(
-                array_map('\trim', explode(',', $toolsExcluded)),
-                static fn (string $n): bool => '' !== $n,
-            );
-            $this->toolRegistry->setExcludedToolNames(array_values($names));
+            $this->toolRegistry->setExcludedToolNames(self::parseToolNameList($toolsExcluded));
         }
+    }
+
+    /**
+     * Parse a comma-separated tool name list into a deduplicated array.
+     *
+     * Trims whitespace around each entry, drops empty tokens, and
+     * preserves insertion order. Empty input yields an empty list.
+     *
+     * @return list<string>
+     */
+    private static function parseToolNameList(string $raw): array
+    {
+        return array_values(array_filter(
+            array_map('\trim', explode(',', $raw)),
+            static fn (string $n): bool => '' !== $n,
+        ));
     }
 
     private function resolveClient(string $transport): AgentSessionClient
