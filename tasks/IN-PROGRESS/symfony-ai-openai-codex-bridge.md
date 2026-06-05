@@ -83,14 +83,21 @@ New layer `OpenAICodexPlatform` → depends only on `Symfony\AI\Platform` + `Sym
 - castor deptrac + castor phpstan pass
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/symfony-ai-openai-codex-bridge
+Worktree: /home/ineersa/projects/agent-core-worktrees/symfony-ai-openai-codex-bridge
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-05T23:04:09.780Z
 Completed:
 
 ## Work log
 - Created: 2026-06-05T22:55:54.191Z
+
+## Task workflow update - 2026-06-05T23:04:09.780Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/symfony-ai-openai-codex-bridge.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/symfony-ai-openai-codex-bridge.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/symfony-ai-openai-codex-bridge.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/symfony-ai-openai-codex-bridge.
