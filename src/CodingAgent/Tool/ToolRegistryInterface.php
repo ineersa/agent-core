@@ -122,12 +122,6 @@ interface ToolRegistryInterface
     public function permanentGuidelines(): array;
 
     /**
-     * Return all active tool names (permanent + dynamic) in deterministic
-     * order (permanent first, then dynamic, each in insertion order).
-     *
-     * @return list<string>
-     */
-    /**
      * Set the allowed tool names (allowlist).
      *
      * When non-empty, only tools whose name is in this set are visible
@@ -167,6 +161,9 @@ interface ToolRegistryInterface
     public function excludedToolNames(): array;
 
     /**
+     * Return all active tool names (permanent + dynamic) in deterministic
+     * order (permanent first, then dynamic, each in insertion order).
+     *
      * @return list<string>
      */
     public function activeToolNames(): array;

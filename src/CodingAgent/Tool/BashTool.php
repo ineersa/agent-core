@@ -39,6 +39,15 @@ use Psr\Log\LoggerInterface;
  *   - timeout (optional int): explicit timeout in seconds
  *
  * No model-controlled run_in_background parameter.
+ *
+ * ## Safety note: raw shell execution
+ *
+ * This tool intentionally executes the model-provided command string directly
+ * via bash -c. That is the tool's purpose — giving the model a real shell.
+ * Because of this, bash is excluded from real-LLM E2E tests by default
+ * (--tools-excluded=bash) unless a test specifically needs to drive it.
+ * The caller (AgentCommand) controls tool exposure per run through
+ * --tools / --tools-excluded CLI options.
  */
 final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterface
 {
@@ -108,16 +117,18 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                         'process_pid' => $pid,
                     ]);
 
+                    $capped = $this->outputCap->process($partialOutput);
+
                     $result = 'Tool execution cancelled.';
-                    if ('' !== $partialOutput) {
-                        $result .= "\n\nPartial output:\n".$partialOutput;
+                    if ('' !== $capped) {
+                        $result .= "\n\nPartial output:\n".$capped;
                     }
 
                     return $result;
                 }
 
                 // 2. Monotonic timeout deadline
-                if (null !== $deadline && hrtime(true) > $deadline) {
+                if (hrtime(true) > $deadline) {
                     $this->manager->stop($pid, $sessionId);
                     $partialOutput = $this->readOutput($pid, $sessionId);
                     $capped = $this->outputCap->process($partialOutput);
@@ -195,7 +206,7 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
     {
         return new ToolDefinitionDTO(
             name: 'bash',
-            description: 'Execute a shell command with timeout. The command runs until completion, hits the timeout, or is cancelled. Long-running commands may be offered to move to background after 30 seconds.',
+            description: \sprintf('Execute a shell command with timeout. The command runs until completion, hits the timeout, or is cancelled. Long-running commands may be offered to move to background after %d seconds.', $this->config->backgroundPromptThresholdSeconds),
             parametersJsonSchema: [
                 'type' => 'object',
                 'properties' => [
@@ -219,7 +230,7 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                 'Use bash for running shell commands, scripts, build tools, and git operations.',
                 'For file operations such as reading, writing, editing, or viewing files, prefer the dedicated read/write/edit/view_image tools instead of bash cat/echo/editor pipelines.',
                 'Commands run until completion. Use the optional timeout parameter for commands that may hang (e.g., network operations, long builds).',
-                'Long-running commands (over 30 seconds) may be offered to move to background. If backgrounded, use bg_status log to view output and bg_status stop to terminate.',
+                \sprintf('Long-running commands (over %d seconds) may be offered to move to background. If backgrounded, use bg_status log to view output and bg_status stop to terminate.', $this->config->backgroundPromptThresholdSeconds),
                 'The command string is passed directly to bash -c. Use proper escaping for special characters.',
                 'Output is capped to prevent excessively large responses. Very large output may be truncated and saved to a file for inspection.',
             ],
@@ -271,7 +282,10 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
     }
 
     /**
-     * Find a process entity by PID from the manager's list.
+     * Find a process entity by PID with refreshed status.
+     *
+     * Delegates to BackgroundProcessManager::find() which does a single
+     * entity fetch (O(1)) rather than a full list() scan (O(n)).
      *
      * @param int         $pid       Process PID to find
      * @param string|null $sessionId Session filter
@@ -280,15 +294,7 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
      */
     private function findProcessRecord(int $pid, ?string $sessionId): ?BackgroundProcess
     {
-        $entities = $this->manager->list($sessionId);
-
-        foreach ($entities as $entity) {
-            if ($entity->pid === $pid) {
-                return $entity;
-            }
-        }
-
-        return null;
+        return $this->manager->find($pid, $sessionId);
     }
 
     /**
@@ -334,6 +340,17 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
         $exitCode = $entity->exitCode;
         $status = $entity->status->value;
 
+        // Check if this was a user-requested stop (bg_status stop)
+        // before treating exit code 0 as normal success, so a
+        // user-stopped command can never be misreported as successful.
+        if ($entity->stoppedByUser) {
+            return \sprintf(
+                "Command was stopped (exit code %d).\n\nOutput:\n%s",
+                $exitCode ?? -1,
+                $capped,
+            );
+        }
+
         // Normal successful completion
         if (0 === $exitCode) {
             $this->logger->info('bash_tool.completed', [
@@ -346,7 +363,7 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
             return $capped;
         }
 
-        // Non-zero exit code or stopped/finished unclean status
+        // Non-zero exit code or finished/unclean status
         $this->logger->info('bash_tool.failed', [
             'component' => 'tool.bash',
             'event_type' => 'bash_tool.failed',
@@ -354,15 +371,6 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
             'exit_code' => $exitCode,
             'status' => $status,
         ]);
-
-        // Check if this was a user-requested stop (bg_status stop)
-        if ($entity->stoppedByUser) {
-            return \sprintf(
-                "Command was stopped (exit code %d).\n\nOutput:\n%s",
-                $exitCode ?? -1,
-                $capped,
-            );
-        }
 
         // Build status suffix for non-zero / unclean exits
         $statusSuffix = '';

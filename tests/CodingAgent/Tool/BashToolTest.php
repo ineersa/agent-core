@@ -163,6 +163,15 @@ final class BashToolTest extends IsolatedKernelTestCase
 
     /* ── Cancellation ── */
 
+    /**
+     * Cancellation is detected in the supervision loop on the second
+     * isCancellationRequested() call. The first call is ToolRuntime's
+     * pre-check before entering the callback, which must not trigger
+     * cancellation (otherwise the command would never start).
+     *
+     * The $callCount counter tracks this: call 1 returns false (pre-check),
+     * calls 2+ return true (supervision loop trigger).
+     */
     public function testCancellationStopsProcess(): void
     {
         $callCount = 0;
@@ -172,8 +181,10 @@ final class BashToolTest extends IsolatedKernelTestCase
             ->willReturnCallback(function () use (&$callCount) {
                 ++$callCount;
 
-                // First call is the pre-check in ToolRuntime::run().
-                // Second+ are from the supervision loop and will trigger cancellation.
+                // First call is the pre-check in ToolRuntime::run() —
+                // must return false so the command starts running.
+                // Second+ are from the supervision loop and will
+                // trigger cancellation.
                 return $callCount >= 2;
             });
 
