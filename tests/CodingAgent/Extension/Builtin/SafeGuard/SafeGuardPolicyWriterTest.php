@@ -140,7 +140,7 @@ final class SafeGuardPolicyWriterTest extends TestCase
 
         // Should not throw — silently returns
         $writer->addAllowPattern('destructive', 'rm -rf /tmp');
-        $this->assertTrue(true); // reached without exception
+        $this->addToAssertionCount(1);
 
         restore_error_handler();
     }

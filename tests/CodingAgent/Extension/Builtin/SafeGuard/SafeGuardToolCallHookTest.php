@@ -585,9 +585,25 @@ final class SafeGuardToolCallHookTest extends TestCase
 
     public function testOnApprovalAnsweredWithEmptyOperationKeyIsNoop(): void
     {
-        // Empty operation_key — should not throw or modify tracker state
+        $command = 'rm -rf /tmp/build';
+
+        // First call: RequireApproval with a real pending key
+        $dto = $this->hook->onToolCall(new ToolCallContextDTO(
+            toolCallId: 'call_empty_key',
+            toolName: 'bash',
+            arguments: ['command' => $command],
+            orderIndex: 0,
+        ));
+
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        $operationKey = $dto->details['operation_key'] ?? null;
+        $this->assertNotNull($operationKey);
+        $questionId = (string) ($dto->details['question_id'] ?? '');
+        $this->assertNotEmpty($questionId);
+
+        // Answer with same questionId but empty operation_key
         $this->hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
-            questionId: 'sg_test',
+            questionId: $questionId,
             answer: 'Allow once',
             toolName: 'bash',
             approvalContext: [
@@ -596,25 +612,62 @@ final class SafeGuardToolCallHookTest extends TestCase
             ],
         ));
 
-        // No approval should be recorded
-        $this->assertFalse($this->tracker->isApproved('bash:rm -rf /tmp/build'), 'Empty operation_key should not approve');
+        // Tracker should still not be approved — empty key is rejected
+        $this->assertFalse($this->tracker->isApproved($operationKey), 'Empty operation_key should not approve');
+
+        // Retry: still requires approval (approval was never granted)
+        $dto2 = $this->hook->onToolCall(new ToolCallContextDTO(
+            toolCallId: 'call_empty_key_retry',
+            toolName: 'bash',
+            arguments: ['command' => $command],
+            orderIndex: 0,
+        ));
+
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto2->kind);
         $this->addToAssertionCount(1); // Reached without exception
     }
 
     public function testOnApprovalAnsweredWithMissingOperationKeyIsNoop(): void
     {
-        // Missing operation_key entirely — should not throw or modify tracker state
+        $command = 'rm -rf /';
+
+        // First call: RequireApproval with a real pending key
+        $dto = $this->hook->onToolCall(new ToolCallContextDTO(
+            toolCallId: 'call_missing_key',
+            toolName: 'bash',
+            arguments: ['command' => $command],
+            orderIndex: 0,
+        ));
+
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        $operationKey = $dto->details['operation_key'] ?? null;
+        $this->assertNotNull($operationKey);
+        $questionId = (string) ($dto->details['question_id'] ?? '');
+        $this->assertNotEmpty($questionId);
+
+        // Answer with same questionId but missing operation_key entirely
         $this->hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
-            questionId: 'sg_test2',
+            questionId: $questionId,
             answer: 'Allow once',
             toolName: 'bash',
             approvalContext: [
                 'category' => 'destructive',
-                'command' => 'rm -rf /',
+                'command' => $command,
             ],
         ));
 
-        $this->assertFalse($this->tracker->isApproved('bash:rm -rf /'), 'Missing operation_key should not approve');
+        // Tracker should still not be approved — missing key is rejected
+        $this->assertFalse($this->tracker->isApproved($operationKey), 'Missing operation_key should not approve');
+
+        // Retry: still requires approval (approval was never granted)
+        $dto2 = $this->hook->onToolCall(new ToolCallContextDTO(
+            toolCallId: 'call_missing_key_retry',
+            toolName: 'bash',
+            arguments: ['command' => $command],
+            orderIndex: 0,
+        ));
+
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto2->kind);
         $this->addToAssertionCount(1); // Reached without exception
     }
 }
