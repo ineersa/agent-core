@@ -435,7 +435,7 @@ depfile.yaml                                                   — new Extension
 - **Approval audit log** — separate from transcript, future work.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/safe-04-safeguard-approval-flow
 Worktree: /home/ineersa/projects/agent-core-worktrees/safe-04-safeguard-approval-flow
 Fork run: nmwaj6hwht4b
@@ -600,3 +600,7 @@ Castor Check Output SHA256: d8a14786d0d604503009cfa92106210b3e0dca4cc12d39d2ef44
 - Updated PR Status: open
 - Validation: move_task CODE-REVIEW quality gate: passed (900s timeout) at commit 735742445757; PR: https://github.com/ineersa/agent-core/pull/79
 - Summary: Moved SAFE-04 to CODE-REVIEW. Full Castor quality gate passed during move_task at commit 735742445757, branch pushed to origin, existing PR updated: https://github.com/ineersa/agent-core/pull/79. Worktree remains clean and aligned with origin/task/safe-04-safeguard-approval-flow at 73574244.
+
+## Task workflow update - 2026-06-05T23:00:03.684Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: Task-review-iterate: user/manual smoke found `castor run:agent` does not start after SAFE-04. Reproduced in worktree logs: PHAR `/tmp/bin/hatfield.phar` version 73574244 reuses stale `.hatfield/cache/prod-ce27bacc` container compiled for older `TickPollListener` constructor, causing `ArgumentCountError` (1 arg passed, 3 expected). PR #79 has no GitHub review comments; this is manual smoke/code-review feedback. Moving back to IN-PROGRESS for forked fix.
