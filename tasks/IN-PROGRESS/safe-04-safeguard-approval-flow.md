@@ -532,3 +532,8 @@ Remaining: castor test:controller requires llama.cpp on port 9052.
 ## Task workflow update - 2026-06-05T20:58:19.509Z
 - Recorded fork run: eor8103xc9r6
 - Summary: Re-review of HEAD 9ddcacb4 returned APPROVE WITH SUGGESTIONS with no blockers. Launched fork eor8103xc9r6 to apply the small sensible cleanup items: use addToAssertionCount for no-exception policy-writer test, strengthen empty/missing operation_key noop tests with real pending approval/retry behavior, add a brief comment for auto_deny_in_noninteractive in the project settings example, validate with Castor non-check gates, and commit without pushing.
+
+## Task workflow update - 2026-06-05T21:01:12.108Z
+- Recorded fork run: eor8103xc9r6
+- Validation: fork: castor test --filter='SafeGuardToolCallHook|SafeGuardPolicyWriter' passed (32 tests, 89 assertions); fork: castor test passed (1722 tests, 5070 assertions); fork: castor deptrac passed (0 violations, 0 errors); fork: castor phpstan passed (0 errors, 0 file_errors); fork: castor cs-check passed (0 files fixed)
+- Summary: Fork eor8103xc9r6 completed the final cleanup suggestions from re-review. Commit b88e60d4 changed only tests and settings example docs: replaced the no-exception policy-writer assertion with addToAssertionCount(1), strengthened empty/missing operation_key noop tests to first create a real pending approval and verify retry still requires approval, and added a short commented explanation for auto_deny_in_noninteractive in .hatfield/settings.yaml. Worktree reported clean at HEAD b88e60d4. Ready for user-initiated task-to-pr.
