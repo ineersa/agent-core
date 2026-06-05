@@ -328,6 +328,10 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             // Pass session ID so the controller can identify and reap its own
             // orphaned consumers when a previous session was SIGKILL'd.
             'HATFIELD_SESSION_ID' => $this->sessionId ?? 'unknown',
+            // Signal an approval channel so SafeGuard (and future approval-
+            // capable extensions) can prompt instead of auto-blocking. The
+            // controller and its messenger consumers inherit this env var.
+            'HATFIELD_APPROVAL_CHANNEL' => 'controller',
         ]);
 
         $pipes = [];

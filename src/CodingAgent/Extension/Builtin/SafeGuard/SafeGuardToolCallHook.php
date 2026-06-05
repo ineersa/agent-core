@@ -83,9 +83,17 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
             return $this->block($decision);
         }
 
-        // Policy-relaxable categories → RequireApproval (unless auto-deny is active)
+        // Policy-relaxable categories → RequireApproval (unless auto-deny is active
+        // and no approval channel is available).
+        //
+        // An approval channel is signalled by HATFIELD_APPROVAL_CHANNEL env var:
+        // - Interactive TUI sets this when spawning the controller process so
+        //   messenger consumers inherit it. SafeGuard MUST prompt — the TUI
+        //   can display the question and relay answers.
+        // - Headless/worker contexts without the env var auto-block (fail-closed),
+        //   unless the operator has explicitly set auto_deny_in_noninteractive=false.
         if ($this->isRelaxable($decision->kind)) {
-            if ($this->autoDenyInNoninteractive) {
+            if ($this->autoDenyInNoninteractive && !$this->hasApprovalChannel()) {
                 return ToolCallDecisionDTO::block(
                     reason: $decision->reason,
                     details: [
@@ -239,6 +247,22 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
         // The onApprovalAnswered() receives the actual category in the
         // approval context, so the tracker key prefix is informational.
         return $toolName;
+    }
+
+    /**
+     * Check whether the runtime has an approval channel available.
+     *
+     * Interactive TUI contexts set HATFIELD_APPROVAL_CHANNEL=controller when
+     * spawning the agent process so that all messenger consumers inherit it
+     * and SafeGuard can prompt for approval instead of auto-blocking.
+     *
+     * Headless/worker contexts without this signal default to fail-closed.
+     */
+    private function hasApprovalChannel(): bool
+    {
+        $channel = getenv('HATFIELD_APPROVAL_CHANNEL');
+
+        return \is_string($channel) && '' !== $channel;
     }
 
     /**

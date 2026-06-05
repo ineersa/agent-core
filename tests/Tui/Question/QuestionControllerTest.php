@@ -176,12 +176,61 @@ class QuestionControllerTest extends TestCase
 
         $items = $this->invokeBuildItems($request);
 
+        // Default schema has no enum; falls back to generic Approve/Reject
         self::assertCount(3, $items); // Approve, Reject, Type your answer
         self::assertSame('approve', $items[0]['value']);
         self::assertSame('Approve', $items[0]['label']);
         self::assertSame('reject', $items[1]['value']);
         self::assertSame('Reject', $items[1]['label']);
         self::assertSame('__other__', $items[2]['value']);
+    }
+
+    #[Test]
+    public function testApprovalItemsFromSchemaEnumWithoutOther(): void
+    {
+        // SafeGuard sets schema.enum: ['Allow once', 'Always allow', 'Deny']
+        // and allowOther: false (enum-only, no freeform).
+        $request = new QuestionRequest(
+            requestId: 'approval-enum',
+            source: QuestionSource::AgentCore,
+            kind: QuestionKind::Approval,
+            prompt: 'Allow destructive command: rm -rf /tmp?',
+            schema: [
+                'type' => 'string',
+                'enum' => ['Allow once', 'Always allow', 'Deny'],
+            ],
+            allowOther: false,
+        );
+
+        $items = $this->invokeBuildItems($request);
+
+        self::assertCount(3, $items);
+        self::assertSame('Allow once', $items[0]['value']);
+        self::assertSame('Allow once', $items[0]['label']);
+        self::assertSame('Always allow', $items[1]['value']);
+        self::assertSame('Always allow', $items[1]['label']);
+        self::assertSame('Deny', $items[2]['value']);
+        self::assertSame('Deny', $items[2]['label']);
+    }
+
+    #[Test]
+    public function testApprovalItemsEmptySchemaEnumFallsBack(): void
+    {
+        // Schema has enum but it's empty — should fall back to generic
+        $request = new QuestionRequest(
+            requestId: 'approval-empty-enum',
+            source: QuestionSource::Tui,
+            kind: QuestionKind::Approval,
+            prompt: 'Approve?',
+            schema: ['type' => 'string', 'enum' => []],
+            allowOther: false,
+        );
+
+        $items = $this->invokeBuildItems($request);
+
+        self::assertCount(2, $items); // generic Approve, Reject
+        self::assertSame('approve', $items[0]['value']);
+        self::assertSame('reject', $items[1]['value']);
     }
 
     #[Test]

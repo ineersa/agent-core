@@ -670,4 +670,86 @@ final class SafeGuardToolCallHookTest extends TestCase
         $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto2->kind);
         $this->addToAssertionCount(1); // Reached without exception
     }
+
+    // ─── Approval-channel availability ────────────────────────────────
+
+    public function testAutoDenyBlocksWhenNoApprovalChannel(): void
+    {
+        // Construct with autoDenyInNoninteractive=true and no HATFIELD_APPROVAL_CHANNEL env.
+        // The destructive `rm -rf` should be auto-blocked instead of prompting.
+        $hook = $this->createHook(autoDeny: true);
+
+        $dto = $hook->onToolCall(new ToolCallContextDTO(
+            toolCallId: 'call_auto_deny',
+            toolName: 'bash',
+            arguments: ['command' => 'rm -rf /tmp/test'],
+            orderIndex: 0,
+        ));
+
+        $this->assertSame(ToolCallDecisionKindEnum::Block, $dto->kind);
+        $this->assertTrue((bool) ($dto->details['auto_denied'] ?? false));
+        $this->assertTrue((bool) ($dto->details['denied'] ?? false));
+    }
+
+    #[\PHPUnit\Framework\Attributes\BackupGlobals(true)]
+    public function testAutoDenyPromptsWhenApprovalChannelIsSet(): void
+    {
+        // Simulate interactive TUI spawning the controller with
+        // HATFIELD_APPROVAL_CHANNEL=controller.
+        \putenv('HATFIELD_APPROVAL_CHANNEL=controller');
+
+        try {
+            $hook = $this->createHook(autoDeny: true);
+
+            $dto = $hook->onToolCall(new ToolCallContextDTO(
+                toolCallId: 'call_with_channel',
+                toolName: 'bash',
+                arguments: ['command' => 'rm -rf /tmp/test'],
+                orderIndex: 0,
+            ));
+
+            // Approval channel should override auto-deny → RequireApproval
+            $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+            $this->assertArrayHasKey('question_id', $dto->details);
+            $this->assertNotEmpty((string) ($dto->details['question_id'] ?? ''));
+        } finally {
+            \putenv('HATFIELD_APPROVAL_CHANNEL');
+        }
+    }
+
+    public function testAutoDenyFalseRequiresApprovalWithoutChannel(): void
+    {
+        // autoDenyInNoninteractive=false, no channel → still prompts.
+        // This is the explicit testing/headless-broker mode.
+        $hook = $this->createHook(autoDeny: false);
+
+        $dto = $hook->onToolCall(new ToolCallContextDTO(
+            toolCallId: 'call_no_channel_false',
+            toolName: 'bash',
+            arguments: ['command' => 'rm -rf /tmp/test'],
+            orderIndex: 0,
+        ));
+
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+    }
+
+    /**
+     * Create a fresh hook with the given auto-deny setting and no
+     * policy writer so each test gets its own clean tracker.
+     */
+    private function createHook(bool $autoDeny): SafeGuardToolCallHook
+    {
+        $config = new SafeGuardConfig(autoDenyInNoninteractive: $autoDeny);
+        $classifier = SafeGuardClassifier::fromConfig($config);
+        $tracker = new ApprovalSessionTracker();
+
+        return new SafeGuardToolCallHook(
+            classifier: $classifier,
+            policy: new SafeGuardPolicy(),
+            approvalTracker: $tracker,
+            policyWriter: null,
+            cwd: $this->cwd,
+            autoDenyInNoninteractive: $autoDeny,
+        );
+    }
 }

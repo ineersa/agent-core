@@ -128,7 +128,12 @@ tui:
 #             allow_write_outside_cwd: []
 #             protected_read_patterns: []
 #             dangerous_command_patterns: []
-#             # Block relaxable ops in headless/worker mode instead of requesting approval.
+#             # Fail-closed when no approval channel (controller/TUI) is
+#             # available. Interactive TUI auto-signals an approval channel
+#             # (HATFIELD_APPROVAL_CHANNEL) so SafeGuard prompts even with
+#             # auto_deny_in_noninteractive=true. Set false only when an
+#             # external approval broker will relay questions and send
+#             # answer_human — otherwise the run hangs in WaitingHuman.
 #             auto_deny_in_noninteractive: true
 
 logging:

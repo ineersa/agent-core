@@ -90,10 +90,10 @@ final class QuestionCoordinator
     /**
      * Resolve the active question with a user-provided answer.
      *
-     * For Tui-source questions, the registered callback (if any) is
-     * invoked with the answer value. For AgentCore-source questions
-     * only the status is updated — runtime dispatch is the caller's
-     * responsibility.
+     * The registered callback (if any, for any source) is invoked with
+     * the answer value. For AgentCore-source questions the callback
+     * typically sends an answer_human command back to the runtime;
+     * for Tui-source questions it handles local side effects.
      *
      * After recording the answer, the coordinator advances to the
      * next queued request, if any.
@@ -106,17 +106,15 @@ final class QuestionCoordinator
 
         $this->activeStatus = QuestionStatus::Answered;
 
-        if (QuestionSource::Tui === $this->active->source) {
-            $callback = $this->callbacks[$this->active->requestId] ?? null;
-            if (null !== $callback) {
-                try {
-                    $callback($value);
-                } finally {
-                    $this->advance();
-                }
-
-                return;
+        $callback = $this->callbacks[$this->active->requestId] ?? null;
+        if (null !== $callback) {
+            try {
+                $callback($value);
+            } finally {
+                $this->advance();
             }
+
+            return;
         }
 
         $this->advance();

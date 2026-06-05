@@ -181,21 +181,21 @@ final class QuestionCoordinatorTest extends TestCase
         self::assertNull($coordinator->activeRequest());
     }
 
-    public function testLocalCallbackNotInvokedForAgentCoreSource(): void
+    public function testCallbackInvokedForAgentCoreSource(): void
     {
         $coordinator = new QuestionCoordinator();
         $request = $this->agentCoreRequest('r1');
-        $called = false;
+        $received = null;
 
-        $coordinator->enqueue($request, function (mixed $value) use (&$called): void {
-            $called = true;
+        $coordinator->enqueue($request, function (mixed $value) use (&$received): void {
+            $received = $value;
         });
 
         $coordinator->answer('hello');
 
-        // AgentCore questions must not invoke local callbacks —
-        // runtime dispatch is handled by upper layers.
-        self::assertFalse($called);
+        // AgentCore callbacks are now invoked so upper layers can
+        // dispatch answer_human commands to the runtime.
+        self::assertSame('hello', $received);
         self::assertNull($coordinator->activeRequest());
     }
 
@@ -262,8 +262,8 @@ final class QuestionCoordinatorTest extends TestCase
         $coordinator->enqueue($this->tuiRequest('r1'), function (mixed $v) use (&$results): void {
             $results[] = "r1:$v";
         });
-        $coordinator->enqueue($this->agentCoreRequest('r2'), function () use (&$results): void {
-            $results[] = 'r2:should-not-be-called';
+        $coordinator->enqueue($this->agentCoreRequest('r2'), function (mixed $v) use (&$results): void {
+            $results[] = "r2:$v";
         });
         $coordinator->enqueue($this->tuiRequest('r3'), function (mixed $v) use (&$results): void {
             $results[] = "r3:$v";
@@ -273,14 +273,15 @@ final class QuestionCoordinatorTest extends TestCase
         $coordinator->answer('a');
         self::assertSame(['r1:a'], $results);
 
-        // r2 now active — AgentCore, answer should NOT invoke callback
+        // r2 now active — AgentCore, callback IS invoked so the
+        // answer_human command can be dispatched to the runtime.
         self::assertSame('r2', $coordinator->activeRequest()?->requestId);
         $coordinator->answer('b');
-        self::assertSame(['r1:a'], $results); // r2 callback NOT called
+        self::assertSame(['r1:a', 'r2:b'], $results);
 
         // r3 now active
         $coordinator->answer('c');
-        self::assertSame(['r1:a', 'r3:c'], $results);
+        self::assertSame(['r1:a', 'r2:b', 'r3:c'], $results);
         self::assertNull($coordinator->activeRequest());
     }
 

@@ -227,10 +227,7 @@ final class QuestionController
                 ],
                 $request->choices,
             ),
-            QuestionKind::Approval => [
-                ['value' => 'approve', 'label' => 'Approve'],
-                ['value' => 'reject', 'label' => 'Reject'],
-            ],
+            QuestionKind::Approval => $this->approvalItems($request),
         };
 
         if ($request->allowOther) {
@@ -238,5 +235,33 @@ final class QuestionController
         }
 
         return $items;
+    }
+
+    /**
+     * Build Approval-choice items, preferring the schema enum when
+     * available (e.g. SafeGuard's ["Allow once", "Always allow", "Deny"]).
+     *
+     * Falls back to generic Approve/Reject when no enum is provided.
+     *
+     * @return list<array{value: string, label: string}>
+     */
+    private function approvalItems(QuestionRequest $request): array
+    {
+        $enum = $request->schema['enum'] ?? null;
+
+        if (\is_array($enum) && [] !== $enum) {
+            return array_map(
+                static fn (string $label): array => [
+                    'value' => $label,
+                    'label' => $label,
+                ],
+                array_values($enum),
+            );
+        }
+
+        return [
+            ['value' => 'approve', 'label' => 'Approve'],
+            ['value' => 'reject', 'label' => 'Reject'],
+        ];
     }
 }
