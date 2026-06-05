@@ -239,6 +239,50 @@ final class BackgroundProcessManager
     }
 
     /**
+     * Find a single background process by PID, with refreshed status.
+     *
+     * Resolves status from filesystem state and flushes before returning.
+     * This is O(1) per call (single entity fetch), unlike list() which
+     * refreshes all entities. Preferred for polling loops that only care
+     * about one known PID.
+     *
+     * @param int         $pid       Process PID to find (must be > 0)
+     * @param string|null $sessionId optional session filter.
+     *                               When provided, only a matching session
+     *                               process is returned.
+     *
+     * @return BackgroundProcess|null The entity with refreshed status, or
+     *                                null if not found or session mismatch
+     */
+    public function find(int $pid, ?string $sessionId = null): ?BackgroundProcess
+    {
+        $entity = $this->store->fetchByPid($pid);
+
+        if (null === $entity) {
+            return null;
+        }
+
+        if (null !== $sessionId && $entity->sessionId !== $sessionId) {
+            return null;
+        }
+
+        // Only flush when the entity transitioned from running to a
+        // terminal state. If finishedAt was already set before the
+        // resolve call, no mutation occurred; if it remains null, the
+        // process is still running and no persisted column changed.
+        // This avoids unnecessary DB writes during polling loops that
+        // call find() every ~100 ms.
+        $wasFinished = null !== $entity->finishedAt;
+        $this->resolveEntityStatus($entity);
+
+        if (!$wasFinished && null !== $entity->finishedAt) {
+            $this->store->flush();
+        }
+
+        return $entity;
+    }
+
+    /**
      * Return the tail of a background process log file.
      *
      * @throws \RuntimeException when process not found, session mismatch, or log unreadable

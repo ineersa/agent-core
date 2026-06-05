@@ -401,6 +401,44 @@ marker.
 
 **Default:** `5000`
 
+### `tools.bash.default_timeout_seconds`
+
+Default timeout in seconds for bash commands when no explicit timeout
+is provided by the model.
+
+**Default:** `300`
+
+### `tools.bash.max_timeout_seconds`
+
+Maximum timeout the model is allowed to request. Timeouts exceeding
+this limit are rejected with a validation error, preventing the model
+from tying up a tool worker with unbounded execution time.
+
+**Default:** `3600` (1 hour)
+
+### `tools.bash.background_prompt_threshold_seconds`
+
+Elapsed seconds before the bash tool offers to move the command to
+background. The default adapter declines (TOOLS-09); a future TUI
+integration (TOOLS-09B) will wire this to a user question.
+
+**Default:** `30`
+
+### `tools.bash.poll_interval_micros`
+
+Supervision loop poll interval in microseconds. Controls how frequently
+the tool checks process status, cancellation, and timeout.
+
+**Default:** `100000` (100 ms)
+
+### `tools.bash.log_tail_chars`
+
+Maximum characters returned as final or partial command output for
+bash tool execution. Output exceeding this limit is passed through
+`tools.output_cap` for truncation and may be saved to a file.
+
+**Default:** `20000`
+
 ### `extensions.enabled`
 
 List of enabled extension class names. Each class must implement

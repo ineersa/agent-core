@@ -118,6 +118,26 @@ tools:
         # Maximum characters returned by bg_status log action.
         log_tail_chars: 5000
 
+    bash:
+        # Default timeout in seconds for bash commands.
+        default_timeout_seconds: 300
+
+        # Maximum allowed timeout that a model can request.
+        # Timeouts above this are rejected with a validation error.
+        max_timeout_seconds: 3600
+
+        # Seconds before the bash tool asks whether to move a still-running
+        # command to background. TOOLS-09 default declines; TOOLS-09B wires
+        # this to the TUI question system.
+        background_prompt_threshold_seconds: 30
+
+        # Supervision loop poll interval in microseconds.
+        poll_interval_micros: 100000
+
+        # Maximum characters to read from the background process log
+        # for returning as final/partial command output.
+        log_tail_chars: 20000
+
 # ---------------------------------------------------------------------------
 # Extensions
 # ---------------------------------------------------------------------------

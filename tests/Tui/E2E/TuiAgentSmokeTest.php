@@ -432,7 +432,7 @@ final class TuiAgentSmokeTest extends TestCase
         [$php, $script] = AgentTestExecutable::command();
 
         return \sprintf(
-            'APP_ENV=dev HOME=%s %s %s agent --model=llama_cpp_test/test 2>&1',
+            'APP_ENV=dev HOME=%s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
             \escapeshellarg($this->testProjectDir.'/home'),
             \escapeshellarg($php),
             \escapeshellarg($script),
