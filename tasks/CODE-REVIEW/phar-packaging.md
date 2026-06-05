@@ -102,7 +102,7 @@ Create `tests/CodingAgent/Phar/PharSmokeTest.php` following the same pattern as 
 - castor check passes
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/phar-packaging
 Worktree: /home/ineersa/projects/agent-core-worktrees/phar-packaging
 Fork run: ieupyrxuq2tz
@@ -261,10 +261,10 @@ Completed:
 - Validation: Reviewer: APPROVED on current HEAD `cb131fc9`; no critical issues, no issues, no security notes; task can proceed to CODE-REVIEW.; `castor test`: OK. Rebuilt stale PHAR first (`/tmp/bin/hatfield.phar`, 5.9MB, timings copy=0.0s composer=1.4s box=1.3s total=2.8s); PHAR smokes OK (`list`, `about`, `agent --help`, writable-dir isolation); PHPUnit OK (1660 tests, 4907 assertions, 0 errors, 0 failures, 0 skipped).; `castor deptrac`: OK (violations=0, errors=0, uncovered=618, allowed=818).; `castor phpstan`: OK (errors=0, file_errors=0).; `castor cs-check`: OK (files_fixed=0).
 - Summary: Final reviewer subagent decision on current HEAD `cb131fc9`: APPROVED — no blockers; task can proceed to CODE-REVIEW. Reviewer verified the final rename commit and broader PHAR changeset, with only cosmetic non-blocking notes (commit subject typo and harmless `$resolved` scope note). Local task-to-pr validation completed successfully after final HEAD.
 Castor Check Status: passed
-Castor Check Commit: cb131fc92c202ce976082a7f6073f3402bdf18d8
+Castor Check Commit: ba0390d3447d0c1d1b23daed9b8ff1ad5b15a8ca
 Castor Check Command: LLM_MODE=true castor check
 Castor Check Timeout: 900s
-Castor Check Completed: 2026-06-05T00:28:22.008Z
+Castor Check Completed: 2026-06-05T00:39:30.740Z
 Castor Check Output SHA256: 8773ab120b38b281b0eaa2028933e1e63b59214e9d9a67b9c3eba0778d6e4472
 
 ## Task workflow update - 2026-06-05T00:28:26.131Z
@@ -290,3 +290,10 @@ Castor Check Output SHA256: 8773ab120b38b281b0eaa2028933e1e63b59214e9d9a67b9c3eb
 - Recorded fork run: ieupyrxuq2tz
 - Validation: Verified worktree status clean and branch aligned with `origin/task/phar-packaging`.; Verified latest commit: `ba0390d3 docs: add PHAR packaging documentation`.; Verified commit stat: `.agents/skills/testing/SKILL.md`, `AGENTS.md`, `docs/phar-packaging.md`, `docs/settings.md`, `docs/tui-testing.md`; 5 files changed, 325 insertions.; Fork reported documentation-only changes; no runtime validation required.
 - Summary: Documentation fork `ieupyrxuq2tz` completed and committed `ba0390d3` (`docs: add PHAR packaging documentation`). Verified commit exists at HEAD and is pushed to `origin/task/phar-packaging`; worktree is clean. Documentation added/updated: new `docs/phar-packaging.md` covering PHAR build architecture, runtime cwd/writable dirs, subprocess executable locator chain, Castor test/run PHAR usage, startup migration executor, non-goals, and troubleshooting; `docs/settings.md` now documents `HATFIELD_CWD`, `HATFIELD_CACHE_DIR`, `HATFIELD_LOG_DIR`, and `HATFIELD_BINARY_PATH`; `.agents/skills/testing/SKILL.md` now includes `phar:build`/`phar:ensure`/`phar:clean` guidance and PHAR test expectations; `docs/tui-testing.md` clarifies subprocess E2E runs against the PHAR; `AGENTS.md` docs map includes `docs/phar-packaging.md`. Commit stat: 5 files changed, 325 insertions.
+
+## Task workflow update - 2026-06-05T00:39:32.035Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: ba0390d3447d.
+- Pushed task/phar-packaging to origin.
+- branch 'task/phar-packaging' set up to track 'origin/task/phar-packaging'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/93
