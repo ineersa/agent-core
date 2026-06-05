@@ -438,7 +438,7 @@ depfile.yaml                                                   — new Extension
 Status: IN-PROGRESS
 Branch: task/safe-04-safeguard-approval-flow
 Worktree: /home/ineersa/projects/agent-core-worktrees/safe-04-safeguard-approval-flow
-Fork run: l87wgx8i3144
+Fork run: nmwaj6hwht4b
 PR URL: https://github.com/ineersa/agent-core/pull/79
 PR Status: open
 Started: 2026-05-31T17:35:50.684Z
@@ -576,3 +576,7 @@ Castor Check Output SHA256: d02306dc21bc1679b045a7da2193d34b746d1dc81fdb9ca69707
 ## Task workflow update - 2026-06-05T21:33:31.175Z
 - Validation: user explicitly approved the three-mode architecture: interactive prompts, approval-capable headless propagation, unattended auto-block
 - Summary: User confirmed desired SAFE-04 architecture: (1) Interactive TUI must show confirmation dialogs for relaxable SafeGuard blocks; (2) headless/subagent contexts can use SafeGuard if they are approval-capable, meaning they propagate HumanInputRequested to a parent/UI/policy broker and send answer_human back; (3) truly unattended noninteractive contexts cannot ask and must fail closed/auto-block. Implementation should treat `auto_deny_in_noninteractive` as fail-closed only when no approval channel is available, not as a blanket disablement of confirmations in TUI/controller flows. Next fork should implement TUI HumanInputRequested -> QuestionCoordinator/QuestionController overlay -> answer_human command, controller answer_human handling, approval-channel signaling for TUI-spawned controller/workers, docs/tests, and cleanup of failed fork's untracked file.
+
+## Task workflow update - 2026-06-05T21:34:22.302Z
+- Recorded fork run: nmwaj6hwht4b
+- Summary: Launched implementation fork nmwaj6hwht4b for the user-confirmed architecture. Scope: clean failed fork artifact; make auto_deny_in_noninteractive fail-closed only when no approval channel is available; signal approval capability from TUI-spawned controller/workers; add controller answer_human handling; wire TUI human_input.requested events into QuestionCoordinator/QuestionController and answer_human dispatch with exact SafeGuard answer strings; update docs/settings comments; add tests; run focused/full Castor validation and actual agent/TUI validation if feasible; commit without pushing.
