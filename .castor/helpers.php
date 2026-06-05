@@ -733,6 +733,32 @@ function phar_smoke(string $pharPath): void
         echo "  smoke writable-dir isolation: ok (.hatfield/cache created in {$tmpCwd})\n";
     }
 
+    // 5. Verify PHAR cache isolation: the cache directory suffix must
+    //    be derived from the PHAR archive content hash (SHA-256, 12 hex
+    //    chars), not the old stable md5(__FILE__) fixpoint that allowed
+    //    stale Symfony compiled containers to survive PHAR rebuilds.
+    $cacheDirs = glob($tmpCwd.'/.hatfield/cache/'.$smokeEnv.'-*', \GLOB_ONLYDIR);
+    if ([] !== $cacheDirs) {
+        $cacheSuffix = substr($cacheDirs[0], strrpos($cacheDirs[0], '-') + 1);
+        $expectedHash = hash_file('sha256', $pharPath);
+
+        if (false === $expectedHash) {
+            $failed[] = 'cache-isolation (could not hash PHAR archive)';
+            echo "  smoke cache-isolation: FAIL (hash_file returned false)\n";
+        } elseif ($cacheSuffix !== substr($expectedHash, 0, 12)) {
+            $failed[] = "cache-isolation (cache suffix {$cacheSuffix} does not match expected content hash prefix "
+                .substr($expectedHash, 0, 12).')';
+            echo "  smoke cache-isolation: FAIL\n";
+        } else {
+            echo "  smoke cache-isolation: ok (content-based suffix {$cacheSuffix})\n";
+        }
+    } else {
+        // The PHAR may not produce a cache dir on every boot (e.g. if
+        // the container was already compiled elsewhere), so this is
+        // a warning, not a hard failure.
+        echo "  smoke cache-isolation: warn (no cache dirs found)\n";
+    }
+
     // Clean up smoke artifacts.
     shell_exec('rm -rf '.escapeshellarg($tmpCwd));
 

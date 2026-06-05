@@ -82,9 +82,22 @@ class Kernel extends BaseKernel
         // source-checkout caches embed filesystem paths that collide with the
         // PHAR's bundled vendor autoloader, causing Cannot-redeclare-class
         // fatals in subprocess controllers.
+        //
+        // The suffix is a content hash of the physical PHAR archive file,
+        // NOT a hash of __FILE__ (which is a stable phar:// URI that never
+        // changes across builds). A stable suffix reuses stale compiled
+        // Symfony containers whose service definitions encode constructor
+        // signatures, paths, and class shapes from the previous PHAR build —
+        // breaking the container when any service changes its constructor
+        // parameters.
         if ($this->isPhar()) {
-            $pharHash = substr(md5(__FILE__), 0, 8);
-            $base .= '-'.$pharHash;
+            $pharPath = $this->resolvePharPath();
+            $pharHash = hash_file('sha256', $pharPath);
+            if (false === $pharHash) {
+                throw new \RuntimeException(\sprintf('Unable to hash PHAR archive at "%s" for cache isolation. Check file permissions.', $pharPath));
+            }
+
+            $base .= '-'.substr($pharHash, 0, 12);
         }
 
         return $base;
@@ -109,6 +122,54 @@ class Kernel extends BaseKernel
     private function isPhar(): bool
     {
         return str_starts_with(__FILE__, 'phar://');
+    }
+
+    /**
+     * Resolve the physical filesystem path of the running PHAR archive.
+     *
+     * Resolution order (matches PharExecutableLocator):
+     *   1. Phar::running(false) — standard PHAR detection.
+     *   2. When Box 4.x uses an auto-generated internal alias
+     *      (Phar::running() returns empty), construct a Phar object
+     *      from __FILE__ and call getPath() to recover the physical path.
+     *
+     * Only called after isPhar() has confirmed __FILE__ starts with
+     * phar://.
+     *
+     * @throws \RuntimeException when the physical PHAR path cannot be
+     *                           resolved or does not exist on disk
+     */
+    private function resolvePharPath(): string
+    {
+        // 1. Standard PHAR detection — works for most PHAR archives
+        //    including manually created ones with a filesystem alias.
+        $pharPath = \Phar::running(false);
+        if ('' !== $pharPath && is_file($pharPath)) {
+            return $pharPath;
+        }
+
+        // 2. Box 4.x+ fallback: the auto-generated internal alias
+        //    makes Phar::running() return empty, but the phar:// prefix
+        //    in __FILE__ lets us construct a Phar object whose getPath()
+        //    resolves back to the physical archive on disk.
+        if (str_starts_with(__FILE__, 'phar://')) {
+            $previous = null;
+            try {
+                $phar = new \Phar(__FILE__);
+                $physicalPath = $phar->getPath();
+                if ('' !== $physicalPath && is_file($physicalPath)) {
+                    return $physicalPath;
+                }
+            } catch (\Throwable $e) {
+                $previous = $e;
+            }
+
+            throw new \RuntimeException(\sprintf('Running inside a PHAR (%s) but unable to resolve the physical archive path. Phar::running(false) returned "%s". Constructing a Phar object from __FILE__ failed%s.', __FILE__, $pharPath, null !== $previous ? ': '.$previous->getMessage() : ' (resolved path is empty or not a file)'), 0, $previous);
+        }
+
+        // This branch should be unreachable because isPhar() guards the
+        // call site in getCacheDir().  Fail loudly if reached anyway.
+        throw new \RuntimeException(\sprintf('resolvePharPath() called but __FILE__ "%s" does not contain a phar:// prefix and Phar::running(false) returned "%s".', __FILE__, $pharPath));
     }
 
     /**
