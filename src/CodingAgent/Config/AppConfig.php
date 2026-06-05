@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Config;
 
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
+use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
@@ -69,6 +70,10 @@ final class AppConfig
         $data = $loader->load($resources->getDefaultsPath(), $cwd);
         $ai = AiConfig::optionalFromArray($data);
 
+        $catalog = null !== $ai ? new HatfieldModelCatalog($ai) : null;
+
+        self::validateDefaultModel($ai, $catalog);
+
         return new self(
             tui: $denormalizer->denormalize(
                 (array) ($data['tui'] ?? []),
@@ -92,8 +97,49 @@ final class AppConfig
             ),
             ai: $ai,
             raw: $data,
-            catalog: null !== $ai ? new HatfieldModelCatalog($ai) : null,
+            catalog: $catalog,
             cwd: $cwd,
         );
+    }
+
+    /**
+     * Validate that ai.default_model (if set) references a configured,
+     * enabled provider/model.
+     *
+     * Fails loudly at boot time with actionable error messages so
+     * misconfiguration is caught before the first LLM call.
+     */
+    private static function validateDefaultModel(
+        ?AiConfig $ai,
+        ?HatfieldModelCatalog $catalog,
+    ): void {
+        if (null === $ai) {
+            return;
+        }
+
+        $defaultModel = $ai->defaultModel;
+        if (null === $defaultModel || '' === $defaultModel) {
+            return;
+        }
+
+        $ref = AiModelReference::tryParse($defaultModel);
+        if (null === $ref) {
+            throw new \RuntimeException(\sprintf('Configured ai.default_model "%s" is invalid. Expected format: provider/model.', $defaultModel));
+        }
+
+        if (null === $catalog || !$catalog->isAvailable($ref)) {
+            $available = null !== $catalog ? $catalog->allModels() : [];
+
+            if ([] === $available) {
+                throw new \RuntimeException(\sprintf('Configured ai.default_model "%s" references an unavailable provider/model. No enabled providers or models are configured under ai.providers. Configure at least one provider/model in ~/.hatfield/settings.yaml or project .hatfield/settings.yaml, or remove ai.default_model.', $defaultModel));
+            }
+
+            $modelStrings = array_map(
+                static fn (AiModelReference $m): string => $m->toString(),
+                $available,
+            );
+
+            throw new \RuntimeException(\sprintf('Configured ai.default_model "%s" is not available. Available models: %s. Correct ai.default_model or remove it to use the first available model.', $defaultModel, implode(', ', $modelStrings)));
+        }
     }
 }

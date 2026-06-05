@@ -8,7 +8,6 @@ use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
 use Ineersa\AgentCore\Domain\Model\ResolvedModel;
-use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Symfony\AI\Platform\Message\MessageBag;
 
 /**
@@ -33,14 +32,14 @@ final class SessionAwareModelResolver implements ModelResolverInterface
         ModelInvocationInput $input,
         ModelResolutionOptions $options,
     ): ResolvedModel {
-        unset($messages, $options);
+        unset($defaultModel, $messages, $options);
 
         $sessionId = $input->runId ?? '';
 
         // Do NOT pass $defaultModel as $explicitModel — the event's defaultModel is the
-        // hardcoded container parameter, not a user override. The user's explicit choice
-        // flows through StartRunRequest → RunMetadata → session metadata and is picked
-        // up by the 2nd priority tier (session metadata).
+        // legacy container parameter (now ''), not a user override. The user's explicit
+        // choice flows through StartRunRequest → RunMetadata → session metadata and is
+        // picked up by the 2nd priority tier (session metadata).
         $modelRef = $this->selectionService->resolveInitialModel(
             explicitModel: null,
             sessionId: $sessionId,
@@ -59,13 +58,6 @@ final class SessionAwareModelResolver implements ModelResolverInterface
             );
         }
 
-        // Fall back to the default model string when no models configured
-        $parsed = AiModelReference::tryParse($defaultModel);
-
-        return new ResolvedModel(
-            model: $defaultModel,
-            providerId: null !== $parsed ? $parsed->providerId : '',
-            reasoning: $reasoning,
-        );
+        throw new \RuntimeException('No AI model is configured. Add at least one enabled provider/model under ai.providers in ~/.hatfield/settings.yaml or project .hatfield/settings.yaml.');
     }
 }

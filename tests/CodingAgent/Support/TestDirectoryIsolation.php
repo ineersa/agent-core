@@ -97,7 +97,9 @@ final class TestDirectoryIsolation
         }
 
         if (!is_file($hatfieldDir.'/settings.yaml')) {
-            file_put_contents($hatfieldDir.'/settings.yaml', "# hatfield settings\n");
+            // Override any home settings that may have a dangling ai.default_model
+            // without providers — kernel boot validation rejects those.
+            file_put_contents($hatfieldDir.'/settings.yaml', "# hatfield settings (test isolation)\nai:\n    default_model: null\n");
         }
     }
 

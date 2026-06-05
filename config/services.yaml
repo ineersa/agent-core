@@ -1,7 +1,9 @@
 # yaml-language-server: $schema=../vendor/symfony/dependency-injection/Loader/schema/services.schema.json
 parameters:
-    # Temporary default model — AI-10 per-turn routing replaces this.
-    app.default_model: 'deepseek/deepseek-v4-pro'
+    # Legacy placeholder — model selection comes from Hatfield settings
+    # (ai.default_model) or the first available configured model.
+    # SessionAwareModelResolver overrides this via ModelResolverRoutingSubscriber.
+    app.default_model: ''
 
     # Default HATFIELD_CAPTURE_ERRORS to enabled; overridable via env var.
     env(HATFIELD_CAPTURE_ERRORS): '1'

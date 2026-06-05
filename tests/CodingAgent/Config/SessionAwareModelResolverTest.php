@@ -114,36 +114,34 @@ final class SessionAwareModelResolverTest extends KernelTestCase
         self::assertNotEmpty($result->providerId);
     }
 
-    public function testResolveFallsBackToDefaultWhenNoModelsConfigured(): void
+    public function testResolveThrowsWhenNoModelsConfigured(): void
     {
         $resolver = $this->createResolver([]);
 
-        $result = $resolver->resolve(
-            'deepseek/deepseek-v4-pro',
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('No AI model is configured');
+
+        $resolver->resolve(
+            '',
             new MessageBag(),
             new ModelInvocationInput(),
             new ModelResolutionOptions(),
         );
+   }
 
-        self::assertSame('deepseek/deepseek-v4-pro', $result->model);
-        self::assertSame('deepseek', $result->providerId);
-        self::assertSame('medium', $result->reasoning);
-    }
-
-    public function testResolveReturnsEmptyProviderIdWhenDefaultHasNoProviderPrefix(): void
+    public function testResolveThrowsWhenNoModelsConfiguredAndLegacyDefaultProvided(): void
     {
         $resolver = $this->createResolver([]);
 
-        $result = $resolver->resolve(
-            'just-a-model',
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('No AI model is configured');
+
+        $resolver->resolve(
+            'any-model',
             new MessageBag(),
             new ModelInvocationInput(),
             new ModelResolutionOptions(),
         );
-
-        self::assertSame('just-a-model', $result->model);
-        self::assertSame('', $result->providerId);
-        self::assertSame('medium', $result->reasoning);
     }
 
     public function testResolveReturnsReasoningFromSessionMetadata(): void

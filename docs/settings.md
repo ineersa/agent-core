@@ -517,6 +517,11 @@ extensions:
 The default model used for new agent sessions. Format is
 `provider_id/model_name`.
 
+**Optional.** When absent or empty, Hatfield selects the first
+available configured model. When set, it must reference an
+enabled, configured provider/model — boot-time validation
+fails loudly with a clear error message otherwise.
+
 **Default:** first available configured model (when absent).
 
 **Example:** `deepseek/deepseek-v4-pro`
