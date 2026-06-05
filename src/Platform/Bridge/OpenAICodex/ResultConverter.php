@@ -67,7 +67,7 @@ final class ResultConverter implements ResultConverterInterface
         $data = $result->getData();
 
         if (isset($data['error']['code']) && 'content_filter' === $data['error']['code']) {
-            throw new ContentFilterException($data['error']['message']);
+            throw new ContentFilterException($data['error']['message'] ?? 'Content filter triggered');
         }
 
         if (isset($data['error'])) {
