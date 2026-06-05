@@ -84,12 +84,12 @@ Important design update: do **not** start bash as an unmanaged foreground `Symfo
 - Logging must use structured event-style messages and must not include raw prompts, full command output, environment values, API keys, or full session content by default.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/tools-09-bash-tool-background
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-09-bash-tool-background
 Fork run: y787iksgy2zt
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/94
+PR Status: open
 Started: 2026-05-31T18:06:23.023Z
 Completed:
 
@@ -179,3 +179,16 @@ Completed:
 - Validation: Reviewer decision: APPROVED on HEAD `b6f3449e`.; Local validation: `castor test` OK (tests=1691, assertions=4990, errors=0, failures=0, skipped=0; junit=var/reports/phpunit.junit.xml).; Local validation: `castor deptrac` OK (violations=0, errors=0, uncovered=640, allowed=821).; Local validation: `castor phpstan` OK (errors=0, file_errors=0).; Local validation: `castor cs-check` OK (files_fixed=0).
 - Summary: Final reviewer subagent on HEAD `b6f3449e` returned APPROVED. No critical issues or issues. Only non-blocking NTH note was possible doc note clarifying that `ToolRegistry::toolDefinition()` remains unfiltered by allowlist/denylist for executor lookup while active definitions are filtered; no PR-blocking work required. Focused local Castor validation passed clean on the worktree. Preparing to move task to CODE-REVIEW, which will run the full `LLM_MODE=true castor check` gate automatically.
 - Task-to-pr review loop completed: after commits `d3cc40be`, `70faee76`, `98304a63`, and `b6f3449e`, reviewer returned APPROVED. Focused local Castor validation passed (`castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`). Moving task to CODE-REVIEW next for the full automatic quality gate and PR creation/update.
+Castor Check Status: passed
+Castor Check Commit: b6f3449e005598e94a235ba3645325b09f354753
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 900s
+Castor Check Completed: 2026-06-05T14:51:16.474Z
+Castor Check Output SHA256: d270c0be584ffffb4144e689a7abe97a4ff09bc605d216a2ba7afc80670f22ab
+
+## Task workflow update - 2026-06-05T14:51:20.269Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: b6f3449e0055.
+- Pushed task/tools-09-bash-tool-background to origin.
+- branch 'task/tools-09-bash-tool-background' set up to track 'origin/task/tools-09-bash-tool-background'.
+- Created PR: https://github.com/ineersa/agent-core/pull/94
