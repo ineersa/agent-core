@@ -123,3 +123,15 @@ Completed:
 - Review fix fork kfstiqrf39fc completed: 25/25 tests, 0 deptrac violations. Committed cbb08cdf.
 - PHPStan level 6 found 5 strict-type errors (mixed in if conditions, truthy checks on non-bool types)
 - Launched fork tm1rv0k6lqlt to fix PHPStan errors
+
+## Task workflow update - 2026-06-05T23:47:22.098Z
+- Validation: castor test → 25 tests, 91 assertions, 0 failures; castor deptrac → violations=0, errors=0; castor phpstan → errors=0, file_errors=0; castor cs-check → files_fixed=0
+- Summary: Implementation complete. 3 commits on branch task/symfony-ai-openai-codex-bridge:
+- 6610a423 feat: OpenAICodex bridge (6 source + 2 test files + 3 config changes)
+- cbb08cdf fix: review findings (null-safe error parsing, refusal test, union type cleanup)
+- d25c1f7c fix: PHPStan strict type errors
+
+All Castor checks pass: test (25/25), deptrac (0 violations), phpstan (0 errors), cs-check (clean).
+- PHPStan fix fork tm1rv0k6lqlt completed: 5 strict-type errors fixed, committed d25c1f7c
+- Fast Castor validation: test ✅ deptrac ✅ phpstan ✅ cs-check ✅
+- Implementation phase complete — ready for task-to-pr
