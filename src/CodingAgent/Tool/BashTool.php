@@ -48,6 +48,12 @@ use Psr\Log\LoggerInterface;
  * (--tools-excluded=bash) unless a test specifically needs to drive it.
  * The caller (AgentCommand) controls tool exposure per run through
  * --tools / --tools-excluded CLI options.
+ *
+ * Note: BackgroundProcessManager::start() warns callers to escape with
+ * escapeshellarg(). That warning applies to callers that take user input
+ * from untrusted sources. BashTool intentionally passes the model-provided
+ * string directly — the model is treated as a trusted caller within the
+ * same agent session.
  */
 final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterface
 {
@@ -106,10 +112,17 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
 
             // Foreground supervision loop
             while (true) {
-                // 1. Cooperative cancellation check from ambient ToolContext
+                // 1. Cooperative cancellation check from ambient ToolContext.
+                //
+                // The process is stopped, but the returned message is discarded:
+                // ToolRuntime::run() throws a RuntimeException for stale results
+                // when it detects cancellation after the callback returns (see
+                // src/AgentCore/Application/Handler/ToolExecutor.php which also
+                // converts post-execution cancellation to an error result).
+                // The meaningful work here is stop() + structured log — return
+                // value only serves local control flow.
                 if (null !== $cancelToken && $cancelToken->isCancellationRequested()) {
                     $this->manager->stop($pid, $sessionId);
-                    $partialOutput = $this->readOutput($pid, $sessionId);
 
                     $this->logger->info('bash_tool.cancelled', [
                         'component' => 'tool.bash',
@@ -117,14 +130,7 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                         'process_pid' => $pid,
                     ]);
 
-                    $capped = $this->outputCap->process($partialOutput);
-
-                    $result = 'Tool execution cancelled.';
-                    if ('' !== $capped) {
-                        $result .= "\n\nPartial output:\n".$capped;
-                    }
-
-                    return $result;
+                    return 'cancelled'; // discarded by ToolRuntime; meaningful action is stop() above
                 }
 
                 // 2. Monotonic timeout deadline
@@ -148,7 +154,8 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                 }
 
                 // 3. Poll process status from BackgroundProcessManager
-                $record = $this->findProcessRecord($pid, $sessionId);
+                // Single entity fetch (O(1)) via find() — not a full list() scan
+                $record = $this->manager->find($pid, $sessionId);
 
                 if (null === $record) {
                     // Process record vanished — should not happen under normal
@@ -216,8 +223,9 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                     ],
                     'timeout' => [
                         'type' => 'integer',
-                        'description' => 'Timeout in seconds (default: 300). Use for commands that may hang.',
+                        'description' => \sprintf('Timeout in seconds (default: %d, max: %d). Use for commands that may hang.', $this->config->defaultTimeoutSeconds, $this->config->maxTimeoutSeconds),
                         'minimum' => 1,
+                        'maximum' => $this->config->maxTimeoutSeconds,
                     ],
                 ],
                 'required' => ['command'],
@@ -278,23 +286,12 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
             throw new ToolCallException('The "timeout" argument must be a positive integer.', retryable: false, hint: 'Provide a positive integer for timeout seconds, or omit to use the default (300).');
         }
 
-        return $timeout;
-    }
+        $maxTimeout = $this->config->maxTimeoutSeconds;
+        if ($timeout > $maxTimeout) {
+            throw new ToolCallException(\sprintf('Timeout must not exceed %d seconds (%d provided).', $maxTimeout, $timeout), retryable: false, hint: \sprintf('Reduce the timeout to at most %d seconds, or omit to use the default (%d).', $maxTimeout, $this->config->defaultTimeoutSeconds));
+        }
 
-    /**
-     * Find a process entity by PID with refreshed status.
-     *
-     * Delegates to BackgroundProcessManager::find() which does a single
-     * entity fetch (O(1)) rather than a full list() scan (O(n)).
-     *
-     * @param int         $pid       Process PID to find
-     * @param string|null $sessionId Session filter
-     *
-     * @return BackgroundProcess|null The matching entity, or null if not found
-     */
-    private function findProcessRecord(int $pid, ?string $sessionId): ?BackgroundProcess
-    {
-        return $this->manager->find($pid, $sessionId);
+        return $timeout;
     }
 
     /**

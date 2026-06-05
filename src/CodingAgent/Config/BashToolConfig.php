@@ -19,6 +19,7 @@ final readonly class BashToolConfig
 {
     /**
      * @param int $defaultTimeoutSeconds            Default timeout for bash commands (seconds)
+     * @param int $maxTimeoutSeconds                Upper bound on model-supplied timeout (seconds)
      * @param int $backgroundPromptThresholdSeconds Seconds before asking to move to background
      * @param int $pollIntervalMicros               Poll interval in microseconds for supervision loop
      * @param int $logTailChars                     Max chars to read from background process log
@@ -26,6 +27,9 @@ final readonly class BashToolConfig
     public function __construct(
         #[SerializedName('default_timeout_seconds')]
         public int $defaultTimeoutSeconds = 300,
+
+        #[SerializedName('max_timeout_seconds')]
+        public int $maxTimeoutSeconds = 3600,
 
         #[SerializedName('background_prompt_threshold_seconds')]
         public int $backgroundPromptThresholdSeconds = 30,

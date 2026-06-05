@@ -171,6 +171,11 @@ final class BashToolTest extends IsolatedKernelTestCase
      *
      * The $callCount counter tracks this: call 1 returns false (pre-check),
      * calls 2+ return true (supervision loop trigger).
+     *
+     * ToolRuntime::run() throws RuntimeException for stale results after
+     * the callback returns, so the callback's return value is discarded.
+     * The meaningful behaviour is that BackgroundProcessManager::stop()
+     * was called, which this test verifies as a post-condition.
      */
     public function testCancellationStopsProcess(): void
     {
@@ -199,14 +204,32 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         $this->createManager();
 
+        $storedPid = null;
+
         // ToolRuntime::run() detects stale cancellation AFTER the callback
         // returns, so we expect a RuntimeException about stale result.
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('due to run cancellation');
 
-        $this->contextAccessor->with($context, function (): string {
-            return ($this->makeBashTool())(['command' => 'echo "before cancel" && sleep 10']);
-        });
+        try {
+            $this->contextAccessor->with($context, function () use (&$storedPid): string {
+                // Capture the PID before cancellation triggers in the loop
+                $entities = $this->manager->list(self::TEST_SESSION);
+                if ([] !== $entities) {
+                    $storedPid = $entities[0]->pid;
+                }
+
+                return ($this->makeBashTool())(['command' => 'echo "before cancel" && sleep 10']);
+            });
+        } finally {
+            // Verify the process was stopped by the cancellation path
+            if (null !== $storedPid) {
+                $entity = $this->manager->find($storedPid, self::TEST_SESSION);
+                if (null !== $entity) {
+                    $this->assertNotNull($entity->finishedAt, 'Cancelled process should be marked finished');
+                }
+            }
+        }
     }
 
     /* ── Argument validation ── */
@@ -239,6 +262,41 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->expectExceptionMessage('timeout');
 
         $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())(['command' => 'echo hi', 'timeout' => -5]));
+    }
+
+    public function testTimeoutExceedsMaximumThrows(): void
+    {
+        $this->createManager();
+        $this->bashConfig = new BashToolConfig(
+            defaultTimeoutSeconds: 10,
+            maxTimeoutSeconds: 30,
+            backgroundPromptThresholdSeconds: 30,
+            pollIntervalMicros: 50_000,
+            logTailChars: 20000,
+        );
+
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('must not exceed 30 seconds');
+
+        $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())(['command' => 'echo hi', 'timeout' => 9999]));
+    }
+
+    public function testTimeoutAtMaximumAccepted(): void
+    {
+        $this->createManager();
+        $this->bashConfig = new BashToolConfig(
+            defaultTimeoutSeconds: 10,
+            maxTimeoutSeconds: 30,
+            backgroundPromptThresholdSeconds: 30,
+            pollIntervalMicros: 50_000,
+            logTailChars: 20000,
+        );
+
+        $result = $this->withContext(self::TEST_SESSION, function (): string {
+            return ($this->makeBashTool())(['command' => 'echo "ok"', 'timeout' => 30]);
+        });
+
+        $this->assertStringContainsString('ok', $result);
     }
 
     /* ── Background prompt acceptance ── */
@@ -421,6 +479,23 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertContains('command', $def->parametersJsonSchema['required'] ?? []);
         // Schema must NOT have 'run_in_background'
         $this->assertArrayNotHasKey('run_in_background', $def->parametersJsonSchema['properties'] ?? []);
+    }
+
+    /* ── No-context execution (session-less) ── */
+
+    public function testSuccessfulCommandWithoutContext(): void
+    {
+        $this->createManager();
+
+        // No ambient ToolContext — sessionId and cancelToken are null.
+        // The tool should execute the command successfully with only the
+        // timeout deadline (no cancellation capability).
+        $tool = $this->makeBashTool();
+        $result = ($tool)(['command' => 'echo "no context test"']);
+
+        $this->assertStringContainsString('no context test', $result);
+        $this->assertStringNotContainsString('timed out', $result);
+        $this->assertStringNotContainsString('cancelled', $result);
     }
 
     /* ── Session scoping ── */

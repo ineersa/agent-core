@@ -96,6 +96,7 @@ tui:
 #
 #     bash:
 #         default_timeout_seconds: 300
+#         max_timeout_seconds: 3600
 #         background_prompt_threshold_seconds: 30
 #         poll_interval_micros: 100000
 #         log_tail_chars: 20000
