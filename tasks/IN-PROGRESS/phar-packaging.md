@@ -102,7 +102,7 @@ Create `tests/CodingAgent/Phar/PharSmokeTest.php` following the same pattern as 
 - castor check passes
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/phar-packaging
 Worktree: /home/ineersa/projects/agent-core-worktrees/phar-packaging
 Fork run: aur5mngapkz1
@@ -273,3 +273,7 @@ Castor Check Output SHA256: 8773ab120b38b281b0eaa2028933e1e63b59214e9d9a67b9c3eb
 - Pushed task/phar-packaging to origin.
 - branch 'task/phar-packaging' set up to track 'origin/task/phar-packaging'.
 - Created PR: https://github.com/ineersa/agent-core/pull/93
+
+## Task workflow update - 2026-06-05T00:31:31.389Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: PR review iteration requested by user: PR is otherwise acceptable, but documentation is missing. Moving back to IN-PROGRESS to add/update docs and applicable agent skill/test guidance before returning to code review.
