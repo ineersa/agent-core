@@ -1,0 +1,96 @@
+# Symfony AI OpenAICodex platform bridge
+
+## Goal
+## Summary
+
+Build a new Symfony AI platform bridge for OpenAI Codex (ChatGPT backend) as a deptrac-isolated namespace under `src/Platform/Bridge/OpenAICodex/`. This bridge is a standalone Symfony AI component with zero dependency on Hatfield/CodingAgent/AgentCore/Tui code.
+
+**Detailed plan**: `.pi/plans/openai-codex-bridge.md` (Task 1 section)
+
+## What Codex is
+
+OpenAI Codex accesses GPT-5.x models via `chatgpt.com/backend-api/codex/responses` using the Responses API format. It requires OAuth (PKCE) authentication + `chatgpt-account-id` header instead of a static API key. The SSE response format is identical to the standard OpenAI Responses API.
+
+## Key differences from OpenResponses bridge
+
+- **Auth**: OAuth access token (not API key) — but the bridge just receives token + account_id, does NOT handle OAuth/PKCE
+- **Headers**: `chatgpt-account-id`, `originator`, `OpenAI-Beta: responses=experimental`
+- **Path**: `/codex/responses` instead of `/v1/responses`
+- **Base URL**: `chatgpt.com/backend-api` instead of `api.openai.com/v1`
+
+## Files to create
+
+```
+src/Platform/Bridge/OpenAICodex/
+├── CodexModel.php              ← extends Model
+├── CodexModelClient.php        ← HTTP client with Codex headers
+├── CodexModelCatalog.php       ← static model catalog (gpt-5.2 through gpt-5.5)
+├── ResultConverter.php         ← SSE stream → ThinkingDelta/TextDelta/ToolCallComplete
+├── TokenUsageExtractor.php     ← Responses API usage format (input_tokens/output_tokens)
+├── Factory.php                 ← createProvider() / createPlatform()
+├── composer.json               ← depends on ai-platform + http-client only
+├── phpunit.xml.dist
+└── Tests/
+    ├── CodexModelClientTest.php     ← MockHttpClient: assert headers, URL, body
+    ├── ResultConverterTest.php      ← InMemoryRawResult: streaming events → deltas
+    └── CodexModelCatalogTest.php    ← model definitions
+```
+
+## Deptrac
+
+New layer `OpenAICodexPlatform` → depends only on `Symfony\AI\Platform` + `Symfony\Component\HttpClient`. Forbidden: AgentCore, CodingAgent, Tui.
+
+## Test patterns (from Symfony AI monorepo)
+
+- **ModelClientTest**: `MockHttpClient` callback — assert method, URL, headers (`chatgpt-account-id`, `originator`, `OpenAI-Beta`, `Authorization: Bearer`), body JSON
+- **ResultConverterTest**: `InMemoryRawResult` with inline event arrays for streaming tests; `createMock(ResponseInterface)` for static tests
+- **Stream events to assert**: `response.output_text.delta` → `TextDelta`, `response.reasoning_summary_text.delta` → `ThinkingStart`+`ThinkingDelta`, `response.reasoning_summary_text.done` → `ThinkingComplete`, `response.completed` with `function_call` → `ToolCallComplete`
+
+## Stream event mapping
+
+| Codex SSE event | Symfony AI delta |
+|----------------|-----------------|
+| `response.output_text.delta` | `TextDelta` |
+| `response.reasoning_summary_text.delta` | `ThinkingStart` (first) + `ThinkingDelta` |
+| `response.reasoning_summary_text.done` | `ThinkingComplete` |
+| `response.completed` + `function_call` output | `ToolCallComplete` |
+| Usage in `response.completed` | `TokenUsage` |
+
+## Models (from pi-mono research)
+
+| Model | Context | Max Tokens | Input Cost | Output Cost | Input |
+|-------|---------|------------|-----------|-------------|-------|
+| gpt-5.2 | 272K | 128K | $1.75 | $14 | text, image |
+| gpt-5.3-codex | 272K | 128K | $1.75 | $14 | text, image |
+| gpt-5.3-codex-spark | 272K | 128K | $1.75 | $14 | text |
+| gpt-5.4 | 272K | 128K | $2.50 | $15 | text, image |
+| gpt-5.4-mini | 272K | 128K | $0.75 | $4.50 | text, image |
+| gpt-5.5 | 272K | 128K | $5.00 | $30 | text, image |
+
+## Validation
+
+- `castor deptrac` — OpenAICodexPlatform layer has no Hatfield dependencies
+- `castor phpstan` — strict analysis
+- All tests pass
+
+## Acceptance criteria
+- CodexModelClient sends correct headers (chatgpt-account-id, originator, OpenAI-Beta) and uses /codex/responses path
+- ResultConverter correctly maps SSE stream events to Symfony AI deltas (TextDelta, ThinkingStart/Delta/Complete, ToolCallComplete, TokenUsage)
+- Factory creates Provider and Platform with correct wiring (CodexModelClient + ResultConverter + CodexModelCatalog)
+- Deptrac validates OpenAICodexPlatform layer has zero dependency on AgentCore/CodingAgent/Tui
+- Tests follow Symfony AI patterns: MockHttpClient callbacks for ModelClient, InMemoryRawResult for streaming ResultConverter
+- TokenUsageExtractor handles Responses API format (input_tokens, output_tokens, cached_tokens, reasoning_tokens)
+- castor deptrac + castor phpstan pass
+
+## Workflow metadata
+Status: TODO
+Branch:
+Worktree:
+Fork run:
+PR URL:
+PR Status:
+Started:
+Completed:
+
+## Work log
+- Created: 2026-06-05T22:55:54.191Z
