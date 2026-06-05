@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
+use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\Tui\Question\QuestionController;
@@ -52,71 +53,14 @@ final class TickPollListener implements TuiListenerRegistrar
         $questionController->setRuntimeRefs($context);
 
         $context->ticks->add(static function () use ($poller, $state, $client, $screen, $questionCoordinator, $questionController): ?bool {
+            $onHitl = static function (RuntimeEvent $event) use ($client, $questionCoordinator): void {
+                self::handleHumanInputRequested($event, $client, $questionCoordinator);
+            };
+
             $changedBlocks = $poller->poll(
                 $state,
                 $client,
-                // Human input requested handler: enqueue an approval question.
-                onHumanInputRequested: static function (RuntimeEvent $event) use ($client, $questionCoordinator): void {
-                    $p = $event->payload;
-                    $questionId = (string) ($p['question_id'] ?? '');
-                    $runId = $event->runId;
-
-                    if ('' === $questionId) {
-                        return;
-                    }
-
-                    // Build choices from schema enum if available
-                    $schema = \is_array($p['schema'] ?? null) ? $p['schema'] : ['type' => 'string'];
-                    $enum = $schema['enum'] ?? null;
-                    $choices = \is_array($enum) && [] !== $enum
-                        ? array_map(
-                            static fn (string $label): QuestionOption => new QuestionOption($label),
-                            array_values($enum),
-                        )
-                        : [];
-
-                    $requestId = 'hitl_'.$questionId;
-                    $request = new QuestionRequest(
-                        requestId: $requestId,
-                        source: QuestionSource::AgentCore,
-                        kind: QuestionKind::Approval,
-                        prompt: (string) ($p['prompt'] ?? 'Approval required.'),
-                        schema: $schema,
-                        choices: $choices,
-                        allowOther: false,
-                        runId: $runId,
-                        questionId: $questionId,
-                        toolCallId: (string) ($p['tool_call_id'] ?? ''),
-                        toolName: (string) ($p['tool_name'] ?? ''),
-                        transcript: true,
-                    );
-
-                    // Enqueue the question with answer and cancel callbacks.
-                    // Answer sends the user's selection; cancel sends a
-                    // fail-safe Deny so the run is not left stuck in
-                    // WaitingHuman when the user dismisses the overlay.
-                    $questionCoordinator->enqueue(
-                        $request,
-                        onAnswer: static function (mixed $answer) use ($client, $runId, $questionId): void {
-                            $client->send($runId, new UserCommand(
-                                type: 'answer_human',
-                                payload: [
-                                    'question_id' => $questionId,
-                                    'answer' => \is_scalar($answer) ? (string) $answer : 'Deny',
-                                ],
-                            ));
-                        },
-                        onCancel: static function () use ($client, $runId, $questionId): void {
-                            $client->send($runId, new UserCommand(
-                                type: 'answer_human',
-                                payload: [
-                                    'question_id' => $questionId,
-                                    'answer' => 'Deny',
-                                ],
-                            ));
-                        },
-                    );
-                },
+                onHumanInputRequested: $onHitl,
             );
 
             if (null !== $changedBlocks) {
@@ -150,5 +94,90 @@ final class TickPollListener implements TuiListenerRegistrar
 
             return null;
         });
+    }
+
+    /**
+     * Handle a human_input.requested runtime event by enqueuing an
+     * Approval question in the coordinator.
+     *
+     * This is invoked by RuntimeEventPoller::poll() each time a
+     * human_input.requested event is polled from the runtime stream.
+     * The event carries a question_id, schema, prompt, and metadata
+     * from the tool that requested approval (e.g. SafeGuard).
+     *
+     * A guard against duplicate request IDs prevents enqueueing the
+     * same question twice if the event stream replays (e.g. after a
+     * cursor reset). RuntimeEventPoller seq-based deduplication should
+     * prevent replays under normal operation, but this is a safety net.
+     */
+    private static function handleHumanInputRequested(
+        RuntimeEvent $event,
+        AgentSessionClient $client,
+        QuestionCoordinator $questionCoordinator,
+    ): void {
+        $p = $event->payload;
+        $questionId = (string) ($p['question_id'] ?? '');
+        $runId = $event->runId;
+
+        if ('' === $questionId) {
+            return;
+        }
+
+        $requestId = 'hitl_'.$questionId;
+
+        if ($questionCoordinator->hasRequest($requestId)) {
+            return;
+        }
+
+        // Build choices from schema enum if available
+        $schema = \is_array($p['schema'] ?? null) ? $p['schema'] : ['type' => 'string'];
+        $enum = $schema['enum'] ?? null;
+        $choices = \is_array($enum) && [] !== $enum
+            ? array_map(
+                static fn (string $label): QuestionOption => new QuestionOption($label),
+                array_values($enum),
+            )
+            : [];
+
+        $request = new QuestionRequest(
+            requestId: $requestId,
+            source: QuestionSource::AgentCore,
+            kind: QuestionKind::Approval,
+            prompt: (string) ($p['prompt'] ?? 'Approval required.'),
+            schema: $schema,
+            choices: $choices,
+            allowOther: false,
+            runId: $runId,
+            questionId: $questionId,
+            toolCallId: (string) ($p['tool_call_id'] ?? ''),
+            toolName: (string) ($p['tool_name'] ?? ''),
+            transcript: true,
+        );
+
+        // Enqueue the question with answer and cancel callbacks.
+        // Answer sends the user's selection; cancel sends a
+        // fail-safe Deny so the run is not left stuck in
+        // WaitingHuman when the user dismisses the overlay.
+        $questionCoordinator->enqueue(
+            $request,
+            onAnswer: static function (mixed $answer) use ($client, $runId, $questionId): void {
+                $client->send($runId, new UserCommand(
+                    type: 'answer_human',
+                    payload: [
+                        'question_id' => $questionId,
+                        'answer' => \is_scalar($answer) ? (string) $answer : 'Deny',
+                    ],
+                ));
+            },
+            onCancel: static function () use ($client, $runId, $questionId): void {
+                $client->send($runId, new UserCommand(
+                    type: 'answer_human',
+                    payload: [
+                        'question_id' => $questionId,
+                        'answer' => 'Deny',
+                    ],
+                ));
+            },
+        );
     }
 }

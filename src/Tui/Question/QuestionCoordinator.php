@@ -100,6 +100,17 @@ final class QuestionCoordinator
     }
 
     /**
+     * Check whether a request with the given ID has already been
+     * enqueued (active or queued).
+     *
+     * Used to guard against duplicate enqueue from event replays.
+     */
+    public function hasRequest(string $requestId): bool
+    {
+        return isset($this->requestIds[$requestId]);
+    }
+
+    /**
      * Resolve the active question with a user-provided answer.
      *
      * The registered callback (if any, for any source) is invoked with

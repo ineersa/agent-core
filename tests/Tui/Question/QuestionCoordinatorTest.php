@@ -437,4 +437,33 @@ final class QuestionCoordinatorTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $coordinator->enqueue($this->tuiRequest('dup-id'));
     }
+
+    public function testHasRequestReturnsTrueForEnqueuedId(): void
+    {
+        $coordinator = new QuestionCoordinator();
+
+        self::assertFalse($coordinator->hasRequest('r1'));
+
+        $coordinator->enqueue($this->tuiRequest('r1'));
+
+        self::assertTrue($coordinator->hasRequest('r1'));
+    }
+
+    public function testHasRequestReturnsFalseAfterAdvance(): void
+    {
+        $coordinator = new QuestionCoordinator();
+        $coordinator->enqueue($this->tuiRequest('r1'));
+
+        $coordinator->answer('ok');
+
+        // After the request is answered, it is removed from tracking
+        self::assertFalse($coordinator->hasRequest('r1'));
+    }
+
+    public function testHasRequestReturnsFalseForUnknownId(): void
+    {
+        $coordinator = new QuestionCoordinator();
+
+        self::assertFalse($coordinator->hasRequest('nonexistent'));
+    }
 }

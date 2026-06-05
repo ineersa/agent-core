@@ -183,6 +183,17 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
 
             return;
         }
+
+        // Unrecognized answers (null, empty, or unknown values) are
+        // intentionally ignored: no approval is recorded and the
+        // pending entry in the tracker remains, leaving the operation
+        // blocked. This is a fail-closed safety guard — only explicit
+        // Deny / Allow once / Always allow answers mutate state.
+        // If the question is retried (re-answered), a new answer will
+        // arrive on a fresh call to this method.
+        //
+        // The guard is intentionally sparse: no logging, no exception.
+        // A stray/corrupted answer should not crash the run.
     }
 
     /**
