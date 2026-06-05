@@ -344,3 +344,8 @@ Castor Check Output SHA256: 8773ab120b38b281b0eaa2028933e1e63b59214e9d9a67b9c3eb
 - Removed worktree /home/ineersa/projects/agent-core-worktrees/phar-packaging.
 - Pulled integration checkout: Already up to date..
 - Summary: Completing reviewed PHAR packaging task after user approval. PR #93 was open/clean; docs review iteration was returned to CODE-REVIEW and Castor gate passed at commit `ba0390d3447d` before merge.
+
+## Task workflow update - 2026-06-05T00:42:34.143Z
+- Updated PR Status: merged
+- Validation: `LLM_MODE=true castor check`: OK. deptrac OK (violations=0, errors=0); PHAR rebuilt because `box.json` changed (`/tmp/bin/hatfield.phar`, 5.9MB; timings copy=0.0s composer=1.3s box=1.3s total=4.1s); PHAR smokes OK (`list`, `about`, `agent --help`, writable-dir isolation); PHPUnit unit/integration OK (1660 tests, 4907 assertions); controller E2E OK (1 test, 7 assertions); llm-real OK (7 tests, 40 assertions); TUI E2E OK (5 tests, 18 assertions); phpstan OK (0 errors, 0 file_errors); cs-check OK (files_fixed=0); quality OK.; `git status --short --branch` on integration checkout: `## main...origin/main` with no changes.; Worktree cleanup check: `/home/ineersa/projects/agent-core-worktrees/phar-packaging` does not exist.
+- Summary: Post-merge validation completed on integration checkout after merging PHAR packaging. Worktree cleanup confirmed: `/home/ineersa/projects/agent-core-worktrees/phar-packaging` no longer exists. Integration checkout is clean and aligned with `origin/main` at `87bcba74`.
