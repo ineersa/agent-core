@@ -323,6 +323,132 @@ final class ToolRegistryTest extends TestCase
         $this->assertSame([], $this->registry->permanentGuidelines());
     }
 
+    /* ───────── Tool filtering (allowlist / denylist) ───────── */
+
+    public function testSetAllowedToolNamesRestrictsVisibleTools(): void
+    {
+        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read', promptGuidelines: ['G1']);
+        $this->registry->registerTool(name: 'write', description: 'Write', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'write: Write', promptGuidelines: ['G2']);
+        $this->registry->registerTool(name: 'bash', description: 'Bash', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'bash: Bash', promptGuidelines: ['G3']);
+
+        $this->registry->setAllowedToolNames(['read', 'write']);
+
+        $this->assertSame(['read', 'write'], $this->registry->activeToolNames());
+        $this->assertSame(['read: Read', 'write: Write'], $this->registry->permanentToolLines());
+        $this->assertSame(['G1', 'G2'], $this->registry->permanentGuidelines());
+    }
+
+    public function testSetAllowedToolNamesEmptyMakesAllToolsVisible(): void
+    {
+        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read', promptGuidelines: ['G1']);
+        $this->registry->setAllowedToolNames(['read']);
+        $this->assertSame(['read'], $this->registry->activeToolNames());
+
+        $this->registry->setAllowedToolNames([]);
+        $this->assertSame(['read'], $this->registry->activeToolNames());
+    }
+
+    public function testSetExcludedToolNamesHidesSpecificTools(): void
+    {
+        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read', promptGuidelines: ['G1']);
+        $this->registry->registerTool(name: 'bash', description: 'Bash', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'bash: Bash', promptGuidelines: ['G3']);
+
+        $this->registry->setExcludedToolNames(['bash']);
+
+        $this->assertSame(['read'], $this->registry->activeToolNames());
+        $this->assertSame(['read: Read'], $this->registry->permanentToolLines());
+        $this->assertSame(['G1'], $this->registry->permanentGuidelines());
+    }
+
+    public function testSetExcludedToolNamesEmptyShowsAll(): void
+    {
+        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read', promptGuidelines: ['G1']);
+        $this->registry->setExcludedToolNames(['read']);
+        $this->assertSame([], $this->registry->activeToolNames());
+
+        $this->registry->setExcludedToolNames([]);
+        $this->assertSame(['read'], $this->registry->activeToolNames());
+    }
+
+    public function testExcludedToolNamesReturnsCurrentList(): void
+    {
+        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read', promptGuidelines: ['G1']);
+        $this->registry->registerTool(name: 'bash', description: 'Bash', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'bash: Bash', promptGuidelines: ['G3']);
+
+        $this->registry->setExcludedToolNames(['bash', 'read']);
+
+        $excluded = $this->registry->excludedToolNames();
+        $this->assertCount(2, $excluded);
+        $this->assertContains('bash', $excluded);
+        $this->assertContains('read', $excluded);
+    }
+
+    public function testCombinedAllowlistAndDenylist(): void
+    {
+        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read', promptGuidelines: ['G1']);
+        $this->registry->registerTool(name: 'write', description: 'Write', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'write: Write', promptGuidelines: ['G2']);
+        $this->registry->registerTool(name: 'bash', description: 'Bash', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'bash: Bash', promptGuidelines: ['G3']);
+        $this->registry->registerTool(name: 'edit', description: 'Edit', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'edit: Edit', promptGuidelines: ['G4']);
+
+        $this->registry->setAllowedToolNames(['read', 'write', 'edit', 'bash']);
+        $this->registry->setExcludedToolNames(['bash', 'edit']);
+
+        $this->assertSame(['read', 'write'], $this->registry->activeToolNames());
+        $this->assertSame(['read: Read', 'write: Write'], $this->registry->permanentToolLines());
+        $this->assertSame(['G1', 'G2'], $this->registry->permanentGuidelines());
+    }
+
+    public function testSetAllowedToolNamesWithUnknownToolThrows(): void
+    {
+        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read', promptGuidelines: ['G1']);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Unknown tool name in allowlist: "unknown_tool"');
+        $this->registry->setAllowedToolNames(['read', 'unknown_tool']);
+    }
+
+    public function testSetExcludedToolNamesWithUnknownToolThrows(): void
+    {
+        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read', promptGuidelines: ['G1']);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Unknown tool name in exclusions: "nonexistent"');
+        $this->registry->setExcludedToolNames(['nonexistent']);
+    }
+
+    public function testExcludedDynamicToolsAreFiltered(): void
+    {
+        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read', promptGuidelines: ['G1']);
+        $this->registry->addDynamicTool(name: 'dyn_tool', description: 'Dyn', parametersJsonSchema: [], handler: $this->dummyHandler());
+
+        $this->registry->setExcludedToolNames(['dyn_tool']);
+
+        $this->assertSame(['read'], $this->registry->activeToolNames());
+        $defs = $this->registry->activeToolDefinitions();
+        $this->assertCount(1, $defs);
+        $this->assertSame('read', $defs[0]->name);
+    }
+
+    public function testSetAllowedToolNamesTrimsEmptyStrings(): void
+    {
+        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read', promptGuidelines: ['G1']);
+        $this->registry->registerTool(name: 'bash', description: 'Bash', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'bash: Bash', promptGuidelines: ['G3']);
+
+        $this->registry->setAllowedToolNames(['', 'read', '  ']);
+
+        $this->assertSame(['read'], $this->registry->activeToolNames());
+    }
+
+    public function testSetExcludedToolNamesTrimsEmptyStrings(): void
+    {
+        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read', promptGuidelines: ['G1']);
+        $this->registry->registerTool(name: 'bash', description: 'Bash', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'bash: Bash', promptGuidelines: ['G3']);
+
+        $this->registry->setExcludedToolNames(['', 'bash', '  ']);
+
+        $this->assertSame(['read'], $this->registry->activeToolNames());
+    }
+
     /* ───────── Execution mode ───────── */
 
     public function testRegisterToolDefaultsToSequentialExecutionMode(): void

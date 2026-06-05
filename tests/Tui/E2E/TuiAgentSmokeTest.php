@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\E2E;
 
+use Ineersa\CodingAgent\Tests\Support\AgentTestExecutable;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
@@ -39,7 +40,7 @@ final class TuiAgentSmokeTest extends TestCase
         }
 
         $this->tmux = new TmuxHarness();
-        $this->projectRoot = \realpath(__DIR__ . '/../../..');
+        $this->projectRoot = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
         $this->testProjectDir = $this->createIsolatedProjectDir();
         $this->snapshotDir = $this->testProjectDir . '/.hatfield/tmp/tui/smoke';
         @\mkdir($this->snapshotDir, 0o777, true);
@@ -280,7 +281,8 @@ final class TuiAgentSmokeTest extends TestCase
             // ── Start first turn ──
             $this->tmux->waitForCaptureContains($pane, '█', 10.0);
 
-            $prompt1 = 'Say exactly: one';
+            // Chat-only prompt: multi-turn ordering test, not a tools test.
+            $prompt1 = 'Respond with exactly "One". Do not use tools.';
             $this->tmux->sendLiteral($pane, $prompt1);
             $this->tmux->sendKey($pane, 'Enter');
 
@@ -313,7 +315,7 @@ final class TuiAgentSmokeTest extends TestCase
 
             // ── Start second turn ──
             // Type a follow-up prompt
-            $prompt2 = 'Say exactly: two';
+            $prompt2 = 'Respond with exactly "Two". Do not use tools.';
 
             // Snapshot current history so we can wait for NEW occurrences
             // of ❯ and ◇ (the first turn's blocks are already in history).
@@ -427,11 +429,13 @@ final class TuiAgentSmokeTest extends TestCase
 
     private function agentCommand(): string
     {
+        [$php, $script] = AgentTestExecutable::command();
+
         return \sprintf(
-            'APP_ENV=dev HOME=%s %s %s agent --model=llama_cpp_test/test 2>&1',
+            'APP_ENV=dev HOME=%s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
             \escapeshellarg($this->testProjectDir.'/home'),
-            \escapeshellarg(\PHP_BINARY),
-            \escapeshellarg($this->projectRoot.'/bin/console'),
+            \escapeshellarg($php),
+            \escapeshellarg($script),
         );
     }
 
@@ -441,18 +445,68 @@ final class TuiAgentSmokeTest extends TestCase
         @\mkdir($dir.'/.hatfield', 0o777, true);
         @\mkdir($dir.'/home/.hatfield', 0o777, true);
 
+        $settings = [];
         $projectSettings = $this->projectRoot.'/.hatfield/settings.yaml';
         if (\is_readable($projectSettings)) {
-            $settings = (string) \file_get_contents($projectSettings);
-            $settings = \preg_replace(
-                '/^ai:\n/m',
-                "ai:\n    default_model: llama_cpp_test/test\n    default_reasoning: off\n",
-                $settings,
-                1,
-            ) ?? $settings;
-            \file_put_contents($dir.'/.hatfield/settings.yaml', $settings);
-            \file_put_contents($dir.'/home/.hatfield/settings.yaml', $settings);
+            $parsed = \Symfony\Component\Yaml\Yaml::parseFile($projectSettings);
+            if (\is_array($parsed)) {
+                $settings = $parsed;
+            }
         }
+
+        $ai = $settings['ai'] ?? [];
+        if (!\is_array($ai)) {
+            $ai = [];
+        }
+        $ai['default_model'] = 'llama_cpp_test/test';
+        unset($ai['default_reasoning']);
+        $settings['ai'] = $ai;
+
+        // Force SafeGuard enabled with blocking defaults for all TUI E2E tests.
+        $extensions = $settings['extensions'] ?? [];
+        if (!\is_array($extensions)) {
+            $extensions = [];
+        }
+
+        $enabled = $extensions['enabled'] ?? [];
+        if (!\is_array($enabled)) {
+            $enabled = [];
+        }
+
+        $safeGuardExtension = 'Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension';
+        if (!\in_array($safeGuardExtension, $enabled, true)) {
+            $enabled[] = $safeGuardExtension;
+        }
+        $extensions['enabled'] = $enabled;
+
+        $extensionSettings = $extensions['settings'] ?? [];
+        if (!\is_array($extensionSettings)) {
+            $extensionSettings = [];
+        }
+
+        $safeGuardSettings = $extensionSettings['safe_guard'] ?? [];
+        if (!\is_array($safeGuardSettings)) {
+            $safeGuardSettings = [];
+        }
+
+        $safeGuardSettings['tool_names'] = [
+            'bash' => 'bash',
+            'write' => 'write',
+            'edit' => 'edit',
+            'read' => 'read',
+        ];
+        $safeGuardSettings['allow_command_patterns'] = [];
+        $safeGuardSettings['allow_write_outside_cwd'] = [];
+        $safeGuardSettings['protected_read_patterns'] = [];
+        $safeGuardSettings['dangerous_command_patterns'] = [];
+
+        $extensionSettings['safe_guard'] = $safeGuardSettings;
+        $extensions['settings'] = $extensionSettings;
+        $settings['extensions'] = $extensions;
+
+        $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
+        \file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
+        \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
         return $dir;
     }
@@ -532,7 +586,7 @@ final class TuiAgentSmokeTest extends TestCase
 
         foreach (\array_slice($dirs, 0, 3) as $sessionDir) {
             \fwrite(\STDERR, "Session: {$sessionDir}\n\n");
-            foreach (['events.jsonl', 'transcript.jsonl', 'state.json', 'metadata.yaml', 'idempotency.jsonl'] as $file) {
+            foreach (['events.jsonl', 'transcript.jsonl', 'state.json', 'idempotency.jsonl'] as $file) {
                 $path = $sessionDir . '/' . $file;
                 if (\file_exists($path)) {
                     $content = (string) \file_get_contents($path);

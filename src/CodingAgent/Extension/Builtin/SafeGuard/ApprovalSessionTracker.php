@@ -5,23 +5,16 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Extension\Builtin\SafeGuard;
 
 /**
- * Two-tier approval tracker for SafeGuard's HITL approval flow.
+ * In-memory tracker for approved tool call operations within a session.
  *
- * Tier 1: In-memory approved keys — operations that were already approved
- *         and can be consumed on the next tool call retry (one-time use).
- *
- * Tier 2: Pending operations — operations that are waiting for the human
- *         to answer. The answer is resolved from the shared events.jsonl
- *         file via SessionEventReader, avoiding cross-process callback
- *         routing that would fail in async (multi-process) mode.
+ * Tracks operations that were approved via the HITL approval flow.
+ * Keys are normalized operation identifiers (e.g., "destructive:rm -rf /tmp/build").
  *
  * Lifecycle:
- *   1. markPending(key, questionId, sessionId) — called when RequireApproval is returned
- *   2. resolveAnswer(key) — reads events.jsonl for the pending answer
- *   3. approve(key) — called when the answer is "Allow once" or "Always allow"
- *   4. consumeApproval(key) — called on the next onToolCall, returns true and removes
- *   5. remove(key) — called when the answer is "Deny"
- *   6. forceAnswer(key, answer) — testing-only in-memory override
+ *   1. markPending(questionId, key) — called when RequireApproval is returned
+ *   2. approve(key) — called when the human answers "Allow once" or "Always allow"
+ *   3. consumeApproval(key) — called on the next onToolCall, returns true and removes
+ *   4. remove(key) — called when the human answers "Deny" or on cleanup
  *
  * This tracker is NOT persisted across runs. All tool execution within a
  * session runs in the same Messenger consumer process, so a singleton-scoped
@@ -32,104 +25,53 @@ namespace Ineersa\CodingAgent\Extension\Builtin\SafeGuard;
 final class ApprovalSessionTracker
 {
     /**
-     * Approved keys: key => true (one-time use, consumed on next tool call).
+     * Approved keys: key => true.
      *
      * @var array<string, bool>
      */
     private array $approved = [];
 
     /**
-     * Pending operations: key => {questionId, sessionId}.
-     *
-     * @var array<string, array{questionId: string, sessionId: string}>
-     */
-    private array $pending = [];
-
-    /**
-     * Forced answers for testing: key => answer.
+     * Pending question_id => key mappings.
      *
      * @var array<string, string>
      */
-    private array $forcedAnswers = [];
-
-    public function __construct(
-        private readonly ?SessionEventReader $eventReader = null,
-    ) {
-    }
+    private array $pendingByQuestionId = [];
 
     /**
      * Mark an operation as pending approval.
      *
-     * Stores the key → (questionId, sessionId) mapping so that
-     * resolveAnswer() can find the human's response in events.jsonl.
+     * Stores the question_id → key mapping so that when the answer
+     * arrives, the correct key can be approved.
      */
-    public function markPending(string $key, string $questionId, string $sessionId): void
+    public function markPending(string $questionId, string $key): void
     {
-        $this->pending[$key] = ['questionId' => $questionId, 'sessionId' => $sessionId];
+        $this->pendingByQuestionId[$questionId] = $key;
     }
 
     /**
-     * Check whether an operation key has a pending approval.
+     * Approve an operation by its question_id.
+     *
+     * Called by SafeGuardToolCallHook::onApprovalAnswered() when the
+     * human answers "Allow once" or "Always allow".
+     *
+     * The operation is marked as approved and will be allowed on the
+     * next onToolCall() invocation with the same key.
      */
-    public function hasPending(string $key): bool
+    public function approveByQuestionId(string $questionId): void
     {
-        return isset($this->pending[$key]);
-    }
+        $key = $this->pendingByQuestionId[$questionId] ?? null;
 
-    /**
-     * Resolve the human's answer for a pending operation.
-     *
-     * Checks forced answers first (testing), then queries the
-     * SessionEventReader to find the answer in events.jsonl.
-     *
-     * After resolving, the pending entry is removed regardless of
-     * whether an answer was found.
-     *
-     * @return string|null the answer text, or null if no answer found yet
-     */
-    public function resolveAnswer(string $key): ?string
-    {
-        // Check forced answers first (testing override)
-        if (isset($this->forcedAnswers[$key])) {
-            $answer = $this->forcedAnswers[$key];
-            unset($this->forcedAnswers[$key]);
-            unset($this->pending[$key]);
-
-            return $answer;
+        if (null === $key) {
+            return;
         }
 
-        $entry = $this->pending[$key] ?? null;
-
-        if (null === $entry) {
-            return null;
-        }
-
-        // Remove pending entry — answer resolution is one-shot
-        unset($this->pending[$key]);
-
-        if (null === $this->eventReader) {
-            return null;
-        }
-
-        return $this->eventReader->findAnswer($entry['sessionId'], $entry['questionId']);
+        $this->approved[$key] = true;
+        unset($this->pendingByQuestionId[$questionId]);
     }
 
     /**
-     * Force an answer for a key (testing only).
-     *
-     * The forced answer takes precedence over events.jsonl and is
-     * consumed on the next resolveAnswer() call.
-     */
-    public function forceAnswer(string $key, string $answer): void
-    {
-        $this->forcedAnswers[$key] = $answer;
-    }
-
-    /**
-     * Approve an operation by its key.
-     *
-     * The operation will be allowed on the next onToolCall() invocation
-     * with the same key (one-time use).
+     * Approve an operation by its key directly.
      */
     public function approve(string $key): void
     {
@@ -162,12 +104,33 @@ final class ApprovalSessionTracker
     }
 
     /**
-     * Remove an operation from both pending and approved state.
+     * Remove an operation from pending and approved state.
      *
      * Called when the human answers "Deny" or on cleanup.
      */
     public function remove(string $key): void
     {
-        unset($this->approved[$key], $this->pending[$key], $this->forcedAnswers[$key]);
+        unset($this->approved[$key]);
+
+        // Also clean up any question_id referencing this key
+        foreach ($this->pendingByQuestionId as $qId => $k) {
+            if ($k === $key) {
+                unset($this->pendingByQuestionId[$qId]);
+            }
+        }
+    }
+
+    /**
+     * Remove a pending operation by its question_id.
+     *
+     * Called when the human answers "Deny".
+     */
+    public function removeByQuestionId(string $questionId): void
+    {
+        $key = $this->pendingByQuestionId[$questionId] ?? null;
+
+        if (null !== $key) {
+            $this->remove($key);
+        }
     }
 }

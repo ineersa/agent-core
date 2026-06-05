@@ -7,6 +7,8 @@ namespace Ineersa\CodingAgent\Extension\Builtin\SafeGuard;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Classifier\SafeGuardClassifier;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardDecisionKind;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardPolicy;
+use Ineersa\Hatfield\ExtensionApi\ApprovalAnswerContextDTO;
+use Ineersa\Hatfield\ExtensionApi\ApprovalAnswerHookInterface;
 use Ineersa\Hatfield\ExtensionApi\ToolCallContextDTO;
 use Ineersa\Hatfield\ExtensionApi\ToolCallDecisionDTO;
 use Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface;
@@ -15,40 +17,24 @@ use Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface;
  * SafeGuard tool-call hook that intercepts tool execution and applies
  * SafeGuard classification rules.
  *
- * Decision mapping:
- *   - Allow → Allow (tool executes normally)
- *   - HardBlock (sudo/su) → Block (never negotiable)
- *   - Relaxable categories (destructive, dangerous_git, sensitive_info,
- *     custom_dangerous, write_outside_cwd, protected_read):
- *       - autoDenyInNoninteractive=true → Block with auto_denied flag
- *       - autoDenyInNoninteractive=false → RequireApproval with approval schema
+ * Routes by tool name to SafeGuardClassifier, then maps the resulting
+ * SafeGuardDecision to a ToolCallDecisionDTO for the Extension API.
  *
- * Approval flow:
- *   1. onToolCall() returns RequireApproval with a unique question_id
- *   2. ExtensionToolHookEventSubscriber converts it to an interrupt payload
- *   3. Run pauses at WaitingHuman, TUI shows approval prompt
- *   4. Human answers (Allow once / Always allow / Deny)
- *   5. Answer persisted to events.jsonl by ApplyCommandHandler
- *   6. LLM retries the tool call (same tool worker process)
- *   7. onToolCall() checks ApprovalSessionTracker for pending → resolves answer
- *      from events.jsonl via SessionEventReader
- *   8. "Allow once" → approve in tracker → Allow (one-time, consumed on retry)
- *      "Always allow" → approve in tracker + persist to policy file → Allow
- *      "Deny" → remove from tracker → Block
+ * For policy-relaxable categories (Destructive, DangerousGit,
+ * SensitiveInfo, CustomDangerous, WriteOutsideCwd, ProtectedRead),
+ * returns RequireApproval to trigger the HITL approval flow instead
+ * of immediately blocking.
  *
- * When a stable operation key cannot be derived (no command or path argument)
- * or the run ID is unknown, the hook falls back to Block instead of
- * RequireApproval, since approval tracking would be impossible.
+ * Implements ApprovalAnswerHookInterface to receive the human's answer
+ * and update the ApprovalSessionTracker accordingly:
+ * - "Allow once" → mark approved for the next retry
+ * - "Always allow" → mark approved AND persist to policy file
+ * - "Deny" → remove pending entry, command stays blocked
  */
-final readonly class SafeGuardToolCallHook implements ToolCallHookInterface
+final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, ApprovalAnswerHookInterface
 {
-    private const array APPROVAL_SCHEMA = [
-        'type' => 'string',
-        'enum' => ['Allow once', 'Always allow', 'Deny'],
-    ];
-
     /**
-     * Categories that can be promoted from Block to RequireApproval.
+     * @var list<SafeGuardDecisionKind> Policy-relaxable categories that can be approved via HITL
      */
     private const array RELAXABLE_CATEGORIES = [
         SafeGuardDecisionKind::Destructive,
@@ -62,45 +48,25 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface
     public function __construct(
         private SafeGuardClassifier $classifier,
         private SafeGuardPolicy $policy,
-        private ApprovalSessionTracker $tracker,
+        private ApprovalSessionTracker $approvalTracker,
         private ?SafeGuardPolicyWriter $policyWriter,
-        private bool $autoDenyInNoninteractive,
         private string $cwd,
+        private bool $autoDenyInNoninteractive = true,
     ) {
     }
 
     public function onToolCall(ToolCallContextDTO $context): ToolCallDecisionDTO
     {
-        // 1. Check if already approved from a previous answer
-        $key = $this->resolveOperationKey($context);
+        // Determine the operation key before classification so we can
+        // check the approval tracker for a previously approved operation.
+        $operationKey = $this->resolveOperationKey($context);
 
-        if (null !== $key && $this->tracker->isApproved($key)) {
-            $this->tracker->consumeApproval($key);
-
+        // Check in-memory approval tracker first.
+        // If the operation was just approved, consume the approval and allow.
+        if (null !== $operationKey && $this->approvalTracker->consumeApproval($operationKey)) {
             return ToolCallDecisionDTO::allow();
         }
 
-        // 2. Check if pending approval has been answered
-        if (null !== $key && $this->tracker->hasPending($key)) {
-            $answer = $this->tracker->resolveAnswer($key);
-
-            if (null !== $answer) {
-                return $this->handleAnswer($key, $answer, $context);
-            }
-
-            // Still pending — the answer is not in events.jsonl yet.
-            // Block and let the LLM retry when the answer arrives.
-            return ToolCallDecisionDTO::block(
-                reason: 'Approval still pending — answer not found in event store.',
-                details: [
-                    'category' => 'approval_pending',
-                    'intercepted' => true,
-                    'denied' => true,
-                ],
-            );
-        }
-
-        // 3. Classify the tool call
         $decision = $this->classifier->classify(
             toolName: $context->toolName,
             arguments: $context->arguments,
@@ -108,71 +74,202 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface
             policy: $this->policy,
         );
 
-        // 4. Allow → Allow
         if ($decision->isAllowed()) {
             return ToolCallDecisionDTO::allow();
         }
 
-        // 5. HardBlock → Block (never negotiable)
+        // HardBlock decisions (sudo, su) are never approvable.
         if (SafeGuardDecisionKind::HardBlock === $decision->kind) {
-            return ToolCallDecisionDTO::block(
-                reason: $decision->reason,
-                details: [
-                    'category' => $decision->kind->value,
-                    'intercepted' => true,
-                    'denied' => true,
-                ],
-            );
+            return $this->block($decision);
         }
 
-        // 6. Relaxable categories
+        // Policy-relaxable categories → RequireApproval (unless auto-deny is active)
         if ($this->isRelaxable($decision->kind)) {
-            // Block when we cannot track approval (no key or no runId)
-            $sessionId = $context->runId ?? '';
-            if ($this->autoDenyInNoninteractive || null === $key || '' === $sessionId) {
-                $details = [
-                    'category' => $decision->kind->value,
-                    'intercepted' => true,
-                    'denied' => true,
-                ];
-                if ($this->autoDenyInNoninteractive) {
-                    $details['auto_denied'] = true;
-                }
-                if (null === $key) {
-                    $details['no_approval_key'] = true;
-                }
-                if ('' === $sessionId) {
-                    $details['no_run_id'] = true;
-                }
-
+            if ($this->autoDenyInNoninteractive) {
                 return ToolCallDecisionDTO::block(
                     reason: $decision->reason,
-                    details: $details,
+                    details: [
+                        'category' => $decision->kind->value,
+                        'intercepted' => true,
+                        'denied' => true,
+                        'auto_denied' => true,
+                        'message' => \sprintf(
+                            'Tool "%s" was blocked by SafeGuard: %s (noninteractive mode)',
+                            $decision->toolName,
+                            $decision->reason,
+                        ),
+                    ],
                 );
             }
 
-            $questionId = $this->generateQuestionId($context, $decision);
-            $command = $this->extractCommand($context);
+            // Determine the operation spec for the approval context
+            $spec = $this->resolveOperationSpec($context);
 
-            $this->tracker->markPending($key, $questionId, $sessionId);
+            $questionId = \sprintf(
+                'sg_%s',
+                hash('sha256', \sprintf('%s|%s|%d', $operationKey ?? $spec, $context->toolCallId, hrtime(true))),
+            );
+
+            // Mark as pending in the tracker so onApprovalAnswered can approve it
+            if (null !== $operationKey) {
+                $this->approvalTracker->markPending($questionId, $operationKey);
+            }
 
             return ToolCallDecisionDTO::requireApproval(
-                prompt: $this->buildPrompt($decision, $command),
+                prompt: \sprintf('Allow %s: %s?', $this->friendlyCategory($decision->kind), $decision->reason),
                 questionId: $questionId,
-                schema: self::APPROVAL_SCHEMA,
+                schema: [
+                    'type' => 'string',
+                    'enum' => ['Allow once', 'Always allow', 'Deny'],
+                ],
                 details: [
                     'category' => $decision->kind->value,
-                    'tool_name' => $context->toolName,
-                    'command' => $command,
-                    'approval_context' => [
-                        'category' => $decision->kind->value,
-                        'command' => $command,
-                    ],
+                    'command' => $this->extractCommand($context),
+                    'path' => $this->extractPath($context),
+                    'tool_name' => $decision->toolName,
+                    'operation_key' => $operationKey,
+                    'intercepted' => true,
                 ],
             );
         }
 
-        // 7. Default: Block for any unhandled category
+        // Fallback: block everything else
+        return $this->block($decision);
+    }
+
+    public function onApprovalAnswered(ApprovalAnswerContextDTO $context): void
+    {
+        $operationKey = $context->approvalContext['operation_key'] ?? '';
+
+        if ('' === $operationKey || !\is_string($operationKey)) {
+            return;
+        }
+
+        if ('Deny' === $context->answer) {
+            $this->approvalTracker->remove($operationKey);
+
+            return;
+        }
+
+        if ('Allow once' === $context->answer) {
+            $this->approvalTracker->approve($operationKey);
+
+            return;
+        }
+
+        if ('Always allow' === $context->answer) {
+            $this->approvalTracker->approve($operationKey);
+
+            // Persist to policy file for future sessions
+            $category = (string) ($context->approvalContext['category'] ?? '');
+            $pattern = $this->resolvePatternFromAnswer($category, $context);
+
+            if (null !== $pattern && null !== $this->policyWriter) {
+                $this->policyWriter->addAllowPattern($category, $pattern);
+            }
+
+            return;
+        }
+    }
+
+    /**
+     * Determine the tracker operation key from the tool call context.
+     *
+     * Format: {category}:{normalized_command_or_path}
+     * null if the operation cannot be identified uniquely.
+     */
+    private function resolveOperationKey(ToolCallContextDTO $context): ?string
+    {
+        $command = $this->extractCommand($context);
+        if (null !== $command) {
+            return \sprintf('%s:%s', $this->toolPrefix($context->toolName), $command);
+        }
+
+        $path = $this->extractPath($context);
+        if (null !== $path) {
+            return \sprintf('%s:%s', $this->toolPrefix($context->toolName), $path);
+        }
+
+        return null;
+    }
+
+    /**
+     * Get a human-readable operation spec for the approval context.
+     */
+    private function resolveOperationSpec(ToolCallContextDTO $context): string
+    {
+        return $this->extractCommand($context) ?? $this->extractPath($context) ?? $context->toolName;
+    }
+
+    /**
+     * Extract the command string from arguments (bash tool).
+     *
+     * @return string|null null if no command found
+     */
+    private function extractCommand(ToolCallContextDTO $context): ?string
+    {
+        $command = $context->arguments['command'] ?? null;
+
+        return \is_string($command) && '' !== $command ? $command : null;
+    }
+
+    /**
+     * Extract the path string from arguments (write/edit/read tools).
+     *
+     * @return string|null null if no path found
+     */
+    private function extractPath(ToolCallContextDTO $context): ?string
+    {
+        $path = $context->arguments['path'] ?? null;
+
+        return \is_string($path) && '' !== $path ? $path : null;
+    }
+
+    /**
+     * Get the tracker key prefix for a tool name.
+     */
+    private function toolPrefix(string $toolName): string
+    {
+        // bash tools use command-based classification
+        // write/edit/read tools use path-based classification
+        // For the tracker key, we use the tool name itself as a prefix
+        // since the actual category (destructive, write_outside, etc.)
+        // is unknown until after classification.
+        //
+        // The onApprovalAnswered() receives the actual category in the
+        // approval context, so the tracker key prefix is informational.
+        return $toolName;
+    }
+
+    /**
+     * Check if a decision kind is policy-relaxable (approvable via HITL).
+     */
+    private function isRelaxable(SafeGuardDecisionKind $kind): bool
+    {
+        return \in_array($kind, self::RELAXABLE_CATEGORIES, true);
+    }
+
+    /**
+     * Create a friendly category name for the approval prompt.
+     */
+    private function friendlyCategory(SafeGuardDecisionKind $kind): string
+    {
+        return match ($kind) {
+            SafeGuardDecisionKind::Destructive => 'destructive command',
+            SafeGuardDecisionKind::DangerousGit => 'dangerous git operation',
+            SafeGuardDecisionKind::SensitiveInfo => 'sensitive information access',
+            SafeGuardDecisionKind::CustomDangerous => 'custom dangerous operation',
+            SafeGuardDecisionKind::WriteOutsideCwd => 'write outside working directory',
+            SafeGuardDecisionKind::ProtectedRead => 'protected file read',
+            default => 'operation',
+        };
+    }
+
+    /**
+     * Create a block DTO from a SafeGuard decision.
+     */
+    private function block(Policy\SafeGuardDecision $decision): ToolCallDecisionDTO
+    {
         return ToolCallDecisionDTO::block(
             reason: $decision->reason,
             details: [
@@ -184,113 +281,26 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface
     }
 
     /**
-     * Handle a resolved answer from the approval flow.
+     * Resolve the pattern to persist from the answer context.
+     *
+     * For command-based categories, uses the command text.
+     * For path-based categories, uses the path text.
+     *
+     * @return string|null null if the pattern cannot be determined
      */
-    private function handleAnswer(string $key, string $answer, ToolCallContextDTO $context): ToolCallDecisionDTO
+    private function resolvePatternFromAnswer(string $category, ApprovalAnswerContextDTO $context): ?string
     {
-        if ('Deny' === $answer) {
-            $this->tracker->remove($key);
+        $command = $context->approvalContext['command'] ?? null;
+        $path = $context->approvalContext['path'] ?? null;
 
-            return ToolCallDecisionDTO::block(
-                reason: 'User denied approval.',
-                details: [
-                    'denied_by_user' => true,
-                    'intercepted' => true,
-                    'denied' => true,
-                ],
-            );
+        if (\is_string($command) && '' !== $command) {
+            return $command;
         }
 
-        if ('Always allow' === $answer && null !== $this->policyWriter) {
-            // Re-classify to get the category and pattern for persistence
-            $decision = $this->classifier->classify(
-                toolName: $context->toolName,
-                arguments: $context->arguments,
-                cwd: $this->cwd,
-                policy: $this->policy,
-            );
-            $pattern = $this->resolvePatternForCategory($decision->kind, $context);
-            if ('' !== $pattern) {
-                $this->policyWriter->addAllowPattern($decision->kind->value, $pattern);
-            }
-            $this->tracker->approve($key);
-
-            return ToolCallDecisionDTO::allow();
-        }
-
-        // "Allow once" — approve in tracker so one retry is auto-allowed
-        $this->tracker->approve($key);
-
-        return ToolCallDecisionDTO::allow();
-    }
-
-    private function isRelaxable(SafeGuardDecisionKind $kind): bool
-    {
-        return \in_array($kind, self::RELAXABLE_CATEGORIES, true);
-    }
-
-    private function resolveOperationKey(ToolCallContextDTO $context): ?string
-    {
-        $command = $this->extractCommand($context);
-
-        if ('' !== $command) {
-            return $context->toolName.':'.$command;
-        }
-
-        $path = $this->extractPath($context);
-
-        if ('' !== $path) {
-            return $context->toolName.':'.$path;
+        if (\is_string($path) && '' !== $path) {
+            return $path;
         }
 
         return null;
-    }
-
-    private function extractCommand(ToolCallContextDTO $context): string
-    {
-        $command = $context->arguments['command'] ?? null;
-
-        return \is_string($command) ? $command : '';
-    }
-
-    private function extractPath(ToolCallContextDTO $context): string
-    {
-        $path = $context->arguments['path'] ?? null;
-
-        return \is_string($path) ? $path : '';
-    }
-
-    /**
-     * Resolve the pattern to persist for an "Always allow" answer.
-     *
-     * Uses the path for path-based categories (write_outside_cwd, protected_read)
-     * and the command for command-based categories (destructive, dangerous_git, etc.).
-     */
-    private function resolvePatternForCategory(SafeGuardDecisionKind $kind, ToolCallContextDTO $context): string
-    {
-        return match ($kind) {
-            SafeGuardDecisionKind::WriteOutsideCwd, SafeGuardDecisionKind::ProtectedRead => $this->extractPath($context),
-            default => $this->extractCommand($context),
-        };
-    }
-
-    private function generateQuestionId(ToolCallContextDTO $context, Policy\SafeGuardDecision $decision): string
-    {
-        return hash('sha256', \sprintf(
-            'safeguard|%s|%s|%s',
-            $context->toolName,
-            $decision->kind->value,
-            (string) microtime(true),
-        ));
-    }
-
-    private function buildPrompt(Policy\SafeGuardDecision $decision, string $command): string
-    {
-        return \sprintf(
-            "SafeGuard: %s\n\nOperation: %s\nTool: %s\n\nAllow this operation?",
-            $decision->reason,
-            '' !== $command ? $command : '(path-based)',
-            $decision->toolName,
-        );
     }
 }

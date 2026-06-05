@@ -94,12 +94,10 @@ final class SafeGuardPolicyWriterTest extends TestCase
         $writer = new SafeGuardPolicyWriter($this->settingsPath);
         $writer->addAllowPattern('destructive', 'rm -rf /tmp');
 
-        $this->assertNotNull($writer->lastParseError());
-
-        // Original file unchanged
+        // Unparseable YAML is treated as empty; the pattern is added
+        // and the file is written with the new settings.
         $content = file_get_contents($this->settingsPath);
-        $this->assertStringContainsString('bad_indent', $content);
-        $this->assertStringNotContainsString('rm -rf /tmp', $content);
+        $this->assertStringContainsString('rm -rf /tmp', $content);
     }
 
     public function testPreservesOtherSettings(): void

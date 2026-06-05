@@ -51,6 +51,7 @@ final class AggregateResumeTest extends TestCase
         $this->hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
             lockFactory: new LockFactory(new FlockStore()),
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
     }
 

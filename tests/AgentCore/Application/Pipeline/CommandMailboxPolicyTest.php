@@ -17,7 +17,7 @@ use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
-use Ineersa\AgentCore\Application\Pipeline\RunMessageStateTools;
+
 use Ineersa\AgentCore\Application\Pipeline\RunOrchestrator;
 use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
@@ -241,6 +241,167 @@ final class CommandMailboxPolicyTest extends TestCase
         $this->assertCount(1, $advanceCommands);
     }
 
+    public function testStopBoundaryReturnsShouldContinueTrueWhenFollowUpApplied(): void
+    {
+        $fixture = $this->createFixture();
+        $runId = 'run-stop-boundary-follow-up';
+
+        $fixture->orchestrator->onStartRun($this->startRun($runId));
+
+        $fixture->orchestrator->onAdvanceRun(new AdvanceRun(
+            runId: $runId,
+            turnNo: 0,
+            stepId: 'advance-1',
+            attempt: 1,
+            idempotencyKey: 'advance-idemp-1',
+        ));
+
+        // Queue a follow-up command (stored in command store, pending)
+        $fixture->orchestrator->onApplyCommand(new ApplyCommand(
+            runId: $runId,
+            turnNo: 1,
+            stepId: 'follow-up-1',
+            attempt: 1,
+            idempotencyKey: 'follow-up-1',
+            kind: 'follow_up',
+            payload: ['message' => [
+                'role' => 'user',
+                'content' => [['type' => 'text', 'text' => 'follow me up']],
+            ]],
+        ));
+
+        // Send LLM result with stop_reason='stop', no tool calls, no error
+        // This triggers the stop-boundary path in LlmStepResultHandler
+        $fixture->orchestrator->onLlmStepResult(new LlmStepResult(
+            runId: $runId,
+            turnNo: 1,
+            stepId: 'advance-1',
+            attempt: 1,
+            idempotencyKey: 'llm-stop-1',
+            assistantMessage: null,
+            usage: [],
+            stopReason: 'stop',
+            error: null,
+        ));
+
+        $state = $fixture->runStore->get($runId);
+        $this->assertNotNull($state);
+        // shouldContinue=true keeps the run Running
+        $this->assertSame(RunStatus::Running, $state->status);
+
+        $events = $fixture->eventStore->allFor($runId);
+        $appliedFollowUp = array_values(array_filter(
+            $events,
+            static fn (\Ineersa\AgentCore\Domain\Event\RunEvent $event): bool => 'agent_command_applied' === $event->type
+                && 'follow-up-1' === ($event->payload['idempotency_key'] ?? null),
+        ));
+        $this->assertCount(1, $appliedFollowUp);
+
+        // shouldContinue should have dispatched a follow-up AdvanceRun
+        $advanceCommands = array_values(array_filter(
+            $fixture->commandBus->messages,
+            static fn (object $message): bool => $message instanceof AdvanceRun,
+        ));
+        // One from ApplyCommandHandler queuing the follow_up, one from stop-boundary shouldContinue
+        $this->assertCount(2, $advanceCommands);
+    }
+
+    public function testStopBoundaryReturnsShouldContinueTrueWhenSteerApplied(): void
+    {
+        $fixture = $this->createFixture();
+        $runId = 'run-stop-boundary-steer';
+
+        $fixture->orchestrator->onStartRun($this->startRun($runId));
+
+        $fixture->orchestrator->onAdvanceRun(new AdvanceRun(
+            runId: $runId,
+            turnNo: 0,
+            stepId: 'advance-1',
+            attempt: 1,
+            idempotencyKey: 'advance-idemp-1',
+        ));
+
+        // Queue a steer command
+        $fixture->orchestrator->onApplyCommand($this->steerCommand($runId, 'stop-steer-1', 'steer at stop boundary'));
+
+        // Send LLM result with stop_reason='stop', no tool calls, no error
+        $fixture->orchestrator->onLlmStepResult(new LlmStepResult(
+            runId: $runId,
+            turnNo: 1,
+            stepId: 'advance-1',
+            attempt: 1,
+            idempotencyKey: 'llm-stop-2',
+            assistantMessage: null,
+            usage: [],
+            stopReason: 'stop',
+            error: null,
+        ));
+
+        $state = $fixture->runStore->get($runId);
+        $this->assertNotNull($state);
+        // shouldContinue=true keeps the run Running
+        $this->assertSame(RunStatus::Running, $state->status, 'Run should remain Running after steer at stop boundary');
+
+        // Verify steer command was applied
+        $events = $fixture->eventStore->allFor($runId);
+        $appliedSteer = array_values(array_filter(
+            $events,
+            static fn (\Ineersa\AgentCore\Domain\Event\RunEvent $event): bool => 'agent_command_applied' === $event->type
+                && 'stop-steer-1' === ($event->payload['idempotency_key'] ?? null),
+        ));
+        $this->assertCount(1, $appliedSteer);
+
+        // Verify follow-up AdvanceRun was dispatched
+        $advanceCommands = array_values(array_filter(
+            $fixture->commandBus->messages,
+            static fn (object $message): bool => $message instanceof AdvanceRun,
+        ));
+        // One from ApplyCommandHandler queuing the steer, one from stop-boundary shouldContinue
+        $this->assertCount(2, $advanceCommands);
+    }
+
+    public function testStopBoundaryReturnsFalseWhenNoCommandsPending(): void
+    {
+        $fixture = $this->createFixture();
+        $runId = 'run-stop-boundary-no-commands';
+
+        $fixture->orchestrator->onStartRun($this->startRun($runId));
+
+        $fixture->orchestrator->onAdvanceRun(new AdvanceRun(
+            runId: $runId,
+            turnNo: 0,
+            stepId: 'advance-1',
+            attempt: 1,
+            idempotencyKey: 'advance-idemp-1',
+        ));
+
+        // Send LLM result with stop_reason='stop', no tool calls, no error,
+        // and NO pending commands -> shouldContinue=false
+        $fixture->orchestrator->onLlmStepResult(new LlmStepResult(
+            runId: $runId,
+            turnNo: 1,
+            stepId: 'advance-1',
+            attempt: 1,
+            idempotencyKey: 'llm-stop-3',
+            assistantMessage: null,
+            usage: [],
+            stopReason: 'stop',
+            error: null,
+        ));
+
+        $state = $fixture->runStore->get($runId);
+        $this->assertNotNull($state);
+        // shouldContinue=false should complete the run
+        $this->assertSame(RunStatus::Completed, $state->status);
+
+        // No follow-up AdvanceRun should have been dispatched
+        $advanceCommands = array_values(array_filter(
+            $fixture->commandBus->messages,
+            static fn (object $message): bool => $message instanceof AdvanceRun,
+        ));
+        $this->assertCount(0, $advanceCommands);
+    }
+
     private function createFixture(int $maxPendingCommands = 100, string $steerDrainMode = 'one_at_a_time'): CommandMailboxFixture
     {
         $runStore = new InMemoryRunStore();
@@ -259,7 +420,6 @@ final class CommandMailboxPolicyTest extends TestCase
             commandRouter: $commandRouter,
             steerDrainMode: $steerDrainMode,
         );
-        $stateTools = new RunMessageStateTools(new \Ineersa\AgentCore\Domain\Event\EventFactory(), new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor());
         $toolBatchCollector = new ToolBatchCollector();
 
         $runCommit = new RunCommit(
@@ -281,31 +441,36 @@ final class CommandMailboxPolicyTest extends TestCase
             logger: new NullLogger(),
             handlers: [
                 new StartRunHandler(
-                    stateTools: $stateTools,
+                    eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
                     normalizer: TestSerializerFactory::normalizer(),
                 ),
                 new ApplyCommandHandler(
                     commandStore: $commandStore,
                     commandRouter: $commandRouter,
                     commandMailboxPolicy: $commandMailboxPolicy,
-                    stateTools: $stateTools,
+                    eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
+                    messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
                     maxPendingCommands: $maxPendingCommands,
                     commandBus: $commandBus,
                 ),
                 new AdvanceRunHandler(
                     commandMailboxPolicy: $commandMailboxPolicy,
-                    stateTools: $stateTools,
+                    eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
                 ),
                 new LlmStepResultHandler(
                     toolBatchCollector: $toolBatchCollector,
                     commandMailboxPolicy: $commandMailboxPolicy,
-                    stateTools: $stateTools,
+                    eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
+                    toolCallExtractor: new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor(),
+                    messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
                     stepDispatcher: $stepDispatcher,
                     commandBus: $commandBus,
                 ),
                 new ToolCallResultHandler(
                     toolBatchCollector: $toolBatchCollector,
-                    stateTools: $stateTools,
+                    eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
+                    toolCallExtractor: new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor(),
+                    messageNormalizer: new \Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer(),
                 ),
             ],
         );

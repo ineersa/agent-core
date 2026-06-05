@@ -625,8 +625,7 @@ pgrep -f messenger:consume
 │   HATFIELD_TOOL_TRANSPORT_DSN=doctrine://default?queue_name=tool_<runId>
 │
 └── sessions/
-    └── <runId>/               runId = session_id = UUID
-        ├── metadata.yaml      {run_id, model, timestamps, session metadata}
+    └── <runId>/               runId = session_id (DB-issued numeric string)
         ├── state.json         Current run state (CAS versioned with LOCK_EX)
         │                      {status, turnNo, messages, context, ...}
         ├── events.jsonl       Canonical events (append-only, LOCK_EX)

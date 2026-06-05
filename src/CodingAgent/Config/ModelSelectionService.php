@@ -9,24 +9,17 @@ use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 /**
  * Central model/reasoning selection with four-tier priority and persistence.
  *
- * Model resolution priority:
- *  1. explicit request (CLI --model, StartRunRequest.model)
- *  2. session metadata (model key in metadata.yaml)
- *  3. Hatfield ai.default_model
- *  4. first available configured model
+ * Coordinates pure resolution ({@see ModelResolver}) with write/persist
+ * ({@see ModelSettingsPersister}) and owns favorites management with
+ * in-process caching.
  *
- * Reasoning mirrors model selection, falling back to medium.
- *
- * On change: persists both home default and session metadata.
- *
- * This service depends only on CodingAgent config services.
- * It does not import AgentCore, Tui, HttpFoundation, or FrameworkBundle.
+ * Public API is identical to the original monolithic version — all callers
+ * unchanged.  Internally delegates read methods to {@see ModelResolver},
+ * write methods to {@see ModelSettingsPersister}, and keeps favorites
+ * locally (toggle + favRaw cache).
  */
 final class ModelSelectionService
 {
-    /** Valid reasoning levels. */
-    public const LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
-
     /**
      * In-process cache of the raw favorite_models list (provider/modelname strings).
      *
@@ -41,60 +34,23 @@ final class ModelSelectionService
 
     public function __construct(
         private readonly AppConfig $appConfig,
-        private readonly HomeSettingsWriter $homeWriter,
-        private readonly SessionMetadataStore $sessionMetaStore,
+        private readonly ModelResolver $resolver,
+        private readonly ModelSettingsPersister $persister,
     ) {
     }
 
     // ──────────────────────────────────────────────
-    //  Model resolution
+    //  Model resolution (delegated)
     // ──────────────────────────────────────────────
 
     /**
      * Resolve the initial model for a session.
-     *
-     * @param string|null $explicitModel Explicit request (e.g. "deepseek/deepseek-v4-pro")
-     * @param string      $sessionId     Session ID for metadata lookup (empty for new sessions)
-     *
-     * @return AiModelReference|null Null only if no models are configured at all
      */
     public function resolveInitialModel(
         ?string $explicitModel = null,
         string $sessionId = '',
     ): ?AiModelReference {
-        $catalog = $this->appConfig->catalog;
-        if (null === $catalog) {
-            return null;
-        }
-
-        // 1. Explicit request
-        if (null !== $explicitModel) {
-            $ref = AiModelReference::tryParse($explicitModel);
-            if (null !== $ref && $catalog->isAvailable($ref)) {
-                return $ref;
-            }
-        }
-
-        // 2. Session metadata
-        if ('' !== $sessionId) {
-            $meta = $this->sessionMetaStore->readSessionMetadata($sessionId);
-            $sessionModel = \is_string($meta['model'] ?? null) ? $meta['model'] : null;
-            if (null !== $sessionModel) {
-                $ref = AiModelReference::tryParse($sessionModel);
-                if (null !== $ref && $catalog->isAvailable($ref)) {
-                    return $ref;
-                }
-            }
-        }
-
-        // 3. Hatfield ai.default_model
-        $defaultRef = $catalog->defaultModelReference();
-        if (null !== $defaultRef && $catalog->isAvailable($defaultRef)) {
-            return $defaultRef;
-        }
-
-        // 4. First available
-        return $catalog->firstAvailableModel();
+        return $this->resolver->resolveInitialModel($explicitModel, $sessionId);
     }
 
     /**
@@ -104,61 +60,29 @@ final class ModelSelectionService
      */
     public function getAvailableModels(): array
     {
-        $catalog = $this->appConfig->catalog;
-
-        return null !== $catalog ? $catalog->allModels() : [];
+        return $this->resolver->getAvailableModels();
     }
 
     // ──────────────────────────────────────────────
-    //  Reasoning resolution
+    //  Reasoning resolution (delegated)
     // ──────────────────────────────────────────────
 
     /**
      * Resolve the initial reasoning level for a session.
-     *
-     * @param string|null $explicitReasoning Explicit request (e.g. "high")
-     * @param string      $sessionId         Session ID for metadata lookup
-     *
-     * @return string A reasoning level from {@see LEVELS}
      */
     public function resolveInitialReasoning(
         ?string $explicitReasoning = null,
         string $sessionId = '',
     ): string {
-        // 1. Explicit request
-        if (null !== $explicitReasoning) {
-            return $explicitReasoning;
-        }
-
-        // 2. Session metadata
-        if ('' !== $sessionId) {
-            $meta = $this->sessionMetaStore->readSessionMetadata($sessionId);
-            $sessionReasoning = \is_string($meta['reasoning'] ?? null) ? $meta['reasoning'] : null;
-            if (null !== $sessionReasoning) {
-                return $sessionReasoning;
-            }
-        }
-
-        // 3. Hatfield ai.default_reasoning
-        $defaultReasoning = $this->appConfig->ai?->defaultReasoning;
-        if (null !== $defaultReasoning && '' !== $defaultReasoning) {
-            return $defaultReasoning;
-        }
-
-        // 4. Fallback
-        return 'medium';
+        return $this->resolver->resolveInitialReasoning($explicitReasoning, $sessionId);
     }
 
     // ──────────────────────────────────────────────
-    //  Persistence (model)
+    //  Persistence (model) — validates then delegates
     // ──────────────────────────────────────────────
 
     /**
      * Change the model for the current session.
-     *
-     * Persists the new default to home settings and current state to
-     * session metadata, so the next session picks up the same model
-     * and a resumed session restores it from metadata.
      *
      * @throws \RuntimeException If the model is not available
      */
@@ -172,19 +96,11 @@ final class ModelSelectionService
             throw new \RuntimeException(\sprintf('Model "%s" is not available.', $model->toString()));
         }
 
-        // Persist default to home settings
-        $this->homeWriter->writeDefaultModel($model->toString());
-
-        // Persist current state to session metadata
-        $this->sessionMetaStore->writeSessionMetadata($sessionId, [
-            'model' => $model->toString(),
-            'model_provider' => $model->providerId,
-            'model_name' => $model->modelName,
-        ]);
+        $this->persister->persistModel($model->toString(), $model->providerId, $model->modelName, $sessionId);
     }
 
     // ──────────────────────────────────────────────
-    //  Persistence (reasoning)
+    //  Persistence (reasoning) — delegates (validation inside persister)
     // ──────────────────────────────────────────────
 
     /**
@@ -194,26 +110,17 @@ final class ModelSelectionService
      */
     public function changeReasoning(string $level, string $sessionId): void
     {
-        if (!\in_array($level, self::LEVELS, true)) {
-            throw new \InvalidArgumentException(\sprintf('Invalid reasoning level "%s". Valid levels: %s.', $level, implode(', ', self::LEVELS)));
-        }
-
-        // Persist default to home settings
-        $this->homeWriter->writeDefaultReasoning($level);
-
-        // Persist current state to session metadata
-        $this->sessionMetaStore->writeSessionMetadata($sessionId, [
-            'reasoning' => $level,
-        ]);
+        $this->persister->persistReasoning($level, $sessionId);
     }
+
+    // ──────────────────────────────────────────────
+    //  Favorites
+    // ──────────────────────────────────────────────
 
     /**
      * Get the persisted favorite model refs (provider/modelname strings).
      *
      * Only returns favorites that are actually available in the catalog.
-     *
-     * Consults the in-process cache when available so that toggleFavorite()
-     * is immediately visible to callers in the same process.
      *
      * @return list<string>
      */
@@ -256,7 +163,6 @@ final class ModelSelectionService
 
         $favSet = array_flip($favorites);
 
-        // Partition into favorites and non-favorites
         $favModels = [];
         $rest = [];
 
@@ -268,7 +174,6 @@ final class ModelSelectionService
             }
         }
 
-        // Favorites in the order they appear in ai.favorite_models
         usort($favModels, static function (AiModelReference $a, AiModelReference $b) use ($favorites): int {
             $posA = array_search($a->toString(), $favorites, true);
             $posB = array_search($b->toString(), $favorites, true);
@@ -292,11 +197,6 @@ final class ModelSelectionService
     /**
      * Toggle a model as favorite (add if absent, remove if present).
      *
-     * Persists to home settings AND updates the in-process cache so that
-     * getFavoriteModels(), isFavorite(), getOrderedModels(), and
-     * cycleFavoriteModel() reflect the change immediately in the same
-     * process without requiring an AppConfig rebuild.
-     *
      * @throws \RuntimeException If the model is not available
      */
     public function toggleFavorite(AiModelReference $model): void
@@ -314,19 +214,15 @@ final class ModelSelectionService
         $pos = array_search($modelStr, $current, true);
 
         if (false !== $pos) {
-            // Remove
             unset($current[$pos]);
             $current = array_values($current);
         } else {
-            // Add to end
             $current[] = $modelStr;
         }
 
-        // Update in-process cache before persisting to disk so that
-        // subsequent reads in this process see the change immediately.
         $this->favRaw = $current;
 
-        $this->homeWriter->writeFavoriteModels($current);
+        $this->persister->persistFavoriteModels($current);
     }
 
     // ──────────────────────────────────────────────
@@ -335,18 +231,14 @@ final class ModelSelectionService
 
     /**
      * Get the currently active model for the session.
-     *
-     * Resolves through session metadata → home default → first available.
      */
     public function getCurrentModel(string $sessionId): ?AiModelReference
     {
-        return $this->resolveInitialModel(null, $sessionId);
+        return $this->resolver->getCurrentModel($sessionId);
     }
 
     /**
      * Cycle to the next favorite model and persist it.
-     *
-     * Returns the newly selected model reference, or null if no favorites exist.
      */
     public function cycleFavoriteModel(string $sessionId): ?AiModelReference
     {
@@ -358,14 +250,11 @@ final class ModelSelectionService
         $current = $this->getCurrentModel($sessionId);
         $currentStr = null !== $current ? $current->toString() : null;
 
-        // Find current position in favorites
         $pos = null !== $currentStr ? array_search($currentStr, $favorites, true) : false;
 
-        // If current is not in favorites, start from beginning
         if (false === $pos) {
             $nextStr = $favorites[0];
         } else {
-            // Cycle to next, wrapping around
             $nextIdx = ($pos + 1) % \count($favorites);
             $nextStr = $favorites[$nextIdx];
         }
@@ -382,29 +271,14 @@ final class ModelSelectionService
 
     /**
      * Cycle to the next reasoning level.
-     *
-     * Returns the new level string.
      */
     public function cycleReasoning(string $currentLevel): string
     {
-        $pos = array_search($currentLevel, self::LEVELS, true);
-
-        if (false === $pos) {
-            // Unknown level — start from beginning
-            return self::LEVELS[0];
-        }
-
-        $nextIdx = ($pos + 1) % \count(self::LEVELS);
-
-        return self::LEVELS[$nextIdx];
+        return $this->resolver->cycleReasoning($currentLevel);
     }
 
     /**
-     * Cycle reasoning for the current model, but only if the model supports
-     * thinking levels. Does NOT persist or change state when unsupported.
-     *
-     * Returns the new level on success, or null when thinking is not supported
-     * for the current model.
+     * Cycle reasoning for the current model.
      */
     public function cycleReasoningForCurrentModel(string $sessionId): ?string
     {
@@ -417,8 +291,6 @@ final class ModelSelectionService
 
         $pos = array_search($current, $levels, true);
         if (false === $pos) {
-            // Current level not in supported set (e.g. xhigh was removed from
-            // config, or model changed) — start from beginning.
             $nextLevel = $levels[0];
         } else {
             $nextIdx = ($pos + 1) % \count($levels);
@@ -435,14 +307,7 @@ final class ModelSelectionService
      */
     public function supportsThinkingLevelsForSession(string $sessionId): bool
     {
-        $catalog = $this->appConfig->catalog;
-        if (null === $catalog) {
-            return false;
-        }
-
-        $model = $this->getCurrentModel($sessionId);
-
-        return null !== $model && $catalog->supportsThinkingLevels($model);
+        return $this->resolver->supportsThinkingLevelsForSession($sessionId);
     }
 
     /**
@@ -450,77 +315,33 @@ final class ModelSelectionService
      */
     public function getCurrentReasoning(string $sessionId): string
     {
-        return $this->resolveInitialReasoning(null, $sessionId);
+        return $this->resolver->getCurrentReasoning($sessionId);
     }
 
     /**
-     * Get the effective reasoning level for display (footer color, UI indicator).
-     *
-     * Returns 'off' when the current model does not support thinking levels;
-     * otherwise returns the persisted current reasoning.  This prevents stale
-     * high/xhigh coloring from lingering after switching to a non-thinking model
-     * (e.g. llama.cpp).
+     * Get the effective reasoning level for display.
      */
     public function getDisplayReasoning(string $sessionId): string
     {
-        if (!$this->supportsThinkingLevelsForSession($sessionId)) {
-            return 'off';
-        }
-
-        return $this->getCurrentReasoning($sessionId);
+        return $this->resolver->getDisplayReasoning($sessionId);
     }
 
     /**
      * Get the reasoning levels supported by the current session's model.
      *
-     * Returns the keys from the model's thinking_level_map plus 'off' as
-     * the first entry.  Falls back to the global {@see LEVELS} constant
-     * when no model is resolved (e.g. before a session is initialised).
-     *
-     * z.ai models that omit xhigh from their thinking_level_map cycle only
-     * through off→minimal→low→medium→high, never exposing unsupported
-     * levels to the user or persisting them.
-     *
      * @return list<string>
      */
     public function getSupportedReasoningLevels(string $sessionId): array
     {
-        $catalog = $this->appConfig->catalog;
-        if (null === $catalog) {
-            return self::LEVELS;
-        }
-
-        $model = $this->getCurrentModel($sessionId);
-        if (null === $model) {
-            return self::LEVELS;
-        }
-
-        $def = $catalog->getModel($model);
-        if (null === $def || [] === $def->thinkingLevelMap) {
-            // Reasoning-capable models that have an empty thinking_level_map
-            // (shouldn't happen in practice, but guard) — return off only.
-            return ['off'];
-        }
-
-        // Thinking-level map keys are the user-facing levels this model
-        // recognises.  Always include 'off' as the first entry.
-        $levels = array_keys($def->thinkingLevelMap);
-        if (!\in_array('off', $levels, true)) {
-            array_unshift($levels, 'off');
-        }
-
-        return $levels;
+        return $this->resolver->getSupportedReasoningLevels($sessionId);
     }
 
     // ──────────────────────────────────────────────
-    //  Favorites
+    //  Favorites helpers
     // ──────────────────────────────────────────────
 
     /**
      * Get the raw favorite model refs (provider/modelname strings).
-     *
-     * Prefers the in-process cache when it has been populated by a prior
-     * toggleFavorite() call; otherwise reads from immutable AppConfig.
      *
      * @return list<string>
      */

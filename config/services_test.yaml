@@ -1,0 +1,26 @@
+# Test environment service overrides.
+#
+# These are automatically loaded by Kernel::configureContainer()
+# as services_{environment}.yaml when APP_ENV=test.
+
+services:
+  # BackgroundProcessManager in test env: do NOT register a PHP shutdown
+  # handler. In production the handler terminates running background
+  # processes on process exit. In tests, IsolatedKernelTestCase closes
+  # the EntityManager in tearDown(), and DAMA/DoctrineTestBundle rolls
+  # back the transaction after each test. A registered shutdown function
+  # that queries Doctrine after these operations would fail.
+  #
+  # Test classes that explicitly need shutdown behavior call
+  # $manager->shutdownCleanup() directly.
+  #
+  # This MUST be a complete, self-contained service definition.
+  # Partial overrides (only the parts you want to change) are NOT
+  # supported — any service listed here replaces the full definition.
+  Ineersa\CodingAgent\Tool\BackgroundProcessManager:
+    arguments:
+      $store: '@Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore'
+      $lifecycle: '@Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle'
+      $config: '@Ineersa\CodingAgent\Config\BackgroundProcessConfig'
+      $logger: '@Psr\Log\LoggerInterface'
+    # No calls: registerShutdownHandler is intentionally omitted.

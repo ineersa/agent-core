@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
+use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -37,10 +38,29 @@ use Symfony\Component\Yaml\Yaml;
  * Path resolution:
  *  - %kernel.project_dir% → app install directory (via SettingsPathResolver::$appRoot)
  *  - ~ → home directory
- *  - Relative paths resolve against the active project directory (getcwd())
+ *  - Relative paths resolve against the canonical runtime cwd passed to
+ *    {@see load()}, which comes from the %app.cwd% container parameter
+ *    (resolved from HATFIELD_CWD or kernel.project_dir).
  */
 final class AppConfigLoader
 {
+    /**
+     * Path-bearing config keys resolved at load time.
+     *
+     * Keys use Symfony PropertyAccess bracket notation for array access.
+     * The value indicates whether the resolved value is a list (each element
+     * resolved individually) or a string (resolved as a single path).
+     *
+     * Add new path-bearing config keys here — no more hardcoded if-blocks.
+     */
+    private const PATH_CONFIG = [
+        '[tui][theme_paths]' => 'list',
+        '[sessions][path]' => 'string',
+        '[logging][path]' => 'string',
+        '[tools][output_cap][path]' => 'string',
+        '[tools][background_process][path]' => 'string',
+    ];
+
     public function __construct(
         private readonly SettingsPathResolver $pathResolver,
     ) {
@@ -50,12 +70,16 @@ final class AppConfigLoader
      * Load and merge all settings layers into a single resolved config.
      *
      * @param string $defaultsPath Path to built-in defaults YAML
+     * @param string $cwd          Canonical runtime working directory
+     *                             (from %app.cwd% / HATFIELD_CWD)
      *
      * @return array<string, mixed>
      */
-    public function load(string $defaultsPath): array
+    public function load(string $defaultsPath, string $cwd): array
     {
-        $cwd = self::resolveCurrentWorkingDirectory();
+        if ('' === $cwd) {
+            throw new \InvalidArgumentException(\sprintf('%s::load() requires a non-empty $cwd. Pass %s from the container or an explicit absolute path.', self::class, '%app.cwd%'));
+        }
 
         // Layer 1: Built-in defaults (shipped with the app)
         $merged = $this->loadYamlFile($defaultsPath);
@@ -82,7 +106,7 @@ final class AppConfigLoader
             $merged = $this->overlayConfig($merged, $projectSettings);
         }
 
-        return $this->resolveConfigPaths($merged);
+        return $this->resolveConfigPaths($merged, $cwd);
     }
 
     /**
@@ -126,55 +150,38 @@ final class AppConfigLoader
     /**
      * Resolve path placeholders in the merged config.
      *
-     * Currently resolves {@see tui::$themePaths}, {@see sessions.path},
-     * and {@see logging.path}. Extend as more path-containing config keys
-     * are added.
+     * Uses a declarative PATH_CONFIG constant instead of hardcoded if-blocks.
+     * Each path entry is resolved through SettingsPathResolver which handles
+     * %kernel.project_dir%, ~, and relative path normalization.
      *
      * @param array<string, mixed> $data
      *
      * @return array<string, mixed>
      */
-    private function resolveConfigPaths(array $data): array
+    private function resolveConfigPaths(array $data, string $cwd): array
     {
-        $cwd = self::resolveCurrentWorkingDirectory();
+        $accessor = PropertyAccess::createPropertyAccessor();
 
-        if (isset($data['tui']['theme_paths']) && \is_array($data['tui']['theme_paths'])) {
-            $resolved = [];
-            foreach ($data['tui']['theme_paths'] as $path) {
-                if (!\is_string($path)) {
-                    continue;
-                }
-                $resolved[] = $this->pathResolver->resolve($path, $cwd);
+        foreach (self::PATH_CONFIG as $path => $type) {
+            try {
+                $value = $accessor->getValue($data, $path);
+            } catch (\Exception) {
+                // Path does not exist in config — skip.
+                continue;
             }
-            $data['tui']['theme_paths'] = $resolved;
-        }
 
-        if (isset($data['sessions']['path']) && \is_string($data['sessions']['path'])) {
-            $data['sessions']['path'] = $this->pathResolver->resolve(
-                $data['sessions']['path'],
-                $cwd,
-            );
-        }
-
-        if (isset($data['logging']['path']) && \is_string($data['logging']['path'])) {
-            $data['logging']['path'] = $this->pathResolver->resolve(
-                $data['logging']['path'],
-                $cwd,
-            );
-        }
-
-        if (isset($data['tools']['output_cap']['path']) && \is_string($data['tools']['output_cap']['path'])) {
-            $data['tools']['output_cap']['path'] = $this->pathResolver->resolve(
-                $data['tools']['output_cap']['path'],
-                $cwd,
-            );
-        }
-
-        if (isset($data['tools']['background_process']['path']) && \is_string($data['tools']['background_process']['path'])) {
-            $data['tools']['background_process']['path'] = $this->pathResolver->resolve(
-                $data['tools']['background_process']['path'],
-                $cwd,
-            );
+            if ('list' === $type && \is_array($value)) {
+                $resolved = [];
+                foreach ($value as $item) {
+                    if (!\is_string($item)) {
+                        continue;
+                    }
+                    $resolved[] = $this->pathResolver->resolve($item, $cwd);
+                }
+                $accessor->setValue($data, $path, $resolved);
+            } elseif ('string' === $type && \is_string($value)) {
+                $accessor->setValue($data, $path, $this->pathResolver->resolve($value, $cwd));
+            }
         }
 
         return $data;
@@ -234,22 +241,5 @@ final class AppConfigLoader
         }
 
         copy($defaultsPath, $homeSettingsPath);
-    }
-
-    /**
-     * Throws early when the process has no working directory rather than
-     * silently falling back to "/" and producing broken paths downstream.
-     *
-     * @throws \RuntimeException
-     */
-    private static function resolveCurrentWorkingDirectory(): string
-    {
-        $cwd = getcwd();
-
-        if (false === $cwd) {
-            throw new \RuntimeException('No current working directory available.');
-        }
-
-        return $cwd;
     }
 }

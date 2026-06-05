@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Domain\Event\Lifecycle;
 
-use Ineersa\AgentCore\Domain\Event\CoreLifecycleEventType;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 
 final readonly class AgentStartEvent extends AbstractLifecycleRunEvent
 {
-    public const string TYPE = CoreLifecycleEventType::AGENT_START;
+    public const string TYPE = RunEventTypeEnum::AgentStart->value;
 }

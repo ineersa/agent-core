@@ -5,11 +5,11 @@
 ## Goals and invariants
 
 - **`session_id === run_id`.** The TUI session and the AgentCore run share a single
-  identity. One 12-character hex ID names the session directory and is used as
-  the AgentCore `RunState::$runId` and every `RunEvent::$runId`.
+  identity. One DB-issued auto-increment ID (numeric string) names the session
+  directory and is used as the AgentCore `RunState::$runId` and every
+  `RunEvent::$runId`.
 - **Self-contained.** Every session directory holds everything needed to resume the
-  conversation or fork it in the future — no global `.hatfield/runs/` registry,
-  no database.
+  conversation or fork it in the future — no global `.hatfield/runs/` registry.
 - **Canonical directory name.** The directory name under `.hatfield/sessions/` is
   the authoritative identity. Embedded IDs inside files are validated on read and
   must match the directory name. A mismatch indicates data corruption.
@@ -22,36 +22,51 @@
 
 ```text
 .hatfield/sessions/<id>/
-  metadata.yaml            Identity, tree, and session metadata
   state.json               AgentCore RunState materialized snapshot/checkpoint
   events.jsonl             AgentCore RunEvent canonical event stream
   transcript.jsonl         TUI/user-facing transcript projection
   attachments/             (future) pasted files, images, diffs
 ```
 
+Session metadata (identity, prompt, model, reasoning, fork tree links)
+lives in the `hatfield_session` database table, not in a metadata.yaml file.
+
 ### File purposes
 
 | File | Canonical? | Written by | Read by | Format |
 |------|-----------|------------|---------|--------|
-| `metadata.yaml` | Yes (identity/tree) | `HatfieldSessionStore` | `HatfieldSessionStore`, TUI, future fork/lister | YAML |
 | `state.json` | No — materialized snapshot/checkpoint | `SessionRunStore::compareAndSwap()` | `SessionRunStore::get()`, resume flow | JSON (Symfony Serializer) |
 | `events.jsonl` | **Yes — canonical domain event stream** | `SessionRunEventStore::append()` | `SessionRunEventStore::allFor()`, `InProcessAgentSessionClient::events()`, TUI tick callback | JSONL (EventPayloadNormalizer) |
 | `transcript.jsonl` | No — TUI projection | `HatfieldSessionStore::appendTranscriptEntry()` | `HatfieldSessionStore::getTranscript()`, resume display | JSONL (TranscriptEntry DTO) |
 
-### metadata.yaml
+### Session metadata (database)
 
-```yaml
-session_id: a1b2c3d4e5f6
-run_id: a1b2c3d4e5f6       # Always === session_id
-parent_id: null             # Future fork tree parent; null for root sessions
-root_id: null               # Future tree root ID; null if this session is root
-created_at: '2026-05-13T12:00:00+00:00'
-updated_at: '2026-05-13T12:05:00+00:00'
-cwd: /home/user/projects/my-app
-prompt: 'Write a README'
+Session identity and metadata are stored in the `hatfield_session` DB table
+(authoritative) and exposed through `HatfieldSessionStore::loadMetadata()`
+and `updateMetadata()`.  The returned array shape for callers:
+
+```php
+[
+    'session_id' => '42',    // DB auto-increment id as string; always === run_id
+    'run_id'     => '42',
+    'parent_id'  => null,    // Future fork tree parent
+    'root_id'    => null,    // Future fork tree root
+    'created_at' => '...',
+    'updated_at' => '...',
+    'cwd'        => '/path/to/project',
+    'prompt'     => 'Write a README',  // nullable
+    'model'      => 'deepseek/deepseek-v4-pro',  // nullable
+    'model_provider' => 'deepseek',              // nullable
+    'model_name'     => 'deepseek-v4-pro',       // nullable
+    'reasoning'  => 'medium',                    // nullable
+]
 ```
 
-Future forking will add optional keys (see [Future fork tree](#future-fork-tree)).
+Non-null keys are always present; nullable fields are only included when
+non-null. There is no separate public_id column — the auto-increment
+integer primary key is cast to string for all external identifiers.
+
+Future forking will add parent_id/root_id support (see [Future fork tree](#future-fork-tree)).
 
 ### Storage model at a glance
 
@@ -93,7 +108,7 @@ Serialized `Ineersa\AgentCore\Domain\Run\RunState` via Symfony Serializer
 
 ```json
 {
-    "runId": "a1b2c3d4e5f6",
+    "runId": "42",
     "status": "running",
     "version": 3,
     "turnNo": 1,
@@ -124,8 +139,8 @@ as a disposable cache.
 One JSON object per line, produced by `EventPayloadNormalizer::normalizeRunEvent()`:
 
 ```jsonl
-{"schema_version":"1.0","run_id":"a1b2c3d4e5f6","seq":1,"turn_no":1,"type":"run_started","payload":{"run_id":"a1b2c3d4e5f6"},"ts":"2026-05-13T12:00:00+00:00"}
-{"schema_version":"1.0","run_id":"a1b2c3d4e5f6","seq":2,"turn_no":1,"type":"turn_start","payload":{},"ts":"2026-05-13T12:00:01+00:00"}
+{"schema_version":"1.0","run_id":"42","seq":1,"turn_no":1,"type":"run_started","payload":{"run_id":"42"},"ts":"2026-05-13T12:00:00+00:00"}
+{"schema_version":"1.0","run_id":"42","seq":2,"turn_no":1,"type":"turn_start","payload":{},"ts":"2026-05-13T12:00:01+00:00"}
 ```
 
 Lines are appended under a Symfony Lock (`FlockStore`). `allFor()` reads all
@@ -137,8 +152,8 @@ lines, validates embedded `run_id` against the directory name, and sorts by
 One JSON object per line, produced by `TranscriptEntry::toArray()`:
 
 ```jsonl
-{"role":"user","text":"Write a README","meta":{"session_id":"a1b2c3d4e5f6"},"created_at":"2026-05-13T12:00:05+00:00"}
-{"role":"assistant","text":"I'll create a README.md","meta":{"run_id":"a1b2c3d4e5f6","seq":4},"created_at":"2026-05-13T12:00:06+00:00"}
+{"role":"user","text":"Write a README","meta":{"session_id":"42"},"created_at":"2026-05-13T12:00:05+00:00"}
+{"role":"assistant","text":"I'll create a README.md","meta":{"run_id":"42","seq":4},"created_at":"2026-05-13T12:00:06+00:00"}
 ```
 
 Roles include `user`, `assistant`, `tool`, `system`, and `error`.
@@ -201,7 +216,7 @@ layer — not during persistence.
    fork logic must rewrite the embedded `runId` in:
    - `state.json` — top-level `runId` key
    - `events.jsonl` — `run_id` field in every line
-   - `metadata.yaml` — `session_id`, `run_id`; set `parent_id` and `root_id`
+   - `hatfield_session` DB row — `session_id`, `run_id`; set `parent_id` and `root_id`
    - `transcript.jsonl` — `meta.run_id` and `meta.session_id` where present
 
 ## Resume flow
@@ -227,7 +242,7 @@ for both the TUI session context and the AgentCore run.
 php bin/console agent --prompt="Hello"
 ```
 
-1. `SessionInitializer::initialize()` calls `$sessionStore->generateId()` → 12-char hex, creates a `TuiSessionState` (in `src/Tui/Runtime/`).
+1. `SessionInitializer::initialize()` calls `$sessionStore->createSession($prompt)` → DB-issued auto-increment numeric string ID, creates a `TuiSessionState` (in `src/Tui/Runtime/`).
 2. `$sessionStore->createSession(cwd, prompt, sessionId)` creates the
    self-contained directory with empty files.
 3. A `StartRunRequest` is created with `runId: sessionId`.
@@ -297,6 +312,18 @@ non-self-contained. By making `session_id === run_id` and storing everything
 under the session directory, each session/run is a single directory that can be
 copied, archived, shared, or forked as a unit.
 
+## Session ID allocation
+
+Session IDs are DB-issued auto-increment integers converted to strings.
+The `hatfield_session` table acts as an authoritative ID registry;
+`createSession()` inserts a row, obtains the ID, then creates the
+session directory under `.hatfield/sessions/<id>/`.
+
+- Provides non-colliding IDs without random-generation loops.
+- Drives the invariant `session_id === run_id` at creation time.
+- Session directories remain self-contained; the DB row serves as
+  the identity registry and metadata store.
+
 ## Why no SQLite yet
 
 A filesystem with JSONL/YAML is simpler for v1:
@@ -306,14 +333,10 @@ A filesystem with JSONL/YAML is simpler for v1:
 - No migration scripts needed.
 - Each session is a self-contained directory.
 
-SQLite may become valuable later for:
-
-- Cross-session queries and indexing.
-- Efficient random-access reads for large sessions.
-- Transactional integrity across multiple writes.
-
-But for the current append-only, single-session-at-a-time workload, filesystem
-JSONL with FlockStore locking is sufficient and less complex.
+A SQLite-backed `hatfield_session` table is used for session ID allocation
+(auto-increment primary key, no collision risk), replacing the original
+random 12-char hex loop. Session content (metadata, events, transcript,
+state) remains in the filesystem directory for the reasons above.
 
 ## Future fork tree
 
@@ -323,7 +346,7 @@ a database.
 
 ### Fork metadata
 
-After a fork, `metadata.yaml` gains optional keys:
+After a fork, the `hatfield_session` DB row gains optional keys:
 
 ```yaml
 session_id: bbb222
@@ -358,17 +381,17 @@ Implementation outline:
 1. Copy `.hatfield/sessions/aaa111` to `.hatfield/sessions/bbb222`.
 2. Generate new ID `bbb222` if not specified.
 3. Rewrite all embedded IDs from `aaa111` to `bbb222` in:
-   - `metadata.yaml`
+   - `hatfield_session` DB row (set parent_id, root_id)
    - `state.json`
    - `events.jsonl`
    - `transcript.jsonl`
-4. Set `parent_id`, `root_id`, and `fork` block in the new metadata.
+4. Set `parent_id`, `root_id`, and `fork` block in DB metadata.
 5. Resume: `php bin/console agent --resume bbb222`.
 
 ### Tree listing (future)
 
 Listing all sessions and building a tree can be done by scanning
-`.hatfield/sessions/*/metadata.yaml` and reading `parent_id` / `root_id`.
+the `hatfield_session` DB table and reading `parent_id` / `root_id`.
 
 No database index is required for session counts in the range of hundreds to
 low thousands.
@@ -405,7 +428,7 @@ embedded IDs.
 | Session pruning/cleanup | Low | No auto-expiry or `session:prune` command. Orphaned sessions accumulate. |
 | Fork command (`session:fork`) | Medium | Planned; storage model is ready. Needs rewrite logic + CLI command. |
 | Attachments storage (`attachments/`) | Low | Directory created in layout docs but not yet used. Will store pasted files, images, diffs. |
-| Session rename / alias | Low | Session IDs are 12-char hex — not human-memorable. Aliases or titles would help. |
+| Session rename / alias | Low | Session IDs are auto-increment numeric strings — not human-memorable. Aliases or titles would help. |
 | Runtime event streaming | Medium | Current polling is synchronous full-scan. Incremental delivery would improve large sessions. |
 | Rebuild `state.json` from `events.jsonl` | Medium | Would make the materialized snapshot fully recoverable and justify treating it as a disposable cache. |
 ## Related documents

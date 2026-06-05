@@ -11,8 +11,8 @@ use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
-use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Ineersa\AgentCore\Tests\Support\Builder\ToolCallBuilder;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Agent\Toolbox\Attribute\AsTool;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallRequested;
@@ -28,18 +28,17 @@ final class ToolExecutorTest extends TestCase
     {
         $executor = new ToolExecutor('interrupt', 30, 2, new ToolExecutionResultStore());
 
-        $result = $executor->execute(new ToolCall(
-            toolCallId: 'tool-call-1',
-            toolName: 'ask_user',
-            arguments: [
+        $result = $executor->execute(ToolCallBuilder::create('tool-call-1')
+            ->withToolName('ask_user')
+            ->withArguments([
                 'question_id' => 'q-1',
                 'prompt' => 'Approve deployment?',
                 'schema' => ['type' => 'boolean'],
-            ],
-            orderIndex: 0,
-            runId: 'run-stage-06',
-            mode: ToolExecutionMode::Interrupt,
-        ));
+            ])
+            ->withOrderIndex(0)
+            ->withRunId('run-stage-06')
+            ->withMode(ToolExecutionMode::Interrupt)
+            ->build());
 
         $this->assertFalse($result->isError);
         $this->assertIsArray($result->details);
@@ -52,12 +51,11 @@ final class ToolExecutorTest extends TestCase
     {
         $executor = new ToolExecutor('parallel', 30, 2, new ToolExecutionResultStore());
 
-        $result = $executor->execute(new ToolCall(
-            toolCallId: 'call-1',
-            toolName: 'web_search',
-            arguments: ['query' => 'symfony'],
-            orderIndex: 0,
-        ));
+        $result = $executor->execute(ToolCallBuilder::create('call-1')
+            ->withToolName('web_search')
+            ->withArguments(['query' => 'symfony'])
+            ->withOrderIndex(0)
+            ->build());
 
         $this->assertTrue($result->isError);
         $this->assertStringContainsString('execution is unavailable', $result->content[0]['text']);
@@ -74,21 +72,19 @@ final class ToolExecutorTest extends TestCase
             resultStore: new ToolExecutionResultStore(),
         );
 
-        $first = $executor->execute(new ToolCall(
-            toolCallId: 'call-1',
-            toolName: 'web_search',
-            arguments: ['query' => 'symfony'],
-            orderIndex: 0,
-            runId: 'run-stage-06',
-        ));
+        $first = $executor->execute(ToolCallBuilder::create('call-1')
+            ->withToolName('web_search')
+            ->withArguments(['query' => 'symfony'])
+            ->withOrderIndex(0)
+            ->withRunId('run-stage-06')
+            ->build());
 
-        $second = $executor->execute(new ToolCall(
-            toolCallId: 'call-1',
-            toolName: 'web_search',
-            arguments: ['query' => 'symfony'],
-            orderIndex: 0,
-            runId: 'run-stage-06',
-        ));
+        $second = $executor->execute(ToolCallBuilder::create('call-1')
+            ->withToolName('web_search')
+            ->withArguments(['query' => 'symfony'])
+            ->withOrderIndex(0)
+            ->withRunId('run-stage-06')
+            ->build());
 
         $this->assertSame(1, $toolbox->executions);
         $this->assertFalse($first->isError);
@@ -107,23 +103,21 @@ final class ToolExecutorTest extends TestCase
             resultStore: new ToolExecutionResultStore(),
         );
 
-        $executor->execute(new ToolCall(
-            toolCallId: 'call-1',
-            toolName: 'web_search',
-            arguments: ['query' => 'symfony'],
-            orderIndex: 0,
-            runId: 'run-stage-06',
-            toolIdempotencyKey: 'idem-1',
-        ));
+        $executor->execute(ToolCallBuilder::create('call-1')
+            ->withToolName('web_search')
+            ->withArguments(['query' => 'symfony'])
+            ->withOrderIndex(0)
+            ->withRunId('run-stage-06')
+            ->withToolIdempotencyKey('idem-1')
+            ->build());
 
-        $second = $executor->execute(new ToolCall(
-            toolCallId: 'call-2',
-            toolName: 'web_search',
-            arguments: ['query' => 'symfony'],
-            orderIndex: 1,
-            runId: 'run-stage-06',
-            toolIdempotencyKey: 'idem-1',
-        ));
+        $second = $executor->execute(ToolCallBuilder::create('call-2')
+            ->withToolName('web_search')
+            ->withArguments(['query' => 'symfony'])
+            ->withOrderIndex(1)
+            ->withRunId('run-stage-06')
+            ->withToolIdempotencyKey('idem-1')
+            ->build());
 
         $this->assertSame(1, $toolbox->executions);
         $this->assertSame('call-2', $second->toolCallId);
@@ -147,12 +141,11 @@ final class ToolExecutorTest extends TestCase
             resultStore: new ToolExecutionResultStore(),
         );
 
-        $result = $executor->execute(new ToolCall(
-            toolCallId: 'call-3',
-            toolName: 'web_search',
-            arguments: ['query' => 'agent core'],
-            orderIndex: 0,
-        ));
+        $result = $executor->execute(ToolCallBuilder::create('call-3')
+            ->withToolName('web_search')
+            ->withArguments(['query' => 'agent core'])
+            ->withOrderIndex(0)
+            ->build());
 
         $this->assertFalse($result->isError);
         $this->assertSame('Blocked by policy listener.', $result->details['raw_result']);
@@ -172,19 +165,18 @@ final class ToolExecutorTest extends TestCase
             contextAccessor: $accessor,
         );
 
-        $executor->execute(new ToolCall(
-            toolCallId: 'call-1',
-            toolName: 'web_search',
-            arguments: ['query' => 'symfony'],
-            orderIndex: 0,
-            runId: 'run-1',
-            context: ['turn_no' => 1, 'cancel_token' => new class implements CancellationTokenInterface {
+        $executor->execute(ToolCallBuilder::create('call-1')
+            ->withToolName('web_search')
+            ->withArguments(['query' => 'symfony'])
+            ->withOrderIndex(0)
+            ->withRunId('run-1')
+            ->withContext(['turn_no' => 1, 'cancel_token' => new class implements CancellationTokenInterface {
                 public function isCancellationRequested(): bool
                 {
                     return false;
                 }
-            }],
-        ));
+            }])
+            ->build());
 
         // Context should be available during execution (CountingToolbox checks this).
         $this->assertNull($accessor->current());
@@ -214,13 +206,12 @@ final class ToolExecutorTest extends TestCase
             toolSetResolver: $denyResolver,
         );
 
-        $result = $executor->execute(new ToolCall(
-            toolCallId: 'call-deny',
-            toolName: 'evil_tool',
-            arguments: [],
-            orderIndex: 0,
-            context: ['tools_ref' => 'toolset:run:r1:turn:1'],
-        ));
+        $result = $executor->execute(ToolCallBuilder::create('call-deny')
+            ->withToolName('evil_tool')
+            ->withArguments([])
+            ->withOrderIndex(0)
+            ->withContext(['tools_ref' => 'toolset:run:r1:turn:1'])
+            ->build());
 
         $this->assertTrue($result->isError);
         $this->assertSame(0, $toolbox->executions, 'Toolbox should not be called for denied tool.');
@@ -254,13 +245,12 @@ final class ToolExecutorTest extends TestCase
             toolSetResolver: $allowResolver,
         );
 
-        $result = $executor->execute(new ToolCall(
-            toolCallId: 'call-allow',
-            toolName: 'allowed_tool',
-            arguments: [],
-            orderIndex: 0,
-            context: ['tools_ref' => 'toolset:run:r1:turn:1'],
-        ));
+        $result = $executor->execute(ToolCallBuilder::create('call-allow')
+            ->withToolName('allowed_tool')
+            ->withArguments([])
+            ->withOrderIndex(0)
+            ->withContext(['tools_ref' => 'toolset:run:r1:turn:1'])
+            ->build());
 
         $this->assertFalse($result->isError);
         $this->assertSame(1, $toolbox->executions, 'Toolbox should be called for allowed tool.');
@@ -292,13 +282,12 @@ final class ToolExecutorTest extends TestCase
             toolSetResolver: $spyResolver,
         );
 
-        $result = $executor->execute(new ToolCall(
-            toolCallId: 'call-no-ref',
-            toolName: 'any_tool',
-            arguments: [],
-            orderIndex: 0,
+        $result = $executor->execute(ToolCallBuilder::create('call-no-ref')
+            ->withToolName('any_tool')
+            ->withArguments([])
+            ->withOrderIndex(0)
             // No context['tools_ref'] — should skip allowlist check
-        ));
+            ->build());
 
         $this->assertFalse($spyResolver->resolved, 'Resolver should not be called when no tools_ref in context.');
         $this->assertFalse($result->isError);
@@ -317,13 +306,12 @@ final class ToolExecutorTest extends TestCase
             resultStore: new ToolExecutionResultStore(),
         );
 
-        $result = $executor->execute(new ToolCall(
-            toolCallId: 'call-no-resolver',
-            toolName: 'some_tool',
-            arguments: [],
-            orderIndex: 0,
-            context: ['tools_ref' => 'toolset:run:r1:turn:1'],
-        ));
+        $result = $executor->execute(ToolCallBuilder::create('call-no-resolver')
+            ->withToolName('some_tool')
+            ->withArguments([])
+            ->withOrderIndex(0)
+            ->withContext(['tools_ref' => 'toolset:run:r1:turn:1'])
+            ->build());
 
         $this->assertFalse($result->isError);
         $this->assertSame(1, $toolbox->executions);
@@ -344,12 +332,11 @@ final class ToolExecutorTest extends TestCase
             resultStore: new ToolExecutionResultStore(),
         );
 
-        $result = $executor->execute(new ToolCall(
-            toolCallId: 'call-tce-1',
-            toolName: 'some_tool',
-            arguments: ['x' => 1],
-            orderIndex: 0,
-        ));
+        $result = $executor->execute(ToolCallBuilder::create('call-tce-1')
+            ->withToolName('some_tool')
+            ->withArguments(['x' => 1])
+            ->withOrderIndex(0)
+            ->build());
 
         $this->assertTrue($result->isError);
         $this->assertIsArray($result->details);
@@ -370,12 +357,11 @@ final class ToolExecutorTest extends TestCase
             resultStore: new ToolExecutionResultStore(),
         );
 
-        $result = $executor->execute(new ToolCall(
-            toolCallId: 'call-tce-2',
-            toolName: 'some_tool',
-            arguments: ['x' => 1],
-            orderIndex: 0,
-        ));
+        $result = $executor->execute(ToolCallBuilder::create('call-tce-2')
+            ->withToolName('some_tool')
+            ->withArguments(['x' => 1])
+            ->withOrderIndex(0)
+            ->build());
 
         $this->assertTrue($result->isError);
         $this->assertTrue($result->details['retryable']);
@@ -394,12 +380,11 @@ final class ToolExecutorTest extends TestCase
             resultStore: new ToolExecutionResultStore(),
         );
 
-        $result = $executor->execute(new ToolCall(
-            toolCallId: 'call-re-1',
-            toolName: 'some_tool',
-            arguments: ['x' => 1],
-            orderIndex: 0,
-        ));
+        $result = $executor->execute(ToolCallBuilder::create('call-re-1')
+            ->withToolName('some_tool')
+            ->withArguments(['x' => 1])
+            ->withOrderIndex(0)
+            ->build());
 
         $this->assertTrue($result->isError);
         $this->assertIsArray($result->details);
@@ -423,20 +408,19 @@ final class ToolExecutorTest extends TestCase
             contextAccessor: $accessor,
         );
 
-        $result = $executor->execute(new ToolCall(
-            toolCallId: 'call-42',
-            toolName: 'read',
-            arguments: ['path' => 'file.txt'],
-            orderIndex: 1,
-            runId: 'run-context-test',
-            timeoutSeconds: 120,
-            context: ['turn_no' => 3, 'cancel_token' => new class implements CancellationTokenInterface {
+        $result = $executor->execute(ToolCallBuilder::create('call-42')
+            ->withToolName('read')
+            ->withArguments(['path' => 'file.txt'])
+            ->withOrderIndex(1)
+            ->withRunId('run-context-test')
+            ->withTimeoutSeconds(120)
+            ->withContext(['turn_no' => 3, 'cancel_token' => new class implements CancellationTokenInterface {
                 public function isCancellationRequested(): bool
                 {
                     return false;
                 }
-            }],
-        ));
+            }])
+            ->build());
 
         $this->assertFalse($result->isError);
         $this->assertNull($accessor->current());

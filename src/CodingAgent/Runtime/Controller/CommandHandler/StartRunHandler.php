@@ -37,7 +37,10 @@ final readonly class StartRunHandler
         $prompt = (string) ($command->payload['prompt'] ?? '');
         $model = isset($command->payload['model']) ? (string) $command->payload['model'] : null;
         $reasoning = isset($command->payload['reasoning']) ? (string) $command->payload['reasoning'] : null;
-        $runId = $command->runId ?? '';
+        $cwd = isset($command->payload['cwd']) ? (string) $command->payload['cwd'] : '';
+        $commandRunId = $command->runId ?? '';
+        $sessionRunId = 'unknown' !== $event->sessionId ? $event->sessionId : '';
+        $runId = '' !== $commandRunId ? $commandRunId : $sessionRunId;
 
         // Non-blocking: dispatches StartRun to run_control transport and returns
         // immediately. The run_control consumer picks up the message and processes
@@ -46,7 +49,8 @@ final readonly class StartRunHandler
         //   2. LLM consumer stdout (streaming deltas) → controller poll → TUI
         $handle = $this->client->start(new StartRunRequest(
             prompt: $prompt,
-            runId: '' !== $runId ? $runId : '',
+            runId: $runId,
+            cwd: $cwd,
             model: '' !== $model ? $model : null,
             reasoning: '' !== $reasoning ? $reasoning : null,
         ));

@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -30,133 +31,9 @@ final readonly class CommandMailboxPolicy
      */
     public function applyPendingTurnStartCommands(RunState $state): array
     {
-        $pendingCommands = $this->commandStore->pending($state->runId);
-        if ([] === $pendingCommands) {
-            return [$state, []];
-        }
+        $result = $this->applyPendingCommands($state, CommandApplicationBoundary::TurnStart);
 
-        $messages = $state->messages;
-        $eventSpecs = [];
-        $supersededSteerKeys = $this->supersededSteerKeys($pendingCommands);
-
-        foreach ($pendingCommands as $pendingCommand) {
-            if (isset($supersededSteerKeys[$pendingCommand->idempotencyKey])) {
-                $this->commandStore->markSuperseded($state->runId, $pendingCommand->idempotencyKey, 'Superseded by a newer steer command.');
-                $eventSpecs[] = [
-                    'type' => 'agent_command_superseded',
-                    'payload' => [
-                        'kind' => CoreCommandKind::Steer,
-                        'idempotency_key' => $pendingCommand->idempotencyKey,
-                        'reason' => 'Superseded by a newer steer command.',
-                    ],
-                ];
-
-                continue;
-            }
-
-            if (CoreCommandKind::Steer === $pendingCommand->kind) {
-                $messagePayload = $pendingCommand->payload['message'] ?? null;
-                if (!\is_array($messagePayload)) {
-                    $this->commandStore->markRejected($state->runId, $pendingCommand->idempotencyKey, 'Invalid steer payload: missing message.');
-                    $eventSpecs[] = [
-                        'type' => 'agent_command_rejected',
-                        'payload' => [
-                            'kind' => CoreCommandKind::Steer,
-                            'idempotency_key' => $pendingCommand->idempotencyKey,
-                            'reason' => 'Invalid steer payload: missing message.',
-                        ],
-                    ];
-
-                    continue;
-                }
-
-                $hydratedMessage = AgentMessage::fromPayload($messagePayload);
-                if (null === $hydratedMessage) {
-                    $this->commandStore->markRejected($state->runId, $pendingCommand->idempotencyKey, 'Invalid steer payload: malformed message envelope.');
-                    $eventSpecs[] = [
-                        'type' => 'agent_command_rejected',
-                        'payload' => [
-                            'kind' => CoreCommandKind::Steer,
-                            'idempotency_key' => $pendingCommand->idempotencyKey,
-                            'reason' => 'Invalid steer payload: malformed message envelope.',
-                        ],
-                    ];
-
-                    continue;
-                }
-
-                $messages[] = $hydratedMessage;
-                $this->commandStore->markApplied($state->runId, $pendingCommand->idempotencyKey);
-                $eventSpecs[] = [
-                    'type' => 'agent_command_applied',
-                    'payload' => [
-                        'kind' => CoreCommandKind::Steer,
-                        'idempotency_key' => $pendingCommand->idempotencyKey,
-                        'options' => [
-                            'cancel_safe' => $pendingCommand->options->safe,
-                        ],
-                    ],
-                ];
-
-                continue;
-            }
-
-            if (CoreCommandKind::FollowUp === $pendingCommand->kind) {
-                $messagePayload = $pendingCommand->payload['message'] ?? null;
-                if (!\is_array($messagePayload)) {
-                    $this->commandStore->markRejected($state->runId, $pendingCommand->idempotencyKey, 'Invalid follow_up payload: missing message.');
-                    $eventSpecs[] = [
-                        'type' => 'agent_command_rejected',
-                        'payload' => [
-                            'kind' => CoreCommandKind::FollowUp,
-                            'idempotency_key' => $pendingCommand->idempotencyKey,
-                            'reason' => 'Invalid follow_up payload: missing message.',
-                        ],
-                    ];
-
-                    continue;
-                }
-
-                $hydratedMessage = AgentMessage::fromPayload($messagePayload);
-                if (null === $hydratedMessage) {
-                    $this->commandStore->markRejected($state->runId, $pendingCommand->idempotencyKey, 'Invalid follow_up payload: malformed message envelope.');
-                    $eventSpecs[] = [
-                        'type' => 'agent_command_rejected',
-                        'payload' => [
-                            'kind' => CoreCommandKind::FollowUp,
-                            'idempotency_key' => $pendingCommand->idempotencyKey,
-                            'reason' => 'Invalid follow_up payload: malformed message envelope.',
-                        ],
-                    ];
-
-                    continue;
-                }
-
-                $messages[] = $hydratedMessage;
-                $this->commandStore->markApplied($state->runId, $pendingCommand->idempotencyKey);
-                $eventSpecs[] = [
-                    'type' => 'agent_command_applied',
-                    'payload' => [
-                        'kind' => CoreCommandKind::FollowUp,
-                        'idempotency_key' => $pendingCommand->idempotencyKey,
-                        'options' => [
-                            'cancel_safe' => $pendingCommand->options->safe,
-                        ],
-                    ],
-                ];
-
-                continue;
-            }
-
-            if (!CoreCommandKind::isCore($pendingCommand->kind)) {
-                $eventSpecs = [
-                    ...$eventSpecs,
-                    ...$this->applyExtensionCommand($state, $pendingCommand),
-                ];
-            }
-        }
-
-        return [$this->copyState($state, ['messages' => $messages]), $eventSpecs];
+        return [$result->state, $result->eventSpecs];
     }
 
     /**
@@ -164,89 +41,9 @@ final readonly class CommandMailboxPolicy
      */
     public function applyPendingStopBoundaryCommands(RunState $state): array
     {
-        $pendingCommands = $this->commandStore->pending($state->runId);
-        if ([] === $pendingCommands) {
-            return [$state, [], false];
-        }
+        $result = $this->applyPendingCommands($state, CommandApplicationBoundary::StopBoundary);
 
-        $messages = $state->messages;
-        $eventSpecs = [];
-        $shouldContinue = false;
-        $supersededSteerKeys = $this->supersededSteerKeys($pendingCommands);
-
-        foreach ($pendingCommands as $pendingCommand) {
-            if (isset($supersededSteerKeys[$pendingCommand->idempotencyKey])) {
-                $this->commandStore->markSuperseded($state->runId, $pendingCommand->idempotencyKey, 'Superseded by a newer steer command.');
-                $eventSpecs[] = [
-                    'type' => 'agent_command_superseded',
-                    'payload' => [
-                        'kind' => CoreCommandKind::Steer,
-                        'idempotency_key' => $pendingCommand->idempotencyKey,
-                        'reason' => 'Superseded by a newer steer command.',
-                    ],
-                ];
-
-                continue;
-            }
-
-            if (\in_array($pendingCommand->kind, [CoreCommandKind::Steer, CoreCommandKind::FollowUp], true)) {
-                $messagePayload = $pendingCommand->payload['message'] ?? null;
-                if (!\is_array($messagePayload)) {
-                    $this->commandStore->markRejected($state->runId, $pendingCommand->idempotencyKey, 'Invalid command payload: missing message envelope.');
-                    $eventSpecs[] = [
-                        'type' => 'agent_command_rejected',
-                        'payload' => [
-                            'kind' => $pendingCommand->kind,
-                            'idempotency_key' => $pendingCommand->idempotencyKey,
-                            'reason' => 'Invalid command payload: missing message envelope.',
-                        ],
-                    ];
-
-                    continue;
-                }
-
-                $hydratedMessage = AgentMessage::fromPayload($messagePayload);
-                if (null === $hydratedMessage) {
-                    $this->commandStore->markRejected($state->runId, $pendingCommand->idempotencyKey, 'Invalid command payload: malformed message envelope.');
-                    $eventSpecs[] = [
-                        'type' => 'agent_command_rejected',
-                        'payload' => [
-                            'kind' => $pendingCommand->kind,
-                            'idempotency_key' => $pendingCommand->idempotencyKey,
-                            'reason' => 'Invalid command payload: malformed message envelope.',
-                        ],
-                    ];
-
-                    continue;
-                }
-
-                $messages[] = $hydratedMessage;
-                $this->commandStore->markApplied($state->runId, $pendingCommand->idempotencyKey);
-                $eventSpecs[] = [
-                    'type' => 'agent_command_applied',
-                    'payload' => [
-                        'kind' => $pendingCommand->kind,
-                        'idempotency_key' => $pendingCommand->idempotencyKey,
-                        'options' => [
-                            'cancel_safe' => $pendingCommand->options->safe,
-                        ],
-                    ],
-                ];
-
-                $shouldContinue = true;
-
-                continue;
-            }
-
-            if (!CoreCommandKind::isCore($pendingCommand->kind)) {
-                $eventSpecs = [
-                    ...$eventSpecs,
-                    ...$this->applyExtensionCommand($state, $pendingCommand),
-                ];
-            }
-        }
-
-        return [$this->copyState($state, ['messages' => $messages]), $eventSpecs, $shouldContinue];
+        return [$result->state, $result->eventSpecs, $result->shouldContinue];
     }
 
     /**
@@ -284,6 +81,108 @@ final readonly class CommandMailboxPolicy
     }
 
     /**
+     * Unified command application loop parameterized by boundary semantics.
+     *
+     * Both applyPendingTurnStartCommands() and applyPendingStopBoundaryCommands()
+     * delegate here. The CommandApplicationBoundary controls the shouldContinue
+     * tracking that distinguishes stop-boundary from turn-start behavior.
+     *
+     * @return CommandApplicationResult containing mutated state, event specs, and shouldContinue flag
+     */
+    private function applyPendingCommands(RunState $state, CommandApplicationBoundary $boundary): CommandApplicationResult
+    {
+        $pendingCommands = $this->commandStore->pending($state->runId);
+        if ([] === $pendingCommands) {
+            return new CommandApplicationResult($state, [], false);
+        }
+
+        $messages = $state->messages;
+        $eventSpecs = [];
+        $shouldContinue = false;
+        $supersededSteerKeys = $this->supersededSteerKeys($pendingCommands);
+
+        foreach ($pendingCommands as $pendingCommand) {
+            if (isset($supersededSteerKeys[$pendingCommand->idempotencyKey])) {
+                $this->commandStore->markSuperseded($state->runId, $pendingCommand->idempotencyKey, 'Superseded by a newer steer command.');
+                $eventSpecs[] = [
+                    'type' => RunEventTypeEnum::AgentCommandSuperseded->value,
+                    'payload' => [
+                        'kind' => CoreCommandKind::Steer,
+                        'idempotency_key' => $pendingCommand->idempotencyKey,
+                        'reason' => 'Superseded by a newer steer command.',
+                    ],
+                ];
+
+                continue;
+            }
+
+            if (\in_array($pendingCommand->kind, [CoreCommandKind::Steer, CoreCommandKind::FollowUp], true)) {
+                $messagePayload = $pendingCommand->payload['message'] ?? null;
+                if (!\is_array($messagePayload)) {
+                    $this->commandStore->markRejected($state->runId, $pendingCommand->idempotencyKey, 'Invalid command payload: missing message envelope.');
+                    $eventSpecs[] = [
+                        'type' => RunEventTypeEnum::AgentCommandRejected->value,
+                        'payload' => [
+                            'kind' => $pendingCommand->kind,
+                            'idempotency_key' => $pendingCommand->idempotencyKey,
+                            'reason' => 'Invalid command payload: missing message envelope.',
+                        ],
+                    ];
+
+                    continue;
+                }
+
+                $hydratedMessage = AgentMessage::fromPayload($messagePayload);
+                if (null === $hydratedMessage) {
+                    $this->commandStore->markRejected($state->runId, $pendingCommand->idempotencyKey, 'Invalid command payload: malformed message envelope.');
+                    $eventSpecs[] = [
+                        'type' => RunEventTypeEnum::AgentCommandRejected->value,
+                        'payload' => [
+                            'kind' => $pendingCommand->kind,
+                            'idempotency_key' => $pendingCommand->idempotencyKey,
+                            'reason' => 'Invalid command payload: malformed message envelope.',
+                        ],
+                    ];
+
+                    continue;
+                }
+
+                $messages[] = $hydratedMessage;
+                $this->commandStore->markApplied($state->runId, $pendingCommand->idempotencyKey);
+                $eventSpecs[] = [
+                    'type' => RunEventTypeEnum::AgentCommandApplied->value,
+                    'payload' => [
+                        'kind' => $pendingCommand->kind,
+                        'idempotency_key' => $pendingCommand->idempotencyKey,
+                        'options' => [
+                            'cancel_safe' => $pendingCommand->options->safe,
+                        ],
+                    ],
+                ];
+
+                if (CommandApplicationBoundary::StopBoundary === $boundary) {
+                    $shouldContinue = true;
+                }
+
+                continue;
+            }
+
+            if (!CoreCommandKind::isCore($pendingCommand->kind)) {
+                $eventSpecs = [
+                    ...$eventSpecs,
+                    ...$this->applyExtensionCommand($state, $pendingCommand),
+                ];
+            }
+        }
+
+        return new CommandApplicationResult(
+            $this->copyState($state, ['messages' => $messages]),
+            $eventSpecs,
+            $shouldContinue,
+        );
+    }
+
+    /**
      * @return list<array{type: string, payload: array<string, mixed>}>
      */
     private function applyExtensionCommand(RunState $state, PendingCommand $command): array
@@ -293,7 +192,7 @@ final readonly class CommandMailboxPolicy
             $this->commandStore->markRejected($state->runId, $command->idempotencyKey, 'No extension command handler registered.');
 
             return [[
-                'type' => 'agent_command_rejected',
+                'type' => RunEventTypeEnum::AgentCommandRejected->value,
                 'payload' => [
                     'kind' => $command->kind,
                     'idempotency_key' => $command->idempotencyKey,
@@ -315,7 +214,7 @@ final readonly class CommandMailboxPolicy
             $this->commandStore->markRejected($state->runId, $command->idempotencyKey, $throwable->getMessage());
 
             return [[
-                'type' => 'agent_command_rejected',
+                'type' => RunEventTypeEnum::AgentCommandRejected->value,
                 'payload' => [
                     'kind' => $command->kind,
                     'idempotency_key' => $command->idempotencyKey,
@@ -327,7 +226,7 @@ final readonly class CommandMailboxPolicy
         $this->commandStore->markApplied($state->runId, $command->idempotencyKey);
 
         $eventSpecs = [[
-            'type' => 'agent_command_applied',
+            'type' => RunEventTypeEnum::AgentCommandApplied->value,
             'payload' => [
                 'kind' => $command->kind,
                 'idempotency_key' => $command->idempotencyKey,

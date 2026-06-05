@@ -94,6 +94,14 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
                 $prompt = $decision->details['prompt'] ?? 'Approval required.';
                 $schema = $decision->details['schema'] ?? ['type' => 'string'];
 
+                // Register pending approval so the answer can be routed back
+                // to the originating hook via ApprovalAnswerHookInterface.
+                $this->hookRegistry->registerPendingApproval(
+                    questionId: $questionId,
+                    hook: $hook,
+                    details: $decision->details,
+                );
+
                 $event->setResult(new ToolResult($toolCall, [
                     'kind' => 'interrupt',
                     'question_id' => $questionId,

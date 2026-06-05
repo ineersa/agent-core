@@ -10,8 +10,10 @@ use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
-use Ineersa\AgentCore\Domain\Event\CoreLifecycleEventType;
+use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
+use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -28,7 +30,9 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
     public function __construct(
         private ToolBatchCollector $toolBatchCollector,
         private CommandMailboxPolicy $commandMailboxPolicy,
-        private RunMessageStateTools $stateTools,
+        private EventFactory $eventFactory,
+        private ToolCallExtractor $toolCallExtractor,
+        private AgentMessageNormalizer $messageNormalizer,
         private StepDispatcher $stepDispatcher,
         private ?ToolSetResolverInterface $toolSetResolver = null,
         private ?ToolboxInterface $toolbox = null,
@@ -51,13 +55,13 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
 
         $runId = $message->runId();
 
-        if ($this->stateTools->isStaleResult($state, $message->turnNo(), $message->stepId())) {
-            $nextState = $this->stateTools->incrementStateVersion($state, eventCount: 1);
-            $event = $this->stateTools->event(
+        if ($state->turnNo !== $message->turnNo() || (null !== $state->activeStepId && $state->activeStepId !== $message->stepId())) {
+            $nextState = $this->eventFactory->incrementStateVersion($state, eventCount: 1);
+            $event = $this->eventFactory->event(
                 runId: $runId,
                 seq: $nextState->lastSeq,
                 turnNo: $state->turnNo,
-                type: 'stale_result_ignored',
+                type: RunEventTypeEnum::StaleResultIgnored->value,
                 payload: [
                     'result' => 'llm_step_result',
                     'step_id' => $message->stepId(),
@@ -74,12 +78,12 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
         if ('aborted' === $message->stopReason || RunStatus::Cancelling === $state->status) {
             $messages = $state->messages;
             if (null !== $message->assistantMessage) {
-                $messages[] = $this->stateTools->assistantMessage($message->assistantMessage);
+                $messages[] = $this->messageNormalizer->assistantMessage($message->assistantMessage);
             }
 
             $eventSpecs = [
                 [
-                    'type' => 'llm_step_aborted',
+                    'type' => RunEventTypeEnum::LlmStepAborted->value,
                     'payload' => [
                         'step_id' => $message->stepId(),
                         'stop_reason' => $message->stopReason ?? 'aborted',
@@ -87,14 +91,14 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
                     ],
                 ],
                 [
-                    'type' => CoreLifecycleEventType::AGENT_END,
+                    'type' => RunEventTypeEnum::AgentEnd->value,
                     'payload' => [
                         'reason' => 'cancelled',
                     ],
                 ],
             ];
 
-            $events = $this->stateTools->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
+            $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
             $nextState = new RunState(
                 runId: $state->runId,
                 status: RunStatus::Cancelled,
@@ -140,11 +144,11 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
                 retryableFailure: $retryable,
             );
 
-            $event = $this->stateTools->event(
+            $event = $this->eventFactory->event(
                 runId: $runId,
                 seq: $nextState->lastSeq,
                 turnNo: $nextState->turnNo,
-                type: 'llm_step_failed',
+                type: RunEventTypeEnum::LlmStepFailed->value,
                 payload: [
                     'error' => $message->error,
                     'retryable' => $retryable,
@@ -160,18 +164,18 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
         }
 
         $assistantMessage = $message->assistantMessage ?? new AssistantMessage();
-        $toolCalls = $this->stateTools->extractToolCalls($assistantMessage);
+        $toolCalls = $this->toolCallExtractor->extractToolCalls($assistantMessage);
         $toolSchemas = $this->resolveToolSchemas();
 
         $messages = $state->messages;
-        $messages[] = $this->stateTools->assistantMessage($assistantMessage);
+        $messages[] = $this->messageNormalizer->assistantMessage($assistantMessage);
 
         $pendingToolCalls = [];
         foreach ($toolCalls as $toolCall) {
             $pendingToolCalls[$toolCall['id']] = false;
         }
 
-        $assistantMessagePayload = $this->stateTools->assistantMessagePayload($assistantMessage);
+        $assistantMessagePayload = $this->messageNormalizer->assistantMessagePayload($assistantMessage);
 
         $activeSet = $this->resolveActiveSet($message->toolsRef, $state->turnNo, $runId);
 
@@ -200,7 +204,7 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
         }
 
         $eventSpecs = [[
-            'type' => 'llm_step_completed',
+            'type' => RunEventTypeEnum::LlmStepCompleted->value,
             'payload' => [
                 'step_id' => $message->stepId(),
                 'stop_reason' => $message->stopReason,
@@ -243,14 +247,14 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
 
             if (!$shouldContinue) {
                 $eventSpecs[] = [
-                    'type' => CoreLifecycleEventType::AGENT_END,
+                    'type' => RunEventTypeEnum::AgentEnd->value,
                     'payload' => [
                         'reason' => 'completed',
                     ],
                 ];
             }
 
-            $events = $this->stateTools->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
+            $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
 
             $nextState = new RunState(
                 runId: $stateAfterBoundary->runId,
@@ -285,7 +289,7 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
 
         foreach ($effects as $effect) {
             $eventSpecs[] = [
-                'type' => CoreLifecycleEventType::TOOL_EXECUTION_START,
+                'type' => RunEventTypeEnum::ToolExecutionStart->value,
                 'payload' => [
                     'tool_call_id' => $effect->toolCallId,
                     'tool_name' => $effect->toolName,
@@ -295,7 +299,7 @@ final readonly class LlmStepResultHandler implements RunMessageHandler
             ];
         }
 
-        $events = $this->stateTools->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
+        $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
 
         $nextState = new RunState(
             runId: $state->runId,

@@ -7,12 +7,10 @@ namespace Ineersa\CodingAgent\Runtime\Controller;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
-use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
-use Ineersa\CodingAgent\Runtime\Session\TranscriptPersistenceService;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
@@ -24,55 +22,30 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
  *
  * Orchestrates the controller event loop: reads JSONL commands from stdin,
  * ACKs immediately, dispatches through Symfony EventDispatcher to focused
- * #[AsEventListener] command handlers, and forwards runtime events to
- * stdout for the TUI.
+ * #[AsEventListener] command handlers, and delegates event emit and LLM
+ * stdout polling to RuntimeEventEmitter and LlmStdoutPoller respectively.
  *
  * Event sources:
- * - Canonical events: polled from events.jsonl via InProcessAgentSessionClient
- *   event drain (seq > 0).
- * - Transient streaming deltas: read from the LLM consumer child process stdout
- *   pipe. Stream subscribers inside the LLM consumer write JSONL to STDOUT;
- *   the controller reads incrementally and forwards.
- *
- * Canonical runtime events (committed by consumer processes to events.jsonl)
- * are polled via InProcessAgentSessionClient and forwarded to TUI through
- * a periodic event drain timer. Transient streaming deltas flow through
- * the LLM consumer stdout pipe.
- *
- * Responsibilities are delegated to collaborators:
- * - EventDispatcherInterface routes commands to #[AsEventListener] handlers
- * - ConsumerSupervisor manages messenger:consume child processes
+ * - Canonical events: drained by RuntimeEventEmitter from events.jsonl via
+ *   InProcessAgentSessionClient (seq > 0).
+ * - Transient streaming deltas: polled by LlmStdoutPoller from the LLM
+ *   consumer child process stdout pipe.
  *
  * Command protocol:
- *   TUI → stdin JSONL  → controller parses → emits command.ack → dispatches event
+ *   TUI → stdin JSONL → controller parses → emits command.ack → dispatches event
  *   Controller → stdout JSONL → TUI reads events including command.ack
  *
  * @see ControllerCommandEvent
  * @see ConsumerSupervisor
- * @see InProcessAgentSessionClient
+ * @see RuntimeEventEmitter
+ * @see LlmStdoutPoller
  */
 final class HeadlessController
 {
-    /** 10ms LLM stdout poll interval for responsive streaming. */
-    private const float STREAMING_EVENT_POLL_INTERVAL = 0.01;
-
-    /** 50ms event drain poll interval. */
-    private const float EVENT_DRAIN_INTERVAL = 0.05;
-
     /** 5s consumer supervision interval. */
     private const float SUPERVISE_INTERVAL = 5.0;
-    private const int MAX_CONSECUTIVE_BAD_LLM_LINES = 10;
-
-    /** @var resource|null */
-    private $stdout;
 
     private bool $shuttingDown = false;
-
-    /** @var array<string, int> runId => lastForwardedSeq */
-    private array $runEventCursors = [];
-
-    /** Consecutive unparseable LLM stdout lines for error threshold. */
-    private int $consecutiveBadLlmLines = 0;
 
     /**
      * Session identifier from HATFIELD_SESSION_ID env var.
@@ -80,36 +53,21 @@ final class HeadlessController
      */
     private readonly string $sessionId;
 
-    /**
-     * Partial-line buffer for LLM consumer stdout reads.
-     *
-     * getIncrementalOutput() can return partial JSONL (no trailing newline).
-     * This buffer accumulates incomplete lines across poll cycles so they
-     * are not silently lost. Complete lines (trailing \n) are processed;
-     * leftovers stay in the buffer for the next poll.
-     *
-     * @see JsonlProcessAgentSessionClient for the same pattern
-     */
-    private string $llmStdoutBuffer = '';
-
     public function __construct(
         private readonly ConsumerSupervisor $consumerSupervisor,
         private readonly EventDispatcherInterface $dispatcher,
         private readonly LoggerInterface $logger,
         private readonly ToolExecutionSettingsInterface $toolExecutionSettings,
         private readonly RuntimeExceptionBoundary $boundary,
-        private readonly ?InProcessAgentSessionClient $eventClient = null,
+        private readonly RuntimeEventEmitter $emitter,
         /**
          * Optional override for parallel tool messenger consumers.
          * Values <= 0 use tools.execution.max_parallelism from settings.
          */
         private readonly int $toolWorkerCount = 0,
-        private readonly ?TranscriptPersistenceService $transcriptPersistence = null,
         /**
          * Optional background process manager for session-scoped cleanup
          * on graceful controller shutdown (SIGTERM/SIGINT).
-         * Nullable for backwards compatibility with tests that construct
-         * HeadlessController without it.
          */
         private readonly ?BackgroundProcessManager $bgProcessManager = null,
     ) {
@@ -118,10 +76,14 @@ final class HeadlessController
 
     public function run(): int
     {
-        $this->stdout = fopen('php://stdout', 'w');
-        if (false === $this->stdout) {
-            throw new \RuntimeException('Cannot open stdout for controller mode');
-        }
+        $this->emitter->openStdout();
+
+        // Wire fatal shutdown: when stdout write fails, the emitter needs to
+        // trigger the full controller shutdown sequence (consumer supervision
+        // + bg process cleanup) before stopping the event loop.
+        $this->emitter->setFatalShutdownHandler(function (): void {
+            $this->shutdown();
+        });
 
         // Reap orphaned messenger:consume processes left behind by SIGKILL'd
         // previous runs. Only kills processes whose parent is init (ppid=1)
@@ -129,7 +91,7 @@ final class HeadlessController
         // a living controller instance.
         $this->killOrphanedConsumers();
 
-        $this->emit(new RuntimeEvent(
+        $this->emitter->emit(new RuntimeEvent(
             type: RuntimeEventTypeEnum::RuntimeReady->value,
             runId: '',
             seq: 0,
@@ -172,92 +134,16 @@ final class HeadlessController
         });
 
         // Poll LLM consumer stdout for transient streaming deltas.
-        EventLoop::repeat(self::STREAMING_EVENT_POLL_INTERVAL, function (): void {
-            if ($this->shuttingDown) {
-                return;
-            }
+        $poller = new LlmStdoutPoller(
+            $this->consumerSupervisor,
+            $this->emitter,
+            $this->boundary,
+            $this->logger,
+        );
+        $poller->startPollLoop(0.01);
 
-            $this->pollLlmStdout();
-        });
-
-        // Periodic event drain: poll canonical events from events.jsonl via
-        // InProcessAgentSessionClient and forward to TUI. Only runs when
-        // there are active runs registered via emit(). The TUI deduplicates
-        // by seq, so re-forwarding already-seen events is harmless.
-        EventLoop::repeat(self::EVENT_DRAIN_INTERVAL, function (): void {
-            if ($this->shuttingDown || null === $this->eventClient) {
-                return;
-            }
-
-            // Snapshot active run IDs to avoid modification during iteration.
-            $activeRuns = array_keys($this->runEventCursors);
-
-            foreach ($activeRuns as $runId) {
-                $cursor = $this->runEventCursors[$runId] ?? null;
-                if (null === $cursor) {
-                    continue; // Run was cleaned up during iteration.
-                }
-
-                try {
-                    foreach ($this->eventClient->events($runId) as $event) {
-                        // Skip transient streaming deltas (seq=0) — these are
-                        // delivered via LLM consumer stdout pipe, not canonical events.
-                        if (0 === $event->seq) {
-                            continue;
-                        }
-
-                        if ($event->seq <= $cursor) {
-                            continue;
-                        }
-
-                        $this->emitInternal($event);
-
-                        if ($event->seq > 0) {
-                            $this->runEventCursors[$runId] = max($cursor, $event->seq);
-                            $cursor = $this->runEventCursors[$runId];
-                        }
-                    }
-
-                    // Persist finalized transcript blocks after draining events.
-                    $this->persistTranscripts($runId);
-                } catch (\Throwable $e) {
-                    // Event drain failures can stall the TUI silently.
-                    // Delegate capture=0 rethrow to boundary.
-                    // If we reach here, capture mode is enabled.
-                    $this->boundary->catch($e, 'headless_controller.event_drain_failed', [
-                        'run_id' => $runId,
-                    ]);
-
-                    // Capture mode: emit protocol error for TUI visibility
-                    // and release cursor so subsequent polls start fresh.
-                    $this->emitInternal(new RuntimeEvent(
-                        type: RuntimeEventTypeEnum::RuntimeReady->value, // broadcast to unstick
-                        runId: $runId,
-                        seq: 0,
-                        payload: [],
-                    ));
-
-                    $this->emitInternal(new RuntimeEvent(
-                        type: RuntimeEventTypeEnum::ProtocolError->value,
-                        runId: $runId,
-                        seq: 0,
-                        payload: [
-                            'error' => 'Event drain failed: '.$e->getMessage(),
-                            'run_id' => $runId,
-                        ],
-                    ));
-
-                    unset($this->runEventCursors[$runId]);
-
-                    $this->logger->error('Event drain failed', [
-                        'run_id' => $runId,
-                        'exception' => $e,
-                    ]);
-
-                    // Event drain will retry next tick.
-                }
-            }
-        });
+        // Periodic event drain via emitter.
+        $this->emitter->startDrainLoop(0.05);
 
         // Consumer supervision: check child process health.
         EventLoop::repeat(self::SUPERVISE_INTERVAL, function (): void {
@@ -283,106 +169,6 @@ final class HeadlessController
         return Command::SUCCESS;
     }
 
-    // ── LLM stdout polling ───────────────────────────────────────────────
-
-    /**
-     * Poll the LLM consumer child process stdout for transient streaming deltas.
-     *
-     * Stream subscribers running inside the LLM consumer process write JSONL
-     * lines to STDOUT. This reads incremental output from the child process
-     * pipe, accumulates partial lines across polls, parses valid RuntimeEvent
-     * JSONL, and forwards to the TUI.
-     *
-     * Non-JSONL lines (e.g. messenger:consume output) are treated as
-     * expected protocol noise and logged at debug level.
-     * Incomplete lines (no trailing \n) are buffered and completed on the
-     * next poll cycle.
-     *
-     * @see JsonlProcessAgentSessionClient::consumeOutput() for the same pattern
-     */
-    private function pollLlmStdout(): void
-    {
-        $llmProcess = $this->consumerSupervisor->getProcess('llm');
-
-        if (null === $llmProcess) {
-            return;
-        }
-
-        $output = $llmProcess->getIncrementalOutput();
-
-        if ('' === $output && '' === $this->llmStdoutBuffer) {
-            return;
-        }
-
-        // Accumulate with partial-line buffer (same pattern as JsonlProcessAgentSessionClient).
-        $this->llmStdoutBuffer .= $output;
-        $lastNewline = strrpos($this->llmStdoutBuffer, "\n");
-        if (false === $lastNewline) {
-            // No complete line yet — wait for more data.
-            return;
-        }
-
-        $complete = substr($this->llmStdoutBuffer, 0, $lastNewline + 1);
-        $this->llmStdoutBuffer = substr($this->llmStdoutBuffer, $lastNewline + 1);
-
-        foreach (explode("\n", $complete) as $line) {
-            $trimmed = trim($line);
-            if ('' === $trimmed) {
-                continue;
-            }
-
-            $data = json_decode($trimmed, true);
-
-            if (!\is_array($data) || !isset($data['v'], $data['type'])) {
-                // Not a valid RuntimeEvent — likely messenger:consume
-                // informational output (worker name, status). Skip at
-                // debug level since this is normal protocol noise.
-                $this->logger->debug('Skipped non-RuntimeEvent LLM consumer stdout line', [
-                    'preview' => mb_substr($trimmed, 0, 120),
-                ]);
-                continue;
-            }
-
-            try {
-                $event = RuntimeEvent::fromArray($data);
-                $this->emit($event);
-                $this->consecutiveBadLlmLines = 0;
-            } catch (\Throwable $e) {
-                ++$this->consecutiveBadLlmLines;
-                $this->logger->debug('Skipping unparseable JSONL from LLM consumer stdout', [
-                    'line' => mb_substr($trimmed, 0, 200),
-                    'exception' => $e,
-                    'consecutive_bad' => $this->consecutiveBadLlmLines,
-                ]);
-
-                if ($this->consecutiveBadLlmLines >= self::MAX_CONSECUTIVE_BAD_LLM_LINES) {
-                    // Persistent malformed LLM output: delegate capture=0
-                    // rethrow to boundary. If we reach here, capture mode.
-                    $this->boundary->catch($e, 'headless_controller.llm_stdout_protocol_error', [
-                        'consecutive_bad' => $this->consecutiveBadLlmLines,
-                    ]);
-
-                    $this->logger->error('Persistent malformed LLM consumer output — streaming may be incomplete', [
-                        'consecutive_bad' => $this->consecutiveBadLlmLines,
-                        'sample' => mb_substr($trimmed, 0, 200),
-                        'exception' => $e,
-                    ]);
-
-                    $this->emitInternal(new RuntimeEvent(
-                        type: RuntimeEventTypeEnum::ProtocolError->value,
-                        runId: '',
-                        seq: 0,
-                        payload: [
-                            'error' => 'Persistent malformed LLM consumer output — streaming may be incomplete.',
-                            'consecutive_bad' => $this->consecutiveBadLlmLines,
-                        ],
-                    ));
-                    $this->consecutiveBadLlmLines = 0;
-                }
-            }
-        }
-    }
-
     // ── Command handling ─────────────────────────────────────────────────
 
     private function handleCommandLine(string $line): void
@@ -399,8 +185,8 @@ final class HeadlessController
         // Command bus dispatch is non-blocking — messages are routed to
         // async Doctrine transports.
         try {
-            $emit = $this->emit(...);
-            $event = new ControllerCommandEvent($command, $emit);
+            $emit = $this->emitter->emit(...);
+            $event = new ControllerCommandEvent($command, $emit, $this->sessionId);
             $this->dispatcher->dispatch($event);
         } catch (\Throwable $e) {
             // Delegate capture=0 rethrow to boundary.
@@ -426,7 +212,7 @@ final class HeadlessController
         try {
             return JsonlCodec::decodeCommand($line);
         } catch (\Throwable $e) {
-            $this->emit(new RuntimeEvent(
+            $this->emitter->emit(new RuntimeEvent(
                 type: RuntimeEventTypeEnum::ProtocolError->value,
                 runId: '',
                 seq: 0,
@@ -441,7 +227,7 @@ final class HeadlessController
 
     private function ackCommand(RuntimeCommand $command): void
     {
-        $this->emit(new RuntimeEvent(
+        $this->emitter->emit(new RuntimeEvent(
             type: RuntimeEventTypeEnum::CommandAck->value,
             runId: $command->runId ?? '',
             seq: 0,
@@ -455,7 +241,7 @@ final class HeadlessController
 
     private function emitCommandRejected(RuntimeCommand $command, string $reason): void
     {
-        $this->emit(new RuntimeEvent(
+        $this->emitter->emit(new RuntimeEvent(
             type: RuntimeEventTypeEnum::CommandRejected->value,
             runId: $command->runId ?? '',
             seq: 0,
@@ -564,84 +350,11 @@ final class HeadlessController
         }
 
         $this->shuttingDown = true;
+        $this->emitter->shutdown();
 
         $this->logger->info('Controller shutting down gracefully');
 
         $this->consumerSupervisor->shutdown();
         $this->bgProcessManager?->shutdownCleanup($this->sessionId);
-    }
-
-    // ── Output ───────────────────────────────────────────────────────────
-
-    /**
-     * Emit a runtime event to TUI stdout.
-     *
-     * Automatically registers run event cursors when start/resume events
-     * are emitted, and releases them on terminal events.
-     */
-    private function emit(RuntimeEvent $event): void
-    {
-        // Auto-register/release event drain cursors based on event type.
-        if (RuntimeEventTypeEnum::RunStarted->value === $event->type
-            || RuntimeEventTypeEnum::RunResumed->value === $event->type
-        ) {
-            $this->runEventCursors[$event->runId] = $this->runEventCursors[$event->runId] ?? 0;
-        } elseif (RuntimeEventTypeEnum::RunCompleted->value === $event->type
-            || RuntimeEventTypeEnum::RunFailed->value === $event->type
-            || RuntimeEventTypeEnum::RunCancelled->value === $event->type
-        ) {
-            unset($this->runEventCursors[$event->runId]);
-        }
-
-        $this->emitInternal($event);
-    }
-
-    private function feedPersister(RuntimeEvent $event): void
-    {
-        if (null === $this->transcriptPersistence) {
-            return;
-        }
-        try {
-            $this->transcriptPersistence->feed($event);
-        } catch (\Throwable) {
-            // Best-effort: persister failures must not break the event loop.
-        }
-    }
-
-    private function persistTranscripts(string $runId): void
-    {
-        if (null === $this->transcriptPersistence) {
-            return;
-        }
-        try {
-            $this->transcriptPersistence->persist($runId);
-        } catch (\Throwable) {
-            // Best-effort: persistence failures must not break the event loop.
-        }
-    }
-
-    private function emitInternal(RuntimeEvent $event): void
-    {
-        $this->feedPersister($event);
-        if (null === $this->stdout) {
-            return;
-        }
-
-        $line = JsonlCodec::encodeEvent($event);
-        $written = @fwrite($this->stdout, $line);
-
-        if (false === $written || 0 === $written) {
-            $error = error_get_last();
-            $this->logger->error('Controller stdout write failed, initiating shutdown', [
-                'event_type' => $event->type,
-                'error' => $error['message'] ?? 'unknown',
-            ]);
-            $this->shutdown();
-            EventLoop::getDriver()->stop();
-
-            return;
-        }
-
-        fflush($this->stdout);
     }
 }

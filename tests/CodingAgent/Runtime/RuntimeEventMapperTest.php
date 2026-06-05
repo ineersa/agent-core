@@ -5,18 +5,15 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\CodingAgent\Runtime\Mapping\AssistantMessageMappingSubscriber;
-use Ineersa\CodingAgent\Runtime\Mapping\CancelAndFallbackMappingSubscriber;
-use Ineersa\CodingAgent\Runtime\Mapping\HitlMappingSubscriber;
-use Ineersa\CodingAgent\Runtime\Mapping\RunLifecycleMappingSubscriber;
-use Ineersa\CodingAgent\Runtime\Mapping\ToolExecutionMappingSubscriber;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
 #[CoversClass(RuntimeEventMapper::class)]
+#[CoversClass(RuntimeEventTranslator::class)]
 final class RuntimeEventMapperTest extends TestCase
 {
     private RuntimeEventMapper $mapper;
@@ -24,14 +21,9 @@ final class RuntimeEventMapperTest extends TestCase
 
     protected function setUp(): void
     {
-        $dispatcher = new EventDispatcher();
-        $dispatcher->addSubscriber(new RunLifecycleMappingSubscriber());
-        $dispatcher->addSubscriber(new AssistantMessageMappingSubscriber());
-        $dispatcher->addSubscriber(new ToolExecutionMappingSubscriber());
-        $dispatcher->addSubscriber(new HitlMappingSubscriber());
-        $dispatcher->addSubscriber(new CancelAndFallbackMappingSubscriber());
-
-        $this->mapper = new RuntimeEventMapper($dispatcher);
+        $this->mapper = new RuntimeEventMapper(
+            new RuntimeEventTranslator(new EventDispatcher()),
+        );
     }
 
     // ── Lifecycle normalization ──────────────────────────────────────────────
@@ -376,6 +368,24 @@ final class RuntimeEventMapperTest extends TestCase
         self::assertSame(RuntimeEventTypeEnum::HumanInputRequested->value, $result->type);
         self::assertSame('q-minimal-1', $result->payload['question_id']);
         self::assertSame('Human input required.', $result->payload['prompt']);
+    }
+
+    // ── HITL answers ─────────────────────────────────────────────────────────
+
+    public function testNormalizesAgentCommandAppliedHumanResponse(): void
+    {
+        $event = $this->runEvent('agent_command_applied', [
+            'kind' => 'human_response',
+            'question_id' => 'q-approve-1',
+            'answer' => 'yes',
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::HumanInputAnswered->value, $result->type);
+        self::assertSame('q-approve-1', $result->payload['question_id']);
+        self::assertSame('yes', $result->payload['answer']);
     }
 
     // ── Cancel normalization ─────────────────────────────────────────────────

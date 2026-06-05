@@ -275,7 +275,11 @@ class CancelListenerTest extends TestCase
             logging: new LoggingConfig(),
             cwd: $this->tmpDir,
         );
-        $sessionStore = new HatfieldSessionStore($appConfig, new LockFactory(new FlockStore()));
+        $sessionStore = new HatfieldSessionStore(
+            appConfig: $appConfig,
+            lockFactory: new LockFactory(new FlockStore()),
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+        );
 
         $context = new TuiRuntimeContext(
             tui: $tui,

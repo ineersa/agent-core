@@ -10,7 +10,9 @@ use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler;
-use Ineersa\AgentCore\Application\Pipeline\RunMessageStateTools;
+use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
+use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -35,7 +37,9 @@ final class LlmStepResultHandlerTest extends TestCase
                 commandStore: $commandStore,
                 commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
             ),
-            stateTools: new RunMessageStateTools(new \Ineersa\AgentCore\Domain\Event\EventFactory(), new \Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor()),
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
             stepDispatcher: $stepDispatcher,
         );
 

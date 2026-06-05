@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\E2E;
 
+use Ineersa\CodingAgent\Tests\Support\AgentTestExecutable;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
@@ -17,6 +19,9 @@ use PHPUnit\Framework\TestCase;
  *
  * After capture, sends Ctrl+D to exit the interactive TUI cleanly.
  *
+ * Runs in an isolated project directory under var/tmp/tui-e2e-*
+ * so it does NOT hit the stale project-root .hatfield/messenger.sqlite.
+ *
  * @group tui-e2e
  */
 #[Group('tui-e2e')]
@@ -24,6 +29,8 @@ final class TuiStartupSnapshotTest extends TestCase
 {
     private TmuxHarness $tmux;
     private string $goldenPath;
+    private string $projectRoot;
+    private string $testProjectDir;
 
     protected function setUp(): void
     {
@@ -32,13 +39,18 @@ final class TuiStartupSnapshotTest extends TestCase
         }
 
         $this->tmux = new TmuxHarness();
-        $this->goldenPath = __DIR__.'/../Snapshots/startup-120x40.txt';
+        $this->projectRoot = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
+        $this->goldenPath = $this->projectRoot.'/tests/Tui/Snapshots/startup-120x40.txt';
+        $this->testProjectDir = $this->createIsolatedProjectDir();
     }
 
     protected function tearDown(): void
     {
         if (isset($this->tmux)) {
             $this->tmux->killAll();
+        }
+        if (isset($this->testProjectDir)) {
+            TestDirectoryIsolation::removeDirectory($this->testProjectDir);
         }
     }
 
@@ -53,8 +65,9 @@ final class TuiStartupSnapshotTest extends TestCase
     public function testStartupLayoutMatchesGoldenSnapshot(): void
     {
         $pane = $this->tmux->startDetached(
-            command: 'php bin/console agent --model=llama_cpp_test/test --prompt="hello from tmux e2e"; echo; echo "── TUI exited ──"; exec sleep 3600',
+            command: $this->agentCommand(),
             prefix: 'hatfield-startup',
+            cwd: $this->testProjectDir,
         );
 
         // Wait for the TUI to render — looking for the Hatfield logo
@@ -114,8 +127,9 @@ final class TuiStartupSnapshotTest extends TestCase
     public function testStartupContainsExpectedElements(): void
     {
         $pane = $this->tmux->startDetached(
-            command: 'php bin/console agent --model=llama_cpp_test/test --prompt="hello from tmux e2e"; echo; echo "── TUI exited ──"; exec sleep 3600',
+            command: $this->agentCommand(),
             prefix: 'hatfield-startup-elements',
+            cwd: $this->testProjectDir,
         );
 
         $capture = $this->tmux->waitForCaptureContains(
@@ -142,6 +156,90 @@ final class TuiStartupSnapshotTest extends TestCase
         self::assertStringContainsString('Welcome', $capture, 'Welcome message missing');
     }
     // ── helpers ────────────────────────────────────────────
+
+    private function agentCommand(): string
+    {
+        [$php, $script] = AgentTestExecutable::command();
+
+        return \sprintf(
+            'APP_ENV=dev HOME=%s %s %s agent --model=llama_cpp_test/test --prompt="hello from tmux e2e" --tools-excluded=bash 2>&1; echo; echo "── TUI exited ──"; exec sleep 3600',
+            \escapeshellarg($this->testProjectDir.'/home'),
+            \escapeshellarg($php),
+            \escapeshellarg($script),
+        );
+    }
+
+    private function createIsolatedProjectDir(): string
+    {
+        $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e', 0o777);
+        TestDirectoryIsolation::createHatfieldTree($dir);
+        TestDirectoryIsolation::createHatfieldTree($dir.'/home');
+
+        $settings = [];
+        $projectSettings = $this->projectRoot.'/.hatfield/settings.yaml';
+        if (\is_readable($projectSettings)) {
+            $parsed = \Symfony\Component\Yaml\Yaml::parseFile($projectSettings);
+            if (\is_array($parsed)) {
+                $settings = $parsed;
+            }
+        }
+
+        $ai = $settings['ai'] ?? [];
+        if (!\is_array($ai)) {
+            $ai = [];
+        }
+        $ai['default_model'] = 'llama_cpp_test/test';
+        $ai['default_reasoning'] = 'off';
+        $settings['ai'] = $ai;
+
+        // Force SafeGuard enabled with blocking defaults for all TUI E2E tests.
+        $extensions = $settings['extensions'] ?? [];
+        if (!\is_array($extensions)) {
+            $extensions = [];
+        }
+
+        $enabled = $extensions['enabled'] ?? [];
+        if (!\is_array($enabled)) {
+            $enabled = [];
+        }
+
+        $safeGuardExtension = 'Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension';
+        if (!\in_array($safeGuardExtension, $enabled, true)) {
+            $enabled[] = $safeGuardExtension;
+        }
+        $extensions['enabled'] = $enabled;
+
+        $extensionSettings = $extensions['settings'] ?? [];
+        if (!\is_array($extensionSettings)) {
+            $extensionSettings = [];
+        }
+
+        $safeGuardSettings = $extensionSettings['safe_guard'] ?? [];
+        if (!\is_array($safeGuardSettings)) {
+            $safeGuardSettings = [];
+        }
+
+        $safeGuardSettings['tool_names'] = [
+            'bash' => 'bash',
+            'write' => 'write',
+            'edit' => 'edit',
+            'read' => 'read',
+        ];
+        $safeGuardSettings['allow_command_patterns'] = [];
+        $safeGuardSettings['allow_write_outside_cwd'] = [];
+        $safeGuardSettings['protected_read_patterns'] = [];
+        $safeGuardSettings['dangerous_command_patterns'] = [];
+
+        $extensionSettings['safe_guard'] = $safeGuardSettings;
+        $extensions['settings'] = $extensionSettings;
+        $settings['extensions'] = $extensions;
+
+        $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
+        \file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
+        \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+
+        return $dir;
+    }
 
     private function shouldUpdateSnapshots(): bool
     {

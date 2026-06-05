@@ -13,20 +13,22 @@
 
 ## Core lifecycle taxonomy
 
-`CoreLifecycleEventType` defines the ordered core stream:
+`RunEventTypeEnum` defines all AgentCore event type strings as a backed enum.
 
-- `agent_start`
-- `turn_start`
-- `message_start`
-- `message_update`
-- `message_end`
-- `tool_execution_start`
-- `tool_execution_update`
-- `tool_execution_end`
-- `turn_end`
-- `agent_end`
+The ordered core stream cases are:
 
-The `CoreLifecycleEventType::validateOrder()` method is the source of truth for ordering constraints.
+- `RunEventTypeEnum::AgentStart`
+- `RunEventTypeEnum::TurnStart`
+- `RunEventTypeEnum::MessageStart`
+- `RunEventTypeEnum::MessageUpdate`
+- `RunEventTypeEnum::MessageEnd`
+- `RunEventTypeEnum::ToolExecutionStart`
+- `RunEventTypeEnum::ToolExecutionUpdate`
+- `RunEventTypeEnum::ToolExecutionEnd`
+- `RunEventTypeEnum::TurnEnd`
+- `RunEventTypeEnum::AgentEnd`
+
+`LifecycleOrderValidator::validateOrder()` is the source of truth for ordering constraints.
 
 ## Maintenance rule
 

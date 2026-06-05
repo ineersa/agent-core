@@ -11,3 +11,4 @@ parameters:
 			identifier: missingType.iterableValue
 			count: 1
 			path: src/CodingAgent/CLI/AgentCommand.php
+

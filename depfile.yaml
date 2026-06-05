@@ -118,7 +118,7 @@ parameters:
     - name: AppRuntimeInternals
       collectors:
         - type: directory
-          value: src/CodingAgent/Runtime/(InProcess|Process|Stream|Mapping|Controller)/.*
+          value: src/CodingAgent/Runtime/(InProcess|Process|Stream|Controller)/.*
 
     - name: AppRuntimeProjection
       collectors:
@@ -412,6 +412,7 @@ parameters:
 
     AppExtension:
       - AppExtensionApi
+      - AppRuntimeContract
       - AppConfig
       - AppTool
       - AgentCore

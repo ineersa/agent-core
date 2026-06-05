@@ -15,7 +15,7 @@ final readonly class StartResult
         public ?int $pgid,
         public string $command,
         public string $logPath,
-        public string $startedAt,
+        public \DateTimeImmutable $startedAt,
         public string $sessionId,
         public string $status,
     ) {

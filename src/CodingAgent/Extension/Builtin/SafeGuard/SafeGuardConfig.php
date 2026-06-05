@@ -78,8 +78,9 @@ final readonly class SafeGuardConfig
      * @param string       $bashToolName             Tool name used for bash (default: 'bash')
      * @param string       $writeToolName            Tool name used for write (default: 'write')
      * @param string       $editToolName             Tool name used for edit (default: 'edit')
-     * @param bool         $autoDenyInNoninteractive Whether to auto-deny in non-interactive mode (default: true)
      * @param string       $readToolName             Tool name used for read (default: 'read')
+     * @param bool         $autoDenyInNoninteractive When true and running without a TUI/controller,
+     *                                               return Block instead of RequireApproval (default: true)
      */
     public function __construct(
         public array $allowCommandPatterns = [],
@@ -119,7 +120,7 @@ final readonly class SafeGuardConfig
             writeToolName: (string) ($toolNames['write'] ?? 'write'),
             editToolName: (string) ($toolNames['edit'] ?? 'edit'),
             readToolName: (string) ($toolNames['read'] ?? 'read'),
-            autoDenyInNoninteractive: self::parseBool($data['auto_deny_in_noninteractive'] ?? true),
+            autoDenyInNoninteractive: (bool) ($data['auto_deny_in_noninteractive'] ?? true),
         );
     }
 
@@ -137,29 +138,6 @@ final readonly class SafeGuardConfig
             ...self::DEFAULT_PROTECTED_READ_PATTERNS,
             ...$yamlPatterns,
         ]));
-    }
-
-    /**
-     * Parse a boolean value from mixed input.
-     *
-     * Handles actual booleans, YAML string representations, and
-     * integer/string values safely.
-     */
-    private static function parseBool(mixed $value): bool
-    {
-        if (null === $value) {
-            return true; // default when config key is explicitly null/missing
-        }
-
-        if (\is_bool($value)) {
-            return $value;
-        }
-
-        if (\is_string($value)) {
-            return !\in_array(strtolower($value), ['false', '0', 'no', ''], true);
-        }
-
-        return (bool) $value;
     }
 
     /**

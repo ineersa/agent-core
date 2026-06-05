@@ -15,6 +15,10 @@ use Ineersa\Hatfield\ExtensionApi\ToolResultHookInterface;
  * - Future ToolHookDispatcher (EXT-HOOK-04) to iterate and dispatch hooks
  *   during tool execution.
  *
+ * Also tracks pending approvals: when a tool call hook returns RequireApproval,
+ * the question_id is mapped back to the originating hook and its context,
+ * so the answer can be routed back to onApprovalAnswered().
+ *
  * @internal this is app-internal wiring, not part of the public ExtensionApi
  */
 final class ExtensionHookRegistry
@@ -32,6 +36,17 @@ final class ExtensionHookRegistry
      * @var list<ToolResultHookInterface>
      */
     private array $toolResultHooks = [];
+
+    /**
+     * Pending approvals: question_id => ApprovalPendingEntry.
+     *
+     * Populated when ExtensionToolHookEventSubscriber processes a
+     * RequireApproval decision. Consumed when the human answer is
+     * routed back to the originating hook.
+     *
+     * @var array<string, ApprovalPendingEntry>
+     */
+    private array $pendingApprovals = [];
 
     public function addToolCallHook(ToolCallHookInterface $hook): void
     {
@@ -57,5 +72,63 @@ final class ExtensionHookRegistry
     public function toolResultHooks(): array
     {
         return $this->toolResultHooks;
+    }
+
+    /**
+     * Register a pending approval for answer routing.
+     *
+     * Called by ExtensionToolHookEventSubscriber when a tool call hook
+     * returns a RequireApproval decision. Stores the question_id → hook
+     * mapping so the answer can be routed back to the originating hook
+     * via ApprovalAnswerHookInterface::onApprovalAnswered().
+     *
+     * @param array<string, mixed> $details the approval context from the RequireApproval decision
+     */
+    public function registerPendingApproval(
+        string $questionId,
+        ToolCallHookInterface $hook,
+        array $details,
+    ): void {
+        $this->pendingApprovals[$questionId] = new ApprovalPendingEntry(
+            hook: $hook,
+            details: $details,
+        );
+    }
+
+    /**
+     * Resolve a pending approval and remove it from the registry.
+     *
+     * Returns null if no pending approval is found for the given question_id
+     * (e.g., already resolved, expired, or never registered).
+     */
+    public function resolveApproval(string $questionId): ?ApprovalPendingEntry
+    {
+        $entry = $this->pendingApprovals[$questionId] ?? null;
+
+        if (null !== $entry) {
+            unset($this->pendingApprovals[$questionId]);
+        }
+
+        return $entry;
+    }
+}
+
+/**
+ * Internal value object for pending approval routing.
+ *
+ * Pairs the originating hook with the approval context details so
+ * the answer can be delivered to the correct hook with full context.
+ *
+ * @internal
+ */
+final readonly class ApprovalPendingEntry
+{
+    /**
+     * @param array<string, mixed> $details the approval context from the RequireApproval decision
+     */
+    public function __construct(
+        public ToolCallHookInterface $hook,
+        public array $details,
+    ) {
     }
 }
