@@ -435,7 +435,7 @@ depfile.yaml                                                   — new Extension
 - **Approval audit log** — separate from transcript, future work.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/safe-04-safeguard-approval-flow
 Worktree: /home/ineersa/projects/agent-core-worktrees/safe-04-safeguard-approval-flow
 Fork run:
@@ -497,3 +497,7 @@ Remaining: castor test:controller requires llama.cpp on port 9052.
 - Fork ron0ojoz0q2z fixed all, committed as 761a8811
 - 1571 tests pass, deptrac clean, cs-check clean, phpstan clean
 - Pushed to PR #79
+
+## Task workflow update - 2026-06-05T20:16:14.034Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: Revived PR #79 for task-review-iterate: branch is stale against current main and will be merged up, revalidated, and re-reviewed before returning to CODE-REVIEW.
