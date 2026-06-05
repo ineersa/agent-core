@@ -63,6 +63,20 @@ final readonly class AnswerHumanHandler
             return;
         }
 
+        // Reject missing or non-scalar answers so that safety-critical
+        // approvals are never silently passed through with a null/missing
+        // answer value that could be misinterpreted downstream.
+        if (!\is_scalar($answer) || '' === (string) $answer) {
+            $event->emit(new RuntimeEvent(
+                type: RuntimeEventTypeEnum::ProtocolError->value,
+                runId: $runId,
+                seq: 0,
+                payload: ['error' => 'answer_human requires non-empty answer'],
+            ));
+
+            return;
+        }
+
         // Dispatch through InProcessAgentSessionClient so the answer flows
         // through AgentRunner::answerHuman() → CoreCommand(HumanResponse) →
         // run_control consumer → ApplyCommandHandler → extension answer subscriber.

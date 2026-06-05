@@ -56,7 +56,7 @@ final class TickPollListener implements TuiListenerRegistrar
                 $state,
                 $client,
                 // Human input requested handler: enqueue an approval question.
-                onHumanInputRequested: static function (RuntimeEvent $event) use ($client, $questionCoordinator, $questionController): void {
+                onHumanInputRequested: static function (RuntimeEvent $event) use ($client, $questionCoordinator): void {
                     $p = $event->payload;
                     $questionId = (string) ($p['question_id'] ?? '');
                     $runId = $event->runId;
@@ -75,7 +75,7 @@ final class TickPollListener implements TuiListenerRegistrar
                         )
                         : [];
 
-                    $requestId = 'rt_'.$questionId;
+                    $requestId = 'hitl_'.$questionId;
                     $request = new QuestionRequest(
                         requestId: $requestId,
                         source: QuestionSource::AgentCore,
@@ -91,8 +91,10 @@ final class TickPollListener implements TuiListenerRegistrar
                         transcript: true,
                     );
 
-                    // Enqueue the question with a callback that sends the
-                    // user's answer back to the runtime as answer_human.
+                    // Enqueue the question with answer and cancel callbacks.
+                    // Answer sends the user's selection; cancel sends a
+                    // fail-safe Deny so the run is not left stuck in
+                    // WaitingHuman when the user dismisses the overlay.
                     $questionCoordinator->enqueue(
                         $request,
                         onAnswer: static function (mixed $answer) use ($client, $runId, $questionId): void {
@@ -100,21 +102,37 @@ final class TickPollListener implements TuiListenerRegistrar
                                 type: 'answer_human',
                                 payload: [
                                     'question_id' => $questionId,
-                                    'answer' => \is_scalar($answer) ? (string) $answer : 'approve',
+                                    'answer' => \is_scalar($answer) ? (string) $answer : 'Deny',
+                                ],
+                            ));
+                        },
+                        onCancel: static function () use ($client, $runId, $questionId): void {
+                            $client->send($runId, new UserCommand(
+                                type: 'answer_human',
+                                payload: [
+                                    'question_id' => $questionId,
+                                    'answer' => 'Deny',
                                 ],
                             ));
                         },
                     );
-
-                    // Open the overlay if this question is now active
-                    if ($questionCoordinator->activeRequest() === $request) {
-                        $questionController->open($request);
-                    }
                 },
             );
 
             if (null !== $changedBlocks) {
                 $screen->setTranscriptBlocks($state->transcript);
+            }
+
+            // Open the question overlay whenever the coordinator has an
+            // active request and the controller is not already showing it.
+            // This handles: (a) new questions becoming active after polling
+            // uncovers a human_input.requested event, and (b) queued
+            // questions advancing into the active slot on later ticks.
+            if ($questionCoordinator->actionRequired() && !$questionController->isOpen()) {
+                $activeRequest = $questionCoordinator->activeRequest();
+                if (null !== $activeRequest) {
+                    $questionController->open($activeRequest);
+                }
             }
 
             // Update working status based on authoritative activity state.

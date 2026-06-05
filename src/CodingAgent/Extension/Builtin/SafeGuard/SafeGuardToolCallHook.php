@@ -154,19 +154,24 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
         }
 
         if ('Deny' === $context->answer) {
-            $this->approvalTracker->remove($operationKey);
+            // removeByQuestionId cleans both the pending mapping and the
+            // approved entry (if any) so stale state cannot accumulate.
+            $this->approvalTracker->removeByQuestionId($context->questionId);
 
             return;
         }
 
         if ('Allow once' === $context->answer) {
-            $this->approvalTracker->approve($operationKey);
+            // approveByQuestionId resolves the operationKey from the
+            // pendingByQuestionId mapping, marks approved, and cleans
+            // the pending entry in one step.
+            $this->approvalTracker->approveByQuestionId($context->questionId);
 
             return;
         }
 
         if ('Always allow' === $context->answer) {
-            $this->approvalTracker->approve($operationKey);
+            $this->approvalTracker->approveByQuestionId($context->questionId);
 
             // Persist to policy file for future sessions
             $category = (string) ($context->approvalContext['category'] ?? '');
@@ -252,11 +257,17 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
     /**
      * Check whether the runtime has an approval channel available.
      *
+     * This is a capability signal, NOT a security boundary. An approval
+     * channel means there is a human or broker that can receive questions
+     * and relay answers back (via answer_human commands). Without it,
+     * RequireApproval decisions would hang the run in WaitingHuman forever.
+     *
      * Interactive TUI contexts set HATFIELD_APPROVAL_CHANNEL=controller when
      * spawning the agent process so that all messenger consumers inherit it
      * and SafeGuard can prompt for approval instead of auto-blocking.
      *
-     * Headless/worker contexts without this signal default to fail-closed.
+     * Headless/worker contexts without this signal default to fail-closed
+     * (auto-block) because no one is available to answer the question.
      */
     private function hasApprovalChannel(): bool
     {

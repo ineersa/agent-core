@@ -229,6 +229,102 @@ final class QuestionCoordinatorTest extends TestCase
         self::assertNull($coordinator->activeRequest());
     }
 
+    // ─── Cancel callback behavior ─────────────────────────────────────
+
+    public function testCancelCallbackInvokedForAgentCoreSource(): void
+    {
+        $coordinator = new QuestionCoordinator();
+        $request = $this->agentCoreRequest('r1');
+        $cancelFired = false;
+
+        $coordinator->enqueue(
+            $request,
+            onAnswer: function (): void {},
+            onCancel: function () use (&$cancelFired): void {
+                $cancelFired = true;
+            },
+        );
+
+        $coordinator->cancel();
+
+        self::assertTrue($cancelFired);
+        self::assertNull($coordinator->activeRequest());
+    }
+
+    public function testCancelCallbackAdvanceQueue(): void
+    {
+        $coordinator = new QuestionCoordinator();
+        $r1 = $this->agentCoreRequest('r1');
+        $r2 = $this->agentCoreRequest('r2');
+        $cancelFired = false;
+
+        $coordinator->enqueue(
+            $r1,
+            onCancel: function () use (&$cancelFired): void {
+                $cancelFired = true;
+            },
+        );
+        $coordinator->enqueue($r2);
+
+        $coordinator->cancel();
+
+        // r1 cancelled, r2 becomes active
+        self::assertTrue($cancelFired);
+        self::assertSame($r2, $coordinator->activeRequest());
+        self::assertTrue($coordinator->actionRequired());
+    }
+
+    public function testCancelCallbackThrowingStillAdvancesQueue(): void
+    {
+        $coordinator = new QuestionCoordinator();
+
+        $coordinator->enqueue(
+            $this->agentCoreRequest('r1'),
+            onCancel: function (): void {
+                throw new \RuntimeException('Callback explosion');
+            },
+        );
+        $coordinator->enqueue($this->agentCoreRequest('r2'));
+
+        // The callback exception propagates, but the finally block
+        // in cancel() already advanced the queue.
+        try {
+            $coordinator->cancel();
+            self::fail('Expected RuntimeException from cancel callback was not thrown');
+        } catch (\RuntimeException $e) {
+            self::assertSame('Callback explosion', $e->getMessage());
+        }
+
+        // Advance happened in finally block — r2 should be active.
+        self::assertSame('r2', $coordinator->activeRequest()?->requestId);
+        self::assertTrue($coordinator->actionRequired());
+    }
+
+    public function testMultipleQueuedCancelCallbacks(): void
+    {
+        $coordinator = new QuestionCoordinator();
+        $cancelled = [];
+
+        $coordinator->enqueue(
+            $this->agentCoreRequest('r1'),
+            onCancel: function () use (&$cancelled): void {
+                $cancelled[] = 'r1';
+            },
+        );
+        $coordinator->enqueue(
+            $this->agentCoreRequest('r2'),
+            onCancel: function () use (&$cancelled): void {
+                $cancelled[] = 'r2';
+            },
+        );
+
+        $coordinator->cancel(); // cancels r1
+        $coordinator->cancel(); // cancels r2
+
+        self::assertSame(['r1', 'r2'], $cancelled);
+        self::assertNull($coordinator->activeRequest());
+    }
+
     public function testMultipleCallbacksInFifoOrder(): void
     {
         $coordinator = new QuestionCoordinator();

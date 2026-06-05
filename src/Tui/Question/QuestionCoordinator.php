@@ -8,9 +8,11 @@ namespace Ineersa\Tui\Question;
  * In-memory coordinator for question request lifecycle.
  *
  * Holds one active question at a time and maintains a FIFO queue for
- * subsequent requests. Answers to Tui-source questions invoke the
- * registered local callback; AgentCore-source questions only record
- * status (runtime dispatch is handled by upper layers).
+ * subsequent requests. Answer callbacks are invoked for all sources
+ * (Tui and AgentCore) — upper layers register callbacks that dispatch
+ * answer_human commands to the runtime or handle local side effects.
+ * Cancel callbacks (AgentCore) send a fail-safe Deny answer when the
+ * user dismisses the overlay without responding.
  *
  * This coordinator is stateful and should be scoped per-session.
  */
@@ -24,6 +26,9 @@ final class QuestionCoordinator
 
     /** @var array<string, \Closure(mixed): void> */
     private array $callbacks = [];
+
+    /** @var array<string, \Closure(): void> */
+    private array $cancelCallbacks = [];
 
     /** @var array<string, true> */
     private array $requestIds = [];
@@ -40,11 +45,14 @@ final class QuestionCoordinator
      * immediately. Otherwise it is queued and will be shown after the
      * current active request is answered, rejected, or cancelled.
      *
-     * The optional $onAnswer closure is invoked only when source is
-     * QuestionSource::Tui and the user provides an answer. It receives
-     * the answer value as its sole argument.
+     * The optional $onAnswer closure is invoked when the user provides
+     * an answer. It receives the answer value as its sole argument.
+     *
+     * The optional $onCancel closure is invoked when the user cancels
+     * the question (via ESC) before providing an answer. AgentCore
+     * callers typically send a fail-safe "Deny" answer_human command.
      */
-    public function enqueue(QuestionRequest $request, ?\Closure $onAnswer = null): void
+    public function enqueue(QuestionRequest $request, ?\Closure $onAnswer = null, ?\Closure $onCancel = null): void
     {
         if (isset($this->requestIds[$request->requestId])) {
             throw new \InvalidArgumentException(\sprintf('A request with ID "%s" is already enqueued or active.', $request->requestId));
@@ -54,6 +62,10 @@ final class QuestionCoordinator
 
         if (null !== $onAnswer) {
             $this->callbacks[$request->requestId] = $onAnswer;
+        }
+
+        if (null !== $onCancel) {
+            $this->cancelCallbacks[$request->requestId] = $onCancel;
         }
 
         if (null === $this->active) {
@@ -138,7 +150,13 @@ final class QuestionCoordinator
     /**
      * Cancel the active question.
      *
-     * Advances to the next queued request, if any.
+     * Invokes the registered cancel callback (if any) before advancing
+     * the queue. For AgentCore-source questions this typically sends a
+     * fail-safe "Deny" answer_human command to the runtime so the run
+     * is not left stuck in WaitingHuman.
+     *
+     * The cancel callback runs inside a try/finally so queue advancement
+     * always happens, even if the callback throws.
      */
     public function cancel(): void
     {
@@ -147,6 +165,18 @@ final class QuestionCoordinator
         }
 
         $this->activeStatus = QuestionStatus::Cancelled;
+
+        $cancelCallback = $this->cancelCallbacks[$this->active->requestId] ?? null;
+        if (null !== $cancelCallback) {
+            try {
+                $cancelCallback();
+            } finally {
+                $this->advance();
+            }
+
+            return;
+        }
+
         $this->advance();
     }
 
@@ -155,7 +185,8 @@ final class QuestionCoordinator
      */
     private function advance(): void
     {
-        unset($this->callbacks[$this->active->requestId], $this->requestIds[$this->active->requestId]);
+        $activeRequestId = $this->active->requestId;
+        unset($this->callbacks[$activeRequestId], $this->cancelCallbacks[$activeRequestId], $this->requestIds[$activeRequestId]);
 
         if ($this->queue->isEmpty()) {
             $this->active = null;

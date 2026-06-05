@@ -171,13 +171,19 @@ final class QuestionController
                 ? $this->context->screen->editorText()
                 : $value;
 
-            $this->coordinator->answer($answer);
-            $this->close();
+            try {
+                $this->coordinator->answer($answer);
+            } finally {
+                $this->close();
+            }
         });
 
         $this->listWidget->onCancel(function (CancelEvent $event): void {
-            $this->coordinator->cancel();
-            $this->close();
+            try {
+                $this->coordinator->cancel();
+            } finally {
+                $this->close();
+            }
         });
 
         $this->container->add($this->listWidget);

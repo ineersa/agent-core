@@ -116,9 +116,14 @@ final class AnswerHumanHandlerTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
-    public function testAnswerCanBeNull(): void
+    public function testEmitsProtocolErrorWhenAnswerMissing(): void
     {
         $handler = new AnswerHumanHandler($this->spyClient);
+
+        $emittedEvents = [];
+        $emit = static function (RuntimeEvent $event) use (&$emittedEvents): void {
+            $emittedEvents[] = $event;
+        };
 
         $command = new RuntimeCommand(
             id: 'cmd_5',
@@ -127,11 +132,62 @@ final class AnswerHumanHandlerTest extends TestCase
             payload: ['question_id' => 'sg_def'],
         );
 
-        $event = new ControllerCommandEvent($command, static function (): void {});
+        $event = new ControllerCommandEvent($command, $emit);
         $handler($event);
 
-        self::assertNotNull($this->spyClient->lastCommand);
-        self::assertNull($this->spyClient->lastCommand->payload['answer'] ?? null);
+        // Missing answer must be rejected with protocol.error — safety-critical
+        // approvals must never pass null/missing through silently.
+        self::assertNull($this->spyClient->lastCommand);
+        self::assertCount(1, $emittedEvents);
+        self::assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
+    }
+
+    public function testEmitsProtocolErrorWhenAnswerEmpty(): void
+    {
+        $handler = new AnswerHumanHandler($this->spyClient);
+
+        $emittedEvents = [];
+        $emit = static function (RuntimeEvent $event) use (&$emittedEvents): void {
+            $emittedEvents[] = $event;
+        };
+
+        $command = new RuntimeCommand(
+            id: 'cmd_6',
+            type: 'answer_human',
+            runId: 'run-111',
+            payload: ['question_id' => 'sg_ghi', 'answer' => ''],
+        );
+
+        $event = new ControllerCommandEvent($command, $emit);
+        $handler($event);
+
+        self::assertNull($this->spyClient->lastCommand);
+        self::assertCount(1, $emittedEvents);
+        self::assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
+    }
+
+    public function testEmitsProtocolErrorWhenAnswerNonScalar(): void
+    {
+        $handler = new AnswerHumanHandler($this->spyClient);
+
+        $emittedEvents = [];
+        $emit = static function (RuntimeEvent $event) use (&$emittedEvents): void {
+            $emittedEvents[] = $event;
+        };
+
+        $command = new RuntimeCommand(
+            id: 'cmd_7',
+            type: 'answer_human',
+            runId: 'run-222',
+            payload: ['question_id' => 'sg_jkl', 'answer' => ['nested' => 'array']],
+        );
+
+        $event = new ControllerCommandEvent($command, $emit);
+        $handler($event);
+
+        self::assertNull($this->spyClient->lastCommand);
+        self::assertCount(1, $emittedEvents);
+        self::assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
     }
 }
 
