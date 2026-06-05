@@ -438,7 +438,7 @@ depfile.yaml                                                   — new Extension
 Status: IN-PROGRESS
 Branch: task/safe-04-safeguard-approval-flow
 Worktree: /home/ineersa/projects/agent-core-worktrees/safe-04-safeguard-approval-flow
-Fork run: k4asjabf6nxb
+Fork run: xsqccsnst3qy
 PR URL: https://github.com/ineersa/agent-core/pull/79
 PR Status: open
 Started: 2026-05-31T17:35:50.684Z
@@ -510,3 +510,7 @@ Remaining: castor test:controller requires llama.cpp on port 9052.
 - Recorded fork run: k4asjabf6nxb
 - Validation: fork: castor test --filter='SafeGuard\|HitlMapping\|ExtensionApproval\|Question\|HumanInput' passed (186 tests, 427 assertions); fork: castor test passed (1724 tests, 5046 assertions); fork: castor deptrac passed (0 violations, 0 errors); fork: castor phpstan passed (0 errors, 0 file_errors); fork: castor cs-check passed (0 files fixed); fork: LLM_MODE=true castor check passed including controller, llm-real, and tui gates
 - Summary: Fork k4asjabf6nxb completed SAFE-04 revival. Merged origin/main fb5078c1 into branch task/safe-04-safeguard-approval-flow, resolving 8 conflicts. Resulting task worktree is clean at HEAD fe0e15e9 after merge commit 2f60dce1 and test-fix commit fe0e15e9. The fork accepted current main's callback-based SafeGuard approval architecture over the older event-store polling variant and adapted tests to current ApprovalSessionTracker/SafeGuardPolicyWriter APIs. Current diff vs origin/main is limited to 5 files: SessionEventReader.php, ApprovalSessionTrackerTest.php, SafeGuardExtensionTest.php, SafeGuardPolicyWriterTest.php, SessionEventReaderTest.php. Open decision before task-to-pr: SessionEventReader.php and SessionEventReaderTest.php appear to be dead code kept by merge; only the test references the class, and current main had removed it in favor of ApprovalAnswerHookInterface callback routing. Recommended to remove those dead-code files in a follow-up implementation fork before review, unless user wants to keep them for a future polling design.
+
+## Task workflow update - 2026-06-05T20:36:40.843Z
+- Recorded fork run: xsqccsnst3qy
+- Summary: Launched cleanup fork xsqccsnst3qy to remove dead SessionEventReader.php and SessionEventReaderTest.php remnants from the old event-store polling SafeGuard design, validate with Castor focused/full non-check gates, and commit without pushing.
