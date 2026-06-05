@@ -102,14 +102,14 @@ Create `tests/CodingAgent/Phar/PharSmokeTest.php` following the same pattern as 
 - castor check passes
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/phar-packaging
 Worktree: /home/ineersa/projects/agent-core-worktrees/phar-packaging
 Fork run: ieupyrxuq2tz
 PR URL: https://github.com/ineersa/agent-core/pull/93
-PR Status: open
+PR Status: merged
 Started: 2026-06-04T18:43:54.659Z
-Completed:
+Completed: 2026-06-05T00:39:38.959Z
 
 ## Work log
 - Created: 2026-05-22T18:43:48.232Z
@@ -297,3 +297,50 @@ Castor Check Output SHA256: 8773ab120b38b281b0eaa2028933e1e63b59214e9d9a67b9c3eb
 - Pushed task/phar-packaging to origin.
 - branch 'task/phar-packaging' set up to track 'origin/task/phar-packaging'.
 - PR already exists: https://github.com/ineersa/agent-core/pull/93
+
+## Task workflow update - 2026-06-05T00:39:38.959Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/phar-packaging into integration checkout.
+- Merge made by the 'ort' strategy.
+ .agents/skills/testing/SKILL.md                    |  22 +
+ .castor/helpers.php                                | 509 +++++++++++++++++++++
+ .castor/tasks.php                                  | 133 +++++-
+ AGENTS.md                                          |   1 +
+ bin/console                                        |  42 +-
+ box.json                                           |  23 +
+ composer.json                                      |   6 +-
+ composer.lock                                      | 132 +++---
+ config/services.yaml                               |  49 +-
+ docs/phar-packaging.md                             | 250 ++++++++++
+ docs/settings.md                                   |  45 ++
+ docs/tui-testing.md                                |   7 +
+ src/CodingAgent/Kernel.php                         |  54 ++-
+ .../Migrations/ApplicationMigrationExecutor.php    | 291 ++++++++++++
+ .../Migrations/StartupDatabaseMigrator.php         |  40 +-
+ .../Runtime/Process/AgentProcessSupervisor.php     |  10 +-
+ .../Runtime/Process/ChainExecutableLocator.php     |  83 ++++
+ .../Runtime/Process/ConfigExecutableLocator.php    |  66 +++
+ .../Runtime/Process/PharExecutableLocator.php      |  75 +++
+ src/CodingAgent/Tool/BackgroundProcessManager.php  |  17 +-
+ src/Tui/Theme/ThemeRegistry.php                    |  20 +-
+ tests/CodingAgent/Phar/PharSmokeTest.php           |  87 ++++
+ .../Controller/E2E/ControllerE2eTestCase.php       |   7 +-
+ tests/CodingAgent/Support/AgentTestExecutable.php  |  68 +++
+ tests/Tui/E2E/TuiAgentSmokeTest.php                |   7 +-
+ tests/Tui/E2E/TuiStartupSnapshotTest.php           |   7 +-
+ tools/phar/.gitignore                              |   2 +
+ tools/phar/composer.json                           |  14 +
+ 28 files changed, 1922 insertions(+), 145 deletions(-)
+ create mode 100644 box.json
+ create mode 100644 docs/phar-packaging.md
+ create mode 100644 src/CodingAgent/Migrations/ApplicationMigrationExecutor.php
+ create mode 100644 src/CodingAgent/Runtime/Process/ChainExecutableLocator.php
+ create mode 100644 src/CodingAgent/Runtime/Process/ConfigExecutableLocator.php
+ create mode 100644 src/CodingAgent/Runtime/Process/PharExecutableLocator.php
+ create mode 100644 tests/CodingAgent/Phar/PharSmokeTest.php
+ create mode 100644 tests/CodingAgent/Support/AgentTestExecutable.php
+ create mode 100644 tools/phar/.gitignore
+ create mode 100644 tools/phar/composer.json
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/phar-packaging.
+- Pulled integration checkout: Already up to date..
+- Summary: Completing reviewed PHAR packaging task after user approval. PR #93 was open/clean; docs review iteration was returned to CODE-REVIEW and Castor gate passed at commit `ba0390d3447d` before merge.
