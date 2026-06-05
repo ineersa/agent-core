@@ -8,12 +8,100 @@ use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Component\Console\Input\ArgvInput;
 use Symfony\Component\Dotenv\Dotenv;
 
-require_once __DIR__.'/../vendor/autoload.php';
+// Detect PHAR mode early. Box uses an internal PHAR alias (not Phar::running())
+// so we check __FILE__ for the phar:// scheme instead.
+// Inside a PHAR, __DIR__ points to phar://<alias>/bin which resolves correctly
+// for require_once. The .env file is never bundled and must be skipped.
+$isPhar = \str_starts_with(__FILE__, 'phar://');
 
-if (is_file(dirname(__DIR__).'/.env')) {
-    (new Dotenv())->bootEnv(dirname(__DIR__).'/.env');
+// ── Early PHAR platform check ────────────────────────────────────────────
+// Box build config sets check-requirements:false, so verify the required
+// PHP extensions are loaded before deep DBAL/Symfony errors obscure the
+// root cause. Source/dev execution skips this check entirely.
+if ($isPhar) {
+    $requiredExtensions = ['pdo_sqlite', 'mbstring', 'xml'];
+    $missing = [];
+    foreach ($requiredExtensions as $ext) {
+        if (!\extension_loaded($ext)) {
+            $missing[] = $ext;
+        }
+    }
+    if ([] !== $missing) {
+        \fwrite(STDERR, \sprintf(
+            "Error: Hatfield PHAR requires the following PHP extensions: %s\n",
+            \implode(', ', $missing),
+        ));
+        exit(1);
+    }
 }
 
-$kernel = new Kernel($_SERVER['APP_ENV'] ?? 'dev', (bool) ($_SERVER['APP_DEBUG'] ?? false));
+require_once __DIR__.'/../vendor/autoload.php';
+
+// ── Early --cwd resolution ───────────────────────────────────────────────
+// Resolve --cwd before Kernel/Application construction so getcwd() and
+// Kernel::boot() see the correct working directory from startup. This ensures
+// AppConfig uses the right CWD without requiring AgentCommand::chdir() after
+// the container has already booted.
+//
+// Supports both forms: --cwd=/path and --cwd /path.
+// Relative paths are resolved against the original shell CWD.
+//
+// After resolution, $_SERVER['argv'] is mutated so Symfony Console's
+// ArgvInput and AgentCommand receive the absolute value. This prevents
+// AgentCommand::__invoke() from re-validating a relative --cwd against
+// the already-changed CWD and failing.
+{
+    $args = $_SERVER['argv'] ?? [];
+    $cwdValue = null;
+    $cwdIndex = null;
+    foreach ($args as $i => $arg) {
+        if (str_starts_with($arg, '--cwd=')) {
+            $cwdValue = substr($arg, 6);
+            $cwdIndex = $i;
+            break;
+        }
+        if ($arg === '--cwd' && isset($args[$i + 1]) && !str_starts_with($args[$i + 1], '-')) {
+            $cwdValue = $args[$i + 1];
+            $cwdIndex = $i + 1;
+            break;
+        }
+    }
+    if (null !== $cwdValue && null !== $cwdIndex) {
+        $resolved = str_starts_with($cwdValue, '/') ? $cwdValue : getcwd().'/'.$cwdValue;
+        if (!is_dir($resolved)) {
+            fwrite(STDERR, \sprintf("Error: Working directory does not exist: %s\n", $resolved));
+            exit(1);
+        }
+        chdir($resolved);
+        $_SERVER['HATFIELD_CWD'] = $resolved;
+        $_ENV['HATFIELD_CWD'] = $resolved;
+        putenv('HATFIELD_CWD='.$resolved);
+
+        // Mutate argv so Symfony Console sees the resolved absolute path.
+        // This prevents AgentCommand from receiving a relative --cwd value
+        // that would fail is_dir() after chdir() already changed CWD.
+        if (str_starts_with($_SERVER['argv'][$cwdIndex], '--cwd=')) {
+            $_SERVER['argv'][$cwdIndex] = '--cwd='.$resolved;
+        } elseif ($cwdIndex > 0 && $_SERVER['argv'][$cwdIndex - 1] === '--cwd') {
+            $_SERVER['argv'][$cwdIndex] = $resolved;
+        }
+    }
+    unset($args, $cwdValue, $cwdIndex, $resolved);
+}
+
+// In PHAR mode, .env is never bundled (no secrets in the archive).
+// Tolerate its absence gracefully — env vars should be set by the
+// parent process or system environment.
+if (!$isPhar) {
+    $envPath = dirname(__DIR__).'/.env';
+    if (is_file($envPath)) {
+        (new Dotenv())->bootEnv($envPath);
+    }
+}
+
+// Default APP_ENV to 'prod' because the PHAR is a distribution artefact.
+// Callers (e.g. Castor tasks, tests, development) may override APP_ENV
+// and APP_DEBUG via the process environment before launching the PHAR.
+$kernel = new Kernel($_SERVER['APP_ENV'] ?? 'prod', (bool) ($_SERVER['APP_DEBUG'] ?? false));
 $application = new Application($kernel);
 $application->run(new ArgvInput());

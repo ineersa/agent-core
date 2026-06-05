@@ -19,5 +19,3 @@ services:
 
   Ineersa\AgentCore\Contract\PromptStateStoreInterface:
     alias: Ineersa\AgentCore\Infrastructure\Storage\InMemoryPromptStateStore
-
-  Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper: ~

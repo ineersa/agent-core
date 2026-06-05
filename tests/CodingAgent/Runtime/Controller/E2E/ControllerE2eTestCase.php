@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 
+use Ineersa\CodingAgent\Tests\Support\AgentTestExecutable;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -69,13 +71,10 @@ abstract class ControllerE2eTestCase extends TestCase
             );
         }
 
-        $this->projectDir = \realpath(__DIR__.'/../../../../..');
-        if (false === $this->projectDir) {
-            throw new \RuntimeException('Cannot resolve project root.');
-        }
+        $this->projectDir = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
 
         $this->sessionId = substr(bin2hex(random_bytes(16)), 0, 12);
-        $this->tempDir = $this->projectDir.'/var/tmp/'.$this->tempDirPrefix().'-'.uniqid('', true);
+        $this->tempDir = TestDirectoryIsolation::createProjectTempDir($this->tempDirPrefix());
 
         $this->createIsolatedProjectDir();
 
@@ -91,7 +90,7 @@ abstract class ControllerE2eTestCase extends TestCase
         $this->stopProcess();
 
         if (isset($this->tempDir) && '' !== $this->tempDir) {
-            $this->removeDir($this->tempDir);
+            TestDirectoryIsolation::removeDirectory($this->tempDir);
         }
 
         parent::tearDown();
@@ -101,8 +100,8 @@ abstract class ControllerE2eTestCase extends TestCase
 
     protected function spawnController(): void
     {
-        $consolePath = $this->projectDir.'/bin/console';
-        self::assertFileExists($consolePath, 'Console entry point not found');
+        [$php, $script] = AgentTestExecutable::command();
+        self::assertFileExists($script, 'Agent executable not found at '.$script);
 
         $descriptors = [
             0 => ['pipe', 'r'],
@@ -122,7 +121,7 @@ abstract class ControllerE2eTestCase extends TestCase
 
         $pipes = [];
         $process = @proc_open(
-            [\PHP_BINARY, $consolePath, 'agent', '--controller', '--cwd='.$this->tempDir],
+            [$php, $script, 'agent', '--controller', '--cwd='.$this->tempDir],
             $descriptors,
             $pipes,
             $this->tempDir,
@@ -397,7 +396,7 @@ abstract class ControllerE2eTestCase extends TestCase
         $lines = ['Session dir: '.$sessionsDir."\nSessions: ".implode(', ', array_map('basename', $dirs))];
 
         foreach ($dirs as $sessionDir) {
-            foreach (['events.jsonl', 'state.json', 'transcript.jsonl', 'metadata.yaml', 'idempotency.jsonl'] as $file) {
+            foreach (['events.jsonl', 'state.json', 'transcript.jsonl', 'idempotency.jsonl'] as $file) {
                 $path = $sessionDir.'/'.$file;
                 if (is_file($path)) {
                     $content = (string) file_get_contents($path);
@@ -449,7 +448,7 @@ abstract class ControllerE2eTestCase extends TestCase
 
     protected function createIsolatedProjectDir(): void
     {
-        mkdir($this->tempDir.'/.hatfield/sessions', 0777, true);
+        TestDirectoryIsolation::createHatfieldTree($this->tempDir, withSessions: true, permissions: 0o777);
 
         $modelConfig = $this->modelConfig();
         $input = implode(', ', array_map(
@@ -482,32 +481,25 @@ ai:
                     tool_calling: {$toolCalling}
                     reasoning: false
                     cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
+
+extensions:
+    enabled:
+        - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
+    settings:
+        safe_guard:
+            tool_names:
+                bash: bash
+                write: write
+                edit: edit
+                read: read
+            allow_command_patterns: []
+            allow_write_outside_cwd: []
+            protected_read_patterns: []
+            dangerous_command_patterns: []
 YAML;
 
         file_put_contents($this->tempDir.'/.hatfield/settings.yaml', $settings);
         file_put_contents($this->tempDir.'/.hatfield/.gitignore', "*\n");
     }
 
-    protected function removeDir(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-
-        foreach ($iterator as $file) {
-            if ($file->isDir()) {
-                rmdir($file->getPathname());
-            } else {
-                @chmod($file->getPathname(), 0644);
-                unlink($file->getPathname());
-            }
-        }
-
-        rmdir($dir);
-    }
 }

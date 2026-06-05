@@ -1,0 +1,14 @@
+{
+    "name": "ineersa/agent-core-phar-tooling",
+    "description": "Isolated PHAR packaging toolchain for agent-core. Keeps Box and its dependencies out of the root Composer graph.",
+    "type": "project",
+    "license": "MIT",
+    "require": {
+        "php": ">=8.5",
+        "humbug/box": "^4.0"
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true
+    }
+}

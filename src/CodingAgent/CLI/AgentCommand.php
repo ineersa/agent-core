@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\CLI;
 
+use Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
@@ -34,7 +35,7 @@ use Symfony\Component\Console\Output\OutputInterface;
  *
  * Session persistence:
  *   Every TUI session creates a directory under .hatfield/sessions/<session-id>/
- *   containing metadata.yaml, transcript.jsonl, state.json, and events.jsonl.
+ *   containing transcript.jsonl, state.json, and events.jsonl.
  *   Use --resume to reload a previous session with its full transcript.
  */
 #[AsCommand(name: 'agent', description: 'Agent session — TUI (default) or headless JSONL runtime')]
@@ -47,6 +48,7 @@ final class AgentCommand
         private HatfieldSessionStore $sessionStore,
         private SkillsConfig $skillsConfig,
         private LoggerInterface $logger,
+        private readonly ?StartupDatabaseMigrator $startupDatabaseMigrator = null,
         private ?HeadlessController $controller = null,
     ) {
     }
@@ -100,6 +102,13 @@ final class AgentCommand
                     throw new \RuntimeException(\sprintf('Working directory does not exist: %s', $cwd));
                 }
                 chdir($cwd);
+
+                // Keep HATFIELD_CWD env var in sync with the resolved CWD so
+                // any service that reads it lazily (e.g. via %%env(HATFIELD_CWD)%%)
+                // gets the correct value even though Kernel::boot() already ran with
+                // the original CWD.
+                $_ENV['HATFIELD_CWD'] = $cwd;
+                putenv('HATFIELD_CWD='.$cwd);
             }
 
             // Populate skills config from CLI options before any session starts.
@@ -107,6 +116,16 @@ final class AgentCommand
             $this->skillsConfig->noSkills = $noSkills;
             $this->skillsConfig->skillsPaths = $skillsPath;
             $this->skillsConfig->preloadSkills = $skills;
+
+            // Run pending database migrations once on agent startup.
+            // StartupDatabaseMigrator is idempotent per process lifetime and
+            // safe for concurrent controller+consumer processes.
+            // Runs built-in doctrine:migrations:migrate via the MigrateCommand service.
+            // Running here ensures migrations complete before any
+            // controller/TUI/headless path accesses the DB.
+            if (null !== $this->startupDatabaseMigrator) {
+                ($this->startupDatabaseMigrator)();
+            }
 
             // Extension loading is handled by ExtensionLoaderSubscriber
             // (fires on ConsoleEvents::COMMAND) which loads extensions in

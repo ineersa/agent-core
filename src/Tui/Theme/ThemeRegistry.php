@@ -143,6 +143,8 @@ final class ThemeRegistry
      * Load all YAML theme files from a directory.
      *
      * Scans for *.yaml and *.yml files (non-recursive).
+     * Uses scandir() instead of glob() because glob() does not
+     * support phar:// stream wrappers (PHAR mode).
      *
      * @return list<ThemePalette>
      */
@@ -153,13 +155,25 @@ final class ThemeRegistry
         }
 
         $palettes = [];
-        $files = glob($dir.'/*.{yaml,yml}', \GLOB_BRACE);
+        $entries = scandir($dir);
 
-        if (false === $files) {
+        if (false === $entries) {
             return [];
         }
 
-        foreach ($files as $file) {
+        foreach ($entries as $entry) {
+            if ('.' === $entry || '..' === $entry) {
+                continue;
+            }
+            if (!str_ends_with($entry, '.yaml') && !str_ends_with($entry, '.yml')) {
+                continue;
+            }
+
+            $file = $dir.'/'.$entry;
+            if (!is_file($file)) {
+                continue;
+            }
+
             try {
                 $palettes[] = $this->loadFile($file);
             } catch (\RuntimeException $e) {

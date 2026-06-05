@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
+use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
 use Symfony\Component\Process\Process;
@@ -33,6 +34,13 @@ use Symfony\Component\Process\Process;
  * - stderr output is captured and logged on crash for diagnostics
  * - getProcess(): exposes the first Process for a transport name so
  *   HeadlessController can read the LLM consumer's stdout
+ *
+ * App executable and runtime CWD resolution:
+ * - Uses RuntimeProcessConfig to provide both the agent binary command
+ *   (via AppExecutableLocator) and the canonical runtime working directory
+ *   (from %app.cwd% / HATFIELD_CWD), so messenger consumers always use the
+ *   correct binary and Hatfield project CWD regardless of the controller's
+ *   own --cwd or the parent process CWD
  */
 final class ConsumerSupervisor
 {
@@ -54,6 +62,7 @@ final class ConsumerSupervisor
 
     public function __construct(
         private readonly LoggerInterface $logger,
+        private readonly RuntimeProcessConfig $runtimeConfig,
         private readonly int $shutdownGraceSeconds = 5,
     ) {
     }
@@ -66,25 +75,13 @@ final class ConsumerSupervisor
      */
     public function launch(string $transportName, int $instanceId = 0): void
     {
-        $entrypoint = (string) ($_SERVER['argv'][0] ?? '');
-        $cwd = getcwd();
-
-        if ('' === $entrypoint || false === $cwd) {
-            $this->logger->error('Cannot launch messenger consumer: invalid entrypoint or CWD', [
-                'transport' => $transportName,
-                'instance' => $instanceId,
-                'entrypoint' => $entrypoint,
-                'cwd' => false === $cwd ? null : $cwd,
-            ]);
-
-            return;
-        }
+        $cwd = $this->runtimeConfig->runtimeCwd();
+        $appCommand = $this->runtimeConfig->executableCommand();
 
         try {
             $process = new Process(
                 [
-                    \PHP_BINARY,
-                    $entrypoint,
+                    ...$appCommand,
                     'messenger:consume',
                     $transportName,
                     '--no-interaction',

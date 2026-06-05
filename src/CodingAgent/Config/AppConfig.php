@@ -41,6 +41,10 @@ final class AppConfig
         /** @var array<string, mixed> Raw merged data for forward compatibility */
         public array $raw = [],
         public ?HatfieldModelCatalog $catalog = null,
+        /**
+         * Canonical runtime working directory injected from %app.cwd%,
+         * never from ambient getcwd(). Set during DI factory construction.
+         */
         public string $cwd = '',
     ) {
     }
@@ -49,17 +53,20 @@ final class AppConfig
      * Production DI factory — loads and hydrates from Hatfield config layers
      * using Symfony Serializer denormalization for known sections.
      *
-     * Used by the Symfony container via services.yaml factory definition.
+     * The canonical runtime cwd is injected from the container parameter
+     * %app.cwd% (which is resolved from HATFIELD_CWD or kernel.project_dir),
+     * not from ambient getcwd(). This ensures the cwd is consistent across
+     * all services regardless of when they are constructed.
      *
-     * @throws \RuntimeException when the current working directory is unavailable
+     * Used by the Symfony container via services.yaml factory definition.
      */
     public static function fromContainer(
         AppConfigLoader $loader,
         AppResourceLocator $resources,
         DenormalizerInterface $denormalizer,
+        string $cwd,
     ): self {
-        $cwd = self::resolveCurrentWorkingDirectory();
-        $data = $loader->load($resources->getDefaultsPath());
+        $data = $loader->load($resources->getDefaultsPath(), $cwd);
         $ai = AiConfig::optionalFromArray($data);
 
         return new self(
@@ -88,22 +95,5 @@ final class AppConfig
             catalog: null !== $ai ? new HatfieldModelCatalog($ai) : null,
             cwd: $cwd,
         );
-    }
-
-    /**
-     * Throws early when the process has no working directory rather than
-     * silently falling back to "/" and producing broken paths downstream.
-     *
-     * @throws \RuntimeException
-     */
-    private static function resolveCurrentWorkingDirectory(): string
-    {
-        $cwd = getcwd();
-
-        if (false === $cwd) {
-            throw new \RuntimeException('No current working directory available.');
-        }
-
-        return $cwd;
     }
 }

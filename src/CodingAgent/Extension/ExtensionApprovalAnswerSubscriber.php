@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension;
 
-use Ineersa\CodingAgent\Runtime\Protocol\RunEventMappingEvent;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\Hatfield\ExtensionApi\ApprovalAnswerContextDTO;
 use Ineersa\Hatfield\ExtensionApi\ApprovalAnswerHookInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
@@ -13,19 +13,13 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  * Routes human approval answers back to the extension hook that
  * requested them.
  *
- * Listens to 'agent_command_applied' AgentCore RunEvent mapping events
- * with kind=human_response. Resolves the originating hook from
- * ExtensionHookRegistry and calls onApprovalAnswered() if the hook
- * implements ApprovalAnswerHookInterface.
+ * Listens to 'agent_command_applied' RunEvent dispatches from
+ * RuntimeEventTranslator with kind=human_response. Resolves the originating
+ * hook from ExtensionHookRegistry and calls onApprovalAnswered() if the
+ * hook implements ApprovalAnswerHookInterface.
  *
- * This subscriber does NOT mark $event->handled = true — the
- * HitlMappingSubscriber still needs to process the same event to map
- * it to HumanInputAnswered for transcript projection.
- *
- * Runs at priority 20 (before HitlMappingSubscriber at priority 10
- * and CancelAndFallbackMappingSubscriber at priority 0) to ensure
- * answers are routed to hooks before the event is consumed for
- * mapping or fallback.
+ * Runs at priority 0; it is called before the RuntimeEventTranslator's
+ * dispatch table processes the same event for mapping to HumanInputAnswered.
  */
 final readonly class ExtensionApprovalAnswerSubscriber implements EventSubscriberInterface
 {
@@ -37,17 +31,13 @@ final readonly class ExtensionApprovalAnswerSubscriber implements EventSubscribe
     public static function getSubscribedEvents(): array
     {
         return [
-            'agent_command_applied' => ['onAgentCommandApplied', 20],
+            'agent_command_applied' => 'onAgentCommandApplied',
         ];
     }
 
-    public function onAgentCommandApplied(RunEventMappingEvent $event): void
+    public function onAgentCommandApplied(RunEvent $event): void
     {
-        // Do NOT check $event->handled here — the HitlMappingSubscriber
-        // will handle it. We read and route independently.
-        // We also do NOT set $event->handled.
-
-        $p = $event->runEvent->payload;
+        $p = $event->payload;
         $kind = (string) ($p['kind'] ?? '');
 
         if ('human_response' !== $kind) {

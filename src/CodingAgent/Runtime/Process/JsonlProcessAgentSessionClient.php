@@ -47,8 +47,6 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     /** @var \SplQueue<RuntimeEvent> */
     private \SplQueue $eventBuffer;
 
-    private string $projectDir;
-
     /**
      * The most recently active run ID tracked across start/resume/send/cancel.
      * Used to auto-resume a run after the controller process is restarted.
@@ -84,31 +82,10 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
      */
     private array $restartTimestamps = [];
 
-    public function __construct()
-    {
+    public function __construct(
+        private readonly RuntimeProcessConfig $runtimeConfig,
+    ) {
         $this->eventBuffer = new \SplQueue();
-
-        /*
-         * SOURCE-CHECKOUT ASSUMPTION:
-         *
-         * dirname(__DIR__, 4) walks up from
-         *   src/CodingAgent/Runtime/Process/
-         * to the app install root, where bin/console lives.
-         *
-         * Runtime data does NOT use this path. The controller process is
-         * spawned with the caller's current working directory so .hatfield/
-         * sessions, logs, and messenger.sqlite stay relative to the user's
-         * project/test CWD.
-         *
-         * TODO: Replace with a SelfExecutableLocator / BinaryLocator that
-         * resolves the headless-agent binary path from:
-         *   1. An explicit config/key (e.g., agent.runtime.binary_path).
-         *   2. Phar::running() / PHP_BINARY introspection inside a PHAR.
-         *   3. PATH-based discovery (e.g., `which agent-core-headless`).
-         *
-         * See: src/CodingAgent/Runtime/Process/AGENTS.md
-         */
-        $this->projectDir = \dirname(__DIR__, 4);
     }
 
     public function __destruct()
@@ -320,16 +297,13 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
      */
     private function spawnProcess(): void
     {
-        $consolePath = $this->projectDir.'/bin/console';
+        $consolePath = $this->runtimeConfig->executablePath();
 
         if (!is_file($consolePath)) {
             throw new \RuntimeException(\sprintf('Console not found at %s', $consolePath));
         }
 
-        $runtimeCwd = getcwd();
-        if (false === $runtimeCwd) {
-            throw new \RuntimeException('No current working directory available for controller process.');
-        }
+        $runtimeCwd = $this->runtimeConfig->runtimeCwd();
 
         $descriptors = [
             0 => ['pipe', 'r'], // stdin: parent writes JSONL commands
@@ -358,7 +332,10 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
         $pipes = [];
         $process = @proc_open(
-            [\PHP_BINARY, $consolePath, 'agent', '--controller', '--cwd='.$runtimeCwd],
+            [
+                ...$this->runtimeConfig->executableCommand(),
+                'agent', '--controller', '--cwd='.$runtimeCwd,
+            ],
             $descriptors,
             $pipes,
             $runtimeCwd,

@@ -4,26 +4,26 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool\Store;
 
-use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\DriverManager;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\Store\DbalToolBatchStore;
-use PHPUnit\Framework\TestCase;
 
 /**
  * @requires extension pdo_sqlite
+ *
+ * Uses the Symfony test container to provide a real DbalToolBatchStore
+ * backed by an isolated SQLite database under var/tests/.
+ *
+ * No manual ORMSetup, DriverManager, SchemaTool, or entity metadata paths.
  */
-final class DbalToolBatchStoreTest extends TestCase
+final class DbalToolBatchStoreTest extends IsolatedKernelTestCase
 {
-    private Connection $connection;
     private DbalToolBatchStore $store;
 
     protected function setUp(): void
     {
-        $this->connection = DriverManager::getConnection([
-            'driver' => 'pdo_sqlite',
-            'memory' => true,
-        ]);
-        $this->store = new DbalToolBatchStore($this->connection);
+        parent::setUp();
+
+        $this->store = static::getContainer()->get(DbalToolBatchStore::class);
     }
 
     public function testLoadReturnsNullForUnknownBatch(): void
@@ -84,7 +84,6 @@ final class DbalToolBatchStoreTest extends TestCase
 
     public function testTableIsCreatedLazily(): void
     {
-        // Should not throw despite no table pre-creation
         $state = ['expected_order' => ['call-1' => 0], 'call_data' => [], 'pending_queue' => [], 'in_flight' => [], 'result_data' => [], 'finalized' => false, 'max_parallelism' => 1];
         $this->store->save('run-1', 1, 'step-1', $state);
         $loaded = $this->store->load('run-1', 1, 'step-1');

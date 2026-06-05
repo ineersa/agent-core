@@ -10,7 +10,6 @@ parameters:
     # Services read this parameter — not the raw env directly.
     app.capture_errors: '%env(bool:HATFIELD_CAPTURE_ERRORS)%'
 
-
 services:
   _defaults:
     autowire: true
@@ -44,14 +43,14 @@ services:
       tags: ['hatfield.tool_provider']
 
   Ineersa\CodingAgent\:
-    resource: '../src/CodingAgent/'
-    exclude: '../src/CodingAgent/ExtensionApi/'
+    resource: '%kernel.project_dir%/src/CodingAgent/**/*.php'
+    exclude: '%kernel.project_dir%/src/CodingAgent/ExtensionApi/**/*.php'
 
   Ineersa\AgentCore\:
-    resource: '../src/AgentCore/'
+    resource: '%kernel.project_dir%/src/AgentCore/**/*.php'
 
   Ineersa\Tui\:
-    resource: '../src/Tui/'
+    resource: '%kernel.project_dir%/src/Tui/**/*.php'
 
   # ─── Session stores — resolved via HatfieldSessionStore for path ───
 
@@ -74,22 +73,20 @@ services:
     arguments:
       $appRoot: '%kernel.project_dir%'
 
-  Ineersa\CodingAgent\Config\HomeSettingsWriter: ~
-
-  Ineersa\CodingAgent\Config\AppConfigLoader: ~
-
   # AppConfig is a value object, not an autowireable service.
   # The container uses the fromContainer() factory to construct it.
+  # Canonical runtime cwd is injected from %app.cwd% rather than relying
+  # on ambient getcwd(), ensuring all config services use the same canonical
+  # runtime working directory (resolved from HATFIELD_CWD or kernel.project_dir).
   Ineersa\CodingAgent\Config\AppConfig:
     factory: ['Ineersa\CodingAgent\Config\AppConfig', 'fromContainer']
     arguments:
-      - '@Ineersa\CodingAgent\Config\AppConfigLoader'
-      - '@Ineersa\CodingAgent\Config\AppResourceLocator'
-      - '@Symfony\Component\Serializer\SerializerInterface'
+      $loader: '@Ineersa\CodingAgent\Config\AppConfigLoader'
+      $resources: '@Ineersa\CodingAgent\Config\AppResourceLocator'
+      $denormalizer: '@Symfony\Component\Serializer\SerializerInterface'
+      $cwd: '%app.cwd%'
 
   # ─── Extension wiring ───
-
-  Ineersa\CodingAgent\Extension\ExtensionHookRegistry: ~
 
   Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge:
     arguments:
@@ -98,12 +95,6 @@ services:
   Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface:
     alias: Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge
 
-  # Retained for backward compat (referenced in extension manager tests).
-  # No longer the primary ExtensionApiInterface implementation.
-  Ineersa\CodingAgent\Extension\ExtensionApiBridge:
-    arguments:
-      $cwd: '@=service("Ineersa\\CodingAgent\\Config\\AppConfig").cwd'
-
   Ineersa\CodingAgent\Extension\ExtensionToolHookEventSubscriber:
     arguments:
       $cwd: '@=service("Ineersa\\CodingAgent\\Config\\AppConfig").cwd'
@@ -111,10 +102,6 @@ services:
   Ineersa\CodingAgent\Extension\ExtensionManager:
     arguments:
       $extensionApi: '@Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface'
-
-  # Loads extensions on every console command (including messenger:consume workers)
-  # so extension hooks are available in tool execution processes.
-  Ineersa\CodingAgent\Extension\ExtensionLoaderSubscriber: ~
 
   # LoggingConfig is derived from AppConfig and autowireable.
   Ineersa\CodingAgent\Config\LoggingConfig:
@@ -151,14 +138,9 @@ services:
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 
-  # BackgroundProcessManager — register shutdown handler in production so
-  # tests (which construct the manager directly) don't accumulate callbacks.
-  Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore:
-    arguments:
-      $denormalizer: '@background_process.object_normalizer'
-
-  Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle: ~
-
+  # BackgroundProcess store — uses Doctrine ORM EntityManager,
+  # no custom normalizer. Schema is managed by Doctrine migrations.
+  # ProcessStore and ProcessLifecycle are autowired by Symfony DI.
   Ineersa\CodingAgent\Tool\BackgroundProcessManager:
     arguments:
       $store: '@Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore'
@@ -167,17 +149,14 @@ services:
     calls:
       - registerShutdownHandler: []
 
-  # Dedicated ObjectNormalizer with CamelCaseToSnakeCaseNameConverter
-  # for background process DB row → DTO conversion. Avoids using the
-  # global @serializer which would break other DTOs that expect exact
-  # property name matching (e.g. RunState).
-  background_process.object_normalizer:
-    class: Symfony\Component\Serializer\Normalizer\ObjectNormalizer
+  # Startup database migrator — runs known migration classes at startup via DBAL.
+  # Uses the app-owned ApplicationMigrationExecutor instead of the Symfony
+  # doctrine:migrations:migrate console command to avoid phar:// filesystem
+  # scanning issues inside the PHAR. Dev doctrine:migrations commands are
+  # still available from the source checkout.
+  Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator:
     arguments:
-      $nameConverter: '@background_process.name_converter'
-
-  background_process.name_converter:
-    class: Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter
+      $executor: '@Ineersa\CodingAgent\Migrations\ApplicationMigrationExecutor'
 
   # CodingAgentImageCapabilityChecker — wraps HatfieldModelCatalog from AppConfig.
   Ineersa\CodingAgent\Tool\ImageProcessing\CodingAgentImageCapabilityChecker:
@@ -187,12 +166,6 @@ services:
 
   Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface:
     alias: Ineersa\CodingAgent\Tool\ImageProcessing\CodingAgentImageCapabilityChecker
-
-  # Image gating is handled by ImageGatingConvertHook (a ConvertToLlmHook),
-  # not by AgentMessageConverter. The hook checks model capabilities upstream
-  # and strips image_ref content parts before the converter runs.
-
-  Ineersa\CodingAgent\Session\HatfieldSessionStore: ~
 
   Ineersa\AgentCore\Infrastructure\SymfonyAi\BeforeProviderRequestSubscriber:
     arguments:
@@ -204,12 +177,8 @@ services:
 
   # ─── Runtime stream wiring ───
 
-  Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink: ~
-
   Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface:
     alias: Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink
-
-  Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink: ~
 
   # Stream subscribers: autowiring cannot resolve RuntimeEventSinkInterface
   # because there are two implementations (in-process and STDOUT). Explicitly
@@ -229,14 +198,52 @@ services:
       $sink: '@Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink'
       $stdoutSink: '@Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink'
 
+  # ─── App executable locator chain ───
+  # Resolves the agent binary independently of the runtime working directory,
+  # so messenger consumers and controller subprocesses always use the correct
+  # binary regardless of --cwd or Hatfield project CWD.
+  #
+  # Ordered fallback:
+  #   1. ConfigExecutableLocator — HATFIELD_BINARY_PATH env override
+  #   2. PharExecutableLocator — current PHAR self-reference
+  #   3. SourceTreeExecutableLocator — source checkout with bin/console
+  Ineersa\CodingAgent\Runtime\Process\ConfigExecutableLocator:
+    arguments:
+      $runtimeCwd: '%app.cwd%'
+
+  Ineersa\CodingAgent\Runtime\Process\PharExecutableLocator: ~
+
+  Ineersa\CodingAgent\Runtime\Process\SourceTreeExecutableLocator:
+    arguments:
+      $projectDir: '%kernel.project_dir%'
+
+  Ineersa\CodingAgent\Runtime\Process\ChainExecutableLocator:
+    class: Ineersa\CodingAgent\Runtime\Process\ChainExecutableLocator
+    arguments:
+      - '@Ineersa\CodingAgent\Runtime\Process\ConfigExecutableLocator'
+      - '@Ineersa\CodingAgent\Runtime\Process\PharExecutableLocator'
+      - '@Ineersa\CodingAgent\Runtime\Process\SourceTreeExecutableLocator'
+
+  Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator:
+    alias: Ineersa\CodingAgent\Runtime\Process\ChainExecutableLocator
+
+  # Centralized runtime process context for subprocess spawning.
+  # Injected into JsonlProcessAgentSessionClient and ConsumerSupervisor.
+  Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig:
+    arguments:
+      $executableLocator: '@Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator'
+      $runtimeCwd: '%app.cwd%'
+
   # ─── Controller event loop ───
 
-  Ineersa\CodingAgent\Runtime\Controller\ConsumerSupervisor: ~
+  Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter:
+    arguments:
+      $eventClient: '@Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient'
+      $transcriptPersistence: '@Ineersa\CodingAgent\Runtime\Session\TranscriptPersistenceService'
 
   Ineersa\CodingAgent\Runtime\Controller\HeadlessController:
     arguments:
       $dispatcher: '@event_dispatcher'
-      $transcriptPersistence: '@Ineersa\CodingAgent\Runtime\Session\TranscriptPersistenceService'
 
   # Stream observer delegates to Symfony EventDispatcher with per-delta subscribers.
   Ineersa\CodingAgent\Runtime\Stream\LlmStreamDispatchObserver:
@@ -246,11 +253,12 @@ services:
   Ineersa\AgentCore\Contract\Hook\LlmStreamObserverInterface:
     alias: Ineersa\CodingAgent\Runtime\Stream\LlmStreamDispatchObserver
 
-  # The mapper now dispatches through the shared Symfony dispatcher
-  # so mapping subscribers (registered via autoconfigure) receive events.
-  Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper:
+  # RuntimeEventMapper uses RuntimeEventTranslator with an explicit dispatch table.
+  # EventDispatcher is still passed for extension subscribers that observe the
+  # mapping flow (e.g. ExtensionApprovalAnswerSubscriber).
+  Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator:
     arguments:
-      $dispatcher: '@event_dispatcher'
+      $eventDispatcher: '@event_dispatcher'
 
   Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface:
     alias: Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector
@@ -262,6 +270,14 @@ services:
   # ─── Symfony AI Platform wiring ───
   # PlatformInterface reads Hatfield config from autowired AppConfig,
   # so no explicit arguments are needed here.
+
+  # Explicit service definition for the platform factory so the DI container
+  # can resolve the service ID during compilation. The class is also
+  # auto-registered by the resource import, but the explicit definition
+  # guarantees it survives when the PHAR resource path uses wildcard
+  # patterns (phar:// paths require **/*.php globs for reliable Symfony DI
+  # service discovery — bare directory paths register 0 services).
+  Ineersa\CodingAgent\Infrastructure\SymfonyAi\ConfiguredSymfonyAiPlatformFactory: ~
 
   Symfony\AI\Platform\PlatformInterface:
     factory: ['@Ineersa\CodingAgent\Infrastructure\SymfonyAi\ConfiguredSymfonyAiPlatformFactory', 'createPlatform']
@@ -288,8 +304,6 @@ services:
     alias: Ineersa\CodingAgent\Tool\ToolRegistry
 
   # CodingAgent ToolSetResolver — bridges ToolRegistry to AgentCore resolver seam.
-  Ineersa\CodingAgent\Tool\CodingAgentToolSetResolver: ~
-
   Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface:
     alias: Ineersa\CodingAgent\Tool\CodingAgentToolSetResolver
 
@@ -305,8 +319,6 @@ services:
     alias: Ineersa\CodingAgent\Tool\RegistryBackedToolbox
 
   # ─── TOOLS-00 Tool cancellation context bridge ───
-
-  Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor: ~
 
   # ToolSettings resolves tools.execution defaults from typed AppConfig DTOs.
   Ineersa\CodingAgent\Config\ToolSettings:
@@ -330,24 +342,14 @@ services:
       $toolSetResolver: '@Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface'
 
   # Durable tool batch store — persists batch state across consumer restarts.
-  # Uses the shared messenger SQLite via Doctrine DBAL.
-  Ineersa\CodingAgent\Tool\Store\DbalToolBatchStore: ~
-
+  # Uses Doctrine ORM entities/repositories against the shared messenger SQLite.
   Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface:
     alias: Ineersa\CodingAgent\Tool\Store\DbalToolBatchStore
 
-  # ToolExecutionPolicyResolver is created inline by ToolExecutor and no longer
-  # needs a standalone service definition since LlmStepResultHandler now resolves
-  # execution mode from ActiveToolSet (sourced from ToolDefinitionDTO).
-
   # ─── AI-10 Per-turn model/reasoning routing ───
-
-  Ineersa\CodingAgent\Config\SessionAwareModelResolver: ~
 
   Ineersa\AgentCore\Contract\Model\ModelResolverInterface:
     alias: Ineersa\CodingAgent\Config\SessionAwareModelResolver
-
-  Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderRegistry: ~
 
   Ineersa\AgentCore\Contract\Model\ProviderRegistryInterface:
     alias: Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderRegistry

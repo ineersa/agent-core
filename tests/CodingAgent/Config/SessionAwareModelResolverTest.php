@@ -14,24 +14,37 @@ use Symfony\Component\Lock\Store\FlockStore;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\HomeSettingsWriter;
 use Ineersa\CodingAgent\Config\LoggingConfig;
-use Ineersa\CodingAgent\Config\SessionsConfig;
+use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
+use Ineersa\CodingAgent\Config\ModelSettingsPersister;
+use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\SessionAwareModelResolver;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
-use PHPUnit\Framework\TestCase;
+use Ineersa\CodingAgent\Entity\HatfieldSession;
+use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\AI\Platform\Message\MessageBag;
-use Symfony\Component\Yaml\Yaml;
 
-final class SessionAwareModelResolverTest extends TestCase
+final class SessionAwareModelResolverTest extends KernelTestCase
 {
+    protected static function createKernel(array $options = []): \Ineersa\CodingAgent\Kernel
+    {
+        return new \Ineersa\CodingAgent\Kernel($options['environment'] ?? 'test', (bool) ($options['debug'] ?? false));
+    }
+
     private string $tempDir;
     private string $homeDir;
+    private \Doctrine\ORM\EntityManagerInterface $entityManager;
 
     protected function setUp(): void
     {
         parent::setUp();
+        
+        self::bootKernel(['environment' => 'test', 'debug' => false]);
+        $container = static::getContainer();
+        $this->entityManager = $container->get('doctrine.orm.default_entity_manager');
+        
         $this->tempDir = sys_get_temp_dir().'/hatfield-resolver-test-'.uniqid('', true);
         $this->homeDir = $this->tempDir.'/home';
         mkdir($this->homeDir, 0777, true);
@@ -42,18 +55,24 @@ final class SessionAwareModelResolverTest extends TestCase
     protected function tearDown(): void
     {
         $this->removeDir($this->tempDir);
+        self::ensureKernelShutdown();
         parent::tearDown();
+        // Pop the exception handler that FrameworkBundle::boot() registered
+        // during kernel boot/shutdown. Parent tearDown calls
+        // ensureKernelShutdown() which may re-boot and re-register, so
+        // this must run after parent::tearDown().
+        restore_exception_handler();
     }
 
     public function testResolveReturnsModelFromSessionMetadata(): void
     {
         $resolver = $this->createResolver($this->standardAiData());
-        $this->writeSessionMetadata('sess-1', ['model' => 'llama_cpp/flash']);
+        $sessionId = $this->writeSessionMetadata('sess-1', ['model' => 'llama_cpp/flash']);
 
         $result = $resolver->resolve(
             'deepseek/deepseek-v4-pro',
             new MessageBag(),
-            new ModelInvocationInput(runId: 'sess-1'),
+            new ModelInvocationInput(runId: $sessionId),
             new ModelResolutionOptions(),
         );
 
@@ -130,12 +149,12 @@ final class SessionAwareModelResolverTest extends TestCase
     public function testResolveReturnsReasoningFromSessionMetadata(): void
     {
         $resolver = $this->createResolver($this->standardAiData());
-        $this->writeSessionMetadata('sess-2', ['model' => 'deepseek/deepseek-v4-pro', 'reasoning' => 'high']);
+        $sessionId = $this->writeSessionMetadata('sess-2', ['model' => 'deepseek/deepseek-v4-pro', 'reasoning' => 'high']);
 
         $result = $resolver->resolve(
             'deepseek/deepseek-v4-pro',
             new MessageBag(),
-            new ModelInvocationInput(runId: 'sess-2'),
+            new ModelInvocationInput(runId: $sessionId),
             new ModelResolutionOptions(),
         );
 
@@ -155,13 +174,14 @@ final class SessionAwareModelResolverTest extends TestCase
                 cwd: $this->tempDir.'/project',
             ),
             lockFactory: new LockFactory(new FlockStore()),
+            entityManager: $this->entityManager,
         );
         $sessionMetaStore = new SessionMetadataStore($hatfieldSessionStore);
 
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new HomeSettingsWriter($pathResolver);
         $appConfig = $this->makeAppConfig($aiData);
-        $selectionService = new ModelSelectionService($appConfig, $homeWriter, $sessionMetaStore);
+        $selectionService = new ModelSelectionService($appConfig, new ModelResolver($appConfig, $sessionMetaStore), new ModelSettingsPersister($homeWriter, $sessionMetaStore));
 
         return new SessionAwareModelResolver($selectionService);
     }
@@ -186,13 +206,32 @@ final class SessionAwareModelResolverTest extends TestCase
         );
     }
 
-    private function writeSessionMetadata(string $sessionId, array $meta): void
+    /**
+     * Create a session entity and apply metadata.
+     *
+     * No public_id column — the integer primary key is the canonical
+     * identifier and its string form is the external session ID.
+     * Returns the session ID as a numeric string.
+     */
+    private function writeSessionMetadata(string $sessionId, array $meta): string
     {
-        $dir = $this->tempDir.'/project/.hatfield/sessions/'.$sessionId;
-        if (!is_dir($dir)) {
-            mkdir($dir, 0777, true);
+        $entity = new HatfieldSession();
+        $entity->cwd = $this->tempDir.'/project';
+        $this->entityManager->persist($entity);
+        $this->entityManager->flush();
+
+        $id = (string) $entity->id;
+
+        if (isset($meta['model']) && \is_string($meta['model'])) {
+            $entity->model = $meta['model'];
         }
-        file_put_contents($dir.'/metadata.yaml', Yaml::dump($meta, 4, 2));
+        if (isset($meta['reasoning']) && \is_string($meta['reasoning'])) {
+            $entity->reasoning = $meta['reasoning'];
+        }
+
+        $this->entityManager->flush();
+
+        return $id;
     }
 
     private function removeDir(string $dir): void

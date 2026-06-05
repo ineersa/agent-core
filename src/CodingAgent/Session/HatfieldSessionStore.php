@@ -4,25 +4,34 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Session;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Yaml\Yaml;
 
 /**
- * Filesystem-backed session persistence using the Hatfield config system.
+ * Session persistence backed by the hatfield_session DB table and the
+ * Hatfield config filesystem.
  *
  * Sessions are stored under the configured sessions.path (defaults to
  * .hatfield/sessions/). Each session is a directory containing:
  *
  *   <session-id>/
- *     metadata.yaml       Session metadata (session_id, run_id, parent_id, etc.)
  *     state.json          AgentCore RunState hot state cache (via SessionRunStore)
  *     events.jsonl        AgentCore RunEvent canonical stream (via SessionRunEventStore)
  *     transcript.jsonl    Append-only TUI transcript projection
- *     transcript.jsonl    Append-only TUI transcript projection
+ *
+ * Session metadata (identity, prompt, model, reasoning, fork tree links)
+ * lives in the hatfield_session DB table — not in a metadata.yaml file.
+ * The DB row is the canonical source of truth for session identity.
  *
  * session_id === run_id in Hatfield. One directory equals one session
  * equals one agent run equals one future fork tree node.
+ *
+ * Session IDs are DB-issued auto-increment integers converted to strings.
+ * The integer primary key in hatfield_session is the canonical identifier;
+ * external representations (session_id / runId) use its string form.
+ * There is no separate public_id column.
  *
  * All writes are protected by a Symfony Lock (FlockStore) to prevent
  * concurrent corruption from multiple processes.
@@ -32,107 +41,175 @@ final class HatfieldSessionStore
     public function __construct(
         private readonly AppConfig $appConfig,
         private readonly LockFactory $lockFactory,
+        private readonly EntityManagerInterface $entityManager,
     ) {
     }
 
     /**
-     * Create a new session directory and return its ID.
+     * Create a new session, insert a DB metadata row, and return its ID.
      *
-     * When $sessionId is provided, it becomes both the session ID and the
-     * agent-core run ID. When empty, a new 12-char hex ID is generated.
+     * Inserts a HatfieldSession entity to obtain an auto-increment
+     * integer ID, then creates the session directory under
+     * .hatfield/sessions/<id>/ containing state.json, events.jsonl,
+     * and transcript.jsonl (all empty).
      *
-     * The on-disk layout is self-contained for resume and future forking:
-     *   metadata.yaml (session_id, run_id, parent_id, root_id, etc.)
-     *   state.json (empty, written by SessionRunStore on first CAS)
-     *   events.jsonl (empty)
-     *   transcript.jsonl (empty)
+     * Metadata is the DB row — no metadata.yaml is written.
      *
-     * @param string $prompt    Optional initial prompt for metadata
-     * @param string $sessionId Optional pre-generated ID; auto-generated if empty
+     * If file creation fails after DB insert, the session row is
+     * removed from the DB to avoid silently inconsistent state.
      *
-     * @return string The session/run ID
+     * @param string $prompt Optional initial prompt for metadata
+     *
+     * @return string The session/run ID (numeric string)
+     *
+     * @throws \RuntimeException if session creation cannot complete
      */
-    public function createSession(string $prompt = '', string $sessionId = ''): string
+    public function createSession(string $prompt = ''): string
     {
-        if ('' === $sessionId) {
-            $sessionId = $this->generateSessionId();
-        }
+        $session = new HatfieldSession();
+        $session->cwd = $this->appConfig->cwd;
+        $session->prompt = '' !== $prompt ? $prompt : null;
 
-        $sessionPath = $this->getSessionDir($sessionId);
-        $lock = $this->lockFactory->createLock('hatfield-session-'.$sessionId);
+        $this->entityManager->persist($session);
+        $this->entityManager->flush();
+
+        // ID is the DB-issued auto-increment integer, used as
+        // both the string session ID and the AgentCore runId.
+        $sessionId = (string) $session->id;
 
         try {
-            $lock->acquire(true);
-
-            if (!is_dir($sessionPath)) {
-                mkdir($sessionPath, 0777, true);
+            $this->writeSessionFiles($sessionId, $prompt);
+        } catch (\Throwable $e) {
+            // Roll back the DB row — no silently inconsistent state.
+            try {
+                $this->entityManager->remove($session);
+                $this->entityManager->flush();
+            } catch (\Throwable $cleanup) {
+                // Best-effort cleanup; log would be better but we avoid
+                // a logger dependency to keep this class focused.
+                throw new \RuntimeException(\sprintf('Failed to create session files for ID "%s" and cleanup also failed: %s. Original error: %s', $sessionId, $cleanup->getMessage(), $e->getMessage()), 0, $e);
             }
 
-            // session_id === run_id in Hatfield
-            $metadata = [
-                'session_id' => $sessionId,
-                'run_id' => $sessionId,
-                'parent_id' => null,
-                'root_id' => null,
-                'created_at' => date('c'),
-                'updated_at' => date('c'),
-                'cwd' => $this->appConfig->cwd,
-                'prompt' => $prompt,
-            ];
-            file_put_contents($sessionPath.'/metadata.yaml', Yaml::dump($metadata, 4, 2));
-
-            file_put_contents($sessionPath.'/state.json', '');
-            file_put_contents($sessionPath.'/events.jsonl', '');
-            file_put_contents($sessionPath.'/transcript.jsonl', '');
-
-            chmod($sessionPath.'/state.json', 0644);
-            chmod($sessionPath.'/events.jsonl', 0644);
-            chmod($sessionPath.'/transcript.jsonl', 0644);
-        } finally {
-            $lock->release();
+            throw new \RuntimeException(\sprintf('Failed to create session files for ID "%s": %s', $sessionId, $e->getMessage()), 0, $e);
         }
 
         return $sessionId;
     }
 
     /**
-     * Load session metadata.
+     * Load session metadata from the database.
      *
-     * @return array<string, mixed>|null Null if session doesn't exist
+     * Returns the same array shape callers expect: session_id, run_id,
+     * parent_id, root_id, created_at, updated_at, cwd, prompt, model,
+     * model_provider, model_name, reasoning. Only returns keys with
+     * non-null values (except session_id/run_id/cwd/created_at/updated_at
+     * which are always present).
+     *
+     * @return array<string, mixed>|null Null if the session row does not exist
      */
     public function loadMetadata(string $sessionId): ?array
     {
-        $path = $this->getSessionDir($sessionId).'/metadata.yaml';
-
-        if (!is_readable($path)) {
+        $entity = $this->fetchEntityOrNull($sessionId);
+        if (null === $entity) {
             return null;
         }
 
-        $data = Yaml::parseFile($path);
+        $id = (string) $entity->id;
+        $meta = [
+            'session_id' => $id,
+            'run_id' => $id,
+            'created_at' => $entity->createdAt->format(\DateTimeInterface::ATOM),
+            'updated_at' => $entity->updatedAt->format(\DateTimeInterface::ATOM),
+            'cwd' => $entity->cwd,
+        ];
 
-        return \is_array($data) ? $data : null;
+        if (null !== $entity->parentId) {
+            $meta['parent_id'] = $entity->parentId;
+        } else {
+            $meta['parent_id'] = null;
+        }
+        if (null !== $entity->rootId) {
+            $meta['root_id'] = $entity->rootId;
+        } else {
+            $meta['root_id'] = null;
+        }
+        if (null !== $entity->prompt) {
+            $meta['prompt'] = $entity->prompt;
+        }
+        if (null !== $entity->model) {
+            $meta['model'] = $entity->model;
+        }
+        if (null !== $entity->modelProvider) {
+            $meta['model_provider'] = $entity->modelProvider;
+        }
+        if (null !== $entity->modelName) {
+            $meta['model_name'] = $entity->modelName;
+        }
+        if (null !== $entity->reasoning) {
+            $meta['reasoning'] = $entity->reasoning;
+        }
+
+        return $meta;
     }
 
     /**
-     * Update session metadata.
+     * Update session metadata fields on the database row.
+     *
+     * Creates a new HatfieldSession entity when one does not yet exist
+     * given session ID. Known keys are mapped to entity fields;
+     * unknown keys are silently ignored. Does nothing when no
+     * matching session row exists — session creation is always
+     * through createSession().
      *
      * @param array<string, mixed> $meta
      */
     public function updateMetadata(string $sessionId, array $meta): void
     {
-        $existing = $this->loadMetadata($sessionId) ?? [];
-        $merged = array_merge($existing, $meta);
-        $merged['updated_at'] = date('c');
+        $entity = $this->fetchEntityOrNull($sessionId);
 
-        $lock = $this->lockFactory->createLock('hatfield-session-'.$sessionId);
-        try {
-            $lock->acquire(true);
-            file_put_contents(
-                $this->getSessionDir($sessionId).'/metadata.yaml',
-                Yaml::dump($merged, 4, 2),
-            );
-        } finally {
-            $lock->release();
+        if (null === $entity) {
+            // No matching session row — update is a no-op.
+            // Session rows are only created by createSession().
+            return;
+        }
+
+        $dirty = false;
+
+        if (\array_key_exists('prompt', $meta) && \is_string($meta['prompt'])) {
+            $entity->prompt = $meta['prompt'];
+            $dirty = true;
+        }
+        if (\array_key_exists('model', $meta) && \is_string($meta['model'])) {
+            $entity->model = $meta['model'];
+            $dirty = true;
+        }
+        if (\array_key_exists('model_provider', $meta) && \is_string($meta['model_provider'])) {
+            $entity->modelProvider = $meta['model_provider'];
+            $dirty = true;
+        }
+        if (\array_key_exists('model_name', $meta) && \is_string($meta['model_name'])) {
+            $entity->modelName = $meta['model_name'];
+            $dirty = true;
+        }
+        if (\array_key_exists('reasoning', $meta) && \is_string($meta['reasoning'])) {
+            $entity->reasoning = $meta['reasoning'];
+            $dirty = true;
+        }
+        if (\array_key_exists('parent_id', $meta)) {
+            $entity->parentId = \is_string($meta['parent_id']) ? $meta['parent_id'] : null;
+            $dirty = true;
+        }
+        if (\array_key_exists('root_id', $meta)) {
+            $entity->rootId = \is_string($meta['root_id']) ? $meta['root_id'] : null;
+            $dirty = true;
+        }
+        if (\array_key_exists('cwd', $meta) && \is_string($meta['cwd'])) {
+            $entity->cwd = $meta['cwd'];
+            $dirty = true;
+        }
+
+        if ($dirty) {
+            $this->entityManager->flush();
         }
     }
 
@@ -187,24 +264,14 @@ final class HatfieldSessionStore
     }
 
     /**
-     * Check whether a session exists.
+     * Check whether a session exists by looking up its database row.
+     *
+     * Only DB-issued numeric session IDs are valid. Non-numeric IDs
+     * (e.g., old-style hex strings from pre-DB sessions) always return false.
      */
     public function exists(string $sessionId): bool
     {
-        return is_readable($this->getSessionDir($sessionId).'/metadata.yaml');
-    }
-
-    /**
-     * Generate a unique session/run ID without creating a directory.
-     *
-     * Used by InteractiveMode to pre-generate the ID before passing it
-     * to both createSession() and StartRunRequest, ensuring session_id === run_id.
-     *
-     * @return string 12-char hex ID
-     */
-    public function generateId(): string
-    {
-        return $this->generateSessionId();
+        return null !== $this->fetchEntityOrNull($sessionId);
     }
 
     /**
@@ -220,10 +287,52 @@ final class HatfieldSessionStore
     }
 
     /**
+     * Write session files (state.json, events.jsonl, transcript.jsonl).
+     *
+     * Session metadata is the DB row; no metadata.yaml is written.
+     */
+    private function writeSessionFiles(string $sessionId, string $prompt): void
+    {
+        $sessionPath = $this->getSessionDir($sessionId);
+
+        if (!is_dir($sessionPath)) {
+            mkdir($sessionPath, 0777, true);
+        }
+
+        file_put_contents($sessionPath.'/state.json', '');
+        file_put_contents($sessionPath.'/events.jsonl', '');
+        file_put_contents($sessionPath.'/transcript.jsonl', '');
+
+        chmod($sessionPath.'/state.json', 0644);
+        chmod($sessionPath.'/events.jsonl', 0644);
+        chmod($sessionPath.'/transcript.jsonl', 0644);
+    }
+
+    /**
+     * Fetch a HatfieldSession entity by its string session ID.
+     *
+     * Parses the session ID as an integer and looks up the
+     * auto-increment primary key directly via the EntityManager.
+     * Non-numeric IDs always return null without any fallback.
+     */
+    private function fetchEntityOrNull(string $sessionId): ?HatfieldSession
+    {
+        // Only numeric IDs are valid; cast to int for primary-key lookup.
+        // Non-numeric strings -> (int) -> 0, which never matches a real
+        // auto-increment ID (starts at 1 in SQLite).
+        $id = (int) $sessionId;
+        if (0 === $id) {
+            return null;
+        }
+
+        return $this->entityManager->find(HatfieldSession::class, $id);
+    }
+
+    /**
      * Build the base sessions directory path from resolved config.
      *
-     * Reads the typed {@see SessionsConfig} from AppConfig. In production
-     * the path is absolute (resolved by {@see AppConfigLoader}). For tests
+     * Reads the typed SessionsConfig from AppConfig. In production
+     * the path is absolute (resolved by AppConfigLoader). For tests
      * that construct AppConfig directly with a relative path, we resolve
      * against the active project directory.
      */
@@ -260,14 +369,5 @@ final class HatfieldSessionStore
         if (!is_dir($dir)) {
             mkdir($dir, 0777, true);
         }
-    }
-
-    /**
-     * Generate a unique session ID.
-     */
-    private function generateSessionId(): string
-    {
-        // 12-char hex ID, same style as agent-core run IDs
-        return bin2hex(random_bytes(6));
     }
 }

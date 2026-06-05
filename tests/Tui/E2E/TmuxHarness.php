@@ -24,7 +24,7 @@ final class TmuxHarness
 
     public function __construct()
     {
-        $this->root = realpath(__DIR__.'/../../..');
+        $this->root = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
         $this->pid = getmypid();
     }
 
@@ -334,9 +334,9 @@ final class TmuxHarness
             $snapshot,
         );
 
-        // Replace 12-char hex session IDs (e.g. in footer "session a1b2c3d4e5f6")
+        // Replace session IDs (numeric, DB-issued)
         $snapshot = preg_replace(
-            '/\bsession \b[0-9a-f]{12}\b/',
+            '/\bsession \b\d+\b/',
             'session <session-id>',
             $snapshot,
         );

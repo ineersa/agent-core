@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
-use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\DriverManager;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
@@ -13,6 +11,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
@@ -21,10 +20,7 @@ use Ineersa\CodingAgent\Tool\BashTool;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
-use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
-use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
-use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 
 /**
  * @covers \Ineersa\CodingAgent\Tool\BashTool
@@ -33,20 +29,21 @@ use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
  * @covers \Ineersa\CodingAgent\Config\BackgroundProcessConfig
  * @covers \Ineersa\CodingAgent\Config\OutputCapConfig
  * @covers \Ineersa\CodingAgent\Tool\OutputCap
- * @covers \Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore
- * @covers \Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle
  *
  * @requires extension pdo_sqlite
  * @requires OS Linux
  *
  * Sleep budget: tests use short-lived commands and minimal polling.
  * Backgrounded processes have at most ~100ms teardown overhead.
+ *
+ * ProcessStore comes from the Symfony test container (via IsolatedKernelTestCase).
+ * BackgroundProcessConfig / ProcessLifecycle / BackgroundProcessManager are
+ * constructed with test-specific temp dirs for process I/O files.
  */
-final class BashToolTest extends TestCase
+final class BashToolTest extends IsolatedKernelTestCase
 {
     private const string TEST_SESSION = 'bash-test-session';
 
-    private Connection $connection;
     private BackgroundProcessManager $manager;
     private BackgroundProcessConfig $bgConfig;
     private BashToolConfig $bashConfig;
@@ -54,14 +51,11 @@ final class BashToolTest extends TestCase
     private ToolRuntime $toolRuntime;
     private OutputCap $outputCap;
     private string $tmpDir;
-    private ?BashTool $tool = null;
+    private bool $managerCreated = false;
 
     protected function setUp(): void
     {
-        $this->connection = DriverManager::getConnection([
-            'driver' => 'pdo_sqlite',
-            'memory' => true,
-        ]);
+        parent::setUp();
 
         $this->tmpDir = sys_get_temp_dir().'/hatfield_bashtool_test_'.bin2hex(random_bytes(8));
         mkdir($this->tmpDir, 0750, recursive: true);
@@ -78,10 +72,6 @@ final class BashToolTest extends TestCase
             logTailChars: 20000,
         );
 
-        $denormalizer = new ObjectNormalizer(nameConverter: new CamelCaseToSnakeCaseNameConverter());
-        $store = new ProcessStore($this->connection, $denormalizer, new NullLogger());
-        $lifecycle = new ProcessLifecycle($this->bgConfig, new NullLogger());
-        $this->manager = new BackgroundProcessManager($store, $lifecycle, $this->bgConfig, new NullLogger());
         $this->contextAccessor = new StackToolExecutionContextAccessor();
         $this->toolRuntime = new ToolRuntime($this->contextAccessor);
         $this->outputCap = new OutputCap(new OutputCapConfig(storageDir: $this->tmpDir.'/output-cap'));
@@ -89,33 +79,20 @@ final class BashToolTest extends TestCase
 
     protected function tearDown(): void
     {
-        // Direct SIGKILL via .pid files to avoid grace sleep in shutdownCleanup
-        if (isset($this->manager)) {
-            $bgDir = $this->bgConfig->storageDir;
-            if (is_dir($bgDir)) {
-                foreach (new \FilesystemIterator($bgDir, \FilesystemIterator::SKIP_DOTS) as $file) {
-                    if ('pid' === $file->getExtension()) {
-                        $pid = (int) file_get_contents((string) $file);
-                        if ($pid > 0 && is_dir('/proc/'.$pid)) {
-                            @exec('kill -KILL -'.$pid.' 2>/dev/null');
-                            @exec('kill -KILL '.$pid.' 2>/dev/null');
-                        }
-                    }
-                }
-            }
-        }
-
+        $this->cleanupProcesses();
         $this->rmDir($this->tmpDir);
+
+        parent::tearDown();
     }
 
     /* ── Successful completion ── */
 
     public function testSuccessfulCommand(): void
     {
-        $this->createTool();
+        $this->createManager();
 
         $result = $this->withContext(self::TEST_SESSION, function (): string {
-            return ($this->tool)(['command' => 'echo "hello from bash"']);
+            return ($this->makeBashTool())(['command' => 'echo "hello from bash"']);
         });
 
         $this->assertStringContainsString('hello from bash', $result);
@@ -127,10 +104,10 @@ final class BashToolTest extends TestCase
 
     public function testSuccessfulCommandWithNewlines(): void
     {
-        $this->createTool();
+        $this->createManager();
 
         $result = $this->withContext(self::TEST_SESSION, function (): string {
-            return ($this->tool)(['command' => "printf 'line1\nline2\nline3\n'"]);
+            return ($this->makeBashTool())(['command' => "printf 'line1\\nline2\\nline3\\n'"]);
         });
 
         $this->assertStringContainsString('line1', $result);
@@ -142,10 +119,10 @@ final class BashToolTest extends TestCase
 
     public function testNonZeroExitCode(): void
     {
-        $this->createTool();
+        $this->createManager();
 
         $result = $this->withContext(self::TEST_SESSION, function (): string {
-            return ($this->tool)(['command' => 'echo "before error" && exit 42']);
+            return ($this->makeBashTool())(['command' => 'echo "before error" && exit 42']);
         });
 
         $this->assertStringContainsString('exit code 42', $result);
@@ -154,10 +131,10 @@ final class BashToolTest extends TestCase
 
     public function testNonExistentCommand(): void
     {
-        $this->createTool();
+        $this->createManager();
 
         $result = $this->withContext(self::TEST_SESSION, function (): string {
-            return ($this->tool)(['command' => 'nonexistent_command_xyz_123']);
+            return ($this->makeBashTool())(['command' => 'nonexistent_command_xyz_123']);
         });
 
         $this->assertStringContainsString('failed', $result);
@@ -168,16 +145,16 @@ final class BashToolTest extends TestCase
 
     public function testTimeoutStopsProcess(): void
     {
+        $this->createManager();
         $this->bashConfig = new BashToolConfig(
             defaultTimeoutSeconds: 1,
             backgroundPromptThresholdSeconds: 30, // never trigger background prompt
             pollIntervalMicros: 50_000,
             logTailChars: 20000,
         );
-        $this->createTool();
 
         $result = $this->withContext(self::TEST_SESSION, function (): string {
-            return ($this->tool)(['command' => 'echo "partial" && sleep 10 && echo "should not see"']);
+            return ($this->makeBashTool())(['command' => 'echo "partial" && sleep 10 && echo "should not see"']);
         });
 
         $this->assertStringContainsString('timed out', $result);
@@ -209,7 +186,7 @@ final class BashToolTest extends TestCase
             timeoutSeconds: 30,
         );
 
-        $this->createTool();
+        $this->createManager();
 
         // ToolRuntime::run() detects stale cancellation AFTER the callback
         // returns, so we expect a RuntimeException about stale result.
@@ -217,7 +194,7 @@ final class BashToolTest extends TestCase
         $this->expectExceptionMessage('due to run cancellation');
 
         $this->contextAccessor->with($context, function (): string {
-            return ($this->tool)(['command' => 'echo "before cancel" && sleep 10']);
+            return ($this->makeBashTool())(['command' => 'echo "before cancel" && sleep 10']);
         });
     }
 
@@ -225,32 +202,32 @@ final class BashToolTest extends TestCase
 
     public function testMissingCommandThrows(): void
     {
-        $this->createTool();
+        $this->createManager();
 
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('command');
 
-        $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)([]));
+        $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())([]));
     }
 
     public function testEmptyCommandThrows(): void
     {
-        $this->createTool();
+        $this->createManager();
 
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('command');
 
-        $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['command' => '']));
+        $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())(['command' => '']));
     }
 
     public function testInvalidTimeoutThrows(): void
     {
-        $this->createTool();
+        $this->createManager();
 
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('timeout');
 
-        $this->withContext(self::TEST_SESSION, fn (): string => ($this->tool)(['command' => 'echo hi', 'timeout' => -5]));
+        $this->withContext(self::TEST_SESSION, fn (): string => ($this->makeBashTool())(['command' => 'echo hi', 'timeout' => -5]));
     }
 
     /* ── Background prompt acceptance ── */
@@ -275,10 +252,10 @@ final class BashToolTest extends TestCase
             pollIntervalMicros: 50_000,
             logTailChars: 20000,
         );
-        $this->createTool($promptAdapter);
+        $this->createManager();
 
-        $result = $this->withContext(self::TEST_SESSION, function (): string {
-            return ($this->tool)(['command' => 'echo "background me" && sleep 10']);
+        $result = $this->withContext(self::TEST_SESSION, function () use ($promptAdapter): string {
+            return ($this->makeBashTool($promptAdapter))(['command' => 'echo "background me" && sleep 10']);
         });
 
         $this->assertStringContainsString('background', $result);
@@ -301,10 +278,10 @@ final class BashToolTest extends TestCase
             pollIntervalMicros: 50_000,
             logTailChars: 20000,
         );
-        $this->createTool($promptAdapter);
+        $this->createManager();
 
-        $result = $this->withContext(self::TEST_SESSION, function (): string {
-            return ($this->tool)(['command' => 'echo "quick command"']);
+        $result = $this->withContext(self::TEST_SESSION, function () use ($promptAdapter): string {
+            return ($this->makeBashTool($promptAdapter))(['command' => 'echo "quick command"']);
         });
 
         $this->assertStringContainsString('quick command', $result);
@@ -321,10 +298,10 @@ final class BashToolTest extends TestCase
             pollIntervalMicros: 50_000,
             logTailChars: 20000,
         );
-        $this->createTool();
+        $this->createManager();
 
         $result = $this->withContext(self::TEST_SESSION, function (): string {
-            return ($this->tool)(['command' => 'echo "decline test"']);
+            return ($this->makeBashTool())(['command' => 'echo "decline test"']);
         });
 
         $this->assertStringContainsString('decline test', $result);
@@ -346,11 +323,11 @@ final class BashToolTest extends TestCase
             pollIntervalMicros: 50_000,
             logTailChars: 20000,
         );
-        $this->createTool($promptAdapter);
+        $this->createManager();
 
         // Process writes unique marker, background acceptance leaves it running
-        $result = $this->withContext(self::TEST_SESSION, function (): string {
-            return ($this->tool)(['command' => 'echo "background-marker-12345" && sleep 5']);
+        $result = $this->withContext(self::TEST_SESSION, function () use ($promptAdapter): string {
+            return ($this->makeBashTool($promptAdapter))(['command' => 'echo "background-marker-12345" && sleep 5']);
         });
 
         $this->assertStringContainsString('background', $result);
@@ -362,15 +339,15 @@ final class BashToolTest extends TestCase
         $pid = (int) $matches[1];
 
         // Verify there's exactly 1 background process
-        $records = $this->manager->list(self::TEST_SESSION);
-        $this->assertCount(1, $records, 'There should be exactly one process');
+        $entities = $this->manager->list(self::TEST_SESSION);
+        $this->assertCount(1, $entities, 'There should be exactly one process');
 
         // Verify it's the same PID (single execution, no duplicate)
-        $this->assertSame($pid, $records[0]->pid, 'The background process should have the same PID');
+        $this->assertSame($pid, $entities[0]->pid, 'The background process should have the same PID');
 
         // Verify the log contains our unique marker
         \usleep(200_000); // Wait for log flush
-        $logContent = \file_get_contents($records[0]->logPath);
+        $logContent = \file_get_contents($entities[0]->logPath);
         $this->assertStringContainsString('background-marker-12345', $logContent ?: '');
 
         // Clean up
@@ -387,10 +364,10 @@ final class BashToolTest extends TestCase
             docCap: 10,
         );
         $this->outputCap = new OutputCap($tinyCap);
-        $this->createTool();
+        $this->createManager();
 
         $result = $this->withContext(self::TEST_SESSION, function (): string {
-            return ($this->tool)(['command' => 'echo "this is a very long output that should be truncated"']);
+            return ($this->makeBashTool())(['command' => 'echo "this is a very long output that should be truncated"']);
         });
 
         $this->assertStringContainsString('Output capped', $result);
@@ -400,9 +377,10 @@ final class BashToolTest extends TestCase
 
     public function testRegistryExposesTool(): void
     {
-        $this->createTool();
+        $this->createManager();
+        $tool = $this->makeBashTool();
 
-        $registry = new ToolRegistry([$this->tool]);
+        $registry = new ToolRegistry([$tool]);
 
         $definitions = $registry->activeToolDefinitions();
 
@@ -415,17 +393,18 @@ final class BashToolTest extends TestCase
         }
 
         $this->assertNotNull($bashDef, 'bash should be registered');
-        $this->assertSame($this->tool, $bashDef->handler);
+        $this->assertSame($tool, $bashDef->handler);
     }
 
     public function testToolDefinitionProperties(): void
     {
-        $this->createTool();
+        $this->createManager();
+        $tool = $this->makeBashTool();
 
-        $def = $this->tool->definition();
+        $def = $tool->definition();
 
         $this->assertSame('bash', $def->name);
-        $this->assertSame($this->tool, $def->handler);
+        $this->assertSame($tool, $def->handler);
 
         // Schema must have 'command' required
         $this->assertContains('command', $def->parametersJsonSchema['required'] ?? []);
@@ -437,24 +416,46 @@ final class BashToolTest extends TestCase
 
     public function testBackgroundProcessIsScopedToSession(): void
     {
-        $this->createTool();
+        $this->createManager();
 
         $this->withContext(self::TEST_SESSION, function (): string {
-            return ($this->tool)(['command' => 'echo "session test"']);
+            return ($this->makeBashTool())(['command' => 'echo "session test"']);
         });
 
-        $records = $this->manager->list(self::TEST_SESSION);
-        $this->assertCount(1, $records);
+        $entities = $this->manager->list(self::TEST_SESSION);
+        $this->assertCount(1, $entities);
 
-        $otherRecords = $this->manager->list('other-session');
-        $this->assertCount(0, $otherRecords);
+        $otherEntities = $this->manager->list('other-session');
+        $this->assertCount(0, $otherEntities);
     }
 
-    /* ── Helper ── */
+    /* ── Helpers ── */
 
-    private function createTool(?BashBackgroundPromptAdapterInterface $promptAdapter = null): void
+    /**
+     * Create the BackgroundProcessManager once per test method.
+     *
+     * ProcessStore comes from the Symfony test container.
+     * ProcessLifecycle and BackgroundProcessManager use test-specific temp dirs.
+     */
+    private function createManager(): void
     {
-        $this->tool = new BashTool(
+        if ($this->managerCreated) {
+            return;
+        }
+
+        /** @var ProcessStore $store */
+        $store = self::getContainer()->get(ProcessStore::class);
+        $lifecycle = new ProcessLifecycle($this->bgConfig, new NullLogger());
+        $this->manager = new BackgroundProcessManager($store, $lifecycle, $this->bgConfig, new NullLogger());
+        $this->managerCreated = true;
+    }
+
+    /**
+     * Create a BashTool with the configured dependencies.
+     */
+    private function makeBashTool(?BashBackgroundPromptAdapterInterface $promptAdapter = null): BashTool
+    {
+        return new BashTool(
             manager: $this->manager,
             contextAccessor: $this->contextAccessor,
             toolRuntime: $this->toolRuntime,
@@ -480,6 +481,31 @@ final class BashToolTest extends TestCase
         );
 
         return $this->contextAccessor->with($context, $callback);
+    }
+
+    /**
+     * Kill any running background processes owned by this test.
+     */
+    private function cleanupProcesses(): void
+    {
+        if (!isset($this->bgConfig)) {
+            return;
+        }
+
+        $bgDir = $this->bgConfig->storageDir;
+        if (!is_dir($bgDir)) {
+            return;
+        }
+
+        foreach (new \FilesystemIterator($bgDir, \FilesystemIterator::SKIP_DOTS) as $file) {
+            if ('pid' === $file->getExtension()) {
+                $pid = (int) file_get_contents((string) $file);
+                if ($pid > 0 && is_dir('/proc/'.$pid)) {
+                    @exec('kill -KILL -'.$pid.' 2>/dev/null');
+                    @exec('kill -KILL '.$pid.' 2>/dev/null');
+                }
+            }
+        }
     }
 
     private function rmDir(string $path): void

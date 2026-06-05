@@ -167,6 +167,51 @@ HATFIELD_CAPTURE_ERRORS=0 bin/console agent --controller
 HATFIELD_CAPTURE_ERRORS=0 bin/console agent
 ```
 
+### `HATFIELD_CWD`
+
+Override the runtime working directory. When set, the active CWD (where
+`.hatfield/` state lives) is resolved from this value instead of
+`getcwd()`. Absolute or relative paths are accepted; relative paths
+resolve against the process CWD.
+
+This is primarily used by `bin/console` early bootstrap when processing
+the `--cwd` CLI option, and by subprocess spawning to ensure controller
+and consumer processes resolve the same runtime directory.
+
+**Default:** `getcwd()` (process working directory).
+
+### `HATFIELD_CACHE_DIR`
+
+Override the Symfony container cache directory. Absolute or relative paths
+are accepted; relative paths resolve against the runtime CWD (from
+`HATFIELD_CWD` or `getcwd()`).
+
+**Default:** `.hatfield/cache/<env>` (relative to runtime CWD).
+
+### `HATFIELD_LOG_DIR`
+
+Override the application log directory. Absolute or relative paths are
+accepted; relative paths resolve against the runtime CWD.
+
+**Default:** `.hatfield/logs` (relative to runtime CWD).
+
+### `HATFIELD_BINARY_PATH`
+
+Override the agent executable path for subprocess spawning. When set,
+`ConfigExecutableLocator` returns this path, taking priority over PHAR
+self-reference and source-tree resolution. Used by test harnesses to
+inject the built PHAR:
+
+```bash
+# Build PHAR, then run controller E2E tests against it
+castor phar:build
+HATFIELD_BINARY_PATH=/tmp/bin/hatfield.phar vendor/bin/phpunit --filter ControllerSmokeTest
+```
+
+Relative paths resolve against the runtime CWD.
+
+---
+
 ### `tools.execution.default_mode`
 
 Default execution mode for tool calls. Controls whether tools run

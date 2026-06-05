@@ -8,7 +8,8 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BashToolConfig;
-use Ineersa\CodingAgent\Tool\BackgroundProcess\BackgroundProcessRecord;
+use Ineersa\CodingAgent\Entity\BackgroundProcess;
+use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -144,7 +145,7 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                     throw new ToolCallException('Background process record vanished unexpectedly; the process may have been cleaned up.', retryable: false);
                 }
 
-                if ('running' !== $record->status) {
+                if (BackgroundProcessStatusEnum::Running !== $record->status) {
                     // Process finished (or stopped/finished uncleanly)
                     return $this->handleFinished($record, $pid, $sessionId);
                 }
@@ -270,20 +271,20 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
     }
 
     /**
-     * Find a process record by PID from the manager's list.
+     * Find a process entity by PID from the manager's list.
      *
      * @param int         $pid       Process PID to find
      * @param string|null $sessionId Session filter
      *
-     * @return BackgroundProcessRecord|null The matching record, or null if not found
+     * @return BackgroundProcess|null The matching entity, or null if not found
      */
-    private function findProcessRecord(int $pid, ?string $sessionId): ?BackgroundProcessRecord
+    private function findProcessRecord(int $pid, ?string $sessionId): ?BackgroundProcess
     {
-        $records = $this->manager->list($sessionId);
+        $entities = $this->manager->list($sessionId);
 
-        foreach ($records as $record) {
-            if ($record->pid === $pid) {
-                return $record;
+        foreach ($entities as $entity) {
+            if ($entity->pid === $pid) {
+                return $entity;
             }
         }
 
@@ -317,21 +318,21 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
     }
 
     /**
-     * Handle a finished/stopped process record.
+     * Handle a finished/stopped process entity.
      *
-     * @param BackgroundProcessRecord $record    The finished process record
-     * @param int                     $pid       Process PID
-     * @param string|null             $sessionId Session ownership filter
+     * @param BackgroundProcess $entity    The finished process entity
+     * @param int               $pid       Process PID
+     * @param string|null       $sessionId Session ownership filter
      *
      * @return string Formatted result with capped output
      */
-    private function handleFinished(BackgroundProcessRecord $record, int $pid, ?string $sessionId): string
+    private function handleFinished(BackgroundProcess $entity, int $pid, ?string $sessionId): string
     {
         $output = $this->readOutput($pid, $sessionId);
         $capped = $this->outputCap->process($output);
 
-        $exitCode = $record->exitCode;
-        $status = $record->status;
+        $exitCode = $entity->exitCode;
+        $status = $entity->status->value;
 
         // Normal successful completion
         if (0 === $exitCode) {
@@ -355,7 +356,7 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
         ]);
 
         // Check if this was a user-requested stop (bg_status stop)
-        if ($record->stoppedByUser) {
+        if ($entity->stoppedByUser) {
             return \sprintf(
                 "Command was stopped (exit code %d).\n\nOutput:\n%s",
                 $exitCode ?? -1,
