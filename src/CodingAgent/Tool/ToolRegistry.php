@@ -230,12 +230,6 @@ final class ToolRegistry implements ToolRegistryInterface
 
     public function setAllowedToolNames(array $names): void
     {
-        if ([] === $names) {
-            $this->allowedNames = null;
-
-            return;
-        }
-
         $allowed = [];
         foreach ($names as $name) {
             $name = trim($name);
@@ -248,6 +242,7 @@ final class ToolRegistry implements ToolRegistryInterface
             $allowed[$name] = true;
         }
 
+        // Empty or whitespace-only input clears the allowlist.
         $this->allowedNames = [] === $allowed ? null : $allowed;
     }
 

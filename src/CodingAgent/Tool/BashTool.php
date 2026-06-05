@@ -85,7 +85,14 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
             $command = $this->validateCommand($arguments);
             $timeout = $this->resolveTimeout($arguments);
 
-            // Resolve session context
+            // Resolve session context.
+            // When no ToolContext is active (e.g. tests bypassing context
+            // wrapping, admin/tooling commands), $sessionId is null and
+            // $cancelToken is null. BackgroundProcessManager treats null
+            // sessionId as unscoped/admin — the process is stored with an
+            // empty session and list/stop calls scoped to a session won't
+            // see it. Cancellation is simply unavailable when no context
+            // is present; only the timeout deadline bounds execution.
             $context = $this->contextAccessor->current();
             $sessionId = $context?->runId();
             $cancelToken = $context?->cancellationToken();

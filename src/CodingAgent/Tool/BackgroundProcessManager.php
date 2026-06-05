@@ -266,8 +266,18 @@ final class BackgroundProcessManager
             return null;
         }
 
+        // Only flush when the entity transitioned from running to a
+        // terminal state. If finishedAt was already set before the
+        // resolve call, no mutation occurred; if it remains null, the
+        // process is still running and no persisted column changed.
+        // This avoids unnecessary DB writes during polling loops that
+        // call find() every ~100 ms.
+        $wasFinished = null !== $entity->finishedAt;
         $this->resolveEntityStatus($entity);
-        $this->store->flush();
+
+        if (!$wasFinished && null !== $entity->finishedAt) {
+            $this->store->flush();
+        }
 
         return $entity;
     }
