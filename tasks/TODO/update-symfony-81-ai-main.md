@@ -60,19 +60,15 @@ Two-part dependency update:
 
 ## Implementation Steps
 
-### Phase 1: Symfony 8.1 stable update
-1. Run `composer update symfony/*` to resolve from BETA1 to 8.1.0 stable
-2. Review any deprecation notices from test suite
-3. Address FrameworkBundle messenger routing config deprecation if applicable (flat `senders` list)
-4. Run `castor check` to validate
-
-### Phase 2: Symfony AI dev-main
-1. Change composer.json:
+### Phase 1: Update everything in one pass
+1. Change `composer.json` for AI packages only:
    - `symfony/ai-platform`: `^0.9` → `dev-main`
    - `symfony/ai-agent`: `^0.9` → `dev-main`  
    - `symfony/ai-generic-platform`: `^0.9` → `dev-main`
-2. Run `composer update symfony/ai-platform symfony/ai-agent symfony/ai-generic-platform`
-3. Verify the `stream_options` / `include_usage` behavior is now handled by the generic bridge
+   - Symfony constraints stay `^8.1` — they naturally resolve from BETA1 to 8.1.0 stable
+2. Run `composer update` — picks up both Symfony 8.1.0 stable and AI dev-main
+3. Review any deprecation notices from test suite
+4. Address FrameworkBundle messenger routing config deprecation if applicable (flat `senders` list)
 
 ### Phase 3: Remove include_usage hack
 1. In `src/AgentCore/Infrastructure/SymfonyAi/LlmPlatformAdapter.php` line 74:
@@ -88,7 +84,7 @@ Two-part dependency update:
 
 | File | Change |
 |------|--------|
-| `composer.json` | Update symfony/ai-* constraints to `dev-main` |
+| `composer.json` | Update symfony/ai-* constraints to `dev-main` (Symfony stays `^8.1`) |
 | `src/AgentCore/Infrastructure/SymfonyAi/LlmPlatformAdapter.php` | Remove `include_usage` hack (line 74) |
 
 ## Blast Radius
