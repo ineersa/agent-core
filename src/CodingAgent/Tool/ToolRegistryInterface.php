@@ -127,6 +127,48 @@ interface ToolRegistryInterface
      *
      * @return list<string>
      */
+    /**
+     * Set the allowed tool names (allowlist).
+     *
+     * When non-empty, only tools whose name is in this set are visible
+     * through activeToolDefinitions(), activeToolNames(), permanentToolLines(),
+     * and permanentGuidelines(). When empty (default), all tools are visible.
+     *
+     * Combined with setExcludedToolNames(), final visibility is:
+     *   (empty allowlist OR name in allowlist) AND (name NOT in exclusions).
+     *
+     * Unknown tool names are rejected with \InvalidArgumentException.
+     *
+     * @param list<string> $names
+     *
+     * @throws \InvalidArgumentException if any name is not a registered permanent or dynamic tool
+     */
+    public function setAllowedToolNames(array $names): void;
+
+    /**
+     * Set the excluded tool names (denylist).
+     *
+     * Excluded tools are hidden from activeToolDefinitions(), activeToolNames(),
+     * permanentToolLines(), and permanentGuidelines().
+     *
+     * Unknown tool names are rejected with \InvalidArgumentException.
+     *
+     * @param list<string> $names
+     *
+     * @throws \InvalidArgumentException if any name is not a registered permanent or dynamic tool
+     */
+    public function setExcludedToolNames(array $names): void;
+
+    /**
+     * Get the current excluded tool names.
+     *
+     * @return list<string>
+     */
+    public function excludedToolNames(): array;
+
+    /**
+     * @return list<string>
+     */
     public function activeToolNames(): array;
 
     /**

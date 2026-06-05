@@ -121,7 +121,7 @@ abstract class ControllerE2eTestCase extends TestCase
 
         $pipes = [];
         $process = @proc_open(
-            [$php, $script, 'agent', '--controller', '--cwd='.$this->tempDir],
+            [$php, $script, 'agent', '--controller', '--cwd='.$this->tempDir, '--tools-excluded=bash'],
             $descriptors,
             $pipes,
             $this->tempDir,

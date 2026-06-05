@@ -48,6 +48,17 @@ final class ToolRegistry implements ToolRegistryInterface
     private array $dynamicOrder = [];
 
     /**
+     * @var array<string, true> excluded tool names (denylist)
+     */
+    private array $excludedNames = [];
+
+    /**
+     * @var array<string, true>|null Allowed tool names (allowlist).
+     *                               null means no allowlist (all tools visible).
+     */
+    private ?array $allowedNames = null;
+
+    /**
      * @param iterable<HatfieldToolProviderInterface> $providers Tagged built-in tool providers
      */
     public function __construct(iterable $providers = [])
@@ -184,6 +195,9 @@ final class ToolRegistry implements ToolRegistryInterface
         $seen = [];
 
         foreach ($this->permanentOrder as $name) {
+            if (!$this->isToolVisible($name)) {
+                continue;
+            }
             $line = $this->permanentTools[$name]->promptLine;
             if (!isset($seen[$line])) {
                 $seen[$line] = true;
@@ -200,6 +214,9 @@ final class ToolRegistry implements ToolRegistryInterface
         $seen = [];
 
         foreach ($this->permanentOrder as $name) {
+            if (!$this->isToolVisible($name)) {
+                continue;
+            }
             foreach ($this->permanentTools[$name]->promptGuidelines as $guideline) {
                 if (!isset($seen[$guideline])) {
                     $seen[$guideline] = true;
@@ -211,12 +228,65 @@ final class ToolRegistry implements ToolRegistryInterface
         return $guidelines;
     }
 
+    public function setAllowedToolNames(array $names): void
+    {
+        if ([] === $names) {
+            $this->allowedNames = null;
+
+            return;
+        }
+
+        $allowed = [];
+        foreach ($names as $name) {
+            $name = trim($name);
+            if ('' === $name) {
+                continue;
+            }
+            if (!$this->isKnownToolName($name)) {
+                throw new \InvalidArgumentException(\sprintf('Unknown tool name in allowlist: "%s".', $name));
+            }
+            $allowed[$name] = true;
+        }
+
+        $this->allowedNames = [] === $allowed ? null : $allowed;
+    }
+
+    public function setExcludedToolNames(array $names): void
+    {
+        $excluded = [];
+        foreach ($names as $name) {
+            $name = trim($name);
+            if ('' === $name) {
+                continue;
+            }
+            if (!$this->isKnownToolName($name)) {
+                throw new \InvalidArgumentException(\sprintf('Unknown tool name in exclusions: "%s".', $name));
+            }
+            $excluded[$name] = true;
+        }
+
+        $this->excludedNames = $excluded;
+    }
+
+    public function excludedToolNames(): array
+    {
+        return array_keys($this->excludedNames);
+    }
+
+    /**
+     * @return list<string>
+     */
     public function activeToolNames(): array
     {
-        // Permanent tools first (registration order), then dynamic tools
         return [
-            ...$this->permanentOrder,
-            ...$this->dynamicOrder,
+            ...array_values(array_filter(
+                $this->permanentOrder,
+                fn (string $name): bool => $this->isToolVisible($name),
+            )),
+            ...array_values(array_filter(
+                $this->dynamicOrder,
+                fn (string $name): bool => $this->isToolVisible($name),
+            )),
         ];
     }
 
@@ -225,11 +295,15 @@ final class ToolRegistry implements ToolRegistryInterface
         $definitions = [];
 
         foreach ($this->permanentOrder as $name) {
-            $definitions[] = $this->permanentTools[$name];
+            if ($this->isToolVisible($name)) {
+                $definitions[] = $this->permanentTools[$name];
+            }
         }
 
         foreach ($this->dynamicOrder as $name) {
-            $definitions[] = $this->dynamicTools[$name];
+            if ($this->isToolVisible($name)) {
+                $definitions[] = $this->dynamicTools[$name];
+            }
         }
 
         return $definitions;
@@ -246,5 +320,30 @@ final class ToolRegistry implements ToolRegistryInterface
         }
 
         return null;
+    }
+
+    /**
+     * Returns true if the given name is a known permanent or dynamic tool.
+     */
+    private function isKnownToolName(string $name): bool
+    {
+        return isset($this->permanentTools[$name]) || isset($this->dynamicTools[$name]);
+    }
+
+    /**
+     * Returns true if the tool with the given name passes the active
+     * allowlist/denylist filters.
+     */
+    private function isToolVisible(string $name): bool
+    {
+        if (isset($this->excludedNames[$name])) {
+            return false;
+        }
+
+        if (null !== $this->allowedNames && !isset($this->allowedNames[$name])) {
+            return false;
+        }
+
+        return true;
     }
 }
