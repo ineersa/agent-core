@@ -514,3 +514,8 @@ Remaining: castor test:controller requires llama.cpp on port 9052.
 ## Task workflow update - 2026-06-05T20:36:40.843Z
 - Recorded fork run: xsqccsnst3qy
 - Summary: Launched cleanup fork xsqccsnst3qy to remove dead SessionEventReader.php and SessionEventReaderTest.php remnants from the old event-store polling SafeGuard design, validate with Castor focused/full non-check gates, and commit without pushing.
+
+## Task workflow update - 2026-06-05T20:40:23.523Z
+- Recorded fork run: xsqccsnst3qy
+- Validation: fork: rg confirmed SessionEventReader had zero production consumers; only its own source and test referenced it; fork: castor test --filter='SafeGuard\|ExtensionApproval\|Question\|HumanInput\|ApprovalSessionTracker\|PolicyWriter' passed (179 tests, 420 assertions); fork: castor test passed (1717 tests, 5039 assertions); fork: castor deptrac passed (0 violations, 0 errors); fork: castor phpstan passed (0 errors, 0 file_errors); fork: castor cs-check passed (0 files fixed); not run: castor check per IN-PROGRESS implementation-phase boundary
+- Summary: Cleanup fork xsqccsnst3qy completed. Removed dead SessionEventReader.php and SessionEventReaderTest.php from the old event-store polling SafeGuard design after confirming only the deleted test referenced the class and no production code used it. Worktree is clean at HEAD 0a2b5f87. Current diff vs origin/main is now test-only: ApprovalSessionTrackerTest.php, SafeGuardExtensionTest.php, SafeGuardPolicyWriterTest.php (3 files, 256 insertions, 43 deletions). Ready for task-to-pr/re-review when user requests it.
