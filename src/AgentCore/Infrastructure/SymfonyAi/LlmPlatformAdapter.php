@@ -71,7 +71,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 $input->getModel(),
                 $input->getMessageBag(),
                 PlatformInvocationMetadata::inject(
-                    array_replace($input->getOptions(), ['stream' => true, 'stream_options' => ['include_usage' => true]]),
+                    array_replace($input->getOptions(), ['stream' => true]),
                     new PlatformInvocationMetadata($request->input, $cancelToken),
                 ),
             ),
