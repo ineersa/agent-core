@@ -180,8 +180,10 @@ class QuestionControllerTest extends TestCase
         self::assertCount(3, $items); // Approve, Reject, Type your answer
         self::assertSame('approve', $items[0]['value']);
         self::assertStringContainsString('Approve', $items[0]['label']);
+        self::assertStringNotContainsString('\u{', $items[0]['label'], 'Literal unicode escapes must not be rendered');
         self::assertSame('reject', $items[1]['value']);
         self::assertStringContainsString('Reject', $items[1]['label']);
+        self::assertStringNotContainsString('\u{', $items[1]['label'], 'Literal unicode escapes must not be rendered');
         self::assertSame('__other__', $items[2]['value']);
     }
 
@@ -218,6 +220,13 @@ class QuestionControllerTest extends TestCase
         self::assertNotSame('Always allow', $items[1]['label']);
         self::assertStringContainsString('Deny', $items[2]['label']);
         self::assertNotSame('Deny', $items[2]['label']);
+        // Verify no raw unicode escape sequences are rendered as text.
+        foreach ($items as $item) {
+            self::assertStringNotContainsString('\u{', $item['label'], \sprintf(
+                'Literal unicode escape in label for value "%s"',
+                $item['value'],
+            ));
+        }
     }
 
     #[Test]

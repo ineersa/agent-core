@@ -388,32 +388,34 @@ final class ChatScreen
     /* ────────── Question overlay ────────── */
 
     /**
-     * Insert an interactive overlay widget between the editor and the footer.
+     * Insert an interactive overlay widget above the editor.
      *
-     * The Symfony TUI root container renders children in append order, and
-     * ChatScreen adds footer-separator + footer last during mount().  When a
-     * question/picker overlay opens via tui->add() it ends up after the footer.
-     *
-     * This method temporarily removes the footer widgets, adds the overlay,
-     * then re-adds the footer so the overlay renders in the right spot:
-     *   editor → overlay → footer-separator → footer
+     * The Symfony TUI root container renders children in append order.
+     * This method removes the editor and all widgets below it, adds the
+     * overlay, then re-adds everything in original order so the overlay
+     * renders directly above the editor area:
+     *   … → status → aboveEditorWidget → overlay → editorSep → editor → …
      */
-    public function insertOverlayBeforeFooter(AbstractWidget $widget): void
+    public function insertOverlayBeforeEditor(AbstractWidget $widget): void
     {
         if (null === $this->tui) {
             return;
         }
 
-        // Remove footer widgets (footerSepWidget last, so footerWidget is
-        // removed first — order doesn't matter for remove(), but doing
-        // footerSepWidget last preserves mental model).
+        // Remove editor area and everything below it (reverse mount order).
         $this->tui->remove($this->footerWidget);
         $this->tui->remove($this->footerSepWidget);
+        $this->tui->remove($this->belowEditorWidget);
+        $this->tui->remove($this->promptEditor->getWidget());
+        $this->tui->remove($this->editorSepWidget);
 
-        // Add the overlay between editor area and footer.
+        // Add the overlay (appended after aboveEditorWidget).
         $this->tui->add($widget);
 
-        // Restore footer widgets in original order.
+        // Restore editor area widgets in original mount order.
+        $this->tui->add($this->editorSepWidget);
+        $this->tui->add($this->promptEditor->getWidget());
+        $this->tui->add($this->belowEditorWidget);
         $this->tui->add($this->footerSepWidget);
         $this->tui->add($this->footerWidget);
     }
@@ -421,7 +423,7 @@ final class ChatScreen
     /**
      * Remove an overlay widget from the TUI root.
      *
-     * Companion to {@see insertOverlayBeforeFooter()}.
+     * Companion to {@see insertOverlayBeforeEditor()}.
      */
     public function removeOverlay(AbstractWidget $widget): void
     {

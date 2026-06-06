@@ -31,25 +31,33 @@ use Symfony\Component\Tui\Widget\TextWidget;
 final class QuestionController
 {
     /**
-     * Build Approval-choice items, preferring the schema enum when
-     * available (e.g. SafeGuard's ["Allow once", "Always allow", "Deny"]).
+     * Display-only icons for approval answer values.
      *
-     * Falls back to generic Approve/Reject when no enum is provided.
-     *
-     * @return list<array{value: string, label: string}>
-     */
-    /**
-     * Icon mapping for known approval answer values.
-     *
-     * Icons are display-only; the 'value' sent in answer_human commands
-     * remains the raw enum string (e.g. "Allow once", "Deny").
+     * Icons are display-only UTF-8 glyphs; the 'value' sent in
+     * answer_human commands remains the raw enum string
+     * (e.g. "Allow once", "Deny").
      *
      * @var array<string, string>
      */
     private const APPROVAL_ICONS = [
-        'Allow once' => '\u{2705}',
-        'Always allow' => '\u{1F510}',
-        'Deny' => '\u{274C}',
+        'Allow once' => "\u{2705}",
+        'Always allow' => "\u{1F510}",
+        'Deny' => "\u{274C}",
+    ];
+
+    /**
+     * Theme color token for each known approval answer value.
+     *
+     * Applied to icon + label so the selected row is visibly distinct
+     * beyond SelectListWidget's built-in bold alone (matching the pattern
+     * used by ModelPickerController with theme->color() markers).
+     *
+     * @var array<string, \Ineersa\Tui\Theme\ThemeColorEnum>
+     */
+    private const APPROVAL_COLORS = [
+        'Allow once' => \Ineersa\Tui\Theme\ThemeColorEnum::Accent,
+        'Always allow' => \Ineersa\Tui\Theme\ThemeColorEnum::Success,
+        'Deny' => \Ineersa\Tui\Theme\ThemeColorEnum::Error,
     ];
     private ?SelectListWidget $listWidget = null;
     private ?ContainerWidget $container = null;
@@ -135,10 +143,10 @@ final class QuestionController
     private function addHeader(QuestionRequest $request): void
     {
         $headerText = $request->header ?? match ($request->kind) {
-            QuestionKind::Text => '\u{1F4DD} Human input required',
-            QuestionKind::Confirm => '\u{2753} Confirmation required',
-            QuestionKind::Choice => '\u{1F4CB} Choose an option',
-            QuestionKind::Approval => '\u{1F6E1}  Approval requested',
+            QuestionKind::Text => "\u{1F4DD} Human input required",
+            QuestionKind::Confirm => "\u{2753} Confirmation required",
+            QuestionKind::Choice => "\u{1F4CB} Choose an option",
+            QuestionKind::Approval => "\u{1F6E1}  Approval requested",
         };
         $header = new TextWidget(text: $headerText, truncate: true);
         $this->container->add($header);
@@ -217,10 +225,10 @@ final class QuestionController
      */
     private function mount(QuestionRequest $request): void
     {
-        // Insert the overlay between the editor and the footer so it
-        // renders in the correct position in the single-column layout:
-        //   editor → question overlay → footer-separator → footer
-        $this->screen->insertOverlayBeforeFooter($this->container);
+        // Insert the overlay above the editor so it renders above
+        // the editor area in the single-column layout:
+        //   question overlay → editor-separator → editor → …
+        $this->screen->insertOverlayBeforeEditor($this->container);
         $this->screen->setStatus('action', "\u{26A0} Question pending");
 
         if (null !== $this->listWidget) {
@@ -273,31 +281,52 @@ final class QuestionController
      * Build Approval-choice items, preferring the schema enum when
      * available (e.g. SafeGuard's ["Allow once", "Always allow", "Deny"]).
      *
+     * Labels include display-only UTF-8 icons and are theme-coloured per
+     * value so the selected row is visually distinct (bold + colour, matching
+     * the pattern used by ModelPickerController's theme->color() markers).
+     *
      * Falls back to generic Approve/Reject when no enum is provided.
      *
      * @return list<array{value: string, label: string}>
      */
     private function approvalItems(QuestionRequest $request): array
     {
+        $theme = $this->screen?->theme();
         $enum = $request->schema['enum'] ?? null;
 
         if (\is_array($enum) && [] !== $enum) {
             return array_map(
-                static fn (string $label): array => [
-                    'value' => $label,
-                    'label' => \sprintf(
-                        '%s  %s',
-                        self::APPROVAL_ICONS[$label] ?? '\u{2753}',
-                        $label,
-                    ),
-                ],
+                static function (string $label) use ($theme): array {
+                    $icon = self::APPROVAL_ICONS[$label] ?? "\u{2753}";
+                    $labelText = \sprintf('%s  %s', $icon, $label);
+
+                    // Colour the label text with its semantic theme token
+                    // so the selected row is clearly distinguishable beyond
+                    // SelectListWidget's built-in bold alone.
+                    if (null !== $theme) {
+                        $color = self::APPROVAL_COLORS[$label] ?? \Ineersa\Tui\Theme\ThemeColorEnum::Text;
+                        $labelText = $theme->color($color, $labelText);
+                    }
+
+                    return [
+                        'value' => $label,
+                        'label' => $labelText,
+                    ];
+                },
                 array_values($enum),
             );
         }
 
+        $approve = "\u{2705}  Approve";
+        $reject = "\u{274C}  Reject";
+        if (null !== $theme) {
+            $approve = $theme->color(\Ineersa\Tui\Theme\ThemeColorEnum::Success, $approve);
+            $reject = $theme->color(\Ineersa\Tui\Theme\ThemeColorEnum::Error, $reject);
+        }
+
         return [
-            ['value' => 'approve', 'label' => '\u{2705}  Approve'],
-            ['value' => 'reject', 'label' => '\u{274C}  Reject'],
+            ['value' => 'approve', 'label' => $approve],
+            ['value' => 'reject', 'label' => $reject],
         ];
     }
 }
