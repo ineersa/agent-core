@@ -110,7 +110,7 @@ Two-part dependency update:
 Status: IN-PROGRESS
 Branch: task/update-symfony-81-ai-main
 Worktree: /home/ineersa/projects/agent-core-worktrees/update-symfony-81-ai-main
-Fork run:
+Fork run: ah2e645m81lf
 PR URL:
 PR Status:
 Started: 2026-06-06T17:50:56.478Z
@@ -128,3 +128,8 @@ Completed:
 
 ## Task workflow update - 2026-06-06T17:51:17.244Z
 - Claimed task and created worktree /home/ineersa/projects/agent-core-worktrees/update-symfony-81-ai-main on branch task/update-symfony-81-ai-main.
+
+## Task workflow update - 2026-06-06T17:54:25.326Z
+- Recorded fork run: ah2e645m81lf
+- Scout confirmed the only planned source change is the LlmPlatformAdapter streaming options merge; composer.json requires the three Symfony AI constraints to move from ^0.9 to dev-main; messenger routing config already uses routing: and does not need the Symfony 8.1 senders deprecation migration.
+- Launched implementation fork ah2e645m81lf in worktree /home/ineersa/projects/agent-core-worktrees/update-symfony-81-ai-main with instructions to update dependencies, remove the include_usage hack, run focused Castor validation (test/phpstan/deptrac/cs-check), commit changes, and stop before PR/gate steps.
