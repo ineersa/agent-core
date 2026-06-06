@@ -13,7 +13,7 @@ Investigate how pan/pi-mono implement OpenAI Codex OAuth/PKCE auth, token storag
 Status: IN-PROGRESS
 Branch: task/hatfield-openai-codex-auth-research
 Worktree: /home/ineersa/projects/agent-core-worktrees/hatfield-openai-codex-auth-research
-Fork run: th4dmot63q4t
+Fork run: kpi1pars94rl
 PR URL:
 PR Status:
 Started: 2026-06-06T17:25:57.754Z
@@ -88,3 +88,9 @@ Recommended direction for Hatfield:
 - Files created by fork: src/CodingAgent/Auth/{BrowserLauncher,CodexAccountIdExtractor,CodexAuthRecord,CodexAuthStorage,CodexOAuthConfig,CodexOAuthService,LocalCallbackServer,ManualCodeParser}.php; src/CodingAgent/CLI/Auth/CodexAuthCommand.php; 5 Codex auth/factory test files
 - Files modified by fork: composer.json, composer.lock, config/services.yaml, config/hatfield.defaults.yaml, src/CodingAgent/Infrastructure/SymfonyAi/SymfonyAiProviderFactory.php
 - Known out-of-scope/follow-up from fork handoff: TUI login dialog, slash-command login, mid-session token hot-swap; fork also noted auth docs in docs/settings.md as a future documentation follow-up
+
+## Task workflow update - 2026-06-06T21:17:14.574Z
+- Recorded fork run: kpi1pars94rl
+- Summary: Reviewer returned REQUEST CHANGES for PR prep. Launched fix fork kpi1pars94rl to address all actionable findings: seconds-vs-milliseconds token expiry mismatch, ignored timeout, custom port/redirect mismatch, refresh account-id validation, catch/logging/storage permission hardening, GenericProvider config deduplication, missing ArgvInput import, and docs/settings auth guidance.
+- Reviewer findings included CRITICAL token expiry unit mismatch causing credentials to appear always expired; BUGs in timeout/port handling and refresh account-id docblock; SECURITY/CONVENTION issues around auth storage permissions/TOCTOU and silent catches; SIMPLIFY duplicated GenericProvider config
+- Fix fork instructed to preserve branch payload including incidental PHAR isolation commit
