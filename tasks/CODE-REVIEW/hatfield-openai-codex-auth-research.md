@@ -13,7 +13,7 @@ Investigate how pan/pi-mono implement OpenAI Codex OAuth/PKCE auth, token storag
 Status: CODE-REVIEW
 Branch: task/hatfield-openai-codex-auth-research
 Worktree: /home/ineersa/projects/agent-core-worktrees/hatfield-openai-codex-auth-research
-Fork run: z0lk809uwmes
+Fork run: g78s4otgnt15
 PR URL: https://github.com/ineersa/agent-core/pull/98
 PR Status: open
 Started: 2026-06-06T17:25:57.754Z
@@ -189,3 +189,15 @@ Castor Check Output SHA256: 7f8b27b804181eeab5b2257c167ad373907d831fde66ef733992
 - PR already exists: https://github.com/ineersa/agent-core/pull/98
 - Validation: reviewer APPROVE at HEAD 2a6c2b4c; castor test passed (1816 tests, 5320 assertions); castor deptrac passed (0 violations, 0 errors); castor phpstan passed (0 errors, 0 file errors); castor cs-check passed clean
 - Summary: Addressed PR #98 inline review comment by removing manual YAML credential support for Codex. Codex provider creation now requires stored OAuth credentials from `auth:codex` / `~/.hatfield/auth.json`; defaults/docs/tests updated accordingly. Reviewer approved commit 2a6c2b4c and focused validation passed.
+
+## Task workflow update - 2026-06-06T23:27:36.311Z
+- Recorded fork run: g78s4otgnt15
+- Validation: move_task(to=DONE) failed with conflict: composer.lock
+- Summary: DONE merge attempt hit a composer.lock conflict. Launched conflict-resolution fork g78s4otgnt15 on the integration checkout to resolve composer.lock against the auto-merged composer.json, validate, and commit the merge result without pushing.
+- Do not retry move_task until fork reports merge commit complete and integration checkout is clean
+
+## Task workflow update - 2026-06-06T23:31:43.112Z
+- Recorded fork run: g78s4otgnt15
+- Validation: fork: composer.lock conflict resolved and merge committed at ee807534; fork: castor test --filter=Codex passed (62 tests, 156 assertions); fork: castor deptrac passed (0 violations, 0 errors); fork: castor phpstan passed (0 errors, 0 file errors); fork: castor cs-check passed clean
+- Summary: Conflict-resolution fork g78s4otgnt15 completed. It resolved the composer.lock merge conflict in the integration checkout and committed the merge as ee807534 `Merge branch 'task/hatfield-openai-codex-auth-research'`. Resolution used the task-branch composer.lock as base, regenerated the lock via Composer to match merged composer.json, validated Codex tests/deptrac/phpstan/cs-check, and left main clean except for this task metadata update.
+- Retry move_task(to=DONE) after this metadata commit so workflow can finalize task move, git pull sync, and worktree cleanup
