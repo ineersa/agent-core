@@ -107,3 +107,10 @@ Recommended direction for Hatfield:
 - Summary: Second re-review returned REQUEST CHANGES. Launched fix fork ypp7l8z96ssa to address remaining blockers: callback server must listen before browser opens, local callback must require matching state, branch PHPStan errors must be fixed, dead REDIRECT_URI constant removed, refresh logic/race refactored into shared refresher with locking, and deptrac layer coverage added for new Auth directory.
 - Prior findings confirmed fixed: expiry units, timeout passthrough, custom port redirect, account-id validation, storage write hardening, GenericProvider config centralization, ArgvInput import, docs/settings guidance
 - Remaining actionable findings passed to fork: callback race, missing state validation, PHPStan gate blockers, dead BC constant, refresh race/duplication, deptrac coverage
+
+## Task workflow update - 2026-06-06T21:47:11.118Z
+- Recorded fork run: ypp7l8z96ssa
+- Validation: fork: castor test --filter=Codex passed (66 tests, 165 assertions); fork: castor test passed (1821 tests, 5331 assertions); fork: castor deptrac passed (0 violations, 0 errors); fork: castor phpstan passed (0 errors, 0 file errors); fork: castor cs-check passed clean; orchestrator inspection: git status clean; HEAD b38845b0; diff stat origin/main...HEAD shows 31 files changed including preserved PHAR isolation and Codex auth implementation/fixes
+- Summary: Second fix fork ypp7l8z96ssa completed at commit b38845b0 `fix(coding-agent): resolve Codex auth review blockers`. It resolved the callback-server/browser race, strict local-callback state validation, PHPStan errors, dead REDIRECT_URI constant, duplicate/racy refresh logic via new CodexTokenRefresher, deptrac coverage for AppAuth, and retained secure storage writes. Worktree verified clean at HEAD b38845b0.
+- Added new src/CodingAgent/Auth/CodexTokenRefresher.php and deptrac AppAuth/SymfonyProcess layer coverage
+- Known skipped item from fork: LocalCallbackServer bind-failure logger injection skipped as low ROI; fallback to manual paste remains and URL is printed
