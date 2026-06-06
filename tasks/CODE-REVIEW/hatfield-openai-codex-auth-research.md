@@ -10,12 +10,12 @@ Investigate how pan/pi-mono implement OpenAI Codex OAuth/PKCE auth, token storag
 - Recommend Hatfield implementation shape and follow-up task scope for auth:codex, refresh, and auth.json storage
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/hatfield-openai-codex-auth-research
 Worktree: /home/ineersa/projects/agent-core-worktrees/hatfield-openai-codex-auth-research
 Fork run: c3d5le8re4r7
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/98
+PR Status: open
 Started: 2026-06-06T17:25:57.754Z
 Completed:
 
@@ -144,3 +144,18 @@ Recommended direction for Hatfield:
 - Summary: PR-prep review completed for exact HEAD 25eba5a7. Reviewer verdict: APPROVE. The final reviewer confirmed the only post-approval change was the one-line redundant-cast removal in LocalCallbackServer and that it has no behavioral/security impact. Worktree is clean and ready for CODE-REVIEW gate/PR creation.
 - Task-to-PR review iterations: initial REQUEST CHANGES fixed by commits 3358743a/82dc8cca; second REQUEST CHANGES fixed by b38845b0; APPROVE WITH SUGGESTIONS fixed by fab4f4bf; final validation PHPStan cast.useless fixed by 25eba5a7
 - Branch still intentionally contains preserved PHAR isolation commit 94853790 per user instruction
+Castor Check Status: passed
+Castor Check Commit: 25eba5a7c5b507b2d73a5a0451065f7df3e1586e
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 900s
+Castor Check Completed: 2026-06-06T22:08:48.084Z
+Castor Check Output SHA256: 271e527f441554fd2f242bcdfa1bab8fccc6951b56a9d90f88eaedd81fc1a1c9
+
+## Task workflow update - 2026-06-06T22:08:51.794Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: 25eba5a7c5b5.
+- Pushed task/hatfield-openai-codex-auth-research to origin.
+- branch 'task/hatfield-openai-codex-auth-research' set up to track 'origin/task/hatfield-openai-codex-auth-research'.
+- Created PR: https://github.com/ineersa/agent-core/pull/98
+- Validation: reviewer APPROVE at HEAD 25eba5a7; castor test passed (1820 tests, 5329 assertions); castor deptrac passed (0 violations, 0 errors); castor phpstan passed (0 errors, 0 file errors); castor cs-check passed clean
+- Summary: Prepared for PR/code review. Reviewer approved exact HEAD 25eba5a7 after multiple remediation forks. Focused local Castor validation passed: test, deptrac, phpstan, cs-check. Branch includes Codex OAuth auth implementation plus preserved PHAR isolation commit per user instruction.
