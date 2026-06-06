@@ -62,7 +62,6 @@ final class QuestionController
     private ?SelectListWidget $listWidget = null;
     private ?ContainerWidget $container = null;
     private bool $isOpen = false;
-    private ?TuiRuntimeContext $context = null;
     private ?ChatScreen $screen = null;
 
     public function __construct(
@@ -74,9 +73,11 @@ final class QuestionController
      * Set the per-run TUI references that are only available at
      * listener registration time.
      */
-    public function setRuntimeRefs(TuiRuntimeContext $context, ChatScreen $screen): void
+    /**
+     * @param TuiRuntimeContext $_context Unused; kept for caller compatibility
+     */
+    public function setRuntimeRefs(TuiRuntimeContext $_context, ChatScreen $screen): void
     {
-        $this->context = $context;
         $this->screen = $screen;
     }
 
@@ -88,16 +89,12 @@ final class QuestionController
      */
     public function open(QuestionRequest $request): void
     {
-        if (null === $this->context) {
+        if (null === $this->screen) {
             throw new \LogicException('setRuntimeRefs() must be called before open()');
         }
 
         if ($this->isOpen) {
             return;
-        }
-
-        if (null === $this->screen) {
-            throw new \LogicException('setRuntimeRefs() must be called before open()');
         }
 
         $this->container = new ContainerWidget();
@@ -199,7 +196,7 @@ final class QuestionController
             $value = $item['value'];
 
             $answer = '__other__' === $value
-                ? $this->context->screen->editorText()
+                ? $this->screen->editorText()
                 : $value;
 
             try {

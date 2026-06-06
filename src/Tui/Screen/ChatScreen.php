@@ -356,13 +356,6 @@ final class ChatScreen
     }
 
     /**
-     * Invalidate all mutable widgets so they re-render on the next tick.
-     *
-     * Extension widgets and status entries change via {@see setStatus()} or
-     * extension calls and already invalidate targeted widgets.  This method
-     * is a safety net for external state changes.
-     */
-    /**
      * Register an additional footer segment provider.
      *
      * Providers are invoked on every footer render. Use this to add
@@ -374,6 +367,13 @@ final class ChatScreen
         $this->footerWidget->invalidate();
     }
 
+    /**
+     * Invalidate all mutable widgets so they re-render on the next tick.
+     *
+     * Extension widgets and status entries change via {@see setStatus()} or
+     * extension calls and already invalidate targeted widgets.  This method
+     * is a safety net for external state changes.
+     */
     public function refresh(): void
     {
         $this->transcriptWidget->invalidate();
@@ -385,7 +385,7 @@ final class ChatScreen
         $this->footerWidget->invalidate();
     }
 
-    /* ────────── Question overlay ────────── */
+    /* ────────── Overlay management ────────── */
 
     /**
      * Insert an interactive overlay widget above the editor.
@@ -394,12 +394,16 @@ final class ChatScreen
      * This method removes the editor and all widgets below it, adds the
      * overlay, then re-adds everything in original order so the overlay
      * renders directly above the editor area:
-     *   … → status → aboveEditorWidget → overlay → editorSep → editor → …
+     *
+     *   … → status → aboveEditorWidget → overlay → editorSep → editor →
+     *   belowEditorWidget → footerSep → footer
+     *
+     * @throws \LogicException when the screen has not been mounted yet
      */
     public function insertOverlayBeforeEditor(AbstractWidget $widget): void
     {
         if (null === $this->tui) {
-            return;
+            throw new \LogicException('insertOverlayBeforeEditor() requires ChatScreen to be mounted first. Call mount() before inserting overlays.');
         }
 
         // Remove editor area and everything below it (reverse mount order).
@@ -423,7 +427,8 @@ final class ChatScreen
     /**
      * Remove an overlay widget from the TUI root.
      *
-     * Companion to {@see insertOverlayBeforeEditor()}.
+     * Companion to {@see insertOverlayBeforeEditor()}. Safe to call before
+     * mount — it is a no-op when the screen has not been mounted yet.
      */
     public function removeOverlay(AbstractWidget $widget): void
     {
