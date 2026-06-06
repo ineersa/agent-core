@@ -123,7 +123,7 @@ final class LocalCallbackServer
 
             $this->sendResponse($conn, 200, self::successHtml());
 
-            return ['code' => (string) $code];
+            return ['code' => $code];
         } finally {
             if (isset($conn) && \is_resource($conn)) {
                 @fclose($conn);
