@@ -64,13 +64,13 @@ This follows TOOLS-09, which implements bash as a background-managed foreground-
 - Required validation is run through Castor, including `castor check` before handoff unless environment prerequisites are unavailable.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/tools-09b-runtime-tool-question-bridge
+Worktree: /home/ineersa/projects/agent-core-worktrees/tools-09b-runtime-tool-question-bridge
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-06T23:33:30.150Z
 Completed:
 
 ## Work log
@@ -80,3 +80,10 @@ Completed:
 - Summary: Design clarification after review: maximize reuse of the existing HITL/TUI question infrastructure. Do not build a parallel question system for bash background prompts. Reuse QuestionCoordinator, QuestionRequest, QuestionController overlay, RuntimeEventPoller/TickPollListener callback wiring, and AgentSessionClient/UserCommand transport patterns wherever possible. The distinction from SafeGuard is lifecycle, not UI: SafeGuard is pre-tool approval that enters AgentCore WaitingHuman and resumes via answer_human; bash background confirmation is a mid-running local tool prompt inside BashTool::shouldBackground() that needs a boolean answer and must remain transcript=false. Implementation should add only minimal adapter/bridge glue needed to surface a local tool prompt to the existing question overlay and return the answer to the blocked bash tool. Do not route local bash background prompts through ask_human/answer_human or canonical WaitingHuman unless the task is explicitly re-scoped. Any dedicated protocol/event/command should be minimal and justified by the mid-tool/cross-process answer-delivery requirement, not by creating a new question architecture. Prefer extracting/shared helpers from the existing human_input.requested handling if that avoids duplication. Avoid introducing a DB-backed pending-question resolver unless exploration proves existing runtime mechanisms cannot safely deliver the answer back to the tool worker process.
 - User clarified that existing SafeGuard/HITL question infrastructure is already implemented and working; TOOLS-09B must maximize reuse rather than inventing a separate question/resolver system.
 - Implementation guidance updated: reuse existing TUI question coordinator/overlay/DTOs and runtime listener shape; add only the smallest local-tool bridge necessary for BashTool background confirmation.
+
+## Task workflow update - 2026-06-06T23:33:30.150Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/tools-09b-runtime-tool-question-bridge.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/tools-09b-runtime-tool-question-bridge.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/tools-09b-runtime-tool-question-bridge.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/tools-09b-runtime-tool-question-bridge.
