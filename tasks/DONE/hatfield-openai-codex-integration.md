@@ -175,14 +175,14 @@ Codex uses the Responses API reasoning format: `{ "reasoning": { "effort": "high
 - credentials storage handles missing file, expired tokens, and invalid JSON gracefully
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/hatfield-openai-codex-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/hatfield-openai-codex-integration
 Fork run: m3rfm09invci
 PR URL: https://github.com/ineersa/agent-core/pull/96
-PR Status: open
+PR Status: merged
 Started: 2026-06-06T00:36:58.573Z
-Completed:
+Completed: 2026-06-06T17:22:23.524Z
 
 ## Work log
 - Created: 2026-06-05T22:55:55.377Z
@@ -280,3 +280,24 @@ Castor Check Output SHA256: 988cdd0c4b41685307b81f8659a06a88d7b448cb0160e6fc17f9
 ## Task workflow update - 2026-06-06T17:18:54.540Z
 - Validation: fork validation: castor test OK (1737 tests, 5126 assertions, 0 failures); fork validation: castor deptrac OK (0 violations); fork validation: castor phpstan OK (0 errors); fork validation: castor cs-check OK (0 files fixed); post-fork inspection: branch task/hatfield-openai-codex-integration ahead origin by 1 at c4416e4c; worktree clean; src/var/tests absent
 - Summary: Fork investigated recurring `src/var/tests` artifact. Root cause was old/deleted `IsolatedKernelTestCase::getProjectDirFromKernel()` logic from prior history that reflected `Kernel.php` under `src/CodingAgent` and used `dirname(..., 2)`, producing projectDir=`src/` and temporary dirs under `src/var/tests/hatfield-test-*`; cleanup removed leaf dirs but left empty `src/var/tests`. Current code had already been refactored to `TestDirectoryIsolation::createProjectTempDir()` → `ProjectDir::get()` → `Kernel::getProjectDir()`, producing `var/tmp/...`, so fork fixed stale comments that still referenced the old broken path. Commit c4416e4c `docs(tests): fix stale var/tests comments — actual path is var/tmp` updates 2 test comments. Worktree clean and `src/var/tests` absent. Note: task is currently CODE-REVIEW/PR #96, but code branch now has one local commit ahead of origin that has not been pushed by the main agent.
+
+## Task workflow update - 2026-06-06T17:22:23.525Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/hatfield-openai-codex-integration into integration checkout.
+- Merge made by the 'ort' strategy.
+ config/hatfield.defaults.yaml                      |  44 ++++
+ src/CodingAgent/Config/Ai/AiProviderConfig.php     |   3 +
+ .../Config/ReasoningOptionsResolver.php            |   5 +
+ .../SymfonyAi/ProjectedSymfonyModelCatalog.php     |  18 +-
+ .../SymfonyAi/SymfonyAiProviderFactory.php         |  44 +++-
+ .../Config/ReasoningOptionsResolverTest.php        |  55 +++++
+ .../SymfonyAi/ProjectedSymfonyModelCatalogTest.php |  22 ++
+ .../SymfonyAi/SymfonyAiProviderFactoryTest.php     | 233 +++++++++++++++++++++
+ .../TestCase/IsolatedKernelTestCase.php            |   2 +-
+ .../Tool/Store/DbalToolBatchStoreTest.php          |   2 +-
+ 10 files changed, 420 insertions(+), 8 deletions(-)
+ create mode 100644 tests/CodingAgent/Infrastructure/SymfonyAi/SymfonyAiProviderFactoryTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/hatfield-openai-codex-integration.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: PR #96 merged by user; Task branch task/hatfield-openai-codex-integration pushed previously during CODE-REVIEW move; Follow-up auth/OAuth work will be tracked separately
+- Summary: User confirmed PR #96 is merged. Closing task after successful CODE-REVIEW phase and syncing integration checkout.
