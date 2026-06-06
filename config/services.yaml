@@ -148,10 +148,24 @@ services:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 
   # BashTool — TOOLS-09 registry-backed bash execution with foreground supervision.
-  # The prompt adapter defaults to BashBackgroundPromptDeclineAdapter (always
-  # declines backgrounding). TOOLS-09B should bind BashBackgroundPromptAdapterInterface
-  # explicitly to a production runtime/TUI bridge implementation in this file.
-  Ineersa\CodingAgent\Tool\BashTool: ~
+  # TOOLS-09B overrides the prompt adapter to RuntimeBashBackgroundPromptAdapter,
+  # which routes background confirmations through the TUI question system.
+  Ineersa\CodingAgent\Tool\BashTool:
+    arguments:
+      $promptAdapter: '@Ineersa\CodingAgent\Tool\ToolQuestion\RuntimeBashBackgroundPromptAdapter'
+
+  # Tool question store — cross-process pending tool question persistence.
+  Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStore: ~
+
+  # Runtime bash background prompt adapter — production TUI bridge.
+  Ineersa\CodingAgent\Tool\ToolQuestion\RuntimeBashBackgroundPromptAdapter: ~
+
+  # Autowire the tool question store interface.
+  Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface:
+    alias: Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStore
+
+  # Controller command handler for tool question answers.
+  Ineersa\CodingAgent\Runtime\Controller\CommandHandler\AnswerToolQuestionHandler: ~
 
   # BackgroundProcess store — uses Doctrine ORM EntityManager,
   # no custom normalizer. Schema is managed by Doctrine migrations.

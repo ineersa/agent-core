@@ -70,6 +70,12 @@ final class HeadlessController
          * on graceful controller shutdown (SIGTERM/SIGINT).
          */
         private readonly ?BackgroundProcessManager $bgProcessManager = null,
+        /**
+         * Optional tool question poller for cross-process tool questions
+         * (e.g. bash background prompts). When provided, polls the DB for
+         * un-emitted tool questions and emits RuntimeEvents to the TUI.
+         */
+        private readonly ?ToolQuestionPoller $toolQuestionPoller = null,
     ) {
         $this->sessionId = $_SERVER['HATFIELD_SESSION_ID'] ?? $_ENV['HATFIELD_SESSION_ID'] ?? 'unknown';
     }
@@ -141,6 +147,11 @@ final class HeadlessController
             $this->logger,
         );
         $poller->startPollLoop(0.01);
+
+        // Poll tool_question DB table for un-emitted tool questions.
+        // Runs in-process alongside the controller rather than relying on
+        // tool consumer stdout, which is not currently polled.
+        $this->toolQuestionPoller?->startPollLoop();
 
         // Periodic event drain via emitter.
         $this->emitter->startDrainLoop(0.05);

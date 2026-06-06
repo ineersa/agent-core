@@ -37,12 +37,14 @@ final class RuntimeEventPoller
     /**
      * Poll for new runtime events and synchronize projected transcript blocks.
      *
-     * @param ?callable(RuntimeEvent): void $onHumanInputRequested Called when a
-     *                                                             human_input.requested event is received; may be null if no handler
+     * @param ?callable(RuntimeEvent): void $onHumanInputRequested   Called when a
+     *                                                               human_input.requested event is received; may be null if no handler
+     * @param ?callable(RuntimeEvent): void $onToolQuestionRequested Called when a
+     *                                                               tool_question.requested event is received; may be null if no handler
      *
      * @return list<TranscriptBlock>|null Changed/new transcript blocks, or null if nothing new
      */
-    public function poll(TuiSessionState $state, AgentSessionClient $client, ?callable $onHumanInputRequested = null): ?array
+    public function poll(TuiSessionState $state, AgentSessionClient $client, ?callable $onHumanInputRequested = null, ?callable $onToolQuestionRequested = null): ?array
     {
         if (null === $state->handle) {
             return null;
@@ -93,9 +95,13 @@ final class RuntimeEventPoller
                 $state->activity = ActivityStateMachine::transition($state->activity, $runtimeEvent);
                 $this->projector->accept($runtimeEvent->toArray());
 
-                // Notify the handler when a human_input.requested event is seen.
+                // Notify handlers for specific event types.
                 if (null !== $onHumanInputRequested && RuntimeEventTypeEnum::HumanInputRequested->value === $runtimeEvent->type) {
                     $onHumanInputRequested($runtimeEvent);
+                }
+
+                if (null !== $onToolQuestionRequested && RuntimeEventTypeEnum::ToolQuestionRequested->value === $runtimeEvent->type) {
+                    $onToolQuestionRequested($runtimeEvent);
                 }
 
                 if (!$processingRemoved) {

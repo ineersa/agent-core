@@ -109,6 +109,9 @@ final class RuntimeEventTypeTest extends TestCase
             RuntimeEventTypeEnum::RuntimeReady,
             RuntimeEventTypeEnum::ProtocolError,
             RuntimeEventTypeEnum::RunResumed,
+
+            // Tool-local questions
+            RuntimeEventTypeEnum::ToolQuestionRequested,
         ];
 
         $cases = RuntimeEventTypeEnum::cases();
@@ -351,7 +354,7 @@ final class RuntimeEventTypeTest extends TestCase
     {
         // 8 lifecycle + 1 user_input + 9 assistant + 8 tool + 2 progress
         // + 6 HITL + 2 cancellation + 5 metadata + 2 command
-        // + 1 runtime + 1 protocol + 1 resumed = 46
-        $this->assertCount(46, RuntimeEventTypeEnum::cases());
+        // + 1 runtime + 1 protocol + 1 resumed + 1 tool_question = 47
+        $this->assertCount(47, RuntimeEventTypeEnum::cases());
     }
 }

@@ -57,10 +57,15 @@ final class TickPollListener implements TuiListenerRegistrar
                 self::handleHumanInputRequested($event, $client, $questionCoordinator);
             };
 
+            $onToolQuestion = static function (RuntimeEvent $event) use ($client, $questionCoordinator): void {
+                self::handleToolQuestionRequested($event, $client, $questionCoordinator);
+            };
+
             $changedBlocks = $poller->poll(
                 $state,
                 $client,
                 onHumanInputRequested: $onHitl,
+                onToolQuestionRequested: $onToolQuestion,
             );
 
             if (null !== $changedBlocks) {
@@ -175,6 +180,88 @@ final class TickPollListener implements TuiListenerRegistrar
                     payload: [
                         'question_id' => $questionId,
                         'answer' => 'Deny',
+                    ],
+                ));
+            },
+        );
+    }
+
+    /**
+     * Handle a tool_question.requested runtime event by enqueuing a
+     * Confirm question in the coordinator.
+     *
+     * This is invoked by RuntimeEventPoller::poll() each time a
+     * tool_question.requested event is polled from the runtime stream.
+     * The event carries a request_id, prompt, and metadata from the tool
+     * that needs user confirmation (e.g. bash background prompt).
+     *
+     * Unlike human_input.requested, this is a LOCAL tool question:
+     * - source is Tui (not AgentCore)
+     * - kind is Confirm (not Approval)
+     * - transcript is false (no transcript block)
+     * - answer sends answer_tool_question (not answer_human)
+     * - no WaitingHuman state transition in AgentCore
+     *
+     * A guard against duplicate request IDs prevents enqueueing the
+     * same question twice if the event stream replays.
+     */
+    private static function handleToolQuestionRequested(
+        RuntimeEvent $event,
+        AgentSessionClient $client,
+        QuestionCoordinator $questionCoordinator,
+    ): void {
+        $p = $event->payload;
+        $requestIdFromPayload = (string) ($p['request_id'] ?? '');
+        $runId = $event->runId;
+
+        if ('' === $requestIdFromPayload) {
+            return;
+        }
+
+        $requestId = 'tool_'.$requestIdFromPayload;
+
+        if ($questionCoordinator->hasRequest($requestId)) {
+            return;
+        }
+
+        $request = new QuestionRequest(
+            requestId: $requestId,
+            source: QuestionSource::Tui,
+            kind: QuestionKind::Confirm,
+            prompt: (string) ($p['prompt'] ?? 'Confirmation required.'),
+            schema: ['type' => 'boolean'],
+            choices: [],
+            allowOther: false,
+            runId: $runId,
+            questionId: $requestIdFromPayload,
+            toolCallId: (string) ($p['tool_call_id'] ?? ''),
+            toolName: (string) ($p['tool_name'] ?? ''),
+            transcript: false,
+        );
+
+        // Enqueue the question with answer and cancel callbacks.
+        // Answer sends 'yes' or 'no' through answer_tool_question command.
+        // Cancel sends 'no' so the tool does not hang waiting for input.
+        $questionCoordinator->enqueue(
+            $request,
+            onAnswer: static function (mixed $answer) use ($client, $runId, $requestIdFromPayload): void {
+                // QuestionController::Confirm returns 'yes' or 'no' strings.
+                $boolAnswer = \is_string($answer) && 'yes' === strtolower($answer);
+
+                $client->send($runId, new UserCommand(
+                    type: 'answer_tool_question',
+                    payload: [
+                        'request_id' => $requestIdFromPayload,
+                        'answer' => $boolAnswer,
+                    ],
+                ));
+            },
+            onCancel: static function () use ($client, $runId, $requestIdFromPayload): void {
+                $client->send($runId, new UserCommand(
+                    type: 'answer_tool_question',
+                    payload: [
+                        'request_id' => $requestIdFromPayload,
+                        'answer' => false,
                     ],
                 ));
             },
