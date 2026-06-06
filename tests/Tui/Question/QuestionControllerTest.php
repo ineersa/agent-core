@@ -179,9 +179,9 @@ class QuestionControllerTest extends TestCase
         // Default schema has no enum; falls back to generic Approve/Reject
         self::assertCount(3, $items); // Approve, Reject, Type your answer
         self::assertSame('approve', $items[0]['value']);
-        self::assertSame('Approve', $items[0]['label']);
+        self::assertStringContainsString('Approve', $items[0]['label']);
         self::assertSame('reject', $items[1]['value']);
-        self::assertSame('Reject', $items[1]['label']);
+        self::assertStringContainsString('Reject', $items[1]['label']);
         self::assertSame('__other__', $items[2]['value']);
     }
 
@@ -205,12 +205,19 @@ class QuestionControllerTest extends TestCase
         $items = $this->invokeBuildItems($request);
 
         self::assertCount(3, $items);
+        // Values must remain the raw enum strings (not icon-prefixed) for correct
+        // answer_human command routing
         self::assertSame('Allow once', $items[0]['value']);
-        self::assertSame('Allow once', $items[0]['label']);
         self::assertSame('Always allow', $items[1]['value']);
-        self::assertSame('Always allow', $items[1]['label']);
         self::assertSame('Deny', $items[2]['value']);
-        self::assertSame('Deny', $items[2]['label']);
+        // Labels contain display-only Unicode icons + the answer text.
+        // Values remain the raw enum strings for correct answer_human routing.
+        self::assertStringContainsString('Allow once', $items[0]['label']);
+        self::assertNotSame('Allow once', $items[0]['label'], 'Label must differ from value because icons are added');
+        self::assertStringContainsString('Always allow', $items[1]['label']);
+        self::assertNotSame('Always allow', $items[1]['label']);
+        self::assertStringContainsString('Deny', $items[2]['label']);
+        self::assertNotSame('Deny', $items[2]['label']);
     }
 
     #[Test]
@@ -230,7 +237,9 @@ class QuestionControllerTest extends TestCase
 
         self::assertCount(2, $items); // generic Approve, Reject
         self::assertSame('approve', $items[0]['value']);
+        self::assertStringContainsString('Approve', $items[0]['label']);
         self::assertSame('reject', $items[1]['value']);
+        self::assertStringContainsString('Reject', $items[1]['label']);
     }
 
     #[Test]
@@ -248,7 +257,9 @@ class QuestionControllerTest extends TestCase
 
         self::assertCount(2, $items);
         self::assertSame('approve', $items[0]['value']);
+        self::assertStringContainsString('Approve', $items[0]['label']);
         self::assertSame('reject', $items[1]['value']);
+        self::assertStringContainsString('Reject', $items[1]['label']);
     }
 
     #[Test]

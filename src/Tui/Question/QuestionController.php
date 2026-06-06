@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Question;
 
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
-use Ineersa\Tui\Widget\WidgetPlacementEnum;
+use Ineersa\Tui\Screen\ChatScreen;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
 use Symfony\Component\Tui\Input\Key;
@@ -30,10 +30,32 @@ use Symfony\Component\Tui\Widget\TextWidget;
  */
 final class QuestionController
 {
+    /**
+     * Build Approval-choice items, preferring the schema enum when
+     * available (e.g. SafeGuard's ["Allow once", "Always allow", "Deny"]).
+     *
+     * Falls back to generic Approve/Reject when no enum is provided.
+     *
+     * @return list<array{value: string, label: string}>
+     */
+    /**
+     * Icon mapping for known approval answer values.
+     *
+     * Icons are display-only; the 'value' sent in answer_human commands
+     * remains the raw enum string (e.g. "Allow once", "Deny").
+     *
+     * @var array<string, string>
+     */
+    private const APPROVAL_ICONS = [
+        'Allow once' => '\u{2705}',
+        'Always allow' => '\u{1F510}',
+        'Deny' => '\u{274C}',
+    ];
     private ?SelectListWidget $listWidget = null;
     private ?ContainerWidget $container = null;
     private bool $isOpen = false;
     private ?TuiRuntimeContext $context = null;
+    private ?ChatScreen $screen = null;
 
     public function __construct(
         private readonly QuestionCoordinator $coordinator,
@@ -44,9 +66,10 @@ final class QuestionController
      * Set the per-run TUI references that are only available at
      * listener registration time.
      */
-    public function setRuntimeRefs(TuiRuntimeContext $context): void
+    public function setRuntimeRefs(TuiRuntimeContext $context, ChatScreen $screen): void
     {
         $this->context = $context;
+        $this->screen = $screen;
     }
 
     /**
@@ -54,12 +77,8 @@ final class QuestionController
      *
      * Builds and mounts a ContainerWidget with header + prompt for Text
      * kind, or header + SelectListWidget for interactive kinds.
-     *
-     * @param WidgetPlacementEnum $placement Controls where the container is
-     *                                       added in the TUI widget tree
-     *                                       (used by future dynamic slot code)
      */
-    public function open(QuestionRequest $request, WidgetPlacementEnum $placement = WidgetPlacementEnum::AboveEditor): void
+    public function open(QuestionRequest $request): void
     {
         if (null === $this->context) {
             throw new \LogicException('setRuntimeRefs() must be called before open()');
@@ -67,6 +86,10 @@ final class QuestionController
 
         if ($this->isOpen) {
             return;
+        }
+
+        if (null === $this->screen) {
+            throw new \LogicException('setRuntimeRefs() must be called before open()');
         }
 
         $this->container = new ContainerWidget();
@@ -87,13 +110,13 @@ final class QuestionController
     public function close(): void
     {
         if (null !== $this->container) {
-            $this->context?->tui->remove($this->container);
+            $this->screen?->removeOverlay($this->container);
             $this->container = null;
         }
         $this->listWidget = null;
         $this->isOpen = false;
-        $this->context?->screen->setStatus('action', null);
-        $this->context?->screen->refresh();
+        $this->screen?->setStatus('action', null);
+        $this->screen?->refresh();
     }
 
     /**
@@ -112,10 +135,10 @@ final class QuestionController
     private function addHeader(QuestionRequest $request): void
     {
         $headerText = $request->header ?? match ($request->kind) {
-            QuestionKind::Text => 'Human input required',
-            QuestionKind::Confirm => 'Confirmation required',
-            QuestionKind::Choice => 'Choose an option',
-            QuestionKind::Approval => 'Approval requested',
+            QuestionKind::Text => '\u{1F4DD} Human input required',
+            QuestionKind::Confirm => '\u{2753} Confirmation required',
+            QuestionKind::Choice => '\u{1F4CB} Choose an option',
+            QuestionKind::Approval => '\u{1F6E1}  Approval requested',
         };
         $header = new TextWidget(text: $headerText, truncate: true);
         $this->container->add($header);
@@ -194,14 +217,17 @@ final class QuestionController
      */
     private function mount(QuestionRequest $request): void
     {
-        $this->context->tui->add($this->container);
-        $this->context->screen->setStatus('action', "\u{26A0} Question pending");
+        // Insert the overlay between the editor and the footer so it
+        // renders in the correct position in the single-column layout:
+        //   editor → question overlay → footer-separator → footer
+        $this->screen->insertOverlayBeforeFooter($this->container);
+        $this->screen->setStatus('action', "\u{26A0} Question pending");
 
-        if (QuestionKind::Text !== $request->kind) {
-            $this->context->tui->setFocus($this->listWidget);
+        if (null !== $this->listWidget) {
+            $this->screen->setFocus($this->listWidget);
         }
 
-        $this->context->tui->requestRender(true);
+        $this->screen->requestRender(true);
         $this->isOpen = true;
     }
 
@@ -259,15 +285,19 @@ final class QuestionController
             return array_map(
                 static fn (string $label): array => [
                     'value' => $label,
-                    'label' => $label,
+                    'label' => \sprintf(
+                        '%s  %s',
+                        self::APPROVAL_ICONS[$label] ?? '\u{2753}',
+                        $label,
+                    ),
                 ],
                 array_values($enum),
             );
         }
 
         return [
-            ['value' => 'approve', 'label' => 'Approve'],
-            ['value' => 'reject', 'label' => 'Reject'],
+            ['value' => 'approve', 'label' => '\u{2705}  Approve'],
+            ['value' => 'reject', 'label' => '\u{274C}  Reject'],
         ];
     }
 }

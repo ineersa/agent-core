@@ -24,6 +24,7 @@ use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\WidgetPlacementEnum;
 use Symfony\Component\Tui\Render\RenderContext;
 use Symfony\Component\Tui\Tui;
+use Symfony\Component\Tui\Widget\AbstractWidget;
 use Symfony\Component\Tui\Widget\EditorWidget;
 
 /**
@@ -81,6 +82,9 @@ final class ChatScreen
     /* ── Slot system ── */
     private readonly TuiSlotRegistry $registry;
     private readonly SlotBasedTuiExtensionContext $extensionContext;
+
+    /* ── Overlay management ── */
+    private ?Tui $tui = null;
 
     /* ── Mount flag ── */
     private bool $mounted = false;
@@ -259,6 +263,7 @@ final class ChatScreen
             return;
         }
         $this->mounted = true;
+        $this->tui = $tui;
 
         // Add widgets in display order (top → bottom).
         // LiveTextWidget producers already read live RenderContext columns,
@@ -378,6 +383,67 @@ final class ChatScreen
         $this->aboveEditorWidget->invalidate();
         $this->belowEditorWidget->invalidate();
         $this->footerWidget->invalidate();
+    }
+
+    /* ────────── Question overlay ────────── */
+
+    /**
+     * Insert an interactive overlay widget between the editor and the footer.
+     *
+     * The Symfony TUI root container renders children in append order, and
+     * ChatScreen adds footer-separator + footer last during mount().  When a
+     * question/picker overlay opens via tui->add() it ends up after the footer.
+     *
+     * This method temporarily removes the footer widgets, adds the overlay,
+     * then re-adds the footer so the overlay renders in the right spot:
+     *   editor → overlay → footer-separator → footer
+     */
+    public function insertOverlayBeforeFooter(AbstractWidget $widget): void
+    {
+        if (null === $this->tui) {
+            return;
+        }
+
+        // Remove footer widgets (footerSepWidget last, so footerWidget is
+        // removed first — order doesn't matter for remove(), but doing
+        // footerSepWidget last preserves mental model).
+        $this->tui->remove($this->footerWidget);
+        $this->tui->remove($this->footerSepWidget);
+
+        // Add the overlay between editor area and footer.
+        $this->tui->add($widget);
+
+        // Restore footer widgets in original order.
+        $this->tui->add($this->footerSepWidget);
+        $this->tui->add($this->footerWidget);
+    }
+
+    /**
+     * Remove an overlay widget from the TUI root.
+     *
+     * Companion to {@see insertOverlayBeforeFooter()}.
+     */
+    public function removeOverlay(AbstractWidget $widget): void
+    {
+        $this->tui?->remove($widget);
+    }
+
+    /**
+     * Set keyboard focus on a TUI widget.
+     */
+    public function setFocus(AbstractWidget $widget): void
+    {
+        $this->tui?->setFocus($widget);
+    }
+
+    /**
+     * Request a render on the next tick.
+     *
+     * @param bool $force When true, bypasses the dirty-tracking render cache
+     */
+    public function requestRender(bool $force = false): void
+    {
+        $this->tui?->requestRender($force);
     }
 
     /* ────────── Slot access ────────── */
