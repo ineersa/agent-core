@@ -67,3 +67,9 @@ Recommended direction for Hatfield:
 
 ## Task workflow update - 2026-06-06T17:49:54.741Z
 - User constraint: preserve existing unrelated changes in this worktree (task-file updates and PHAR isolation changes). Do not reset/clean/remove them during auth implementation.
+
+## Task workflow update - 2026-06-06T17:52:42.987Z
+- Summary: Task scope expanded in-place from research to implementation. We will implement a v1 user-auth-ready Codex flow in this existing worktree using league/oauth2-client as the OAuth/PKCE helper, while keeping Hatfield-specific CLI pieces (callback server, browser launch, manual fallback, auth.json storage/locking) in local code.
+- Repurposed current task in-place from research-only to implementation; no new task/worktree will be created
+- Implementation target: auth:codex command + ~/.hatfield/auth.json storage + refresh-on-read + provider-factory fallback to stored Codex credentials
+- Constraint remains: preserve existing unrelated branch/worktree changes; do not reset/clean/remove them
