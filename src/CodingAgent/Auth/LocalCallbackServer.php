@@ -1,0 +1,151 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ineersa\CodingAgent\Auth;
+
+/**
+ * Minimal local TCP HTTP server for the OAuth PKCE callback.
+ *
+ * Binds to 127.0.0.1:<port> and waits for a GET /auth/callback
+ * request with query parameters ?code=...&state=...
+ *
+ * On success it returns the authorization code; on timeout or error
+ * it returns null so the caller can fall back to manual paste input.
+ *
+ * Implementation uses raw PHP stream_socket_server to avoid any
+ * HTTP server dependency. The server is single-request: accept one
+ * connection, process it, and shut down.
+ */
+final class LocalCallbackServer
+{
+    private const string CALLBACK_PATH = '/auth/callback';
+
+    /**
+     * Wait for the OAuth callback on a local TCP socket.
+     *
+     * @param string $expectedState  The OAuth state parameter to validate against
+     * @param float  $timeoutSeconds Seconds to wait before returning null (pass 0 for no timeout)
+     * @param int    $port           Local TCP port
+     *
+     * @return array{code: string}|null The authorization code, or null on timeout/error
+     */
+    public function waitForCallback(
+        string $expectedState,
+        float $timeoutSeconds = 300.0,
+        int $port = CodexOAuthConfig::DEFAULT_PORT,
+    ): ?array {
+        $errno = 0;
+        $errstr = '';
+
+        $server = @stream_socket_server(
+            'tcp://127.0.0.1:'.$port,
+            $errno,
+            $errstr,
+            \STREAM_SERVER_BIND | \STREAM_SERVER_LISTEN,
+        );
+
+        if (false === $server) {
+            return null;
+        }
+
+        try {
+            $conn = @stream_socket_accept($server, $timeoutSeconds);
+            if (false === $conn) {
+                return null; // timeout
+            }
+
+            $request = @fread($conn, 8192);
+            if (false === $request || '' === $request) {
+                return null;
+            }
+
+            // Parse the first line: GET /auth/callback?code=...&state=... HTTP/1.1
+            $firstLine = strstr($request, "\r\n", true);
+            if (false === $firstLine || !str_starts_with($firstLine, 'GET ')) {
+                $this->sendResponse($conn, 400, self::errorHtml('Invalid request method.'));
+
+                return null;
+            }
+
+            // Extract the path + query part
+            $pathAndQuery = substr($firstLine, 4, -9); // strip "GET " and " HTTP/1.1"
+            $queryStart = strpos($pathAndQuery, '?');
+            if (false === $queryStart) {
+                $this->sendResponse($conn, 400, self::errorHtml('Missing query parameters.'));
+
+                return null;
+            }
+
+            $path = substr($pathAndQuery, 0, $queryStart);
+            $query = substr($pathAndQuery, $queryStart + 1);
+
+            if (self::CALLBACK_PATH !== $path) {
+                $this->sendResponse($conn, 404, self::errorHtml('Not found.'));
+
+                return null;
+            }
+
+            parse_str($query, $params);
+
+            $code = $params['code'] ?? null;
+            $state = $params['state'] ?? null;
+
+            // Validate state
+            if (null !== $state && $state !== $expectedState) {
+                $this->sendResponse($conn, 400, self::errorHtml('State mismatch.'));
+
+                return null;
+            }
+
+            if (null === $code || '' === $code) {
+                $this->sendResponse($conn, 400, self::errorHtml('Missing authorization code.'));
+
+                return null;
+            }
+
+            $this->sendResponse($conn, 200, self::successHtml());
+
+            return ['code' => (string) $code];
+        } finally {
+            if (isset($conn) && \is_resource($conn)) {
+                @fclose($conn);
+            }
+            fclose($server);
+        }
+    }
+
+    private function sendResponse($conn, int $statusCode, string $body): void
+    {
+        $statusText = match ($statusCode) {
+            200 => 'OK',
+            400 => 'Bad Request',
+            404 => 'Not Found',
+            500 => 'Internal Server Error',
+            default => 'Unknown',
+        };
+
+        $response = \sprintf(
+            "HTTP/1.1 %d %s\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+            $statusCode,
+            $statusText,
+            \strlen($body),
+            $body,
+        );
+
+        @fwrite($conn, $response);
+        @fflush($conn);
+    }
+
+    private static function successHtml(): string
+    {
+        return '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Authentication Successful</title><style>body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:#f0fdf4;color:#166534}div{text-align:center}h1{font-size:1.8rem}code{font-size:1.2rem;color:#15803d}</style></head><body><div><h1>✅ Authentication Successful</h1><p>You can close this browser window and return to the terminal.</p></div></body></html>';
+    }
+
+    private static function errorHtml(string $message): string
+    {
+        $escaped = htmlspecialchars($message, \ENT_QUOTES, 'UTF-8');
+
+        return \sprintf('<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Authentication Error</title><style>body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:#fef2f2;color:#991b1b}div{text-align:center}h1{font-size:1.8rem}p{font-size:1rem;color:#dc2626}</style></head><body><div><h1>❌ Authentication Error</h1><p>%s</p><p>Return to the terminal and try again.</p></div></body></html>', $escaped);
+    }
+}

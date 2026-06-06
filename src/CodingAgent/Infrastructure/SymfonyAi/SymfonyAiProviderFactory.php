@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi;
 
+use Ineersa\CodingAgent\Auth\CodexAuthStorage;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Symfony\AI\Platform\Bridge\Generic\CompletionsModel;
@@ -30,6 +31,7 @@ class SymfonyAiProviderFactory
     public function __construct(
         private readonly AppConfig $appConfig,
         private readonly EventDispatcherInterface $eventDispatcher,
+        private readonly ?CodexAuthStorage $codexAuth = null,
     ) {
     }
 
@@ -93,12 +95,27 @@ class SymfonyAiProviderFactory
     private function buildCodexProvider(AiProviderConfig $provider, ProjectedSymfonyModelCatalog $projectedCatalog): ProviderInterface
     {
         $apiKey = $this->resolveApiKey($provider->apiKey);
+        $accountId = $provider->accountId;
+
+        // Fall back to stored OAuth credentials when YAML credentials are missing.
+        // auth:codex stores the access token and account ID in ~/.hatfield/auth.json.
+        // Explicit YAML values always take priority over stored credentials.
+        if ((null === $apiKey || '' === $apiKey || null === $accountId || '' === $accountId) && null !== $this->codexAuth) {
+            $record = $this->codexAuth->loadCredentials('openai-codex');
+            if (null !== $record) {
+                if (null === $apiKey || '' === $apiKey) {
+                    $apiKey = $record->access;
+                }
+                if (null === $accountId || '' === $accountId) {
+                    $accountId = $record->accountId;
+                }
+            }
+        }
 
         if (null === $apiKey || '' === $apiKey) {
             throw new \RuntimeException(\sprintf('OpenAI Codex provider "%s" requires an api_key (OAuth access token). Run: bin/console auth:codex', $provider->id));
         }
 
-        $accountId = $provider->accountId;
         if (null === $accountId || '' === $accountId) {
             throw new \RuntimeException(\sprintf('OpenAI Codex provider "%s" requires an account_id. Run: bin/console auth:codex', $provider->id));
         }
