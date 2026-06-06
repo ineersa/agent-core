@@ -178,7 +178,7 @@ Codex uses the Responses API reasoning format: `{ "reasoning": { "effort": "high
 Status: IN-PROGRESS
 Branch: task/hatfield-openai-codex-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/hatfield-openai-codex-integration
-Fork run: l5m87bccs98n
+Fork run: lgc0uvl3ef9m
 PR URL:
 PR Status:
 Started: 2026-06-06T00:36:58.573Z
@@ -218,3 +218,10 @@ Validation: 44 tests pass, 0 PHPStan errors, 0 deptrac violations.
 - Fork l5m87bccs98n completed and committed as b8d1129f
 - 6 files changed: hatfield.defaults.yaml, AiProviderConfig, ReasoningOptionsResolver, SymfonyAiProviderFactory, + 2 test files
 - 44 tests pass, 0 PHPStan errors, 0 deptrac violations
+
+## Task workflow update - 2026-06-06T16:53:03.656Z
+- Recorded fork run: lgc0uvl3ef9m
+- Summary: Reviewer returned REQUEST CHANGES. Launched fix fork lgc0uvl3ef9m to address: critical CodexModel vs CompletionsModel catalog mismatch, empty-string credential validation for api_key/account_id, missing account_id in defaults YAML example, and add regression coverage for the catalog/model-type bug.
+- Reviewer verdict: REQUEST CHANGES
+- Critical finding: ProjectedSymfonyModelCatalog emits CompletionsModel, but OpenAICodex bridge requires CodexModel; all Codex invocations would fail at runtime
+- Launched fork lgc0uvl3ef9m to parameterize/fix model projection, harden credential validation, update defaults YAML, and add regression tests
