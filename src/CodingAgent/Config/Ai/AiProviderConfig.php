@@ -19,6 +19,7 @@ final readonly class AiProviderConfig
      * @param string                           $baseUrl                Base URL for the provider's API
      * @param string                           $api                    API flavor (e.g. openai-completions)
      * @param string|null                      $apiKey                 API key (plain or env:VAR format; resolved by SecretResolver)
+     * @param string|null                      $accountId              Account ID for provider (e.g. Codex chatgpt-account-id header)
      * @param string|null                      $completionsPath        Chat completions endpoint path (e.g. /chat/completions)
      * @param string|null                      $embeddingsPath         Embeddings endpoint path (e.g. /embeddings)
      * @param bool                             $supportsCompletions    Whether chat completions are supported
@@ -34,6 +35,7 @@ final readonly class AiProviderConfig
         public string $baseUrl = '',
         public string $api = 'openai-completions',
         public ?string $apiKey = null,
+        public ?string $accountId = null,
         public ?string $completionsPath = null,
         public ?string $embeddingsPath = null,
         public bool $supportsCompletions = true,
@@ -67,6 +69,7 @@ final readonly class AiProviderConfig
             baseUrl: (string) ($data['base_url'] ?? ''),
             api: (string) ($data['api'] ?? 'openai-completions'),
             apiKey: isset($data['api_key']) ? (string) $data['api_key'] : null,
+            accountId: isset($data['account_id']) ? (string) $data['account_id'] : null,
             completionsPath: isset($data['completions_path']) ? (string) $data['completions_path'] : null,
             embeddingsPath: isset($data['embeddings_path']) ? (string) $data['embeddings_path'] : null,
             supportsCompletions: (bool) ($data['supports_completions'] ?? true),

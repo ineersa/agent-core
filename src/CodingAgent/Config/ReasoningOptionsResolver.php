@@ -64,6 +64,11 @@ final readonly class ReasoningOptionsResolver
             return ['enable_thinking' => true];
         }
 
+        // Codex Responses API: reasoning.effort format
+        if ('codex' === $thinkingFormat) {
+            return ['reasoning' => ['effort' => $mappedValue, 'summary' => 'auto']];
+        }
+
         // OpenAI-style: reasoning_effort
         if ($this->supportsReasoningEffort($ref)) {
             return ['reasoning_effort' => $mappedValue];

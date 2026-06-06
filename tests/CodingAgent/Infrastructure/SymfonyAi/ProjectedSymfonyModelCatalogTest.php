@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\Generic\CompletionsModel;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
 use Symfony\AI\Platform\Capability;
 use Symfony\AI\Platform\Exception\ModelNotFoundException;
 
@@ -206,6 +207,27 @@ class ProjectedSymfonyModelCatalogTest extends TestCase
 
         self::assertInstanceOf(CompletionsModel::class, $model);
         self::assertNotEmpty($model->getName());
+    }
+
+    public function testCustomModelClassProducesCodexModel(): void
+    {
+        $def = new AiModelDefinition(
+            id: 'gpt-5.5',
+            toolCalling: true,
+            reasoning: true,
+        );
+
+        $catalog = new ProjectedSymfonyModelCatalog(
+            ['gpt-5.5' => $def],
+            CodexModel::class,
+        );
+
+        $model = $catalog->getModel('gpt-5.5');
+
+        self::assertInstanceOf(CodexModel::class, $model);
+        self::assertSame('gpt-5.5', $model->getName());
+        self::assertTrue($model->supports(Capability::TOOL_CALLING));
+        self::assertTrue($model->supports(Capability::THINKING));
     }
 
     // — helpers —
