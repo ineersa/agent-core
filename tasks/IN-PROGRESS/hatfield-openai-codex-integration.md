@@ -225,3 +225,19 @@ Validation: 44 tests pass, 0 PHPStan errors, 0 deptrac violations.
 - Reviewer verdict: REQUEST CHANGES
 - Critical finding: ProjectedSymfonyModelCatalog emits CompletionsModel, but OpenAICodex bridge requires CodexModel; all Codex invocations would fail at runtime
 - Launched fork lgc0uvl3ef9m to parameterize/fix model projection, harden credential validation, update defaults YAML, and add regression tests
+
+## Task workflow update - 2026-06-06T16:57:35.319Z
+- Recorded fork run: lgc0uvl3ef9m
+- Validation: castor test: 43 tests, 109 assertions, 0 failures; castor deptrac: 0 violations, 0 errors; castor phpstan: 0 errors; castor cs-check/cs-fix: formatting cleaned, final state CS clean
+- Summary: Fix fork lgc0uvl3ef9m completed and committed as 3fc8bd65.
+
+Resolved reviewer findings:
+- Critical runtime fix: ProjectedSymfonyModelCatalog now accepts a modelClass parameter; codex providers project CodexModel instead of CompletionsModel, fixing OpenAICodex ModelClient/ResultConverter compatibility.
+- Hardened credential validation: empty-string api_key/account_id now fail fast with the same RuntimeException path as null values.
+- Updated defaults YAML: added commented account_id line to the openai-codex example.
+- Added regression coverage: catalog test proves CodexModel projection; factory tests assert generic providers produce CompletionsModel, codex providers produce CodexModel, and empty credential values throw.
+
+Commit diff: 5 files changed, 110 insertions, 16 deletions.
+- Verified fork commit 3fc8bd65 at worktree HEAD
+- Verified diff stat for fix commit: 5 files changed, 110 insertions, 16 deletions
+- Recorded completion of reviewer-fix fork lgc0uvl3ef9m; waiting for next task workflow phase before re-review/PR prep
