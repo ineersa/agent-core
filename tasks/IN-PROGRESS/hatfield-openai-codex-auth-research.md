@@ -94,3 +94,10 @@ Recommended direction for Hatfield:
 - Summary: Reviewer returned REQUEST CHANGES for PR prep. Launched fix fork kpi1pars94rl to address all actionable findings: seconds-vs-milliseconds token expiry mismatch, ignored timeout, custom port/redirect mismatch, refresh account-id validation, catch/logging/storage permission hardening, GenericProvider config deduplication, missing ArgvInput import, and docs/settings auth guidance.
 - Reviewer findings included CRITICAL token expiry unit mismatch causing credentials to appear always expired; BUGs in timeout/port handling and refresh account-id docblock; SECURITY/CONVENTION issues around auth storage permissions/TOCTOU and silent catches; SIMPLIFY duplicated GenericProvider config
 - Fix fork instructed to preserve branch payload including incidental PHAR isolation commit
+
+## Task workflow update - 2026-06-06T21:26:23.987Z
+- Recorded fork run: kpi1pars94rl
+- Validation: fork: castor test --filter=Codex passed (61 tests, 156 assertions); fork: castor test passed (1816 tests, 5322 assertions); fork: castor deptrac passed (0 violations); fork: castor cs-fix then castor cs-check passed clean; fork: castor phpstan src/CodingAgent/Auth reported 4 errors in auth files; pending remediation before PR prep can complete
+- Summary: Fix fork kpi1pars94rl completed at commit 3358743a `fix(coding-agent): harden Codex auth review findings`. It implemented reviewer fixes for token expiry seconds, timeout/port handling, refresh account-id validation, catch/storage hardening, GenericProvider config centralization, missing ArgvInput import, and docs/settings auth guidance. Worktree is clean. Fork also reported 4 PHPStan errors in new auth files remain; although described as pre-existing relative to that fork, they are branch-introduced and must be resolved before CODE-REVIEW quality gate.
+- Fix fork created intermediate commit 82dc8cca and final commit 3358743a; final tree state is clean
+- Remaining gate risk from fork handoff: PHPStan errors in CodexAccountIdExtractor, CodexOAuthService, and LocalCallbackServer
