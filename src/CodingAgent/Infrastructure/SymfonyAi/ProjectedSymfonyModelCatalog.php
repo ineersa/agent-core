@@ -7,13 +7,18 @@ namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Symfony\AI\Platform\Bridge\Generic\CompletionsModel;
 use Symfony\AI\Platform\Capability;
+use Symfony\AI\Platform\Model;
 use Symfony\AI\Platform\ModelCatalog\AbstractModelCatalog;
 
 /**
  * Thin Symfony model catalog projected from Hatfield metadata.
  *
- * Each configured model is projected to {@see CompletionsModel} with
- * capabilities derived from Hatfield's rich model definitions.
+ * Each configured model is projected to a Symfony AI Model subclass
+ * (default: {@see CompletionsModel}) with capabilities derived from
+ * Hatfield's rich model definitions.  The model class can be
+ * overridden via the constructor for provider-specific bridges
+ * (e.g. {@see CodexModel} for the OpenAI Codex bridge).
+ *
  * Unknown models are not supported — only explicitly listed models
  * are registered.
  *
@@ -25,16 +30,19 @@ final class ProjectedSymfonyModelCatalog extends AbstractModelCatalog
 {
     /**
      * @param array<string, AiModelDefinition> $hatfieldModels Model name → definition
+     * @param class-string<Model>              $modelClass     Symfony AI model class to instantiate
      */
-    public function __construct(array $hatfieldModels)
-    {
+    public function __construct(
+        array $hatfieldModels,
+        private readonly string $modelClass = CompletionsModel::class,
+    ) {
         $this->models = [];
 
         foreach ($hatfieldModels as $modelName => $modelDef) {
             $capabilities = $this->capabilitiesFor($modelDef);
 
             $this->models[$modelName] = [
-                'class' => CompletionsModel::class,
+                'class' => $this->modelClass,
                 'capabilities' => $capabilities,
             ];
         }

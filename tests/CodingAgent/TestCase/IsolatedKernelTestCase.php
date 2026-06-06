@@ -21,7 +21,7 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  * the test suite runs.
  *
  * Setup flow per test:
- *  1. Creates an isolated cwd under var/tests/<unique>/ with .hatfield/
+ *  1. Creates an isolated cwd under var/tmp/<prefix>-<random>/ with .hatfield/
  *  2. chdir() into it so Kernel::boot() picks it up as HATFIELD_CWD
  *     for filesystem artifact paths (session directories, etc.)
  *  3. Boots the Symfony kernel in test environment

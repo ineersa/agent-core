@@ -6,7 +6,10 @@ namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi;
 
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Symfony\AI\Platform\Bridge\Generic\CompletionsModel;
 use Symfony\AI\Platform\Bridge\Generic\Factory as GenericFactory;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Factory as OpenAICodexFactory;
 use Symfony\AI\Platform\ProviderInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
@@ -50,7 +53,12 @@ class SymfonyAiProviderFactory
                 continue;
             }
 
-            $projectedCatalog = new ProjectedSymfonyModelCatalog($provider->models);
+            $projectedCatalog = new ProjectedSymfonyModelCatalog(
+                hatfieldModels: $provider->models,
+                modelClass: 'codex' === $provider->type
+                    ? CodexModel::class
+                    : CompletionsModel::class,
+            );
 
             $providers[$provider->id] = $this->buildProvider($provider, $projectedCatalog);
         }
@@ -63,6 +71,10 @@ class SymfonyAiProviderFactory
      */
     private function buildProvider(AiProviderConfig $provider, ProjectedSymfonyModelCatalog $projectedCatalog): ProviderInterface
     {
+        if ('codex' === $provider->type) {
+            return $this->buildCodexProvider($provider, $projectedCatalog);
+        }
+
         return GenericFactory::createProvider(
             baseUrl: $provider->baseUrl,
             apiKey: $this->resolveApiKey($provider->apiKey),
@@ -74,6 +86,36 @@ class SymfonyAiProviderFactory
             supportsEmbeddings: $provider->supportsEmbeddings,
             completionsPath: $provider->completionsPath ?? '/v1/chat/completions',
             embeddingsPath: $provider->embeddingsPath ?? '/v1/embeddings',
+            name: $provider->id,
+        );
+    }
+
+    private function buildCodexProvider(AiProviderConfig $provider, ProjectedSymfonyModelCatalog $projectedCatalog): ProviderInterface
+    {
+        $apiKey = $this->resolveApiKey($provider->apiKey);
+
+        if (null === $apiKey || '' === $apiKey) {
+            throw new \RuntimeException(\sprintf('OpenAI Codex provider "%s" requires an api_key (OAuth access token). Run: bin/console auth:codex', $provider->id));
+        }
+
+        $accountId = $provider->accountId;
+        if (null === $accountId || '' === $accountId) {
+            throw new \RuntimeException(\sprintf('OpenAI Codex provider "%s" requires an account_id. Run: bin/console auth:codex', $provider->id));
+        }
+
+        // Use the configured baseUrl falling back to the OpenAICodex factory default,
+        // so a YAML provider with an empty base_url does not silently break the bridge.
+        $baseUrl = '' !== $provider->baseUrl ? $provider->baseUrl : 'https://chatgpt.com/backend-api';
+
+        return OpenAICodexFactory::createProvider(
+            baseUrl: $baseUrl,
+            accessToken: $apiKey,
+            accountId: $accountId,
+            httpClient: null,
+            modelCatalog: $projectedCatalog,
+            contract: null,
+            eventDispatcher: $this->eventDispatcher,
+            responsesPath: $provider->completionsPath ?? '/codex/responses',
             name: $provider->id,
         );
     }
