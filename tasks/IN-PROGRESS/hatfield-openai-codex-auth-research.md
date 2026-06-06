@@ -51,3 +51,8 @@ Recommended direction for Hatfield:
 - Launched 3 parallel scouts: pi-mono auth flow, token storage/refresh/account-id extraction, and Symfony/PHP OAuth library research
 - Scouts completed; key exact files: packages/ai/src/utils/oauth/openai-codex.ts, packages/ai/src/utils/oauth/pkce.ts, packages/coding-agent/src/core/auth-storage.ts, packages/coding-agent/src/modes/interactive/components/login-dialog.ts
 - Research recommendation: minimal hand-rolled CLI flow with optional league/oauth2-client assistance; avoid web-only Symfony OAuth bundles
+
+## Task workflow update - 2026-06-06T17:45:12.870Z
+- Summary: User decision: use `league/oauth2-client` as the OAuth/PKCE helper for the future Codex auth implementation. Keep CLI-specific pieces (loopback callback server, browser launch, manual paste fallback, local auth.json storage/locking) in Hatfield code.
+- User agreed on `league/oauth2-client` as the preferred protocol helper
+- Direction clarified: use league/oauth2-client for PKCE + token exchange, while hand-rolling Hatfield CLI/native-app pieces around it
