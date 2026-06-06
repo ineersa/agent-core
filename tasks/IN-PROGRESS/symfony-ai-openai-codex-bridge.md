@@ -142,3 +142,7 @@ All Castor checks pass: test (25/25), deptrac (0 violations), phpstan (0 errors)
 - Re-review: APPROVE WITH SUGGESTIONS — 0 CRITICAL, 0 BUG, 1 EDGE CASE (ContentFilterException missing ?? fallback), rest NTH
 - Fork q7lwxi3uk4ze fixed ContentFilterException fallback, committed 29a5f325
 - Castor validation: test ✅ deptrac ✅ phpstan ✅ cs-check ✅
+
+## Task workflow update - 2026-06-06T00:01:22.667Z
+- Castor quality gate failed: 15 PHPUnit notices in ResultConverterTest (mock objects without expectations)
+- Launched fork alhiau23gosj to add #[AllowMockObjectsWithoutExpectations] attribute
