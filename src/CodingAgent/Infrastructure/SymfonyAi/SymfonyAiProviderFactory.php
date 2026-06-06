@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Symfony\AI\Platform\Bridge\Generic\Factory as GenericFactory;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Factory as OpenAICodexFactory;
 use Symfony\AI\Platform\ProviderInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
@@ -63,6 +64,10 @@ class SymfonyAiProviderFactory
      */
     private function buildProvider(AiProviderConfig $provider, ProjectedSymfonyModelCatalog $projectedCatalog): ProviderInterface
     {
+        if ('codex' === $provider->type) {
+            return $this->buildCodexProvider($provider, $projectedCatalog);
+        }
+
         return GenericFactory::createProvider(
             baseUrl: $provider->baseUrl,
             apiKey: $this->resolveApiKey($provider->apiKey),
@@ -74,6 +79,38 @@ class SymfonyAiProviderFactory
             supportsEmbeddings: $provider->supportsEmbeddings,
             completionsPath: $provider->completionsPath ?? '/v1/chat/completions',
             embeddingsPath: $provider->embeddingsPath ?? '/v1/embeddings',
+            name: $provider->id,
+        );
+    }
+
+    private function buildCodexProvider(AiProviderConfig $provider, ProjectedSymfonyModelCatalog $projectedCatalog): ProviderInterface
+    {
+        $apiKey = $this->resolveApiKey($provider->apiKey);
+
+        if (null === $apiKey) {
+            throw new \RuntimeException(\sprintf(
+                'OpenAI Codex provider "%s" requires an api_key (OAuth access token). Run: bin/console auth:codex',
+                $provider->id,
+            ));
+        }
+
+        $accountId = $provider->accountId;
+        if (null === $accountId) {
+            throw new \RuntimeException(\sprintf(
+                'OpenAI Codex provider "%s" requires an account_id. Run: bin/console auth:codex',
+                $provider->id,
+            ));
+        }
+
+        return OpenAICodexFactory::createProvider(
+            baseUrl: $provider->baseUrl,
+            accessToken: $apiKey,
+            accountId: $accountId,
+            httpClient: null,
+            modelCatalog: $projectedCatalog,
+            contract: null,
+            eventDispatcher: $this->eventDispatcher,
+            responsesPath: $provider->completionsPath ?? '/codex/responses',
             name: $provider->id,
         );
     }

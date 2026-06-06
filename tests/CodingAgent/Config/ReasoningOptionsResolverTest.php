@@ -279,6 +279,61 @@ class ReasoningOptionsResolverTest extends TestCase
         self::assertSame([], $result);
     }
 
+    // ── Codex: reasoning.effort (Responses API) ─────────────────────────
+
+    public function testCodexEmitsReasoningEffortFormat(): void
+    {
+        $provider = $this->provider(
+            'openai-codex',
+            $this->model([
+                'id' => 'gpt-5.5',
+                'reasoning' => true,
+                'thinkingLevelMap' => [
+                    'minimal' => 'low',
+                    'low' => 'low',
+                    'medium' => 'medium',
+                    'high' => 'high',
+                    'xhigh' => 'xhigh',
+                ],
+            ]),
+            new AiCompatibility(
+                supportsDeveloperRole: false,
+                supportsReasoningEffort: false,
+                thinkingFormat: 'codex',
+            ),
+        );
+
+        $resolver = $this->resolverForProviders(['openai-codex' => $provider]);
+
+        self::assertSame(
+            ['reasoning' => ['effort' => 'medium', 'summary' => 'auto']],
+            $resolver->resolve($this->modelRef('openai-codex', 'gpt-5.5'), 'medium'),
+        );
+
+        self::assertSame(
+            ['reasoning' => ['effort' => 'xhigh', 'summary' => 'auto']],
+            $resolver->resolve($this->modelRef('openai-codex', 'gpt-5.5'), 'xhigh'),
+        );
+    }
+
+    public function testCodexOffLevelReturnsEmpty(): void
+    {
+        $provider = $this->provider(
+            'openai-codex',
+            $this->model([
+                'id' => 'gpt-5.5',
+                'reasoning' => true,
+                'thinkingLevelMap' => ['medium' => 'medium'],
+            ]),
+            new AiCompatibility(supportsReasoningEffort: false, thinkingFormat: 'codex'),
+        );
+
+        $resolver = $this->resolverForProviders(['openai-codex' => $provider]);
+        $result = $resolver->resolve($this->modelRef('openai-codex', 'gpt-5.5'), 'off');
+
+        self::assertSame([], $result);
+    }
+
     // ── reasoning_effort is omitted when unsupported ──────────────────────
 
     public function testReasoningEffortOmittedWhenUnsupported(): void

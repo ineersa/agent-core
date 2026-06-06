@@ -344,3 +344,45 @@ logging:
 #                     thinking_level_map: { minimal: enabled, low: enabled, medium: enabled, high: enabled }
 #                     compatibility: { zai_tool_stream: true }
 #                     cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
+#
+#         openai-codex:
+#             type: codex
+#             enabled: false
+#             base_url: https://chatgpt.com/backend-api
+#             api: openai-responses
+#             api_key: null
+#             completions_path: /codex/responses
+#             supports_completions: true
+#             supports_embeddings: false
+#             supports_thinking_levels: true
+#             compatibility:
+#                 supports_developer_role: false
+#                 thinking_format: codex
+#             models:
+#                 gpt-5.5:
+#                     name: GPT-5.5
+#                     reasoning: true
+#                     thinking_level_map: { minimal: low, low: low, medium: medium, high: high, xhigh: xhigh }
+#                     tool_calling: true
+#                     input: [text, image]
+#                     context_window: 272000
+#                     max_tokens: 128000
+#                     cost: { input: 5.00, output: 30.00 }
+#                 gpt-5.4:
+#                     name: GPT-5.4
+#                     reasoning: true
+#                     thinking_level_map: { minimal: low, low: low, medium: medium, high: high, xhigh: xhigh }
+#                     tool_calling: true
+#                     input: [text, image]
+#                     context_window: 272000
+#                     max_tokens: 128000
+#                     cost: { input: 2.50, output: 15.00 }
+#                 gpt-5.4-mini:
+#                     name: GPT-5.4 Mini
+#                     reasoning: true
+#                     thinking_level_map: { minimal: low, low: low, medium: medium, high: high, xhigh: xhigh }
+#                     tool_calling: true
+#                     input: [text, image]
+#                     context_window: 272000
+#                     max_tokens: 128000
+#                     cost: { input: 0.75, output: 4.50 }
