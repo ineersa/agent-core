@@ -10,14 +10,21 @@ Investigate how pan/pi-mono implement OpenAI Codex OAuth/PKCE auth, token storag
 - Recommend Hatfield implementation shape and follow-up task scope for auth:codex, refresh, and auth.json storage
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/hatfield-openai-codex-auth-research
+Worktree: /home/ineersa/projects/agent-core-worktrees/hatfield-openai-codex-auth-research
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-06T17:25:57.754Z
 Completed:
 
 ## Work log
 - Created: 2026-06-06T17:25:53.157Z
+
+## Task workflow update - 2026-06-06T17:25:57.754Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/hatfield-openai-codex-auth-research.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/hatfield-openai-codex-auth-research.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/hatfield-openai-codex-auth-research.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/hatfield-openai-codex-auth-research.
