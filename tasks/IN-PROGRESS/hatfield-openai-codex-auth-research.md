@@ -169,3 +169,9 @@ Castor Check Output SHA256: 271e527f441554fd2f242bcdfa1bab8fccc6951b56a9d90f88ea
 - Recorded fork run: z0lk809uwmes
 - Summary: Launched review-iteration fork z0lk809uwmes to address PR #98 inline comment: remove manual YAML credential support/override semantics for Codex and require credentials from `auth:codex` / `~/.hatfield/auth.json`. Scope includes SymfonyAiProviderFactory Codex credential resolution, defaults/docs cleanup, and factory tests update.
 - Do not push or move task until fork completes, changes are verified, reviewer re-run, and focused Castor validation passes
+
+## Task workflow update - 2026-06-06T23:04:32.607Z
+- Recorded fork run: z0lk809uwmes
+- Validation: fork: castor test --filter=Codex passed (62 tests, 156 assertions); fork: castor test passed (1816 tests, 5320 assertions); fork: castor deptrac passed (0 violations, 0 errors); fork: castor phpstan passed (0 errors, 0 file errors); fork: castor cs-check passed clean; orchestrator inspection: git status clean; HEAD 2a6c2b4c; diff vs origin branch: 5 files changed, 39 insertions, 162 deletions
+- Summary: Review-iteration fork z0lk809uwmes completed at commit 2a6c2b4c `fix(coding-agent): require stored OAuth credentials for Codex`. It removes manual YAML `api_key`/`account_id` credential support for Codex: SymfonyAiProviderFactory now requires CodexAuthStorage and reads `auth:codex` stored credentials only; defaults/docs no longer advertise YAML credentials; tests updated to require stored OAuth credentials. Worktree verified clean and 1 commit ahead of origin branch.
+- PR #98 inline comment addressed: Codex credentials are now OAuth-only via ~/.hatfield/auth.json; YAML config only controls provider metadata/models/base URL/compatibility
