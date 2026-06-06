@@ -107,14 +107,21 @@ Two-part dependency update:
 - No new deprecation warnings in test suite
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/update-symfony-81-ai-main
+Worktree: /home/ineersa/projects/agent-core-worktrees/update-symfony-81-ai-main
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-06T17:50:56.478Z
 Completed:
 
 ## Work log
 - Created: 2026-06-05T21:45:00.709Z
+
+## Task workflow update - 2026-06-06T17:50:56.478Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/update-symfony-81-ai-main.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/update-symfony-81-ai-main.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/update-symfony-81-ai-main.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/update-symfony-81-ai-main.
