@@ -24,6 +24,7 @@ use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\WidgetPlacementEnum;
 use Symfony\Component\Tui\Render\RenderContext;
 use Symfony\Component\Tui\Tui;
+use Symfony\Component\Tui\Widget\AbstractWidget;
 use Symfony\Component\Tui\Widget\EditorWidget;
 
 /**
@@ -81,6 +82,9 @@ final class ChatScreen
     /* ── Slot system ── */
     private readonly TuiSlotRegistry $registry;
     private readonly SlotBasedTuiExtensionContext $extensionContext;
+
+    /* ── Overlay management ── */
+    private ?Tui $tui = null;
 
     /* ── Mount flag ── */
     private bool $mounted = false;
@@ -259,6 +263,7 @@ final class ChatScreen
             return;
         }
         $this->mounted = true;
+        $this->tui = $tui;
 
         // Add widgets in display order (top → bottom).
         // LiveTextWidget producers already read live RenderContext columns,
@@ -351,13 +356,6 @@ final class ChatScreen
     }
 
     /**
-     * Invalidate all mutable widgets so they re-render on the next tick.
-     *
-     * Extension widgets and status entries change via {@see setStatus()} or
-     * extension calls and already invalidate targeted widgets.  This method
-     * is a safety net for external state changes.
-     */
-    /**
      * Register an additional footer segment provider.
      *
      * Providers are invoked on every footer render. Use this to add
@@ -369,6 +367,13 @@ final class ChatScreen
         $this->footerWidget->invalidate();
     }
 
+    /**
+     * Invalidate all mutable widgets so they re-render on the next tick.
+     *
+     * Extension widgets and status entries change via {@see setStatus()} or
+     * extension calls and already invalidate targeted widgets.  This method
+     * is a safety net for external state changes.
+     */
     public function refresh(): void
     {
         $this->transcriptWidget->invalidate();
@@ -378,6 +383,74 @@ final class ChatScreen
         $this->aboveEditorWidget->invalidate();
         $this->belowEditorWidget->invalidate();
         $this->footerWidget->invalidate();
+    }
+
+    /* ────────── Overlay management ────────── */
+
+    /**
+     * Insert an interactive overlay widget above the editor.
+     *
+     * The Symfony TUI root container renders children in append order.
+     * This method removes the editor and all widgets below it, adds the
+     * overlay, then re-adds everything in original order so the overlay
+     * renders directly above the editor area:
+     *
+     *   … → status → aboveEditorWidget → overlay → editorSep → editor →
+     *   belowEditorWidget → footerSep → footer
+     *
+     * @throws \LogicException when the screen has not been mounted yet
+     */
+    public function insertOverlayBeforeEditor(AbstractWidget $widget): void
+    {
+        if (null === $this->tui) {
+            throw new \LogicException('insertOverlayBeforeEditor() requires ChatScreen to be mounted first. Call mount() before inserting overlays.');
+        }
+
+        // Remove editor area and everything below it (reverse mount order).
+        $this->tui->remove($this->footerWidget);
+        $this->tui->remove($this->footerSepWidget);
+        $this->tui->remove($this->belowEditorWidget);
+        $this->tui->remove($this->promptEditor->getWidget());
+        $this->tui->remove($this->editorSepWidget);
+
+        // Add the overlay (appended after aboveEditorWidget).
+        $this->tui->add($widget);
+
+        // Restore editor area widgets in original mount order.
+        $this->tui->add($this->editorSepWidget);
+        $this->tui->add($this->promptEditor->getWidget());
+        $this->tui->add($this->belowEditorWidget);
+        $this->tui->add($this->footerSepWidget);
+        $this->tui->add($this->footerWidget);
+    }
+
+    /**
+     * Remove an overlay widget from the TUI root.
+     *
+     * Companion to {@see insertOverlayBeforeEditor()}. Safe to call before
+     * mount — it is a no-op when the screen has not been mounted yet.
+     */
+    public function removeOverlay(AbstractWidget $widget): void
+    {
+        $this->tui?->remove($widget);
+    }
+
+    /**
+     * Set keyboard focus on a TUI widget.
+     */
+    public function setFocus(AbstractWidget $widget): void
+    {
+        $this->tui?->setFocus($widget);
+    }
+
+    /**
+     * Request a render on the next tick.
+     *
+     * @param bool $force When true, bypasses the dirty-tracking render cache
+     */
+    public function requestRender(bool $force = false): void
+    {
+        $this->tui?->requestRender($force);
     }
 
     /* ────────── Slot access ────────── */

@@ -61,7 +61,7 @@ final class SubmitListener implements TuiListenerRegistrar
         $questionController = $this->questionController;
 
         // Wire the question controller with TUI runtime references
-        $questionController->setRuntimeRefs($context);
+        $questionController->setRuntimeRefs($context, $screen);
 
         $context->tui->addListener(static function (SubmitEvent $event) use (
             $client, $sessionStore, $state, $screen, $tui, $router, $blockFactory,

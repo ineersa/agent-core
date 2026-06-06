@@ -50,7 +50,7 @@ final class TickPollListener implements TuiListenerRegistrar
         $questionController = $this->questionController;
 
         // Wire the question controller with TUI runtime references
-        $questionController->setRuntimeRefs($context);
+        $questionController->setRuntimeRefs($context, $screen);
 
         $context->ticks->add(static function () use ($poller, $state, $client, $screen, $questionCoordinator, $questionController): ?bool {
             $onHitl = static function (RuntimeEvent $event) use ($client, $questionCoordinator): void {

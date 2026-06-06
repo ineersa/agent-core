@@ -124,4 +124,76 @@ final class PharSmokeTest extends TestCase
         $output = $process->getOutput();
         self::assertStringContainsString('agent', $output, 'PHAR list must contain agent command when run from repo root');
     }
+
+    /**
+     * Verify PHAR cache isolation uses a content-based hash of the archive
+     * file, not a stable __FILE__ fixpoint that allows stale Symfony
+     * compiled containers to survive PHAR rebuilds.
+     *
+     * The regression caught by this test: the old code computed
+     *   substr(md5(__FILE__), 0, 8)
+     * which inside a PHAR is a stable 8-char hex string across rebuilds.
+     * When any service constructor changed (e.g. TickPollListener gained
+     * arguments on SAFE-04), the stale container from a previous PHAR
+     * build was reused and threw ArgumentCountError on boot.
+     *
+     * The fix uses hash_file('sha256', $pharPath) to produce a 12-char
+     * content-based suffix.  This test validates both the suffix length
+     * (12 not 8) and format (lowercase hex) as a cheap regression guard.
+     */
+    #[Group('phar')]
+    public function testPharCacheIsolationUsesContentHash(): void
+    {
+        [$php, $pharPath] = AgentTestExecutable::command();
+        $isPhar = str_ends_with($pharPath, '.phar');
+
+        if (!$isPhar) {
+            self::markTestSkipped('Not running as PHAR — requires HATFIELD_BINARY_PATH=/tmp/bin/hatfield.phar');
+        }
+
+        // Run PHAR from an isolated temp dir to trigger fresh cache
+        // creation.  The cache dir suffix must be 12 hex chars (SHA-256)
+        // rather than 8 (legacy md5(__FILE__)).
+        $tmpCwd = sys_get_temp_dir().'/phar-cache-hash-test-'.bin2hex(random_bytes(8));
+        @mkdir($tmpCwd, 0755, true);
+
+        try {
+            $process = Process::fromShellCommandline(
+                \sprintf('APP_ENV=prod %s %s list', escapeshellarg($php), escapeshellarg($pharPath)),
+                cwd: $tmpCwd,
+            );
+            $process->mustRun();
+
+            // Cache should have been created with a content-hash suffix.
+            $cacheDirs = glob($tmpCwd.'/.hatfield/cache/prod-*', GLOB_ONLYDIR);
+            self::assertNotEmpty(
+                $cacheDirs,
+                'PHAR did not create a cache directory in the isolated CWD',
+            );
+
+            $suffix = substr($cacheDirs[0], strrpos($cacheDirs[0], '-') + 1);
+
+            // Content hash (SHA-256) → 12 hex chars.
+            // Legacy md5(__FILE__) → 8 hex chars.  A suffix shorter than
+            // 12 indicates the old stable-fixpoint bug has regressed.
+            self::assertSame(
+                12,
+                \strlen($suffix),
+                \sprintf(
+                    'Cache dir suffix "%s" should be 12 hex chars (SHA-256 content hash), got %d chars. '
+                    .'An 8-char suffix indicates the legacy md5(__FILE__) stable-fixpoint regression.',
+                    $suffix,
+                    \strlen($suffix),
+                ),
+            );
+            self::assertMatchesRegularExpression(
+                '/^[0-9a-f]{12}$/',
+                $suffix,
+                \sprintf('Cache dir suffix "%s" should be lowercase hex', $suffix),
+            );
+        } finally {
+            // Clean up the isolated temp dir even on assertion failure.
+            shell_exec('rm -rf '.escapeshellarg($tmpCwd));
+        }
+    }
 }
