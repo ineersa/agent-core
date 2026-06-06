@@ -10,7 +10,7 @@ Investigate how pan/pi-mono implement OpenAI Codex OAuth/PKCE auth, token storag
 - Recommend Hatfield implementation shape and follow-up task scope for auth:codex, refresh, and auth.json storage
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/hatfield-openai-codex-auth-research
 Worktree: /home/ineersa/projects/agent-core-worktrees/hatfield-openai-codex-auth-research
 Fork run: c3d5le8re4r7
@@ -159,3 +159,8 @@ Castor Check Output SHA256: 271e527f441554fd2f242bcdfa1bab8fccc6951b56a9d90f88ea
 - Created PR: https://github.com/ineersa/agent-core/pull/98
 - Validation: reviewer APPROVE at HEAD 25eba5a7; castor test passed (1820 tests, 5329 assertions); castor deptrac passed (0 violations, 0 errors); castor phpstan passed (0 errors, 0 file errors); castor cs-check passed clean
 - Summary: Prepared for PR/code review. Reviewer approved exact HEAD 25eba5a7 after multiple remediation forks. Focused local Castor validation passed: test, deptrac, phpstan, cs-check. Branch includes Codex OAuth auth implementation plus preserved PHAR isolation commit per user instruction.
+
+## Task workflow update - 2026-06-06T22:59:37.168Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Validation: PR inline comment reviewed: src/CodingAgent/Infrastructure/SymfonyAi/SymfonyAiProviderFactory.php line 103 — drop explicit YAML credential configs for Codex
+- Summary: Review iteration requested from PR #98 inline comment: Codex credentials should not be manually configured via YAML because OAuth is required first. Plan: remove YAML api_key/account_id override path for Codex, rely only on auth:codex stored credentials, and update defaults/docs/tests accordingly.
