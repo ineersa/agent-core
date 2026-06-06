@@ -72,15 +72,13 @@ final class SymfonyAiProviderFactoryCodexAuthTest extends TestCase
         );
     }
 
-    public function testCodexProviderBuiltWithYamlCredentialsWhenPresent(): void
+    public function testCodexProviderWithAuthStorageCredentials(): void
     {
         $provider = new AiProviderConfig(
             id: 'openai-codex',
             type: 'codex',
             enabled: true,
             baseUrl: 'https://chatgpt.com/backend-api',
-            apiKey: 'yaml-api-key',
-            accountId: 'yaml-account-id',
             models: [
                 'gpt-5.5' => new AiModelDefinition(
                     id: 'gpt-5.5',
@@ -90,31 +88,6 @@ final class SymfonyAiProviderFactoryCodexAuthTest extends TestCase
             ],
         );
 
-        $factory = $this->createFactory([$provider->id => $provider]);
-        $providers = $factory->createProviders();
-
-        $this->assertArrayHasKey('openai-codex', $providers);
-    }
-
-    public function testCodexProviderFallsBackToAuthStorageWhenYamlApiKeyMissing(): void
-    {
-        $provider = new AiProviderConfig(
-            id: 'openai-codex',
-            type: 'codex',
-            enabled: true,
-            baseUrl: 'https://chatgpt.com/backend-api',
-            apiKey: '',
-            accountId: '',
-            models: [
-                'gpt-5.5' => new AiModelDefinition(
-                    id: 'gpt-5.5',
-                    toolCalling: true,
-                    reasoning: true,
-                ),
-            ],
-        );
-
-        // Save credentials into the real auth storage
         $this->authStorage->saveCredentials('openai-codex', new CodexAuthRecord(
             access: 'stored-access-token',
             refresh: 'stored-refresh-token',
@@ -128,15 +101,42 @@ final class SymfonyAiProviderFactoryCodexAuthTest extends TestCase
         $this->assertArrayHasKey('openai-codex', $providers);
     }
 
-    public function testCodexProviderThrowsWhenBothYamlAndAuthStorageEmpty(): void
+    public function testCodexProviderWithAuthStorageAndEmptyBaseUrl(): void
+    {
+        $provider = new AiProviderConfig(
+            id: 'openai-codex',
+            type: 'codex',
+            enabled: true,
+            baseUrl: '',
+            models: [
+                'gpt-5.5' => new AiModelDefinition(
+                    id: 'gpt-5.5',
+                    toolCalling: true,
+                    reasoning: true,
+                ),
+            ],
+        );
+
+        $this->authStorage->saveCredentials('openai-codex', new CodexAuthRecord(
+            access: 'stored-access-token',
+            refresh: 'stored-refresh-token',
+            expires: \time() + 3600,
+            accountId: 'stored-account-id',
+        ));
+
+        $factory = $this->createFactory([$provider->id => $provider], $this->authStorage);
+        $providers = $factory->createProviders();
+
+        $this->assertArrayHasKey('openai-codex', $providers);
+    }
+
+    public function testCodexProviderThrowsWhenAuthStorageEmpty(): void
     {
         $provider = new AiProviderConfig(
             id: 'openai-codex',
             type: 'codex',
             enabled: true,
             baseUrl: 'https://chatgpt.com/backend-api',
-            apiKey: '',
-            accountId: '',
             models: [
                 'gpt-5.5' => new AiModelDefinition(
                     id: 'gpt-5.5',
@@ -149,20 +149,18 @@ final class SymfonyAiProviderFactoryCodexAuthTest extends TestCase
         $factory = $this->createFactory([$provider->id => $provider], $this->authStorage);
 
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('bin/console auth:codex');
+        $this->expectExceptionMessage('requires stored OAuth credentials');
 
         $factory->createProviders();
     }
 
-    public function testYamlCredentialsOverrideAuthStorage(): void
+    public function testCodexProviderThrowsWhenAuthStorageNotConfigured(): void
     {
         $provider = new AiProviderConfig(
             id: 'openai-codex',
             type: 'codex',
             enabled: true,
             baseUrl: 'https://chatgpt.com/backend-api',
-            apiKey: 'yaml-override-key',
-            accountId: 'yaml-override-account',
             models: [
                 'gpt-5.5' => new AiModelDefinition(
                     id: 'gpt-5.5',
@@ -172,17 +170,11 @@ final class SymfonyAiProviderFactoryCodexAuthTest extends TestCase
             ],
         );
 
-        // Save credentials — should NOT be used since YAML provides them
-        $this->authStorage->saveCredentials('openai-codex', new CodexAuthRecord(
-            access: 'stored-should-not-be-used',
-            refresh: 'stored-refresh',
-            expires: \time() + 3600,
-            accountId: 'stored-account',
-        ));
+        $factory = $this->createFactory([$provider->id => $provider]);
 
-        $factory = $this->createFactory([$provider->id => $provider], $this->authStorage);
-        $providers = $factory->createProviders();
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('requires stored OAuth credentials');
 
-        $this->assertArrayHasKey('openai-codex', $providers);
+        $factory->createProviders();
     }
 }

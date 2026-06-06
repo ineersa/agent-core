@@ -684,11 +684,10 @@ OpenAICodex platform bridge which talks to the ChatGPT backend at
 - Run `bin/console auth:codex` for OAuth PKCE login (browser-based
   authorization_code flow with local loopback callback).
 - Credentials are stored in `~/.hatfield/auth.json` (0600) keyed
-  by `openai-codex`.
-- YAML `api_key` / `account_id` under `ai.providers.openai-codex`
-  are **optional**. When set, they override stored credentials.
-  When absent, `auth.json` is read automatically. If both are missing
-  the provider emits a clear error.
+  by `openai-codex` and are automatically loaded by the Codex provider.
+- Do **not** set `api_key` or `account_id` in YAML for this provider
+  type — Codex credentials are OAuth-only and live in the auth file.
+  If credentials are missing, the provider emits a clear error.
 
 **Compat quirks:**
 
@@ -700,8 +699,8 @@ OpenAICodex platform bridge which talks to the ChatGPT backend at
 
 **⚠ Experimental.** The Codex backend API uses the `chatgpt.com/backend-api`
 endpoint, which is not an officially documented OpenAI API surface.
-Use at your own risk. The bridge supports both API-key (
-`api.openai.com`) and OAuth paths.
+Use at your own risk. Only the OAuth PKCE authentication path is
+supported (run `bin/console auth:codex`).
 
 Seed models: `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`.
 

@@ -350,11 +350,9 @@ logging:
 #             enabled: false
 #             base_url: https://chatgpt.com/backend-api
 #             api: openai-responses
-#             # api_key and account_id are optional — run `bin/console auth:codex` to
-#             # create them via OAuth PKCE and store them in ~/.hatfield/auth.json.
-#             # When set here, these YAML values override any stored credentials.
-#             api_key: null
-#             account_id: null
+#             # Codex credentials are created via OAuth PKCE. Run `bin/console auth:codex`
+#             # to authenticate; the access token and account ID are stored in
+#             # ~/.hatfield/auth.json. Do not set api_key or account_id here.
 #             completions_path: /codex/responses
 #             supports_completions: true
 #             supports_embeddings: false
