@@ -107,14 +107,14 @@ Two-part dependency update:
 - No new deprecation warnings in test suite
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/update-symfony-81-ai-main
 Worktree: /home/ineersa/projects/agent-core-worktrees/update-symfony-81-ai-main
 Fork run: ah2e645m81lf
 PR URL: https://github.com/ineersa/agent-core/pull/97
-PR Status: open
+PR Status: merged
 Started: 2026-06-06T17:50:56.478Z
-Completed:
+Completed: 2026-06-06T21:09:39.443Z
 
 ## Work log
 - Created: 2026-06-05T21:45:00.709Z
@@ -160,3 +160,14 @@ Castor Check Output SHA256: 68c3cff7bd62140dc4cbe7aff1f4d9b40f199a618056ef0f27a2
 - Updated PR Status: open
 - Validation: move_task to CODE-REVIEW: Castor quality gate passed at commit 6188aa4703cb; branch pushed; PR #97 created; move_task to DONE: blocked because integration checkout has unstaged composer.json modification
 - Summary: PR created after full Castor quality gate passed: https://github.com/ineersa/agent-core/pull/97. Attempted DONE merge per user request, but move_task refused because the integration checkout is dirty: composer.json has an unstaged local change setting all three AI packages, including symfony/ai-platform, to dev-main. This is not part of the committed task branch and Composer diagnostics showed ai-platform dev-main is not installable with current upstream dev-main ai-agent/generic-platform constraints. Merge remains blocked until the integration checkout composer.json change is committed, stashed, or discarded.
+
+## Task workflow update - 2026-06-06T21:09:39.443Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/update-symfony-81-ai-main into integration checkout.
+- Merge made by the 'ort' strategy.
+ composer.json                                      |   4 +-
+ composer.lock                                      | 514 +++++++++++----------
+ .../SymfonyAi/LlmPlatformAdapter.php               |   2 +-
+ 3 files changed, 269 insertions(+), 251 deletions(-)
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/update-symfony-81-ai-main.
+- Pulled integration checkout: Already up to date..
