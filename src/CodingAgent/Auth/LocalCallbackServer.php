@@ -24,9 +24,14 @@ final class LocalCallbackServer
     /**
      * Wait for the OAuth callback on a local TCP socket.
      *
-     * @param string $expectedState  The OAuth state parameter to validate against
-     * @param float  $timeoutSeconds Seconds to wait before returning null (pass 0 for no timeout)
-     * @param int    $port           Local TCP port
+     * The server binds and listens BEFORE invoking the optional $afterListen
+     * callback, so callers can safely launch a browser inside that callback
+     * knowing a fast auth redirect will not hit a closed port.
+     *
+     * @param string        $expectedState  The OAuth state parameter to validate against
+     * @param float         $timeoutSeconds Seconds to wait before returning null (pass 0 for no timeout)
+     * @param int           $port           Local TCP port
+     * @param callable|null $afterListen    Invoked after bind succeeds, before accept blocks
      *
      * @return array{code: string}|null The authorization code, or null on timeout/error
      */
@@ -34,6 +39,7 @@ final class LocalCallbackServer
         string $expectedState,
         float $timeoutSeconds = 300.0,
         int $port = CodexOAuthConfig::DEFAULT_PORT,
+        ?callable $afterListen = null,
     ): ?array {
         $errno = 0;
         $errstr = '';
@@ -46,7 +52,15 @@ final class LocalCallbackServer
         );
 
         if (false === $server) {
+            // Bind failure (e.g. port in use). Return null so caller falls
+            // back to manual paste; the URL was already printed before
+            // waitForCallback was called.
             return null;
+        }
+
+        // Server is now listening — safe to open browser
+        if (null !== $afterListen) {
+            $afterListen();
         }
 
         try {
@@ -91,8 +105,8 @@ final class LocalCallbackServer
             $code = $params['code'] ?? null;
             $state = $params['state'] ?? null;
 
-            // Validate state
-            if (null !== $state && $state !== $expectedState) {
+            // State must be present and match exactly (SECURITY: prevent CSRF)
+            if (!\is_string($state) || $state !== $expectedState) {
                 $this->sendResponse($conn, 400, self::errorHtml('State mismatch.'));
 
                 return null;
@@ -115,6 +129,9 @@ final class LocalCallbackServer
         }
     }
 
+    /**
+     * @param resource $conn
+     */
     private function sendResponse($conn, int $statusCode, string $body): void
     {
         $statusText = match ($statusCode) {

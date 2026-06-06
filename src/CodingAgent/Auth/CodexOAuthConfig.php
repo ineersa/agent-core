@@ -27,9 +27,6 @@ final class CodexOAuthConfig
     /** OpenAI OAuth token endpoint. */
     public const string TOKEN_URL = 'https://auth.openai.com/oauth/token';
 
-    /** @deprecated Use redirectUriForPort() instead. Kept for BC during migration. */
-    public const string REDIRECT_URI = 'http://127.0.0.1:1455/auth/callback';
-
     /** OAuth scopes requested for Codex access. */
     public const string SCOPE = 'openid profile email offline_access';
 

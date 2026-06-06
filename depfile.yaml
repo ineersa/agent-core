@@ -145,6 +145,11 @@ parameters:
         - type: directory
           value: src/CodingAgent/CLI/.*
 
+    - name: AppAuth
+      collectors:
+        - type: directory
+          value: src/CodingAgent/Auth/.*
+
     - name: AppInfrastructureSymfonyAi
       collectors:
         - type: directory
@@ -179,6 +184,11 @@ parameters:
       collectors:
         - type: classNameRegex
           value: '#^Symfony\\\\Component\\\\Lock\\\\#i'
+
+    - name: SymfonyProcess
+      collectors:
+        - type: classNameRegex
+          value: '#^Symfony\\\\Component\\\\Process\\\\#i'
 
     - name: SymfonySerializer
       collectors:
@@ -374,9 +384,15 @@ parameters:
       - SymfonyConsole
       - SymfonyYaml
 
+    AppAuth:
+      - SymfonyConsole
+      - SymfonyLock
+      - SymfonyProcess
+
     AppInfrastructureSymfonyAi:
       - AppConfig
       - SymfonyAiPlatform
+      - AppAuth
 
     AppSession:
       - AgentCore
@@ -387,6 +403,7 @@ parameters:
       - SymfonySerializer
 
     AppCli:
+      - AppAuth
       - AppExtension
       - AppExtensionApi
       - AppTool
@@ -457,6 +474,7 @@ parameters:
     SymfonyConsole: ~
     SymfonyMessenger: ~
     SymfonyLock: ~
+    SymfonyProcess: ~
     SymfonySerializer: ~
     SymfonyYaml: ~
     ForbiddenHttp: ~

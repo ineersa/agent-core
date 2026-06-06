@@ -26,7 +26,7 @@ final class CodexAccountIdExtractor
             return null;
         }
 
-        $payloadB64 = $parts[1] ?? '';
+        $payloadB64 = $parts[1];
         if ('' === $payloadB64) {
             return null;
         }
@@ -37,7 +37,7 @@ final class CodexAccountIdExtractor
                 return null;
             }
 
-            /** @var array $payload */
+            /** @var array<string, mixed> $payload */
             $payload = json_decode($decoded, true, 8, \JSON_THROW_ON_ERROR);
             if (!\is_array($payload)) {
                 return null;

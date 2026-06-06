@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Auth;
 use Ineersa\CodingAgent\Auth\CodexAuthRecord;
 use Ineersa\CodingAgent\Auth\CodexAuthStorage;
 use Ineersa\CodingAgent\Auth\CodexOAuthConfig;
+use Ineersa\CodingAgent\Auth\CodexTokenRefresher;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
@@ -15,6 +16,7 @@ final class CodexAuthStorageTest extends TestCase
 {
     private string $tmpDir;
     private CodexAuthStorage $storage;
+    private CodexTokenRefresher $refresher;
 
     protected function setUp(): void
     {
@@ -24,6 +26,7 @@ final class CodexAuthStorageTest extends TestCase
         $store = new FlockStore($this->tmpDir);
         $lockFactory = new LockFactory($store);
         $this->storage = new CodexAuthStorage($this->tmpDir, $lockFactory);
+        $this->refresher = new CodexTokenRefresher();
     }
 
     protected function tearDown(): void
@@ -62,9 +65,10 @@ final class CodexAuthStorageTest extends TestCase
         $this->assertNull($loaded);
     }
 
-    public function testExpiredRecordTriggersRefreshAndPersists(): void
+    public function testExpiredRecordWithoutRefresherReturnsExpired(): void
     {
-        // Save an expired record
+        // Save an expired record — no refresher is configured in $this->storage,
+        // so loadCredentials returns it without attempting refresh.
         $expiredRecord = new CodexAuthRecord(
             access: 'expired-access',
             refresh: 'i-will-be-refreshed',
@@ -74,15 +78,51 @@ final class CodexAuthStorageTest extends TestCase
 
         $this->storage->saveCredentials('openai-codex', $expiredRecord);
 
-        // The loadCredentials will try to refresh.
-        // Since we can't actually hit the OAuth endpoint, it should return
-        // the expired record when refresh fails.
         $loaded = $this->storage->loadCredentials('openai-codex');
 
         $this->assertNotNull($loaded);
-        // Should still return the expired record (refresh is best-effort)
         $this->assertTrue($loaded->isExpired());
         $this->assertSame('expired-access', $loaded->access);
+    }
+
+    public function testExpiredRecordWithRefresherThrowsOnRefreshFailure(): void
+    {
+        // Storage WITH a refresher configured
+        $storageWithRefresh = new CodexAuthStorage($this->tmpDir, new LockFactory(new FlockStore($this->tmpDir)), $this->refresher);
+
+        $expiredRecord = new CodexAuthRecord(
+            access: 'expired-access',
+            refresh: 'invalid-refresh-token',
+            expires: \time() - 3600,
+            accountId: 'chat-old',
+        );
+
+        $storageWithRefresh->saveCredentials('openai-codex', $expiredRecord);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('expired and could not be refreshed');
+
+        $storageWithRefresh->loadCredentials('openai-codex');
+    }
+
+    public function testLoadCredentialsRawReturnsExpiredWithoutRefresh(): void
+    {
+        $expiredRecord = new CodexAuthRecord(
+            access: 'expired-access-raw',
+            refresh: 'some-refresh',
+            expires: \time() - 3600,
+            accountId: 'chat-raw',
+        );
+
+        $storageWithRefresh = new CodexAuthStorage($this->tmpDir, new LockFactory(new FlockStore($this->tmpDir)), $this->refresher);
+        $storageWithRefresh->saveCredentials('openai-codex', $expiredRecord);
+
+        // loadCredentialsRaw should return the raw record without attempting refresh
+        $raw = $storageWithRefresh->loadCredentialsRaw('openai-codex');
+
+        $this->assertNotNull($raw);
+        $this->assertSame('expired-access-raw', $raw->access);
+        $this->assertTrue($raw->isExpired());
     }
 
     public function testMultipleProviderKeysCoexist(): void
@@ -119,5 +159,11 @@ final class CodexAuthStorageTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Corrupt auth.json');
         $this->storage->loadCredentials('openai-codex');
+    }
+
+    public function testLoadCredentialsRawReturnsNullOnMissingFile(): void
+    {
+        $raw = $this->storage->loadCredentialsRaw('nonexistent');
+        $this->assertNull($raw);
     }
 }

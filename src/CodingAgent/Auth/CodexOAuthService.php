@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Auth;
 
 use League\OAuth2\Client\Provider\Exception\IdentityProviderException;
 use League\OAuth2\Client\Provider\GenericProvider;
-use Symfony\Component\Console\Input\ArgvInput;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
@@ -21,6 +20,7 @@ final class CodexOAuthService
 {
     public function __construct(
         private CodexAuthStorage $storage,
+        private ?CodexTokenRefresher $tokenRefresher = null,
     ) {
     }
 
@@ -29,7 +29,7 @@ final class CodexOAuthService
      *
      * 1. Build the authorization URL with PKCE challenge
      * 2. Start the local callback server on 127.0.0.1:$port
-     * 3. Print the URL and try to open the browser
+     * 3. Print the URL and (once server binds) try to open the browser
      * 4. Race callback vs manual paste input
      * 5. Exchange the authorization code for tokens
      * 6. Extract the chatgpt_account_id from the JWT
@@ -39,13 +39,11 @@ final class CodexOAuthService
      * @throws \RuntimeException on any step failure
      */
     public function login(
-        ?SymfonyStyle $io = null,
+        SymfonyStyle $io,
         bool $noBrowser = false,
         int $timeout = CodexOAuthConfig::DEFAULT_TIMEOUT,
         int $port = CodexOAuthConfig::DEFAULT_PORT,
     ): CodexAuthRecord {
-        $io ??= new SymfonyStyle(new ArgvInput(), null);
-
         $provider = $this->createProvider($port);
         $authUrl = $provider->getAuthorizationUrl([
             'scope' => CodexOAuthConfig::SCOPE,
@@ -57,13 +55,8 @@ final class CodexOAuthService
         $expectedState = $provider->getState();
         $pkceVerifier = $provider->getPkceCode();
 
-        // Try browser callback if not disabled
-        $code = null;
-
-        if (!$noBrowser) {
-            BrowserLauncher::open($authUrl);
-        }
-
+        // Print instructions BEFORE starting the callback server, so the
+        // user has the URL even if the server bind fails.
         $io->writeln('');
         $io->writeln('  <info>OpenAI Codex Authorization</info>');
         $io->writeln('');
@@ -71,14 +64,22 @@ final class CodexOAuthService
         $io->writeln(\sprintf('  <href=%s>%s</>', $authUrl, $authUrl));
         $io->writeln('');
 
-        // Wait for callback via local server
+        // Start server: the $afterListen callback opens the browser AFTER
+        // the TCP port is bound, so a fast auto-redirect can reach us.
         $server = new LocalCallbackServer();
-        $callbackResult = $server->waitForCallback($expectedState, (float) $timeout, $port);
+        $callbackResult = $server->waitForCallback(
+            $expectedState,
+            (float) $timeout,
+            $port,
+            static function () use ($noBrowser, $authUrl): void {
+                if (!$noBrowser) {
+                    BrowserLauncher::open($authUrl);
+                }
+            },
+        );
 
-        if (null !== $callbackResult) {
-            $code = $callbackResult['code'];
-            $io->writeln('  <info>✓</info> Authorization callback received.');
-        } else {
+        // Try manual paste as fallback
+        if (null === $callbackResult) {
             $io->writeln('  Could not detect browser callback automatically.');
             $io->writeln('  Paste the redirect URL (or just the authorization code) below:');
             $io->writeln('');
@@ -97,6 +98,9 @@ final class CodexOAuthService
             }
 
             $code = $parsed['code'];
+        } else {
+            $code = $callbackResult['code'];
+            $io->writeln('  <info>✓</info> Authorization callback received.');
         }
 
         if (null === $code || '' === $code) {
@@ -141,57 +145,29 @@ final class CodexOAuthService
     /**
      * Refresh stored credentials for the Codex provider.
      *
-     * Loads the stored refresh token, exchanges it for new tokens,
-     * extracts the account ID (should match stored), and persists.
+     * Loads the stored refresh token, exchanges it for new tokens
+     * via {@see CodexTokenRefresher}, validates the account ID,
+     * and persists the result.
      *
      * @throws \RuntimeException when no stored credentials, refresh fails, or account ID changes
      */
     public function refreshCredentials(): CodexAuthRecord
     {
-        $stored = $this->storage->loadCredentials(CodexOAuthConfig::PROVIDER_KEY);
+        if (null === $this->tokenRefresher) {
+            throw new \RuntimeException('Token refresh is not available (no refresher configured).');
+        }
+
+        $stored = $this->storage->loadCredentialsRaw(CodexOAuthConfig::PROVIDER_KEY);
 
         if (null === $stored) {
             throw new \RuntimeException('No stored Codex credentials found. Run bin/console auth:codex first.');
         }
 
-        $provider = $this->createProvider();
+        $fresh = $this->tokenRefresher->refresh($stored->refresh, $stored->accountId);
 
-        try {
-            $token = $provider->getAccessToken('refresh_token', [
-                'refresh_token' => $stored->refresh,
-            ]);
-        } catch (IdentityProviderException $e) {
-            throw new \RuntimeException(\sprintf('Token refresh failed: %s. Run bin/console auth:codex to re-authenticate.', $e->getMessage()), previous: $e);
-        }
+        $this->storage->saveCredentials(CodexOAuthConfig::PROVIDER_KEY, $fresh);
 
-        $accessToken = $token->getToken();
-        $refreshToken = $token->getRefreshToken();
-        $expires = $token->getExpires();
-
-        if (null === $accessToken || null === $refreshToken || null === $expires) {
-            throw new \RuntimeException('Token refresh response missing required fields.');
-        }
-
-        $accountId = CodexAccountIdExtractor::extract($accessToken);
-        if (null === $accountId) {
-            throw new \RuntimeException('Failed to extract account ID from refreshed token. Run bin/console auth:codex to re-authenticate.');
-        }
-
-        // Validate account ID hasn't changed — prevents silent credential theft
-        if ($accountId !== $stored->accountId) {
-            throw new \RuntimeException(\sprintf('Account ID changed from "%s" to "%s" after token refresh. Run bin/console auth:codex to re-authenticate.', $stored->accountId, $accountId));
-        }
-
-        $record = new CodexAuthRecord(
-            access: $accessToken,
-            refresh: $refreshToken,
-            expires: $expires,
-            accountId: $accountId,
-        );
-
-        $this->storage->saveCredentials(CodexOAuthConfig::PROVIDER_KEY, $record);
-
-        return $record;
+        return $fresh;
     }
 
     /**

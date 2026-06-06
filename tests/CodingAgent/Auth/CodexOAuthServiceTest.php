@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Auth\CodexAuthRecord;
 use Ineersa\CodingAgent\Auth\CodexAuthStorage;
 use Ineersa\CodingAgent\Auth\CodexOAuthConfig;
 use Ineersa\CodingAgent\Auth\CodexOAuthService;
+use Ineersa\CodingAgent\Auth\CodexTokenRefresher;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
@@ -15,6 +16,7 @@ use Symfony\Component\Lock\Store\FlockStore;
 final class CodexOAuthServiceTest extends TestCase
 {
     private CodexAuthStorage $storage;
+    private CodexTokenRefresher $refresher;
     private string $tmpDir;
 
     protected function setUp(): void
@@ -27,6 +29,7 @@ final class CodexOAuthServiceTest extends TestCase
         $store = new FlockStore($this->tmpDir);
         $lockFactory = new LockFactory($store);
         $this->storage = new CodexAuthStorage($this->tmpDir, $lockFactory);
+        $this->refresher = new CodexTokenRefresher();
     }
 
     protected function tearDown(): void
@@ -43,13 +46,19 @@ final class CodexOAuthServiceTest extends TestCase
 
     public function testConstructWithStorage(): void
     {
+        $service = new CodexOAuthService($this->storage, $this->refresher);
+        $this->assertInstanceOf(CodexOAuthService::class, $service);
+    }
+
+    public function testConstructAcceptsNullRefresher(): void
+    {
         $service = new CodexOAuthService($this->storage);
         $this->assertInstanceOf(CodexOAuthService::class, $service);
     }
 
     public function testRefreshCredentialsThrowsWhenNoStoredCredentials(): void
     {
-        $service = new CodexOAuthService($this->storage);
+        $service = new CodexOAuthService($this->storage, $this->refresher);
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('No stored Codex credentials found');
@@ -57,9 +66,8 @@ final class CodexOAuthServiceTest extends TestCase
         $service->refreshCredentials();
     }
 
-    public function testRefreshCredentialsWithStoredExpiredDataAttemptsRefresh(): void
+    public function testRefreshCredentialsThrowsWhenRefresherNotConfigured(): void
     {
-        // Save an expired record — refresh will try to reach the network and fail
         $expired = new CodexAuthRecord(
             access: 'expired-access',
             refresh: 'expired-refresh-token',
@@ -68,10 +76,27 @@ final class CodexOAuthServiceTest extends TestCase
         );
         $this->storage->saveCredentials('openai-codex', $expired);
 
-        $service = new CodexOAuthService($this->storage);
+        $service = new CodexOAuthService($this->storage); // no refresher
 
-        // refreshCredentials will try the network exchange; it should throw
-        // either a RuntimeException or an IdentityProviderException
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('no refresher configured');
+
+        $service->refreshCredentials();
+    }
+
+    public function testRefreshCredentialsWithStoredExpiredDataAttemptsRefresh(): void
+    {
+        $expired = new CodexAuthRecord(
+            access: 'expired-access',
+            refresh: 'expired-refresh-token',
+            expires: \time() - 3600,
+            accountId: 'expired-account',
+        );
+        $this->storage->saveCredentials('openai-codex', $expired);
+
+        $service = new CodexOAuthService($this->storage, $this->refresher);
+
+        // Will hit the network and fail — expect RuntimeException
         $this->expectException(\RuntimeException::class);
 
         $service->refreshCredentials();
