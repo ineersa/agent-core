@@ -83,12 +83,12 @@ New layer `OpenAICodexPlatform` → depends only on `Symfony\AI\Platform` + `Sym
 - castor deptrac + castor phpstan pass
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/symfony-ai-openai-codex-bridge
 Worktree: /home/ineersa/projects/agent-core-worktrees/symfony-ai-openai-codex-bridge
 Fork run: 8ldq21ali7su
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/95
+PR Status: open
 Started: 2026-06-05T23:04:09.780Z
 Completed:
 
@@ -146,3 +146,16 @@ All Castor checks pass: test (25/25), deptrac (0 violations), phpstan (0 errors)
 ## Task workflow update - 2026-06-06T00:01:22.667Z
 - Castor quality gate failed: 15 PHPUnit notices in ResultConverterTest (mock objects without expectations)
 - Launched fork alhiau23gosj to add #[AllowMockObjectsWithoutExpectations] attribute
+Castor Check Status: passed
+Castor Check Commit: cb8195389adb915a3c7d153b01433e695b9f360b
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 240s
+Castor Check Completed: 2026-06-06T00:05:53.967Z
+Castor Check Output SHA256: 57af658402d1a1d379786fddef6138a99f615fe4547a4df02111442d86cdf5fa
+
+## Task workflow update - 2026-06-06T00:05:57.104Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (240s timeout). Commit: cb8195389adb.
+- Pushed task/symfony-ai-openai-codex-bridge to origin.
+- branch 'task/symfony-ai-openai-codex-bridge' set up to track 'origin/task/symfony-ai-openai-codex-bridge'.
+- Created PR: https://github.com/ineersa/agent-core/pull/95
