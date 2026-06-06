@@ -175,12 +175,12 @@ Codex uses the Responses API reasoning format: `{ "reasoning": { "effort": "high
 - credentials storage handles missing file, expired tokens, and invalid JSON gracefully
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/hatfield-openai-codex-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/hatfield-openai-codex-integration
 Fork run: m3rfm09invci
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/96
+PR Status: open
 Started: 2026-06-06T00:36:58.573Z
 Completed:
 
@@ -261,3 +261,18 @@ Final implementation commits on task branch:
 - Re-review returned APPROVE with no actionable issues
 - Ran focused Castor validation successfully using installed `castor` binary after correcting initial entrypoint mistake (`vendor/bin/castor` does not exist in this repo)
 - Preparing move to CODE-REVIEW for full gate + PR creation
+Castor Check Status: passed
+Castor Check Commit: a9928d5265976d8407d396943ff0e8dc4f54f8cf
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 240s
+Castor Check Completed: 2026-06-06T17:15:32.501Z
+Castor Check Output SHA256: 988cdd0c4b41685307b81f8659a06a88d7b448cb0160e6fc17f9e51515872615
+
+## Task workflow update - 2026-06-06T17:15:35.570Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (240s timeout). Commit: a9928d526597.
+- Pushed task/hatfield-openai-codex-integration to origin.
+- branch 'task/hatfield-openai-codex-integration' set up to track 'origin/task/hatfield-openai-codex-integration'.
+- Created PR: https://github.com/ineersa/agent-core/pull/96
+- Validation: reviewer: APPROVE on HEAD a9928d52; castor test: ok (tests=1737, assertions=5126, errors=0, failures=0, skipped=0); castor deptrac: ok (violations=0, errors=0, uncovered=644, allowed=822); castor phpstan: ok (errors=0, file_errors=0); castor cs-check: ok (files_fixed=0)
+- Summary: Reviewer approved current HEAD a9928d52. Focused Castor validation passed locally (test, deptrac, phpstan, cs-check). Moving to CODE-REVIEW to run full LLM_MODE=true castor check quality gate, push branch, and create PR.
