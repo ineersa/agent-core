@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\ApprovalSessionTracker;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Classifier\SafeGuardClassifier;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardPolicy;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardConfig;
+use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardPolicyWriter;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardToolCallHook;
 use Ineersa\Hatfield\ExtensionApi\ApprovalAnswerContextDTO;
 use Ineersa\Hatfield\ExtensionApi\ToolCallContextDTO;
@@ -416,5 +417,339 @@ final class SafeGuardToolCallHookTest extends TestCase
 
         $this->assertSame(ToolCallDecisionKindEnum::Block, $dto->kind);
         $this->assertSame('hard_block', $dto->details['category']);
+    }
+
+    // ── onApprovalAnswered ──
+
+    public function testAllowOnceApprovesAndConsumesOnRetry(): void
+    {
+        $command = 'rm -rf /tmp/build';
+
+        // First call: RequireApproval
+        $dto = $this->hook->onToolCall(new ToolCallContextDTO(
+            toolCallId: 'call_22',
+            toolName: 'bash',
+            arguments: ['command' => $command],
+            orderIndex: 0,
+        ));
+
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        $operationKey = $dto->details['operation_key'] ?? null;
+        $this->assertNotNull($operationKey);
+        $questionId = (string) ($dto->details['question_id'] ?? '');
+        $this->assertNotEmpty($questionId);
+
+        // Human answers "Allow once" through onApprovalAnswered
+        $this->hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
+            questionId: $questionId,
+            answer: 'Allow once',
+            toolName: 'bash',
+            approvalContext: [
+                'operation_key' => $operationKey,
+                'category' => 'destructive',
+                'command' => $command,
+                'tool_name' => 'bash',
+            ],
+        ));
+
+        $this->assertTrue($this->tracker->isApproved($operationKey), 'Tracker should mark approved after "Allow once"');
+
+        // Second call (retry): consumed and allowed
+        $dto2 = $this->hook->onToolCall(new ToolCallContextDTO(
+            toolCallId: 'call_23',
+            toolName: 'bash',
+            arguments: ['command' => $command],
+            orderIndex: 0,
+        ));
+
+        $this->assertSame(ToolCallDecisionKindEnum::Allow, $dto2->kind);
+        $this->assertFalse($this->tracker->isApproved($operationKey), 'Approval should be consumed after retry');
+    }
+
+    public function testDenyRemovesPendingAndRejectsRetry(): void
+    {
+        $command = 'rm -rf /tmp/test';
+
+        // First call: RequireApproval
+        $dto = $this->hook->onToolCall(new ToolCallContextDTO(
+            toolCallId: 'call_24',
+            toolName: 'bash',
+            arguments: ['command' => $command],
+            orderIndex: 0,
+        ));
+
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        $operationKey = $dto->details['operation_key'] ?? null;
+        $this->assertNotNull($operationKey);
+        $questionId = (string) ($dto->details['question_id'] ?? '');
+
+        // Human answers "Deny" through onApprovalAnswered
+        $this->hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
+            questionId: $questionId,
+            answer: 'Deny',
+            toolName: 'bash',
+            approvalContext: [
+                'operation_key' => $operationKey,
+                'category' => 'destructive',
+                'command' => $command,
+                'tool_name' => 'bash',
+            ],
+        ));
+
+        $this->assertFalse($this->tracker->isApproved($operationKey), 'Tracker should not approve after denial');
+
+        // Second call (retry after denial): still requires approval
+        $dto2 = $this->hook->onToolCall(new ToolCallContextDTO(
+            toolCallId: 'call_25',
+            toolName: 'bash',
+            arguments: ['command' => $command],
+            orderIndex: 0,
+        ));
+
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto2->kind);
+    }
+
+    public function testAlwaysAllowApprovesAndPersistsToPolicyFile(): void
+    {
+        $tmpDir = sys_get_temp_dir() . '/sg_hook_test_' . uniqid();
+        mkdir($tmpDir, 0o755, true);
+        $settingsPath = $tmpDir . '/settings.yaml';
+
+        try {
+            $config = new SafeGuardConfig(autoDenyInNoninteractive: false);
+            $classifier = SafeGuardClassifier::fromConfig($config);
+            $policy = SafeGuardPolicy::fromConfig($config);
+            $tracker = new ApprovalSessionTracker();
+            $policyWriter = new SafeGuardPolicyWriter($settingsPath);
+            $hook = new SafeGuardToolCallHook(
+                classifier: $classifier,
+                policy: $policy,
+                approvalTracker: $tracker,
+                policyWriter: $policyWriter,
+                cwd: $this->cwd,
+                autoDenyInNoninteractive: false,
+            );
+
+            $command = 'rm -rf /tmp/build';
+
+            // First call: RequireApproval
+            $dto = $hook->onToolCall(new ToolCallContextDTO(
+                toolCallId: 'call_26',
+                toolName: 'bash',
+                arguments: ['command' => $command],
+                orderIndex: 0,
+            ));
+
+            $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+            $operationKey = $dto->details['operation_key'] ?? null;
+            $this->assertNotNull($operationKey);
+            $questionId = (string) ($dto->details['question_id'] ?? '');
+
+            // Human answers "Always allow" through onApprovalAnswered
+            $hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
+                questionId: $questionId,
+                answer: 'Always allow',
+                toolName: 'bash',
+                approvalContext: [
+                    'operation_key' => $operationKey,
+                    'category' => 'destructive',
+                    'command' => $command,
+                    'tool_name' => 'bash',
+                ],
+            ));
+
+            $this->assertTrue($tracker->isApproved($operationKey), 'Tracker should approve for next retry');
+
+            // Second call: approved (consumed)
+            $dto2 = $hook->onToolCall(new ToolCallContextDTO(
+                toolCallId: 'call_27',
+                toolName: 'bash',
+                arguments: ['command' => $command],
+                orderIndex: 0,
+            ));
+
+            $this->assertSame(ToolCallDecisionKindEnum::Allow, $dto2->kind);
+
+            // Policy file should contain the persisted pattern
+            $this->assertFileExists($settingsPath);
+            $content = file_get_contents($settingsPath);
+            $this->assertStringContainsString('rm -rf /tmp/build', $content);
+            $this->assertStringContainsString('allow_command_patterns', $content);
+        } finally {
+            if (file_exists($settingsPath)) {
+                unlink($settingsPath);
+            }
+            @rmdir($tmpDir);
+        }
+    }
+
+    public function testOnApprovalAnsweredWithEmptyOperationKeyIsNoop(): void
+    {
+        $command = 'rm -rf /tmp/build';
+
+        // First call: RequireApproval with a real pending key
+        $dto = $this->hook->onToolCall(new ToolCallContextDTO(
+            toolCallId: 'call_empty_key',
+            toolName: 'bash',
+            arguments: ['command' => $command],
+            orderIndex: 0,
+        ));
+
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        $operationKey = $dto->details['operation_key'] ?? null;
+        $this->assertNotNull($operationKey);
+        $questionId = (string) ($dto->details['question_id'] ?? '');
+        $this->assertNotEmpty($questionId);
+
+        // Answer with same questionId but empty operation_key
+        $this->hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
+            questionId: $questionId,
+            answer: 'Allow once',
+            toolName: 'bash',
+            approvalContext: [
+                'operation_key' => '',
+                'category' => 'destructive',
+            ],
+        ));
+
+        // Tracker should still not be approved — empty key is rejected
+        $this->assertFalse($this->tracker->isApproved($operationKey), 'Empty operation_key should not approve');
+
+        // Retry: still requires approval (approval was never granted)
+        $dto2 = $this->hook->onToolCall(new ToolCallContextDTO(
+            toolCallId: 'call_empty_key_retry',
+            toolName: 'bash',
+            arguments: ['command' => $command],
+            orderIndex: 0,
+        ));
+
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto2->kind);
+        $this->addToAssertionCount(1); // Reached without exception
+    }
+
+    public function testOnApprovalAnsweredWithMissingOperationKeyIsNoop(): void
+    {
+        $command = 'rm -rf /';
+
+        // First call: RequireApproval with a real pending key
+        $dto = $this->hook->onToolCall(new ToolCallContextDTO(
+            toolCallId: 'call_missing_key',
+            toolName: 'bash',
+            arguments: ['command' => $command],
+            orderIndex: 0,
+        ));
+
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        $operationKey = $dto->details['operation_key'] ?? null;
+        $this->assertNotNull($operationKey);
+        $questionId = (string) ($dto->details['question_id'] ?? '');
+        $this->assertNotEmpty($questionId);
+
+        // Answer with same questionId but missing operation_key entirely
+        $this->hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
+            questionId: $questionId,
+            answer: 'Allow once',
+            toolName: 'bash',
+            approvalContext: [
+                'category' => 'destructive',
+                'command' => $command,
+            ],
+        ));
+
+        // Tracker should still not be approved — missing key is rejected
+        $this->assertFalse($this->tracker->isApproved($operationKey), 'Missing operation_key should not approve');
+
+        // Retry: still requires approval (approval was never granted)
+        $dto2 = $this->hook->onToolCall(new ToolCallContextDTO(
+            toolCallId: 'call_missing_key_retry',
+            toolName: 'bash',
+            arguments: ['command' => $command],
+            orderIndex: 0,
+        ));
+
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto2->kind);
+        $this->addToAssertionCount(1); // Reached without exception
+    }
+
+    // ─── Approval-channel availability ────────────────────────────────
+
+    public function testAutoDenyBlocksWhenNoApprovalChannel(): void
+    {
+        // Construct with autoDenyInNoninteractive=true and no HATFIELD_APPROVAL_CHANNEL env.
+        // The destructive `rm -rf` should be auto-blocked instead of prompting.
+        $hook = $this->createHook(autoDeny: true);
+
+        $dto = $hook->onToolCall(new ToolCallContextDTO(
+            toolCallId: 'call_auto_deny',
+            toolName: 'bash',
+            arguments: ['command' => 'rm -rf /tmp/test'],
+            orderIndex: 0,
+        ));
+
+        $this->assertSame(ToolCallDecisionKindEnum::Block, $dto->kind);
+        $this->assertTrue((bool) ($dto->details['auto_denied'] ?? false));
+        $this->assertTrue((bool) ($dto->details['denied'] ?? false));
+    }
+
+    #[\PHPUnit\Framework\Attributes\BackupGlobals(true)]
+    public function testAutoDenyPromptsWhenApprovalChannelIsSet(): void
+    {
+        // Simulate interactive TUI spawning the controller with
+        // HATFIELD_APPROVAL_CHANNEL=controller.
+        \putenv('HATFIELD_APPROVAL_CHANNEL=controller');
+
+        try {
+            $hook = $this->createHook(autoDeny: true);
+
+            $dto = $hook->onToolCall(new ToolCallContextDTO(
+                toolCallId: 'call_with_channel',
+                toolName: 'bash',
+                arguments: ['command' => 'rm -rf /tmp/test'],
+                orderIndex: 0,
+            ));
+
+            // Approval channel should override auto-deny → RequireApproval
+            $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+            $this->assertArrayHasKey('question_id', $dto->details);
+            $this->assertNotEmpty((string) ($dto->details['question_id'] ?? ''));
+        } finally {
+            \putenv('HATFIELD_APPROVAL_CHANNEL');
+        }
+    }
+
+    public function testAutoDenyFalseRequiresApprovalWithoutChannel(): void
+    {
+        // autoDenyInNoninteractive=false, no channel → still prompts.
+        // This is the explicit testing/headless-broker mode.
+        $hook = $this->createHook(autoDeny: false);
+
+        $dto = $hook->onToolCall(new ToolCallContextDTO(
+            toolCallId: 'call_no_channel_false',
+            toolName: 'bash',
+            arguments: ['command' => 'rm -rf /tmp/test'],
+            orderIndex: 0,
+        ));
+
+        $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+    }
+
+    /**
+     * Create a fresh hook with the given auto-deny setting and no
+     * policy writer so each test gets its own clean tracker.
+     */
+    private function createHook(bool $autoDeny): SafeGuardToolCallHook
+    {
+        $config = new SafeGuardConfig(autoDenyInNoninteractive: $autoDeny);
+        $classifier = SafeGuardClassifier::fromConfig($config);
+        $tracker = new ApprovalSessionTracker();
+
+        return new SafeGuardToolCallHook(
+            classifier: $classifier,
+            policy: new SafeGuardPolicy(),
+            approvalTracker: $tracker,
+            policyWriter: null,
+            cwd: $this->cwd,
+            autoDenyInNoninteractive: $autoDeny,
+        );
     }
 }

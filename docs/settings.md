@@ -490,6 +490,7 @@ Settings are read at extension load time through
 | `allow_destructive_in_paths` | list | `[]` | Reserved for serialization compatibility. Not currently wired to classification logic. |
 | `protected_read_patterns` | list | `[]` | Additional filename/path patterns requiring confirmation to read. Added **on top** of built-in defaults — defaults cannot be removed. |
 | `dangerous_command_patterns` | list | `[]` | Extra command substrings treated as dangerous, added to built-in regexes. |
+| `auto_deny_in_noninteractive` | bool | `true` | Fail-closed when no approval channel (controller/TUI) is available. Interactive TUI contexts set `HATFIELD_APPROVAL_CHANNEL=controller` automatically so SafeGuard prompts even when this is `true`. Set to `false` only when an external approval broker (parent process, headless subagent host, policy engine) will relay questions and send `answer_human` back — otherwise the run hangs in `WaitingHuman` forever. |
 
 **Example:**
 
@@ -510,6 +511,7 @@ extensions:
                 - .env.production
             dangerous_command_patterns:
                 - python -c "import os"
+            auto_deny_in_noninteractive: true
 ```
 
 ### `ai.default_model`

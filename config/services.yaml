@@ -244,6 +244,17 @@ services:
 
   # ─── Controller event loop ───
 
+  # Command handlers (ControllerCommandEvent listeners) receive the
+  # in-process client so they can dispatch commands to the run_control,
+  # llm, and tool transports without spawning subprocesses.
+  #
+  # Controller command handlers type-hint against the AgentSessionClient
+  # interface so they remain testable with test spies (InProcessAgentSessionClient
+  # is final and cannot be mocked). The concrete implementation calls
+  # agent-core services directly in-process.
+  Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient:
+    alias: 'Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient'
+
   Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter:
     arguments:
       $eventClient: '@Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient'

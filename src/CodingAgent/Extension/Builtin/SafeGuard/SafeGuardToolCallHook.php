@@ -83,9 +83,17 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
             return $this->block($decision);
         }
 
-        // Policy-relaxable categories → RequireApproval (unless auto-deny is active)
+        // Policy-relaxable categories → RequireApproval (unless auto-deny is active
+        // and no approval channel is available).
+        //
+        // An approval channel is signalled by HATFIELD_APPROVAL_CHANNEL env var:
+        // - Interactive TUI sets this when spawning the controller process so
+        //   messenger consumers inherit it. SafeGuard MUST prompt — the TUI
+        //   can display the question and relay answers.
+        // - Headless/worker contexts without the env var auto-block (fail-closed),
+        //   unless the operator has explicitly set auto_deny_in_noninteractive=false.
         if ($this->isRelaxable($decision->kind)) {
-            if ($this->autoDenyInNoninteractive) {
+            if ($this->autoDenyInNoninteractive && !$this->hasApprovalChannel()) {
                 return ToolCallDecisionDTO::block(
                     reason: $decision->reason,
                     details: [
@@ -146,19 +154,24 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
         }
 
         if ('Deny' === $context->answer) {
-            $this->approvalTracker->remove($operationKey);
+            // removeByQuestionId cleans both the pending mapping and the
+            // approved entry (if any) so stale state cannot accumulate.
+            $this->approvalTracker->removeByQuestionId($context->questionId);
 
             return;
         }
 
         if ('Allow once' === $context->answer) {
-            $this->approvalTracker->approve($operationKey);
+            // approveByQuestionId resolves the operationKey from the
+            // pendingByQuestionId mapping, marks approved, and cleans
+            // the pending entry in one step.
+            $this->approvalTracker->approveByQuestionId($context->questionId);
 
             return;
         }
 
         if ('Always allow' === $context->answer) {
-            $this->approvalTracker->approve($operationKey);
+            $this->approvalTracker->approveByQuestionId($context->questionId);
 
             // Persist to policy file for future sessions
             $category = (string) ($context->approvalContext['category'] ?? '');
@@ -170,6 +183,17 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
 
             return;
         }
+
+        // Unrecognized answers (null, empty, or unknown values) are
+        // intentionally ignored: no approval is recorded and the
+        // pending entry in the tracker remains, leaving the operation
+        // blocked. This is a fail-closed safety guard — only explicit
+        // Deny / Allow once / Always allow answers mutate state.
+        // If the question is retried (re-answered), a new answer will
+        // arrive on a fresh call to this method.
+        //
+        // The guard is intentionally sparse: no logging, no exception.
+        // A stray/corrupted answer should not crash the run.
     }
 
     /**
@@ -239,6 +263,28 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
         // The onApprovalAnswered() receives the actual category in the
         // approval context, so the tracker key prefix is informational.
         return $toolName;
+    }
+
+    /**
+     * Check whether the runtime has an approval channel available.
+     *
+     * This is a capability signal, NOT a security boundary. An approval
+     * channel means there is a human or broker that can receive questions
+     * and relay answers back (via answer_human commands). Without it,
+     * RequireApproval decisions would hang the run in WaitingHuman forever.
+     *
+     * Interactive TUI contexts set HATFIELD_APPROVAL_CHANNEL=controller when
+     * spawning the agent process so that all messenger consumers inherit it
+     * and SafeGuard can prompt for approval instead of auto-blocking.
+     *
+     * Headless/worker contexts without this signal default to fail-closed
+     * (auto-block) because no one is available to answer the question.
+     */
+    private function hasApprovalChannel(): bool
+    {
+        $channel = getenv('HATFIELD_APPROVAL_CHANNEL');
+
+        return \is_string($channel) && '' !== $channel;
     }
 
     /**

@@ -7,6 +7,8 @@ namespace Ineersa\CodingAgent\Tests\Extension\Builtin\SafeGuard;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardToolCallHook;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
+use Ineersa\Hatfield\ExtensionApi\ToolCallContextDTO;
+use Ineersa\Hatfield\ExtensionApi\ToolCallDecisionKindEnum;
 use Ineersa\Hatfield\ExtensionApi\ToolCallHookInterface;
 use PHPUnit\Framework\TestCase;
 
@@ -24,72 +26,66 @@ final class SafeGuardExtensionTest extends TestCase
     public function testRegisterCreatesHookAndCallsRegisterToolCallHook(): void
     {
         $extension = new SafeGuardExtension();
-
         $api = $this->createMock(ExtensionApiInterface::class);
-
-        $api->expects($this->once())
-            ->method('getSettings')
-            ->with('safe_guard')
-            ->willReturn([]);
-
-        $api->expects($this->once())
-            ->method('getCwd')
-            ->willReturn('/tmp');
-
-        // Verify registerToolCallHook is called with a SafeGuardToolCallHook instance
-        $api->expects($this->once())
-            ->method('registerToolCallHook')
-            ->with($this->callback(static function (ToolCallHookInterface $hook): bool {
-                return $hook instanceof SafeGuardToolCallHook;
-            }));
-
+        $api->expects($this->once())->method('getSettings')->with('safe_guard')->willReturn([]);
+        $api->expects($this->once())->method('getCwd')->willReturn('/tmp');
+        $api->expects($this->once())->method('registerToolCallHook')
+            ->with($this->callback(static fn (ToolCallHookInterface $hook): bool => $hook instanceof SafeGuardToolCallHook));
         $extension->register($api);
     }
 
-    public function testRegisterWithCustomSettings(): void
+    public function testRegisterWithCustomSettingsIncludingAutoDeny(): void
     {
         $extension = new SafeGuardExtension();
 
+        /** @var SafeGuardToolCallHook|null $capturedHook */
+        $capturedHook = null;
+
         $api = $this->createMock(ExtensionApiInterface::class);
+        $api->expects($this->once())->method('getSettings')->with('safe_guard')->willReturn([
+            'tool_names' => ['bash' => 'shell'],
+            'auto_deny_in_noninteractive' => false,
+        ]);
+        $api->expects($this->once())->method('getCwd')->willReturn('/project');
+        $api->expects($this->once())->method('registerToolCallHook')
+            ->with($this->callback(static function (ToolCallHookInterface $hook) use (&$capturedHook): bool {
+                $capturedHook = $hook;
 
-        $api->expects($this->once())
-            ->method('getSettings')
-            ->with('safe_guard')
-            ->willReturn([
-                'tool_names' => [
-                    'bash' => 'shell',
-                    'write' => 'save',
-                ],
-                'allow_command_patterns' => ['git push'],
-            ]);
-
-        $api->expects($this->once())
-            ->method('getCwd')
-            ->willReturn('/project');
-
-        $api->expects($this->once())
-            ->method('registerToolCallHook')
-            ->with($this->isInstanceOf(SafeGuardToolCallHook::class));
-
+                return $hook instanceof SafeGuardToolCallHook;
+            }));
         $extension->register($api);
+
+        $this->assertNotNull($capturedHook, 'Expected hook to be captured');
+
+        // Exercise the hook with a destructive command using the custom alias 'shell'
+        // and verify auto_deny_in_noninteractive=false allows RequireApproval
+        $dto = $capturedHook->onToolCall(new ToolCallContextDTO(
+            toolCallId: 'call_custom',
+            toolName: 'shell',
+            arguments: ['command' => 'rm -rf /tmp/build'],
+            orderIndex: 0,
+        ));
+
+        $this->assertSame(
+            ToolCallDecisionKindEnum::RequireApproval,
+            $dto->kind,
+            'Custom alias "shell" should be recognized and auto_deny_in_noninteractive=false should return RequireApproval',
+        );
     }
 
     public function testRegisterCanBeCalledMultipleTimes(): void
     {
-        // Each register() call creates a fresh hook — verify idempotent.
         $extension = new SafeGuardExtension();
-
         $api1 = $this->createMock(ExtensionApiInterface::class);
         $api1->method('getSettings')->willReturn([]);
         $api1->method('getCwd')->willReturn('/tmp');
         $api1->expects($this->once())->method('registerToolCallHook');
+        $extension->register($api1);
 
         $api2 = $this->createMock(ExtensionApiInterface::class);
         $api2->method('getSettings')->willReturn([]);
         $api2->method('getCwd')->willReturn('/tmp');
         $api2->expects($this->once())->method('registerToolCallHook');
-
-        $extension->register($api1);
         $extension->register($api2);
     }
 }

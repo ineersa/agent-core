@@ -131,12 +131,18 @@ final readonly class SafeGuardPolicyWriter
 
         $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 4, 2);
 
-        // Use atomic write to avoid partial writes
+        // Use atomic write to avoid partial writes.
+        // On any failure (write, rename, or partial state), clean up
+        // the temp file so orphaned .tmp.<pid> files don't accumulate.
         $tmp = $this->settingsPath.'.tmp.'.getmypid();
-        $written = file_put_contents($tmp, $yaml, \LOCK_EX);
+        $written = @file_put_contents($tmp, $yaml, \LOCK_EX);
 
         if (false !== $written) {
-            rename($tmp, $this->settingsPath);
+            if (!@rename($tmp, $this->settingsPath) && file_exists($tmp)) {
+                @unlink($tmp);
+            }
+        } elseif (file_exists($tmp)) {
+            @unlink($tmp);
         }
     }
 }
