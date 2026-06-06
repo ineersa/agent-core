@@ -135,6 +135,36 @@ final class SymfonyAiProviderFactoryTest extends TestCase
         $this->assertInstanceOf(CodexModel::class, $model);
     }
 
+    public function testCodexTypeWithEmptyBaseUrlBuildsProvider(): void
+    {
+        $providerConfig = new AiProviderConfig(
+            id: 'openai-codex',
+            type: 'codex',
+            enabled: true,
+            baseUrl: '',
+            apiKey: 'some-access-token',
+            accountId: 'chat-123456',
+            models: [
+                'gpt-5.4-mini' => new AiModelDefinition(
+                    id: 'gpt-5.4-mini',
+                    toolCalling: true,
+                    reasoning: true,
+                ),
+            ],
+        );
+
+        $factory = $this->createFactory(['openai-codex' => $providerConfig]);
+        $providers = $factory->createProviders();
+
+        $this->assertArrayHasKey('openai-codex', $providers);
+        $this->assertInstanceOf(ProviderInterface::class, $providers['openai-codex']);
+
+        // Verify the catalog produces CodexModel even when baseUrl is empty
+        $catalog = $providers['openai-codex']->getModelCatalog();
+        $model = $catalog->getModel('gpt-5.4-mini');
+        $this->assertInstanceOf(CodexModel::class, $model);
+    }
+
     public function testDisabledCodexProviderIsSkipped(): void
     {
         $providerConfig = new AiProviderConfig(

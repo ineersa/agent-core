@@ -358,6 +358,7 @@ logging:
 #             supports_thinking_levels: true
 #             compatibility:
 #                 supports_developer_role: false
+#                 supports_reasoning_effort: false
 #                 thinking_format: codex
 #             models:
 #                 gpt-5.5:

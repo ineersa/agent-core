@@ -103,8 +103,12 @@ class SymfonyAiProviderFactory
             throw new \RuntimeException(\sprintf('OpenAI Codex provider "%s" requires an account_id. Run: bin/console auth:codex', $provider->id));
         }
 
+        // Use the configured baseUrl falling back to the OpenAICodex factory default,
+        // so a YAML provider with an empty base_url does not silently break the bridge.
+        $baseUrl = '' !== $provider->baseUrl ? $provider->baseUrl : 'https://chatgpt.com/backend-api';
+
         return OpenAICodexFactory::createProvider(
-            baseUrl: $provider->baseUrl,
+            baseUrl: $baseUrl,
             accessToken: $apiKey,
             accountId: $accountId,
             httpClient: null,
