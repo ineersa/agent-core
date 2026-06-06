@@ -13,7 +13,7 @@ Investigate how pan/pi-mono implement OpenAI Codex OAuth/PKCE auth, token storag
 Status: IN-PROGRESS
 Branch: task/hatfield-openai-codex-auth-research
 Worktree: /home/ineersa/projects/agent-core-worktrees/hatfield-openai-codex-auth-research
-Fork run: c3d5le8re4r7
+Fork run: z0lk809uwmes
 PR URL: https://github.com/ineersa/agent-core/pull/98
 PR Status: open
 Started: 2026-06-06T17:25:57.754Z
@@ -164,3 +164,8 @@ Castor Check Output SHA256: 271e527f441554fd2f242bcdfa1bab8fccc6951b56a9d90f88ea
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Validation: PR inline comment reviewed: src/CodingAgent/Infrastructure/SymfonyAi/SymfonyAiProviderFactory.php line 103 — drop explicit YAML credential configs for Codex
 - Summary: Review iteration requested from PR #98 inline comment: Codex credentials should not be manually configured via YAML because OAuth is required first. Plan: remove YAML api_key/account_id override path for Codex, rely only on auth:codex stored credentials, and update defaults/docs/tests accordingly.
+
+## Task workflow update - 2026-06-06T23:00:05.098Z
+- Recorded fork run: z0lk809uwmes
+- Summary: Launched review-iteration fork z0lk809uwmes to address PR #98 inline comment: remove manual YAML credential support/override semantics for Codex and require credentials from `auth:codex` / `~/.hatfield/auth.json`. Scope includes SymfonyAiProviderFactory Codex credential resolution, defaults/docs cleanup, and factory tests update.
+- Do not push or move task until fork completes, changes are verified, reviewer re-run, and focused Castor validation passes
