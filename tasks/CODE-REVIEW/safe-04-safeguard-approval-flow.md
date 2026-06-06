@@ -435,7 +435,7 @@ depfile.yaml                                                   — new Extension
 - **Approval audit log** — separate from transcript, future work.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/safe-04-safeguard-approval-flow
 Worktree: /home/ineersa/projects/agent-core-worktrees/safe-04-safeguard-approval-flow
 Fork run: 44c68978
@@ -542,11 +542,11 @@ Remaining: castor test:controller requires llama.cpp on port 9052.
 - Validation: reviewer: APPROVE WITH SUGGESTIONS on HEAD b88e60d4, no critical issues, no bugs, no blockers; castor test passed (1722 tests, 5070 assertions, 0 failures, 0 errors); castor deptrac passed (0 violations, 0 errors); castor phpstan passed (0 errors, 0 file_errors); castor cs-check passed (0 files fixed)
 - Summary: Task-to-pr final review on HEAD b88e60d4 returned APPROVE WITH SUGGESTIONS with no blockers or issues. Reviewer confirmed prior suggestions are addressed: onApprovalAnswered() coverage is meaningful, SafeGuardExtensionTest proves custom alias plus auto_deny_in_noninteractive=false wiring, and docs/settings examples are clear. Remaining comments are non-blocking decorative/nice-to-have only (implicit no-exception addToAssertionCount, optional direct SafeGuardConfig parsing test). Local focused Castor validation passed on HEAD b88e60d4; worktree clean. Proceeding to move task to CODE-REVIEW / push PR #79.
 Castor Check Status: passed
-Castor Check Commit: 7357424457577523a8fb82f7bdbcb148f541ab74
+Castor Check Commit: 44c689782048d318edc6d27e0e7ccfe78233a35e
 Castor Check Command: LLM_MODE=true castor check
 Castor Check Timeout: 900s
-Castor Check Completed: 2026-06-05T22:52:12.884Z
-Castor Check Output SHA256: d8a14786d0d604503009cfa92106210b3e0dca4cc12d39d2ef44f052023e0139
+Castor Check Completed: 2026-06-06T00:58:30.066Z
+Castor Check Output SHA256: 073027cc965adf5cfe916f203e6964e8be9c5217e1b31c98eaf48936983e5469
 
 ## Task workflow update - 2026-06-05T21:09:25.199Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -634,3 +634,12 @@ Castor Check Output SHA256: d8a14786d0d604503009cfa92106210b3e0dca4cc12d39d2ef44
 - Recorded fork run: 44c68978
 - Validation: castor test --filter='ChatScreenTest|QuestionController' OK (20 tests, 69 assertions); castor test --filter='Question|Tui|SafeGuard|TickPoll|ChatScreen' OK (520 tests, 1246 assertions); castor test OK (1746 tests, 5147 assertions); castor deptrac OK (0 violations, 0 errors); castor phpstan OK (0 errors, 0 file_errors); castor cs-check OK (0 files fixed)
 - Summary: Implementation fork addressed reviewer polish suggestions for SafeGuard approval overlay. Commit 44c68978 `Tighten SafeGuard approval overlay polish` (3 files changed, 217 insertions, 20 deletions): added targeted ChatScreen overlay placement tests in new tests/Tui/Screen/ChatScreenTest.php; simplified QuestionController by removing redundant context field, using screen as single source of truth, and consolidating null guard; changed ChatScreen::insertOverlayBeforeEditor() to throw LogicException if called before mount instead of silently dropping overlay; renamed overlay section comment, fixed orphaned ChatScreen refresh docblock, and updated overlay order comment to the accurate chain aboveEditorWidget → overlay → editorSep → editor → belowEditorWidget → footerSep → footer. PickerOverlay migration intentionally deferred as prior reviewer marked it follow-up/out of scope. Worktree reported clean at HEAD 44c68978.
+
+## Task workflow update - 2026-06-06T00:58:31.302Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: 44c689782048.
+- Pushed task/safe-04-safeguard-approval-flow to origin.
+- branch 'task/safe-04-safeguard-approval-flow' set up to track 'origin/task/safe-04-safeguard-approval-flow'.
+- Skipped PR creation (pushOnly: true).
+- Validation: pre-push state: PR #79 already merged at old head 73574244; local branch HEAD 44c68978 with 4 commits not on origin/main; worktree clean after removing untracked smoke artifact claw/test.md; origin/main pulled to da1e4833 before push/merge
+- Summary: Pushing latest post-merge SAFE-04 fixes after PR #79 was already merged at older head. Latest local task branch adds PHAR cache invalidation and approval dialog placement/theme polish commits through 44c68978; no new PR is needed because user requested pushing branch and merging directly to main.
