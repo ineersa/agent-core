@@ -67,7 +67,7 @@ This follows TOOLS-09, which implements bash as a background-managed foreground-
 Status: IN-PROGRESS
 Branch: task/tools-09b-runtime-tool-question-bridge
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-09b-runtime-tool-question-bridge
-Fork run:
+Fork run: cqv6k03pf40f
 PR URL:
 PR Status:
 Started: 2026-06-06T23:33:30.150Z
@@ -87,3 +87,9 @@ Completed:
 - Created worktree /home/ineersa/projects/agent-core-worktrees/tools-09b-runtime-tool-question-bridge.
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/tools-09b-runtime-tool-question-bridge.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/tools-09b-runtime-tool-question-bridge.
+
+## Task workflow update - 2026-06-06T23:40:15.135Z
+- Recorded fork run: cqv6k03pf40f
+- Summary: Task started and implementation fork launched in worktree /home/ineersa/projects/agent-core-worktrees/tools-09b-runtime-tool-question-bridge. Scout findings: BashTool already has the correct single seam, BashBackgroundPromptAdapterInterface::shouldBackground(command, pid, logPath, elapsedSeconds): bool, called once from the supervision loop after BackgroundProcessManager::start(); accepting returns a background notice and leaves the already-started process running, preserving no-duplicate-command behavior. ToolContext via StackToolExecutionContextAccessor provides runId, toolCallId, toolName, cancellationToken, and timeoutSeconds. Existing TUI question infrastructure already supports local callbacks through QuestionCoordinator/QuestionRequest/QuestionController with QuestionSource::Tui, QuestionKind::Confirm, transcript=false. Existing TickPollListener currently hardcodes human_input.requested as AgentCore Approval transcript=true with answer_human callbacks; TOOLS-09B should add an adjacent/reused tool_question path instead. RuntimeEventPoller can be extended with a second optional callback for tool_question.requested. Process-mode TUI is default, and tool workers do not have stdout polled by HeadlessController (only LLM stdout is polled), so the fork was instructed to implement the minimal cross-process pending answer bridge necessary while reusing the existing question UI and runtime command patterns.
+- Launched two scout subagents in the task worktree: one for BashTool/background prompt internals and one for existing HITL/TUI question/runtime reuse seams.
+- Launched implementation fork cqv6k03pf40f with reuse-first instructions: add minimal tool_question.requested / answer_tool_question bridge, reuse QuestionCoordinator/QuestionController, keep transcript=false, avoid ask_human/answer_human, preserve no-duplicate bash execution, add focused tests, run Castor focused validation, commit, and stop before PR/gate steps.
