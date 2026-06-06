@@ -248,3 +248,16 @@ Commit diff: 5 files changed, 110 insertions, 16 deletions.
 - Re-review verdict: APPROVE WITH SUGGESTIONS
 - Addressing 2 actionable edge cases before PR prep: Codex config semantics for supports_reasoning_effort, and empty baseUrl fallback in SymfonyAiProviderFactory
 - Launched cleanup fork m3rfm09invci
+
+## Task workflow update - 2026-06-06T17:13:17.542Z
+- Validation: reviewer: APPROVE on HEAD a9928d52; castor test: ok (tests=1737, assertions=5126, errors=0, failures=0, skipped=0); castor deptrac: ok (violations=0, errors=0, uncovered=644, allowed=822); castor phpstan: ok (errors=0, file_errors=0); castor cs-check: ok (files_fixed=0)
+- Summary: Reviewer re-run on HEAD a9928d52 returned APPROVE with no actionable issues. Task is ready for PR/code review.
+
+Final implementation commits on task branch:
+- b8d1129f feat(coding-agent): wire OpenAICodex bridge into Hatfield config, factory, and reasoning
+- 3fc8bd65 fix(coding-agent): correct Codex model projection and credential validation
+- a9928d52 chore(coding-agent): tighten Codex provider config semantics
+- Verified cleanup commit a9928d52 at worktree HEAD
+- Re-review returned APPROVE with no actionable issues
+- Ran focused Castor validation successfully using installed `castor` binary after correcting initial entrypoint mistake (`vendor/bin/castor` does not exist in this repo)
+- Preparing move to CODE-REVIEW for full gate + PR creation
