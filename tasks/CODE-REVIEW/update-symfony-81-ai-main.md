@@ -107,12 +107,12 @@ Two-part dependency update:
 - No new deprecation warnings in test suite
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/update-symfony-81-ai-main
 Worktree: /home/ineersa/projects/agent-core-worktrees/update-symfony-81-ai-main
 Fork run: ah2e645m81lf
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/97
+PR Status: open
 Started: 2026-06-06T17:50:56.478Z
 Completed:
 
@@ -142,3 +142,16 @@ Completed:
 ## Task workflow update - 2026-06-06T18:09:36.033Z
 - Validation: Reviewer: APPROVE WITH SUGGESTIONS; critical issues: none; Branch verification: git diff --stat origin/main...HEAD => composer.json, composer.lock, src/AgentCore/Infrastructure/SymfonyAi/LlmPlatformAdapter.php only; Branch verification: git log origin/main..HEAD => 6188aa47 only
 - Summary: Reviewer subagent returned APPROVE WITH SUGGESTIONS and no critical issues. Reviewer noted a two-dot branch divergence involving task metadata, but local verification after git fetch confirmed origin/main...HEAD diff is limited to the expected 3 implementation files; origin/main..HEAD shows task metadata only because the branch is behind origin/main by task workflow commits, not because the implementation commit changed task files. The acceptance-criteria deviation for symfony/ai-platform is documented and Composer-confirmed as unavoidable with current upstream constraints.
+Castor Check Status: passed
+Castor Check Commit: 6188aa4703cbaa4284d1317e08ede94d5ef36e77
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 900s
+Castor Check Completed: 2026-06-06T18:11:59.785Z
+Castor Check Output SHA256: 68c3cff7bd62140dc4cbe7aff1f4d9b40f199a618056ef0f27a28b3d0d520ebb
+
+## Task workflow update - 2026-06-06T18:12:03.638Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: 6188aa4703cb.
+- Pushed task/update-symfony-81-ai-main to origin.
+- branch 'task/update-symfony-81-ai-main' set up to track 'origin/task/update-symfony-81-ai-main'.
+- Created PR: https://github.com/ineersa/agent-core/pull/97
