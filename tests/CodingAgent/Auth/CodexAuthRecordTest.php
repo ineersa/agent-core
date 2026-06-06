@@ -37,8 +37,6 @@ final class CodexAuthRecordTest extends TestCase
         $this->assertTrue($record->isExpired());
     }
 
-
-
     public function testBufferMakesFutureRecordAppearExpired(): void
     {
         // Record expires 30 seconds from now

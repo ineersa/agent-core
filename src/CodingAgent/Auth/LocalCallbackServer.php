@@ -69,6 +69,9 @@ final class LocalCallbackServer
                 return null; // timeout
             }
 
+            // 8 KB is intentionally generous: a local OAuth GET callback with
+            // headers + query string rarely exceeds 2 KB, so this buffer size
+            // safely captures the full request without streaming complexity.
             $request = @fread($conn, 8192);
             if (false === $request || '' === $request) {
                 return null;
@@ -112,7 +115,7 @@ final class LocalCallbackServer
                 return null;
             }
 
-            if (null === $code || '' === $code) {
+            if (!\is_string($code) || '' === $code) {
                 $this->sendResponse($conn, 400, self::errorHtml('Missing authorization code.'));
 
                 return null;

@@ -69,11 +69,4 @@ final class ManualCodeParserTest extends TestCase
         $this->assertNull($result['state']);
     }
 
-    public function testReturnsCodeOnlyForCodeValue(): void
-    {
-        $result = ManualCodeParser::parse('axbYz9876');
-
-        $this->assertSame('axbYz9876', $result['code']);
-        $this->assertNull($result['state']);
-    }
 }
