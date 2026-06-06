@@ -155,3 +155,8 @@ Castor Check Output SHA256: 68c3cff7bd62140dc4cbe7aff1f4d9b40f199a618056ef0f27a2
 - Pushed task/update-symfony-81-ai-main to origin.
 - branch 'task/update-symfony-81-ai-main' set up to track 'origin/task/update-symfony-81-ai-main'.
 - Created PR: https://github.com/ineersa/agent-core/pull/97
+
+## Task workflow update - 2026-06-06T18:12:35.391Z
+- Updated PR Status: open
+- Validation: move_task to CODE-REVIEW: Castor quality gate passed at commit 6188aa4703cb; branch pushed; PR #97 created; move_task to DONE: blocked because integration checkout has unstaged composer.json modification
+- Summary: PR created after full Castor quality gate passed: https://github.com/ineersa/agent-core/pull/97. Attempted DONE merge per user request, but move_task refused because the integration checkout is dirty: composer.json has an unstaged local change setting all three AI packages, including symfony/ai-platform, to dev-main. This is not part of the committed task branch and Composer diagnostics showed ai-platform dev-main is not installable with current upstream dev-main ai-agent/generic-platform constraints. Merge remains blocked until the integration checkout composer.json change is committed, stashed, or discarded.
