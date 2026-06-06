@@ -13,7 +13,7 @@ Investigate how pan/pi-mono implement OpenAI Codex OAuth/PKCE auth, token storag
 Status: IN-PROGRESS
 Branch: task/hatfield-openai-codex-auth-research
 Worktree: /home/ineersa/projects/agent-core-worktrees/hatfield-openai-codex-auth-research
-Fork run: ypp7l8z96ssa
+Fork run: y7xo7dgh05j8
 PR URL:
 PR Status:
 Started: 2026-06-06T17:25:57.754Z
@@ -114,3 +114,9 @@ Recommended direction for Hatfield:
 - Summary: Second fix fork ypp7l8z96ssa completed at commit b38845b0 `fix(coding-agent): resolve Codex auth review blockers`. It resolved the callback-server/browser race, strict local-callback state validation, PHPStan errors, dead REDIRECT_URI constant, duplicate/racy refresh logic via new CodexTokenRefresher, deptrac coverage for AppAuth, and retained secure storage writes. Worktree verified clean at HEAD b38845b0.
 - Added new src/CodingAgent/Auth/CodexTokenRefresher.php and deptrac AppAuth/SymfonyProcess layer coverage
 - Known skipped item from fork: LocalCallbackServer bind-failure logger injection skipped as low ROI; fallback to manual paste remains and URL is printed
+
+## Task workflow update - 2026-06-06T21:54:45.755Z
+- Recorded fork run: y7xo7dgh05j8
+- Summary: Final reviewer pass returned APPROVE WITH SUGGESTIONS and confirmed all prior blockers fixed. Launched cleanup fork y7xo7dgh05j8 to address remaining actionable suggestions: require callback `code` to be a string, remove duplicate bare-code parser test, normalize test spacing, and add concise comments for raw credential load / 8KB local callback read if useful.
+- Reviewer prior blockers confirmed fixed: browser/server ordering, strict state validation, PHPStan, dead REDIRECT_URI, refresh race/duplication, deptrac AppAuth coverage
+- Remaining findings are non-blocking but actionable, so cleanup fork launched before final approval/validation
