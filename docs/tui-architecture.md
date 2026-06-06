@@ -598,6 +598,14 @@ The TUI layers are enforced by Deptrac (`depfile.yaml`):
 
 TUI must not import AgentCore internals, HttpKernel, or FrameworkBundle.
 
+## HITL and question system
+
+The TUI question system (`QuestionCoordinator`, `QuestionController`, `QuestionRequest`,
+`QuestionKind`) manages interactive overlays that pause the layout to request user input
+for approval decisions (SafeGuard) or other interrupts. See
+[HITL and Approval Architecture](hitl-and-approvals.md) for the end-to-end question
+lifecycle, extension approval flow, and SafeGuard runtime modes.
+
 Key differences from the pre-cleanup boundary model:
 - `TuiRuntime` and `TuiScreen` are new layers (separated from Application/Layout).
 - `TuiListener` no longer depends on `TuiApplication` or `TuiWidget` — it depends

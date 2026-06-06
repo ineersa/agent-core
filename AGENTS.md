@@ -138,6 +138,7 @@ After compaction, the `task-workflow` extension reinjects `<current_task>` as a 
 - `docs/tui-architecture.md` — layout, widgets, slots, themes
 - `docs/tui-testing.md` — tmux testing, snapshots, keybindings
 - `docs/phar-packaging.md` — PHAR build, runtime, test, and troubleshooting
+- `docs/hitl-and-approvals.md` — HITL end-to-end flow, TUI question system, extension approvals, SafeGuard modes
 - `docs/datadog.md` — local Datadog setup, structured log fields, event names, spans, and observability privacy rules
 - `src/AgentCore/Domain/AGENTS.md` — domain/event docs
 - `src/AgentCore/Application/AGENTS.md` — command/handler topology

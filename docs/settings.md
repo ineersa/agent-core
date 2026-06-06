@@ -949,17 +949,21 @@ allowlisted via
 `extensions.settings.safe_guard.allow_write_outside_cwd` by listing
 the absolute paths where writes should be permitted.
 
-### MVP behaviour
+### Behaviour
 
-In the current version, SafeGuard blocks policy violations with a
-structured denial result returned to the LLM. The response includes
-`denied: true`, a `reason` code (`safe_guard_policy`), a human-readable
-`message` explaining the block, and a `category` identifying the rule
-triggered (e.g. `dangerous_command`, `protected_read`,
-`write_outside_cwd`).
+SafeGuard applies policy decisions and, for relaxable violations (e.g.
+write outside CWD, destructive commands), prompts the user for approval
+via the HITL question system when an approval channel is available.
 
-**Interactive approval prompts** (Block / Allow once / Always allow)
-are not yet implemented. They will be added in a future phase
-(planned as SAFE-04) that requires the QH question/approval widget
-infrastructure in the TUI. Until then, all blocks are final for the
-duration of the session — no user prompting occurs.
+In interactive TUI mode the user sees an approval overlay with three options:
+
+- **Allow once** — approve the current operation for this session only
+- **Always allow** — approve AND persist the pattern to `.hatfield/settings.yaml`
+  so the operation is allowed in future sessions
+- **Deny** — block the operation immediately
+
+In headless/noninteractive contexts with `auto_deny_in_noninteractive: true`
+(the default), relaxable violations are auto-blocked without prompting.
+
+See [HITL and Approval Architecture](hitl-and-approvals.md) for the full
+end-to-end flow.
