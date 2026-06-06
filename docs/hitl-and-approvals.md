@@ -342,7 +342,7 @@ SafeGuard detects the execution context and chooses an appropriate behavior:
 
 ```
 castor run:agent
-  → php /tmp/bin/hatfield.phar agent         # TUI mode
+  → php var/tmp/phar/hatfield.phar agent       # TUI mode
     → spawns controller: HATFIELD_APPROVAL_CHANNEL=controller
       → messenger consumers inherit the env var
 ```

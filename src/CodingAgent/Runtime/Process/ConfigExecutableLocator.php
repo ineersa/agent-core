@@ -12,7 +12,7 @@ namespace Ineersa\CodingAgent\Runtime\Process;
  * resolved path.
  *
  * Use cases:
- *   - Tests: HATFIELD_BINARY_PATH=/tmp/bin/hatfield.phar
+ *   - Tests: HATFIELD_BINARY_PATH=var/tmp/phar/hatfield.phar
  *   - Custom install: HATFIELD_BINARY_PATH=/opt/hatfield/hatfield.phar
  *
  * Falls back through ChainExecutableLocator when the env var is not set.

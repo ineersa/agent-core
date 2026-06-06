@@ -52,51 +52,67 @@ function latest_file_mtime(array $directories): float
 // ─── PHAR packaging constants ──────────────────────────────────────────
 // Centralised so output paths, staging directories, and tooling references
 // have a single source of truth.  Every function that needs the PHAR path
-// calls hatfield_phar_path() instead of hard-coding /tmp/bin/hatfield.phar.
+// calls hatfield_phar_path() instead of hard-coding a path.
+//
+// Defaults are project-root-relative so each checkout/worktree gets its
+// own local PHAR artifact — sibling worktrees won't clobber each other.
 //
 // Environment overrides (optional):
-//   HATFIELD_PHAR_PATH        — Override the PHAR output file path.
-//   HATFIELD_PHAR_STAGING_DIR — Override the production Composer staging dir.
+//   HATFIELD_PHAR_PATH        — Override the PHAR output file path
+//                                (absolute, or project-root-relative).
+//   HATFIELD_PHAR_STAGING_DIR — Override the production Composer staging
+//                                dir (absolute path).
 //   HATFIELD_PHAR_BOX_BIN     — Override the Box binary (defaults to
 //                                tools/phar/vendor/bin/box when the isolated
 //                                toolchain is present).
 
-/** Default PHAR output path. */
-const HATFIELD_PHAR_PATH_DEFAULT = '/tmp/bin/hatfield.phar';
+/** Default project-root-relative PHAR output path. */
+const HATFIELD_PHAR_PATH_DEFAULT = 'var/tmp/phar/hatfield.phar';
 
-/** Default staging directory for production-only Composer installs. */
-const HATFIELD_PHAR_STAGING_DIR_DEFAULT = '/tmp/hatfield-phar-build/source';
+/** Default project-root-relative staging directory. */
+const HATFIELD_PHAR_STAGING_DIR_DEFAULT = 'var/tmp/phar-build/source';
 
 /**
  * Resolve the PHAR output path.
  *
- * Respects HATFIELD_PHAR_PATH if set; otherwise returns the hard default
- * /tmp/bin/hatfield.phar.  Relative overrides are resolved against the
- * project root directory.
+ * Respects HATFIELD_PHAR_PATH if set; otherwise returns a worktree-local
+ * path (var/tmp/phar/hatfield.phar under the project root).  Relative
+ * overrides are resolved against the project root directory.
+ *
+ * Worktree-local default prevents concurrent builds in sibling worktrees
+ * from clobbering each other's PHAR artifacts.
  */
 function hatfield_phar_path(): string
 {
     $override = getenv('HATFIELD_PHAR_PATH');
+    $root = realpath(__DIR__.'/..');
 
     if (false !== $override && '' !== $override) {
         if (str_starts_with($override, '/')) {
             return $override;
         }
 
-        $root = realpath(__DIR__.'/..');
         if (false !== $root) {
             return $root.'/'.$override;
         }
     }
 
-    return HATFIELD_PHAR_PATH_DEFAULT;
+    // Default: worktree-local so sibling checkouts don't collide.
+    if (false !== $root) {
+        return $root.'/'.HATFIELD_PHAR_PATH_DEFAULT;
+    }
+
+    return HATFIELD_PHAR_PATH_DEFAULT; // last-resort fallback
 }
 
 /**
  * Resolve the PHAR staging directory.
  *
- * Respects HATFIELD_PHAR_STAGING_DIR if set; otherwise returns the hard
- * default /tmp/hatfield-phar-build/source.
+ * Respects HATFIELD_PHAR_STAGING_DIR if set; otherwise returns a
+ * worktree-local path (var/tmp/phar-build/source under the project root).
+ *
+ * Worktree-local default prevents concurrent builds in sibling worktrees
+ * from clobbering each other's staging area.
  */
 function hatfield_phar_staging_dir(): string
 {
@@ -106,7 +122,12 @@ function hatfield_phar_staging_dir(): string
         return $override;
     }
 
-    return HATFIELD_PHAR_STAGING_DIR_DEFAULT;
+    $root = realpath(__DIR__.'/..');
+    if (false !== $root) {
+        return $root.'/'.HATFIELD_PHAR_STAGING_DIR_DEFAULT;
+    }
+
+    return HATFIELD_PHAR_STAGING_DIR_DEFAULT; // last-resort fallback
 }
 
 /**
@@ -492,7 +513,21 @@ function phar_build(): string
         throw new \RuntimeException('Unable to resolve project root for PHAR build.');
     }
 
+    // Guard: the PHAR output path and staging dir must live under the
+    // current project root unless the caller set an explicit override
+    // (HATFIELD_PHAR_PATH / HATFIELD_PHAR_STAGING_DIR) to a non-project
+    // location.  This catches accidental global-path usage.
+    $explicitPharPath = getenv('HATFIELD_PHAR_PATH');
+    if ((false === $explicitPharPath || '' === $explicitPharPath) && !str_starts_with($pharPath, $root)) {
+        throw new \RuntimeException(\sprintf('PHAR output path %s is not under the project root %s. This indicates a non-worktree-local default. Set HATFIELD_PHAR_PATH explicitly if this is intentional.', $pharPath, $root));
+    }
+
     $stagingDir = hatfield_phar_staging_dir();
+    $explicitStaging = getenv('HATFIELD_PHAR_STAGING_DIR');
+    if ((false === $explicitStaging || '' === $explicitStaging) && !str_starts_with($stagingDir, $root)) {
+        throw new \RuntimeException(\sprintf('Staging directory %s is not under the project root %s. This indicates a non-worktree-local default. Set HATFIELD_PHAR_STAGING_DIR explicitly if this is intentional.', $stagingDir, $root));
+    }
+
     $startTime = microtime(true);
 
     // ── Resolve external binaries ────────────────────────────────────

@@ -20,9 +20,9 @@ castor phpstan [path]       # static analysis (optionally scoped to a path)
 castor phpstan:baseline     # regenerate phpstan baseline
 castor cs-fix [path]        # auto-fix coding style
 castor cs-check             # check coding style (dry-run)
-castor phar:build           # Build hatfield.phar at /tmp/bin/hatfield.phar
+castor phar:build           # Build hatfield.phar (worktree-local by default)
 castor phar:ensure           # Ensure PHAR exists (build if missing or stale)
-castor phar:clean            # Remove built hatfield.phar
+castor phar:clean            # Remove worktree-local hatfield.phar
 ```
 
 ## Test LLM
@@ -50,7 +50,7 @@ artifact boots and responds to basic commands.
 Run PHAR smoke tests manually:
 ```bash
 castor phar:build
-HATFIELD_BINARY_PATH=/tmp/bin/hatfield.phar vendor/bin/phpunit --group phar
+HATFIELD_BINARY_PATH=var/tmp/phar/hatfield.phar vendor/bin/phpunit --group phar
 ```
 
 ## Isolation

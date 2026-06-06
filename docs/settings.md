@@ -205,7 +205,7 @@ inject the built PHAR:
 ```bash
 # Build PHAR, then run controller E2E tests against it
 castor phar:build
-HATFIELD_BINARY_PATH=/tmp/bin/hatfield.phar vendor/bin/phpunit --filter ControllerSmokeTest
+HATFIELD_BINARY_PATH=var/tmp/phar/hatfield.phar vendor/bin/phpunit --filter ControllerSmokeTest
 ```
 
 Relative paths resolve against the runtime CWD.
