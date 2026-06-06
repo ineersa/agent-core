@@ -205,7 +205,7 @@ inject the built PHAR:
 ```bash
 # Build PHAR, then run controller E2E tests against it
 castor phar:build
-HATFIELD_BINARY_PATH=/tmp/bin/hatfield.phar vendor/bin/phpunit --filter ControllerSmokeTest
+HATFIELD_BINARY_PATH=var/tmp/phar/hatfield.phar vendor/bin/phpunit --filter ControllerSmokeTest
 ```
 
 Relative paths resolve against the runtime CWD.
@@ -672,6 +672,37 @@ z.ai GLM models via OpenAI chat-completions-style API. Requires `ZAI_API_KEY` en
 Seed models: `glm-5.1`, `glm-5v-turbo`.
 
 All z.ai models have zero cost (plan-based billing).
+
+#### openai-codex
+
+OpenAI Codex backend via OpenAI Responses API (`type: codex`). Uses the
+OpenAICodex platform bridge which talks to the ChatGPT backend at
+`https://chatgpt.com/backend-api/codex/responses`.
+
+**Authentication:**
+
+- Run `bin/console auth:codex` for OAuth PKCE login (browser-based
+  authorization_code flow with local loopback callback).
+- Credentials are stored in `~/.hatfield/auth.json` (0600) keyed
+  by `openai-codex` and are automatically loaded by the Codex provider.
+- Do **not** set `api_key` or `account_id` in YAML for this provider
+  type — Codex credentials are OAuth-only and live in the auth file.
+  If credentials are missing, the provider emits a clear error.
+
+**Compat quirks:**
+
+- Uses `reasoning.effort` (not `enable_thinking` or `reasoning_effort`)
+  for thinking signalled via `thinking_format: codex`.
+- `supports_developer_role: false` — maps `developer` to `system` role.
+- `supports_reasoning_effort: false` — uses `reasoning.effort` instead
+  of the standard `reasoning_effort` parameter.
+
+**⚠ Experimental.** The Codex backend API uses the `chatgpt.com/backend-api`
+endpoint, which is not an officially documented OpenAI API surface.
+Use at your own risk. Only the OAuth PKCE authentication path is
+supported (run `bin/console auth:codex`).
+
+Seed models: `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`.
 
 ### Model reference format
 

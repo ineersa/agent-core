@@ -7,30 +7,37 @@ one executable that can be distributed and run without a Composer dependency tre
 ## Build commands
 
 ```bash
-castor phar:build           # Build hatfield.phar at /tmp/bin/hatfield.phar
+castor phar:build           # Build hatfield.phar (worktree-local by default)
 castor phar:ensure           # Ensure PHAR exists (build if missing or stale)
-castor phar:clean            # Remove built hatfield.phar
+castor phar:clean            # Remove worktree-local hatfield.phar
 ```
 
-- **`castor phar:build`** — Full build from staging directory. Always starts
-  fresh (deletes staging dir). Runs post-build smoke tests.
-- **`castor phar:ensure`** — Idempotent: returns the existing PHAR path if
-  it is up-to-date (newer than source, config, and toolchain files). Rebuilds
-  only if stale or missing. Used by Castor test tasks as a prerequisite.
-- **`castor phar:clean`** — Remove the built PHAR so the next build is clean.
+- **`castor phar:build`** — Full build from a worktree-local staging
+  directory. Always starts fresh (deletes staging dir). Runs post-build
+  smoke tests. By default the PHAR is placed at
+  `<project>/var/tmp/phar/hatfield.phar`.
+- **`castor phar:ensure`** — Idempotent: returns the existing worktree-local
+  PHAR path if it is up-to-date (newer than source, config, and toolchain
+  files). Rebuilds only if stale or missing. Used by Castor test tasks as a
+  prerequisite.
+- **`castor phar:clean`** — Remove the worktree-local PHAR (and staging)
+  so the next build starts clean.
 
-The default PHAR output path is `/tmp/bin/hatfield.phar`. Override with the
-`HATFIELD_PHAR_PATH` environment variable.
+The default PHAR output path is `<project>/var/tmp/phar/hatfield.phar` —
+scoped to the current checkout/worktree so concurrent builds in sibling
+worktrees don't clobber each other. Override with the `HATFIELD_PHAR_PATH`
+environment variable (absolute or project-root-relative).
 
 ## Build architecture
 
 The build pipeline is implemented in `.castor/helpers.php` under the
 `CastorTasks` namespace:
 
-1. **Staging directory** (`/tmp/hatfield-phar-build/source` by default,
+1. **Staging directory** (`<project>/var/tmp/phar-build/source` by default,
    override with `HATFIELD_PHAR_STAGING_DIR`) — a clean copy of production
    directories only (`bin/`, `src/`, `config/`, `migrations/`) plus
-   `composer.json`, `composer.lock`, and `box.json`.
+   `composer.json`, `composer.lock`, and `box.json`. Worktree-local to
+   prevent concurrent build collisions.
 
 2. **Deterministic autoloader suffix** — `composer.json` in staging gets
    `config.autoloader-suffix` set to `HatfieldPharBuild`. Without this,
@@ -63,7 +70,7 @@ Override the Box binary path with `HATFIELD_PHAR_BOX_BIN` if needed.
 {
     "directories": ["bin", "src", "config", "vendor", "migrations"],
     "files": ["bin/console", "composer.json", "composer.lock"],
-    "output": "/tmp/bin/hatfield.phar",
+    "output": "var/tmp/phar/hatfield.phar",
     "compression": "GZ",
     "algorithm": "SHA256",
     "main": "bin/console",
@@ -85,7 +92,7 @@ valid directory.
 The PHAR is invoked as:
 
 ```bash
-php /tmp/bin/hatfield.phar [command] [options]
+php var/tmp/phar/hatfield.phar [command] [options]
 ```
 
 ### Working directory and writable dirs
@@ -154,7 +161,7 @@ Run it explicitly:
 
 ```bash
 castor phar:build
-HATFIELD_BINARY_PATH=/tmp/bin/hatfield.phar vendor/bin/phpunit --group phar
+HATFIELD_BINARY_PATH=var/tmp/phar/hatfield.phar vendor/bin/phpunit --group phar
 ```
 
 ### AgentTestExecutable
@@ -214,14 +221,14 @@ If `.hatfield/cache` or `.hatfield/logs` are not being created in the
 expected location, verify the working directory:
 
 ```bash
-php /tmp/bin/hatfield.phar about
+php var/tmp/phar/hatfield.phar about
 ```
 
 This shows the resolved `app.cwd` and cache/log paths. If the current
 directory is not writable, use `--cwd`:
 
 ```bash
-php /tmp/bin/hatfield.phar agent --cwd=/path/to/project
+php var/tmp/phar/hatfield.phar agent --cwd=/path/to/project
 ```
 
 Or set `HATFIELD_CACHE_DIR` / `HATFIELD_LOG_DIR` to absolute paths.

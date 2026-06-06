@@ -14,7 +14,6 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\Generic\CompletionsModel;
-use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
 use Symfony\AI\Platform\ProviderInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
@@ -37,7 +36,7 @@ final class SymfonyAiProviderFactoryTest extends TestCase
         $this->assertInstanceOf(CompletionsModel::class, $model);
     }
 
-    public function testCodexTypeThrowsWithoutApiKey(): void
+    public function testCodexTypeThrowsWithoutAuthStorage(): void
     {
         $providerConfig = new AiProviderConfig(
             id: 'openai-codex',
@@ -47,65 +46,13 @@ final class SymfonyAiProviderFactoryTest extends TestCase
         );
 
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('requires an api_key');
+        $this->expectExceptionMessage('requires stored OAuth credentials');
 
         $factory = $this->createFactory(['openai-codex' => $providerConfig]);
         $factory->createProviders();
     }
 
-    public function testCodexTypeThrowsWithoutAccountId(): void
-    {
-        $providerConfig = new AiProviderConfig(
-            id: 'openai-codex',
-            type: 'codex',
-            enabled: true,
-            baseUrl: 'https://chatgpt.com/backend-api',
-            apiKey: 'some-access-token',
-        );
-
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('requires an account_id');
-
-        $factory = $this->createFactory(['openai-codex' => $providerConfig]);
-        $factory->createProviders();
-    }
-
-    public function testCodexTypeThrowsWithEmptyApiKey(): void
-    {
-        $providerConfig = new AiProviderConfig(
-            id: 'openai-codex',
-            type: 'codex',
-            enabled: true,
-            baseUrl: 'https://chatgpt.com/backend-api',
-            apiKey: '',
-        );
-
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('requires an api_key');
-
-        $factory = $this->createFactory(['openai-codex' => $providerConfig]);
-        $factory->createProviders();
-    }
-
-    public function testCodexTypeThrowsWithEmptyAccountId(): void
-    {
-        $providerConfig = new AiProviderConfig(
-            id: 'openai-codex',
-            type: 'codex',
-            enabled: true,
-            baseUrl: 'https://chatgpt.com/backend-api',
-            apiKey: 'some-access-token',
-            accountId: '',
-        );
-
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('requires an account_id');
-
-        $factory = $this->createFactory(['openai-codex' => $providerConfig]);
-        $factory->createProviders();
-    }
-
-    public function testCodexTypeWithValidCredentialsBuildsProvider(): void
+    public function testCodexTypeThrowsRegardlessOfYamlCredentials(): void
     {
         $providerConfig = new AiProviderConfig(
             id: 'openai-codex',
@@ -114,55 +61,13 @@ final class SymfonyAiProviderFactoryTest extends TestCase
             baseUrl: 'https://chatgpt.com/backend-api',
             apiKey: 'some-access-token',
             accountId: 'chat-123456',
-            models: [
-                'gpt-5.5' => new AiModelDefinition(
-                    id: 'gpt-5.5',
-                    toolCalling: true,
-                    reasoning: true,
-                ),
-            ],
         );
 
-        $factory = $this->createFactory(['openai-codex' => $providerConfig]);
-        $providers = $factory->createProviders();
-
-        $this->assertArrayHasKey('openai-codex', $providers);
-        $this->assertInstanceOf(ProviderInterface::class, $providers['openai-codex']);
-
-        // Regression: verify the catalog produces CodexModel instances
-        $catalog = $providers['openai-codex']->getModelCatalog();
-        $model = $catalog->getModel('gpt-5.5');
-        $this->assertInstanceOf(CodexModel::class, $model);
-    }
-
-    public function testCodexTypeWithEmptyBaseUrlBuildsProvider(): void
-    {
-        $providerConfig = new AiProviderConfig(
-            id: 'openai-codex',
-            type: 'codex',
-            enabled: true,
-            baseUrl: '',
-            apiKey: 'some-access-token',
-            accountId: 'chat-123456',
-            models: [
-                'gpt-5.4-mini' => new AiModelDefinition(
-                    id: 'gpt-5.4-mini',
-                    toolCalling: true,
-                    reasoning: true,
-                ),
-            ],
-        );
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('requires stored OAuth credentials');
 
         $factory = $this->createFactory(['openai-codex' => $providerConfig]);
-        $providers = $factory->createProviders();
-
-        $this->assertArrayHasKey('openai-codex', $providers);
-        $this->assertInstanceOf(ProviderInterface::class, $providers['openai-codex']);
-
-        // Verify the catalog produces CodexModel even when baseUrl is empty
-        $catalog = $providers['openai-codex']->getModelCatalog();
-        $model = $catalog->getModel('gpt-5.4-mini');
-        $this->assertInstanceOf(CodexModel::class, $model);
+        $factory->createProviders();
     }
 
     public function testDisabledCodexProviderIsSkipped(): void

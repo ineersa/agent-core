@@ -562,12 +562,12 @@ function resolve_worktree_target(string $root, array $worktrees, string $target)
 // ─── PHAR tasks ────────────────────────────────────────────────
 
 /**
- * Build the PHAR at /tmp/bin/hatfield.phar using box.
+ * Build the PHAR (worktree-local by default) using box.
  *
  * Requires humbug/box to be installed globally or available via PATH
  * or the BOX_BIN environment variable.
  */
-#[AsTask(name: 'phar:build', description: 'Build hatfield.phar at /tmp/bin/hatfield.phar')]
+#[AsTask(name: 'phar:build', description: 'Build hatfield.phar (worktree-local by default)')]
 function phar_build(): void
 {
     \CastorTasks\phar_build();
@@ -579,7 +579,7 @@ function phar_build(): void
  * Can be added as a dependency to run/test tasks so the PHAR is always
  * available before subprocess spawning.
  */
-#[AsTask(name: 'phar:ensure', description: 'Ensure hatfield.phar exists (build if missing)')]
+#[AsTask(name: 'phar:ensure', description: 'Ensure worktree-local hatfield.phar exists (build if missing)')]
 function phar_ensure(): void
 {
     \CastorTasks\phar_ensure();
@@ -588,7 +588,7 @@ function phar_ensure(): void
 /**
  * Remove the built PHAR.
  */
-#[AsTask(name: 'phar:clean', description: 'Remove built hatfield.phar')]
+#[AsTask(name: 'phar:clean', description: 'Remove worktree-local hatfield.phar')]
 function phar_clean(): void
 {
     $pharPath = \CastorTasks\hatfield_phar_path();

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi;
 
+use Ineersa\CodingAgent\Auth\CodexAuthStorage;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Symfony\AI\Platform\Bridge\Generic\CompletionsModel;
@@ -30,6 +31,7 @@ class SymfonyAiProviderFactory
     public function __construct(
         private readonly AppConfig $appConfig,
         private readonly EventDispatcherInterface $eventDispatcher,
+        private readonly ?CodexAuthStorage $codexAuth = null,
     ) {
     }
 
@@ -92,15 +94,13 @@ class SymfonyAiProviderFactory
 
     private function buildCodexProvider(AiProviderConfig $provider, ProjectedSymfonyModelCatalog $projectedCatalog): ProviderInterface
     {
-        $apiKey = $this->resolveApiKey($provider->apiKey);
-
-        if (null === $apiKey || '' === $apiKey) {
-            throw new \RuntimeException(\sprintf('OpenAI Codex provider "%s" requires an api_key (OAuth access token). Run: bin/console auth:codex', $provider->id));
+        if (null === $this->codexAuth) {
+            throw new \RuntimeException(\sprintf('OpenAI Codex provider "%s" requires stored OAuth credentials. Run: bin/console auth:codex', $provider->id));
         }
 
-        $accountId = $provider->accountId;
-        if (null === $accountId || '' === $accountId) {
-            throw new \RuntimeException(\sprintf('OpenAI Codex provider "%s" requires an account_id. Run: bin/console auth:codex', $provider->id));
+        $record = $this->codexAuth->loadCredentials();
+        if (null === $record) {
+            throw new \RuntimeException(\sprintf('OpenAI Codex provider "%s" requires stored OAuth credentials. Run: bin/console auth:codex', $provider->id));
         }
 
         // Use the configured baseUrl falling back to the OpenAICodex factory default,
@@ -109,8 +109,8 @@ class SymfonyAiProviderFactory
 
         return OpenAICodexFactory::createProvider(
             baseUrl: $baseUrl,
-            accessToken: $apiKey,
-            accountId: $accountId,
+            accessToken: $record->access,
+            accountId: $record->accountId,
             httpClient: null,
             modelCatalog: $projectedCatalog,
             contract: null,

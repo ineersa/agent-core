@@ -12,30 +12,32 @@ use Symfony\Component\Process\Process;
 /**
  * Built PHAR smoke test.
  *
- * Validates that the PHAR exists (e.g. /tmp/bin/hatfield.phar when
- * HATFIELD_BINARY_PATH is set) and that it boots sufficiently to
+ * Validates that the PHAR exists (e.g. `var/tmp/phar/hatfield.phar` when
+ * HATFIELD_BINARY_PATH is set by Castor) and that it boots sufficiently to
  * respond to `php hatfield.phar list` with the expected agent command.
  *
  * This test is NOT in the llm-real group because it does not need
  * llama.cpp. It is not in any group by default — run it explicitly:
  *
- *   HATFIELD_BINARY_PATH=/tmp/bin/hatfield.phar vendor/bin/phpunit --filter PharSmokeTest
+ *   HATFIELD_BINARY_PATH=var/tmp/phar/hatfield.phar vendor/bin/phpunit --filter PharSmokeTest
  *
  * Or through Castor:
  *
- *   castor phar:build && HATFIELD_BINARY_PATH=/tmp/bin/hatfield.phar vendor/bin/phpunit --filter PharSmokeTest
+ *   castor phar:build && HATFIELD_BINARY_PATH=var/tmp/phar/hatfield.phar vendor/bin/phpunit --filter PharSmokeTest
  */
 #[Group('phar')]
 final class PharSmokeTest extends TestCase
 {
     /**
-     * Default PHAR path used in skip messages.
+     * Default project-relative PHAR path used in skip messages.
      *
      * The actual path is resolved via HATFIELD_BINARY_PATH env var
      * (set by Castor tasks) or AgentTestExecutable.  This constant mirrors
      * the build default from .castor/helpers.php:hatfield_phar_path().
+     * Castor resolves this relative to the project root so each worktree
+     * gets its own local PHAR.
      */
-    private const string DEFAULT_PHAR_PATH = '/tmp/bin/hatfield.phar';
+    private const string DEFAULT_PHAR_PATH = 'var/tmp/phar/hatfield.phar';
 
     public function testPharBootingToAgentList(): void
     {
@@ -45,7 +47,7 @@ final class PharSmokeTest extends TestCase
         if (!$isPhar) {
             self::markTestSkipped(\sprintf(
                 'HATFIELD_BINARY_PATH not set or not a PHAR. Resolved to %s. '
-                .'Run: castor phar:build && HATFIELD_BINARY_PATH=/tmp/bin/hatfield.phar vendor/bin/phpunit --filter PharSmokeTest',
+                .'Run: castor phar:build && HATFIELD_BINARY_PATH=var/tmp/phar/hatfield.phar vendor/bin/phpunit --filter PharSmokeTest',
                 $pharPath,
             ));
         }
@@ -75,7 +77,7 @@ final class PharSmokeTest extends TestCase
         if (!$isPhar) {
             self::markTestSkipped(\sprintf(
                 'HATFIELD_BINARY_PATH not set or not a PHAR. Resolved to %s. '
-                .'Run: castor phar:build && HATFIELD_BINARY_PATH=/tmp/bin/hatfield.phar vendor/bin/phpunit --filter PharSmokeTest',
+                .'Run: castor phar:build && HATFIELD_BINARY_PATH=var/tmp/phar/hatfield.phar vendor/bin/phpunit --filter PharSmokeTest',
                 $pharPath,
             ));
         }
@@ -106,7 +108,7 @@ final class PharSmokeTest extends TestCase
         $isPhar = str_ends_with($pharPath, '.phar');
 
         if (!$isPhar) {
-            self::markTestSkipped('Not running as PHAR — requires HATFIELD_BINARY_PATH=/tmp/bin/hatfield.phar');
+            self::markTestSkipped('Not running as PHAR — requires HATFIELD_BINARY_PATH pointing to built hatfield.phar');
         }
 
         // Run from repo root (where source-tree vendor/ is visible).
@@ -148,7 +150,7 @@ final class PharSmokeTest extends TestCase
         $isPhar = str_ends_with($pharPath, '.phar');
 
         if (!$isPhar) {
-            self::markTestSkipped('Not running as PHAR — requires HATFIELD_BINARY_PATH=/tmp/bin/hatfield.phar');
+            self::markTestSkipped('Not running as PHAR — requires HATFIELD_BINARY_PATH pointing to built hatfield.phar');
         }
 
         // Run PHAR from an isolated temp dir to trigger fresh cache

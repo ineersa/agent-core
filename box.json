@@ -11,7 +11,7 @@
         "composer.json",
         "composer.lock"
     ],
-    "output": "/tmp/bin/hatfield.phar",
+    "output": "var/tmp/phar/hatfield.phar",
     "compression": "GZ",
     "algorithm": "SHA256",
     "main": "bin/console",

@@ -75,6 +75,13 @@ services:
     arguments:
       $appRoot: '%kernel.project_dir%'
 
+  # CodexAuthStorage is a service, not just a value object — it needs
+  # the home directory resolved from SettingsPathResolver and a LockFactory.
+  # Autowiring fails for the string $homeDir parameter.
+  Ineersa\CodingAgent\Auth\CodexAuthStorage:
+    arguments:
+      $homeDir: '@=service("Ineersa\\CodingAgent\\Config\\SettingsPathResolver").getHomeDir()'
+
   # AppConfig is a value object, not an autowireable service.
   # The container uses the fromContainer() factory to construct it.
   # Canonical runtime cwd is injected from %app.cwd% rather than relying
