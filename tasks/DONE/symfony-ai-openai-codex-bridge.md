@@ -83,14 +83,14 @@ New layer `OpenAICodexPlatform` → depends only on `Symfony\AI\Platform` + `Sym
 - castor deptrac + castor phpstan pass
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/symfony-ai-openai-codex-bridge
 Worktree: /home/ineersa/projects/agent-core-worktrees/symfony-ai-openai-codex-bridge
 Fork run: 8ldq21ali7su
 PR URL: https://github.com/ineersa/agent-core/pull/95
-PR Status: open
+PR Status: merged
 Started: 2026-06-05T23:04:09.780Z
-Completed:
+Completed: 2026-06-06T00:20:53.615Z
 
 ## Work log
 - Created: 2026-06-05T22:55:54.191Z
@@ -165,3 +165,10 @@ Castor Check Output SHA256: 57af658402d1a1d379786fddef6138a99f615fe4547a4df02111
 - Updated PR Status: open
 - Castor quality gate PASSED at cb819538. Pushed branch. Created PR #95.
 - PR: https://github.com/ineersa/agent-core/pull/95
+
+## Task workflow update - 2026-06-06T00:20:53.615Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/symfony-ai-openai-codex-bridge into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/symfony-ai-openai-codex-bridge.
+- Pulled integration checkout: Already up to date..
