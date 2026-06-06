@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Infrastructure\SymfonyAi;
 
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
+use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -12,6 +13,8 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Bridge\Generic\CompletionsModel;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
 use Symfony\AI\Platform\ProviderInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
@@ -27,6 +30,11 @@ final class SymfonyAiProviderFactoryTest extends TestCase
 
         $this->assertArrayHasKey('deepseek', $providers);
         $this->assertNotNull($providers['deepseek']);
+
+        // Verify the generic path still produces CompletionsModel
+        $catalog = $providers['deepseek']->getModelCatalog();
+        $model = $catalog->getModel('deepseek/deepseek-v4-pro');
+        $this->assertInstanceOf(CompletionsModel::class, $model);
     }
 
     public function testCodexTypeThrowsWithoutApiKey(): void
@@ -62,6 +70,41 @@ final class SymfonyAiProviderFactoryTest extends TestCase
         $factory->createProviders();
     }
 
+    public function testCodexTypeThrowsWithEmptyApiKey(): void
+    {
+        $providerConfig = new AiProviderConfig(
+            id: 'openai-codex',
+            type: 'codex',
+            enabled: true,
+            baseUrl: 'https://chatgpt.com/backend-api',
+            apiKey: '',
+        );
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('requires an api_key');
+
+        $factory = $this->createFactory(['openai-codex' => $providerConfig]);
+        $factory->createProviders();
+    }
+
+    public function testCodexTypeThrowsWithEmptyAccountId(): void
+    {
+        $providerConfig = new AiProviderConfig(
+            id: 'openai-codex',
+            type: 'codex',
+            enabled: true,
+            baseUrl: 'https://chatgpt.com/backend-api',
+            apiKey: 'some-access-token',
+            accountId: '',
+        );
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('requires an account_id');
+
+        $factory = $this->createFactory(['openai-codex' => $providerConfig]);
+        $factory->createProviders();
+    }
+
     public function testCodexTypeWithValidCredentialsBuildsProvider(): void
     {
         $providerConfig = new AiProviderConfig(
@@ -71,6 +114,13 @@ final class SymfonyAiProviderFactoryTest extends TestCase
             baseUrl: 'https://chatgpt.com/backend-api',
             apiKey: 'some-access-token',
             accountId: 'chat-123456',
+            models: [
+                'gpt-5.5' => new AiModelDefinition(
+                    id: 'gpt-5.5',
+                    toolCalling: true,
+                    reasoning: true,
+                ),
+            ],
         );
 
         $factory = $this->createFactory(['openai-codex' => $providerConfig]);
@@ -78,6 +128,11 @@ final class SymfonyAiProviderFactoryTest extends TestCase
 
         $this->assertArrayHasKey('openai-codex', $providers);
         $this->assertInstanceOf(ProviderInterface::class, $providers['openai-codex']);
+
+        // Regression: verify the catalog produces CodexModel instances
+        $catalog = $providers['openai-codex']->getModelCatalog();
+        $model = $catalog->getModel('gpt-5.5');
+        $this->assertInstanceOf(CodexModel::class, $model);
     }
 
     public function testDisabledCodexProviderIsSkipped(): void
@@ -125,6 +180,13 @@ final class SymfonyAiProviderFactoryTest extends TestCase
             enabled: true,
             baseUrl: 'https://api.deepseek.com',
             apiKey: 'dummy-key',
+            models: [
+                'deepseek-v4-pro' => new AiModelDefinition(
+                    id: 'deepseek-v4-pro',
+                    toolCalling: true,
+                    reasoning: true,
+                ),
+            ],
         );
 
         $aiConfig = new AiConfig(

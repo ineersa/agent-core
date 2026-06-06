@@ -6,7 +6,9 @@ namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi;
 
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Symfony\AI\Platform\Bridge\Generic\CompletionsModel;
 use Symfony\AI\Platform\Bridge\Generic\Factory as GenericFactory;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Factory as OpenAICodexFactory;
 use Symfony\AI\Platform\ProviderInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
@@ -51,7 +53,12 @@ class SymfonyAiProviderFactory
                 continue;
             }
 
-            $projectedCatalog = new ProjectedSymfonyModelCatalog($provider->models);
+            $projectedCatalog = new ProjectedSymfonyModelCatalog(
+                hatfieldModels: $provider->models,
+                modelClass: 'codex' === $provider->type
+                    ? CodexModel::class
+                    : CompletionsModel::class,
+            );
 
             $providers[$provider->id] = $this->buildProvider($provider, $projectedCatalog);
         }
@@ -87,19 +94,13 @@ class SymfonyAiProviderFactory
     {
         $apiKey = $this->resolveApiKey($provider->apiKey);
 
-        if (null === $apiKey) {
-            throw new \RuntimeException(\sprintf(
-                'OpenAI Codex provider "%s" requires an api_key (OAuth access token). Run: bin/console auth:codex',
-                $provider->id,
-            ));
+        if (null === $apiKey || '' === $apiKey) {
+            throw new \RuntimeException(\sprintf('OpenAI Codex provider "%s" requires an api_key (OAuth access token). Run: bin/console auth:codex', $provider->id));
         }
 
         $accountId = $provider->accountId;
-        if (null === $accountId) {
-            throw new \RuntimeException(\sprintf(
-                'OpenAI Codex provider "%s" requires an account_id. Run: bin/console auth:codex',
-                $provider->id,
-            ));
+        if (null === $accountId || '' === $accountId) {
+            throw new \RuntimeException(\sprintf('OpenAI Codex provider "%s" requires an account_id. Run: bin/console auth:codex', $provider->id));
         }
 
         return OpenAICodexFactory::createProvider(
