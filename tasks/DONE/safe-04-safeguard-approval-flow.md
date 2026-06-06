@@ -435,14 +435,14 @@ depfile.yaml                                                   — new Extension
 - **Approval audit log** — separate from transcript, future work.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/safe-04-safeguard-approval-flow
 Worktree: /home/ineersa/projects/agent-core-worktrees/safe-04-safeguard-approval-flow
 Fork run: 44c68978
 PR URL: https://github.com/ineersa/agent-core/pull/79
-PR Status: open
+PR Status: merged
 Started: 2026-05-31T17:35:50.684Z
-Completed:
+Completed: 2026-06-06T00:58:38.815Z
 
 ## Work log
 - Created: 2026-05-29T20:50:28.944Z
@@ -643,3 +643,23 @@ Castor Check Output SHA256: 073027cc965adf5cfe916f203e6964e8be9c5217e1b31c98eaf4
 - Skipped PR creation (pushOnly: true).
 - Validation: pre-push state: PR #79 already merged at old head 73574244; local branch HEAD 44c68978 with 4 commits not on origin/main; worktree clean after removing untracked smoke artifact claw/test.md; origin/main pulled to da1e4833 before push/merge
 - Summary: Pushing latest post-merge SAFE-04 fixes after PR #79 was already merged at older head. Latest local task branch adds PHAR cache invalidation and approval dialog placement/theme polish commits through 44c68978; no new PR is needed because user requested pushing branch and merging directly to main.
+
+## Task workflow update - 2026-06-06T00:58:38.815Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/safe-04-safeguard-approval-flow into integration checkout.
+- Merge made by the 'ort' strategy.
+ .castor/helpers.php                           |  26 ++++
+ src/CodingAgent/Kernel.php                    |  65 ++++++++-
+ src/Tui/Listener/SubmitListener.php           |   2 +-
+ src/Tui/Listener/TickPollListener.php         |   2 +-
+ src/Tui/Question/QuestionController.php       | 116 +++++++++++----
+ src/Tui/Screen/ChatScreen.php                 |  87 +++++++++++-
+ tests/CodingAgent/Phar/PharSmokeTest.php      |  72 ++++++++++
+ tests/Tui/Question/QuestionControllerTest.php |  30 +++-
+ tests/Tui/Screen/ChatScreenTest.php           | 195 ++++++++++++++++++++++++++
+ 9 files changed, 549 insertions(+), 46 deletions(-)
+ create mode 100644 tests/Tui/Screen/ChatScreenTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/safe-04-safeguard-approval-flow.
+- Pulled integration checkout: Already up to date..
+- Validation: CODE-REVIEW pushOnly quality gate passed at 44c689782048 before merge; task branch pushed to origin/task/safe-04-safeguard-approval-flow
+- Summary: Completing SAFE-04 after pushing the latest post-merge branch commits (44c68978) and merging them into main. PR #79 had already been merged at older head 73574244; this direct merge brings PHAR cache invalidation and approval dialog polish onto main.
