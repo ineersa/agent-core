@@ -175,14 +175,21 @@ Codex uses the Responses API reasoning format: `{ "reasoning": { "effort": "high
 - credentials storage handles missing file, expired tokens, and invalid JSON gracefully
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/hatfield-openai-codex-integration
+Worktree: /home/ineersa/projects/agent-core-worktrees/hatfield-openai-codex-integration
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-06T00:36:58.573Z
 Completed:
 
 ## Work log
 - Created: 2026-06-05T22:55:55.377Z
+
+## Task workflow update - 2026-06-06T00:36:58.573Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/hatfield-openai-codex-integration.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/hatfield-openai-codex-integration.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/hatfield-openai-codex-integration.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/hatfield-openai-codex-integration.
