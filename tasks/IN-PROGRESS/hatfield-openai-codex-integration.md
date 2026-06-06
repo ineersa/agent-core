@@ -178,7 +178,7 @@ Codex uses the Responses API reasoning format: `{ "reasoning": { "effort": "high
 Status: IN-PROGRESS
 Branch: task/hatfield-openai-codex-integration
 Worktree: /home/ineersa/projects/agent-core-worktrees/hatfield-openai-codex-integration
-Fork run:
+Fork run: l5m87bccs98n
 PR URL:
 PR Status:
 Started: 2026-06-06T00:36:58.573Z
@@ -193,3 +193,11 @@ Completed:
 - Created worktree /home/ineersa/projects/agent-core-worktrees/hatfield-openai-codex-integration.
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/hatfield-openai-codex-integration.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/hatfield-openai-codex-integration.
+
+## Task workflow update - 2026-06-06T00:40:06.583Z
+- Recorded fork run: l5m87bccs98n
+- Summary: Claimed task. Scoped to config/factory/reasoning wiring only — OAuth/PKCE deferred to future task. Launched fork l5m87bccs98n with implementation: add codex provider to defaults YAML, branch buildProvider() on type:codex, add codex reasoning format, add accountId to AiProviderConfig, tests for factory + resolver.
+- Claimed task, worktree at /home/ineersa/projects/agent-core-worktrees/hatfield-openai-codex-integration
+- Gathered context: services.yaml autowiring, no existing Auth dir, CLI commands use invokable pattern, ReasoningOptionsResolver inlined in CompatRequestShaper, ProjectedSymfonyModelCatalog implements ModelCatalogInterface
+- Scoped out OAuth/PKCE/auth command — will be separate future task. This task is pure wiring.
+- Launched fork l5m87bccs98n for implementation
