@@ -10,7 +10,7 @@ Investigate how pan/pi-mono implement OpenAI Codex OAuth/PKCE auth, token storag
 - Recommend Hatfield implementation shape and follow-up task scope for auth:codex, refresh, and auth.json storage
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/hatfield-openai-codex-auth-research
 Worktree: /home/ineersa/projects/agent-core-worktrees/hatfield-openai-codex-auth-research
 Fork run: z0lk809uwmes
@@ -145,11 +145,11 @@ Recommended direction for Hatfield:
 - Task-to-PR review iterations: initial REQUEST CHANGES fixed by commits 3358743a/82dc8cca; second REQUEST CHANGES fixed by b38845b0; APPROVE WITH SUGGESTIONS fixed by fab4f4bf; final validation PHPStan cast.useless fixed by 25eba5a7
 - Branch still intentionally contains preserved PHAR isolation commit 94853790 per user instruction
 Castor Check Status: passed
-Castor Check Commit: 25eba5a7c5b507b2d73a5a0451065f7df3e1586e
+Castor Check Commit: 2a6c2b4c672aa6cf5d2973a2aacc5dbb11b98f02
 Castor Check Command: LLM_MODE=true castor check
 Castor Check Timeout: 900s
-Castor Check Completed: 2026-06-06T22:08:48.084Z
-Castor Check Output SHA256: 271e527f441554fd2f242bcdfa1bab8fccc6951b56a9d90f88eaedd81fc1a1c9
+Castor Check Completed: 2026-06-06T23:09:45.490Z
+Castor Check Output SHA256: 7f8b27b804181eeab5b2257c167ad373907d831fde66ef73399245aa32ebb718
 
 ## Task workflow update - 2026-06-06T22:08:51.794Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -180,3 +180,12 @@ Castor Check Output SHA256: 271e527f441554fd2f242bcdfa1bab8fccc6951b56a9d90f88ea
 - Validation: reviewer: APPROVE for commit 2a6c2b4c; no critical issues or blockers; castor test passed (1816 tests, 5320 assertions, 0 errors/failures); castor deptrac passed (0 violations, 0 errors, uncovered=672, allowed=852); castor phpstan passed (0 errors, 0 file errors); castor cs-check passed clean (files_fixed=0)
 - Summary: Review iteration for PR #98 inline comment completed at HEAD 2a6c2b4c. Reviewer verdict: APPROVE. The reviewer confirmed Codex credentials are now OAuth-only via `auth:codex` / `~/.hatfield/auth.json`, YAML `api_key`/`account_id` no longer work for Codex, generic providers are unaffected, and docs/defaults/tests are consistent.
 - Ready to move back to CODE-REVIEW so full Castor quality gate can run and PR #98 branch can be updated
+
+## Task workflow update - 2026-06-06T23:09:47.106Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: 2a6c2b4c672a.
+- Pushed task/hatfield-openai-codex-auth-research to origin.
+- branch 'task/hatfield-openai-codex-auth-research' set up to track 'origin/task/hatfield-openai-codex-auth-research'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/98
+- Validation: reviewer APPROVE at HEAD 2a6c2b4c; castor test passed (1816 tests, 5320 assertions); castor deptrac passed (0 violations, 0 errors); castor phpstan passed (0 errors, 0 file errors); castor cs-check passed clean
+- Summary: Addressed PR #98 inline review comment by removing manual YAML credential support for Codex. Codex provider creation now requires stored OAuth credentials from `auth:codex` / `~/.hatfield/auth.json`; defaults/docs/tests updated accordingly. Reviewer approved commit 2a6c2b4c and focused validation passed.
