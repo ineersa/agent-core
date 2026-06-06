@@ -195,6 +195,11 @@ parameters:
         - type: classNameRegex
           value: '#^Symfony\\\\AI\\\\Platform\\\\#i'
 
+    - name: SymfonyHttpClient
+      collectors:
+        - type: classNameRegex
+          value: '#^Symfony\\\\(Component\\\\HttpClient\\\\|Contracts\\\\HttpClient\\)#i'
+
     - name: ForbiddenHttp
       collectors:
         - type: classNameRegex
@@ -445,7 +450,9 @@ parameters:
       - SymfonySerializer
       - SymfonyAiPlatform
     SymfonyTui: ~
-    SymfonyAiPlatform: ~
+    SymfonyAiPlatform:
+      - SymfonyEventDispatcher
+      - SymfonyHttpClient
     SymfonyEventDispatcher: ~
     SymfonyConsole: ~
     SymfonyMessenger: ~

@@ -15,6 +15,9 @@
         <testsuite name="tui">
             <directory>tests/Tui</directory>
         </testsuite>
+        <testsuite name="platform">
+            <directory>tests/Platform</directory>
+        </testsuite>
     </testsuites>
     <extensions>
         <bootstrap class="DAMA\DoctrineTestBundle\PHPUnit\PHPUnitExtension"/>
