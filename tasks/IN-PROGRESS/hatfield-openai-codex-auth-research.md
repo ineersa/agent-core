@@ -13,7 +13,7 @@ Investigate how pan/pi-mono implement OpenAI Codex OAuth/PKCE auth, token storag
 Status: IN-PROGRESS
 Branch: task/hatfield-openai-codex-auth-research
 Worktree: /home/ineersa/projects/agent-core-worktrees/hatfield-openai-codex-auth-research
-Fork run: kpi1pars94rl
+Fork run: ypp7l8z96ssa
 PR URL:
 PR Status:
 Started: 2026-06-06T17:25:57.754Z
@@ -101,3 +101,9 @@ Recommended direction for Hatfield:
 - Summary: Fix fork kpi1pars94rl completed at commit 3358743a `fix(coding-agent): harden Codex auth review findings`. It implemented reviewer fixes for token expiry seconds, timeout/port handling, refresh account-id validation, catch/storage hardening, GenericProvider config centralization, missing ArgvInput import, and docs/settings auth guidance. Worktree is clean. Fork also reported 4 PHPStan errors in new auth files remain; although described as pre-existing relative to that fork, they are branch-introduced and must be resolved before CODE-REVIEW quality gate.
 - Fix fork created intermediate commit 82dc8cca and final commit 3358743a; final tree state is clean
 - Remaining gate risk from fork handoff: PHPStan errors in CodexAccountIdExtractor, CodexOAuthService, and LocalCallbackServer
+
+## Task workflow update - 2026-06-06T21:39:06.354Z
+- Recorded fork run: ypp7l8z96ssa
+- Summary: Second re-review returned REQUEST CHANGES. Launched fix fork ypp7l8z96ssa to address remaining blockers: callback server must listen before browser opens, local callback must require matching state, branch PHPStan errors must be fixed, dead REDIRECT_URI constant removed, refresh logic/race refactored into shared refresher with locking, and deptrac layer coverage added for new Auth directory.
+- Prior findings confirmed fixed: expiry units, timeout passthrough, custom port redirect, account-id validation, storage write hardening, GenericProvider config centralization, ArgvInput import, docs/settings guidance
+- Remaining actionable findings passed to fork: callback race, missing state validation, PHPStan gate blockers, dead BC constant, refresh race/duplication, deptrac coverage
