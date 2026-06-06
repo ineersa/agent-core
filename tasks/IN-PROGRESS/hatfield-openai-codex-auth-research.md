@@ -13,7 +13,7 @@ Investigate how pan/pi-mono implement OpenAI Codex OAuth/PKCE auth, token storag
 Status: IN-PROGRESS
 Branch: task/hatfield-openai-codex-auth-research
 Worktree: /home/ineersa/projects/agent-core-worktrees/hatfield-openai-codex-auth-research
-Fork run:
+Fork run: th4dmot63q4t
 PR URL:
 PR Status:
 Started: 2026-06-06T17:25:57.754Z
@@ -73,3 +73,10 @@ Recommended direction for Hatfield:
 - Repurposed current task in-place from research-only to implementation; no new task/worktree will be created
 - Implementation target: auth:codex command + ~/.hatfield/auth.json storage + refresh-on-read + provider-factory fallback to stored Codex credentials
 - Constraint remains: preserve existing unrelated branch/worktree changes; do not reset/clean/remove them
+
+## Task workflow update - 2026-06-06T17:53:33.832Z
+- Recorded fork run: th4dmot63q4t
+- Summary: Launched implementation fork th4dmot63q4t in the existing auth-research worktree to add v1 user-auth-ready Codex support: auth:codex command, PKCE flow, loopback callback server, browser/manual fallback, ~/.hatfield/auth.json storage + refresh-on-read, and provider-factory fallback to stored credentials.
+- Gathered local implementation context: CLI command pattern, SettingsPathResolver/HomeSettingsWriter, LockFactory/session-store patterns, provider-factory integration point
+- User confirmed league/oauth2-client direction
+- Implementation fork launched with explicit preserve-existing-branch-changes constraint
