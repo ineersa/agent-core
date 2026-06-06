@@ -27,11 +27,14 @@ final readonly class CodexAuthRecord
     /**
      * Whether the access token is expired (or within 60s of expiry).
      *
+     * The `expires` field is a Unix timestamp in **seconds**, as returned
+     * by League\OAuth2\Client\Token\AccessToken::getExpires().
+     *
      * @param int $bufferSeconds Grace period before actual expiry
      */
     public function isExpired(int $bufferSeconds = 60): bool
     {
-        return (time() + $bufferSeconds) * 1000 >= $this->expires;
+        return (time() + $bufferSeconds) >= $this->expires;
     }
 
     /**

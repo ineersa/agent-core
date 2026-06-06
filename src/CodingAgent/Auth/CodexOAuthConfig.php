@@ -27,7 +27,7 @@ final class CodexOAuthConfig
     /** OpenAI OAuth token endpoint. */
     public const string TOKEN_URL = 'https://auth.openai.com/oauth/token';
 
-    /** Local loopback redirect URI for the OAuth callback server. */
+    /** @deprecated Use redirectUriForPort() instead. Kept for BC during migration. */
     public const string REDIRECT_URI = 'http://127.0.0.1:1455/auth/callback';
 
     /** OAuth scopes requested for Codex access. */
@@ -50,4 +50,33 @@ final class CodexOAuthConfig
 
     /** Originator value sent to the OpenAI authorize endpoint. */
     public const string ORIGINATOR = 'hatfield';
+
+    /**
+     * Redirect URI for the given port.
+     */
+    public static function redirectUriForPort(int $port = self::DEFAULT_PORT): string
+    {
+        return \sprintf('http://127.0.0.1:%d/auth/callback', $port);
+    }
+
+    /**
+     * GenericProvider options array for the given port.
+     *
+     * Centralized so both CodexOAuthService and CodexAuthStorage's
+     * inline refresh handler share the same configuration.
+     *
+     * @return array<string, mixed>
+     */
+    public static function providerOptions(int $port = self::DEFAULT_PORT): array
+    {
+        return [
+            'clientId' => self::CLIENT_ID,
+            'clientSecret' => '',
+            'redirectUri' => self::redirectUriForPort($port),
+            'urlAuthorize' => self::AUTHORIZE_URL,
+            'urlAccessToken' => self::TOKEN_URL,
+            'urlResourceOwnerDetails' => '',
+            'pkceMethod' => 'S256',
+        ];
+    }
 }

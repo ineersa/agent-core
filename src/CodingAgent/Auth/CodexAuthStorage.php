@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Auth;
 
 use League\OAuth2\Client\Provider\Exception\IdentityProviderException;
 use League\OAuth2\Client\Provider\GenericProvider;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
 
 /**
@@ -27,20 +28,14 @@ final class CodexAuthStorage
     public function __construct(
         private readonly string $homeDir,
         private readonly LockFactory $lockFactory,
+        private readonly ?LoggerInterface $logger = null,
     ) {
         // Set up the internal refresh handler that can refresh expired
         // Codex OAuth tokens without creating a circular dependency on
-        // CodexOAuthService. Uses the same league/oauth2-client config.
-        $this->refreshHandler = static function (string $refreshToken): CodexAuthRecord {
-            $provider = new GenericProvider([
-                'clientId' => CodexOAuthConfig::CLIENT_ID,
-                'clientSecret' => '',
-                'redirectUri' => CodexOAuthConfig::REDIRECT_URI,
-                'urlAuthorize' => CodexOAuthConfig::AUTHORIZE_URL,
-                'urlAccessToken' => CodexOAuthConfig::TOKEN_URL,
-                'urlResourceOwnerDetails' => '',
-                'pkceMethod' => GenericProvider::PKCE_METHOD_S256,
-            ]);
+        // CodexOAuthService. Uses centralized provider config from
+        // CodexOAuthConfig and validates account ID stays stable.
+        $this->refreshHandler = static function (string $refreshToken, string $storedAccountId): CodexAuthRecord {
+            $provider = new GenericProvider(CodexOAuthConfig::providerOptions());
 
             try {
                 $token = $provider->getAccessToken('refresh_token', [
@@ -61,6 +56,11 @@ final class CodexAuthStorage
             $accountId = CodexAccountIdExtractor::extract($accessToken);
             if (null === $accountId) {
                 throw new \RuntimeException('Failed to extract account ID from refreshed token.');
+            }
+
+            // Validate account ID hasn't changed
+            if ($accountId !== $storedAccountId) {
+                throw new \RuntimeException(\sprintf('Account ID changed from "%s" to "%s" after token refresh. Run bin/console auth:codex to re-authenticate.', $storedAccountId, $accountId));
             }
 
             return new CodexAuthRecord(
@@ -94,13 +94,21 @@ final class CodexAuthStorage
         // If expired and we have a refresh handler, try refreshing
         if ($record->isExpired() && null !== $this->refreshHandler) {
             try {
-                $fresh = ($this->refreshHandler)($record->refresh);
+                $fresh = ($this->refreshHandler)($record->refresh, $record->accountId);
                 $this->saveCredentials($providerKey, $fresh);
 
                 return $fresh;
-            } catch (\Throwable) {
-                // Refresh failed — return expired record so caller
-                // knows auth needs re-establishment
+            } catch (\Throwable $e) {
+                // Log the failure and return expired record so the caller
+                // knows auth needs re-establishment.
+                if (null !== $this->logger) {
+                    $this->logger->warning('Codex token refresh failed, returning expired record', [
+                        'provider_key' => $providerKey,
+                        'component' => 'codex_auth_storage',
+                        'event_type' => 'codex_token_refresh_failed',
+                        'error' => $e->getMessage(),
+                    ]);
+                }
             }
         }
 
@@ -175,16 +183,29 @@ final class CodexAuthStorage
         $dir = \dirname($path);
 
         if (!@is_dir($dir)) {
-            @mkdir($dir, 0755, true);
+            @mkdir($dir, 0700, true);
         }
 
         $json = json_encode($data, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR);
 
-        $written = @file_put_contents($path, $json, \LOCK_EX);
+        // Write to a temp file and chmod before rename to avoid a world-readable
+        // window on the credentials (TOCTOU). The temp file is in the same
+        // directory so the rename is atomic within the same filesystem.
+        $tmpPath = $path.'.'.bin2hex(random_bytes(8)).'.tmp';
+        $written = @file_put_contents($tmpPath, $json, \LOCK_EX);
         if (false === $written) {
+            @unlink($tmpPath);
             throw new \RuntimeException(\sprintf('Cannot write auth credentials to %s', $path));
         }
 
+        @chmod($tmpPath, 0600);
+
+        if (!@rename($tmpPath, $path)) {
+            @unlink($tmpPath);
+            throw new \RuntimeException(\sprintf('Cannot rename auth credentials to %s', $path));
+        }
+
+        // Defensive chmod after rename (preserves 0600 even if umask interfered)
         @chmod($path, 0600);
     }
 

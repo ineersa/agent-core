@@ -41,7 +41,7 @@ final class CodexAuthStorageTest extends TestCase
         $record = new CodexAuthRecord(
             access: 'test-access-token',
             refresh: 'test-refresh-token',
-            expires: \time() * 1000 + 3600000, // 1 hour from now
+            expires: \time() + 3600, // 1 hour from now (seconds)
             accountId: 'chat-abc123',
         );
 
@@ -68,7 +68,7 @@ final class CodexAuthStorageTest extends TestCase
         $expiredRecord = new CodexAuthRecord(
             access: 'expired-access',
             refresh: 'i-will-be-refreshed',
-            expires: \time() * 1000 - 3600000, // already expired
+            expires: \time() - 3600, // already expired (seconds)
             accountId: 'chat-old',
         );
 
@@ -87,8 +87,8 @@ final class CodexAuthStorageTest extends TestCase
 
     public function testMultipleProviderKeysCoexist(): void
     {
-        $record1 = new CodexAuthRecord('tok1', 'ref1', \time() * 1000 + 3600000, 'acct1');
-        $record2 = new CodexAuthRecord('tok2', 'ref2', \time() * 1000 + 3600000, 'acct2');
+        $record1 = new CodexAuthRecord('tok1', 'ref1', \time() + 3600, 'acct1');
+        $record2 = new CodexAuthRecord('tok2', 'ref2', \time() + 3600, 'acct2');
 
         $this->storage->saveCredentials('openai-codex', $record1);
         $this->storage->saveCredentials('other-provider', $record2);
@@ -102,7 +102,7 @@ final class CodexAuthStorageTest extends TestCase
 
     public function testRemoveCredentials(): void
     {
-        $record = new CodexAuthRecord('tok', 'ref', \time() * 1000 + 3600000, 'acct');
+        $record = new CodexAuthRecord('tok', 'ref', \time() + 3600, 'acct');
         $this->storage->saveCredentials('openai-codex', $record);
         $this->storage->removeCredentials('openai-codex');
 

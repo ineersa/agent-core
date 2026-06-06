@@ -63,7 +63,7 @@ final class CodexOAuthServiceTest extends TestCase
         $expired = new CodexAuthRecord(
             access: 'expired-access',
             refresh: 'expired-refresh-token',
-            expires: \time() * 1000 - 3600000,
+            expires: \time() - 3600,
             accountId: 'expired-account',
         );
         $this->storage->saveCredentials('openai-codex', $expired);
@@ -77,16 +77,17 @@ final class CodexOAuthServiceTest extends TestCase
         $service->refreshCredentials();
     }
 
-    public function testCodexAuthRecordIsExpiredWithBuffer(): void
+    public function testCodexAuthRecordIsExpiredWithSeconds(): void
     {
+        // Record expires 30 seconds from now (Unix seconds)
         $record = new CodexAuthRecord(
             access: 'tok',
             refresh: 'ref',
-            expires: (\time() + 30) * 1000,
+            expires: \time() + 30,
             accountId: 'acct',
         );
 
-        $this->assertTrue($record->isExpired(60));
-        $this->assertFalse($record->isExpired(0));
+        $this->assertTrue($record->isExpired(60), 'buffer 60 > 30 remaining = expired');
+        $this->assertFalse($record->isExpired(0), 'no buffer, 30 remaining = not expired');
     }
 }

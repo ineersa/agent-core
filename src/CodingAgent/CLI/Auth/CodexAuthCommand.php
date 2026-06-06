@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Auth\CodexOAuthService;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\ArgvInput;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
@@ -67,7 +68,7 @@ final class CodexAuthCommand
             return Command::FAILURE;
         }
 
-        $expiresAt = date('Y-m-d H:i:s T', (int) ($record->expires / 1000));
+        $expiresAt = date('Y-m-d H:i:s T', $record->expires);
 
         $io->success(\sprintf(
             'OpenAI Codex authentication successful. Token expires at %s.',
@@ -87,7 +88,7 @@ final class CodexAuthCommand
             return Command::FAILURE;
         }
 
-        $expiresAt = date('Y-m-d H:i:s T', (int) ($record->expires / 1000));
+        $expiresAt = date('Y-m-d H:i:s T', $record->expires);
 
         $io->success(\sprintf(
             'Token refreshed successfully. New token expires at %s.',

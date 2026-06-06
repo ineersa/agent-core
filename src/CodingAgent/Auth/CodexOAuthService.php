@@ -46,7 +46,7 @@ final class CodexOAuthService
     ): CodexAuthRecord {
         $io ??= new SymfonyStyle(new ArgvInput(), null);
 
-        $provider = $this->createProvider();
+        $provider = $this->createProvider($port);
         $authUrl = $provider->getAuthorizationUrl([
             'scope' => CodexOAuthConfig::SCOPE,
             'originator' => CodexOAuthConfig::ORIGINATOR,
@@ -73,7 +73,7 @@ final class CodexOAuthService
 
         // Wait for callback via local server
         $server = new LocalCallbackServer();
-        $callbackResult = $server->waitForCallback($expectedState, 30.0, $port);
+        $callbackResult = $server->waitForCallback($expectedState, (float) $timeout, $port);
 
         if (null !== $callbackResult) {
             $code = $callbackResult['code'];
@@ -177,6 +177,11 @@ final class CodexOAuthService
             throw new \RuntimeException('Failed to extract account ID from refreshed token. Run bin/console auth:codex to re-authenticate.');
         }
 
+        // Validate account ID hasn't changed — prevents silent credential theft
+        if ($accountId !== $stored->accountId) {
+            throw new \RuntimeException(\sprintf('Account ID changed from "%s" to "%s" after token refresh. Run bin/console auth:codex to re-authenticate.', $stored->accountId, $accountId));
+        }
+
         $record = new CodexAuthRecord(
             access: $accessToken,
             refresh: $refreshToken,
@@ -192,16 +197,8 @@ final class CodexOAuthService
     /**
      * Get a configured GenericProvider for Codex OAuth.
      */
-    private function createProvider(): GenericProvider
+    private function createProvider(int $port = CodexOAuthConfig::DEFAULT_PORT): GenericProvider
     {
-        return new GenericProvider([
-            'clientId' => CodexOAuthConfig::CLIENT_ID,
-            'clientSecret' => '',
-            'redirectUri' => CodexOAuthConfig::REDIRECT_URI,
-            'urlAuthorize' => CodexOAuthConfig::AUTHORIZE_URL,
-            'urlAccessToken' => CodexOAuthConfig::TOKEN_URL,
-            'urlResourceOwnerDetails' => '',
-            'pkceMethod' => GenericProvider::PKCE_METHOD_S256,
-        ]);
+        return new GenericProvider(CodexOAuthConfig::providerOptions($port));
     }
 }

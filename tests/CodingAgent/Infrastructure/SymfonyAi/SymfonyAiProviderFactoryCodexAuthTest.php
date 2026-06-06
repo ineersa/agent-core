@@ -118,7 +118,7 @@ final class SymfonyAiProviderFactoryCodexAuthTest extends TestCase
         $this->authStorage->saveCredentials('openai-codex', new CodexAuthRecord(
             access: 'stored-access-token',
             refresh: 'stored-refresh-token',
-            expires: \time() * 1000 + 3600000,
+            expires: \time() + 3600,
             accountId: 'stored-account-id',
         ));
 
@@ -176,7 +176,7 @@ final class SymfonyAiProviderFactoryCodexAuthTest extends TestCase
         $this->authStorage->saveCredentials('openai-codex', new CodexAuthRecord(
             access: 'stored-should-not-be-used',
             refresh: 'stored-refresh',
-            expires: \time() * 1000 + 3600000,
+            expires: \time() + 3600,
             accountId: 'stored-account',
         ));
 

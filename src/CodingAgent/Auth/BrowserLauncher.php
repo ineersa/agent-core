@@ -38,6 +38,8 @@ final class BrowserLauncher
 
             return $process->isSuccessful();
         } catch (\Throwable) {
+            // Best-effort browser launch. The caller always prints the URL
+            // for manual use, so silent degradation is acceptable here.
             return false;
         }
     }
