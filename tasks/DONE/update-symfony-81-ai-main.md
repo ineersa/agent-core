@@ -171,3 +171,8 @@ Castor Check Output SHA256: 68c3cff7bd62140dc4cbe7aff1f4d9b40f199a618056ef0f27a2
  3 files changed, 269 insertions(+), 251 deletions(-)
 - Removed worktree /home/ineersa/projects/agent-core-worktrees/update-symfony-81-ai-main.
 - Pulled integration checkout: Already up to date..
+
+## Task workflow update - 2026-06-06T21:12:23.490Z
+- Updated PR Status: merged
+- Validation: Post-merge validation: LLM_MODE=true castor check => quality: ok; Post-merge castor check details: deptrac ok; PHAR smoke ok; castor test ok (1782 tests, 5263 assertions); test:controller ok; test:llm-real ok (7 tests, 38 assertions); test:tui ok (5 tests, 18 assertions); phpstan ok; cs-check ok
+- Summary: Task merged to integration checkout after user approved discarding the unrelated local composer.json change. move_task(to=DONE) merged task/update-symfony-81-ai-main, removed worktree /home/ineersa/projects/agent-core-worktrees/update-symfony-81-ai-main, pulled integration checkout, and moved the task to DONE.
