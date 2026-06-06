@@ -11,7 +11,7 @@ use Ineersa\CodingAgent\Tool\Store\DbalToolBatchStore;
  * @requires extension pdo_sqlite
  *
  * Uses the Symfony test container to provide a real DbalToolBatchStore
- * backed by an isolated SQLite database under var/tests/.
+ * backed by an isolated SQLite database under var/tmp/.
  *
  * No manual ORMSetup, DriverManager, SchemaTool, or entity metadata paths.
  */
