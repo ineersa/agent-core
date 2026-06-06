@@ -64,3 +64,6 @@ Recommended direction for Hatfield:
 ## Task workflow update - 2026-06-06T17:49:12.672Z
 - Validation: No new validation run for this correction note. Prior fork validation for 94853790 remains recorded above: phar:clean/ensure, castor test, deptrac, phpstan, cs-check all passed.
 - Summary: Correction note: PHAR worktree-local build/test isolation is unrelated to the OpenAI Codex auth research task and was implemented in this task worktree by orchestration mistake. User explicitly objected to the cross-task contamination, then instructed to keep the commit here for now and update the task file. Current local code commit on this task branch: 94853790 `fix(phar): isolate QA builds per worktree` (not pushed by the main agent). Treat this as an incidental branch payload that must be accounted for during the eventual task-to-pr/review, not as part of the original Codex auth research scope. No task transition, no PR, no branch push performed.
+
+## Task workflow update - 2026-06-06T17:49:54.741Z
+- User constraint: preserve existing unrelated changes in this worktree (task-file updates and PHAR isolation changes). Do not reset/clean/remove them during auth implementation.
