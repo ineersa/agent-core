@@ -7,7 +7,31 @@ Integrate the Symfony AI OpenAICodex bridge (built in task `symfony-ai-openai-co
 
 **Detailed plan**: `.pi/plans/openai-codex-bridge.md` (Task 2 section)
 
-**Depends on**: Task `symfony-ai-openai-codex-bridge` must be complete.
+**Depends on**: Task `symfony-ai-openai-codex-bridge` ✅ DONE (PR #95 merged).
+
+## ⚠️ Ban Risk Assessment
+
+The `chatgpt.com/backend-api/codex/responses` endpoint is a **semi-official gray zone**.
+
+### Risk factors
+- **OpenAI has signaled openness**: Romain Huet (OpenAI, March 2026) named Pi, JetBrains, OpenCode, Claude Code as welcome to use Codex. Codex CLI is open source using the same endpoint.
+- **June 2026 ban wave**: Multiple heavy Codex users got banned with no explanation, no specific violation cited. Bans appear automated. OpenAI employee confirmed "the team is looking into it."
+- **TOS ambiguity**: OpenAI's Terms prohibit "automated or programmatic method to extract data… except as permitted through the API" — `chatgpt.com/backend-api` is arguably not "the API" (`api.openai.com`).
+- **Anthropic precedent**: Anthropic blocked third-party tools (OpenClaw) from Claude subscriptions in April 2026. OpenAI could do the same.
+- **Not a named partner**: Hatfield is not on the explicit partner list (JetBrains, Xcode, OpenCode, Pi, Claude Code).
+
+### Risk mitigation — dual auth strategy
+
+Support **both authentication paths** to minimize risk:
+
+1. **API key path (LOW RISK, recommended default)** — `api.openai.com` with standard billing, models gpt-5.4, gpt-5.5. Zero ban risk. Uses standard OpenAI Responses API.
+2. **OAuth path (MODERATE RISK)** — `chatgpt.com/backend-api/codex/responses`, subscription credits, access to codex-only models (gpt-5.3-codex). Shares the same `app_EMoamEEZ73f0CkXaXp7hrann` client ID as Codex CLI.
+
+**Implementation**: If `api_key` is set in provider config → use API key path with OpenResponses bridge. If no `api_key` → use OAuth path with OpenAICodex bridge. Same YAML provider entry, different transport under the hood.
+
+### User disclosure
+Add a note in `docs/settings.md` and `auth:codex` command output:
+> ⚠️ The Codex OAuth path uses the ChatGPT backend API, which is not an official OpenAI API endpoint. Heavy usage may trigger automated account restrictions. For zero-risk usage, use an API key with standard OpenAI billing.
 
 ## Files to create
 
@@ -51,38 +75,76 @@ depfile.yaml ← CodingAgent → OpenAICodexPlatform allowed
 
 ## Provider config (hatfield.defaults.yaml)
 
+The Codex provider supports dual auth. If `api_key` is set → API key path (api.openai.com, Responses API, zero ban risk). If no `api_key` → OAuth path (chatgpt.com/backend-api, subscription credits, moderate ban risk).
+
 ```yaml
 openai-codex:
     type: codex
-    enabled: true
+    enabled: false                    # Opt-in only — user must enable explicitly
+    base_url: https://api.openai.com  # Default: API key path (safe). OAuth path overrides to chatgpt.com/backend-api
+    api: openai-responses             # Responses API protocol (not openai-completions)
+    api_key: env:OPENAI_API_KEY       # Optional. Set to use API key path (recommended). Leave unset for OAuth path.
+    completions_path: /v1/responses   # Default for API key path. OAuth path overrides to /codex/responses
+    supports_completions: true
+    supports_embeddings: false
     supports_thinking_levels: true
     compatibility:
-        supports_developer_role: false
+        supports_developer_role: true
     models:
-        gpt-5.4:
+        gpt-5.5:                      # Flagship, $5/$30 per 1M tokens
+            name: GPT-5.5
             reasoning: true
-            thinking_level_map: { minimal: low, xhigh: xhigh }
+            thinking_level_map: { minimal: low, low: low, medium: medium, high: high, xhigh: xhigh }
             tool_calling: true
             input: [text, image]
             context_window: 272000
             max_tokens: 128000
-            cost: { input: 2.50, output: 15 }
-        gpt-5.4-mini:
+            cost: { input: 5.00, output: 30.00 }
+        gpt-5.4:                      # Mid-tier, $2.50/$15 per 1M tokens
+            name: GPT-5.4
             reasoning: true
-            thinking_level_map: { minimal: low, xhigh: xhigh }
+            thinking_level_map: { minimal: low, low: low, medium: medium, high: high, xhigh: xhigh }
+            tool_calling: true
+            input: [text, image]
+            context_window: 272000
+            max_tokens: 128000
+            cost: { input: 2.50, output: 15.00 }
+        gpt-5.4-mini:                 # Budget, $0.75/$4.50 per 1M tokens
+            name: GPT-5.4 Mini
+            reasoning: true
+            thinking_level_map: { minimal: low, low: low, medium: medium, high: high, xhigh: xhigh }
             tool_calling: true
             input: [text, image]
             context_window: 272000
             max_tokens: 128000
             cost: { input: 0.75, output: 4.50 }
-        gpt-5.5:
-            reasoning: true
-            thinking_level_map: { minimal: low, xhigh: xhigh }
-            tool_calling: true
-            input: [text, image]
-            context_window: 272000
-            max_tokens: 128000
-            cost: { input: 5.00, output: 30 }
+```
+
+### Model availability by auth path
+
+| Model | API key (api.openai.com) | OAuth (chatgpt.com/backend-api) |
+|-------|--------------------------|----------------------------------|
+| gpt-5.5 | ✅ | ✅ |
+| gpt-5.4 | ✅ | ✅ |
+| gpt-5.4-mini | ✅ | ✅ |
+| gpt-5.3-codex | ❌ | ✅ (codex-only) |
+| gpt-5.3-codex-spark | ❌ | ✅ (codex-only, text only) |
+| gpt-5.2 | ✅ | ✅ |
+
+### Post-implementation: Update ~/.hatfield/settings.yaml
+
+After the integration task lands, add the provider to `~/.hatfield/settings.yaml`:
+
+```yaml
+ai:
+    providers:
+        openai-codex:
+            enabled: true
+            api_key: env:OPENAI_API_KEY
+            # Or for OAuth path (no api_key):
+            # enabled: true
+            # base_url: https://chatgpt.com/backend-api
+            # completions_path: /codex/responses
 ```
 
 ## Reasoning options
