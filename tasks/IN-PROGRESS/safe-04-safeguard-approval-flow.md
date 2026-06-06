@@ -438,7 +438,7 @@ depfile.yaml                                                   — new Extension
 Status: IN-PROGRESS
 Branch: task/safe-04-safeguard-approval-flow
 Worktree: /home/ineersa/projects/agent-core-worktrees/safe-04-safeguard-approval-flow
-Fork run: 0fbc513e
+Fork run: 44c68978
 PR URL: https://github.com/ineersa/agent-core/pull/79
 PR Status: open
 Started: 2026-05-31T17:35:50.684Z
@@ -629,3 +629,8 @@ Castor Check Output SHA256: d8a14786d0d604503009cfa92106210b3e0dca4cc12d39d2ef44
 ## Task workflow update - 2026-06-06T00:38:49.719Z
 - Validation: fork output claim: commit 5a5ed847 with 8 files changed (325 insertions, 76 deletions); reality: HEAD at 0fbc513e, worktree clean, no new commits anywhere; 5a5ed847 not found in git log --all; conclusion: fork hallucinated its report; no changes applied
 - Summary: Fork launched to address SAFE-04 reviewer APPROVE WITH SUGGESTIONS (placement test coverage, QuestionController screen/context simplification, ChatScreen overlay comments, pre-mount overlay edge case). Fork returned a hallucinated report claiming commit 5a5ed847 with 8 files changed, but worktree inspection shows HEAD still at 0fbc513e with zero new commits — the reported SHA does not exist in git log or reflog anywhere. No actual changes were applied. Fork must be re-launched.
+
+## Task workflow update - 2026-06-06T00:48:57.335Z
+- Recorded fork run: 44c68978
+- Validation: castor test --filter='ChatScreenTest|QuestionController' OK (20 tests, 69 assertions); castor test --filter='Question|Tui|SafeGuard|TickPoll|ChatScreen' OK (520 tests, 1246 assertions); castor test OK (1746 tests, 5147 assertions); castor deptrac OK (0 violations, 0 errors); castor phpstan OK (0 errors, 0 file_errors); castor cs-check OK (0 files fixed)
+- Summary: Implementation fork addressed reviewer polish suggestions for SafeGuard approval overlay. Commit 44c68978 `Tighten SafeGuard approval overlay polish` (3 files changed, 217 insertions, 20 deletions): added targeted ChatScreen overlay placement tests in new tests/Tui/Screen/ChatScreenTest.php; simplified QuestionController by removing redundant context field, using screen as single source of truth, and consolidating null guard; changed ChatScreen::insertOverlayBeforeEditor() to throw LogicException if called before mount instead of silently dropping overlay; renamed overlay section comment, fixed orphaned ChatScreen refresh docblock, and updated overlay order comment to the accurate chain aboveEditorWidget → overlay → editorSep → editor → belowEditorWidget → footerSep → footer. PickerOverlay migration intentionally deferred as prior reviewer marked it follow-up/out of scope. Worktree reported clean at HEAD 44c68978.
