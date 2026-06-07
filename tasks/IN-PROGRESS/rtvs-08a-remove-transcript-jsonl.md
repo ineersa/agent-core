@@ -34,14 +34,22 @@ No compatibility fallback to old `transcript.jsonl` should be added unless expli
 - `castor deptrac` passes; full validation must use Castor per project rules.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/rtvs-08a-remove-transcript-jsonl
+Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-08a-remove-transcript-jsonl
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-07T21:23:43.851Z
 Completed:
 
 ## Work log
 - Created: 2026-06-07T00:17:18.300Z
+
+## Task workflow update - 2026-06-07T21:23:43.851Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/rtvs-08a-remove-transcript-jsonl.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/rtvs-08a-remove-transcript-jsonl.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/rtvs-08a-remove-transcript-jsonl.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/rtvs-08a-remove-transcript-jsonl.
+- Summary: Started RTVS-08A task-start phase. Main agent remains orchestrator; implementation will be delegated to a fork in the task worktree.
