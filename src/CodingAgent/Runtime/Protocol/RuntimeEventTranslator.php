@@ -103,28 +103,7 @@ final class RuntimeEventTranslator
     private function onRunStarted(RunEvent $runEvent): RuntimeEvent
     {
         $p = $runEvent->payload;
-
-        // Extract initial user messages from the normalized StartRunPayload
-        // so events.jsonl replay can project user message transcript blocks.
-        $userMessages = [];
-        $normalizedPayload = $p['payload'] ?? [];
-        $messages = $normalizedPayload['messages'] ?? [];
-        if (\is_array($messages)) {
-            foreach ($messages as $msg) {
-                $role = (string) ($msg['role'] ?? '');
-                if ('user' !== $role) {
-                    continue;
-                }
-                $text = $this->extractTextFromContent($msg['content'] ?? []);
-                // Only include non-empty user messages, skipping system/user-context
-                if ('' !== $text) {
-                    $userMessages[] = [
-                        'message_id' => \sprintf('initial_%s_%d', $runEvent->runId, \count($userMessages)),
-                        'text' => $text,
-                    ];
-                }
-            }
-        }
+        $userMessages = $this->extractUserMessages($runEvent);
 
         $payload = ['step_id' => (string) ($p['step_id'] ?? '')];
         if ([] !== $userMessages) {
@@ -390,6 +369,41 @@ final class RuntimeEventTranslator
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────
+
+    /**
+     * Extract initial user messages from the normalized StartRunPayload so
+     * events.jsonl replay can project user message transcript blocks.
+     *
+     * Only role===user messages with non-empty text are included; system and
+     * context messages are intentionally skipped to avoid leaking full prompts.
+     *
+     * @return list<array{message_id: string, text: string}>
+     */
+    private function extractUserMessages(RunEvent $runEvent): array
+    {
+        $normalizedPayload = $runEvent->payload['payload'] ?? [];
+        $messages = $normalizedPayload['messages'] ?? [];
+        if (!\is_array($messages)) {
+            return [];
+        }
+
+        $userMessages = [];
+        foreach ($messages as $msg) {
+            $role = (string) ($msg['role'] ?? '');
+            if ('user' !== $role) {
+                continue;
+            }
+            $text = $this->extractTextFromContent($msg['content'] ?? []);
+            if ('' !== $text) {
+                $userMessages[] = [
+                    'message_id' => \sprintf('initial_%s_%d', $runEvent->runId, \count($userMessages)),
+                    'text' => $text,
+                ];
+            }
+        }
+
+        return $userMessages;
+    }
 
     /**
      * Legacy fallback: extract text from the normalized assistant_message

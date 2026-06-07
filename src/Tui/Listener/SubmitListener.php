@@ -90,12 +90,9 @@ final class SubmitListener implements TuiListenerRegistrar
             }
 
             // ── Normal prompt — route to runtime (existing behavior) ──
-            // User message will appear as a projected block once the runtime
-            // event is polled. Local echo is intentionally skipped to avoid
-            // block ID duplication with canonical runtime projection.
-
-            // Persistence is removed — events.jsonl is the canonical record.
-            // Transcript blocks are rebuilt from events.jsonl on resume.
+            // No local echo or persistence: canonical runtime events project
+            // user blocks (avoiding duplicate block IDs), and events.jsonl is
+            // the single source of truth for transcript replay on resume.
 
             try {
                 // Start a run if this is the first message

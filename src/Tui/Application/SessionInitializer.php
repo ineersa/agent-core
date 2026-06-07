@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
+use Psr\Log\LoggerInterface;
 
 /**
  * Initializes session state for the interactive TUI.
@@ -37,6 +38,7 @@ final readonly class SessionInitializer
         private RuntimeEventMapper $eventMapper,
         private TranscriptProjectorInterface $projector,
         private TranscriptBlockFactory $blockFactory,
+        private LoggerInterface $logger,
     ) {
     }
 
@@ -118,8 +120,18 @@ final readonly class SessionInitializer
 
         try {
             $runEvents = $this->eventStore->allFor($runId);
-        } catch (\Throwable) {
-            // If events.jsonl is missing or corrupt, show a minimal fallback.
+        } catch (\Throwable $e) {
+            // Intentional local degradation: events.jsonl is unreadable.
+            // Log the error with sanitised correlation fields so operators
+            // can diagnose without seeing raw prompts or tool output.
+            $this->logger->warning('Session transcript replay: events.jsonl unreadable, falling back to system block', [
+                'component' => 'SessionInitializer',
+                'event_type' => 'replay_events_unreadable',
+                'session_id' => $runId,
+                'exception_class' => $e::class,
+                'exception_message' => $e->getMessage(),
+            ]);
+
             return [$this->blockFactory->system(
                 runId: $runId,
                 text: 'Session '.$runId.' — could not load events.',
