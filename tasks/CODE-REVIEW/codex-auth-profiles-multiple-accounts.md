@@ -33,12 +33,12 @@ Notes:
 - Castor validation passes: focused tests, phpstan on changed auth/config/provider files, deptrac, cs-check.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/codex-auth-profiles-multiple-accounts
 Worktree: /home/ineersa/projects/agent-core-worktrees/codex-auth-profiles-multiple-accounts
 Fork run: ut2bh7fej4gj
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/100
+PR Status: open
 Started: 2026-06-07T22:22:43.380Z
 Completed:
 
@@ -85,3 +85,16 @@ Completed:
 - Recorded fork run: ut2bh7fej4gj
 - Validation: Reviewer verdict on HEAD 0e70332f: APPROVE; no critical/security/correctness issues.; Focused validation on worktree passed: castor test => tests=1977, assertions=5766, errors=0, failures=0, skipped=0; PHAR smoke OK.; Focused validation on worktree passed: castor deptrac => violations=0, errors=0, uncovered=717, allowed=901.; Focused validation on worktree passed: castor phpstan => errors=0, file_errors=0.; Focused validation on worktree passed: castor cs-check => files_fixed=0.; Verified git status clean on branch task/codex-auth-profiles-multiple-accounts at 0e70332f.
 - Summary: Final reviewer pass on HEAD 0e70332f returned APPROVE with no issues. Verified task worktree is clean. Branch contains three task commits: 7077795b initial profile/auth_key implementation, ab8dca9d first review-suggestion cleanup, 0e70332f profile-aware refresh error hint cleanup. Ready for CODE-REVIEW move and Castor quality gate.
+Castor Check Status: passed
+Castor Check Commit: 0e70332f6f5f581dc69036486d6d683f01fcb64d
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 900s
+Castor Check Completed: 2026-06-07T23:20:55.941Z
+Castor Check Output SHA256: 26180184825ff62806f719a2d50976c001d18700360ac193fe105e023cf6ad02
+
+## Task workflow update - 2026-06-07T23:20:59.327Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: 0e70332f6f5f.
+- Pushed task/codex-auth-profiles-multiple-accounts to origin.
+- branch 'task/codex-auth-profiles-multiple-accounts' set up to track 'origin/task/codex-auth-profiles-multiple-accounts'.
+- Created PR: https://github.com/ineersa/agent-core/pull/100
