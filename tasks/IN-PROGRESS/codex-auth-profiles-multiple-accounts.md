@@ -36,7 +36,7 @@ Notes:
 Status: IN-PROGRESS
 Branch: task/codex-auth-profiles-multiple-accounts
 Worktree: /home/ineersa/projects/agent-core-worktrees/codex-auth-profiles-multiple-accounts
-Fork run:
+Fork run: 9g5xn40wapel
 PR URL:
 PR Status:
 Started: 2026-06-07T22:22:43.380Z
@@ -61,3 +61,7 @@ Completed:
 ## Task workflow update - 2026-06-07T22:24:13.991Z
 - Validation: Scout only; no implementation yet.
 - Summary: Task claimed and worktree created at /home/ineersa/projects/agent-core-worktrees/codex-auth-profiles-multiple-accounts. Read-only scout confirmed CodexAuthStorage already supports multiple provider keys, but CodexOAuthService login/refresh and SymfonyAiProviderFactory currently hardcode/default to CodexOAuthConfig::PROVIDER_KEY (`openai-codex`), CodexAuthCommand has no --profile option, and AiProviderConfig has no auth_key field. Implementation plan: add config auth_key, add CLI --profile mapped to openai-codex-<profile> with validation, pass selected key through CodexOAuthService login/refresh, load provider credentials by explicit auth_key with default fallback, update docs/defaults, and add focused tests. Keep manual provider/profile switching only; no auto failover or retry-on-limit behavior.
+
+## Task workflow update - 2026-06-07T22:25:45.146Z
+- Recorded fork run: 9g5xn40wapel
+- Summary: Launched implementation fork 9g5xn40wapel in worktree /home/ineersa/projects/agent-core-worktrees/codex-auth-profiles-multiple-accounts with instructions to implement explicit Codex OAuth profiles, auth_key provider selection, docs/defaults, focused tests, and Castor-only validation. Stop boundary: no PR/code-review/push/castor check/reviewer.
