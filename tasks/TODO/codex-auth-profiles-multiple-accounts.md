@@ -44,3 +44,9 @@ Completed:
 
 ## Work log
 - Created: 2026-06-07T21:26:12.410Z
+
+## Task workflow update - 2026-06-07T21:34:07.019Z
+- Summary: Policy/risk note added after research: profile support should be explicit/manual account selection, not automatic failover/load-balancing when one account reaches a cap. Using a second paid account after the first hits a cap is the highest-risk interpretation because OpenAI policies prohibit circumventing rate/usage limits; implementation should avoid auto-switch-on-cap behavior and document that profiles are for separate accounts/purposes, with user-controlled switching.
+
+## Task workflow update - 2026-06-07T21:37:01.242Z
+- Summary: Policy/product clarification from user: support manual provider/profile switching only. The implementation must NOT add automatic failover, retry-on-limit, round-robin, load balancing, or any behavior that switches accounts when one hits a cap. Users may manually select a different configured Codex provider/profile (for example via model/provider selection) when desired. Document this as explicit/manual profile selection for separate paid accounts, not automated usage-limit circumvention.
