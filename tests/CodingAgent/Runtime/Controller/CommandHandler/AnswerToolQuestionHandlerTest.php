@@ -171,6 +171,41 @@ final class AnswerToolQuestionHandlerTest extends TestCase
 
         self::assertFalse($this->spyStore->lastAnswer);
     }
+
+    public function testEmitsProtocolErrorOnStoreFailure(): void
+    {
+        $this->spyStore->throwOnAnswer = new \RuntimeException('DB connection lost');
+        $handler = new AnswerToolQuestionHandler($this->spyStore);
+
+        $emittedEvents = [];
+        $emit = static function (RuntimeEvent $event) use (&$emittedEvents): void {
+            $emittedEvents[] = $event;
+        };
+
+        $command = new RuntimeCommand(
+            id: 'cmd_8',
+            type: 'answer_tool_question',
+            runId: 'run-999',
+            payload: [
+                'request_id' => 'bash_bg_run-999_tc1_1',
+                'answer' => true,
+            ],
+        );
+
+        $event = new ControllerCommandEvent($command, $emit);
+        $handler($event);
+
+        // Verify the handler caught the exception and emitted a ProtocolError.
+        self::assertNull($this->spyStore->lastAnswer, 'answer() should not have reached real store logic');
+        self::assertCount(1, $emittedEvents);
+        self::assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
+        self::assertSame('run-999', $emittedEvents[0]->runId);
+        self::assertStringContainsString('Failed to answer tool question', $emittedEvents[0]->payload['error'] ?? '');
+        self::assertStringContainsString('DB connection lost', $emittedEvents[0]->payload['error'] ?? '');
+
+        // Verify no exception propagates to the caller.
+        $this->addToAssertionCount(1);
+    }
 }
 
 /**
@@ -181,8 +216,17 @@ final class SpyToolQuestionStore implements \Ineersa\CodingAgent\Tool\ToolQuesti
     public ?string $lastRequestId = null;
     public ?bool $lastAnswer = null;
 
+    /**
+     * When set, answer() throws this exception instead of recording.
+     */
+    public ?\Throwable $throwOnAnswer = null;
+
     public function answer(string $requestId, bool $answer): bool
     {
+        if (null !== $this->throwOnAnswer) {
+            throw $this->throwOnAnswer;
+        }
+
         $this->lastRequestId = $requestId;
         $this->lastAnswer = $answer;
 

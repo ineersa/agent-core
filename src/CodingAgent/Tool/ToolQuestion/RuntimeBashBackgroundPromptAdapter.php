@@ -23,6 +23,13 @@ use Psr\Log\LoggerInterface;
  *
  * Falls back to false (decline) when no ToolContext is available, matching
  * the existing non-interactive decline behavior.
+ *
+ * Note: The full TUI surfacing path (event emission -> question overlay ->
+ * answer callback) is currently process-mode / controller-driven via
+ * ToolQuestionPoller. In-process mode can still write to and poll the store
+ * directly, but has no running controller poller loop today. The adapter
+ * therefore safely returns false (decline) after timeout if no answer is
+ * surfaced, matching the non-interactive decline fallback.
  */
 final readonly class RuntimeBashBackgroundPromptAdapter implements BashBackgroundPromptAdapterInterface
 {
