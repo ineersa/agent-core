@@ -1,7 +1,6 @@
 # SESSION-04 /rename command and session argument completions
 
 ## Goal
-## Goal
 Add session rename UX and completion support for session-taking slash commands.
 
 ## Desired UX
@@ -10,6 +9,111 @@ Add session rename UX and completion support for session-taking slash commands.
 - `/rename <session id> <new name>` executes the rename.
 - If no name is provided, show an error with a concrete command hint using the selected/provided real session id.
 - For all completion flows, Tab inserts a completion into the editor while Enter executes the command/picker selection.
+
+## Current code facts
+
+### Key difference from `/resume` picker
+`/resume` picker executes on selection. `/rename` picker must **insert** a partial command into the editor and return focus. This requires:
+1. Picker `onSelect()` → construct string like `/rename <sessionId> ` → insert into editor → close picker
+2. Editor access via `ChatScreen::getEditor()` → `editor->insertText(string)` or equivalent
+
+### Editor API (from `src/Tui/Editor/PromptEditor.php` + `PromptEditorWidget.php`)
+- `extract(): EditorState` — returns current text snapshot
+- `clear(): void` — resets editor content
+- Editor can be accessed via `ChatScreen::getEditor()` which is returned by `InteractiveMode::run()` but not currently exposed via `TuiRuntimeContext`
+- **May need** to expose editor or add an `insertText()` method to `ChatScreen` or `TuiRuntimeContext` for use by command handlers.
+
+### Tab completion (EDITOR-08, NOT YET implemented)
+- Task `tasks/TODO/editor-08-completion-foundation-slash.md`:
+  - `CompletionProvider` interface, `CompletionSuggestion`, `CompletionState`
+  - Completion menu rendering near editor
+  - `SlashCommandCompletionProvider` backed by registry metadata
+  - Tab: accept selected or trigger slash completion
+  - Escape: close completion without clearing text
+- Bot commands like `/resume <sessionId>` and `/rename <sessionId>` will need a `SessionIdCompletionProvider` that calls `HatfieldSessionStore::listSessions()` for suggestions.
+
+### Session metadata update path
+- `HatfieldSessionStore::updateMetadata(string $sessionId, array $meta): void` — merges known keys
+- After SESSION-01 adds `name` support, rename is simply:
+  ```php
+  $this->sessionStore->updateMetadata($sessionId, ['name' => $newName]);
+  ```
+
+## Implementation seams
+
+### New file: `src/Tui/Command/RenameSessionCommand.php`
+```php
+class RenameSessionCommand implements SlashCommandHandler {
+    public function __construct(
+        private HatfieldSessionStore $sessionStore,
+        private ChatScreen $screen,
+    ) {}
+
+    public function handle(SlashCommand $cmd): CommandResult {
+        // Parse args: sessionId + newName
+        $args = preg_split('/\s+/', trim($cmd->args), 2);
+        $sessionId = $args[0] ?? '';
+        $newName = $args[1] ?? '';
+
+        if ('' === $sessionId) {
+            // Open picker → onSelect inserts /rename <id>  into editor
+            $this->openRenamePicker();
+            return new NoOp();
+        }
+
+        if ('' === $newName) {
+            return new TranscriptMessage(
+                'Provide a name. Example: `/rename '.$sessionId.' My session`'
+            );
+        }
+
+        if (!$this->sessionStore->exists($sessionId)) {
+            return new TranscriptMessage('Session not found: '.$sessionId);
+        }
+
+        $this->sessionStore->updateMetadata($sessionId, ['name' => $newName]);
+        return new TranscriptMessage('Session '.$sessionId.' renamed to "'.$newName.'"');
+    }
+}
+```
+
+### Picker insertion (picker `onSelect`)
+```php
+$listWidget->onSelect(function (SelectEvent $e) use ($editor, $overlay): void {
+    $sessionId = $e->item->value;
+    $editor->clear();
+    $editor->insertText('/rename '.$sessionId.' ');
+    $overlay->close();
+    // Focus returns to editor naturally
+});
+```
+
+### Completion provider (after EDITOR-08)
+```php
+class SessionIdCompletionProvider implements CompletionProvider {
+    public function __construct(private HatfieldSessionStore $sessionStore) {}
+    public function getSuggestions(string $prefix): array {
+        return array_map(
+            fn(array $s) => new CompletionSuggestion(
+                value: $s['sessionId'],
+                display: $s['displayTitle'],
+                insert: $s['sessionId'].' ',
+            ),
+            $this->sessionStore->listSessions(limit: 30)
+        );
+    }
+}
+```
+
+## Known pitfalls
+- Picker insertion requires editor access from the command handler. If `TuiRuntimeContext` doesn't expose the editor, either:
+  - Add `ChatScreen::insertText(string): void`
+  - Or expose `PromptEditor` through `TuiRuntimeContext`
+- Command parsing: `/rename` args must split on first space to separate sessionId (which never contains spaces, it's numeric) from the rest (which may contain spaces). Use `explode(' ', ..., 2)` or `preg_split('/\s+/', ..., 2)`.
+- `/rename <sessionId> <new name>` where sessionId is quoted/special: not needed since IDs are numeric strings.
+- Completion for session IDs depends on EDITOR-08. If that task is delayed, `/rename` direct command and picker-insertion can still ship without tab completion.
+- Display fallback for unnamed sessions must not be persisted (keep `name` null in DB).
+- No backward-compatibility shims for old sessions without name field.
 
 ## Dependencies
 - SESSION-01 for name metadata/listing.

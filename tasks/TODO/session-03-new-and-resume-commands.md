@@ -1,7 +1,6 @@
 # SESSION-03 /new and /resume session commands
 
 ## Goal
-## Goal
 Add interactive TUI commands for starting a fresh session and resuming/switching to an existing session.
 
 ## Desired UX
@@ -9,6 +8,103 @@ Add interactive TUI commands for starting a fresh session and resuming/switching
 - Selecting a session resumes/switches to it and reloads the TUI transcript/state from where it ended.
 - `/resume <session id>` executes directly.
 - `/new` clears the TUI into a fresh session state. Prefer lazy creation: a new DB/session directory is created on first submitted message, not merely by opening an empty draft, unless implementation constraints force a documented alternative.
+
+## Current code facts
+
+### Existing reference pattern: ModelControlListener + ModelPickerController
+- `src/Tui/Listener/ModelControlListener.php` — registers `/model` command + interactive picker + Ctrl+P/Shift+Tab
+- `src/Tui/Picker/ModelPickerController.php` — uses `PickerOverlay` + `SelectListWidget` for list selection
+- `src/Tui/Picker/PickerOverlay.php` — `mount()` appends container widget to `Tui` root; `close()` removes it
+- This is the template for `/resume` picker and `/new` behavior
+
+### Existing slash command infrastructure
+- `src/Tui/Command/SlashCommandRegistry.php` — built-ins: `/help`, `/clear`, `/exit`; supports `register(CommandMetadata, SlashCommandHandler)` and `setHandler(name, handler)`
+- `src/Tui/Command/CommandParser.php` — parses `/cmd args` → `SlashCommand(name, args, originalText)`
+- `src/Tui/Command/SubmissionRouter.php` — routes slash commands to registry, normal prompts to runtime
+- `src/Tui/Command/SlashCommandHandler.php` — interface: `handle(SlashCommand): CommandResult`
+- `src/Tui/Listener/SubmitListener.php` — applies `CommandResult` variants: `TranscriptMessage`, `ClearTranscript`, `ExitApplication`, `StatusUpdate`; **ignores `DispatchRuntime`**
+
+### Command result types
+- `src/Tui/Command/TranscriptMessage.php` — append to transcript
+- `src/Tui/Command/NoOp.php` — silently ignored
+- `src/Tui/Command/ExitApplication.php` — stop TUI
+- `src/Tui/Command/DispatchRuntime.php` — placeholder, NOT wired yet (may need wiring for `/new` to trigger runtime start)
+
+### Pickers and overlays
+- `SelectListWidget` — list with keybindings: `select_up`/`down`/`page_up`/`page_down`/`select_confirm`/`select_cancel`; `onSelect()`, `onCancel()`, `onInput()` callbacks
+- `PickerOverlay` — `mount()` → `tui->add(container)`; `close()` → `tui->remove(container)`; appends at bottom of widget tree
+- `QuestionController::insertOverlayBeforeEditor()` — alternative overlay placement (above editor, replaces editor position)
+- **Recommendation**: for session picker, use `PickerOverlay` pattern (appended at bottom, session selector feels like a model picker)
+
+### Session picker data source
+- After SESSION-01: `HatfieldSessionStore::listSessions()` returns array with sessionId / name / displayTitle / prompt / model / timestamps
+- Picker items display: `displayTitle` (name fallback logic applied)
+
+## Implementation seams
+
+### New files to create
+
+#### `src/Tui/Command/NewSessionCommand.php`
+```php
+class NewSessionCommand implements SlashCommandHandler {
+    public function __construct(private SessionSwitchService $switcher) {}
+    public function handle(SlashCommand $cmd): CommandResult {
+        $this->switcher->switchToNew();
+        return new NoOp();  // or StatusUpdate
+    }
+}
+```
+
+#### `src/Tui/Command/ResumeSessionCommand.php`
+```php
+class ResumeSessionCommand implements SlashCommandHandler {
+    public function __construct(
+        private SessionSwitchService $switcher,
+        private HatfieldSessionStore $sessionStore,
+    ) {}
+    public function handle(SlashCommand $cmd): CommandResult {
+        if ('' === $cmd->args) {
+            // Open picker overlay → onSelect calls switcher->switchToResume(id)
+            $this->picker->open($cmd);
+            return new NoOp();
+        }
+        $sessionId = trim($cmd->args);
+        if (!$this->sessionStore->exists($sessionId)) {
+            return new TranscriptMessage('Session not found: '.$sessionId);
+        }
+        $this->switcher->switchToResume($sessionId);
+        return new NoOp();
+    }
+}
+```
+
+#### `src/Tui/Picker/SessionPickerController.php` (optional, or inline in ResumeSessionCommand)
+- Uses `PickerOverlay` + `SelectListWidget`
+- Items from `HatfieldSessionStore::listSessions()`
+- `onSelect()` calls `switcher->switchToResume($selectedSessionId)`
+- `onCancel()` closes picker, returns `NoOp`
+
+### Registration in InteractiveMode
+Like `ModelControlListener`, add registration in `InteractiveMode::run()` or in a new listener:
+```php
+$registry->register(
+    new CommandMetadata(name: 'new', description: 'Start a new session'),
+    new NewSessionCommand($switcher),
+);
+$registry->register(
+    new CommandMetadata(name: 'resume', aliases: ['r'], description: 'Resume a session (/resume <id> or picker)'),
+    new ResumeSessionCommand($switcher, $sessionStore, ...),
+);
+```
+
+## Known pitfalls
+- `/new` must not create an orphan DB session row if the user never types a message. Lazy creation means deferring `HatfieldSessionStore::createSession()` until first `SubmitListener` submits a normal prompt.
+- `/resume` picker must refresh session list from DB each time it opens (sessions may be renamed between opens).
+- The active `AgentSessionClient` run (`state->handle`) must be cancelled before switching. If cancellation is in progress, either wait and retry or force-close.
+- Session switch must also cancel/close any open `QuestionCoordinator` overlay — the user may be answering a HITL question when they type `/resume`.
+- `TuiSessionState::$resuming` must be set correctly so `buildInitialTranscript()` replays events (after RTVS-08A).
+- No backward-compatibility to old `transcript.jsonl` after RTVS-08A removes it.
+- Runtime/TUI changes require full `castor check` before CODE-REVIEW.
 
 ## Dependencies
 - SESSION-01 for session list/name metadata.
