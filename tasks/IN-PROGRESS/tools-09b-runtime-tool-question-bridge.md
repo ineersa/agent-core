@@ -251,3 +251,9 @@ Castor Check Output SHA256: 47cd96b0b58c66f04734662d5fb5d2abe66498d8979238ab044a
 - Verified fork commit f62195f1 exists at HEAD in worktree, branch clean and ahead of origin by 1 commit.
 - Verified commit stat: 11 files changed, 472 insertions, 2 deletions.
 - Implementation-phase STOP boundary observed: no reviewer, no push, no move_task(to=CODE-REVIEW), no castor check. User should run task-to-pr when ready.
+
+## Task workflow update - 2026-06-07T18:23:11.657Z
+- Summary: Reviewer subagent run on local HEAD f62195f1 (`TOOLS-09B: Fix stale bash background prompts`) returned APPROVE WITH SUGGESTIONS. Critical Issues: none. Reviewer confirmed the process-completion fix and stale-question DB noop behavior are architecturally sound and well-tested, with clean structured logging and deptrac boundaries respected. Actionable finding: TickPollListener::handleToolTerminal currently calls QuestionCoordinator::cancel() but does not close the QuestionController visual overlay, so the ghost prompt can remain visible until the user interacts. Exact fix recommended: pass QuestionController to handleToolTerminal and call close() after cancelling, or add a tick-loop guard `isOpen() && !actionRequired()` to close stale overlays. Minor cleanup findings: remove unused CoversClass import in BackgroundProcessStatusCheckerTest, and remove or document unused `$client` parameter in TickPollListener::handleToolTerminal.
+- Reviewer on f62195f1: APPROVE WITH SUGGESTIONS. Actionable UX issue remains: stale overlay may not visually close because coordinator cancellation does not call QuestionController::close().
+- Reviewer minor cleanup: unused CoversClass import in tests/CodingAgent/Tool/ToolQuestion/BackgroundProcessStatusCheckerTest.php; unused `$client` parameter in src/Tui/Listener/TickPollListener.php::handleToolTerminal().
+- No code changes made by orchestrator. Next step should be a small implementation fork to address reviewer suggestions if user approves.
