@@ -24,7 +24,8 @@ final class CodexToolNormalizer extends ModelContractNormalizer
      *     type: 'function',
      *     name: string,
      *     description: string,
-     *     parameters?: array<string, mixed>
+     *     parameters?: array<string, mixed>,
+     *     strict?: null
      * }
      */
     public function normalize(mixed $data, ?string $format = null, array $context = []): array
@@ -37,6 +38,7 @@ final class CodexToolNormalizer extends ModelContractNormalizer
 
         if (null !== $data->getParameters()) {
             $function['parameters'] = $data->getParameters();
+            $function['strict'] = null;
         }
 
         return $function;

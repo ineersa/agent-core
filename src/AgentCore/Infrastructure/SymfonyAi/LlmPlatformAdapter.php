@@ -228,7 +228,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 'run_id' => $runId,
                 'step_id' => $stepId,
                 'error_type' => $exception::class,
-                'error_message' => $exception->getMessage(),
+                'error_message' => mb_substr($exception->getMessage(), 0, 500),
             ]);
 
             return $this->errorResult($deltas, $exception, $deferredResult);
@@ -263,7 +263,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             stopReason: 'error',
             error: [
                 'type' => $exception::class,
-                'message' => $exception->getMessage(),
+                'message' => mb_substr($exception->getMessage(), 0, 500),
             ],
         );
     }

@@ -22,6 +22,7 @@ final class CodexToolCallNormalizer extends ModelContractNormalizer
 {
     /**
      * @return array{
+     *     id: string,
      *     call_id: string,
      *     name: string,
      *     arguments: string,
@@ -31,6 +32,7 @@ final class CodexToolCallNormalizer extends ModelContractNormalizer
     public function normalize(mixed $data, ?string $format = null, array $context = []): array
     {
         return [
+            'id' => $data->getId(),
             'call_id' => $data->getId(),
             'name' => $data->getName(),
             'arguments' => json_encode($data->getArguments() ?? new \stdClass()),

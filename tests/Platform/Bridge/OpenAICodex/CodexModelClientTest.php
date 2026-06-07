@@ -54,7 +54,18 @@ final class CodexModelClientTest extends TestCase
             self::assertSame('chatgpt-account-id: acct-123', $options['normalized_headers']['chatgpt-account-id'][0]);
             self::assertSame('originator: hatfield', $options['normalized_headers']['originator'][0]);
             self::assertSame('OpenAI-Beta: responses=experimental', $options['normalized_headers']['openai-beta'][0]);
-            self::assertSame('{"temperature":1,"model":"gpt-5.5","input":[{"role":"user","content":"test message"}]}', $options['body']);
+
+            $body = \json_decode($options['body'], true);
+            self::assertSame('POST', $method);
+            self::assertSame('gpt-5.5', $body['model']);
+            self::assertSame('test message', $body['input'][0]['content']);
+            self::assertSame(1, $body['temperature']);
+            self::assertFalse($body['store']);
+            self::assertTrue($body['stream']);
+            self::assertSame('low', $body['text']['verbosity']);
+            self::assertSame(['reasoning.encrypted_content'], $body['include']);
+            self::assertSame('auto', $body['tool_choice']);
+            self::assertTrue($body['parallel_tool_calls']);
 
             return new MockResponse();
         };
@@ -88,10 +99,13 @@ final class CodexModelClientTest extends TestCase
         $resultCallback = static function (string $method, string $url, array $options): HttpResponse {
             self::assertSame('POST', $method);
             self::assertSame('https://chatgpt.com/backend-api/codex/responses', $url);
-            self::assertSame(
-                '{"temperature":0.7,"text":{"format":{"name":"foo","schema":[],"type":"json"}},"model":"gpt-5.5","input":[{"role":"user","content":"Hello"}]}',
-                $options['body'],
-            );
+
+            $body = \json_decode($options['body'], true);
+            // Verify structured output fields are preserved
+            self::assertSame('json', $body['text']['format']['type']);
+            self::assertSame('foo', $body['text']['format']['name']);
+            // Verify verbosity is merged alongside format
+            self::assertSame('low', $body['text']['verbosity']);
 
             return new MockResponse();
         };
@@ -137,7 +151,8 @@ final class CodexModelClientTest extends TestCase
             $body = \json_decode($options['body'], true);
             self::assertArrayNotHasKey('_agent_core_invocation', $body);
             self::assertArrayNotHasKey('_hatfield_suppress_developer_role', $body);
-            self::assertArrayNotHasKey('stream', $body);
+            // stream is NOT stripped — it is a valid Codex API field and is preserved
+            self::assertTrue($body['stream']);
             self::assertArrayNotHasKey('tools_ref', $body);
             self::assertArrayNotHasKey('turn_no', $body);
             self::assertArrayNotHasKey('run_id', $body);
@@ -177,6 +192,8 @@ final class CodexModelClientTest extends TestCase
             self::assertArrayHasKey('model', $body);
             self::assertSame('gpt-5.5', $body['model']);
             self::assertArrayHasKey('input', $body);
+            // stream is preserved (not stripped) — valid Codex field
+            self::assertTrue($body['stream']);
 
             return new MockResponse();
         };
@@ -187,7 +204,7 @@ final class CodexModelClientTest extends TestCase
         $options = [
             'reasoning' => ['effort' => 'high', 'summary' => 'auto'],
             'temperature' => 0.5,
-            'stream' => true, // should be stripped
+            'stream' => true,
         ];
 
         $modelClient->request(
@@ -201,9 +218,10 @@ final class CodexModelClientTest extends TestCase
     {
         $resultCallback = static function (string $method, string $url, array $options): HttpResponse {
             $body = \json_decode($options['body'], true);
-            // Internal keys stripped
-            self::assertArrayNotHasKey('stream', $body);
+            // Internal keys stripped (_hatfield_ prefix)
             self::assertArrayNotHasKey('_hatfield_suppress_developer_role', $body);
+            // stream is preserved (valid Codex API field)
+            self::assertTrue($body['stream']);
             // Model and payload preserved
             self::assertSame('gpt-5.4-mini', $body['model']);
             self::assertSame('Hello world', $body['input'][0]['content']);
@@ -219,6 +237,82 @@ final class CodexModelClientTest extends TestCase
             new CodexModel('gpt-5.4-mini'),
             ['input' => [['role' => 'user', 'content' => 'Hello world']]],
             ['stream' => true, '_hatfield_suppress_developer_role' => true],
+        );
+    }
+
+    public function testItIncludesCodexRequiredDefaultsInBody(): void
+    {
+        $resultCallback = static function (string $method, string $url, array $options): HttpResponse {
+            $body = \json_decode($options['body'], true);
+
+            // Codex Responses API required fields
+            self::assertFalse($body['store']);
+            self::assertTrue($body['stream']);
+            self::assertSame('low', $body['text']['verbosity']);
+            self::assertSame(['reasoning.encrypted_content'], $body['include']);
+            self::assertSame('auto', $body['tool_choice']);
+            self::assertTrue($body['parallel_tool_calls']);
+
+            // Internal keys stripped
+            self::assertArrayNotHasKey('_agent_core_invocation', $body);
+            self::assertArrayNotHasKey('_hatfield_suppress_developer_role', $body);
+            self::assertArrayNotHasKey('tools_ref', $body);
+            self::assertArrayNotHasKey('turn_no', $body);
+            self::assertArrayNotHasKey('run_id', $body);
+
+            return new MockResponse();
+        };
+
+        $httpClient = new MockHttpClient([$resultCallback]);
+        $modelClient = new CodexModelClient($httpClient, 'https://chatgpt.com/backend-api', 'test-access-token', 'acct-123');
+
+        $options = [
+            '_agent_core_invocation' => ['some' => 'data'],
+            '_hatfield_suppress_developer_role' => true,
+            'tools_ref' => 'toolset-1',
+            'turn_no' => 1,
+            'run_id' => 'run-abc',
+            'temperature' => 0.5,
+        ];
+
+        $modelClient->request(
+            new CodexModel('gpt-5.5'),
+            ['input' => [['role' => 'user', 'content' => 'test']]],
+            $options,
+        );
+    }
+
+    public function testCodexDefaultsDoNotOverrideExplicitValues(): void
+    {
+        $resultCallback = static function (string $method, string $url, array $options): HttpResponse {
+            $body = \json_decode($options['body'], true);
+
+            // Explicit values must not be overridden by defaults
+            self::assertTrue($body['store']);
+            self::assertSame('high', $body['text']['verbosity']);
+            self::assertSame(['custom_feature'], $body['include']);
+            self::assertSame('manual', $body['tool_choice']);
+            self::assertFalse($body['parallel_tool_calls']);
+
+            return new MockResponse();
+        };
+
+        $httpClient = new MockHttpClient([$resultCallback]);
+        $modelClient = new CodexModelClient($httpClient, 'https://chatgpt.com/backend-api', 'test-access-token', 'acct-123');
+
+        $options = [
+            'store' => true,
+            'text' => ['verbosity' => 'high'],
+            'include' => ['custom_feature'],
+            'tool_choice' => 'manual',
+            'parallel_tool_calls' => false,
+            'stream' => true,
+        ];
+
+        $modelClient->request(
+            new CodexModel('gpt-5.5'),
+            ['input' => [['role' => 'user', 'content' => 'test']]],
+            $options,
         );
     }
 }
