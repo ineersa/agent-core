@@ -66,18 +66,30 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         $input = new Input($request->model, $messageBag, $options);
         $this->toolDescriptionProcessor->processInput($input);
 
+        // Build a privacy-safe request summary for error diagnostics.
+        // This is included in the error array when the request fails.
+        $inputOptions = $input->getOptions();
+        $requestSummary = [
+            'model' => $request->model,
+            'input_count' => \count($messageBag->withoutSystemMessage()->getMessages()),
+            'has_instructions' => null !== $messageBag->getSystemMessage(),
+            'has_tools' => isset($inputOptions['tools']),
+            'tool_count' => \is_array($inputOptions['tools'] ?? null) ? \count($inputOptions['tools']) : 0,
+        ];
+
         return $this->consumeStream(
             $this->platform->invoke(
                 $input->getModel(),
                 $input->getMessageBag(),
                 PlatformInvocationMetadata::inject(
-                    array_replace($input->getOptions(), ['stream' => true]),
+                    array_replace($inputOptions, ['stream' => true]),
                     new PlatformInvocationMetadata($request->input, $cancelToken),
                 ),
             ),
             $cancelToken,
             $request->input->runId ?? '',
             $request->input->stepId,
+            $requestSummary,
         );
     }
 
@@ -197,11 +209,15 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         return new NullCancellationToken();
     }
 
+    /**
+     * @param array<string, mixed> $requestSummary Privacy-safe request summary for error diagnostics
+     */
     private function consumeStream(
         DeferredResult $deferredResult,
         CancellationTokenInterface $cancelToken,
         string $runId,
         ?string $stepId,
+        array $requestSummary = [],
     ): PlatformInvocationResult {
         $aborted = false;
         $deltas = [];
@@ -223,15 +239,15 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         } catch (\Throwable $exception) {
             $this->notifyStreamError($runId, $stepId, $exception);
 
-            $this->logger->warning('llm.provider.stream_error', [
-                'event_type' => 'llm.provider.stream_error',
-                'run_id' => $runId,
-                'step_id' => $stepId,
-                'error_type' => $exception::class,
-                'error_message' => mb_substr($exception->getMessage(), 0, 500),
-            ]);
+            $this->logger->warning('llm.provider.stream_error', $this->buildErrorLogContext(
+                $exception,
+                $runId,
+                $stepId,
+                $deferredResult,
+                $requestSummary,
+            ));
 
-            return $this->errorResult($deltas, $exception, $deferredResult);
+            return $this->errorResult($deltas, $exception, $deferredResult, $requestSummary);
         }
 
         $this->notifyStreamEnd($runId, $stepId);
@@ -252,19 +268,147 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     }
 
     /**
-     * @param list<DeltaInterface> $deltas
+     * @param array<string, mixed> $requestSummary Privacy-safe request summary
+     *
+     * @return array<string, mixed>
      */
-    private function errorResult(array $deltas, \Throwable $exception, DeferredResult $deferredResult): PlatformInvocationResult
+    private function buildErrorLogContext(
+        \Throwable $exception,
+        string $runId,
+        ?string $stepId,
+        DeferredResult $deferredResult,
+        array $requestSummary = [],
+    ): array {
+        $context = [
+            'event_type' => 'llm.provider.stream_error',
+            'run_id' => $runId,
+            'step_id' => $stepId,
+            'error_type' => $exception::class,
+            'error_message' => mb_substr($exception->getMessage(), 0, 500),
+        ];
+
+        // Extract response diagnostics from the raw HTTP result if available.
+        $responseDiagnostics = $this->extractResponseDiagnostics($deferredResult);
+        foreach ($responseDiagnostics as $key => $value) {
+            if (null !== $value) {
+                $context[$key] = $value;
+            }
+        }
+
+        // Merge request summary (privacy-safe structural metadata).
+        foreach ($requestSummary as $key => $value) {
+            $context['request_'.$key] = $value;
+        }
+
+        return $context;
+    }
+
+    /**
+     * Extract privacy-safe response diagnostics from a DeferredResult.
+     *
+     * Returns an array of diagnostics keys, with values truncated and
+     * sensitive data excluded.
+     *
+     * @return array<string, mixed>
+     */
+    private function extractResponseDiagnostics(DeferredResult $deferredResult): array
     {
+        $rawResult = $deferredResult->getRawResult();
+
+        if (!$rawResult instanceof RawHttpResult) {
+            return [];
+        }
+
+        try {
+            $response = $rawResult->getObject();
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $diag = [
+            'http_status_code' => null,
+            'response_content_type' => null,
+            'response_error_code' => null,
+            'response_error_type' => null,
+            'response_error_param' => null,
+            'response_error_message' => null,
+            'response_body_preview' => null,
+        ];
+
+        try {
+            $diag['http_status_code'] = $response->getStatusCode();
+        } catch (\Throwable) {
+        }
+
+        // Extract headers
+        try {
+            $headers = $response->getHeaders(false);
+            $diag['response_content_type'] = $headers['content-type'][0] ?? null;
+        } catch (\Throwable) {
+        }
+
+        // Try to parse response body for structured error fields.
+        // If body is not JSON, include a truncated preview.
+        try {
+            $body = $response->getContent(false);
+        } catch (\Throwable) {
+            return $diag;
+        }
+
+        $data = json_decode($body, true);
+
+        if (null !== $data) {
+            if (isset($data['error']) && \is_array($data['error'])) {
+                $error = $data['error'];
+                $diag['response_error_code'] = isset($error['code']) && '' !== $error['code'] ? $error['code'] : null;
+                $diag['response_error_type'] = $error['type'] ?? null;
+                $diag['response_error_param'] = $error['param'] ?? null;
+                $diag['response_error_message'] = mb_substr($error['message'] ?? '', 0, 500);
+            } elseif (\is_string($data['error'] ?? null)) {
+                // Alternative: {"error": "message string"}
+                $diag['response_error_message'] = mb_substr($data['error'], 0, 500);
+            } elseif (isset($data['error_description'])) {
+                $diag['response_error_message'] = mb_substr($data['error_description'], 0, 500);
+            }
+        } else {
+            // Non-JSON body — include truncated preview
+            $preview = trim(preg_replace('/\s+/', ' ', $body));
+            $diag['response_body_preview'] = mb_substr($preview, 0, 500);
+        }
+
+        return $diag;
+    }
+
+    /**
+     * @param list<DeltaInterface> $deltas
+     * @param array<string, mixed> $requestSummary Privacy-safe request summary
+     */
+    private function errorResult(array $deltas, \Throwable $exception, DeferredResult $deferredResult, array $requestSummary = []): PlatformInvocationResult
+    {
+        $error = [
+            'type' => $exception::class,
+            'message' => mb_substr($exception->getMessage(), 0, 500),
+        ];
+
+        // Include response diagnostics in the error array for downstream logging.
+        $responseDiag = $this->extractResponseDiagnostics($deferredResult);
+        foreach ($responseDiag as $key => $value) {
+            if (null !== $value) {
+                $error[$key] = $value;
+            }
+        }
+
+        // Include request summary.
+        foreach ($requestSummary as $key => $value) {
+            $error['request_'.$key] = $value;
+        }
+
         return new PlatformInvocationResult(
             assistantMessage: $this->buildAssistantMessage($deltas),
             deltas: $deltas,
             usage: $this->extractUsage($deferredResult),
             stopReason: 'error',
-            error: [
-                'type' => $exception::class,
-                'message' => mb_substr($exception->getMessage(), 0, 500),
-            ],
+            error: $error,
         );
     }
 

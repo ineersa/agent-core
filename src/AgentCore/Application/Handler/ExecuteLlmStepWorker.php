@@ -109,12 +109,28 @@ final readonly class ExecuteLlmStepWorker
             $this->metrics?->recordLlmLatency($durationMs, null !== $response->error);
 
             if (null !== $response->error) {
-                $this->logger->warning('llm.request.failed', [
+                $logCtx = [
                     'duration_ms' => round($durationMs, 3),
                     'event_type' => 'llm.request.failed',
                     'error_type' => $response->error['type'] ?? 'unknown',
                     'error_message' => mb_substr($response->error['message'] ?? 'Unknown error', 0, 500),
-                ]);
+                ];
+
+                // Forward all diagnostics from the platform error result.
+                // These are privacy-safe structural metadata (status codes,
+                // error codes, types, booleans) and never raw prompts/tokens.
+                foreach ($response->error as $key => $value) {
+                    if (\in_array($key, ['type', 'message'], true)) {
+                        continue; // already logged above
+                    }
+                    if (\is_string($value)) {
+                        $logCtx[$key] = mb_substr($value, 0, 500);
+                    } else {
+                        $logCtx[$key] = $value;
+                    }
+                }
+
+                $this->logger->warning('llm.request.failed', $logCtx);
             } else {
                 $this->logger->info('llm.request.completed', [
                     'duration_ms' => round($durationMs, 3),
@@ -151,6 +167,9 @@ final readonly class ExecuteLlmStepWorker
                 'event_type' => 'llm.request.failed',
                 'error_type' => $exception::class,
                 'error_message' => mb_substr($exception->getMessage(), 0, 500),
+                // No request/response diagnostics available here because
+                // this catch handles unexpected exceptions below PlatformInterface
+                // (e.g. DI resolution failures, not provider HTTP errors).
             ]);
 
             return new LlmStepResult(

@@ -15,8 +15,10 @@ use Symfony\Component\Serializer\Normalizer\NormalizerAwareTrait;
 /**
  * Normalizes AssistantMessages into the Codex Responses API format.
  *
- * Without tool calls: returns {role, type, content}.
+ * Without tool calls: returns {role, type: 'message', content: [{type: 'output_text', text}]}.
  * With tool calls: returns a list of {call_id, name, arguments, type: 'function_call'}.
+ *
+ * Uses typed output_text format matching Pi's /codex/responses shape.
  */
 final class CodexAssistantMessageNormalizer extends ModelContractNormalizer implements NormalizerAwareInterface
 {
@@ -42,7 +44,9 @@ final class CodexAssistantMessageNormalizer extends ModelContractNormalizer impl
         return [
             'role' => $data->getRole()->value,
             'type' => 'message',
-            'content' => '' === $text ? null : $text,
+            'content' => '' === $text ? null : [
+                ['type' => 'output_text', 'text' => $text],
+            ],
         ];
     }
 

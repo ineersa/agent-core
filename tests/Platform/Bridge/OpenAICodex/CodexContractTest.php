@@ -85,7 +85,9 @@ final class CodexContractTest extends TestCase
                     [
                         'role' => 'assistant',
                         'type' => 'message',
-                        'content' => 'Hi! How can I help?',
+                        'content' => [
+                            ['type' => 'output_text', 'text' => 'Hi! How can I help?'],
+                        ],
                     ],
                     [
                         'role' => 'user',
@@ -114,7 +116,9 @@ final class CodexContractTest extends TestCase
                     [
                         'role' => 'assistant',
                         'type' => 'message',
-                        'content' => 'Here is the code.',
+                        'content' => [
+                            ['type' => 'output_text', 'text' => 'Here is the code.'],
+                        ],
                     ],
                 ],
                 'instructions' => 'You are a code assistant.',

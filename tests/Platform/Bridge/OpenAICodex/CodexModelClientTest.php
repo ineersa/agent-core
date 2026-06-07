@@ -55,6 +55,7 @@ final class CodexModelClientTest extends TestCase
             self::assertSame('chatgpt-account-id: acct-123', $options['normalized_headers']['chatgpt-account-id'][0]);
             self::assertSame('originator: hatfield', $options['normalized_headers']['originator'][0]);
             self::assertSame('OpenAI-Beta: responses=experimental', $options['normalized_headers']['openai-beta'][0]);
+            self::assertArrayHasKey('x-client-request-id', $options['normalized_headers']);
 
             $body = \json_decode($options['body'], true);
             self::assertSame('POST', $method);
@@ -386,5 +387,8 @@ final class CodexModelClientTest extends TestCase
         $this->assertTrue($loggedContext['has_store']);
         $this->assertTrue($loggedContext['has_stream']);
         $this->assertSame('hatfield', $loggedContext['originator']);
+
+        // Must contain new diagnostics fields
+        $this->assertArrayHasKey('has_client_request_id', $loggedContext);
     }
 }

@@ -12,6 +12,7 @@ use Symfony\AI\Platform\ModelClientInterface;
 use Symfony\AI\Platform\Result\RawHttpResult;
 use Symfony\AI\Platform\StructuredOutput\PlatformSubscriber;
 use Symfony\Component\HttpClient\EventSourceHttpClient;
+use Symfony\Component\Uid\UuidV4;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 class CodexModelClient implements ModelClientInterface
@@ -105,6 +106,7 @@ class CodexModelClient implements ModelClientInterface
                 'chatgpt-account-id' => $this->accountId,
                 'originator' => $this->originator,
                 'OpenAI-Beta' => 'responses=experimental',
+                'x-client-request-id' => UuidV4::v4()->toRfc4122(),
             ],
             'json' => $jsonBody,
         ];
@@ -156,6 +158,7 @@ class CodexModelClient implements ModelClientInterface
             'has_text' => isset($jsonBody['text']),
             'has_store' => isset($jsonBody['store']),
             'has_stream' => isset($jsonBody['stream']),
+            'has_client_request_id' => true,
             'originator' => $this->originator,
         ]);
     }
