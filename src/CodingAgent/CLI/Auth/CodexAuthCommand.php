@@ -56,16 +56,15 @@ final class CodexAuthCommand
 
         ?OutputInterface $output = null,
     ): int {
+        $io = new SymfonyStyle(new ArgvInput(), $output);
+
         try {
             $providerKey = CodexOAuthConfig::providerKeyForProfile($profile);
         } catch (\InvalidArgumentException $e) {
-            $io = new SymfonyStyle(new ArgvInput(), $output);
             $io->error($e->getMessage());
 
             return Command::FAILURE;
         }
-
-        $io = new SymfonyStyle(new ArgvInput(), $output);
 
         $profileLabel = null !== $profile ? \sprintf(' (profile: %s)', $profile) : '';
 

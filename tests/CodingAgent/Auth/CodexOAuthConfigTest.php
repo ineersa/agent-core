@@ -72,4 +72,64 @@ final class CodexOAuthConfigTest extends TestCase
         $key = CodexOAuthConfig::providerKeyForProfile('MyWork');
         $this->assertSame('openai-codex-mywork', $key);
     }
+
+    // -- profileFromProviderKey tests --
+
+    #[DataProvider('profileFromProviderKeyProvider')]
+    public function testProfileFromProviderKey(string $providerKey, ?string $expectedProfile): void
+    {
+        $this->assertSame($expectedProfile, CodexOAuthConfig::profileFromProviderKey($providerKey));
+    }
+
+    /**
+     * @return iterable<string, array{0: string, 1: string|null}>
+     */
+    public static function profileFromProviderKeyProvider(): iterable
+    {
+        yield 'default key returns null' => ['openai-codex', null];
+        yield 'profile key returns profile' => ['openai-codex-work', 'work'];
+        yield 'hyphenated profile' => ['openai-codex-my-account', 'my-account'];
+        yield 'underscore profile' => ['openai-codex-personal_2', 'personal_2'];
+        yield 'digits profile' => ['openai-codex-2', '2'];
+        yield 'malformed no suffix' => ['openai-codex-', null];
+        yield 'custom non-profile key' => ['my-custom-key', null];
+        yield 'empty string' => ['', null];
+        yield 'totally unrelated key' => ['other-provider', null];
+    }
+
+    // -- authCommandHintForProviderKey tests --
+
+    #[DataProvider('authCommandHintProvider')]
+    public function testAuthCommandHintForProviderKey(string $providerKey, string $expectedHint): void
+    {
+        $hint = CodexOAuthConfig::authCommandHintForProviderKey($providerKey);
+        $this->assertSame($expectedHint, $hint);
+    }
+
+    /**
+     * @return iterable<string, array{0: string, 1: string}>
+     */
+    public static function authCommandHintProvider(): iterable
+    {
+        yield 'default key shows base command' => [
+            'openai-codex',
+            'bin/console auth:codex',
+        ];
+        yield 'profile key appends profile flag' => [
+            'openai-codex-work',
+            'bin/console auth:codex --profile=work',
+        ];
+        yield 'custom key does not append profile flag' => [
+            'my-custom-key',
+            'bin/console auth:codex',
+        ];
+        yield 'malformed suffix does not append profile flag' => [
+            'openai-codex-',
+            'bin/console auth:codex',
+        ];
+        yield 'empty key shows base command' => [
+            '',
+            'bin/console auth:codex',
+        ];
+    }
 }

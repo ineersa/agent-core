@@ -51,12 +51,14 @@ final class CodexOAuthConfig
     /**
      * Map a profile name to a provider storage key.
      *
-     * When profile is null or empty, returns the default PROVIDER_KEY.
-     * When a profile is provided, returns 'openai-codex-<profile>'.
+     * When profile is null, empty, or whitespace-only, returns the default
+     * PROVIDER_KEY without throwing. When a non-empty profile is provided,
+     * returns 'openai-codex-<normalized-profile>'.
      *
      * The profile name is validated for safe characters:
      * only lowercase letters, digits, hyphens, and underscores are allowed.
-     * Blank, ".", "..", or anything containing slashes/whitespace is rejected.
+     * Dot ("."), double-dot (".."), or anything containing slashes,
+     * backslashes, or whitespace is rejected with InvalidArgumentException.
      *
      * @throws \InvalidArgumentException when profile name is invalid
      */
@@ -73,6 +75,63 @@ final class CodexOAuthConfig
         }
 
         return self::PROVIDER_KEY.'-'.$normalized;
+    }
+
+    /**
+     * Extract the profile name from a provider storage key.
+     *
+     * Returns null for:
+     *  - The default key 'openai-codex'
+     *  - A malformed key that does not match 'openai-codex-<valid-profile>'
+     *  - 'openai-codex-' with no profile suffix
+     *
+     * Returns the profile string for keys like 'openai-codex-work' => 'work'.
+     */
+    public static function profileFromProviderKey(string $providerKey): ?string
+    {
+        if (self::PROVIDER_KEY === $providerKey) {
+            return null;
+        }
+
+        $prefix = self::PROVIDER_KEY.'-';
+
+        if (!str_starts_with($providerKey, $prefix)) {
+            return null;
+        }
+
+        $suffix = substr($providerKey, \strlen($prefix));
+
+        // Reject empty suffix (e.g. 'openai-codex-')
+        if ('' === $suffix || '' === trim($suffix)) {
+            return null;
+        }
+
+        // Validate suffix matches allowed profile characters
+        if (!preg_match('/^[a-z0-9_-]+$/', $suffix)) {
+            return null;
+        }
+
+        return $suffix;
+    }
+
+    /**
+     * Build a CLI command hint for the given provider storage key.
+     *
+     * Returns 'bin/console auth:codex' for the default key or custom keys,
+     * and appends ' --profile=<profile>' only when the key follows the
+     * 'openai-codex-<valid-profile>' pattern.
+     */
+    public static function authCommandHintForProviderKey(string $providerKey): string
+    {
+        $hint = 'bin/console auth:codex';
+
+        $profile = self::profileFromProviderKey($providerKey);
+
+        if (null !== $profile) {
+            $hint .= \sprintf(' --profile=%s', $profile);
+        }
+
+        return $hint;
     }
 
     /**

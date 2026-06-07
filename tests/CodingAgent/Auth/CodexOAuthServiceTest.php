@@ -66,6 +66,29 @@ final class CodexOAuthServiceTest extends TestCase
         $service->refreshCredentials();
     }
 
+    public function testRefreshCredentialsProfileKeyHintInErrorMessage(): void
+    {
+        $service = new CodexOAuthService($this->storage, $this->refresher);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('bin/console auth:codex --profile=work');
+
+        $service->refreshCredentials('openai-codex-work');
+    }
+
+    public function testRefreshCredentialsDefaultKeyHasNoProfileHint(): void
+    {
+        $service = new CodexOAuthService($this->storage, $this->refresher);
+
+        try {
+            $service->refreshCredentials();
+            $this->fail('Expected RuntimeException was not thrown.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('bin/console auth:codex', $e->getMessage());
+            $this->assertStringNotContainsString('--profile=', $e->getMessage());
+        }
+    }
+
     public function testRefreshCredentialsWithCustomProviderKeyIsIsolated(): void
     {
         // Store under work key only

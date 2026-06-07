@@ -160,7 +160,8 @@ final class CodexOAuthService
         $stored = $this->storage->loadCredentialsRaw($providerKey);
 
         if (null === $stored) {
-            throw new \RuntimeException('No stored Codex credentials found. Run bin/console auth:codex first.');
+            $hint = CodexOAuthConfig::authCommandHintForProviderKey($providerKey);
+            throw new \RuntimeException(\sprintf('No stored Codex credentials found. Run %s first.', $hint));
         }
 
         $fresh = $this->tokenRefresher->refresh($stored->refresh, $stored->accountId);
