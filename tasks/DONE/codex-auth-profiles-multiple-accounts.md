@@ -33,14 +33,14 @@ Notes:
 - Castor validation passes: focused tests, phpstan on changed auth/config/provider files, deptrac, cs-check.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: DONE
 Branch: task/codex-auth-profiles-multiple-accounts
 Worktree: /home/ineersa/projects/agent-core-worktrees/codex-auth-profiles-multiple-accounts
 Fork run: r0lndgf0ic6h
 PR URL: https://github.com/ineersa/agent-core/pull/100
-PR Status: open
+PR Status: merged
 Started: 2026-06-07T22:22:43.380Z
-Completed:
+Completed: 2026-06-07T23:47:07.612Z
 
 ## Work log
 - Created: 2026-06-07T21:26:12.410Z
@@ -112,3 +112,22 @@ Castor Check Output SHA256: 26180184825ff62806f719a2d50976c001d18700360ac193fe10
 - Recorded fork run: r0lndgf0ic6h
 - Validation: Verified HEAD: ee975c52 on branch task/codex-auth-profiles-multiple-accounts, ahead of origin/task/codex-auth-profiles-multiple-accounts by 1 commit.; Verified latest commit stat: 9 files changed, 27 insertions, 25 deletions; expected source/docs/config/tests only.; Verified branch diff stat remains scoped to Codex auth profiles: 13 files changed total vs origin/main.; Fork validation reported: castor test --filter='CodexAuthStorage|CodexOAuthService|CodexAuthCommand|CodexOAuthConfig|SymfonyAiProviderFactory|AiProviderConfig' passed (76 tests, 120 assertions).; Fork validation reported: castor phpstan on Auth, CLI/Auth, SymfonyAi provider, and Config/Ai paths passed with 0 errors.; Fork validation reported: castor deptrac passed (0 violations).; Fork validation reported: castor cs-check clean.; Fork PHAR smoke reported: var/tmp/phar/hatfield.phar auth:codex --help exits 0, shows --auth-profile, no profile collision error.; Fork PHAR smoke reported: var/tmp/phar/hatfield.phar auth:codex --auth-profile 'invalid/name' --no-browser exits 1 with profile validation error, not option collision.
 - Summary: Review-iteration fork completed successfully at commit ee975c52 (`fix(coding-agent): rename Codex auth profile option to --auth-profile`). Verified worktree is clean except branch is ahead of origin by one commit, as expected for the unpushed review iteration. The fix renames the command-specific option from `--profile` to `--auth-profile` to avoid Symfony Console global `--profile` collision; updates CLI usage, auth command hints, provider-factory invalid-key message, docs/settings.md, config comments, and test expectations. Storage key format and provider `auth_key` config remain unchanged (`openai-codex-<profile>`).
+
+## Task workflow update - 2026-06-07T23:47:07.612Z
+- Moved IN-PROGRESS → DONE.
+- Merged task/codex-auth-profiles-multiple-accounts into integration checkout.
+- Merge made by the 'ort' strategy.
+ config/hatfield.defaults.yaml                                |  4 ++--
+ docs/settings.md                                             | 10 ++++++----
+ src/CodingAgent/Auth/CodexOAuthConfig.php                    |  4 ++--
+ src/CodingAgent/CLI/Auth/CodexAuthCommand.php                | 12 ++++++------
+ .../Infrastructure/SymfonyAi/SymfonyAiProviderFactory.php    |  4 ++--
+ tests/CodingAgent/Auth/CodexAuthStorageTest.php              |  4 ++--
+ tests/CodingAgent/Auth/CodexOAuthConfigTest.php              |  2 +-
+ tests/CodingAgent/Auth/CodexOAuthServiceTest.php             |  8 ++++----
+ .../SymfonyAi/SymfonyAiProviderFactoryCodexAuthTest.php      |  4 ++--
+ 9 files changed, 27 insertions(+), 25 deletions(-)
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/codex-auth-profiles-multiple-accounts.
+- Pulled integration checkout: Already up to date..
+- Validation: Pre-DONE check: PR #100 state MERGED on GitHub at head 0e70332f.; Pre-DONE sync: git pull --ff-only fast-forwarded main to origin/main merge commit 7deee7e9.; Task branch HEAD before DONE: ee975c52, one commit ahead of origin/task/codex-auth-profiles-multiple-accounts.
+- Summary: Completing after PR #100 was already merged on GitHub at 0e70332f. A subsequent user smoke test found Symfony Console global `--profile` collision; review-iteration commit ee975c52 on the local task branch renamed the Codex auth option to `--auth-profile` and passed focused Castor + PHAR smoke validation. Merging task branch now to include that smoke fix on main.
