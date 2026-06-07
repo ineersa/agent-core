@@ -67,7 +67,7 @@ This follows TOOLS-09, which implements bash as a background-managed foreground-
 Status: IN-PROGRESS
 Branch: task/tools-09b-runtime-tool-question-bridge
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-09b-runtime-tool-question-bridge
-Fork run: cqv6k03pf40f
+Fork run: 1ommiw6zs466
 PR URL:
 PR Status:
 Started: 2026-06-06T23:33:30.150Z
@@ -100,3 +100,10 @@ Completed:
 - Summary: Implementation fork cqv6k03pf40f completed successfully on branch task/tools-09b-runtime-tool-question-bridge. Verified worktree is clean, latest commit is e3096703 (TOOLS-09B: Runtime bridge for bash background confirmation questions), and git diff stat shows 20 files changed with 1259 insertions/17 deletions. Implementation adds a reuse-first runtime bridge for BashTool background confirmation prompts: new tool_question.requested runtime event, answer_tool_question user command path, Doctrine-backed ToolQuestion persistence for cross-process controller mode, RuntimeBashBackgroundPromptAdapter bound as the production BashBackgroundPromptAdapterInterface implementation, ToolQuestionPoller in the controller, AnswerToolQuestionHandler, InProcess/JsonlProcess answer handling, and TUI TickPollListener/RuntimeEventPoller integration that enqueues existing QuestionCoordinator Confirm questions with source=Tui and transcript=false. No PR/gate steps were run per task-start boundary; full LLM_MODE=true castor check remains for task-to-pr.
 - Recorded implementation fork result for cqv6k03pf40f. Key files added/modified include ToolQuestion entity/store/status/interface, RuntimeBashBackgroundPromptAdapter, ToolQuestionPoller, AnswerToolQuestionHandler, RuntimeEventTypeEnum/UserCommand protocol updates, Jsonl/InProcess answer handling, TickPollListener/RuntimeEventPoller TUI question integration, services.yaml binding, migration Version20260606140000, ApplicationMigrationExecutor registration, depfile.yaml update, and handler/enum tests.
 - Known gap carried forward: no full TUI/LLM E2E validation yet because task-start phase stops before castor check; task-to-pr must run the full quality gate. Fork also noted stale pending ToolQuestions may remain if a run terminates before answer; no lifecycle cleanup hook was added in this task.
+
+## Task workflow update - 2026-06-07T00:19:30.667Z
+- Recorded fork run: 1ommiw6zs466
+- Summary: task-to-pr review phase started. Worktree inspected: branch task/tools-09b-runtime-tool-question-bridge, clean status, latest implementation commit e3096703, diff origin/main...HEAD shows 20 files changed with 1259 insertions/17 deletions. Reviewer subagent returned APPROVE WITH SUGGESTIONS, no critical issues. Actionable findings are being treated as fix-before-PR per user instructions: duplicate AppTool deptrac entry, idempotent ToolQuestionStore answer/cancel behavior, remove QueryBuilder leak/dead interface method, consolidate duplicated answer parsing, and add low-risk stale pending question startup cancellation/active-run handling. Implementation fork 1ommiw6zs466 launched to apply those fixes, run focused Castor validation, commit, and stop before PR/gate steps.
+- task-to-pr initial inspection: git status clean, latest commit e3096703, full diff stat 20 files changed / 1259 insertions / 17 deletions.
+- Reviewer subagent verdict: APPROVE WITH SUGGESTIONS. No critical issues; actionable suggestions forwarded to fork 1ommiw6zs466 for fix-before-PR.
+- Fork 1ommiw6zs466 instructions: remove duplicate deptrac AppTool entry, make ToolQuestionStore answer/cancel idempotent, replace ToolQuestionStoreInterface QueryBuilder leak with explicit finder, extract ToolQuestionAnswerResolver, handle stale pending tool questions on controller startup or active-run filtering, add/update tests, run castor test/deptrac/phpstan/cs-check, commit, stop.
