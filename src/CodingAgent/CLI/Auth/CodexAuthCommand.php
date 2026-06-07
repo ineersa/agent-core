@@ -66,7 +66,7 @@ final class CodexAuthCommand
             return Command::FAILURE;
         }
 
-        $profileLabel = null !== $profile ? \sprintf(' (profile: %s)', $profile) : '';
+        $profileLabel = (null !== $profile && '' !== trim($profile)) ? \sprintf(' (profile: %s)', $profile) : '';
 
         if ($refresh) {
             return $this->handleRefresh($io, $providerKey, $profileLabel);

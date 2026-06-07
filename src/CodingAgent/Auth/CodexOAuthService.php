@@ -164,7 +164,13 @@ final class CodexOAuthService
             throw new \RuntimeException(\sprintf('No stored Codex credentials found. Run %s first.', $hint));
         }
 
-        $fresh = $this->tokenRefresher->refresh($stored->refresh, $stored->accountId);
+        try {
+            $fresh = $this->tokenRefresher->refresh($stored->refresh, $stored->accountId);
+        } catch (\Throwable $e) {
+            $hint = CodexOAuthConfig::authCommandHintForProviderKey($providerKey);
+
+            throw new \RuntimeException("Token refresh failed for stored Codex credentials. Run {$hint} to re-authenticate.", previous: $e);
+        }
 
         $this->storage->saveCredentials($providerKey, $fresh);
 
