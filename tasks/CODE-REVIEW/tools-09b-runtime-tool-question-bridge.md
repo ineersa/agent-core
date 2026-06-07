@@ -64,7 +64,7 @@ This follows TOOLS-09, which implements bash as a background-managed foreground-
 - Required validation is run through Castor, including `castor check` before handoff unless environment prerequisites are unavailable.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/tools-09b-runtime-tool-question-bridge
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-09b-runtime-tool-question-bridge
 Fork run: cxwd2p2eqmmt
@@ -216,11 +216,11 @@ Completed:
 - Final reviewer pass on b40c0e93 returned APPROVED.
 - Focused Castor validation passed on b40c0e93; worktree clean. Proceeding to move_task(to=CODE-REVIEW), which will run the full Castor quality gate and create the PR if successful.
 Castor Check Status: passed
-Castor Check Commit: b40c0e933a1eef1683a63070190833a940aee931
+Castor Check Commit: dbc500ebe6dbf6bc1d3c84e0064604c1d0d73843
 Castor Check Command: LLM_MODE=true castor check
 Castor Check Timeout: 900s
-Castor Check Completed: 2026-06-07T17:36:21.115Z
-Castor Check Output SHA256: 47cd96b0b58c66f04734662d5fb5d2abe66498d8979238ab044a9138938b6444
+Castor Check Completed: 2026-06-07T21:27:22.232Z
+Castor Check Output SHA256: 6f108714ebec53a30e528c55f7406d2445bdbf4b6784c59def9b4efb82ad2dd4
 
 ## Task workflow update - 2026-06-07T17:36:24.691Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -323,3 +323,12 @@ Castor Check Output SHA256: 47cd96b0b58c66f04734662d5fb5d2abe66498d8979238ab044a
 - Validation: `castor test`: ok (tests=1887, assertions=5534, errors=0, failures=0, skipped=0).; `castor deptrac`: ok (violations=0, errors=0, uncovered=713, allowed=894).; `castor phpstan`: ok (errors=0, file_errors=0).; `castor cs-check`: ok (files_fixed=0).
 - Summary: Task-to-pr focused validation on HEAD dbc500eb passed locally. Reviewer result remains APPROVE WITH SUGGESTIONS with no blockers. Proceeding to move task to CODE-REVIEW, which will run the full Castor gate and push/update PR #99.
 - Pre-CODE-REVIEW worktree inspection: clean at HEAD dbc500eb (`TOOLS-09B: Clarify background handoff hints`), diff stat origin/main...HEAD shows 39 files changed, 3897 insertions, 150 deletions.
+
+## Task workflow update - 2026-06-07T21:27:23.492Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: dbc500ebe6db.
+- Pushed task/tools-09b-runtime-tool-question-bridge to origin.
+- branch 'task/tools-09b-runtime-tool-question-bridge' set up to track 'origin/task/tools-09b-runtime-tool-question-bridge'.
+- Skipped PR creation (pushOnly: true).
+- Validation: Pre-transition `castor test`: ok (tests=1887, assertions=5534, errors=0, failures=0, skipped=0).; Pre-transition `castor deptrac`: ok (violations=0, errors=0).; Pre-transition `castor phpstan`: ok (errors=0).; Pre-transition `castor cs-check`: ok (files_fixed=0).
+- Summary: Moved back to CODE-REVIEW after smoke-test review iteration. Final branch HEAD dbc500eb includes fixes for: process completion during background prompt, stale question overlay close, automatic `[BG_PROCESS_DONE]` follow-up for explicitly-backgrounded bash processes, status refresh before completion notification query, and structured background handoff with auto-notify plus bg_status log/stop fallback hints. Reviewer returned APPROVE WITH SUGGESTIONS with no blockers. Focused local validation passed before transition.
