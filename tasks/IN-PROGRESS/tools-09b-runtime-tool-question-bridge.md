@@ -67,7 +67,7 @@ This follows TOOLS-09, which implements bash as a background-managed foreground-
 Status: IN-PROGRESS
 Branch: task/tools-09b-runtime-tool-question-bridge
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-09b-runtime-tool-question-bridge
-Fork run: 90wun3bqege1
+Fork run: i8iuu2kg1qt8
 PR URL:
 PR Status:
 Started: 2026-06-06T23:33:30.150Z
@@ -170,3 +170,9 @@ Completed:
 - Summary: Re-review of HEAD 837b31bf returned APPROVE WITH SUGGESTIONS with no critical issues. Remaining sensible/actionable suggestions are being addressed before PR: isolate/log ToolQuestionPoller emit/markEmitted failures while continuing subsequent questions, document intentional log_path/capped command_preview payload privacy boundary, share ToolQuestion command preview length constant with RuntimeBashBackgroundPromptAdapter, add additional ToolQuestion factory guards and explicit column lengths, and add adapter polling-loop rationale comment. Explicitly skipped as non-actionable/design tradeoffs: replacing EntityManager::clear() with DBAL fresh reads, moving test spy helper, PHP typed const compatibility (project PHP >=8.5), startup cleanup cutoff configurability, and changing private test seam to production API. Fork 90wun3bqege1 launched to implement these fixes, validate, commit, and stop.
 - Second reviewer on HEAD 837b31bf: APPROVE WITH SUGGESTIONS, no critical issues. Actionable/sensible suggestions forwarded to fork 90wun3bqege1.
 - Fork 90wun3bqege1 launched for final review polish before another reviewer pass.
+
+## Task workflow update - 2026-06-07T16:52:45.584Z
+- Recorded fork run: i8iuu2kg1qt8
+- Summary: Fork 90wun3bqege1 produced an unrelated/corrupted handoff about the Composer lock on main, not the requested TOOLS-09B review-polish work. fork_retrieve returned the same unrelated artifact. Worktree inspection confirmed no commit was made and the branch remained clean at HEAD 837b31bf. Replacement fork i8iuu2kg1qt8 launched with explicit instructions to implement the remaining review-polish fixes, not answer the Composer-main question, run focused Castor validation, commit, and stop.
+- Fork 90wun3bqege1 invalid/corrupted: no worktree changes, no commit, artifact unrelated to TOOLS-09B. Worktree clean at 837b31bf.
+- Replacement fork i8iuu2kg1qt8 launched for the same review-polish fixes.
