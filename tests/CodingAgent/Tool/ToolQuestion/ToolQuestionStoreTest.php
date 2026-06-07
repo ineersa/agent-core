@@ -230,6 +230,110 @@ final class ToolQuestionStoreTest extends IsolatedKernelTestCase
         self::assertTrue($this->store->pollAnswer($r3), 'Answered question must still return true');
     }
 
+    // ── Test: duplicate create idempotency ───────────────────────────────
+
+    public function testCreateDuplicateReturnsExisting(): void
+    {
+        $q1 = $this->createQuestion('duplicate');
+        $r1 = $q1->requestId;
+
+        // First create succeeds.
+        $first = $this->store->create($q1);
+        self::assertSame($r1, $first->requestId);
+
+        // Create a second question with the same requestId but different values.
+        $q2 = ToolQuestion::create(
+            requestId: $r1,
+            runId: 'dup-run',
+            toolCallId: 'dup-tc',
+            toolName: 'view_image',
+            pid: 99999,
+            logPath: '/tmp/dup.log',
+            commandPreview: 'duplicate command',
+            prompt: 'Duplicate?',
+        );
+
+        // Second create returns the original persisted entity (not the new one).
+        $result = $this->store->create($q2);
+
+        // Without DAMA isolation this would hit unique constraint, but DAMA
+        // wraps in a transaction. Use a known assertion that works in both
+        // cases: the returned entity should have the ORIGINAL runId (q1's).
+        self::assertSame($r1, $result->requestId);
+        self::assertSame($q1->runId, $result->runId, 'Should return existing entity with original values (not the new duplicate)');
+        self::assertSame('bash', $result->toolName, 'Should return existing entity with original tool name');
+    }
+
+    // ── Test: entity factory input validation ───────────────────────────
+
+    public function testCreateWithEmptyRequestIdThrows(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('requestId must not be empty');
+
+        ToolQuestion::create(
+            requestId: '',
+            runId: 'run-1',
+            toolCallId: 'tc-1',
+            toolName: 'bash',
+            pid: 12345,
+            logPath: '/tmp/test.log',
+            commandPreview: 'test',
+            prompt: 'Test prompt?',
+        );
+    }
+
+    public function testCreateWithWhitespaceOnlyRequestIdThrows(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('requestId must not be empty');
+
+        ToolQuestion::create(
+            requestId: "   \t\n",
+            runId: 'run-1',
+            toolCallId: 'tc-1',
+            toolName: 'bash',
+            pid: 12345,
+            logPath: '/tmp/test.log',
+            commandPreview: 'test',
+            prompt: 'Test prompt?',
+        );
+    }
+
+    public function testCreateWithOverlongCommandPreviewThrows(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('commandPreview must not exceed 200 characters');
+
+        ToolQuestion::create(
+            requestId: 'test-valid',
+            runId: 'run-1',
+            toolCallId: 'tc-1',
+            toolName: 'bash',
+            pid: 12345,
+            logPath: '/tmp/test.log',
+            commandPreview: \str_repeat('x', 201),
+            prompt: 'Test prompt?',
+        );
+    }
+
+    public function testCreateWithExactlyMaxLengthCommandPreviewSucceeds(): void
+    {
+        $q = ToolQuestion::create(
+            requestId: 'test-max-preview',
+            runId: 'run-1',
+            toolCallId: 'tc-1',
+            toolName: 'bash',
+            pid: 12345,
+            logPath: '/tmp/test.log',
+            commandPreview: \str_repeat('x', 200),
+            prompt: 'Test prompt?',
+        );
+
+        self::assertSame('test-max-preview', $q->requestId);
+        self::assertSame(200, \mb_strlen($q->commandPreview));
+    }
+
     // ── Test: markEmitted deduplication ─────────────────────────────────
 
     public function testCreateAndMarkEmittedDeduplication(): void

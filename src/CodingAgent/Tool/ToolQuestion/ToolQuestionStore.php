@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool\ToolQuestion;
 
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Entity\ToolQuestion;
 use Ineersa\CodingAgent\Entity\ToolQuestionStatusEnum;
@@ -31,12 +32,55 @@ final class ToolQuestionStore implements ToolQuestionStoreInterface
     /**
      * Create a new pending tool question.
      *
-     * @return ToolQuestion the persisted entity
+     * Defensive idempotency: if a question with the same requestId already
+     * exists, returns the existing entity without creating a duplicate.
+     * A race fallback catches UniqueConstraintViolationException around the
+     * flush and re-fetches the existing entity.
+     *
+     * @return ToolQuestion the persisted (or existing) entity
      */
     public function create(ToolQuestion $question): ToolQuestion
     {
-        $this->entityManager->persist($question);
-        $this->entityManager->flush();
+        // Check-before-persist for the common case.
+        $existing = $this->findByRequestId($question->requestId);
+        if (null !== $existing) {
+            $this->logger->info('tool_question.create_duplicate_reused', [
+                'component' => 'tool_question.store',
+                'event_type' => 'tool_question.create_duplicate_reused',
+                'request_id' => $question->requestId,
+                'run_id' => $question->runId,
+                'tool_name' => $question->toolName,
+                'pid' => $question->pid,
+            ]);
+
+            return $existing;
+        }
+
+        try {
+            $this->entityManager->persist($question);
+            $this->entityManager->flush();
+        } catch (UniqueConstraintViolationException $e) {
+            // Race fallback: another process persisted the same requestId
+            // between our check and flush.
+            $this->entityManager->clear();
+
+            $existing = $this->findByRequestId($question->requestId);
+            if (null !== $existing) {
+                $this->logger->info('tool_question.create_duplicate_race_reused', [
+                    'component' => 'tool_question.store',
+                    'event_type' => 'tool_question.create_duplicate_race_reused',
+                    'request_id' => $question->requestId,
+                    'run_id' => $question->runId,
+                    'tool_name' => $question->toolName,
+                    'pid' => $question->pid,
+                ]);
+
+                return $existing;
+            }
+
+            // Refetch failed — rethrow the original exception.
+            throw $e;
+        }
 
         $this->logger->info('tool_question.created', [
             'component' => 'tool_question.store',
@@ -74,7 +118,7 @@ final class ToolQuestionStore implements ToolQuestionStoreInterface
         $qb = $this->entityManager->getRepository(ToolQuestion::class)->createQueryBuilder('tq');
         $qb->where('tq.status = :status')
             ->andWhere('tq.emittedAt IS NULL')
-            ->setParameter('status', ToolQuestionStatusEnum::Pending)
+            ->setParameter('status', ToolQuestionStatusEnum::Pending->value)
             ->orderBy('tq.createdAt', 'ASC');
 
         /* @var list<ToolQuestion> */
@@ -220,7 +264,9 @@ final class ToolQuestionStore implements ToolQuestionStoreInterface
      * Cancelled (not deleted) to preserve audit trail.
      *
      * Uses DQL UPDATE to avoid loading/resolving individual entities,
-     * since this is a bulk cleanup operation.
+     * since this is a bulk cleanup operation. DQL UPDATE bypasses entity
+     * lifecycle callbacks (PreUpdate etc.), so updatedAt is set explicitly
+     * in the query to keep timestamps consistent.
      *
      * @return int number of questions cancelled
      */

@@ -203,17 +203,17 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             default => throw new \InvalidArgumentException(\sprintf('Unknown command type: "%s"', $command->type)),
         };
 
-        $payload = array_filter([
-            'text' => $command->text,
-            'question_id' => $command->payload['question_id'] ?? null,
-            'answer' => $command->payload['answer'] ?? null,
-        ], static fn (mixed $v): bool => null !== $v);
-
-        // Include tool question specific payload keys.
-        if ('answer_tool_question' === $type) {
-            $payload['request_id'] = $command->payload['request_id'] ?? '';
-            $payload['answer'] = $command->payload['answer'] ?? null;
-        }
+        $payload = match ($type) {
+            'answer_tool_question' => array_filter([
+                'request_id' => $command->payload['request_id'] ?? '',
+                'answer' => $command->payload['answer'] ?? null,
+            ], static fn (mixed $v): bool => null !== $v),
+            default => array_filter([
+                'text' => $command->text,
+                'question_id' => $command->payload['question_id'] ?? null,
+                'answer' => $command->payload['answer'] ?? null,
+            ], static fn (mixed $v): bool => null !== $v),
+        };
 
         $cmd = new RuntimeCommand(
             id: uniqid('cmd_', true),

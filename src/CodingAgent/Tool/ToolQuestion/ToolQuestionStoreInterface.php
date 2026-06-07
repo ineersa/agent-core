@@ -37,7 +37,13 @@ interface ToolQuestionStoreInterface
     /**
      * Poll for an answer with a fresh DB read.
      *
-     * @return ?bool true/false if answered/cancelled, null if still pending
+     * Returns null if the question is still pending (no user decision yet).
+     * Returns true if the user answered yes/accept.
+     * Returns false if the user answered no, cancelled, or timed out — because
+     * the bash prompt semantics treat both a explicit-no and cancellation/timeout
+     * as a decline to move the command to the background.
+     *
+     * @return ?bool null if pending, true if accepted, false if declined/cancelled/timed-out
      */
     public function pollAnswer(string $requestId): ?bool;
 

@@ -30,6 +30,8 @@ class ToolQuestion
 {
     use TimestampableLifecycleTrait;
 
+    private const int COMMAND_PREVIEW_MAX_LENGTH = 200;
+
     #[ORM\Id]
     #[ORM\GeneratedValue(strategy: 'AUTO')]
     #[ORM\Column(type: 'integer')]
@@ -103,6 +105,8 @@ class ToolQuestion
 
     /**
      * Factory method to create a pending tool question.
+     *
+     * @throws \InvalidArgumentException when requestId is empty or commandPreview exceeds 200 chars
      */
     public static function create(
         string $requestId,
@@ -115,6 +119,14 @@ class ToolQuestion
         string $prompt,
         string $kind = 'confirm',
     ): self {
+        if ('' === trim($requestId)) {
+            throw new \InvalidArgumentException('requestId must not be empty');
+        }
+
+        if (mb_strlen($commandPreview) > self::COMMAND_PREVIEW_MAX_LENGTH) {
+            throw new \InvalidArgumentException(\sprintf('commandPreview must not exceed %d characters (got %d)', self::COMMAND_PREVIEW_MAX_LENGTH, mb_strlen($commandPreview)));
+        }
+
         $entity = new self();
         $entity->requestId = $requestId;
         $entity->runId = $runId;
