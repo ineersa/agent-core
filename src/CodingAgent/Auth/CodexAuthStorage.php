@@ -79,7 +79,9 @@ final class CodexAuthStorage
                         ]);
                     }
 
-                    throw new \RuntimeException('Stored Codex credentials have expired and could not be refreshed. Run bin/console auth:codex to re-authenticate.', previous: $e);
+                    $hint = CodexOAuthConfig::authCommandHintForProviderKey($providerKey);
+
+                    throw new \RuntimeException("Stored Codex credentials have expired and could not be refreshed. Run {$hint} to re-authenticate.", previous: $e);
                 }
             }
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi;
 
 use Ineersa\CodingAgent\Auth\CodexAuthStorage;
+use Ineersa\CodingAgent\Auth\CodexOAuthConfig;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Psr\Log\LoggerInterface;
@@ -96,13 +97,17 @@ class SymfonyAiProviderFactory
 
     private function buildCodexProvider(AiProviderConfig $provider, ProjectedSymfonyModelCatalog $projectedCatalog): ProviderInterface
     {
+        $authKey = $this->resolveCodexAuthKey($provider);
+
         if (null === $this->codexAuth) {
-            throw new \RuntimeException(\sprintf('OpenAI Codex provider "%s" requires stored OAuth credentials. Run: bin/console auth:codex', $provider->id));
+            $hint = CodexOAuthConfig::authCommandHintForProviderKey($authKey);
+            throw new \RuntimeException(\sprintf('OpenAI Codex provider "%s" requires stored OAuth credentials. Run: %s', $provider->id, $hint));
         }
 
-        $record = $this->codexAuth->loadCredentials();
+        $record = $this->codexAuth->loadCredentials($authKey);
         if (null === $record) {
-            throw new \RuntimeException(\sprintf('OpenAI Codex provider "%s" requires stored OAuth credentials. Run: bin/console auth:codex', $provider->id));
+            $hint = CodexOAuthConfig::authCommandHintForProviderKey($authKey);
+            throw new \RuntimeException(\sprintf('OpenAI Codex provider "%s" requires stored OAuth credentials. Run: %s', $provider->id, $hint));
         }
 
         // Use the configured baseUrl falling back to the OpenAICodex factory default,
@@ -121,6 +126,42 @@ class SymfonyAiProviderFactory
             name: $provider->id,
             logger: $this->logger,
         );
+    }
+
+    /**
+     * Resolve the auth storage key for a Codex provider config.
+     *
+     * Returns the default PROVIDER_KEY when authKey is null/empty/whitespace,
+     * returns valid profile keys as-is, and throws for malformed keys
+     * that cannot be created through auth:codex --profile=<name>.
+     *
+     * @return non-empty-string
+     *
+     * @throws \RuntimeException when authKey is invalid
+     */
+    private function resolveCodexAuthKey(AiProviderConfig $provider): string
+    {
+        $authKey = $provider->authKey;
+
+        // Default: null/empty/whitespace uses the default provider key
+        if (null === $authKey || '' === trim($authKey)) {
+            return CodexOAuthConfig::PROVIDER_KEY;
+        }
+
+        // Explicit default key is always valid
+        if (CodexOAuthConfig::PROVIDER_KEY === $authKey) {
+            return $authKey;
+        }
+
+        // Profile-generated keys like 'openai-codex-work' must have a valid profile suffix
+        $profile = CodexOAuthConfig::profileFromProviderKey($authKey);
+        if (null !== $profile) {
+            // Valid profile-generated key
+            return $authKey;
+        }
+
+        // Anything else is invalid: openai-codex- with no suffix, my-custom-key, weird chars
+        throw new \RuntimeException(\sprintf('OpenAI Codex provider "%s" has an invalid auth_key "%s". Use "openai-codex" for the default account or run bin/console auth:codex --profile=<name> to create an account under "openai-codex-<name>".', $provider->id, $authKey));
     }
 
     /**

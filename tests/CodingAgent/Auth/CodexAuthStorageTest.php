@@ -166,4 +166,71 @@ final class CodexAuthStorageTest extends TestCase
         $raw = $this->storage->loadCredentialsRaw('nonexistent');
         $this->assertNull($raw);
     }
+
+    public function testExpiredProfileRecordWithFailingRefresherShowsProfileHint(): void
+    {
+        // Create a refresher that always throws so we can assert the error message
+        // without depending on the network.
+        $failingRefresher = new class extends CodexTokenRefresher {
+            public function refresh(string $refreshToken, string $expectedAccountId): CodexAuthRecord
+            {
+                throw new \RuntimeException('Simulated refresh failure.');
+            }
+        };
+
+        $storageWithRefresh = new CodexAuthStorage(
+            $this->tmpDir,
+            new LockFactory(new FlockStore($this->tmpDir)),
+            $failingRefresher,
+        );
+
+        $expiredRecord = new CodexAuthRecord(
+            access: 'expired-access',
+            refresh: 'invalid-refresh-token',
+            expires: \time() - 3600,
+            accountId: 'chat-old',
+        );
+
+        $storageWithRefresh->saveCredentials('openai-codex-work', $expiredRecord);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('--profile=work');
+
+        $storageWithRefresh->loadCredentials('openai-codex-work');
+    }
+
+    public function testExpiredDefaultRecordWithFailingRefresherShowsNoProfileHint(): void
+    {
+        $failingRefresher = new class extends CodexTokenRefresher {
+            public function refresh(string $refreshToken, string $expectedAccountId): CodexAuthRecord
+            {
+                throw new \RuntimeException('Simulated refresh failure.');
+            }
+        };
+
+        $storageWithRefresh = new CodexAuthStorage(
+            $this->tmpDir,
+            new LockFactory(new FlockStore($this->tmpDir)),
+            $failingRefresher,
+        );
+
+        $expiredRecord = new CodexAuthRecord(
+            access: 'expired-access',
+            refresh: 'invalid-refresh-token',
+            expires: \time() - 3600,
+            accountId: 'chat-old',
+        );
+
+        $storageWithRefresh->saveCredentials('openai-codex', $expiredRecord);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('expired and could not be refreshed');
+
+        try {
+            $storageWithRefresh->loadCredentials('openai-codex');
+        } catch (\RuntimeException $e) {
+            $this->assertStringNotContainsString('--profile=', $e->getMessage());
+            throw $e;
+        }
+    }
 }
