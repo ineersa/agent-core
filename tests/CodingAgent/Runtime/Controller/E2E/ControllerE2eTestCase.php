@@ -396,7 +396,7 @@ abstract class ControllerE2eTestCase extends TestCase
         $lines = ['Session dir: '.$sessionsDir."\nSessions: ".implode(', ', array_map('basename', $dirs))];
 
         foreach ($dirs as $sessionDir) {
-            foreach (['events.jsonl', 'state.json', 'transcript.jsonl', 'idempotency.jsonl'] as $file) {
+            foreach (['events.jsonl', 'state.json', 'idempotency.jsonl'] as $file) {
                 $path = $sessionDir.'/'.$file;
                 if (is_file($path)) {
                     $content = (string) file_get_contents($path);
@@ -425,15 +425,6 @@ abstract class ControllerE2eTestCase extends TestCase
                 } elseif (0 === filesize($path)) {
                     $missing[] = $file.' (empty)';
                 }
-            }
-
-            // transcript.jsonl is projected from session events by the
-            // TranscriptPersistenceService in controller mode. When it's
-            // missing or empty the run still succeeded — report a soft
-            // diagnostic without failing the test.
-            $transcriptPath = $sessionDir.'/transcript.jsonl';
-            if (!is_file($transcriptPath) || 0 === filesize($transcriptPath)) {
-                \fwrite(\STDERR, "[INFO] transcript.jsonl empty — projected during controller run.\n");
             }
         }
 

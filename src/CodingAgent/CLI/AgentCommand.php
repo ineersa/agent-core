@@ -31,13 +31,13 @@ use Symfony\Component\Console\Output\OutputInterface;
  *   agent                              # Interactive TUI mode (in-process transport)
  *   agent --headless                   # JSONL protocol on stdin/stdout
  *   agent --prompt="Do X"              # TUI with initial prompt
- *   agent --resume=<sessionId>         # Resume existing session (loads transcript)
+ *   agent --resume=<sessionId>         # Resume existing session
  *   agent --transport=process          # Use process-isolated transport in TUI mode
  *
  * Session persistence:
  *   Every TUI session creates a directory under .hatfield/sessions/<session-id>/
- *   containing transcript.jsonl, state.json, and events.jsonl.
- *   Use --resume to reload a previous session with its full transcript.
+ *   containing state.json and events.jsonl. Transcript projection is rebuilt
+ *   from events.jsonl on resume.
  */
 #[AsCommand(name: 'agent', description: 'Agent session — TUI (default) or headless JSONL runtime')]
 final class AgentCommand

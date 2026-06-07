@@ -48,7 +48,7 @@ Tests mirror the source module structure exactly. The three test suites in `phpu
 - Spawns `bin/console agent --controller` via `proc_open` with isolated per-test `var/tmp/` directories
 - JSONL protocol over stdin/stdout pipes — production-realistic protocol
 - Non-blocking stderr drain, buffer-based event parsing, timeout-gated event collection
-- Rich diagnostics: dumps all collected events, session artifacts (`state.json`, `events.jsonl`, `transcript.jsonl`), messenger DB state on failure
+- Rich diagnostics: dumps all collected events, session artifacts (`state.json`, `events.jsonl`), messenger DB state on failure
 - Overridable `modelConfig()` for capabilities (text-only vs text+image, tool-calling)
 - `tempDirPrefix()` for per-test-class isolation namespacing
 

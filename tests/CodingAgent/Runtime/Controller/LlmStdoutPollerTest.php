@@ -37,7 +37,6 @@ final class LlmStdoutPollerTest extends TestCase
 
         return new RuntimeEventEmitter(
             eventClient: null,
-            transcriptPersistence: null,
             boundary: $boundary,
             logger: $logger,
         );

@@ -104,11 +104,38 @@ final class RuntimeEventTranslator
     {
         $p = $runEvent->payload;
 
+        // Extract initial user messages from the normalized StartRunPayload
+        // so events.jsonl replay can project user message transcript blocks.
+        $userMessages = [];
+        $normalizedPayload = $p['payload'] ?? [];
+        $messages = $normalizedPayload['messages'] ?? [];
+        if (\is_array($messages)) {
+            foreach ($messages as $msg) {
+                $role = (string) ($msg['role'] ?? '');
+                if ('user' !== $role) {
+                    continue;
+                }
+                $text = $this->extractTextFromContent($msg['content'] ?? []);
+                // Only include non-empty user messages, skipping system/user-context
+                if ('' !== $text) {
+                    $userMessages[] = [
+                        'message_id' => \sprintf('initial_%s_%d', $runEvent->runId, \count($userMessages)),
+                        'text' => $text,
+                    ];
+                }
+            }
+        }
+
+        $payload = ['step_id' => (string) ($p['step_id'] ?? '')];
+        if ([] !== $userMessages) {
+            $payload['user_messages'] = $userMessages;
+        }
+
         return new RuntimeEvent(
             type: RuntimeEventTypeEnum::RunStarted->value,
             runId: $runEvent->runId,
             seq: $runEvent->seq,
-            payload: ['step_id' => (string) ($p['step_id'] ?? '')],
+            payload: $payload,
         );
     }
 
@@ -280,7 +307,9 @@ final class RuntimeEventTranslator
 
     /**
      * Resolve agent_command_applied with explicit priority:
-     * human_response → human_input.answered, cancel → cancellation.requested,
+     * steer/follow_up → user.message_submitted,
+     * human_response → human_input.answered,
+     * cancel → cancellation.requested,
      * everything else → status.updated.
      */
     private function onAgentCommandApplied(RunEvent $runEvent): RuntimeEvent
@@ -306,6 +335,27 @@ final class RuntimeEventTranslator
                 runId: $runEvent->runId,
                 seq: $runEvent->seq,
                 payload: ['kind' => $kind, 'reason' => 'user_cancelled'],
+            );
+        }
+
+        if (\in_array($kind, ['steer', 'follow_up'], true)) {
+            // Extract message text from the serialized message payload
+            // included by CommandMailboxPolicy.
+            $messagePayload = $p['message'] ?? [];
+            $text = \is_string($p['text'] ?? null) ? $p['text'] : '';
+            if ('' === $text && \is_array($messagePayload)) {
+                $text = $this->extractTextFromContent($messagePayload['content'] ?? []);
+            }
+            $idempotencyKey = (string) ($p['idempotency_key'] ?? '');
+
+            return new RuntimeEvent(
+                type: RuntimeEventTypeEnum::UserMessageSubmitted->value,
+                runId: $runEvent->runId,
+                seq: $runEvent->seq,
+                payload: [
+                    'message_id' => \sprintf('user_%s_%d_%s', $runEvent->runId, $runEvent->seq, $idempotencyKey),
+                    'text' => $text,
+                ],
             );
         }
 
@@ -366,5 +416,26 @@ final class RuntimeEventTranslator
         }
 
         return [] !== $parts ? implode('', $parts) : '';
+    }
+
+    /**
+     * Extract text content from a content array (list of typed content blocks).
+     *
+     * @param array<int, array<string, mixed>>|mixed $content
+     */
+    private function extractTextFromContent(mixed $content): string
+    {
+        if (!\is_array($content) || [] === $content) {
+            return '';
+        }
+
+        $parts = [];
+        foreach ($content as $block) {
+            if (\is_array($block) && isset($block['text']) && ('text' === ($block['type'] ?? null))) {
+                $parts[] = (string) $block['text'];
+            }
+        }
+
+        return implode('', $parts);
     }
 }

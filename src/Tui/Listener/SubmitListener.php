@@ -8,7 +8,6 @@ use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Session\TranscriptEntry as PersistedTranscriptEntry;
 use Ineersa\Tui\Command\ClearTranscript;
 use Ineersa\Tui\Command\CommandResult;
 use Ineersa\Tui\Command\ExitApplication;
@@ -91,22 +90,12 @@ final class SubmitListener implements TuiListenerRegistrar
             }
 
             // ── Normal prompt — route to runtime (existing behavior) ──
+            // User message will appear as a projected block once the runtime
+            // event is polled. Local echo is intentionally skipped to avoid
+            // block ID duplication with canonical runtime projection.
 
-            $state->transcript[] = $blockFactory->user(
-                runId: $state->sessionId,
-                text: str_replace("\n", "\n    ", $text),
-                seq: \count($state->transcript) + 1,
-            );
-
-            // Persist plain text (no theme/ANSI)
-            $sessionStore->appendTranscriptEntry(
-                $state->sessionId,
-                new PersistedTranscriptEntry(
-                    role: 'user',
-                    text: $text,
-                    meta: ['session_id' => $state->sessionId],
-                ),
-            );
+            // Persistence is removed — events.jsonl is the canonical record.
+            // Transcript blocks are rebuilt from events.jsonl on resume.
 
             try {
                 // Start a run if this is the first message
@@ -182,19 +171,9 @@ final class SubmitListener implements TuiListenerRegistrar
         TranscriptBlockFactory $blockFactory,
     ): void {
         if ($result instanceof TranscriptMessage) {
-            // ── Append message to transcript ──
+            // ── Append message to transcript (in-memory only) ──
             $block = self::blockForTranscriptMessage($result, $state, $blockFactory);
             $state->transcript[] = $block;
-
-            // Persist
-            $sessionStore->appendTranscriptEntry(
-                $state->sessionId,
-                new PersistedTranscriptEntry(
-                    role: $result->role,
-                    text: $result->text,
-                    meta: ['session_id' => $state->sessionId, 'style' => $result->style],
-                ),
-            );
 
             $screen->setTranscriptBlocks($state->transcript);
 

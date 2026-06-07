@@ -12,9 +12,9 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
-use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
+use PHPUnit\Framework\TestCase;
 
 final class SessionRunEventStoreTest extends TestCase
 {
@@ -39,7 +39,6 @@ final class SessionRunEventStoreTest extends TestCase
         );
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
-            lockFactory: new LockFactory(new FlockStore()),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
 
@@ -133,7 +132,6 @@ final class SessionRunEventStoreTest extends TestCase
         );
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
-            lockFactory: new LockFactory(new FlockStore()),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
         $newStore = new SessionRunEventStore(

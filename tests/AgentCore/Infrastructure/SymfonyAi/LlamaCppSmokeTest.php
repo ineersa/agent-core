@@ -36,8 +36,6 @@ use Symfony\AI\Platform\Bridge\Generic\Factory as GenericFactory;
 use Symfony\AI\Platform\Platform;
 use Symfony\AI\Platform\ProviderInterface;
 use Symfony\Component\EventDispatcher\EventDispatcher;
-use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -108,7 +106,6 @@ final class LlamaCppSmokeTest extends KernelTestCase
                 logging: new LoggingConfig(),
                 cwd: $this->tempDir.'/project',
             ),
-            lockFactory: new LockFactory(new FlockStore()),
             entityManager: $this->entityManager,
         );
         $this->sessionMetaStore = new SessionMetadataStore($hatfieldSessionStore);

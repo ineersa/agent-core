@@ -84,7 +84,7 @@ All E2E tests must use `var/tmp/test-{uuid}` isolation. They must NOT read or wr
    - `run.started` received
    - `assistant.text_started` or `assistant.message_completed` received
    - `run.completed` or `run.failed` received (within 60s timeout)
-7. Verifies session artifacts (`state.json`, `events.jsonl`, `transcript.jsonl`)
+7. Verifies session artifacts (`state.json`, `events.jsonl`)
 8. On failure, dumps all collected events, session artifacts, and messenger DB
 
 This exercises the full async runtime pipeline:
@@ -97,7 +97,7 @@ This exercises the full async runtime pipeline:
 
 On E2E test failure, the test dumps:
 - All collected JSONL events (with types and count)
-- Session artifacts: `state.json`, `events.jsonl`, `transcript.jsonl`
+- Session artifacts: `state.json`, `events.jsonl`
 - Messenger DB (`messenger.sqlite`) with pending message counts per queue
 - Controller stderr output
 

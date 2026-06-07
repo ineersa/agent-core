@@ -48,8 +48,6 @@ use Symfony\AI\Platform\ResultConverterInterface;
 use Symfony\AI\Platform\TokenUsage\TokenUsageExtractorInterface;
 use Symfony\AI\Platform\TokenUsage\TokenUsageInterface;
 use Symfony\Component\EventDispatcher\EventDispatcher;
-use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
 
 /**
  * Application-level trace/replay tests.
@@ -91,7 +89,6 @@ final class TraceReplayTest extends KernelTestCase
                 logging: new LoggingConfig(),
                 cwd: $this->tempDir.'/project',
             ),
-            lockFactory: new LockFactory(new FlockStore()),
             entityManager: $this->entityManager,
         );
         $this->sessionMetaStore = new SessionMetadataStore($hatfieldSessionStore);

@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Application;
 
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
+use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Session\TranscriptEntry as PersistedTranscriptEntry;
+use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 
@@ -15,17 +17,25 @@ use Ineersa\Tui\Transcript\TranscriptBlockFactory;
  * Initializes session state for the interactive TUI.
  *
  * Handles:
- *   - New session creation (generates ID, persists initial entry)
- *   - Session resumption (loads existing transcript from disk)
+ *   - New session creation (generates ID, no file persistence)
+ *   - Session resumption (replays transcript from canonical events.jsonl)
  *   - Initial run start (if a pre-configured request is provided)
  *
  * Extracted from InteractiveMode::run() so the session lifecycle
  * is independently testable and the run() method stays lean.
+ *
+ * On resume, transcript blocks are rebuilt from events.jsonl through
+ * RuntimeEventMapper + TranscriptProjector instead of loading from a
+ * separate transcript.jsonl file. This ensures the TUI transcript is
+ * always a derived projection of the canonical event stream.
  */
 final readonly class SessionInitializer
 {
     public function __construct(
         private HatfieldSessionStore $sessionStore,
+        private SessionRunEventStore $eventStore,
+        private RuntimeEventMapper $eventMapper,
+        private TranscriptProjectorInterface $projector,
         private TranscriptBlockFactory $blockFactory,
     ) {
     }
@@ -69,6 +79,10 @@ final readonly class SessionInitializer
     /**
      * Build the initial transcript blocks for the session.
      *
+     * On resume, replays canonical events.jsonl through RuntimeEventMapper
+     * and TranscriptProjector to reconstruct the transcript block history.
+     * On fresh session, returns a welcome block.
+     *
      * Returns plain projection blocks; theme colors/prefixes are applied
      * at display time by ChatScreen/TranscriptBlockWidget.
      *
@@ -77,28 +91,11 @@ final readonly class SessionInitializer
     public function buildInitialTranscript(TuiSessionState $state): array
     {
         if ($state->resuming) {
-            $entries = $this->loadTranscriptBlocks($state->sessionId);
-            if ([] === $entries) {
-                return [$this->blockFactory->system(
-                    runId: $state->sessionId,
-                    text: 'Session '.$state->sessionId.' — no messages yet.',
-                    seq: 1,
-                )];
-            }
-
-            return $entries;
+            return $this->replayFromEvents($state);
         }
 
-        // Persist initial system entry for new sessions
-        $this->sessionStore->appendTranscriptEntry(
-            $state->sessionId,
-            new PersistedTranscriptEntry(
-                role: 'system',
-                text: 'Session started',
-                meta: ['session_id' => $state->sessionId],
-            ),
-        );
-
+        // New session: no file persistence — events.jsonl is the canonical record.
+        // A welcome block is returned for in-memory display only.
         return [$this->blockFactory->system(
             runId: $state->sessionId,
             text: 'Welcome to Hatfield. Type a message below to start.',
@@ -107,23 +104,64 @@ final readonly class SessionInitializer
     }
 
     /**
-     * Load persisted transcript entries as plain transcript blocks.
+     * Replay canonical events.jsonl through the projector to rebuild transcript.
      *
      * @return list<TranscriptBlock>
      */
-    private function loadTranscriptBlocks(string $sessionId): array
+    private function replayFromEvents(TuiSessionState $state): array
     {
-        $persisted = $this->sessionStore->getTranscript($sessionId);
-        if ([] === $persisted) {
-            return [];
+        // Reset projector to clear any stale state from previous runs.
+        $this->projector->reset();
+
+        // Use the session ID as the run ID (they are the same in Hatfield).
+        $runId = $state->sessionId;
+
+        try {
+            $runEvents = $this->eventStore->allFor($runId);
+        } catch (\Throwable) {
+            // If events.jsonl is missing or corrupt, show a minimal fallback.
+            return [$this->blockFactory->system(
+                runId: $runId,
+                text: 'Session '.$runId.' — could not load events.',
+                seq: 1,
+            )];
         }
 
-        $blocks = [];
-        foreach ($persisted as $idx => $entry) {
-            $seq = $idx + 1;
-            $blocks[] = 'user' === $entry->role
-                ? $this->blockFactory->user($sessionId, $entry->text, $seq)
-                : $this->blockFactory->system($sessionId, $entry->text, $seq, (string) ($entry->meta['style'] ?? ''));
+        if ([] === $runEvents) {
+            return [$this->blockFactory->system(
+                runId: $runId,
+                text: 'Session '.$runId.' — no messages yet.',
+                seq: 1,
+            )];
+        }
+
+        $maxSeq = 0;
+
+        foreach ($runEvents as $runEvent) {
+            $runtimeEvent = $this->eventMapper->toRuntimeEvent($runEvent);
+
+            if (null === $runtimeEvent) {
+                continue; // Dropped/ignored event types
+            }
+
+            if ($runtimeEvent->seq > $maxSeq) {
+                $maxSeq = $runtimeEvent->seq;
+            }
+
+            $this->projector->accept($runtimeEvent->toArray());
+        }
+
+        // Set lastSeq so the live poller does not re-process replayed events.
+        $state->lastSeq = $maxSeq;
+
+        $blocks = $this->projector->blocks();
+
+        if ([] === $blocks) {
+            return [$this->blockFactory->system(
+                runId: $runId,
+                text: 'Session '.$runId.' — no messages yet.',
+                seq: 1,
+            )];
         }
 
         return $blocks;

@@ -17,8 +17,6 @@ use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
 use Ineersa\Tui\Picker\FavoritePickerController;
 use Ineersa\Tui\Picker\ModelPickerController;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -208,7 +206,6 @@ class ModelPickerControllerTest extends TestCase
                 logging: new LoggingConfig(),
                 cwd: $this->tempDir.'/project',
             ),
-            lockFactory: new LockFactory(new FlockStore()),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
         $sessionMetaStore = new SessionMetadataStore($hatfieldSessionStore);

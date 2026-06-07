@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Session;
 
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Session\TranscriptEntry;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 
 final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
@@ -47,54 +46,20 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         // Core files created (no metadata.yaml)
         self::assertFileExists($sessionPath.'/state.json');
         self::assertFileExists($sessionPath.'/events.jsonl');
-        self::assertFileExists($sessionPath.'/transcript.jsonl');
-
-        // Empty transcript
-        $entries = $this->store->getTranscript($sessionId);
-        self::assertCount(0, $entries);
+        self::assertFileDoesNotExist($sessionPath.'/transcript.jsonl');
     }
 
     public function testAppendAndLoadTranscript(): void
     {
-        $sessionId = $this->store->createSession();
-
-        $this->store->appendTranscriptEntry($sessionId, new TranscriptEntry(
-            role: 'user',
-            text: 'Hello world',
-            meta: ['session_id' => $sessionId],
-        ));
-
-        $this->store->appendTranscriptEntry($sessionId, new TranscriptEntry(
-            role: 'assistant',
-            text: 'Hi there!',
-            meta: ['run_id' => '123', 'seq' => 1],
-        ));
-
-        $entries = $this->store->getTranscript($sessionId);
-        self::assertCount(2, $entries);
-
-        self::assertSame('user', $entries[0]->role);
-        self::assertSame('Hello world', $entries[0]->text);
-        self::assertSame('assistant', $entries[1]->role);
-        self::assertSame('Hi there!', $entries[1]->text);
-        self::assertSame('123', $entries[1]->meta['run_id']);
+        // This test is removed because transcript.jsonl is no longer written.
+        // Transcript blocks are rebuilt from events.jsonl on resume.
+        $this->expectNotToPerformAssertions();
     }
 
     public function testAppendTranscriptPreservesOrder(): void
     {
-        $sessionId = $this->store->createSession();
-
-        for ($i = 1; $i <= 5; ++$i) {
-            $this->store->appendTranscriptEntry($sessionId, new TranscriptEntry(
-                role: 'user',
-                text: "Message {$i}",
-            ));
-        }
-
-        $entries = $this->store->getTranscript($sessionId);
-        self::assertCount(5, $entries);
-        self::assertSame('Message 1', $entries[0]->text);
-        self::assertSame('Message 5', $entries[4]->text);
+        // This test is removed because transcript.jsonl is no longer written.
+        $this->expectNotToPerformAssertions();
     }
 
     public function testExistsReturnsFalseForMissingSession(): void
@@ -122,36 +87,6 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         self::assertSame('deepseek-v4', $meta['model']);
         self::assertArrayHasKey('session_id', $meta);
         self::assertArrayHasKey('updated_at', $meta);
-    }
-
-    public function testTranscriptEntryFromArray(): void
-    {
-        $entry = TranscriptEntry::fromArray([
-            'role' => 'user',
-            'text' => 'hello',
-            'meta' => ['key' => 'val'],
-            'created_at' => '2026-05-13T12:00:00+00:00',
-        ]);
-
-        self::assertSame('user', $entry->role);
-        self::assertSame('hello', $entry->text);
-        self::assertSame('val', $entry->meta['key']);
-        self::assertSame('2026-05-13T12:00:00+00:00', $entry->createdAt->format('c'));
-    }
-
-    public function testTranscriptEntryToArray(): void
-    {
-        $entry = new TranscriptEntry(
-            role: 'assistant',
-            text: 'response',
-            meta: ['run_id' => 'x'],
-        );
-        $data = $entry->toArray();
-
-        self::assertSame('assistant', $data['role']);
-        self::assertSame('response', $data['text']);
-        self::assertSame('x', $data['meta']['run_id']);
-        self::assertArrayHasKey('created_at', $data);
     }
 
     public function testCreateSessionReturnsAutoIncrementIds(): void

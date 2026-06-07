@@ -24,7 +24,6 @@ final class RuntimeEventEmitterTest extends TestCase
 
         return new RuntimeEventEmitter(
             eventClient: null,
-            transcriptPersistence: null,
             boundary: $boundary,
             logger: $logger,
         );

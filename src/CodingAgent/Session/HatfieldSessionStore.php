@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Session;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
-use Symfony\Component\Lock\LockFactory;
 
 /**
  * Session persistence backed by the hatfield_session DB table and the
@@ -19,7 +18,7 @@ use Symfony\Component\Lock\LockFactory;
  *   <session-id>/
  *     state.json          AgentCore RunState hot state cache (via SessionRunStore)
  *     events.jsonl        AgentCore RunEvent canonical stream (via SessionRunEventStore)
- *     transcript.jsonl    Append-only TUI transcript projection
+ *     (no separate projection file — transcript rebuilt from events.jsonl)
  *
  * Session metadata (identity, prompt, model, reasoning, fork tree links)
  * lives in the hatfield_session DB table — not in a metadata.yaml file.
@@ -40,7 +39,6 @@ final class HatfieldSessionStore
 {
     public function __construct(
         private readonly AppConfig $appConfig,
-        private readonly LockFactory $lockFactory,
         private readonly EntityManagerInterface $entityManager,
     ) {
     }
@@ -50,8 +48,8 @@ final class HatfieldSessionStore
      *
      * Inserts a HatfieldSession entity to obtain an auto-increment
      * integer ID, then creates the session directory under
-     * .hatfield/sessions/<id>/ containing state.json, events.jsonl,
-     * and transcript.jsonl (all empty).
+     * .hatfield/sessions/<id>/ containing state.json and events.jsonl
+     * (all empty).
      *
      * Metadata is the DB row — no metadata.yaml is written.
      *
@@ -214,56 +212,6 @@ final class HatfieldSessionStore
     }
 
     /**
-     * Append a transcript entry to a session.
-     */
-    public function appendTranscriptEntry(string $sessionId, TranscriptEntry $entry): void
-    {
-        $path = $this->getSessionDir($sessionId).'/transcript.jsonl';
-        $lock = $this->lockFactory->createLock('hatfield-session-'.$sessionId);
-
-        try {
-            $lock->acquire(true);
-            $this->ensureSessionDir($sessionId);
-            file_put_contents(
-                $path,
-                json_encode($entry->toArray(), \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES)."\n",
-                \FILE_APPEND | \LOCK_EX,
-            );
-        } finally {
-            $lock->release();
-        }
-    }
-
-    /**
-     * Load all transcript entries for a session, in order.
-     *
-     * @return list<TranscriptEntry>
-     */
-    public function getTranscript(string $sessionId): array
-    {
-        $path = $this->getSessionDir($sessionId).'/transcript.jsonl';
-
-        if (!is_readable($path)) {
-            return [];
-        }
-
-        $entries = [];
-        $lines = file($path, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES);
-        if (false === $lines) {
-            return [];
-        }
-
-        foreach ($lines as $line) {
-            $data = json_decode($line, true);
-            if (\is_array($data)) {
-                $entries[] = TranscriptEntry::fromArray($data);
-            }
-        }
-
-        return $entries;
-    }
-
-    /**
      * Check whether a session exists by looking up its database row.
      *
      * Only DB-issued numeric session IDs are valid. Non-numeric IDs
@@ -287,7 +235,7 @@ final class HatfieldSessionStore
     }
 
     /**
-     * Write session files (state.json, events.jsonl, transcript.jsonl).
+     * Write session files (state.json, events.jsonl).
      *
      * Session metadata is the DB row; no metadata.yaml is written.
      */
@@ -301,11 +249,9 @@ final class HatfieldSessionStore
 
         file_put_contents($sessionPath.'/state.json', '');
         file_put_contents($sessionPath.'/events.jsonl', '');
-        file_put_contents($sessionPath.'/transcript.jsonl', '');
 
         chmod($sessionPath.'/state.json', 0644);
         chmod($sessionPath.'/events.jsonl', 0644);
-        chmod($sessionPath.'/transcript.jsonl', 0644);
     }
 
     /**
@@ -358,16 +304,5 @@ final class HatfieldSessionStore
     private function getSessionDir(string $sessionId): string
     {
         return $this->getSessionsDir().'/'.$sessionId;
-    }
-
-    /**
-     * Ensure the session directory exists (create if needed).
-     */
-    private function ensureSessionDir(string $sessionId): void
-    {
-        $dir = $this->getSessionDir($sessionId);
-        if (!is_dir($dir)) {
-            mkdir($dir, 0777, true);
-        }
     }
 }

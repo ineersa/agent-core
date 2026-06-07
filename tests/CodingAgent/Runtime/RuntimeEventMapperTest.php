@@ -410,13 +410,21 @@ final class RuntimeEventMapperTest extends TestCase
         $event = $this->runEvent('agent_command_applied', [
             'kind' => 'steer',
             'idempotency_key' => 'steer-key-1',
+            'message' => [
+                'role' => 'user',
+                'content' => [
+                    ['type' => 'text', 'text' => 'Hello, steer message'],
+                ],
+            ],
+            'text' => 'Hello, steer message',
         ]);
 
         $result = $this->mapper->toRuntimeEvent($event);
 
         self::assertNotNull($result);
-        self::assertSame(RuntimeEventTypeEnum::StatusUpdated->value, $result->type);
-        self::assertSame('agent_command_applied', $result->payload['debug.raw_type']);
+        self::assertSame(RuntimeEventTypeEnum::UserMessageSubmitted->value, $result->type);
+        self::assertSame('Hello, steer message', $result->payload['text']);
+        self::assertStringContainsString('steer-key-1', $result->payload['message_id']);
     }
 
     // ── Skipped internal events ──────────────────────────────────────────────
