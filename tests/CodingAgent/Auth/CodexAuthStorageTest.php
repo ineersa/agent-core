@@ -194,7 +194,7 @@ final class CodexAuthStorageTest extends TestCase
         $storageWithRefresh->saveCredentials('openai-codex-work', $expiredRecord);
 
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('--profile=work');
+        $this->expectExceptionMessage('--auth-profile=work');
 
         $storageWithRefresh->loadCredentials('openai-codex-work');
     }
@@ -229,7 +229,7 @@ final class CodexAuthStorageTest extends TestCase
         try {
             $storageWithRefresh->loadCredentials('openai-codex');
         } catch (\RuntimeException $e) {
-            $this->assertStringNotContainsString('--profile=', $e->getMessage());
+            $this->assertStringNotContainsString('--auth-profile=', $e->getMessage());
             throw $e;
         }
     }

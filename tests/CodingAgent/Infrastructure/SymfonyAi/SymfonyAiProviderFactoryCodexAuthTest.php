@@ -322,7 +322,7 @@ final class SymfonyAiProviderFactoryCodexAuthTest extends TestCase
         $factory = $this->createFactory([$provider->id => $provider], $this->authStorage);
 
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('bin/console auth:codex --profile=work');
+        $this->expectExceptionMessage('bin/console auth:codex --auth-profile=work');
 
         $factory->createProviders();
     }
@@ -352,7 +352,7 @@ final class SymfonyAiProviderFactoryCodexAuthTest extends TestCase
             $this->fail('Expected RuntimeException was not thrown.');
         } catch (\RuntimeException $e) {
             $this->assertStringContainsString('bin/console auth:codex', $e->getMessage());
-            $this->assertStringNotContainsString('--profile=', $e->getMessage());
+            $this->assertStringNotContainsString('--auth-profile=', $e->getMessage());
         }
     }
 }

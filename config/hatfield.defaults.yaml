@@ -355,8 +355,8 @@ logging:
 #             # ~/.hatfield/auth.json under key 'openai-codex'. Do not set api_key or account_id here.
 #             #
 #             # For multiple accounts, use profiles:
-#             #   bin/console auth:codex --profile work
-#             #   bin/console auth:codex --profile personal
+#             #   bin/console auth:codex --auth-profile work
+#             #   bin/console auth:codex --auth-profile personal
 #             # Then set auth_key to match (e.g. 'openai-codex-work').
 #             # Only one stored record is used per provider; there is
 #             # no automatic account switching on rate limits.

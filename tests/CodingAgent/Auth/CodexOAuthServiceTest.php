@@ -71,7 +71,7 @@ final class CodexOAuthServiceTest extends TestCase
         $service = new CodexOAuthService($this->storage, $this->refresher);
 
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('bin/console auth:codex --profile=work');
+        $this->expectExceptionMessage('bin/console auth:codex --auth-profile=work');
 
         $service->refreshCredentials('openai-codex-work');
     }
@@ -85,7 +85,7 @@ final class CodexOAuthServiceTest extends TestCase
             $this->fail('Expected RuntimeException was not thrown.');
         } catch (\RuntimeException $e) {
             $this->assertStringContainsString('bin/console auth:codex', $e->getMessage());
-            $this->assertStringNotContainsString('--profile=', $e->getMessage());
+            $this->assertStringNotContainsString('--auth-profile=', $e->getMessage());
         }
     }
 
@@ -201,7 +201,7 @@ final class CodexOAuthServiceTest extends TestCase
         $service = new CodexOAuthService($this->storage, $failingRefresher);
 
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('bin/console auth:codex --profile=work');
+        $this->expectExceptionMessage('bin/console auth:codex --auth-profile=work');
 
         $service->refreshCredentials('openai-codex-work');
     }
@@ -230,7 +230,7 @@ final class CodexOAuthServiceTest extends TestCase
             $this->fail('Expected RuntimeException was not thrown.');
         } catch (\RuntimeException $e) {
             $this->assertStringContainsString('bin/console auth:codex', $e->getMessage());
-            $this->assertStringNotContainsString('--profile=', $e->getMessage());
+            $this->assertStringNotContainsString('--auth-profile=', $e->getMessage());
         }
     }
 }

@@ -133,7 +133,7 @@ class SymfonyAiProviderFactory
      *
      * Returns the default PROVIDER_KEY when authKey is null/empty/whitespace,
      * returns valid profile keys as-is, and throws for malformed keys
-     * that cannot be created through auth:codex --profile=<name>.
+     * that cannot be created through auth:codex --auth-profile=<name>.
      *
      * @return non-empty-string
      *
@@ -161,7 +161,7 @@ class SymfonyAiProviderFactory
         }
 
         // Anything else is invalid: openai-codex- with no suffix, my-custom-key, weird chars
-        throw new \RuntimeException(\sprintf('OpenAI Codex provider "%s" has an invalid auth_key "%s". Use "openai-codex" for the default account or run bin/console auth:codex --profile=<name> to create an account under "openai-codex-<name>".', $provider->id, $authKey));
+        throw new \RuntimeException(\sprintf('OpenAI Codex provider "%s" has an invalid auth_key "%s". Use "openai-codex" for the default account or run bin/console auth:codex --auth-profile=<name> to create an account under "openai-codex-<name>".', $provider->id, $authKey));
     }
 
     /**

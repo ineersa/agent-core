@@ -118,7 +118,7 @@ final class CodexOAuthConfig
      * Build a CLI command hint for the given provider storage key.
      *
      * Returns 'bin/console auth:codex' for the default key or custom keys,
-     * and appends ' --profile=<profile>' only when the key follows the
+     * and appends ' --auth-profile=<profile>' only when the key follows the
      * 'openai-codex-<valid-profile>' pattern.
      */
     public static function authCommandHintForProviderKey(string $providerKey): string
@@ -128,7 +128,7 @@ final class CodexOAuthConfig
         $profile = self::profileFromProviderKey($providerKey);
 
         if (null !== $profile) {
-            $hint .= \sprintf(' --profile=%s', $profile);
+            $hint .= \sprintf(' --auth-profile=%s', $profile);
         }
 
         return $hint;

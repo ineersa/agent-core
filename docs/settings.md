@@ -695,18 +695,20 @@ OpenAICodex platform bridge which talks to the ChatGPT backend at
 **Multiple accounts (profiles):**
 
 You can authenticate with multiple OpenAI accounts by using the
-`--profile` option. Each profile stores credentials under a separate
-key in `~/.hatfield/auth.json`:
+`--auth-profile` option (the `--profile` flag is reserved by Symfony
+Console as a global option and cannot be used for Codex auth profiles).
+Each profile stores credentials under a separate key in
+`~/.hatfield/auth.json`:
 
 ```bash
 # Default account (key: openai-codex)
 bin/console auth:codex
 
 # Work account (key: openai-codex-work)
-bin/console auth:codex --profile work
+bin/console auth:codex --auth-profile work
 
 # Personal account (key: openai-codex-personal)
-bin/console auth:codex --profile personal
+bin/console auth:codex --auth-profile personal
 ```
 
 To use a specific profile, configure the provider with `auth_key`:
