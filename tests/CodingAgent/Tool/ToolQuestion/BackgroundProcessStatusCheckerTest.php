@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Tests\Tool\ToolQuestion;
 
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
 use Ineersa\CodingAgent\Tool\ToolQuestion\BackgroundProcessStatusCheckerInterface;
-use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
 /**

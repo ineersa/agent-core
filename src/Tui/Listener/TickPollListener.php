@@ -61,8 +61,8 @@ final class TickPollListener implements TuiListenerRegistrar
                 self::handleToolQuestionRequested($event, $client, $questionCoordinator);
             };
 
-            $onToolTerminal = static function (RuntimeEvent $event) use ($client, $questionCoordinator): void {
-                self::handleToolTerminal($event, $client, $questionCoordinator);
+            $onToolTerminal = static function (RuntimeEvent $event) use ($questionCoordinator, $questionController): void {
+                self::handleToolTerminal($event, $questionCoordinator, $questionController);
             };
 
             $changedBlocks = $poller->poll(
@@ -211,8 +211,8 @@ final class TickPollListener implements TuiListenerRegistrar
      */
     private static function handleToolTerminal(
         RuntimeEvent $event,
-        AgentSessionClient $client,
         QuestionCoordinator $questionCoordinator,
+        QuestionController $questionController,
     ): void {
         $p = $event->payload;
         $toolCallId = (string) ($p['tool_call_id'] ?? '');
@@ -237,6 +237,11 @@ final class TickPollListener implements TuiListenerRegistrar
         }
 
         $questionCoordinator->cancel();
+
+        // Close the visual overlay so the stale prompt is not visible.
+        // The overlay is removed even if it was already dismissed by user
+        // action — close() handles the no-op case internally.
+        $questionController->close();
     }
 
     /**
