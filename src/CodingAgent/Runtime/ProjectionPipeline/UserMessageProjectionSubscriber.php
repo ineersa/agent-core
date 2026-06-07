@@ -43,6 +43,11 @@ final readonly class UserMessageProjectionSubscriber implements EventSubscriberI
      * messages (initial prompt). These are included as user_messages in the
      * run.started runtime event payload so events.jsonl replay can produce
      * user message transcript blocks for the very first turn.
+     *
+     * Note: The seq assigned by $state->nextSeq() is projector-local ordering,
+     * not the runtime event seq. Projector seq is deterministic for replay
+     * (same input events produce same block ordering) but does not correspond
+     * to any canonical event sequence number.
      */
     public function onRunStarted(TranscriptProjectionEvent $event): void
     {

@@ -117,6 +117,53 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertSame(1, $blocks[1]->seq);
     }
 
+    public function testRunStartedWithUserMessagesProjectsInitialPromptBlocks(): void
+    {
+        $this->accept('run.started', [
+            'step_id' => 'start-1',
+            'user_messages' => [
+                ['message_id' => 'initial_run_1_0', 'text' => 'Write a README'],
+            ],
+        ]);
+
+        $blocks = $this->projector->blocks();
+        $this->assertCount(1, $blocks);
+        $this->assertSame(TranscriptBlockKindEnum::UserMessage, $blocks[0]->kind);
+        $this->assertSame('initial_run_1_0', $blocks[0]->id);
+        $this->assertSame('Write a README', $blocks[0]->text);
+        $this->assertFalse($blocks[0]->streaming);
+    }
+
+    public function testRunStartedWithMultipleUserMessages(): void
+    {
+        $this->accept('run.started', [
+            'step_id' => 'start-1',
+            'user_messages' => [
+                ['message_id' => 'init_1', 'text' => 'First prompt'],
+                ['message_id' => 'init_2', 'text' => 'Second prompt'],
+            ],
+        ]);
+
+        $blocks = $this->projector->blocks();
+        $this->assertCount(2, $blocks);
+        $this->assertSame('init_1', $blocks[0]->id);
+        $this->assertSame('init_2', $blocks[1]->id);
+        $this->assertSame(TranscriptBlockKindEnum::UserMessage, $blocks[0]->kind);
+        $this->assertSame(TranscriptBlockKindEnum::UserMessage, $blocks[1]->kind);
+    }
+
+    public function testRunStartedWithoutUserMessagesCreatesNoUserBlocks(): void
+    {
+        $this->accept('run.started', [
+            'step_id' => 'start-2',
+        ]);
+
+        // RunLifecycleProjectionSubscriber may add a System block for run start.
+        $blocks = $this->projector->blocks();
+        $kinds = array_map(static fn (TranscriptBlock $b) => $b->kind, $blocks);
+        $this->assertNotContains(TranscriptBlockKindEnum::UserMessage, $kinds, 'No UserMessage blocks without user_messages payload');
+    }
+
     // ── Assistant text stream ─────────────────────────────────────────────────
 
     public function testAssistantTextStreamCreatesAndAccumulatesBlock(): void

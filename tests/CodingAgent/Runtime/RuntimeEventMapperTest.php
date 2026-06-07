@@ -41,6 +41,68 @@ final class RuntimeEventMapperTest extends TestCase
         self::assertSame(1, $result->seq);
     }
 
+    public function testNormalizesRunStartedWithUserMessages(): void
+    {
+        $event = $this->runEvent('run_started', [
+            'step_id' => 'start-2',
+            'payload' => [
+                'messages' => [
+                    ['role' => 'system', 'content' => [['type' => 'text', 'text' => 'System prompt']]],
+                    ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Initial prompt']]],
+                ],
+            ],
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::RunStarted->value, $result->type);
+        self::assertSame('start-2', $result->payload['step_id']);
+        self::assertArrayHasKey('user_messages', $result->payload);
+        self::assertCount(1, $result->payload['user_messages']);
+        self::assertSame('Initial prompt', $result->payload['user_messages'][0]['text']);
+        // System/user-context messages are not included
+        $texts = array_column($result->payload['user_messages'], 'text');
+        self::assertNotContains('System prompt', $texts, 'System messages must not appear in user_messages');
+    }
+
+    public function testNormalizesRunStartedWithoutUserMessages(): void
+    {
+        // When the normalized payload has no user-role messages.
+        $event = $this->runEvent('run_started', [
+            'step_id' => 'start-3',
+            'payload' => [
+                'messages' => [
+                    ['role' => 'system', 'content' => [['type' => 'text', 'text' => 'System prompt only']]],
+                ],
+            ],
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        self::assertNotNull($result);
+        self::assertSame('start-3', $result->payload['step_id']);
+        self::assertArrayNotHasKey('user_messages', $result->payload);
+    }
+
+    public function testNormalizesRunStartedWithEmptyUserMessageSkipped(): void
+    {
+        // User-role messages with empty text should be skipped.
+        $event = $this->runEvent('run_started', [
+            'step_id' => 'start-4',
+            'payload' => [
+                'messages' => [
+                    ['role' => 'user', 'content' => []],
+                ],
+            ],
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        self::assertNotNull($result);
+        self::assertArrayNotHasKey('user_messages', $result->payload);
+    }
+
     public function testNormalizesTurnAdvancedToTurnStarted(): void
     {
         $event = $this->runEvent('turn_advanced', ['turn_no' => 3]);
@@ -405,7 +467,7 @@ final class RuntimeEventMapperTest extends TestCase
         self::assertSame('user_cancelled', $result->payload['reason']);
     }
 
-    public function testNormalizesAgentCommandAppliedNonCancel(): void
+    public function testNormalizesAgentCommandAppliedSteerToUserMessageSubmitted(): void
     {
         $event = $this->runEvent('agent_command_applied', [
             'kind' => 'steer',
@@ -425,6 +487,49 @@ final class RuntimeEventMapperTest extends TestCase
         self::assertSame(RuntimeEventTypeEnum::UserMessageSubmitted->value, $result->type);
         self::assertSame('Hello, steer message', $result->payload['text']);
         self::assertStringContainsString('steer-key-1', $result->payload['message_id']);
+    }
+
+    public function testNormalizesAgentCommandAppliedFollowUpToUserMessageSubmitted(): void
+    {
+        $event = $this->runEvent('agent_command_applied', [
+            'kind' => 'follow_up',
+            'idempotency_key' => 'follow-key-1',
+            'message' => [
+                'role' => 'user',
+                'content' => [
+                    ['type' => 'text', 'text' => 'A follow-up question'],
+                ],
+            ],
+            'text' => 'A follow-up question',
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::UserMessageSubmitted->value, $result->type);
+        self::assertSame('A follow-up question', $result->payload['text']);
+        self::assertStringContainsString('follow-key-1', $result->payload['message_id']);
+    }
+
+    public function testNormalizesAgentCommandAppliedFollowUpExtractsTextFromMessage(): void
+    {
+        // When 'text' key is missing, should extract from serialized message content.
+        $event = $this->runEvent('agent_command_applied', [
+            'kind' => 'follow_up',
+            'idempotency_key' => 'follow-key-2',
+            'message' => [
+                'role' => 'user',
+                'content' => [
+                    ['type' => 'text', 'text' => 'Extracted from content'],
+                ],
+            ],
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        self::assertNotNull($result);
+        self::assertSame(RuntimeEventTypeEnum::UserMessageSubmitted->value, $result->type);
+        self::assertSame('Extracted from content', $result->payload['text']);
     }
 
     // ── Skipped internal events ──────────────────────────────────────────────

@@ -49,19 +49,6 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         self::assertFileDoesNotExist($sessionPath.'/transcript.jsonl');
     }
 
-    public function testAppendAndLoadTranscript(): void
-    {
-        // This test is removed because transcript.jsonl is no longer written.
-        // Transcript blocks are rebuilt from events.jsonl on resume.
-        $this->expectNotToPerformAssertions();
-    }
-
-    public function testAppendTranscriptPreservesOrder(): void
-    {
-        // This test is removed because transcript.jsonl is no longer written.
-        $this->expectNotToPerformAssertions();
-    }
-
     public function testExistsReturnsFalseForMissingSession(): void
     {
         self::assertFalse($this->store->exists('nonexistent-session-id'));

@@ -399,23 +399,9 @@ final class RuntimeEventTranslator
      */
     private function extractAssistantText(mixed $assistantMessage): string
     {
-        if (!\is_array($assistantMessage)) {
-            return '';
-        }
-
-        $content = $assistantMessage['content'] ?? null;
-        if (!\is_array($content) || [] === $content) {
-            return '';
-        }
-
-        $parts = [];
-        foreach ($content as $block) {
-            if (\is_array($block) && isset($block['text']) && ('text' === ($block['type'] ?? null))) {
-                $parts[] = (string) $block['text'];
-            }
-        }
-
-        return [] !== $parts ? implode('', $parts) : '';
+        return \is_array($assistantMessage)
+            ? $this->extractTextFromContent($assistantMessage['content'] ?? null)
+            : '';
     }
 
     /**

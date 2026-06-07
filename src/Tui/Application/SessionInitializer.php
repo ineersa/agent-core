@@ -135,24 +135,33 @@ final readonly class SessionInitializer
             )];
         }
 
-        $maxSeq = 0;
+        $maxSourceSeq = 0;
+        $maxMappedSeq = 0;
 
         foreach ($runEvents as $runEvent) {
+            // Track the highest source seq so lastSeq is never stale even
+            // when every event maps to null (e.g. only internal bookkeeping).
+            if ($runEvent->seq > $maxSourceSeq) {
+                $maxSourceSeq = $runEvent->seq;
+            }
+
             $runtimeEvent = $this->eventMapper->toRuntimeEvent($runEvent);
 
             if (null === $runtimeEvent) {
                 continue; // Dropped/ignored event types
             }
 
-            if ($runtimeEvent->seq > $maxSeq) {
-                $maxSeq = $runtimeEvent->seq;
+            if ($runtimeEvent->seq > $maxMappedSeq) {
+                $maxMappedSeq = $runtimeEvent->seq;
             }
 
             $this->projector->accept($runtimeEvent->toArray());
         }
 
         // Set lastSeq so the live poller does not re-process replayed events.
-        $state->lastSeq = $maxSeq;
+        // Use the max of mapped event seqs; fall back to max source event seq
+        // when every source event was dropped/ignored by the mapper.
+        $state->lastSeq = max($maxMappedSeq, $maxSourceSeq);
 
         $blocks = $this->projector->blocks();
 

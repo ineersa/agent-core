@@ -141,15 +141,6 @@ Lines are appended under a Symfony Lock (`FlockStore`). `allFor()` reads all
 lines, validates embedded `run_id` against the directory name, and sorts by
 `seq` before returning.
 
-One JSON object per line, produced by `TranscriptEntry::toArray()`:
-
-```jsonl
-{"role":"user","text":"Write a README","meta":{"session_id":"42"},"created_at":"2026-05-13T12:00:05+00:00"}
-{"role":"assistant","text":"I'll create a README.md","meta":{"run_id":"42","seq":4},"created_at":"2026-05-13T12:00:06+00:00"}
-```
-
-Roles include `user`, `assistant`, `tool`, `system`, and `error`.
-
 
 ### Runtime event → transcript projection
 
@@ -170,28 +161,6 @@ projected events.
 
 No separate transcript.jsonl file is written. Transcript blocks are a derived
 projection of the canonical event stream and are never persisted independently.
-
- ──────────────────────────────▶│ • persist runtime  │  (plain model, no theme)
- (JsonlProcessAgentSessionClt)  │ • map to transcript│
-                                └────────┬───────────┘
-                                         │
-                                         ▼
-                                  TuiSessionState
-                                  $state->transcript[]
-                                         │
-                                         ▼
-                                  ChatScreen::appendTranscript()
-                                         │
-                                         ▼
-                                  TranscriptWidget → live display
-                                  (role prefixes + theme applied
-                                   by TranscriptEntry::render())
-```
-
-Key: runtime events flow through `RuntimeEventPoller` which produces plain
-`TranscriptEntry` objects. Theming and role-based display prefixes (❯ ◇ ●)
-are applied at render time by `TranscriptEntry::render()` in the TUI widget
-layer — not during persistence.
 
 ## ID rules and integrity checks
 
