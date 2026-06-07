@@ -117,7 +117,7 @@ final class CodexOAuthConfigTest extends TestCase
         ];
         yield 'profile key appends profile flag' => [
             'openai-codex-work',
-            'bin/console auth:codex --profile=work',
+            'bin/console auth:codex --auth-profile=work',
         ];
         yield 'custom key does not append profile flag' => [
             'my-custom-key',

@@ -21,8 +21,8 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  *   bin/console auth:codex --no-browser
  *   bin/console auth:codex --timeout=600 --port=1555
  *   bin/console auth:codex --refresh
- *   bin/console auth:codex --profile work
- *   bin/console auth:codex --refresh --profile work
+ *   bin/console auth:codex --auth-profile work
+ *   bin/console auth:codex --refresh --auth-profile work
  *
  * Profiles allow storing credentials for multiple OpenAI accounts.
  * Each profile stores under a separate key in auth.json
@@ -51,22 +51,22 @@ final class CodexAuthCommand
         #[Option(description: 'Refresh existing credentials instead of full login')]
         bool $refresh = false,
 
-        #[Option(description: 'Profile name for multiple accounts (e.g. "work", "personal"). Defaults to primary account.')]
-        ?string $profile = null,
+        #[Option(description: 'Auth profile name for multiple accounts (e.g. "work", "personal"). Defaults to primary account. Note: --profile is a Symfony Console global option and must not be used for Codex auth profiles.')]
+        ?string $authProfile = null,
 
         ?OutputInterface $output = null,
     ): int {
         $io = new SymfonyStyle(new ArgvInput(), $output);
 
         try {
-            $providerKey = CodexOAuthConfig::providerKeyForProfile($profile);
+            $providerKey = CodexOAuthConfig::providerKeyForProfile($authProfile);
         } catch (\InvalidArgumentException $e) {
             $io->error($e->getMessage());
 
             return Command::FAILURE;
         }
 
-        $profileLabel = (null !== $profile && '' !== trim($profile)) ? \sprintf(' (profile: %s)', $profile) : '';
+        $profileLabel = (null !== $authProfile && '' !== trim($authProfile)) ? \sprintf(' (profile: %s)', $authProfile) : '';
 
         if ($refresh) {
             return $this->handleRefresh($io, $providerKey, $profileLabel);
