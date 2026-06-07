@@ -67,7 +67,7 @@ This follows TOOLS-09, which implements bash as a background-managed foreground-
 Status: IN-PROGRESS
 Branch: task/tools-09b-runtime-tool-question-bridge
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-09b-runtime-tool-question-bridge
-Fork run: ffhjocf4swsm
+Fork run: 8ipsqnxrrju4
 PR URL:
 PR Status:
 Started: 2026-06-06T23:33:30.150Z
@@ -138,3 +138,9 @@ Completed:
 - Recorded fork run: ffhjocf4swsm
 - Summary: User accepted the broader Composer lock normalization as fine because it makes Composer/Castor work. Fork ffhjocf4swsm launched to apply the targeted Composer update despite broader lock refresh, run focused Castor validation (`castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`), commit, and stop before PR/gate/push/status move.
 - User decision: broad Composer lock refresh is acceptable if Composer/Castor works. Fork ffhjocf4swsm launched to apply and validate it.
+
+## Task workflow update - 2026-06-07T16:07:18.769Z
+- Recorded fork run: 8ipsqnxrrju4
+- Summary: Fork ffhjocf4swsm returned a corrupted/incomplete artifact (`The fork tool appears to map to subagent with context: fork. Let me retry:`) and produced no usable handoff. Retrieval returned the same incomplete text. Worktree was verified clean at HEAD 8143aaf2. Replacement fork 8ipsqnxrrju4 launched with explicit instruction to do the Composer lock refresh itself, not delegate to subagents/forks, run focused Castor validation, commit, and stop.
+- Fork ffhjocf4swsm result was unusable/corrupted; no evidence of changes or validation. Worktree remained clean at HEAD 8143aaf2.
+- Replacement fork 8ipsqnxrrju4 launched to apply the user-authorized broad Composer lock refresh and focused validation.
