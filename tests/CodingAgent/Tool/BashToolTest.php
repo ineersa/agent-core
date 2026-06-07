@@ -330,6 +330,9 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('background', $result);
         $this->assertStringContainsString('PID:', $result);
         $this->assertStringContainsString('Log:', $result);
+        $this->assertStringContainsString('You will be notified', $result);
+        $this->assertStringContainsString('bg_status log pid=', $result);
+        $this->assertStringContainsString('bg_status stop pid=', $result);
         $this->assertStringNotContainsString('timed out', $result);
         $this->assertStringNotContainsString('cancelled', $result);
     }
@@ -401,6 +404,9 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         $this->assertStringContainsString('background', $result);
         $this->assertStringContainsString('PID:', $result);
+        $this->assertStringContainsString('You will be notified', $result);
+        $this->assertStringContainsString('bg_status log pid=', $result);
+        $this->assertStringContainsString('bg_status stop pid=', $result);
 
         // Extract PID from result
         \preg_match('/PID: (\d+)/', $result, $matches);
@@ -414,6 +420,10 @@ final class BashToolTest extends IsolatedKernelTestCase
         // Verify it's the same PID (single execution, no duplicate)
         $this->assertSame($pid, $entities[0]->pid, 'The background process should have the same PID');
 
+        // Verify the process is marked as backgrounded (backgroundAt is set)
+        // This confirms the markBackgrounded() call was made in BashTool.
+        $this->assertNotNull($entities[0]->backgroundedAt, 'Background process should have backgroundedAt set');
+
         // Verify the log contains our unique marker
         \usleep(200_000); // Wait for log flush
         $logContent = \file_get_contents($entities[0]->logPath);
@@ -421,6 +431,43 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         // Clean up
         $this->manager->stop($pid, self::TEST_SESSION);
+    }
+
+    /* ── Process finishes during prompt — regression for smoke bug A ── */
+
+    public function testProcessFinishesWhilePromptBlocksReturnsCompletedOutput(): void
+    {
+        // Adapter that blocks for 400ms (simulating waiting for user input
+        // via TUI) then returns true (user accepted backgrounding).
+        $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
+        $promptAdapter
+            ->expects($this->once())
+            ->method('shouldBackground')
+            ->willReturnCallback(function (): bool {
+                \usleep(400_000); // 400ms block
+
+                return true; // Simulate user accepting
+            });
+
+        $this->bashConfig = new BashToolConfig(
+            defaultTimeoutSeconds: 30,
+            backgroundPromptThresholdSeconds: 0, // trigger immediately
+            pollIntervalMicros: 50_000,
+            logTailChars: 20000,
+        );
+        $this->createManager();
+
+        // Command that finishes while the adapter is blocking (200ms < 400ms).
+        $result = $this->withContext(self::TEST_SESSION, function () use ($promptAdapter): string {
+            return ($this->makeBashTool($promptAdapter))([
+                'command' => 'sleep 0.2 && echo "Hello world"',
+            ]);
+        });
+
+        // Must show the completed output, not a backgrounding notice or timeout.
+        $this->assertStringContainsString('Hello world', $result);
+        $this->assertStringNotContainsString('Command moved to background', $result);
+        $this->assertStringNotContainsString('timed out', $result);
     }
 
     /* ── Output capping ── */

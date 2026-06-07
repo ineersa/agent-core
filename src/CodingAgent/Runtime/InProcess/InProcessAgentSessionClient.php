@@ -19,6 +19,8 @@ use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
+use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionAnswerResolver;
+use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface;
 
 /**
  * In-process implementation of AgentSessionClient.
@@ -41,6 +43,8 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly AgentsContextRenderer $agentsContextRenderer,
         private readonly SkillsContextBuilder $skillsContextBuilder,
         private readonly ?RuntimeEventSinkInterface $transientSink = null,
+        private readonly ?ToolQuestionStoreInterface $toolQuestionStore = null,
+        private readonly ToolQuestionAnswerResolver $answerResolver = new ToolQuestionAnswerResolver(),
     ) {
     }
 
@@ -139,6 +143,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
                 (string) ($command->payload['question_id'] ?? ''),
                 $command->payload['answer'] ?? null,
             ),
+            'answer_tool_question' => $this->handleAnswerToolQuestion($runId, $command),
             default => throw new \InvalidArgumentException(\sprintf('Unknown UserCommand type: "%s"', $command->type)),
         };
     }
@@ -173,5 +178,26 @@ final class InProcessAgentSessionClient implements AgentSessionClient
     public function cancel(string $runId): void
     {
         $this->runner->cancel($runId);
+    }
+
+    /**
+     * Handle an answer_tool_question command by writing the answer
+     * to the ToolQuestionStore. The blocked tool worker polls the store
+     * and will pick up the answer.
+     */
+    private function handleAnswerToolQuestion(string $runId, UserCommand $command): void
+    {
+        if (null === $this->toolQuestionStore) {
+            throw new \RuntimeException('ToolQuestionStore not configured; cannot handle answer_tool_question command.');
+        }
+
+        $requestId = (string) ($command->payload['request_id'] ?? '');
+
+        if ('' === $requestId) {
+            throw new \InvalidArgumentException('answer_tool_question requires request_id in payload');
+        }
+
+        $answer = $this->answerResolver->resolve($command->payload['answer'] ?? null);
+        $this->toolQuestionStore->answer($requestId, $answer);
     }
 }

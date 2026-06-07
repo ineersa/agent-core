@@ -57,10 +57,20 @@ final class TickPollListener implements TuiListenerRegistrar
                 self::handleHumanInputRequested($event, $client, $questionCoordinator);
             };
 
+            $onToolQuestion = static function (RuntimeEvent $event) use ($client, $questionCoordinator): void {
+                self::handleToolQuestionRequested($event, $client, $questionCoordinator);
+            };
+
+            $onToolTerminal = static function (RuntimeEvent $event) use ($questionCoordinator, $questionController): void {
+                self::handleToolTerminal($event, $questionCoordinator, $questionController);
+            };
+
             $changedBlocks = $poller->poll(
                 $state,
                 $client,
                 onHumanInputRequested: $onHitl,
+                onToolQuestionRequested: $onToolQuestion,
+                onToolTerminal: $onToolTerminal,
             );
 
             if (null !== $changedBlocks) {
@@ -175,6 +185,141 @@ final class TickPollListener implements TuiListenerRegistrar
                     payload: [
                         'question_id' => $questionId,
                         'answer' => 'Deny',
+                    ],
+                ));
+            },
+        );
+    }
+
+    /**
+     * Handle a tool execution terminal event by cancelling any active
+     * Tui-source question whose toolCallId matches the terminal event.
+     *
+     * This is invoked by RuntimeEventPoller::poll() each time a
+     * tool_execution.completed, tool_execution.failed, or
+     * tool_execution.cancelled event is polled from the runtime stream.
+     * When the tool returns (with output, error, or cancellation) while a
+     * local tool question overlay is still open, this dismisses the stale
+     * question so the user cannot answer a prompt for a tool that is no
+     * longer running.
+     *
+     * Cancelling the coordinator sends a fail-safe false answer through
+     * the registered cancel callback, which dispatches an
+     * answer_tool_question=false command. The store's idempotency makes
+     * this a noop if the adapter already cancelled or returned before the
+     * answer arrives.
+     */
+    private static function handleToolTerminal(
+        RuntimeEvent $event,
+        QuestionCoordinator $questionCoordinator,
+        QuestionController $questionController,
+    ): void {
+        $p = $event->payload;
+        $toolCallId = (string) ($p['tool_call_id'] ?? '');
+
+        if ('' === $toolCallId) {
+            return;
+        }
+
+        $active = $questionCoordinator->activeRequest();
+        if (null === $active) {
+            return;
+        }
+
+        // Only cancel if the active question is a local Tui-source question
+        // (tool-local prompt, not AgentCore HITL) and the toolCallId matches.
+        if (QuestionSource::Tui !== $active->source) {
+            return;
+        }
+
+        if ($active->toolCallId !== $toolCallId) {
+            return;
+        }
+
+        $questionCoordinator->cancel();
+
+        // Close the visual overlay so the stale prompt is not visible.
+        // The overlay is removed even if it was already dismissed by user
+        // action — close() handles the no-op case internally.
+        $questionController->close();
+    }
+
+    /**
+     * Handle a tool_question.requested runtime event by enqueuing a
+     * Confirm question in the coordinator.
+     *
+     * This is invoked by RuntimeEventPoller::poll() each time a
+     * tool_question.requested event is polled from the runtime stream.
+     * The event carries a request_id, prompt, and metadata from the tool
+     * that needs user confirmation (e.g. bash background prompt).
+     *
+     * Unlike human_input.requested, this is a LOCAL tool question:
+     * - source is Tui (not AgentCore)
+     * - kind is Confirm (not Approval)
+     * - transcript is false (no transcript block)
+     * - answer sends answer_tool_question (not answer_human)
+     * - no WaitingHuman state transition in AgentCore
+     *
+     * A guard against duplicate request IDs prevents enqueueing the
+     * same question twice if the event stream replays.
+     */
+    private static function handleToolQuestionRequested(
+        RuntimeEvent $event,
+        AgentSessionClient $client,
+        QuestionCoordinator $questionCoordinator,
+    ): void {
+        $p = $event->payload;
+        $requestIdFromPayload = (string) ($p['request_id'] ?? '');
+        $runId = $event->runId;
+
+        if ('' === $requestIdFromPayload) {
+            return;
+        }
+
+        $requestId = 'tool_'.$requestIdFromPayload;
+
+        if ($questionCoordinator->hasRequest($requestId)) {
+            return;
+        }
+
+        $request = new QuestionRequest(
+            requestId: $requestId,
+            source: QuestionSource::Tui,
+            kind: QuestionKind::Confirm,
+            prompt: (string) ($p['prompt'] ?? 'Confirmation required.'),
+            schema: ['type' => 'boolean'],
+            choices: [],
+            allowOther: false,
+            runId: $runId,
+            questionId: $requestIdFromPayload,
+            toolCallId: (string) ($p['tool_call_id'] ?? ''),
+            toolName: (string) ($p['tool_name'] ?? ''),
+            transcript: false,
+        );
+
+        // Enqueue the question with answer and cancel callbacks.
+        // Answer sends 'yes' or 'no' through answer_tool_question command.
+        // Cancel sends 'no' so the tool does not hang waiting for input.
+        $questionCoordinator->enqueue(
+            $request,
+            onAnswer: static function (mixed $answer) use ($client, $runId, $requestIdFromPayload): void {
+                // QuestionController::Confirm returns 'yes' or 'no' strings.
+                $boolAnswer = \is_string($answer) && 'yes' === strtolower($answer);
+
+                $client->send($runId, new UserCommand(
+                    type: 'answer_tool_question',
+                    payload: [
+                        'request_id' => $requestIdFromPayload,
+                        'answer' => $boolAnswer,
+                    ],
+                ));
+            },
+            onCancel: static function () use ($client, $runId, $requestIdFromPayload): void {
+                $client->send($runId, new UserCommand(
+                    type: 'answer_tool_question',
+                    payload: [
+                        'request_id' => $requestIdFromPayload,
+                        'answer' => false,
                     ],
                 ));
             },
