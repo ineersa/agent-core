@@ -365,7 +365,6 @@ parameters:
       - AppSystemPrompt
       - AppSkills
       - AppTool
-      - AppTool
       - AgentCore
       - AppConfig
       - SymfonyConsole

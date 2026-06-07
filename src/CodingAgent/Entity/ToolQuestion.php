@@ -135,17 +135,35 @@ class ToolQuestion
         $this->emittedAt = new \DateTimeImmutable();
     }
 
-    /** Set the boolean answer. */
+    /**
+     * Set the boolean answer.
+     *
+     * Idempotent: does nothing if the question is already resolved.
+     * The store layer also guards against overwriting, but the entity-level
+     * guard prevents misuse even if resetAnswer() is called directly.
+     */
     public function setAnswer(bool $answer): void
     {
+        if ($this->isResolved()) {
+            return;
+        }
+
         $this->answer = $answer;
         $this->status = ToolQuestionStatusEnum::Answered;
         $this->answeredAt = new \DateTimeImmutable();
     }
 
-    /** Mark the question as cancelled (user/tool cancelled without answering). */
+    /**
+     * Mark the question as cancelled (user/tool cancelled without answering).
+     *
+     * Idempotent: does nothing if already resolved.
+     */
     public function markCancelled(): void
     {
+        if ($this->isResolved()) {
+            return;
+        }
+
         $this->status = ToolQuestionStatusEnum::Cancelled;
         $this->answeredAt = new \DateTimeImmutable();
     }

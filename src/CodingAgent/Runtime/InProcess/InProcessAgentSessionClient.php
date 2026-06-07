@@ -19,6 +19,7 @@ use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
+use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionAnswerResolver;
 use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface;
 
 /**
@@ -43,6 +44,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly SkillsContextBuilder $skillsContextBuilder,
         private readonly ?RuntimeEventSinkInterface $transientSink = null,
         private readonly ?ToolQuestionStoreInterface $toolQuestionStore = null,
+        private readonly ToolQuestionAnswerResolver $answerResolver = new ToolQuestionAnswerResolver(),
     ) {
     }
 
@@ -195,32 +197,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             throw new \InvalidArgumentException('answer_tool_question requires request_id in payload');
         }
 
-        $answer = $this->resolveAnswer($command->payload['answer'] ?? null);
+        $answer = $this->answerResolver->resolve($command->payload['answer'] ?? null);
         $this->toolQuestionStore->answer($requestId, $answer);
-    }
-
-    /**
-     * Resolve a boolean answer from various input formats.
-     *
-     * Accepts: true/false (bool), 'yes'/'no'/'true'/'false'/'1'/'0' (string),
-     * 1/0 (int). Everything else is treated as false.
-     */
-    private function resolveAnswer(mixed $answer): bool
-    {
-        if (\is_bool($answer)) {
-            return $answer;
-        }
-
-        if (\is_string($answer)) {
-            $lower = strtolower(trim($answer));
-
-            return \in_array($lower, ['yes', 'true', '1'], true);
-        }
-
-        if (\is_int($answer)) {
-            return 1 === $answer;
-        }
-
-        return false;
     }
 }

@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionAnswerResolver;
 use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 
@@ -27,6 +28,7 @@ final readonly class AnswerToolQuestionHandler
 {
     public function __construct(
         private readonly ToolQuestionStoreInterface $store,
+        private readonly ToolQuestionAnswerResolver $answerResolver = new ToolQuestionAnswerResolver(),
     ) {
     }
 
@@ -63,7 +65,7 @@ final readonly class AnswerToolQuestionHandler
             return;
         }
 
-        $answer = $this->resolveAnswer($command->payload['answer'] ?? null);
+        $answer = $this->answerResolver->resolve($command->payload['answer'] ?? null);
 
         try {
             $this->store->answer($requestId, $answer);
@@ -77,29 +79,5 @@ final readonly class AnswerToolQuestionHandler
                 ],
             ));
         }
-    }
-
-    /**
-     * Resolve a boolean from various answer formats.
-     *
-     * Accepts: bool, 'yes'/'no'/'true'/'false'/'1'/'0', int 1/0.
-     */
-    private function resolveAnswer(mixed $answer): bool
-    {
-        if (\is_bool($answer)) {
-            return $answer;
-        }
-
-        if (\is_string($answer)) {
-            $lower = strtolower(trim($answer));
-
-            return \in_array($lower, ['yes', 'true', '1'], true);
-        }
-
-        if (\is_int($answer)) {
-            return 1 === $answer;
-        }
-
-        return false;
     }
 }

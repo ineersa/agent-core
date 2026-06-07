@@ -190,12 +190,7 @@ final class SpyToolQuestionStore implements \Ineersa\CodingAgent\Tool\ToolQuesti
         return true;
     }
 
-    public function createQueryBuilder(): \Doctrine\ORM\QueryBuilder
-    {
-        throw new \RuntimeException('Not implemented in spy');
-    }
-
-    public function findUnemittedPending(string $runId): array
+    public function findUnemittedPendingQuestions(): array
     {
         return [];
     }
@@ -216,6 +211,11 @@ final class SpyToolQuestionStore implements \Ineersa\CodingAgent\Tool\ToolQuesti
 
     public function cancel(string $requestId): void
     {
+    }
+
+    public function cancelPendingQuestionsCreatedBefore(\DateTimeImmutable $cutoff): int
+    {
+        return 0;
     }
 
     public function create(\Ineersa\CodingAgent\Entity\ToolQuestion $question): \Ineersa\CodingAgent\Entity\ToolQuestion

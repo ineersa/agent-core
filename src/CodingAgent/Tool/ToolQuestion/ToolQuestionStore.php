@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool\ToolQuestion;
 
 use Doctrine\ORM\EntityManagerInterface;
-use Doctrine\ORM\QueryBuilder;
 use Ineersa\CodingAgent\Entity\ToolQuestion;
 use Ineersa\CodingAgent\Entity\ToolQuestionStatusEnum;
 use Psr\Log\LoggerInterface;
@@ -18,7 +17,7 @@ use Psr\Log\LoggerInterface;
  * to avoid stale identity-map state when another process writes the
  * answer (e.g. controller writes answer while tool worker polls).
  *
- * All methods use explicit flush() to commit changes immediately,
+ * All mutations use explicit flush() to commit changes immediately,
  * since the caller may be in a different process.
  */
 final class ToolQuestionStore implements ToolQuestionStoreInterface
@@ -63,31 +62,18 @@ final class ToolQuestionStore implements ToolQuestionStoreInterface
     }
 
     /**
-     * Create a QueryBuilder against the tool_question table.
-     * Used by ToolQuestionPoller for broad queries across runs.
-     */
-    public function createQueryBuilder(): QueryBuilder
-    {
-        $this->entityManager->clear();
-
-        return $this->entityManager->getRepository(ToolQuestion::class)->createQueryBuilder('tq');
-    }
-
-    /**
-     * Find pending questions for a run that have not yet been emitted.
-     * Returns fresh DB results, ordered by created_at ascending.
+     * Find all un-emitted pending questions across all runs, ordered by
+     * created_at ascending.
      *
      * @return list<ToolQuestion>
      */
-    public function findUnemittedPending(string $runId): array
+    public function findUnemittedPendingQuestions(): array
     {
         $this->entityManager->clear();
 
         $qb = $this->entityManager->getRepository(ToolQuestion::class)->createQueryBuilder('tq');
-        $qb->where('tq.runId = :runId')
-            ->andWhere('tq.status = :status')
+        $qb->where('tq.status = :status')
             ->andWhere('tq.emittedAt IS NULL')
-            ->setParameter('runId', $runId)
             ->setParameter('status', ToolQuestionStatusEnum::Pending)
             ->orderBy('tq.createdAt', 'ASC');
 
@@ -119,6 +105,11 @@ final class ToolQuestionStore implements ToolQuestionStoreInterface
      * Answer a pending question. Sets the boolean answer and marks status Answered.
      * Uses fresh DB read to ensure we have the latest state.
      *
+     * Idempotent: if the question is already resolved (answered or cancelled),
+     * returns false without overwriting state. This prevents a late answer from
+     * racing with cancellation, or a duplicate answer from mutating a resolved
+     * question.
+     *
      * @return bool true if the question was found and answered
      */
     public function answer(string $requestId, bool $answer): bool
@@ -129,6 +120,19 @@ final class ToolQuestionStore implements ToolQuestionStoreInterface
                 'component' => 'tool_question.store',
                 'event_type' => 'tool_question.answer_not_found',
                 'request_id' => $requestId,
+            ]);
+
+            return false;
+        }
+
+        // Guard against overwriting already-resolved state (e.g. late answer
+        // racing with cancellation, or duplicate answer_tool_question command).
+        if ($question->isResolved()) {
+            $this->logger->info('tool_question.answer_skipped_resolved', [
+                'component' => 'tool_question.store',
+                'event_type' => 'tool_question.answer_skipped_resolved',
+                'request_id' => $requestId,
+                'current_status' => $question->status->value,
             ]);
 
             return false;
@@ -172,11 +176,28 @@ final class ToolQuestionStore implements ToolQuestionStoreInterface
 
     /**
      * Cancel a pending question (tool detected cancellation while waiting).
+     *
+     * Idempotent: if the question is already resolved, returns without
+     * changing state. This prevents a cancel racing after an answer from
+     * flipping status to Cancelled.
      */
     public function cancel(string $requestId): void
     {
         $question = $this->findByRequestId($requestId);
         if (null === $question) {
+            return;
+        }
+
+        // Guard against overwriting already-resolved state (e.g. cancel
+        // racing after answer_tool_question already resolved the question).
+        if ($question->isResolved()) {
+            $this->logger->info('tool_question.cancel_skipped_resolved', [
+                'component' => 'tool_question.store',
+                'event_type' => 'tool_question.cancel_skipped_resolved',
+                'request_id' => $requestId,
+                'current_status' => $question->status->value,
+            ]);
+
             return;
         }
 
@@ -188,5 +209,51 @@ final class ToolQuestionStore implements ToolQuestionStoreInterface
             'event_type' => 'tool_question.cancelled',
             'request_id' => $requestId,
         ]);
+    }
+
+    /**
+     * Cancel all pending questions created before the given cutoff.
+     *
+     * Used on controller startup to clean up stale pending questions
+     * from a previous controller crash/restart where no blocked tool
+     * worker remains to receive a late answer. Questions are marked
+     * Cancelled (not deleted) to preserve audit trail.
+     *
+     * Uses DQL UPDATE to avoid loading/resolving individual entities,
+     * since this is a bulk cleanup operation.
+     *
+     * @return int number of questions cancelled
+     */
+    public function cancelPendingQuestionsCreatedBefore(\DateTimeImmutable $cutoff): int
+    {
+        $this->entityManager->clear();
+
+        $now = new \DateTimeImmutable();
+
+        $qb = $this->entityManager->getRepository(ToolQuestion::class)->createQueryBuilder('tq');
+        $count = (int) $qb->update()
+            ->set('tq.status', ':cancelled')
+            ->set('tq.answeredAt', ':now')
+            ->where('tq.status = :pending')
+            ->andWhere('tq.createdAt < :cutoff')
+            ->setParameter('cancelled', ToolQuestionStatusEnum::Cancelled->value)
+            ->setParameter('now', $now)
+            ->setParameter('pending', ToolQuestionStatusEnum::Pending->value)
+            ->setParameter('cutoff', $cutoff)
+            ->getQuery()
+            ->execute();
+
+        $this->entityManager->clear();
+
+        if ($count > 0) {
+            $this->logger->info('tool_question.cleanup_stale', [
+                'component' => 'tool_question.store',
+                'event_type' => 'tool_question.cleanup_stale',
+                'count' => $count,
+                'cutoff' => $cutoff->format(\DateTimeInterface::ATOM),
+            ]);
+        }
+
+        return $count;
     }
 }
