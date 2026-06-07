@@ -1,6 +1,6 @@
 ---
 name: task-workflow
-description: "Step-by-step procedures for each task workflow phase. Load this skill when: starting any task phase (task-start, task-to-pr, task-review-iterate, task-done), after compaction when you see `<current_task>` and need to recall exact steps, preparing fork instructions, or running reviewer workflows. Covers orchestrator model, phase procedures, and compaction resilience."
+description: "Step-by-step procedures for each task workflow phase. Load this skill when: starting any task phase (task-start, task-to-pr, task-review-iterate, task-done), preparing fork instructions, or running reviewer workflows. Covers orchestrator model, phase procedures, and compaction resilience."
 ---
 
 # Task Workflow Procedures
@@ -87,10 +87,4 @@ Read-only planning. No status changes, no file edits, no forks.
 
 ## Compaction resilience
 
-After compaction, the `task-workflow` extension reinjects `<current_task>` as a custom message containing:
-- Active task identity (status, branch, worktree, PR URL)
-- Acceptance criteria and recent work log
-- Orchestrator role reminder
-- Phase-specific STOP boundary
-
-This ensures the model stays oriented after context compression. Full procedures (this file) live in the `task-workflow` skill and prompt files. The injection only provides identity and boundaries — load this skill when you need exact workflow steps.
+After compaction, the `task-workflow` skill documents next steps. Use `task_list` to inspect active tasks, and load this skill for exact phase procedures.

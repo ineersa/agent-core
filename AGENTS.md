@@ -125,11 +125,11 @@ task-explain → task-start → task-to-pr → task-done
               (address feedback)
 ```
 
-**Load the `task-workflow` skill** when: starting any task phase (task-start, task-to-pr, task-review-iterate, task-done), after compaction when you see `<current_task>` and need to recall exact steps, or when preparing fork instructions and reviewer workflows.
+**Load the `task-workflow` skill** when: starting any task phase (task-start, task-to-pr, task-review-iterate, task-done), or when preparing fork instructions and reviewer workflows.
 
 ### Compaction resilience
 
-After compaction, the `task-workflow` extension reinjects `<current_task>` as a custom message with active task identity, orchestrator role reminder, and phase-specific STOP boundary. When you see `<current_task>` and need exact workflow steps, **load the `task-workflow` skill**.
+After compaction, the `task-workflow` skill documents next steps. Use `task_list` to inspect active tasks, and load this skill for exact phase procedures.
 
 ## Docs map
 
