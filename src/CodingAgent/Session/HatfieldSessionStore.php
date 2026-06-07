@@ -32,8 +32,9 @@ use Ineersa\CodingAgent\Entity\HatfieldSession;
  * external representations (session_id / runId) use its string form.
  * There is no separate public_id column.
  *
- * All writes are protected by a Symfony Lock (FlockStore) to prevent
- * concurrent corruption from multiple processes.
+ * Session metadata updates are persisted via Doctrine ORM with its own
+ * transactional guarantees. State and event files are locked independently
+ * by their respective stores (SessionRunStore, SessionRunEventStore).
  */
 final class HatfieldSessionStore
 {

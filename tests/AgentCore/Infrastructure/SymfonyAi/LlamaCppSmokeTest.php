@@ -468,7 +468,7 @@ final class LlamaCppSmokeTest extends KernelTestCase
             'Session dir: '.$sessionDir,
         ];
 
-        foreach (['state.json', 'events.jsonl', 'transcript.jsonl', 'idempotency.jsonl'] as $file) {
+        foreach (['state.json', 'events.jsonl', 'idempotency.jsonl'] as $file) {
             $path = $sessionDir.'/'.$file;
             if (!is_file($path)) {
                 $chunks[] = "--- {$file}: missing ---";
