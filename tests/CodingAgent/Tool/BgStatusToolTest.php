@@ -6,7 +6,9 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
+use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
@@ -38,12 +40,20 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
     private StackToolExecutionContextAccessor $contextAccessor;
     private BgStatusTool $tool;
     private string $tmpDir;
+    private OutputCapConfig $outputCapCfg;
 
     protected function setUp(): void
     {
         parent::setUp();
 
         $this->tmpDir = TestDirectoryIsolation::createOsTempDir('hatfield_bgtool_test', 0o750);
+
+        // Use a high default cap so existing tests are unaffected.
+        $this->outputCapCfg = new OutputCapConfig(
+            storageDir: $this->tmpDir.'/output-cap',
+            defaultCap: 20000,
+            docCap: 50000,
+        );
 
         $this->config = new BackgroundProcessConfig(
             storageDir: $this->tmpDir,
@@ -56,7 +66,12 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $lifecycle = new ProcessLifecycle($this->config, new NullLogger());
         $this->manager = new BackgroundProcessManager($store, $lifecycle, $this->config, new NullLogger());
         $this->contextAccessor = new StackToolExecutionContextAccessor();
-        $this->tool = new BgStatusTool($this->manager, $this->config, $this->contextAccessor);
+        $this->tool = new BgStatusTool(
+            $this->manager,
+            $this->config,
+            $this->contextAccessor,
+            new OutputCap($this->outputCapCfg),
+        );
     }
 
     protected function tearDown(): void
@@ -200,6 +215,55 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $this->assertNotContains('echo "B-for-test-A"', $commandsA);
         $this->assertContains('echo "B-for-test-A"', $commandsB);
         $this->assertNotContains('echo "A-for-test-B"', $commandsB);
+    }
+
+    /* ── log cap regression ── */
+
+    public function testLogCapCapsLargeOutput(): void
+    {
+        // Create a low-cap OutputCap variant for this test.
+        $lowCapCfg = new OutputCapConfig(
+            storageDir: $this->tmpDir.'/output-cap-low',
+            defaultCap: 200,
+            docCap: 200,
+        );
+        $lowCap = new OutputCap($lowCapCfg);
+        $lowCapTool = new BgStatusTool(
+            $this->manager,
+            $this->config,
+            $this->contextAccessor,
+            $lowCap,
+        );
+
+        $sentinel = 'CAP_SHOULD_HIDE_'.bin2hex(random_bytes(8));
+
+        // Generate output that exceeds the cap. The sentinel must appear
+        // after the cap threshold so it would be in the tail if uncapped.
+        $padding = str_repeat('x', 170);
+        $command = 'printf \''.$padding.'\n'.$sentinel.'\n\'';
+
+        $started = $this->withContext(self::TEST_SESSION, fn () => $this->manager->start($command, self::TEST_SESSION));
+        usleep(100_000);
+
+        $result = $this->withContext(self::TEST_SESSION, fn (): string => $lowCapTool(['action' => 'log', 'pid' => $started->pid]));
+
+        $this->assertStringContainsString('Output capped', $result);
+        $this->assertStringNotContainsString($sentinel, $result, 'Large log sentinel must not leak past output cap');
+
+        // The persisted file must contain the full content including the sentinel.
+        $this->assertDirectoryExists($lowCapCfg->storageDir);
+        $files = glob($lowCapCfg->storageDir.'/*.txt') ?: [];
+        $this->assertNotEmpty($files, 'Expected at least one persisted output-cap file');
+
+        $foundSentinel = false;
+        foreach ($files as $file) {
+            $content = (string) file_get_contents($file);
+            if (str_contains($content, $sentinel)) {
+                $foundSentinel = true;
+                break;
+            }
+        }
+        $this->assertTrue($foundSentinel, 'Persisted output-cap file must contain the full original sentinel');
     }
 
     /* ── Error: missing action ── */
