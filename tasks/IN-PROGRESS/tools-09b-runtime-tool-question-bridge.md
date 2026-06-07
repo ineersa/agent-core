@@ -67,7 +67,7 @@ This follows TOOLS-09, which implements bash as a background-managed foreground-
 Status: IN-PROGRESS
 Branch: task/tools-09b-runtime-tool-question-bridge
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-09b-runtime-tool-question-bridge
-Fork run: 3jmcn23ucg4z
+Fork run: o30s2waurjqw
 PR URL:
 PR Status:
 Started: 2026-06-06T23:33:30.150Z
@@ -196,3 +196,9 @@ Completed:
 - Summary: Fork 3jmcn23ucg4z completed final review-nit cleanup and committed 2fb59cb0 (`TOOLS-09B: Address final review nits`). Worktree verified clean at HEAD 2fb59cb0. Commit changed 3 files (162 insertions, 2 deletions): removed unused ToolQuestion import from AnswerToolQuestionHandlerTest, documented ToolQuestionStore::findByRequestId() EntityManager::clear() cross-process fresh-read rationale and detachment side effect, and added RuntimeBashBackgroundPromptAdapterTest with no-context fallback, answered-yes, and elapsed-at-threshold coverage. Optional TickPollListener test was skipped because there is no existing test file and creating one from scratch would be high churn; cancellation/timeout adapter tests were skipped to avoid brittle sleep/time manipulation tests.
 - Verified fork 3jmcn23ucg4z commit 2fb59cb0 on task/tools-09b-runtime-tool-question-bridge, worktree clean, commit stat 3 files / 162+ / 2-.
 - Next task-to-pr step: final reviewer rerun on HEAD 2fb59cb0.
+
+## Task workflow update - 2026-06-07T17:25:15.437Z
+- Recorded fork run: o30s2waurjqw
+- Summary: Reviewer on HEAD 2fb59cb0 returned APPROVE WITH SUGGESTIONS with Critical Issues none and Issues none. Remaining low-risk polish delegated to fork o30s2waurjqw: add tool_question to Doctrine config header comment, document RuntimeBashBackgroundPromptAdapter process-mode/controller poller limitation for in-process mode, and add AnswerToolQuestionHandler store failure catch-block test. Explicit skips: logging/ack on store->answer() false (low-priority behavior/protocol change), composite index on (status, emitted_at) premature for local SQLite, logPath length validation low risk, and composer.lock separation/main lock sync as separate hygiene concern.
+- Reviewer on HEAD 2fb59cb0: APPROVE WITH SUGGESTIONS, Critical Issues none, Issues none. Tiny final doc/test polish delegated to fork o30s2waurjqw.
+- Fork o30s2waurjqw launched for final polish before focused validation and CODE-REVIEW move.
