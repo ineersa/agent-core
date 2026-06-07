@@ -36,7 +36,7 @@ Notes:
 Status: IN-PROGRESS
 Branch: task/codex-auth-profiles-multiple-accounts
 Worktree: /home/ineersa/projects/agent-core-worktrees/codex-auth-profiles-multiple-accounts
-Fork run: ut2bh7fej4gj
+Fork run: r0lndgf0ic6h
 PR URL: https://github.com/ineersa/agent-core/pull/100
 PR Status: open
 Started: 2026-06-07T22:22:43.380Z
@@ -102,3 +102,8 @@ Castor Check Output SHA256: 26180184825ff62806f719a2d50976c001d18700360ac193fe10
 ## Task workflow update - 2026-06-07T23:35:28.260Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: Review-iteration needed after user smoke test: PHAR `auth:codex --profile canada` and `auth:codex --help` fail because Symfony Console already has a global `--profile` option, producing `An option named "profile" already exists.` Need rename the command-specific option away from `--profile` and update docs/tests/errors accordingly.
+
+## Task workflow update - 2026-06-07T23:36:07.897Z
+- Recorded fork run: r0lndgf0ic6h
+- Validation: User smoke failure reproduced conceptually: command-specific `--profile` conflicts with Symfony Console global `--profile`.
+- Summary: Launched review-iteration fork r0lndgf0ic6h to fix user smoke failure: Symfony Console already owns global `--profile`, causing `auth:codex --help` and `auth:codex --profile canada` to fail with `An option named "profile" already exists.` Fork will rename Codex profile option to `--auth-profile`, update command hints/docs/tests/default comments, run focused Castor validation plus PHAR smoke (`auth:codex --help`, invalid auth-profile).
