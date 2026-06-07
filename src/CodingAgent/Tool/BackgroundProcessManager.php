@@ -546,10 +546,14 @@ final class BackgroundProcessManager
      * Safe to call repeatedly — only queries unfinished entities, checks
      * status files and /proc/<pid>, and flushes any newly-resolved
      * entities. Already-finished entities are skipped.
+     *
+     * @param string|null $sessionId optional session filter. When provided,
+     *                               only processes for this session are
+     *                               refreshed. Pass null for all.
      */
-    public function refreshAllUnfinished(): void
+    public function refreshAllUnfinished(?string $sessionId = null): void
     {
-        $entities = $this->store->fetchAllUnfinished();
+        $entities = $this->store->fetchAllUnfinished($sessionId);
 
         foreach ($entities as $entity) {
             $this->resolveEntityStatus($entity);

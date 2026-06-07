@@ -289,6 +289,12 @@ services:
     arguments:
       $dispatcher: '@event_dispatcher'
 
+  Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller:
+    arguments:
+      # Session scoping prevents O(N) cross-session filesystem scans.
+      # Null/unset means unscoped (all processes), set = scoped to one run.
+      $sessionId: '%env(HATFIELD_SESSION_ID)%'
+
   # Stream observer delegates to Symfony EventDispatcher with per-delta subscribers.
   Ineersa\CodingAgent\Runtime\Stream\LlmStreamDispatchObserver:
     arguments:

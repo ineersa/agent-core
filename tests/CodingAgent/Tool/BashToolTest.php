@@ -425,7 +425,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertNotNull($entities[0]->backgroundedAt, 'Background process should have backgroundedAt set');
 
         // Verify the log contains our unique marker
-        \usleep(200_000); // Wait for log flush
+        \usleep(50_000); // Brief wait for log flush
         $logContent = \file_get_contents($entities[0]->logPath);
         $this->assertStringContainsString('background-marker-12345', $logContent ?: '');
 
@@ -437,16 +437,23 @@ final class BashToolTest extends IsolatedKernelTestCase
 
     public function testProcessFinishesWhilePromptBlocksReturnsCompletedOutput(): void
     {
-        // Adapter that blocks for 400ms (simulating waiting for user input
-        // via TUI) then returns true (user accepted backgrounding).
+        // Adapter blocks briefly (simulating user considering the prompt)
+        // while the command finishes.  BashTool must re-check process
+        // status after shouldBackground() returns instead of blindly
+        // backgrounding a completed command.
+        //
+        // Timing: the supervision loop polls at 50ms intervals.  First poll
+        // at ~50ms calls shouldBackground.  Adapter blocks 200ms.  During
+        // that block the process (sleep 0.2 ≈ 200ms) finishes.  On return,
+        // the re-check finds the process completed.
         $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
         $promptAdapter
             ->expects($this->once())
             ->method('shouldBackground')
             ->willReturnCallback(function (): bool {
-                \usleep(400_000); // 400ms block
+                \usleep(200_000); // Block while the command finishes
 
-                return true; // Simulate user accepting
+                return true;
             });
 
         $this->bashConfig = new BashToolConfig(
@@ -457,10 +464,12 @@ final class BashToolTest extends IsolatedKernelTestCase
         );
         $this->createManager();
 
-        // Command that finishes while the adapter is blocking (200ms < 400ms).
+        // Command that finishes while the adapter is blocking.
+        // sleep 0.1 (≈100ms) is longer than the poll interval (50ms)
+        // but short enough to finish during the 200ms adapter block.
         $result = $this->withContext(self::TEST_SESSION, function () use ($promptAdapter): string {
             return ($this->makeBashTool($promptAdapter))([
-                'command' => 'sleep 0.2 && echo "Hello world"',
+                'command' => 'sleep 0.1 && echo "Hello world"',
             ]);
         });
 

@@ -50,6 +50,15 @@ final class BackgroundProcessCompletionPoller
         private readonly AgentSessionClient $sessionClient,
         private readonly RuntimeEventEmitter $emitter,
         private readonly LoggerInterface $logger,
+        /**
+         * Optional session/run ID to scope queries.
+         * When null or empty, operates across all sessions (unscoped).
+         * When set, only processes for this session are polled,
+         * preventing O(N) cross-session filesystem scans from stale
+         * background processes created by earlier or unrelated runs.
+         * Set via DI from HATFIELD_SESSION_ID env var.
+         */
+        private readonly ?string $sessionId = null,
     ) {
     }
 
@@ -75,8 +84,11 @@ final class BackgroundProcessCompletionPoller
         // status file; the DB entity still has finishedAt=NULL. Without
         // this refresh, findPendingNotifications() below would never
         // select it because the query requires finishedAt IS NOT NULL.
+        //
+        // When sessionId is set, only processes for the current session
+        // are refreshed to avoid O(N) cross-session filesystem scans.
         try {
-            $this->processManager->refreshAllUnfinished();
+            $this->processManager->refreshAllUnfinished($this->sessionId);
         } catch (\Throwable $e) {
             $this->logger->warning('bg_process_completion.refresh_failed', [
                 'component' => 'bg_process_completion.poller',
@@ -88,7 +100,7 @@ final class BackgroundProcessCompletionPoller
         }
 
         try {
-            $processes = $this->processStore->findPendingNotifications();
+            $processes = $this->processStore->findPendingNotifications($this->sessionId);
         } catch (\Throwable $e) {
             $this->logger->warning('bg_process_completion.poller_query_failed', [
                 'component' => 'bg_process_completion.poller',
