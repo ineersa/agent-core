@@ -131,3 +131,8 @@ Castor Check Output SHA256: 26180184825ff62806f719a2d50976c001d18700360ac193fe10
 - Pulled integration checkout: Already up to date..
 - Validation: Pre-DONE check: PR #100 state MERGED on GitHub at head 0e70332f.; Pre-DONE sync: git pull --ff-only fast-forwarded main to origin/main merge commit 7deee7e9.; Task branch HEAD before DONE: ee975c52, one commit ahead of origin/task/codex-auth-profiles-multiple-accounts.
 - Summary: Completing after PR #100 was already merged on GitHub at 0e70332f. A subsequent user smoke test found Symfony Console global `--profile` collision; review-iteration commit ee975c52 on the local task branch renamed the Codex auth option to `--auth-profile` and passed focused Castor + PHAR smoke validation. Merging task branch now to include that smoke fix on main.
+
+## Task workflow update - 2026-06-07T23:50:07.691Z
+- Updated PR Status: merged
+- Validation: LLM_MODE=true castor check passed on integration checkout.; deptrac: ok (violations=0, errors=0, uncovered=717, allowed=901).; PHAR rebuilt successfully; PHAR smoke list/about/agent --help/writable-dir isolation/cache-isolation all ok.; unit tests: ok (tests=1977, assertions=5766, errors=0, failures=0, skipped=0).; controller E2E: ok (tests=1, assertions=7).; llm-real: ok (tests=4, assertions=29).; tui E2E: ok (tests=5, assertions=18).; phpstan: ok (errors=0, file_errors=0).; cs-check: ok (files_fixed=0).; quality: ok.
+- Summary: Post-merge validation completed on main after merging the local smoke-fix commit ee975c52 and task metadata commit. PR #100 had already been merged at 0e70332f; DONE merge added the `--auth-profile` collision fix to main and removed the task worktree.
