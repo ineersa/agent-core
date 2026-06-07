@@ -52,10 +52,11 @@ abstract class ControllerE2eTestCase extends TestCase
 
     /**
      * @return list<string> Extra CLI arguments appended to `agent --controller`.
+     *                         Default excludes bash for deterministic E2E tests.
      */
     protected function controllerExtraArgs(): array
     {
-        return [];
+        return ['--tools-excluded=bash'];
     }
 
     /**
