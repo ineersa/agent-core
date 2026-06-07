@@ -67,7 +67,7 @@ This follows TOOLS-09, which implements bash as a background-managed foreground-
 Status: IN-PROGRESS
 Branch: task/tools-09b-runtime-tool-question-bridge
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-09b-runtime-tool-question-bridge
-Fork run: 92s164cbq9nx
+Fork run: f3yg0pj1tpq2
 PR URL: https://github.com/ineersa/agent-core/pull/99
 PR Status: open
 Started: 2026-06-06T23:33:30.150Z
@@ -288,3 +288,9 @@ Castor Check Output SHA256: 47cd96b0b58c66f04734662d5fb5d2abe66498d8979238ab044a
 - Validation: Verified worktree clean and HEAD commit exists with `git status --porcelain`, `git log --oneline -5`, and `git show --stat --oneline HEAD`.; Fork-reported `castor test`: 1886 tests, 5518 assertions, 0 failures.; Fork-reported `castor deptrac`: 0 violations.; Fork-reported `castor phpstan`: 0 errors.; Fork-reported `castor cs-check`: 0 files fixed.
 - Summary: Fork 92s164cbq9nx completed background-process completion follow-up implementation. Commit 6cad8734 (`TOOLS-09B: Follow up on background process completion`) on task branch, worktree clean. Commit-local stat: 13 files changed, 722 insertions, 2 deletions. Implemented pi-equivalent behavior where explicitly-backgrounded bash processes send a synthetic `[BG_PROCESS_DONE] ... Output (last 3000 chars)` follow-up via native `UserCommand(type: 'follow_up')` after completion. Key changes: added `backgroundedAt` and `completionNotifiedAt` to `BackgroundProcess`, migration `Version20260607000000`, store/manager methods to mark backgrounded/notified and find pending notifications, BashTool marks only accepted-background processes as backgrounded, new `BackgroundProcessCompletionPoller` wired into `HeadlessController`, new `RuntimeEventTypeEnum::BackgroundProcessCompleted`, and tests for poller/runtime enum/bash path. Design preserves foreground bash behavior: normal foreground completions are not auto-notified by the poller.
 - Implementation phase STOP boundary observed after recording fork result: no reviewer, no castor check, no move_task(to=CODE-REVIEW), no PR creation, no task-branch push from orchestrator.
+
+## Task workflow update - 2026-06-07T20:30:34.902Z
+- Recorded fork run: f3yg0pj1tpq2
+- Summary: Launched fix fork f3yg0pj1tpq2 for user-reported smoke bug: no `[BG_PROCESS_DONE]` follow-up appears when a backgrounded process completes. Scout/root cause: `BackgroundProcessCompletionPoller` queries `finishedAt IS NOT NULL` but never refreshes DB process status from status files/proc, so a process that completes without manual `bg_status` remains `finishedAt = NULL` and is never selected. Fork instructed to add a production refresh API on `BackgroundProcessManager`, call it before `findPendingNotifications()`, add regression coverage for `backgroundedAt != null` + `finishedAt = null` + status file completion, preserve foreground/non-backgrounded no-notify behavior, and update BashTool background handoff text to say the user will be notified when the process finishes. Fork instructed to run Castor test/deptrac/phpstan/cs-check, commit, and stop without push/PR/status changes.
+- User smoke retest after commit 6cad8734 still showed no automatic completion message for `sleep 60 && echo Hello`; manual `bg_status log` confirmed the process completed and output existed.
+- Scout confirmed primary defect is stale DB status: the shell wrapper writes the status file, but the controller completion poller did not call BackgroundProcessManager status resolution before querying pending notifications.
