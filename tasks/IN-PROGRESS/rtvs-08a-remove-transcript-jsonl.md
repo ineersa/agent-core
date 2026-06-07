@@ -37,7 +37,7 @@ No compatibility fallback to old `transcript.jsonl` should be added unless expli
 Status: IN-PROGRESS
 Branch: task/rtvs-08a-remove-transcript-jsonl
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-08a-remove-transcript-jsonl
-Fork run:
+Fork run: btx3cu9spniy
 PR URL:
 PR Status:
 Started: 2026-06-07T21:23:43.851Z
@@ -53,3 +53,12 @@ Completed:
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/rtvs-08a-remove-transcript-jsonl.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/rtvs-08a-remove-transcript-jsonl.
 - Summary: Started RTVS-08A task-start phase. Main agent remains orchestrator; implementation will be delegated to a fork in the task worktree.
+
+## Task workflow update - 2026-06-07T21:32:04.340Z
+- Validation: No validation run in main agent during task-start; implementation delegated to fork per workflow.
+- Summary: Task-start scout recon completed in worktree /home/ineersa/projects/agent-core-worktrees/rtvs-08a-remove-transcript-jsonl. Scouts confirmed transcript.jsonl removal touches HatfieldSessionStore, SessionInitializer, SubmitListener, RuntimeEventEmitter, TranscriptPersistenceService, services.yaml, tests/diagnostics, docs/AGENTS/skills. Critical implementation gap: events.jsonl currently cannot replay user messages because RuntimeEventTranslator emits no user.message_submitted and AgentCore command-applied events omit steer/follow_up message text. Fork instructions will include adding replayable user-message runtime mappings and canonical payload data before removing transcript.jsonl I/O.
+
+## Task workflow update - 2026-06-07T22:10:37.612Z
+- Recorded fork run: btx3cu9spniy
+- Validation: castor deptrac: PASS (0 violations); castor phpstan: PASS (0 errors); castor cs-check: PASS; castor test --filter=HatfieldSessionStoreTest: PASS (8 tests, 32 assertions); castor test --filter=RuntimeEventMapperTest: PASS (33 tests, 111 assertions); castor test --filter=TranscriptProjectorTest: PASS (65 tests, 241 assertions); castor test --filter=RuntimeEventPollerTest: PASS (22 tests); castor test --filter=ActivityStateMachineTest: PASS (30 tests); castor test: PASS (1850 tests, 5457 assertions); castor check: NOT RUN by fork; requires tmux + llama.cpp:9052, will be run by task-to-pr/move_task CODE-REVIEW gate when requested
+- Summary: Implementation fork completed RTVS-08A and committed 57a4fffc on branch task/rtvs-08a-remove-transcript-jsonl. Removed production transcript.jsonl I/O and deleted persisted TranscriptEntry + TranscriptPersistenceService; resume now rebuilds TUI transcript blocks from events.jsonl via SessionRunEventStore → RuntimeEventMapper → TranscriptProjector; user replay gaps closed for initial prompt and steer/follow_up; SubmitListener normal prompts now use canonical runtime projection rather than local persisted echo. Worktree verified clean; diff stat: 36 files changed, 268 insertions, 529 deletions.
