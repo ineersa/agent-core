@@ -11,7 +11,6 @@ use Symfony\AI\Platform\Model;
 use Symfony\AI\Platform\ModelClientInterface;
 use Symfony\AI\Platform\Result\RawHttpResult;
 use Symfony\AI\Platform\StructuredOutput\PlatformSubscriber;
-use Symfony\Component\HttpClient\EventSourceHttpClient;
 use Symfony\Component\Uid\UuidV4;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
@@ -35,7 +34,7 @@ class CodexModelClient implements ModelClientInterface
         'run_id',
     ];
 
-    private readonly EventSourceHttpClient $httpClient;
+    private readonly HttpClientInterface $httpClient;
     private readonly LoggerInterface $logger;
 
     public function __construct(
@@ -47,9 +46,7 @@ class CodexModelClient implements ModelClientInterface
         private readonly string $originator = 'hatfield',
         ?LoggerInterface $logger = null,
     ) {
-        $this->httpClient = $httpClient instanceof EventSourceHttpClient
-            ? $httpClient
-            : new EventSourceHttpClient($httpClient);
+        $this->httpClient = $httpClient;
         $this->logger = $logger ?? new NullLogger();
     }
 
@@ -113,7 +110,13 @@ class CodexModelClient implements ModelClientInterface
 
         $this->logRequestSummary($model, $jsonBody);
 
-        return new RawHttpResult($this->httpClient->request('POST', $this->baseUrl.$this->path, $requestOptions));
+        // Use a bare Http client (no EventSourceHttpClient wrapping) because the
+        // Codex backend may not return text/event-stream Content-Type. Our
+        // CodexSseStream (passed via RawHttpResult) handles SSE parsing
+        // independently of the content-type header.
+        $response = $this->httpClient->request('POST', $this->baseUrl.$this->path, $requestOptions);
+
+        return new RawHttpResult($response, new CodexSseStream());
     }
 
     /**

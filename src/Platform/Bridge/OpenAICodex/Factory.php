@@ -13,7 +13,7 @@ use Symfony\AI\Platform\ModelRouterInterface;
 use Symfony\AI\Platform\Platform;
 use Symfony\AI\Platform\Provider;
 use Symfony\AI\Platform\ProviderInterface;
-use Symfony\Component\HttpClient\EventSourceHttpClient;
+use Symfony\Component\HttpClient\HttpClient;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
@@ -35,9 +35,10 @@ class Factory
         string $name = 'openai-codex',
         ?LoggerInterface $logger = null,
     ): ProviderInterface {
-        $httpClient = $httpClient instanceof EventSourceHttpClient
-            ? $httpClient
-            : new EventSourceHttpClient($httpClient);
+        // Use the raw HttpClientInterface directly — no EventSourceHttpClient
+        // wrapping. The CodexSseStream (inside CodexModelClient) handles SSE
+        // parsing independently of content-type headers.
+        $httpClient ??= HttpClient::create();
 
         return new Provider(
             $name,

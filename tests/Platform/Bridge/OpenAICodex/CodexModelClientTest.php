@@ -9,29 +9,12 @@ use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModelClient;
 use Symfony\AI\Platform\Model;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\HttpClient\EventSourceHttpClient;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Contracts\HttpClient\ResponseInterface as HttpResponse;
 
 final class CodexModelClientTest extends TestCase
 {
-    public function testItWrapsHttpClientInEventSourceHttpClient(): void
-    {
-        $httpClient = new MockHttpClient();
-        $modelClient = new CodexModelClient($httpClient, 'https://chatgpt.com/backend-api', 'test-token', 'acct-123');
-
-        $this->assertInstanceOf(CodexModelClient::class, $modelClient);
-    }
-
-    public function testItAcceptsEventSourceHttpClientDirectly(): void
-    {
-        $httpClient = new EventSourceHttpClient(new MockHttpClient());
-        $modelClient = new CodexModelClient($httpClient, 'https://chatgpt.com/backend-api', 'test-token', 'acct-123');
-
-        $this->assertInstanceOf(CodexModelClient::class, $modelClient);
-    }
-
     public function testItSupportsCodexModel(): void
     {
         $modelClient = new CodexModelClient(new MockHttpClient(), 'https://chatgpt.com/backend-api', 'test-token', 'acct-123');
