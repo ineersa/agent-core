@@ -12,6 +12,13 @@ parameters:
     # Services read this parameter — not the raw env directly.
     app.capture_errors: '%env(bool:HATFIELD_CAPTURE_ERRORS)%'
 
+    # Default session ID for background process completion polling.
+    # Empty means unscoped (operates across all sessions) in
+    # non-controller or test environments. HeadlessController sets
+    # HATFIELD_SESSION_ID to the actual run ID so the poller scopes
+    # its queries and avoids O(N) cross-session filesystem scans.
+    env(HATFIELD_SESSION_ID): ''
+
 services:
   _defaults:
     autowire: true

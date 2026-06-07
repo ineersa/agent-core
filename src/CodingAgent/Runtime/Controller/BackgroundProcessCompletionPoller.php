@@ -44,22 +44,33 @@ final class BackgroundProcessCompletionPoller
      */
     private const int NOTIFICATION_TAIL_CHARS = 3000;
 
+    /**
+     * @param string|null $sessionId optional session/run ID to scope
+     *                               queries. When null or empty string,
+     *                               operates across all sessions
+     *                               (unscoped). Normalized from empty
+     *                               string to null so downstream
+     *                               repository null-guards work correctly.
+     *                               Set via DI from HATFIELD_SESSION_ID
+     *                               env var; defaults to empty string
+     *                               in non-controller/test environments.
+     */
+    private readonly ?string $sessionId;
+
     public function __construct(
         private readonly ProcessStore $processStore,
         private readonly BackgroundProcessManager $processManager,
         private readonly AgentSessionClient $sessionClient,
         private readonly RuntimeEventEmitter $emitter,
         private readonly LoggerInterface $logger,
-        /**
-         * Optional session/run ID to scope queries.
-         * When null or empty, operates across all sessions (unscoped).
-         * When set, only processes for this session are polled,
-         * preventing O(N) cross-session filesystem scans from stale
-         * background processes created by earlier or unrelated runs.
-         * Set via DI from HATFIELD_SESSION_ID env var.
-         */
-        private readonly ?string $sessionId = null,
+        ?string $sessionId = null,
     ) {
+        // Normalize empty string to null so repository null-guards
+        // (null !== $sessionId) work correctly when the env var is
+        // undefined or set to empty string in non-controller contexts.
+        $this->sessionId = (null !== $sessionId && '' !== $sessionId)
+            ? $sessionId
+            : null;
     }
 
     /**

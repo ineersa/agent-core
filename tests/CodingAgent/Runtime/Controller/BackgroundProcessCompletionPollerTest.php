@@ -275,6 +275,32 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $this->assertNotNull($entity->completionNotifiedAt);
     }
 
+    public function testEmptyStringSessionIdNormalizedToNull(): void
+    {
+        $store = self::getContainer()->get(ProcessStore::class);
+        $bgConfig = $this->createBgConfig();
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger());
+        $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
+
+        // Construct with empty string — must be normalized to null
+        $poller = new BackgroundProcessCompletionPoller(
+            processStore: $store,
+            processManager: $manager,
+            sessionClient: $this->clientSpy,
+            emitter: new RuntimeEventEmitter(
+                eventClient: null,
+                transcriptPersistence: null,
+                boundary: new RuntimeExceptionBoundary(new EventDispatcher()),
+                logger: $this->createStub(LoggerInterface::class),
+            ),
+            logger: $this->createStub(LoggerInterface::class),
+            sessionId: '',
+        );
+
+        $ref = new \ReflectionProperty($poller, 'sessionId');
+        $this->assertNull($ref->getValue($poller));
+    }
+
     public function testRegressionFreshBackgroundedProcessWithoutFinishedAt(): void
     {
         // Regression for the bug where a backgrounded process finishes
