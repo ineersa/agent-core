@@ -33,13 +33,13 @@ Notes:
 - Castor validation passes: focused tests, phpstan on changed auth/config/provider files, deptrac, cs-check.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/codex-auth-profiles-multiple-accounts
+Worktree: /home/ineersa/projects/agent-core-worktrees/codex-auth-profiles-multiple-accounts
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-07T22:22:43.380Z
 Completed:
 
 ## Work log
@@ -50,3 +50,10 @@ Completed:
 
 ## Task workflow update - 2026-06-07T21:37:01.242Z
 - Summary: Policy/product clarification from user: support manual provider/profile switching only. The implementation must NOT add automatic failover, retry-on-limit, round-robin, load balancing, or any behavior that switches accounts when one hits a cap. Users may manually select a different configured Codex provider/profile (for example via model/provider selection) when desired. Document this as explicit/manual profile selection for separate paid accounts, not automated usage-limit circumvention.
+
+## Task workflow update - 2026-06-07T22:22:43.380Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/codex-auth-profiles-multiple-accounts.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/codex-auth-profiles-multiple-accounts.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/codex-auth-profiles-multiple-accounts.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/codex-auth-profiles-multiple-accounts.
