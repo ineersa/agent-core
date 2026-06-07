@@ -37,7 +37,7 @@ No compatibility fallback to old `transcript.jsonl` should be added unless expli
 Status: IN-PROGRESS
 Branch: task/rtvs-08a-remove-transcript-jsonl
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-08a-remove-transcript-jsonl
-Fork run: btx3cu9spniy
+Fork run: y6gpiqnm8nn0
 PR URL:
 PR Status:
 Started: 2026-06-07T21:23:43.851Z
@@ -62,3 +62,8 @@ Completed:
 - Recorded fork run: btx3cu9spniy
 - Validation: castor deptrac: PASS (0 violations); castor phpstan: PASS (0 errors); castor cs-check: PASS; castor test --filter=HatfieldSessionStoreTest: PASS (8 tests, 32 assertions); castor test --filter=RuntimeEventMapperTest: PASS (33 tests, 111 assertions); castor test --filter=TranscriptProjectorTest: PASS (65 tests, 241 assertions); castor test --filter=RuntimeEventPollerTest: PASS (22 tests); castor test --filter=ActivityStateMachineTest: PASS (30 tests); castor test: PASS (1850 tests, 5457 assertions); castor check: NOT RUN by fork; requires tmux + llama.cpp:9052, will be run by task-to-pr/move_task CODE-REVIEW gate when requested
 - Summary: Implementation fork completed RTVS-08A and committed 57a4fffc on branch task/rtvs-08a-remove-transcript-jsonl. Removed production transcript.jsonl I/O and deleted persisted TranscriptEntry + TranscriptPersistenceService; resume now rebuilds TUI transcript blocks from events.jsonl via SessionRunEventStore → RuntimeEventMapper → TranscriptProjector; user replay gaps closed for initial prompt and steer/follow_up; SubmitListener normal prompts now use canonical runtime projection rather than local persisted echo. Worktree verified clean; diff stat: 36 files changed, 268 insertions, 529 deletions.
+
+## Task workflow update - 2026-06-07T22:29:44.631Z
+- Recorded fork run: y6gpiqnm8nn0
+- Validation: castor deptrac: PASS (0 violations); castor phpstan: PASS (0 errors); castor cs-check: PASS (0 files fixed); castor test: PASS (1922 tests, 5672 assertions, 0 failures); castor test:controller: PASS (1 test, 7 assertions); castor check: NOT RUN by fork; requires tmux + llama.cpp:9052 and remains required before CODE-REVIEW
+- Summary: Merge-main fork completed. Merged origin/main into task/rtvs-08a-remove-transcript-jsonl: before 57a4fffc, merge commit ca1175d6, final fix commit 110adb66. Merge had 0 git conflicts but full tests found semantic constructor mismatch from main's TOOLS-09B tests still passing removed RuntimeEventEmitter transcriptPersistence named parameter; fork fixed 2 test files and committed. Worktree verified clean at 110adb66.
