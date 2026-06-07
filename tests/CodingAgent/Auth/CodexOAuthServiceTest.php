@@ -66,6 +66,46 @@ final class CodexOAuthServiceTest extends TestCase
         $service->refreshCredentials();
     }
 
+    public function testRefreshCredentialsWithCustomProviderKeyIsIsolated(): void
+    {
+        // Store under work key only
+        $valid = new CodexAuthRecord(
+            access: 'work-access',
+            refresh: 'work-refresh',
+            expires: \time() + 3600,
+            accountId: 'work-account',
+        );
+        $this->storage->saveCredentials('openai-codex-work', $valid);
+
+        $service = new CodexOAuthService($this->storage, $this->refresher);
+
+        // Default key has no stored credentials
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('No stored Codex credentials found');
+
+        $service->refreshCredentials();
+    }
+
+    public function testRefreshCredentialsWithCustomProviderKeyDoesNotFallbackToDefault(): void
+    {
+        // Store under default key only
+        $defaultRecord = new CodexAuthRecord(
+            access: 'default-access',
+            refresh: 'default-refresh',
+            expires: \time() + 3600,
+            accountId: 'default-account',
+        );
+        $this->storage->saveCredentials('openai-codex', $defaultRecord);
+
+        // Service should fail when asked for non-existent key
+        $service = new CodexOAuthService($this->storage, $this->refresher);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('No stored Codex credentials found');
+
+        $service->refreshCredentials('openai-codex-non-existent');
+    }
+
     public function testRefreshCredentialsThrowsWhenRefresherNotConfigured(): void
     {
         $expired = new CodexAuthRecord(

@@ -684,10 +684,53 @@ OpenAICodex platform bridge which talks to the ChatGPT backend at
 - Run `bin/console auth:codex` for OAuth PKCE login (browser-based
   authorization_code flow with local loopback callback).
 - Credentials are stored in `~/.hatfield/auth.json` (0600) keyed
-  by `openai-codex` and are automatically loaded by the Codex provider.
+  by `openai-codex` (default) or `openai-codex-<profile>` when a
+  profile is used. The stored record is automatically loaded by the
+  Codex provider matching the `auth_key` config field.
 - Do **not** set `api_key` or `account_id` in YAML for this provider
   type — Codex credentials are OAuth-only and live in the auth file.
-  If credentials are missing, the provider emits a clear error.
+  If credentials are missing, the provider emits a clear error with
+  the matching auth command.
+
+**Multiple accounts (profiles):**
+
+You can authenticate with multiple OpenAI accounts by using the
+`--profile` option. Each profile stores credentials under a separate
+key in `~/.hatfield/auth.json`:
+
+```bash
+# Default account (key: openai-codex)
+bin/console auth:codex
+
+# Work account (key: openai-codex-work)
+bin/console auth:codex --profile work
+
+# Personal account (key: openai-codex-personal)
+bin/console auth:codex --profile personal
+```
+
+To use a specific profile, configure the provider with `auth_key`:
+
+```yaml
+openai-codex-work:
+    type: codex
+    enabled: true
+    auth_key: openai-codex-work
+    # ... other settings
+
+openai-codex-personal:
+    type: codex
+    enabled: true
+    auth_key: openai-codex-personal
+    # ... other settings
+```
+
+When `auth_key` is not set, the default `openai-codex` key is used.
+
+**⚠ Important:** Profile switching is **manual**. Hatfield does NOT
+automatically fail over to another account when one reaches a rate
+limit or usage cap. Profiles exist purely for managing multiple
+paid OpenAI accounts separately — not for usage-limit circumvention.
 
 **Compat quirks:**
 

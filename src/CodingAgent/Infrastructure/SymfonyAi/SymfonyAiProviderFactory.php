@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi;
 
 use Ineersa\CodingAgent\Auth\CodexAuthStorage;
+use Ineersa\CodingAgent\Auth\CodexOAuthConfig;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Psr\Log\LoggerInterface;
@@ -97,12 +98,27 @@ class SymfonyAiProviderFactory
     private function buildCodexProvider(AiProviderConfig $provider, ProjectedSymfonyModelCatalog $projectedCatalog): ProviderInterface
     {
         if (null === $this->codexAuth) {
-            throw new \RuntimeException(\sprintf('OpenAI Codex provider "%s" requires stored OAuth credentials. Run: bin/console auth:codex', $provider->id));
+            $errorMsg = \sprintf('OpenAI Codex provider "%s" requires stored OAuth credentials. Run: bin/console auth:codex', $provider->id);
+            if (null !== $provider->authKey && '' !== $provider->authKey && CodexOAuthConfig::PROVIDER_KEY !== $provider->authKey) {
+                $errorMsg .= \sprintf(' --profile=%s', preg_replace('/^openai-codex-/', '', $provider->authKey));
+            }
+
+            throw new \RuntimeException($errorMsg);
         }
 
-        $record = $this->codexAuth->loadCredentials();
+        $authKey = $provider->authKey;
+        if (null === $authKey || '' === $authKey) {
+            $authKey = CodexOAuthConfig::PROVIDER_KEY;
+        }
+
+        $record = $this->codexAuth->loadCredentials($authKey);
         if (null === $record) {
-            throw new \RuntimeException(\sprintf('OpenAI Codex provider "%s" requires stored OAuth credentials. Run: bin/console auth:codex', $provider->id));
+            $errorMsg = \sprintf('OpenAI Codex provider "%s" requires stored OAuth credentials. Run: bin/console auth:codex', $provider->id);
+            if (CodexOAuthConfig::PROVIDER_KEY !== $authKey) {
+                $errorMsg .= \sprintf(' --profile=%s', preg_replace('/^openai-codex-/', '', $authKey));
+            }
+
+            throw new \RuntimeException($errorMsg);
         }
 
         // Use the configured baseUrl falling back to the OpenAICodex factory default,

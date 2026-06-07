@@ -49,6 +49,33 @@ final class CodexOAuthConfig
     public const string ORIGINATOR = 'hatfield';
 
     /**
+     * Map a profile name to a provider storage key.
+     *
+     * When profile is null or empty, returns the default PROVIDER_KEY.
+     * When a profile is provided, returns 'openai-codex-<profile>'.
+     *
+     * The profile name is validated for safe characters:
+     * only lowercase letters, digits, hyphens, and underscores are allowed.
+     * Blank, ".", "..", or anything containing slashes/whitespace is rejected.
+     *
+     * @throws \InvalidArgumentException when profile name is invalid
+     */
+    public static function providerKeyForProfile(?string $profile): string
+    {
+        if (null === $profile || '' === trim($profile)) {
+            return self::PROVIDER_KEY;
+        }
+
+        $normalized = strtolower(trim($profile));
+
+        if ('' === $normalized || !preg_match('/^[a-z0-9_-]+$/', $normalized)) {
+            throw new \InvalidArgumentException(\sprintf('Invalid profile name "%s". Only lowercase letters, digits, hyphens, and underscores are allowed.', $profile));
+        }
+
+        return self::PROVIDER_KEY.'-'.$normalized;
+    }
+
+    /**
      * Redirect URI for the given port.
      */
     public static function redirectUriForPort(int $port = self::DEFAULT_PORT): string

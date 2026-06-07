@@ -15,6 +15,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
@@ -176,5 +177,57 @@ final class SymfonyAiProviderFactoryCodexAuthTest extends TestCase
         $this->expectExceptionMessage('requires stored OAuth credentials');
 
         $factory->createProviders();
+    }
+
+    #[DataProvider('authKeyProvider')]
+    public function testCodexProviderWithAuthKeyLoadsCorrectCredentials(
+        ?string $configAuthKey,
+        string $storedKey,
+        bool $shouldSucceed,
+    ): void {
+        $provider = new AiProviderConfig(
+            id: 'openai-codex',
+            type: 'codex',
+            enabled: true,
+            baseUrl: 'https://chatgpt.com/backend-api',
+            authKey: $configAuthKey,
+            models: [
+                'gpt-5.5' => new AiModelDefinition(
+                    id: 'gpt-5.5',
+                    toolCalling: true,
+                    reasoning: true,
+                ),
+            ],
+        );
+
+        // Store credentials under the expected key
+        $this->authStorage->saveCredentials($storedKey, new CodexAuthRecord(
+            access: 'stored-access-token-' . $storedKey,
+            refresh: 'stored-refresh-token',
+            expires: \time() + 3600,
+            accountId: 'stored-account-id',
+        ));
+
+        $factory = $this->createFactory([$provider->id => $provider], $this->authStorage);
+
+        if ($shouldSucceed) {
+            $providers = $factory->createProviders();
+            $this->assertArrayHasKey('openai-codex', $providers);
+        } else {
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage('requires stored OAuth credentials');
+            $factory->createProviders();
+        }
+    }
+
+    /**
+     * @return iterable<string, array{0: string|null, 1: string, 2: bool}>
+     */
+    public static function authKeyProvider(): iterable
+    {
+        yield 'null auth_key loads from default openai-codex' => [null, 'openai-codex', true];
+        yield 'explicit auth_key matches default' => ['openai-codex', 'openai-codex', true];
+        yield 'custom auth_key loads from that key' => ['openai-codex-work', 'openai-codex-work', true];
+        yield 'custom auth_key with default-key storage fails' => ['openai-codex-work', 'openai-codex', false];
     }
 }

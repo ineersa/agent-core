@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\CLI\Auth;
 
+use Ineersa\CodingAgent\Auth\CodexOAuthConfig;
 use Ineersa\CodingAgent\Auth\CodexOAuthService;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
@@ -20,6 +21,14 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  *   bin/console auth:codex --no-browser
  *   bin/console auth:codex --timeout=600 --port=1555
  *   bin/console auth:codex --refresh
+ *   bin/console auth:codex --profile work
+ *   bin/console auth:codex --refresh --profile work
+ *
+ * Profiles allow storing credentials for multiple OpenAI accounts.
+ * Each profile stores under a separate key in auth.json
+ * (e.g. 'openai-codex', 'openai-codex-work', 'openai-codex-personal').
+ * Configure providers with 'auth_key' to select which stored credentials
+ * to use.
  */
 #[AsCommand(name: 'auth:codex', description: 'Authenticate with OpenAI Codex subscription (OAuth PKCE)')]
 final class CodexAuthCommand
@@ -42,18 +51,32 @@ final class CodexAuthCommand
         #[Option(description: 'Refresh existing credentials instead of full login')]
         bool $refresh = false,
 
+        #[Option(description: 'Profile name for multiple accounts (e.g. "work", "personal"). Defaults to primary account.')]
+        ?string $profile = null,
+
         ?OutputInterface $output = null,
     ): int {
-        $io = new SymfonyStyle(new ArgvInput(), $output);
+        try {
+            $providerKey = CodexOAuthConfig::providerKeyForProfile($profile);
+        } catch (\InvalidArgumentException $e) {
+            $io = new SymfonyStyle(new ArgvInput(), $output);
+            $io->error($e->getMessage());
 
-        if ($refresh) {
-            return $this->handleRefresh($io);
+            return Command::FAILURE;
         }
 
-        return $this->handleLogin($io, $noBrowser, $timeout, $port);
+        $io = new SymfonyStyle(new ArgvInput(), $output);
+
+        $profileLabel = null !== $profile ? \sprintf(' (profile: %s)', $profile) : '';
+
+        if ($refresh) {
+            return $this->handleRefresh($io, $providerKey, $profileLabel);
+        }
+
+        return $this->handleLogin($io, $noBrowser, $timeout, $port, $providerKey, $profileLabel);
     }
 
-    private function handleLogin(SymfonyStyle $io, bool $noBrowser, int $timeout, int $port): int
+    private function handleLogin(SymfonyStyle $io, bool $noBrowser, int $timeout, int $port, string $providerKey, string $profileLabel = ''): int
     {
         try {
             $record = $this->oauthService->login(
@@ -61,6 +84,7 @@ final class CodexAuthCommand
                 noBrowser: $noBrowser,
                 timeout: $timeout,
                 port: $port,
+                providerKey: $providerKey,
             );
         } catch (\RuntimeException $e) {
             $io->error(\sprintf('Authentication failed: %s', $e->getMessage()));
@@ -71,17 +95,18 @@ final class CodexAuthCommand
         $expiresAt = date('Y-m-d H:i:s T', $record->expires);
 
         $io->success(\sprintf(
-            'OpenAI Codex authentication successful. Token expires at %s.',
+            'OpenAI Codex authentication successful%s. Token expires at %s.',
+            $profileLabel,
             $expiresAt,
         ));
 
         return Command::SUCCESS;
     }
 
-    private function handleRefresh(SymfonyStyle $io): int
+    private function handleRefresh(SymfonyStyle $io, string $providerKey, string $profileLabel = ''): int
     {
         try {
-            $record = $this->oauthService->refreshCredentials();
+            $record = $this->oauthService->refreshCredentials($providerKey);
         } catch (\RuntimeException $e) {
             $io->error(\sprintf('Token refresh failed: %s', $e->getMessage()));
 
@@ -91,7 +116,8 @@ final class CodexAuthCommand
         $expiresAt = date('Y-m-d H:i:s T', $record->expires);
 
         $io->success(\sprintf(
-            'Token refreshed successfully. New token expires at %s.',
+            'Token refreshed successfully%s. New token expires at %s.',
+            $profileLabel,
             $expiresAt,
         ));
 
