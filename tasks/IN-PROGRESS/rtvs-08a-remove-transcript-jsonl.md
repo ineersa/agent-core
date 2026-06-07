@@ -37,7 +37,7 @@ No compatibility fallback to old `transcript.jsonl` should be added unless expli
 Status: IN-PROGRESS
 Branch: task/rtvs-08a-remove-transcript-jsonl
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-08a-remove-transcript-jsonl
-Fork run: 04a0a881
+Fork run: 8966325f
 PR URL:
 PR Status:
 Started: 2026-06-07T21:23:43.851Z
@@ -72,3 +72,8 @@ Completed:
 - Recorded fork run: 04a0a881
 - Validation: fork-reported raw validation (not accepted as final project validation): tests/static checks passed; parent will rerun Castor commands per AGENTS.md
 - Summary: Reviewer-fix fork addressed APPROVE WITH SUGGESTIONS findings and committed 04a0a881. Fixes include robust SessionInitializer lastSeq fallback for all-null event mapping; cleanup of stale transcript.jsonl docs; deletion of empty HatfieldSessionStoreTest vestiges; RuntimeEventTranslator helper simplification; UserMessageProjectionSubscriber seq comment; added mapper/projector tests for run.started user_messages and follow_up user.message_submitted mapping. Note: fork reported using raw vendor/bin commands due Castor runtime confusion, so parent will rerun required Castor validation before CODE-REVIEW.
+
+## Task workflow update - 2026-06-07T23:45:01.150Z
+- Recorded fork run: 8966325f
+- Validation: castor test --filter=HatfieldSessionStoreTest: PASS (6 tests, 32 assertions); castor phpstan: PASS (0 errors); castor cs-check: PASS (0 files fixed); castor deptrac: PASS (0 violations); castor test: PASS (1932 tests, 5722 assertions); castor check: not run by fork; will be run by move_task CODE-REVIEW gate
+- Summary: Final reviewer-cleanup fork committed 8966325f. Addressed stale HatfieldSessionStore lock docblock and removed transcript.jsonl from LlamaCppSmokeTest diagnostics. Fork verified remaining transcript.jsonl PHP references are intentional: absence assertion and design comment. Worktree clean.
