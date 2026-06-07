@@ -67,7 +67,7 @@ This follows TOOLS-09, which implements bash as a background-managed foreground-
 Status: IN-PROGRESS
 Branch: task/tools-09b-runtime-tool-question-bridge
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-09b-runtime-tool-question-bridge
-Fork run: djx7ma1em7ui
+Fork run: f3ob1q2ca6au
 PR URL:
 PR Status:
 Started: 2026-06-06T23:33:30.150Z
@@ -119,3 +119,10 @@ Completed:
 - Summary: Final reviewer pass after c6774966 returned APPROVE WITH SUGGESTIONS with no Issues and no Critical Issues. Reviewer verified all prior findings fixed: deptrac duplicate removed, ToolQuestionStore answer/cancel idempotent, QueryBuilder/dead API removed, answer parsing consolidated, startup stale cleanup safe, bulk cleanup updates updatedAt, and ToolQuestionRequested family/helper tests present. One reasonable high-value NTH remains: add kernel-backed ToolQuestionStore integration coverage for create/poll/answer/cancel/stale cleanup. Fork djx7ma1em7ui launched with default fork settings to add that test using IsolatedKernelTestCase/test container, run Castor validation, commit, and stop. Other NTHs intentionally skipped: no debug log for no questions found (would add log noise), no extra entity factory validation because the single production caller already caps command preview.
 - Final reviewer subagent verdict on HEAD c6774966: APPROVE WITH SUGGESTIONS, with no actionable Issues/Critical Issues. Security notes and design notes were non-blocking.
 - Fork djx7ma1em7ui launched to address the only reasonable pre-PR NTH: kernel-backed ToolQuestionStore integration test.
+
+## Task workflow update - 2026-06-07T00:56:24.430Z
+- Recorded fork run: f3ob1q2ca6au
+- Validation: `castor test` on HEAD 8143aaf2: PHPUnit completed with tests=1851, assertions=5393, errors=0, failures=0, skipped=4, but command exit code was 1 because PHAR ensure/composer install failed: symfony/ai-agent and symfony/ai-generic-platform are locked at v0.9.0 while composer.json requires dev-main.; Inspected composer state: origin/main and current branch both have composer.json symfony/ai-agent=dev-main, symfony/ai-generic-platform=dev-main, symfony/ai-platform=^0.9, while composer.lock has ai-agent/generic-platform/platform v0.9.0; this is not in the TOOLS-09B diff but blocks validation.
+- Summary: During task-to-pr focused validation on HEAD 8143aaf2, final reviewer returned APPROVE WITH SUGGESTIONS with no Issues/Critical Issues. Remaining NTHs were analyzed and not changed: STARTUP_CLEANUP_CUTOFF already has rationale comments, and RuntimeBashBackgroundPromptAdapter's poll loop is bounded by ToolExecutor's max(1) timeout policy plus BashTool's pre-prompt timeout check. However, `castor test` exited nonzero even though PHPUnit passed (1851 tests, 0 failures/errors) because PHAR ensure/composer install failed on an existing base-branch composer.json/composer.lock mismatch: composer.json requires symfony/ai-agent and symfony/ai-generic-platform dev-main, while composer.lock has v0.9.0. The mismatch is present on origin/main and not introduced by TOOLS-09B (diff origin/main...HEAD has no composer changes), but it blocks required validation/gate. Fork f3ob1q2ca6au launched to minimally sync composer.lock for current constraints, validate with Castor, commit if safe, or report if broad/unrelated.
+- Final reviewer on HEAD 8143aaf2: APPROVE WITH SUGGESTIONS, no Issues/Critical Issues. No more code-review blockers found.
+- Focused validation found a base composer lock mismatch causing `castor test` nonzero despite PHPUnit success. Fork f3ob1q2ca6au launched to minimally sync the lock and rerun focused Castor validation.
