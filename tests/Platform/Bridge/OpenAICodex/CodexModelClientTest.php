@@ -8,6 +8,7 @@ use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModelClient;
 use Symfony\AI\Platform\Model;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpClient\EventSourceHttpClient;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -314,5 +315,72 @@ final class CodexModelClientTest extends TestCase
             ['input' => [['role' => 'user', 'content' => 'test']]],
             $options,
         );
+    }
+
+    public function testLogsRequestSummaryOnRequest(): void
+    {
+        $loggedContext = null;
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())
+            ->method('info')
+            ->with(
+                $this->identicalTo('llm.provider.request_prepared'),
+                $this->callback(function (array $context) use (&$loggedContext): bool {
+                    $loggedContext = $context;
+
+                    // Must include structural metadata
+                    $this->assertArrayHasKey('body_keys', $context);
+                    $this->assertArrayHasKey('input_count', $context);
+                    $this->assertArrayHasKey('input_types', $context);
+                    $this->assertArrayHasKey('model', $context);
+                    $this->assertArrayHasKey('has_instructions', $context);
+                    $this->assertArrayHasKey('has_stream', $context);
+                    $this->assertArrayHasKey('has_include', $context);
+                    $this->assertArrayHasKey('has_store', $context);
+                    $this->assertArrayHasKey('tool_count', $context);
+                    $this->assertArrayHasKey('originator', $context);
+
+                    // Model name is safe
+                    $this->assertSame('gpt-5.5', $context['model']);
+
+                    // Must NOT contain sensitive data (keys sampled)
+                    $contextStr = implode(' ', (array) $context);
+                    $this->assertStringNotContainsString('test-access-token', $contextStr);
+                    $this->assertStringNotContainsString('test prompt', $contextStr);
+                    $this->assertStringNotContainsString('test-access', $contextStr);
+
+                    return true;
+                }),
+            );
+
+        $httpClient = new MockHttpClient([static function () {
+            return new MockResponse();
+        }]);
+
+        $modelClient = new CodexModelClient(
+            $httpClient,
+            'https://chatgpt.com/backend-api',
+            'test-access-token',
+            'acct-123',
+            '/codex/responses',
+            'hatfield',
+            $logger,
+        );
+
+        $modelClient->request(
+            new CodexModel('gpt-5.5'),
+            ['input' => [['role' => 'user', 'content' => 'test prompt']]],
+            ['temperature' => 1],
+        );
+
+        // Additional structural assertions on the captured context
+        $this->assertNotNull($loggedContext);
+        $this->assertStringContainsString('input', $loggedContext['body_keys']);
+        $this->assertStringContainsString('model', $loggedContext['body_keys']);
+        $this->assertSame(1, $loggedContext['input_count']);
+        $this->assertStringContainsString('user', $loggedContext['input_types']);
+        $this->assertTrue($loggedContext['has_store']);
+        $this->assertTrue($loggedContext['has_stream']);
+        $this->assertSame('hatfield', $loggedContext['originator']);
     }
 }

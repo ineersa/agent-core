@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Symfony\AI\Platform\Bridge\OpenAICodex;
 
+use Psr\Log\LoggerInterface;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\CodexContract;
 use Symfony\AI\Platform\Contract;
 use Symfony\AI\Platform\ModelCatalog\ModelCatalogInterface;
@@ -32,6 +33,7 @@ class Factory
         string $responsesPath = '/codex/responses',
         string $originator = 'hatfield',
         string $name = 'openai-codex',
+        ?LoggerInterface $logger = null,
     ): ProviderInterface {
         $httpClient = $httpClient instanceof EventSourceHttpClient
             ? $httpClient
@@ -39,7 +41,7 @@ class Factory
 
         return new Provider(
             $name,
-            [new CodexModelClient($httpClient, $baseUrl, $accessToken, $accountId, $responsesPath, $originator)],
+            [new CodexModelClient($httpClient, $baseUrl, $accessToken, $accountId, $responsesPath, $originator, $logger)],
             [new ResultConverter()],
             $modelCatalog,
             $contract ?? CodexContract::create(),
@@ -62,9 +64,10 @@ class Factory
         string $originator = 'hatfield',
         string $name = 'openai-codex',
         ?ModelRouterInterface $modelRouter = null,
+        ?LoggerInterface $logger = null,
     ): Platform {
         return new Platform(
-            [self::createProvider($baseUrl, $accessToken, $accountId, $httpClient, $modelCatalog, $contract, $eventDispatcher, $responsesPath, $originator, $name)],
+            [self::createProvider($baseUrl, $accessToken, $accountId, $httpClient, $modelCatalog, $contract, $eventDispatcher, $responsesPath, $originator, $name, $logger)],
             $modelRouter ?? new CatalogBasedModelRouter(),
             $eventDispatcher,
         );

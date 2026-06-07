@@ -567,4 +567,108 @@ final class ResultConverterTest extends TestCase
         $this->assertInstanceOf(TextDelta::class, $chunks[4]);
         $this->assertSame('The answer is 42.', $chunks[4]->getText());
     }
+
+    public function testThrowsBadRequestWithCodeTypeParamOnStructuredError(): void
+    {
+        $converter = new ResultConverter();
+        $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(400);
+        $httpResponse->method('getContent')->willReturn(json_encode([
+            'error' => [
+                'code' => 'invalid_request_error',
+                'type' => 'invalid_request',
+                'param' => 'model',
+                'message' => 'The model `unknown` does not exist',
+            ],
+        ]));
+
+        $this->expectException(BadRequestException::class);
+        $this->expectExceptionMessage('[invalid_request_error/invalid_request/model]: The model `unknown` does not exist');
+
+        $converter->convert(new RawHttpResult($httpResponse));
+    }
+
+    public function testThrowsBadRequestWithBodyPreviewOnNonJsonResponse(): void
+    {
+        $converter = new ResultConverter();
+        $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(400);
+        $httpResponse->method('getContent')->willReturn('<html><body>Bad Request: invalid parameters</body></html>');
+        $httpResponse->method('getHeaders')->willReturn(['content-type' => ['text/html; charset=utf-8']]);
+
+        $this->expectException(BadRequestException::class);
+        $this->expectExceptionMessage('text/html; charset=utf-8');
+        $this->expectExceptionMessage('Bad Request: invalid parameters');
+
+        $converter->convert(new RawHttpResult($httpResponse));
+    }
+
+    public function testThrowsBadRequestWithAlternativeTopLevelErrorKeys(): void
+    {
+        $converter = new ResultConverter();
+        $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(400);
+        // Hydra/OAuth-style error with error_description instead of error.message
+        $httpResponse->method('getContent')->willReturn(json_encode([
+            'error' => 'invalid_request',
+            'error_description' => 'The authorization code is invalid or expired',
+        ]));
+
+        $this->expectException(BadRequestException::class);
+        $this->expectExceptionMessage('The authorization code is invalid or expired');
+
+        $converter->convert(new RawHttpResult($httpResponse));
+    }
+
+    public function testThrowsBadRequestWithEmptyBodyFallsBackToClientError(): void
+    {
+        $converter = new ResultConverter();
+        $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(400);
+        // getContent returns empty string, no getHeaders mock (returns empty)
+        $httpResponse->method('getContent')->willReturn('');
+
+        $this->expectException(BadRequestException::class);
+        $this->expectExceptionMessage('Bad Request');
+
+        $converter->convert(new RawHttpResult($httpResponse));
+    }
+
+    public function testThrowsAuthenticationWithCodeTypeOnStructuredError(): void
+    {
+        $converter = new ResultConverter();
+        $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(401);
+        $httpResponse->method('getContent')->willReturn(json_encode([
+            'error' => [
+                'code' => 'invalid_api_key',
+                'message' => 'Invalid API key provided',
+            ],
+        ]));
+
+        $this->expectException(AuthenticationException::class);
+        $this->expectExceptionMessage('[invalid_api_key]: Invalid API key provided');
+
+        $converter->convert(new RawHttpResult($httpResponse));
+    }
+
+    public function testThrowsRateLimitWithCodeTypeOnStructuredError(): void
+    {
+        $converter = new ResultConverter();
+        $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(429);
+        $httpResponse->method('getContent')->willReturn(json_encode([
+            'error' => [
+                'code' => 'rate_limited',
+                'type' => 'rate_limit_error',
+                'message' => 'Too many requests, please retry after 60 seconds',
+            ],
+        ]));
+
+        $this->expectException(RateLimitExceededException::class);
+        // RateLimitExceededException prepends "Rate limit exceeded. "
+        $this->expectExceptionMessage('Rate limit exceeded. [rate_limited/rate_limit_error]: Too many requests, please retry after 60 seconds');
+
+        $converter->convert(new RawHttpResult($httpResponse));
+    }
 }

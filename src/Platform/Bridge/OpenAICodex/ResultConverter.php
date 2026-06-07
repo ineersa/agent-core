@@ -24,6 +24,7 @@ use Symfony\AI\Platform\Result\ThinkingResult;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\AI\Platform\Result\ToolCallResult;
 use Symfony\AI\Platform\ResultConverterInterface;
+use Symfony\Contracts\HttpClient\ResponseInterface;
 
 /**
  * @phpstan-type OutputMessage array{content: array<Refusal|OutputText>, id: string, role: string, type: 'message'}
@@ -46,18 +47,15 @@ final class ResultConverter implements ResultConverterInterface
         $response = $result->getObject();
 
         if (401 === $response->getStatusCode()) {
-            $body = json_decode($response->getContent(false), true);
-            throw new AuthenticationException($body['error']['message'] ?? 'Unauthorized');
+            throw new AuthenticationException($this->extractErrorDiagnostics($response));
         }
 
         if (400 === $response->getStatusCode()) {
-            $body = json_decode($response->getContent(false), true);
-            throw new BadRequestException($body['error']['message'] ?? 'Bad Request');
+            throw new BadRequestException($this->extractErrorDiagnostics($response));
         }
 
         if (429 === $response->getStatusCode()) {
-            $body = json_decode($response->getContent(false), true);
-            throw new RateLimitExceededException(null, $body['error']['message'] ?? null);
+            throw new RateLimitExceededException(null, $this->extractErrorDiagnostics($response));
         }
 
         if (true === ($options['stream'] ?? false)) {
@@ -86,6 +84,81 @@ final class ResultConverter implements ResultConverterInterface
     public function getTokenUsageExtractor(): TokenUsageExtractor
     {
         return new TokenUsageExtractor();
+    }
+
+    /**
+     * Extract a privacy-safe diagnostic message from an HTTP error response.
+     *
+     * Returns the most informative available detail while keeping the result
+     * safe for logging (truncated, no tokens/account IDs/prompts).
+     */
+    private function extractErrorDiagnostics(ResponseInterface $response): string
+    {
+        $statusCode = $response->getStatusCode();
+        $body = $response->getContent(false);
+
+        $data = json_decode($body, true);
+
+        if (null !== $data && isset($data['error']) && \is_array($data['error'])) {
+            $error = $data['error'];
+            $parts = [];
+            if (isset($error['code']) && '' !== $error['code']) {
+                $parts[] = (string) $error['code'];
+            }
+            if (isset($error['type']) && '' !== $error['type']) {
+                $parts[] = (string) $error['type'];
+            }
+            if (isset($error['param']) && '' !== $error['param']) {
+                $parts[] = (string) $error['param'];
+            }
+
+            $prefix = [] !== $parts ? '['.implode('/', $parts).']: ' : '';
+            $message = $error['message'] ?? '-';
+
+            return $prefix.$message;
+        }
+
+        // Alternative top-level error keys (Hydra, OAuth, or Codex-specific shapes).
+        // Only match when 'error' is not an array (handled above).
+        // Strings like {"error":"invalid_request"} are alternative, not structured.
+        if (null !== $data) {
+            $alt = $data['error_description']
+                ?? $data['error_code']
+                ?? $data['detail']
+                ?? (\is_string($data['error'] ?? null) ? $data['error'] : null)
+                ?? null;
+            if (null !== $alt) {
+                $preview = \is_string($alt) ? $alt : (string) json_encode($alt);
+
+                return mb_substr($preview, 0, 500);
+            }
+        }
+
+        // Non-JSON or empty body — include content type and truncated preview
+        $contentType = '';
+        try {
+            $headers = $response->getHeaders(false);
+            $contentType = $headers['content-type'][0] ?? '';
+        } catch (\Throwable) {
+            // Headers may not be available on mocked responses
+        }
+
+        $preview = mb_substr(trim(preg_replace('/\s+/', ' ', $body)), 0, 200);
+        if ('' === $preview) {
+            // Empty body: use standard HTTP reason phrases
+            return match ($statusCode) {
+                400 => 'Bad Request',
+                401 => 'Unauthorized',
+                429 => 'Rate limit exceeded',
+                default => \sprintf('HTTP %d', $statusCode),
+            };
+        }
+
+        if ('' !== $contentType) {
+            return \sprintf('%s: "%s"', $contentType, $preview);
+        }
+
+        return \sprintf('"%s"', $preview);
     }
 
     /**

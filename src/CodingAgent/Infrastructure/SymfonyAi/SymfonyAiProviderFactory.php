@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi;
 use Ineersa\CodingAgent\Auth\CodexAuthStorage;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Psr\Log\LoggerInterface;
 use Symfony\AI\Platform\Bridge\Generic\CompletionsModel;
 use Symfony\AI\Platform\Bridge\Generic\Factory as GenericFactory;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
@@ -32,6 +33,7 @@ class SymfonyAiProviderFactory
         private readonly AppConfig $appConfig,
         private readonly EventDispatcherInterface $eventDispatcher,
         private readonly ?CodexAuthStorage $codexAuth = null,
+        private readonly ?LoggerInterface $logger = null,
     ) {
     }
 
@@ -117,6 +119,7 @@ class SymfonyAiProviderFactory
             eventDispatcher: $this->eventDispatcher,
             responsesPath: $provider->completionsPath ?? '/codex/responses',
             name: $provider->id,
+            logger: $this->logger,
         );
     }
 

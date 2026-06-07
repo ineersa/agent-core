@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Symfony\AI\Platform\Bridge\OpenAICodex;
 
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Exception\InvalidArgumentException;
 use Symfony\AI\Platform\Model;
 use Symfony\AI\Platform\ModelClientInterface;
@@ -32,6 +34,7 @@ class CodexModelClient implements ModelClientInterface
     ];
 
     private readonly EventSourceHttpClient $httpClient;
+    private readonly LoggerInterface $logger;
 
     public function __construct(
         HttpClientInterface $httpClient,
@@ -40,10 +43,12 @@ class CodexModelClient implements ModelClientInterface
         private readonly string $accountId,
         private readonly string $path = '/codex/responses',
         private readonly string $originator = 'hatfield',
+        ?LoggerInterface $logger = null,
     ) {
         $this->httpClient = $httpClient instanceof EventSourceHttpClient
             ? $httpClient
             : new EventSourceHttpClient($httpClient);
+        $this->logger = $logger ?? new NullLogger();
     }
 
     public function supports(Model $model): bool
@@ -103,6 +108,54 @@ class CodexModelClient implements ModelClientInterface
             'json' => $jsonBody,
         ];
 
+        $this->logRequestSummary($model, $jsonBody);
+
         return new RawHttpResult($this->httpClient->request('POST', $this->baseUrl.$this->path, $requestOptions));
+    }
+
+    /**
+     * Log a privacy-safe summary of the outgoing Codex request.
+     *
+     * Only structural metadata (key names, counts, booleans) is logged.
+     * Prompt text, tool content, access tokens, and account IDs are never
+     * included.
+     *
+     * @param array<string, mixed> $jsonBody
+     */
+    private function logRequestSummary(Model $model, array $jsonBody): void
+    {
+        $input = $jsonBody['input'] ?? [];
+        $inputCount = \is_array($input) ? \count($input) : 0;
+        $tools = $jsonBody['tools'] ?? [];
+
+        // Summarize input content types without revealing actual text.
+        $inputTypes = [];
+        if (\is_array($input)) {
+            foreach ($input as $item) {
+                if (isset($item['type']) && \is_string($item['type'])) {
+                    $inputTypes[$item['type']] = true;
+                }
+                if (isset($item['role']) && \is_string($item['role'])) {
+                    $inputTypes['role:'.$item['role']] = true;
+                }
+            }
+        }
+
+        $this->logger->info('llm.provider.request_prepared', [
+            'event_type' => 'llm.provider.request_prepared',
+            'request_url_path' => $this->path,
+            'model' => $model->getName(),
+            'body_keys' => implode(', ', array_keys($jsonBody)),
+            'input_count' => $inputCount,
+            'input_types' => [] !== $inputTypes ? implode(', ', array_keys($inputTypes)) : 'none',
+            'tool_count' => \is_array($tools) ? \count($tools) : 0,
+            'has_instructions' => isset($jsonBody['instructions']),
+            'has_reasoning' => isset($jsonBody['reasoning']),
+            'has_include' => isset($jsonBody['include']),
+            'has_text' => isset($jsonBody['text']),
+            'has_store' => isset($jsonBody['store']),
+            'has_stream' => isset($jsonBody['stream']),
+            'originator' => $this->originator,
+        ]);
     }
 }
