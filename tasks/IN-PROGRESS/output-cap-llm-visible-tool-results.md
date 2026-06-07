@@ -157,3 +157,6 @@ Completed:
 - Created worktree /home/ineersa/projects/agent-core-worktrees/output-cap-llm-visible-tool-results.
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/output-cap-llm-visible-tool-results.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/output-cap-llm-visible-tool-results.
+
+## Task workflow update - 2026-06-07T23:41:45.761Z
+- Task claimed and worktree created at `/home/ineersa/projects/agent-core-worktrees/output-cap-llm-visible-tool-results` on branch `task/output-cap-llm-visible-tool-results`. Focused implementation-prep scout confirmed the boundary-safe entrypoint is a CodingAgent `TransformContextHookInterface` implementation before `AgentMessageConverter`, plus `BgStatusTool` direct OutputCap wiring and controller E2E test hooks for `--tools=read`/low `tools.output_cap` settings.
