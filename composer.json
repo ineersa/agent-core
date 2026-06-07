@@ -22,6 +22,7 @@
         "symfony/uid": "^8.0",
         "symfony/tui": "^8.1",
         "symfony/ai-generic-platform": "dev-main",
+        "symfony/ai-open-responses-platform": "dev-main",
         "monolog/monolog": "^3.10",
         "symfony/framework-bundle": "^8.1",
         "symfony/monolog-bundle": "^4.0",

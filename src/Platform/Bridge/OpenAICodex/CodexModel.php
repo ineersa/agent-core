@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Symfony\AI\Platform\Bridge\OpenAICodex;
 
-use Symfony\AI\Platform\Model;
+use Symfony\AI\Platform\Bridge\OpenResponses\ResponsesModel;
 
-class CodexModel extends Model
+class CodexModel extends ResponsesModel
 {
 }

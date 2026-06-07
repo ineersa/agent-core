@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Symfony\AI\Platform\Bridge\OpenAICodex\Contract;
 
 use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\Message\CodexAssistantMessageNormalizer;
-use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\Message\CodexMessageBagNormalizer;
-use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\Message\CodexToolCallMessageNormalizer;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\Message\CodexUserMessageNormalizer;
-use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\Message\Content\CodexTextNormalizer;
+use Symfony\AI\Platform\Bridge\OpenResponses\Contract\Message\Content\TextNormalizer;
+use Symfony\AI\Platform\Bridge\OpenResponses\Contract\Message\MessageBagNormalizer;
+use Symfony\AI\Platform\Bridge\OpenResponses\Contract\Message\ToolCallMessageNormalizer;
 use Symfony\AI\Platform\Contract;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
@@ -36,14 +36,21 @@ final class CodexContract extends Contract
      */
     public static function create(array $normalizers = []): Contract
     {
-        // Pass Codex-specific normalizers first so they take priority over
-        // the default normalizers that match unconditionally.
+        // Use upstream OpenResponses normalizers for standard Responses API
+        // shape, with Codex-specific normalizers taking priority where their
+        // output differs:
+        //   - CodexAssistantMessageNormalizer: typed {type:'output_text', text}
+        //   - CodexUserMessageNormalizer: typed {type:'input_text', text} content
+        //   - CodexToolNormalizer: adds strict:null to parameters
+        //   - CodexToolCallNormalizer: adds id field alongside call_id
+        // Upstream normalizers handle MessageBag, ToolCallMessage, and Text
+        // content types identically to what Codex needs.
         $codexNormalizers = [
-            new CodexMessageBagNormalizer(),
+            new MessageBagNormalizer(),
             new CodexAssistantMessageNormalizer(),
-            new CodexToolCallMessageNormalizer(),
+            new ToolCallMessageNormalizer(),
             new CodexUserMessageNormalizer(),
-            new CodexTextNormalizer(),
+            new TextNormalizer(),
             new CodexToolNormalizer(),
             new CodexToolCallNormalizer(),
             ...$normalizers,
