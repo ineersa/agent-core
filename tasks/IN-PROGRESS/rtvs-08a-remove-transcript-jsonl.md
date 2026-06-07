@@ -37,7 +37,7 @@ No compatibility fallback to old `transcript.jsonl` should be added unless expli
 Status: IN-PROGRESS
 Branch: task/rtvs-08a-remove-transcript-jsonl
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-08a-remove-transcript-jsonl
-Fork run: y6gpiqnm8nn0
+Fork run: 04a0a881
 PR URL:
 PR Status:
 Started: 2026-06-07T21:23:43.851Z
@@ -67,3 +67,8 @@ Completed:
 - Recorded fork run: y6gpiqnm8nn0
 - Validation: castor deptrac: PASS (0 violations); castor phpstan: PASS (0 errors); castor cs-check: PASS (0 files fixed); castor test: PASS (1922 tests, 5672 assertions, 0 failures); castor test:controller: PASS (1 test, 7 assertions); castor check: NOT RUN by fork; requires tmux + llama.cpp:9052 and remains required before CODE-REVIEW
 - Summary: Merge-main fork completed. Merged origin/main into task/rtvs-08a-remove-transcript-jsonl: before 57a4fffc, merge commit ca1175d6, final fix commit 110adb66. Merge had 0 git conflicts but full tests found semantic constructor mismatch from main's TOOLS-09B tests still passing removed RuntimeEventEmitter transcriptPersistence named parameter; fork fixed 2 test files and committed. Worktree verified clean at 110adb66.
+
+## Task workflow update - 2026-06-07T23:12:47.937Z
+- Recorded fork run: 04a0a881
+- Validation: fork-reported raw validation (not accepted as final project validation): tests/static checks passed; parent will rerun Castor commands per AGENTS.md
+- Summary: Reviewer-fix fork addressed APPROVE WITH SUGGESTIONS findings and committed 04a0a881. Fixes include robust SessionInitializer lastSeq fallback for all-null event mapping; cleanup of stale transcript.jsonl docs; deletion of empty HatfieldSessionStoreTest vestiges; RuntimeEventTranslator helper simplification; UserMessageProjectionSubscriber seq comment; added mapper/projector tests for run.started user_messages and follow_up user.message_submitted mapping. Note: fork reported using raw vendor/bin commands due Castor runtime confusion, so parent will rerun required Castor validation before CODE-REVIEW.
