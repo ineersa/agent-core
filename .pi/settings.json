@@ -19,7 +19,7 @@
     "reserveTokens": 16384
   },
   "pi-fork": {
-    "defaultModel": "deepseek/deepseek-v4-flash",
+    "defaultModel": "deepseek/deepseek-v4-pro",
     "defaultThinking": "xhigh"
   },
   "jetbrainsIndex": {
