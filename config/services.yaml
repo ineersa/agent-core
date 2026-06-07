@@ -160,6 +160,10 @@ services:
   # Runtime bash background prompt adapter — production TUI bridge.
   Ineersa\CodingAgent\Tool\ToolQuestion\RuntimeBashBackgroundPromptAdapter: ~
 
+  # Background process status checker for adapter poll loop.
+  Ineersa\CodingAgent\Tool\ToolQuestion\BackgroundProcessStatusCheckerInterface:
+    alias: Ineersa\CodingAgent\Tool\ToolQuestion\BackgroundProcessStatusChecker
+
   # Autowire the tool question store interface.
   Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface:
     alias: Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStore

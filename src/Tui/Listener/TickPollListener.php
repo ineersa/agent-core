@@ -61,11 +61,16 @@ final class TickPollListener implements TuiListenerRegistrar
                 self::handleToolQuestionRequested($event, $client, $questionCoordinator);
             };
 
+            $onToolTerminal = static function (RuntimeEvent $event) use ($client, $questionCoordinator): void {
+                self::handleToolTerminal($event, $client, $questionCoordinator);
+            };
+
             $changedBlocks = $poller->poll(
                 $state,
                 $client,
                 onHumanInputRequested: $onHitl,
                 onToolQuestionRequested: $onToolQuestion,
+                onToolTerminal: $onToolTerminal,
             );
 
             if (null !== $changedBlocks) {
@@ -184,6 +189,54 @@ final class TickPollListener implements TuiListenerRegistrar
                 ));
             },
         );
+    }
+
+    /**
+     * Handle a tool execution terminal event by cancelling any active
+     * Tui-source question whose toolCallId matches the terminal event.
+     *
+     * This is invoked by RuntimeEventPoller::poll() each time a
+     * tool_execution.completed, tool_execution.failed, or
+     * tool_execution.cancelled event is polled from the runtime stream.
+     * When the tool returns (with output, error, or cancellation) while a
+     * local tool question overlay is still open, this dismisses the stale
+     * question so the user cannot answer a prompt for a tool that is no
+     * longer running.
+     *
+     * Cancelling the coordinator sends a fail-safe false answer through
+     * the registered cancel callback, which dispatches an
+     * answer_tool_question=false command. The store's idempotency makes
+     * this a noop if the adapter already cancelled or returned before the
+     * answer arrives.
+     */
+    private static function handleToolTerminal(
+        RuntimeEvent $event,
+        AgentSessionClient $client,
+        QuestionCoordinator $questionCoordinator,
+    ): void {
+        $p = $event->payload;
+        $toolCallId = (string) ($p['tool_call_id'] ?? '');
+
+        if ('' === $toolCallId) {
+            return;
+        }
+
+        $active = $questionCoordinator->activeRequest();
+        if (null === $active) {
+            return;
+        }
+
+        // Only cancel if the active question is a local Tui-source question
+        // (tool-local prompt, not AgentCore HITL) and the toolCallId matches.
+        if (QuestionSource::Tui !== $active->source) {
+            return;
+        }
+
+        if ($active->toolCallId !== $toolCallId) {
+            return;
+        }
+
+        $questionCoordinator->cancel();
     }
 
     /**

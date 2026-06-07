@@ -184,6 +184,23 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                         $promptTriggered = true;
 
                         if ($this->promptAdapter->shouldBackground($command, $pid, $logPath, $elapsedSeconds)) {
+                            // Re-check process status — it may have finished while we
+                            // were waiting for the user's decision. If the process
+                            // completed, return the finished output instead of the
+                            // backgrounding notice. This avoids a misleading
+                            // "Command moved to background" message when the process
+                            // already exited during the prompt wait.
+                            $recheck = $this->manager->find($pid, $sessionId);
+                            if (null !== $recheck && BackgroundProcessStatusEnum::Running !== $recheck->status) {
+                                $this->logger->info('bash_tool.background_process_completed_during_prompt', [
+                                    'component' => 'tool.bash',
+                                    'event_type' => 'bash_tool.background_process_completed_during_prompt',
+                                    'process_pid' => $pid,
+                                ]);
+
+                                return $this->handleFinished($recheck, $pid, $sessionId);
+                            }
+
                             $this->logger->info('bash_tool.backgrounded', [
                                 'component' => 'tool.bash',
                                 'event_type' => 'bash_tool.backgrounded',

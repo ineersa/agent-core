@@ -52,6 +52,7 @@ final readonly class RuntimeBashBackgroundPromptAdapter implements BashBackgroun
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly ToolQuestionStoreInterface $store,
         private readonly LoggerInterface $logger,
+        private readonly BackgroundProcessStatusCheckerInterface $processStatusChecker,
     ) {
     }
 
@@ -127,6 +128,25 @@ final readonly class RuntimeBashBackgroundPromptAdapter implements BashBackgroun
                     'component' => 'tool.bash.background_prompt',
                     'event_type' => 'bash_tool.background_cancelled',
                     'request_id' => $requestId,
+                ]);
+
+                return false;
+            }
+
+            // Check if the bash process has finished while waiting for a
+            // user decision. When the process completes, cancel the pending
+            // question and return false so BashTool's foreground supervision
+            // loop can return the completed output instead of a timeout or
+            // backgrounding notice.
+            if ($this->processStatusChecker->isFinished($pid, $runId)) {
+                $this->store->cancel($requestId);
+
+                $this->logger->info('bash_tool.background_process_finished', [
+                    'component' => 'tool.bash.background_prompt',
+                    'event_type' => 'bash_tool.background_process_finished',
+                    'request_id' => $requestId,
+                    'run_id' => $runId,
+                    'pid' => $pid,
                 ]);
 
                 return false;

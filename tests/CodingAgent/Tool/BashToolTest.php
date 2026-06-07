@@ -423,6 +423,43 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->manager->stop($pid, self::TEST_SESSION);
     }
 
+    /* ── Process finishes during prompt — regression for smoke bug A ── */
+
+    public function testProcessFinishesWhilePromptBlocksReturnsCompletedOutput(): void
+    {
+        // Adapter that blocks for 400ms (simulating waiting for user input
+        // via TUI) then returns true (user accepted backgrounding).
+        $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
+        $promptAdapter
+            ->expects($this->once())
+            ->method('shouldBackground')
+            ->willReturnCallback(function (): bool {
+                \usleep(400_000); // 400ms block
+
+                return true; // Simulate user accepting
+            });
+
+        $this->bashConfig = new BashToolConfig(
+            defaultTimeoutSeconds: 30,
+            backgroundPromptThresholdSeconds: 0, // trigger immediately
+            pollIntervalMicros: 50_000,
+            logTailChars: 20000,
+        );
+        $this->createManager();
+
+        // Command that finishes while the adapter is blocking (200ms < 400ms).
+        $result = $this->withContext(self::TEST_SESSION, function () use ($promptAdapter): string {
+            return ($this->makeBashTool($promptAdapter))([
+                'command' => 'sleep 0.2 && echo "Hello world"',
+            ]);
+        });
+
+        // Must show the completed output, not a backgrounding notice or timeout.
+        $this->assertStringContainsString('Hello world', $result);
+        $this->assertStringNotContainsString('Command moved to background', $result);
+        $this->assertStringNotContainsString('timed out', $result);
+    }
+
     /* ── Output capping ── */
 
     public function testOutputCapping(): void
