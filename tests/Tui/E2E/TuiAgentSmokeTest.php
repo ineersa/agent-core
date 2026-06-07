@@ -13,19 +13,22 @@ use PHPUnit\Framework\TestCase;
  * wait for assistant/error response, capture ANSI snapshot, and
  * verify the transcript contains real projected TranscriptBlocks.
  *
- * Uses the real project configuration (dev env) so the configured
- * LLM providers are active.  If no provider is configured or the
- * provider fails, the test still asserts a user-visible error
- * block appears (instead of a stuck "Processing..." indicator).
+ * Uses an isolated minimal configuration with only the
+ * llama_cpp_test provider active.  The test creates its own
+ * settings from scratch, NOT copied from project settings,
+ * to avoid leaking unrelated provider credentials (e.g.
+ * openai-codex) that would break the selected model path.
+ *
+ * If no provider is configured or the provider fails, the test
+ * still asserts a user-visible error block appears (instead of
+ * a stuck "Processing..." indicator).
  *
  * On failure, dumps the ANSI snapshot and session files to stdout
  * for debugging.
  *
  * @group tui-e2e
- * @group llm-real
  */
 #[Group('tui-e2e')]
-#[Group('llm-real')]
 final class TuiAgentSmokeTest extends TestCase
 {
     private TmuxHarness $tmux;
@@ -445,64 +448,57 @@ final class TuiAgentSmokeTest extends TestCase
         @\mkdir($dir.'/.hatfield', 0o777, true);
         @\mkdir($dir.'/home/.hatfield', 0o777, true);
 
-        $settings = [];
-        $projectSettings = $this->projectRoot.'/.hatfield/settings.yaml';
-        if (\is_readable($projectSettings)) {
-            $parsed = \Symfony\Component\Yaml\Yaml::parseFile($projectSettings);
-            if (\is_array($parsed)) {
-                $settings = $parsed;
-            }
-        }
-
-        $ai = $settings['ai'] ?? [];
-        if (!\is_array($ai)) {
-            $ai = [];
-        }
-        $ai['default_model'] = 'llama_cpp_test/test';
-        unset($ai['default_reasoning']);
-        $settings['ai'] = $ai;
-
-        // Force SafeGuard enabled with blocking defaults for all TUI E2E tests.
-        $extensions = $settings['extensions'] ?? [];
-        if (!\is_array($extensions)) {
-            $extensions = [];
-        }
-
-        $enabled = $extensions['enabled'] ?? [];
-        if (!\is_array($enabled)) {
-            $enabled = [];
-        }
-
-        $safeGuardExtension = 'Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension';
-        if (!\in_array($safeGuardExtension, $enabled, true)) {
-            $enabled[] = $safeGuardExtension;
-        }
-        $extensions['enabled'] = $enabled;
-
-        $extensionSettings = $extensions['settings'] ?? [];
-        if (!\is_array($extensionSettings)) {
-            $extensionSettings = [];
-        }
-
-        $safeGuardSettings = $extensionSettings['safe_guard'] ?? [];
-        if (!\is_array($safeGuardSettings)) {
-            $safeGuardSettings = [];
-        }
-
-        $safeGuardSettings['tool_names'] = [
-            'bash' => 'bash',
-            'write' => 'write',
-            'edit' => 'edit',
-            'read' => 'read',
+        // Build minimal isolated settings from scratch.  Do NOT read or
+        // copy the real project .hatfield/settings.yaml — that would leak
+        // unrelated provider credentials (e.g. openai-codex requiring
+        // OAuth) into the isolated test HOME, breaking the selected model
+        // path.  Include only what the TUI smoke test actually needs.
+        $settings = [
+            'ai' => [
+                'default_model' => 'llama_cpp_test/test',
+                'providers' => [
+                    'llama_cpp_test' => [
+                        'type' => 'generic',
+                        'enabled' => true,
+                        'base_url' => 'http://192.168.2.38:9052/v1',
+                        'api' => 'openai-completions',
+                        'api_key' => 'dummy',
+                        'completions_path' => '/chat/completions',
+                        'supports_completions' => true,
+                        'supports_embeddings' => false,
+                        'models' => [
+                            'test' => [
+                                'name' => 'test',
+                                'context_window' => 32768,
+                                'max_tokens' => 32768,
+                                'input' => ['text', 'image'],
+                                'tool_calling' => true,
+                                'cost' => ['input' => 0, 'output' => 0],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            'extensions' => [
+                'enabled' => [
+                    'Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension',
+                ],
+                'settings' => [
+                    'safe_guard' => [
+                        'tool_names' => [
+                            'bash' => 'bash',
+                            'write' => 'write',
+                            'edit' => 'edit',
+                            'read' => 'read',
+                        ],
+                        'allow_command_patterns' => [],
+                        'allow_write_outside_cwd' => [],
+                        'protected_read_patterns' => [],
+                        'dangerous_command_patterns' => [],
+                    ],
+                ],
+            ],
         ];
-        $safeGuardSettings['allow_command_patterns'] = [];
-        $safeGuardSettings['allow_write_outside_cwd'] = [];
-        $safeGuardSettings['protected_read_patterns'] = [];
-        $safeGuardSettings['dangerous_command_patterns'] = [];
-
-        $extensionSettings['safe_guard'] = $safeGuardSettings;
-        $extensions['settings'] = $extensionSettings;
-        $settings['extensions'] = $extensions;
 
         $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
         \file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);

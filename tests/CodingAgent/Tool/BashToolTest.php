@@ -330,6 +330,9 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('background', $result);
         $this->assertStringContainsString('PID:', $result);
         $this->assertStringContainsString('Log:', $result);
+        $this->assertStringContainsString('You will be notified', $result);
+        $this->assertStringContainsString('bg_status log pid=', $result);
+        $this->assertStringContainsString('bg_status stop pid=', $result);
         $this->assertStringNotContainsString('timed out', $result);
         $this->assertStringNotContainsString('cancelled', $result);
     }
@@ -401,6 +404,9 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         $this->assertStringContainsString('background', $result);
         $this->assertStringContainsString('PID:', $result);
+        $this->assertStringContainsString('You will be notified', $result);
+        $this->assertStringContainsString('bg_status log pid=', $result);
+        $this->assertStringContainsString('bg_status stop pid=', $result);
 
         // Extract PID from result
         \preg_match('/PID: (\d+)/', $result, $matches);
@@ -414,13 +420,63 @@ final class BashToolTest extends IsolatedKernelTestCase
         // Verify it's the same PID (single execution, no duplicate)
         $this->assertSame($pid, $entities[0]->pid, 'The background process should have the same PID');
 
+        // Verify the process is marked as backgrounded (backgroundAt is set)
+        // This confirms the markBackgrounded() call was made in BashTool.
+        $this->assertNotNull($entities[0]->backgroundedAt, 'Background process should have backgroundedAt set');
+
         // Verify the log contains our unique marker
-        \usleep(200_000); // Wait for log flush
+        \usleep(50_000); // Brief wait for log flush
         $logContent = \file_get_contents($entities[0]->logPath);
         $this->assertStringContainsString('background-marker-12345', $logContent ?: '');
 
         // Clean up
         $this->manager->stop($pid, self::TEST_SESSION);
+    }
+
+    /* ── Process finishes during prompt — regression for smoke bug A ── */
+
+    public function testProcessFinishesWhilePromptBlocksReturnsCompletedOutput(): void
+    {
+        // Adapter blocks briefly (simulating user considering the prompt)
+        // while the command finishes.  BashTool must re-check process
+        // status after shouldBackground() returns instead of blindly
+        // backgrounding a completed command.
+        //
+        // Timing: the supervision loop polls at 50ms intervals.  First poll
+        // at ~50ms calls shouldBackground.  Adapter blocks 200ms.  During
+        // that block the process (sleep 0.2 ≈ 200ms) finishes.  On return,
+        // the re-check finds the process completed.
+        $promptAdapter = $this->createMock(BashBackgroundPromptAdapterInterface::class);
+        $promptAdapter
+            ->expects($this->once())
+            ->method('shouldBackground')
+            ->willReturnCallback(function (): bool {
+                \usleep(200_000); // Block while the command finishes
+
+                return true;
+            });
+
+        $this->bashConfig = new BashToolConfig(
+            defaultTimeoutSeconds: 30,
+            backgroundPromptThresholdSeconds: 0, // trigger immediately
+            pollIntervalMicros: 50_000,
+            logTailChars: 20000,
+        );
+        $this->createManager();
+
+        // Command that finishes while the adapter is blocking.
+        // sleep 0.1 (≈100ms) is longer than the poll interval (50ms)
+        // but short enough to finish during the 200ms adapter block.
+        $result = $this->withContext(self::TEST_SESSION, function () use ($promptAdapter): string {
+            return ($this->makeBashTool($promptAdapter))([
+                'command' => 'sleep 0.1 && echo "Hello world"',
+            ]);
+        });
+
+        // Must show the completed output, not a backgrounding notice or timeout.
+        $this->assertStringContainsString('Hello world', $result);
+        $this->assertStringNotContainsString('Command moved to background', $result);
+        $this->assertStringNotContainsString('timed out', $result);
     }
 
     /* ── Output capping ── */

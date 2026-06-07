@@ -65,6 +65,12 @@ class BackgroundProcess
     #[ORM\Column(name: 'stopped_by_user', type: 'boolean')]
     public bool $stoppedByUser = false;
 
+    #[ORM\Column(name: 'backgrounded_at', type: 'datetime_immutable', nullable: true)]
+    public ?\DateTimeImmutable $backgroundedAt = null;
+
+    #[ORM\Column(name: 'completion_notified_at', type: 'datetime_immutable', nullable: true)]
+    public ?\DateTimeImmutable $completionNotifiedAt = null;
+
     #[ORM\Column(name: 'status', type: 'string', enumType: BackgroundProcessStatusEnum::class)]
     public BackgroundProcessStatusEnum $status = BackgroundProcessStatusEnum::Running;
 
@@ -110,5 +116,37 @@ class BackgroundProcess
         $this->exitCode = null;
         $this->finishedAt = $finishedAt;
         $this->status = BackgroundProcessStatusEnum::FinishedUnclean;
+    }
+
+    /**
+     * Mark this process as having been explicitly moved to background
+     * by the user through the background prompt.
+     *
+     * Processes with backgroundedAt set are eligible for automatic
+     * completion notification via BackgroundProcessCompletionPoller.
+     */
+    public function markBackgrounded(\DateTimeImmutable $now): void
+    {
+        $this->backgroundedAt = $now;
+    }
+
+    /**
+     * Mark that the completion notification follow-up has been sent.
+     */
+    public function markCompletionNotified(\DateTimeImmutable $now): void
+    {
+        $this->completionNotifiedAt = $now;
+    }
+
+    /**
+     * Whether this process should notify on completion.
+     *
+     * Only processes explicitly backgrounded by the user and not already
+     * notified qualify.
+     */
+    public function shouldNotifyOnCompletion(): bool
+    {
+        return null !== $this->backgroundedAt
+            && null === $this->completionNotifiedAt;
     }
 }

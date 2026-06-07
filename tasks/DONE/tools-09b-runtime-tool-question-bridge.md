@@ -64,14 +64,14 @@ This follows TOOLS-09, which implements bash as a background-managed foreground-
 - Required validation is run through Castor, including `castor check` before handoff unless environment prerequisites are unavailable.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: DONE
 Branch: task/tools-09b-runtime-tool-question-bridge
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-09b-runtime-tool-question-bridge
-Fork run: cxwd2p2eqmmt
+Fork run: t503ric532bo
 PR URL: https://github.com/ineersa/agent-core/pull/99
-PR Status: open
+PR Status: merged
 Started: 2026-06-06T23:33:30.150Z
-Completed:
+Completed: 2026-06-07T21:36:11.793Z
 
 ## Work log
 - Created: 2026-05-31T18:02:46.913Z
@@ -216,11 +216,11 @@ Completed:
 - Final reviewer pass on b40c0e93 returned APPROVED.
 - Focused Castor validation passed on b40c0e93; worktree clean. Proceeding to move_task(to=CODE-REVIEW), which will run the full Castor quality gate and create the PR if successful.
 Castor Check Status: passed
-Castor Check Commit: b40c0e933a1eef1683a63070190833a940aee931
+Castor Check Commit: dbc500ebe6dbf6bc1d3c84e0064604c1d0d73843
 Castor Check Command: LLM_MODE=true castor check
 Castor Check Timeout: 900s
-Castor Check Completed: 2026-06-07T17:36:21.115Z
-Castor Check Output SHA256: 47cd96b0b58c66f04734662d5fb5d2abe66498d8979238ab044a9138938b6444
+Castor Check Completed: 2026-06-07T21:27:22.232Z
+Castor Check Output SHA256: 6f108714ebec53a30e528c55f7406d2445bdbf4b6784c59def9b4efb82ad2dd4
 
 ## Task workflow update - 2026-06-07T17:36:24.691Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -318,3 +318,32 @@ Castor Check Output SHA256: 47cd96b0b58c66f04734662d5fb5d2abe66498d8979238ab044a
 - Validation: Reviewer did not run full `castor check` per instruction. Reviewed code/test coverage and reported no blockers.; Reviewer noted existing fork-reported validation remains green: test/deptrac/phpstan/cs-check from latest implementation forks.
 - Summary: Reviewer pass on HEAD dbc500eb returned `APPROVE WITH SUGGESTIONS` with no Critical Issues and no blockers to CODE-REVIEW. Reviewer assessed the full branch diff `origin/main...HEAD`, with focus on recent smoke-test fixes (process completion during prompt, stale overlay close, background completion follow-up, status refresh before notification query, and structured bg_status fallback hints). Reviewer explicitly stated the implementation is correct, well-tested, follows project conventions, and is ready to move to CODE-REVIEW.
 - Reviewer suggestions only: optional future session scoping defense in `BackgroundProcessCompletionPoller::findPendingNotifications()`, documented EntityManager clear trade-off in ToolQuestionStore, small race window after shouldBackground() returns true is acceptable and mitigated by completion poller, intentional LLM-visible command/output tail in `[BG_PROCESS_DONE]`, minor simplify/NTH comments. No action required before CODE-REVIEW.
+
+## Task workflow update - 2026-06-07T21:24:27.345Z
+- Validation: `castor test`: ok (tests=1887, assertions=5534, errors=0, failures=0, skipped=0).; `castor deptrac`: ok (violations=0, errors=0, uncovered=713, allowed=894).; `castor phpstan`: ok (errors=0, file_errors=0).; `castor cs-check`: ok (files_fixed=0).
+- Summary: Task-to-pr focused validation on HEAD dbc500eb passed locally. Reviewer result remains APPROVE WITH SUGGESTIONS with no blockers. Proceeding to move task to CODE-REVIEW, which will run the full Castor gate and push/update PR #99.
+- Pre-CODE-REVIEW worktree inspection: clean at HEAD dbc500eb (`TOOLS-09B: Clarify background handoff hints`), diff stat origin/main...HEAD shows 39 files changed, 3897 insertions, 150 deletions.
+
+## Task workflow update - 2026-06-07T21:27:23.492Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: dbc500ebe6db.
+- Pushed task/tools-09b-runtime-tool-question-bridge to origin.
+- branch 'task/tools-09b-runtime-tool-question-bridge' set up to track 'origin/task/tools-09b-runtime-tool-question-bridge'.
+- Skipped PR creation (pushOnly: true).
+- Validation: Pre-transition `castor test`: ok (tests=1887, assertions=5534, errors=0, failures=0, skipped=0).; Pre-transition `castor deptrac`: ok (violations=0, errors=0).; Pre-transition `castor phpstan`: ok (errors=0).; Pre-transition `castor cs-check`: ok (files_fixed=0).
+- Summary: Moved back to CODE-REVIEW after smoke-test review iteration. Final branch HEAD dbc500eb includes fixes for: process completion during background prompt, stale question overlay close, automatic `[BG_PROCESS_DONE]` follow-up for explicitly-backgrounded bash processes, status refresh before completion notification query, and structured background handoff with auto-notify plus bg_status log/stop fallback hints. Reviewer returned APPROVE WITH SUGGESTIONS with no blockers. Focused local validation passed before transition.
+
+## Task workflow update - 2026-06-07T21:32:47.703Z
+- Recorded fork run: t503ric532bo
+- Validation: Pre-merge integration checkout was clean (`## main...origin/main`).; PR #99 before local merge: OPEN, mergeStateStatus=DIRTY, head=task/tools-09b-runtime-tool-question-bridge, base=main.; `move_task(to=DONE)` failed with conflict: `composer.lock`.
+- Summary: During `move_task(to=DONE)`, merge into integration checkout failed with a single conflict in `composer.lock`; task remained CODE-REVIEW. GitHub had reported PR #99 `mergeStateStatus=DIRTY` beforehand. Conflict inspection showed main/HEAD contains a new `symfony/ai-open-responses-platform` package entry around the `symfony/ai-generic-platform` lock block that the task branch lacks. Launched fork t503ric532bo in the integration checkout to resolve only `composer.lock`, preserve main’s `symfony/ai-open-responses-platform` package, validate JSON syntax, stage the resolved lock file, and stop without committing or moving task status.
+- Conflict resolution must not touch unrelated unstaged `tasks/IN-PROGRESS/rtvs-08a-remove-transcript-jsonl.md` visible in integration checkout status. Parent will retry `move_task(to=DONE)` after fork resolves/stages composer.lock.
+
+## Task workflow update - 2026-06-07T21:36:11.793Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/tools-09b-runtime-tool-question-bridge into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/tools-09b-runtime-tool-question-bridge.
+- Pulled integration checkout: Already up to date..
+- Validation: Merge commit completed locally: `58986abe Merge branch 'task/tools-09b-runtime-tool-question-bridge'`.; Conflict resolution preserved main's `symfony/ai-open-responses-platform` lock entry and `composer.lock` JSON validation passed before merge commit.
+- Summary: Completed reviewed task after manually concluding the resolved merge commit (`58986abe`) because the prior retry could not run while `MERGE_HEAD` existed. The task branch is now merged into main. This transition moves the task file to DONE and cleans up the task worktree; unrelated unstaged task-note edits are intentionally preserved by using `requireCleanMain=false`.

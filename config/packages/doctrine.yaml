@@ -6,6 +6,7 @@
 # ORM entities are mapped under CodingAgent for:
 #   - background_process  — BackgroundProcessManager durable tracking
 #   - tool_batch_state    — DbalToolBatchStore parallel tool execution state
+#   - tool_question       — ToolQuestionStore cross-process tool-local questions
 #
 doctrine:
     dbal:

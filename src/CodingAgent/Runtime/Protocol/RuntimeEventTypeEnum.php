@@ -88,6 +88,20 @@ enum RuntimeEventTypeEnum: string
     case CommandAck = 'command.ack';
     case CommandRejected = 'command.rejected';
 
+    // ── Tool-local questions ─────────────────────────────────────────────────────
+    // Used by tool workers (e.g. BashTool) to prompt the user via the TUI
+    // question overlay without entering AgentCore WaitingHuman. These events
+    // carry transcript=false and do not create transcript blocks.
+
+    case ToolQuestionRequested = 'tool_question.requested';
+
+    // ── Background process completion ───────────────────────────────────────────────────
+    // Emitted by BackgroundProcessCompletionPoller when a process that was
+    // explicitly moved to background finishes. Carries pid, exit_code, status,
+    // command_preview, output_tail in payload.
+
+    case BackgroundProcessCompleted = 'bg_process.completed';
+
     // ── Runtime lifecycle (controller process) ─────────────────────────────
 
     case RuntimeReady = 'runtime.ready';
@@ -98,7 +112,8 @@ enum RuntimeEventTypeEnum: string
      * Return the event family name for grouping and documentation.
      *
      * @return string One of: lifecycle, user_input, assistant_stream, tool,
-     *                progress, hitl, cancellation, metadata, runtime, protocol
+     *                progress, hitl, cancellation, metadata, runtime, protocol,
+     *                tool_question
      */
     public function family(): string
     {
@@ -132,6 +147,10 @@ enum RuntimeEventTypeEnum: string
 
             self::RuntimeReady => 'runtime',
             self::ProtocolError => 'protocol',
+
+            self::ToolQuestionRequested => 'tool_question',
+
+            self::BackgroundProcessCompleted => 'background_process_completion',
 
             self::ModelChanged, self::ReasoningChanged, self::UsageUpdated,
             self::ContextUpdated, self::CostUpdated => 'metadata',
@@ -192,5 +211,13 @@ enum RuntimeEventTypeEnum: string
     public function isProtocol(): bool
     {
         return 'protocol' === $this->family();
+    }
+
+    /**
+     * Return true when the event type is a tool-local question.
+     */
+    public function isToolQuestion(): bool
+    {
+        return 'tool_question' === $this->family();
     }
 }

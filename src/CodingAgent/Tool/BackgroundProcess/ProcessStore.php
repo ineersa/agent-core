@@ -88,6 +88,51 @@ final class ProcessStore
     }
 
     /**
+     * Mark a process as explicitly backgrounded (user accepted via prompt).
+     */
+    public function markBackgrounded(int $pid, \DateTimeImmutable $now): void
+    {
+        $entity = $this->fetchByPid($pid);
+
+        if (null === $entity) {
+            throw new \RuntimeException(\sprintf('Background process with PID %d not found.', $pid));
+        }
+
+        $entity->markBackgrounded($now);
+        $this->entityManager->flush();
+    }
+
+    /**
+     * Mark a process as notified of completion.
+     */
+    public function markCompletionNotified(int $pid, \DateTimeImmutable $now): void
+    {
+        $entity = $this->fetchByPid($pid);
+
+        if (null === $entity) {
+            throw new \RuntimeException(\sprintf('Background process with PID %d not found.', $pid));
+        }
+
+        $entity->markCompletionNotified($now);
+        $this->entityManager->flush();
+    }
+
+    /**
+     * Find background processes that finished and should notify on completion.
+     *
+     * Query conditions: finishedAt IS NOT NULL, backgroundedAt IS NOT NULL,
+     * completionNotifiedAt IS NULL.
+     *
+     * @param string|null $sessionId optional session filter
+     *
+     * @return BackgroundProcess[]
+     */
+    public function findPendingNotifications(?string $sessionId = null): array
+    {
+        return $this->repository->findPendingNotifications($sessionId);
+    }
+
+    /**
      * Fetch a single entity by PID.
      */
     public function fetchByPid(int $pid): ?BackgroundProcess

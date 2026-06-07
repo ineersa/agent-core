@@ -55,6 +55,35 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
     }
 
     /**
+     * Find finished background processes that were explicitly backgrounded
+     * and have not yet had their completion notified.
+     *
+     * These are processes that completed after being moved to background,
+     * for which the BackgroundProcessCompletionPoller should send a
+     * follow-up notification to the user.
+     *
+     * @param string|null $sessionId optional session filter
+     *
+     * @return BackgroundProcess[]
+     */
+    public function findPendingNotifications(?string $sessionId = null): array
+    {
+        $qb = $this->createQueryBuilder('bp')
+            ->where('bp.finishedAt IS NOT NULL')
+            ->andWhere('bp.backgroundedAt IS NOT NULL')
+            ->andWhere('bp.completionNotifiedAt IS NULL');
+
+        if (null !== $sessionId) {
+            $qb->andWhere('bp.sessionId = :sessionId')
+                ->setParameter('sessionId', $sessionId);
+        }
+
+        return $qb->orderBy('bp.id', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * Find stale (finished and older than cutoff) processes.
      *
      * @return BackgroundProcess[]

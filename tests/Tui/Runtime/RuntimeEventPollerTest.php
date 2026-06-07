@@ -305,4 +305,89 @@ final class RuntimeEventPollerTest extends TestCase
         self::assertSame(0, $this->state->runtimePollErrorCount);
         self::assertSame('', $this->state->lastRuntimePollError);
     }
+
+    public function testOnToolTerminalCallbackFiresForCompleted(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolExecutionCompleted->value,
+            runId: 'test-run',
+            seq: 5,
+            payload: ['tool_call_id' => 'tc-123', 'is_error' => false],
+        );
+
+        $this->client->expects(self::once())
+            ->method('events')
+            ->with('test-run')
+            ->willReturn([$event]);
+
+        $this->projector->method('accept');
+        $this->projector->method('blocks')->willReturn([]);
+
+        $called = null;
+        $callback = static function (RuntimeEvent $e) use (&$called): void {
+            $called = $e;
+        };
+
+        $this->poller->poll($this->state, $this->client, onToolTerminal: $callback);
+
+        self::assertNotNull($called);
+        self::assertSame(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $called->type);
+        self::assertSame('tc-123', $called->payload['tool_call_id'] ?? null);
+    }
+
+    public function testOnToolTerminalCallbackFiresForFailed(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolExecutionFailed->value,
+            runId: 'test-run',
+            seq: 6,
+            payload: ['tool_call_id' => 'tc-456', 'is_error' => true],
+        );
+
+        $this->client->expects(self::once())
+            ->method('events')
+            ->with('test-run')
+            ->willReturn([$event]);
+
+        $this->projector->method('accept');
+        $this->projector->method('blocks')->willReturn([]);
+
+        $called = null;
+        $callback = static function (RuntimeEvent $e) use (&$called): void {
+            $called = $e;
+        };
+
+        $this->poller->poll($this->state, $this->client, onToolTerminal: $callback);
+
+        self::assertNotNull($called);
+        self::assertSame(RuntimeEventTypeEnum::ToolExecutionFailed->value, $called->type);
+        self::assertSame('tc-456', $called->payload['tool_call_id'] ?? null);
+    }
+
+    public function testOnToolTerminalNotCalledForNonTerminalEvents(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolExecutionStarted->value,
+            runId: 'test-run',
+            seq: 7,
+            payload: ['tool_call_id' => 'tc-789'],
+        );
+
+        $this->client->expects(self::once())
+            ->method('events')
+            ->with('test-run')
+            ->willReturn([$event]);
+
+        $this->projector->method('accept');
+        $this->projector->method('blocks')->willReturn([]);
+
+        $called = false;
+        $callback = static function (RuntimeEvent $e) use (&$called): void {
+            $called = true;
+        };
+
+        $this->poller->poll($this->state, $this->client, onToolTerminal: $callback);
+
+        self::assertFalse($called);
+    }
 }

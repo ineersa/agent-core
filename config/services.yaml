@@ -12,6 +12,13 @@ parameters:
     # Services read this parameter — not the raw env directly.
     app.capture_errors: '%env(bool:HATFIELD_CAPTURE_ERRORS)%'
 
+    # Default session ID for background process completion polling.
+    # Empty means unscoped (operates across all sessions) in
+    # non-controller or test environments. HeadlessController sets
+    # HATFIELD_SESSION_ID to the actual run ID so the poller scopes
+    # its queries and avoids O(N) cross-session filesystem scans.
+    env(HATFIELD_SESSION_ID): ''
+
 services:
   _defaults:
     autowire: true
@@ -148,10 +155,28 @@ services:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 
   # BashTool — TOOLS-09 registry-backed bash execution with foreground supervision.
-  # The prompt adapter defaults to BashBackgroundPromptDeclineAdapter (always
-  # declines backgrounding). TOOLS-09B should bind BashBackgroundPromptAdapterInterface
-  # explicitly to a production runtime/TUI bridge implementation in this file.
-  Ineersa\CodingAgent\Tool\BashTool: ~
+  # TOOLS-09B overrides the prompt adapter to RuntimeBashBackgroundPromptAdapter,
+  # which routes background confirmations through the TUI question system.
+  Ineersa\CodingAgent\Tool\BashTool:
+    arguments:
+      $promptAdapter: '@Ineersa\CodingAgent\Tool\ToolQuestion\RuntimeBashBackgroundPromptAdapter'
+
+  # Tool question store — cross-process pending tool question persistence.
+  Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStore: ~
+
+  # Runtime bash background prompt adapter — production TUI bridge.
+  Ineersa\CodingAgent\Tool\ToolQuestion\RuntimeBashBackgroundPromptAdapter: ~
+
+  # Background process status checker for adapter poll loop.
+  Ineersa\CodingAgent\Tool\ToolQuestion\BackgroundProcessStatusCheckerInterface:
+    alias: Ineersa\CodingAgent\Tool\ToolQuestion\BackgroundProcessStatusChecker
+
+  # Autowire the tool question store interface.
+  Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface:
+    alias: Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStore
+
+  # Controller command handler for tool question answers.
+  Ineersa\CodingAgent\Runtime\Controller\CommandHandler\AnswerToolQuestionHandler: ~
 
   # BackgroundProcess store — uses Doctrine ORM EntityManager,
   # no custom normalizer. Schema is managed by Doctrine migrations.
@@ -269,6 +294,12 @@ services:
   Ineersa\CodingAgent\Runtime\Controller\HeadlessController:
     arguments:
       $dispatcher: '@event_dispatcher'
+
+  Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller:
+    arguments:
+      # Session scoping prevents O(N) cross-session filesystem scans.
+      # Null/unset means unscoped (all processes), set = scoped to one run.
+      $sessionId: '%env(HATFIELD_SESSION_ID)%'
 
   # Stream observer delegates to Symfony EventDispatcher with per-delta subscribers.
   Ineersa\CodingAgent\Runtime\Stream\LlmStreamDispatchObserver:
