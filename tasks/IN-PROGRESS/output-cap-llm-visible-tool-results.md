@@ -142,7 +142,7 @@ Use Castor only. Required commands for implementation handoff:
 Status: IN-PROGRESS
 Branch: task/output-cap-llm-visible-tool-results
 Worktree: /home/ineersa/projects/agent-core-worktrees/output-cap-llm-visible-tool-results
-Fork run:
+Fork run: 6cd1x0bomv62
 PR URL:
 PR Status:
 Started: 2026-06-07T23:37:20.748Z
@@ -160,3 +160,7 @@ Completed:
 
 ## Task workflow update - 2026-06-07T23:41:45.761Z
 - Task claimed and worktree created at `/home/ineersa/projects/agent-core-worktrees/output-cap-llm-visible-tool-results` on branch `task/output-cap-llm-visible-tool-results`. Focused implementation-prep scout confirmed the boundary-safe entrypoint is a CodingAgent `TransformContextHookInterface` implementation before `AgentMessageConverter`, plus `BgStatusTool` direct OutputCap wiring and controller E2E test hooks for `--tools=read`/low `tools.output_cap` settings.
+
+## Task workflow update - 2026-06-07T23:42:37.365Z
+- Recorded fork run: 6cd1x0bomv62
+- Launched implementation fork `6cd1x0bomv62` in worktree `/home/ineersa/projects/agent-core-worktrees/output-cap-llm-visible-tool-results`. Fork instructions: add central `TransformContextHookInterface` output-cap hook before provider conversion, cap `bg_status log`, add deterministic transform/bg_status tests, add controller `llm-real` read-large-file test with isolated low `tools.output_cap`, run Castor validation, commit, and leave worktree clean.
