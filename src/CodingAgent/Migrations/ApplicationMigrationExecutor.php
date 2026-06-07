@@ -66,6 +66,7 @@ final class ApplicationMigrationExecutor
     private const KNOWN_MIGRATIONS = [
         \DoctrineMigrations\Version20260601152619::class,
         \DoctrineMigrations\Version20260606140000::class,
+        \DoctrineMigrations\Version20260607000000::class,
     ];
 
     private bool $ran = false;

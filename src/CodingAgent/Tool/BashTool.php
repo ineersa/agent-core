@@ -201,6 +201,10 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                                 return $this->handleFinished($recheck, $pid, $sessionId);
                             }
 
+                            // Mark the process as backgrounded so the
+                            // BackgroundProcessCompletionPoller can notify on completion.
+                            $this->manager->markBackgrounded($pid, $sessionId);
+
                             $this->logger->info('bash_tool.backgrounded', [
                                 'component' => 'tool.bash',
                                 'event_type' => 'bash_tool.backgrounded',

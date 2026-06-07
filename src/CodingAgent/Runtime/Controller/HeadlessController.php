@@ -76,6 +76,13 @@ final class HeadlessController
          * un-emitted tool questions and emits RuntimeEvents to the TUI.
          */
         private readonly ?ToolQuestionPoller $toolQuestionPoller = null,
+        /**
+         * Optional background process completion poller for sending
+         * follow-up notifications when a backgrounded process finishes.
+         * When provided, polls the DB for completed background processes
+         * and sends follow_up UserCommands to the agent session.
+         */
+        private readonly ?BackgroundProcessCompletionPoller $bgProcessCompletionPoller = null,
     ) {
         $this->sessionId = $_SERVER['HATFIELD_SESSION_ID'] ?? $_ENV['HATFIELD_SESSION_ID'] ?? 'unknown';
     }
@@ -152,6 +159,11 @@ final class HeadlessController
         // Runs in-process alongside the controller rather than relying on
         // tool consumer stdout, which is not currently polled.
         $this->toolQuestionPoller?->startPollLoop();
+
+        // Poll background_process DB table for completed, explicitly-backgrounded
+        // processes and send follow-up notifications to the agent session.
+        // This mirrors pi's bg-process.ts finalizeBackgroundProcess behavior.
+        $this->bgProcessCompletionPoller?->startPollLoop();
 
         // Periodic event drain via emitter.
         $this->emitter->startDrainLoop(0.05);

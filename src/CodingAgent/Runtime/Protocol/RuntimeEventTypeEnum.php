@@ -95,6 +95,13 @@ enum RuntimeEventTypeEnum: string
 
     case ToolQuestionRequested = 'tool_question.requested';
 
+    // ── Background process completion ───────────────────────────────────────────────────
+    // Emitted by BackgroundProcessCompletionPoller when a process that was
+    // explicitly moved to background finishes. Carries pid, exit_code, status,
+    // command_preview, output_tail in payload.
+
+    case BackgroundProcessCompleted = 'bg_process.completed';
+
     // ── Runtime lifecycle (controller process) ─────────────────────────────
 
     case RuntimeReady = 'runtime.ready';
@@ -142,6 +149,8 @@ enum RuntimeEventTypeEnum: string
             self::ProtocolError => 'protocol',
 
             self::ToolQuestionRequested => 'tool_question',
+
+            self::BackgroundProcessCompleted => 'background_process_completion',
 
             self::ModelChanged, self::ReasoningChanged, self::UsageUpdated,
             self::ContextUpdated, self::CostUpdated => 'metadata',

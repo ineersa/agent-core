@@ -452,6 +452,37 @@ final class BackgroundProcessManager
     }
 
     /**
+     * Mark a process as explicitly moved to background by user action.
+     *
+     * Called by BashTool when the user accepts the background prompt.
+     * Only processes marked backgrounded are eligible for automatic
+     * completion notification via the controller poller.
+     *
+     * @throws \RuntimeException when process not found
+     */
+    public function markBackgrounded(int $pid, ?string $sessionId = null): void
+    {
+        $entity = $this->store->fetchByPid($pid);
+
+        if (null === $entity) {
+            throw new \RuntimeException(\sprintf('Background process with PID %d not found.', $pid));
+        }
+
+        if (null !== $sessionId && $entity->sessionId !== $sessionId) {
+            throw new \RuntimeException(\sprintf('No background process with PID %d for this session.', $pid));
+        }
+
+        $this->store->markBackgrounded($pid, Clock::get()->now());
+
+        $this->logger->info('background_process.marked_backgrounded', [
+            'component' => 'tool.background_process',
+            'event_type' => 'background_process.marked_backgrounded',
+            'process_pid' => $pid,
+            'process_session_id' => $sessionId ?? '',
+        ]);
+    }
+
+    /**
      * Terminate all currently tracked running processes.
      *
      * Called automatically via register_shutdown_function() on PHP process

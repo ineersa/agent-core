@@ -414,6 +414,10 @@ final class BashToolTest extends IsolatedKernelTestCase
         // Verify it's the same PID (single execution, no duplicate)
         $this->assertSame($pid, $entities[0]->pid, 'The background process should have the same PID');
 
+        // Verify the process is marked as backgrounded (backgroundAt is set)
+        // This confirms the markBackgrounded() call was made in BashTool.
+        $this->assertNotNull($entities[0]->backgroundedAt, 'Background process should have backgroundedAt set');
+
         // Verify the log contains our unique marker
         \usleep(200_000); // Wait for log flush
         $logContent = \file_get_contents($entities[0]->logPath);

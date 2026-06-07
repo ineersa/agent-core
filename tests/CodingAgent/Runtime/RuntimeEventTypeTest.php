@@ -112,6 +112,9 @@ final class RuntimeEventTypeTest extends TestCase
 
             // Tool-local questions
             RuntimeEventTypeEnum::ToolQuestionRequested,
+
+            // Background process completion
+            RuntimeEventTypeEnum::BackgroundProcessCompleted,
         ];
 
         $cases = RuntimeEventTypeEnum::cases();
@@ -296,6 +299,8 @@ final class RuntimeEventTypeTest extends TestCase
         }
 
         yield RuntimeEventTypeEnum::ToolQuestionRequested->name => [RuntimeEventTypeEnum::ToolQuestionRequested, 'tool_question'];
+
+        yield RuntimeEventTypeEnum::BackgroundProcessCompleted->name => [RuntimeEventTypeEnum::BackgroundProcessCompleted, 'background_process_completion'];
     }
 
     /**
@@ -330,6 +335,11 @@ final class RuntimeEventTypeTest extends TestCase
         $this->assertTrue(RuntimeEventTypeEnum::ToolQuestionRequested->isToolQuestion());
         $this->assertFalse(RuntimeEventTypeEnum::ToolQuestionRequested->isLifecycle());
         $this->assertFalse(RuntimeEventTypeEnum::ToolQuestionRequested->isHitl());
+
+        $this->assertSame('background_process_completion', RuntimeEventTypeEnum::BackgroundProcessCompleted->family());
+        $this->assertFalse(RuntimeEventTypeEnum::BackgroundProcessCompleted->isLifecycle());
+        $this->assertFalse(RuntimeEventTypeEnum::BackgroundProcessCompleted->isTool());
+        $this->assertFalse(RuntimeEventTypeEnum::BackgroundProcessCompleted->isHitl());
     }
 
     /**
@@ -360,7 +370,8 @@ final class RuntimeEventTypeTest extends TestCase
     {
         // 8 lifecycle + 1 user_input + 9 assistant + 8 tool + 2 progress
         // + 6 HITL + 2 cancellation + 5 metadata + 2 command
-        // + 1 runtime + 1 protocol + 1 resumed + 1 tool_question = 47
-        $this->assertCount(47, RuntimeEventTypeEnum::cases());
+        // + 1 runtime + 1 protocol + 1 resumed + 1 tool_question
+        // + 1 background_process_completion = 48
+        $this->assertCount(48, RuntimeEventTypeEnum::cases());
     }
 }
