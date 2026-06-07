@@ -139,14 +139,21 @@ Use Castor only. Required commands for implementation handoff:
 - All QA/test/lint/static-analysis commands are run via Castor; full `LLM_MODE=true castor check` is required before CODE-REVIEW because this changes LLM-visible flow.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/output-cap-llm-visible-tool-results
+Worktree: /home/ineersa/projects/agent-core-worktrees/output-cap-llm-visible-tool-results
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-07T23:37:20.748Z
 Completed:
 
 ## Work log
 - Created: 2026-06-07T23:15:32.094Z
+
+## Task workflow update - 2026-06-07T23:37:20.748Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/output-cap-llm-visible-tool-results.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/output-cap-llm-visible-tool-results.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/output-cap-llm-visible-tool-results.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/output-cap-llm-visible-tool-results.
