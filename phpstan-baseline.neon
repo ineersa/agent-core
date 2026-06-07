@@ -1,6 +1,17 @@
 parameters:
 	ignoreErrors:
 		-
+			message: '#^Method Ineersa\\CodingAgent\\Auth\\CodexOAuthProvider\:\:getAuthorizationParameters\(\) has parameter \$options with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/CodingAgent/Auth/CodexOAuthProvider.php
+
+		-
+			message: '#^Method Ineersa\\CodingAgent\\Auth\\CodexOAuthProvider\:\:getAccessTokenRequest\(\) has parameter \$params with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/CodingAgent/Auth/CodexOAuthProvider.php
+		-
 			message: '#^Method Ineersa\\CodingAgent\\CLI\\AgentCommand\:\:__invoke\(\) has parameter \$skills with no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1

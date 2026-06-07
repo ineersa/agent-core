@@ -53,14 +53,18 @@ final class CodexOAuthConfig
      */
     public static function redirectUriForPort(int $port = self::DEFAULT_PORT): string
     {
-        return \sprintf('http://127.0.0.1:%d/auth/callback', $port);
+        return \sprintf('http://localhost:%d/auth/callback', $port);
     }
 
     /**
-     * GenericProvider options array for the given port.
+     * Provider options array for the given port.
      *
-     * Centralized so both CodexOAuthService and CodexAuthStorage's
-     * inline refresh handler share the same configuration.
+     * Centralised so both CodexOAuthService and CodexTokenRefresher
+     * share the same configuration.
+     *
+     * Note: the resulting {@see CodexOAuthProvider} filters out the
+     * empty client_secret from token requests; OpenAI's Hydra OAuth
+     * server rejects the field for this public client registration.
      *
      * @return array<string, mixed>
      */

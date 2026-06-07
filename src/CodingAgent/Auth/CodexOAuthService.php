@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Auth;
 
 use League\OAuth2\Client\Provider\Exception\IdentityProviderException;
-use League\OAuth2\Client\Provider\GenericProvider;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
@@ -171,10 +170,14 @@ final class CodexOAuthService
     }
 
     /**
-     * Get a configured GenericProvider for Codex OAuth.
+     * Get a configured CodexOAuthProvider for the Codex OAuth PKCE flow.
+     *
+     * Uses the custom provider which strips the league default 'approval_prompt'
+     * parameter and omits the empty 'client_secret' from token requests — both
+     * required by OpenAI's Hydra OAuth server.
      */
-    private function createProvider(int $port = CodexOAuthConfig::DEFAULT_PORT): GenericProvider
+    private function createProvider(int $port = CodexOAuthConfig::DEFAULT_PORT): CodexOAuthProvider
     {
-        return new GenericProvider(CodexOAuthConfig::providerOptions($port));
+        return new CodexOAuthProvider(CodexOAuthConfig::providerOptions($port));
     }
 }

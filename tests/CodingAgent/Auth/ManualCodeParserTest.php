@@ -12,7 +12,7 @@ final class ManualCodeParserTest extends TestCase
     public function testParsesFullRedirectUrl(): void
     {
         $result = ManualCodeParser::parse(
-            'http://127.0.0.1:1455/auth/callback?code=abc123&state=def456',
+            'http://localhost:1455/auth/callback?code=abc123&state=def456',
         );
 
         $this->assertSame('abc123', $result['code']);
@@ -22,7 +22,7 @@ final class ManualCodeParserTest extends TestCase
     public function testParsesUrlWithOnlyCode(): void
     {
         $result = ManualCodeParser::parse(
-            'http://127.0.0.1:1455/auth/callback?code=abc123',
+            'http://localhost:1455/auth/callback?code=abc123',
         );
 
         $this->assertSame('abc123', $result['code']);

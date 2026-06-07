@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Auth;
 
 use League\OAuth2\Client\Provider\Exception\IdentityProviderException;
-use League\OAuth2\Client\Provider\GenericProvider;
 
 /**
  * Exchanges a refresh token for fresh OAuth credentials.
@@ -35,7 +34,7 @@ class CodexTokenRefresher
      */
     public function refresh(string $refreshToken, string $expectedAccountId): CodexAuthRecord
     {
-        $provider = new GenericProvider(CodexOAuthConfig::providerOptions($this->port));
+        $provider = new CodexOAuthProvider(CodexOAuthConfig::providerOptions($this->port));
 
         try {
             $token = $provider->getAccessToken('refresh_token', [
