@@ -330,6 +330,9 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('background', $result);
         $this->assertStringContainsString('PID:', $result);
         $this->assertStringContainsString('Log:', $result);
+        $this->assertStringContainsString('You will be notified', $result);
+        $this->assertStringContainsString('bg_status log pid=', $result);
+        $this->assertStringContainsString('bg_status stop pid=', $result);
         $this->assertStringNotContainsString('timed out', $result);
         $this->assertStringNotContainsString('cancelled', $result);
     }
@@ -401,6 +404,9 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         $this->assertStringContainsString('background', $result);
         $this->assertStringContainsString('PID:', $result);
+        $this->assertStringContainsString('You will be notified', $result);
+        $this->assertStringContainsString('bg_status log pid=', $result);
+        $this->assertStringContainsString('bg_status stop pid=', $result);
 
         // Extract PID from result
         \preg_match('/PID: (\d+)/', $result, $matches);

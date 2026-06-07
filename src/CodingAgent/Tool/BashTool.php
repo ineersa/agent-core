@@ -212,12 +212,14 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                                 'log_path' => $logPath,
                             ]);
 
+                            $pidStr = (string) $pid;
+
                             return \sprintf(
-                                "Command moved to background.\nPID: %d\nLog: %s\n\nYou will be notified when the process finishes.\nUse bg_status log pid=%d for immediate output, or bg_status stop pid=%d to terminate.",
+                                "Command moved to background.\nPID: %d\nLog: %s\n\nYou will be notified when the process finishes.\n\nYou can also check output with:\n  bg_status log pid=%s\n\nOr stop it with:\n  bg_status stop pid=%s",
                                 $pid,
                                 $logPath,
-                                $pid,
-                                $pid,
+                                $pidStr,
+                                $pidStr,
                             );
                         }
 
@@ -267,7 +269,7 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                 'Use bash for running shell commands, scripts, build tools, and git operations.',
                 'For file operations such as reading, writing, editing, or viewing files, prefer the dedicated read/write/edit/view_image tools instead of bash cat/echo/editor pipelines.',
                 'Commands run until completion. Use the optional timeout parameter for commands that may hang (e.g., network operations, long builds).',
-                \sprintf('Long-running commands (over %d seconds) may be offered to move to background. If backgrounded, use bg_status log to view output and bg_status stop to terminate.', $this->config->backgroundPromptThresholdSeconds),
+                \sprintf('Long-running commands (over %d seconds) may be offered to move to background. If backgrounded, tell the user they will be notified on completion, and include bg_status log pid=<pid> / bg_status stop pid=<pid> as fallback commands from the tool result.', $this->config->backgroundPromptThresholdSeconds),
                 'The command string is passed directly to bash -c. Use proper escaping for special characters.',
                 'Output is capped to prevent excessively large responses. Very large output may be truncated and saved to a file for inspection.',
             ],
