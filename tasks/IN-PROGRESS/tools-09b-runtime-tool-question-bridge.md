@@ -64,7 +64,7 @@ This follows TOOLS-09, which implements bash as a background-managed foreground-
 - Required validation is run through Castor, including `castor check` before handoff unless environment prerequisites are unavailable.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/tools-09b-runtime-tool-question-bridge
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-09b-runtime-tool-question-bridge
 Fork run: o30s2waurjqw
@@ -234,3 +234,7 @@ Castor Check Output SHA256: 47cd96b0b58c66f04734662d5fb5d2abe66498d8979238ab044a
 - Scout 1: BashTool calls shouldBackground() after threshold and blocks inside RuntimeBashBackgroundPromptAdapter; adapter ignores process completion, so a process finishing while question is open is invisible until adapter timeout. When adapter returns at the same deadline as BashTool, BashTool timeout branch wins before finished-process handling.
 - Scout 2: TUI QuestionCoordinator/QuestionController currently close tool questions only on user action. There is no tool_question resolved/cancelled event. Store idempotency makes late answer a DB noop, but UI overlay stays stale. Recommended least-invasive reuse-first close path: auto-cancel/close active tool question when matching tool execution terminal event arrives, and/or emit explicit cancellation if adding protocol surface is justified.
 - Scout 3: Test strategy should cover process finishes while prompt is open -> output returned, adapter detects process completion and cancels question, late answer after cancelled question is noop, and TUI/coordinator closes matching active tool question on tool terminal event. Existing seams: BashBackgroundPromptAdapterInterface, ToolQuestionStoreInterface, StackToolExecutionContextAccessor, CancellationTokenInterface, BashToolTest real process/kernel patterns.
+
+## Task workflow update - 2026-06-07T17:58:46.937Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: Review iteration opened for user smoke-test regressions in PR #99: unanswered bash background question can mask completed process as timeout, and stale question overlay remains actionable after tool completion. No GitHub PR comments yet; user reported issues directly during manual smoke testing.
