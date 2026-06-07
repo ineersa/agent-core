@@ -109,9 +109,11 @@ final readonly class ExecuteLlmStepWorker
             $this->metrics?->recordLlmLatency($durationMs, null !== $response->error);
 
             if (null !== $response->error) {
-                $this->logger->info('llm.request.failed', [
+                $this->logger->warning('llm.request.failed', [
                     'duration_ms' => round($durationMs, 3),
                     'event_type' => 'llm.request.failed',
+                    'error_type' => $response->error['type'] ?? 'unknown',
+                    'error_message' => mb_substr($response->error['message'] ?? 'Unknown error', 0, 500),
                 ]);
             } else {
                 $this->logger->info('llm.request.completed', [
@@ -144,10 +146,11 @@ final readonly class ExecuteLlmStepWorker
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
             $this->metrics?->recordLlmLatency($durationMs, true);
 
-            $this->logger->info('llm.request.failed', [
+            $this->logger->warning('llm.request.failed', [
                 'duration_ms' => round($durationMs, 3),
                 'event_type' => 'llm.request.failed',
                 'error_type' => $exception::class,
+                'error_message' => mb_substr($exception->getMessage(), 0, 500),
             ]);
 
             return new LlmStepResult(

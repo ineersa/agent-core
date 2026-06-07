@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Symfony\AI\Platform\Bridge\OpenAICodex;
 
+use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\CodexContract;
 use Symfony\AI\Platform\Contract;
 use Symfony\AI\Platform\ModelCatalog\ModelCatalogInterface;
 use Symfony\AI\Platform\ModelRouter\CatalogBasedModelRouter;
@@ -41,7 +42,7 @@ class Factory
             [new CodexModelClient($httpClient, $baseUrl, $accessToken, $accountId, $responsesPath, $originator)],
             [new ResultConverter()],
             $modelCatalog,
-            $contract ?? Contract::create(),
+            $contract ?? CodexContract::create(),
             $eventDispatcher,
         );
     }

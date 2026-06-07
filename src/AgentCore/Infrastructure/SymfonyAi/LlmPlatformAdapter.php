@@ -223,6 +223,14 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         } catch (\Throwable $exception) {
             $this->notifyStreamError($runId, $stepId, $exception);
 
+            $this->logger->warning('llm.provider.stream_error', [
+                'event_type' => 'llm.provider.stream_error',
+                'run_id' => $runId,
+                'step_id' => $stepId,
+                'error_type' => $exception::class,
+                'error_message' => $exception->getMessage(),
+            ]);
+
             return $this->errorResult($deltas, $exception, $deferredResult);
         }
 

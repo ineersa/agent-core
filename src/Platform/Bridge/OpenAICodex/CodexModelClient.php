@@ -14,6 +14,21 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 class CodexModelClient implements ModelClientInterface
 {
+    /**
+     * Internal option keys that must not be serialized into the Codex JSON body.
+     *
+     * These keys are injected by Hatfield/Symfony AI infrastructure for routing,
+     * metadata, or hook dispatch and are not valid Codex Responses API fields.
+     */
+    private const array INTERNAL_OPTION_KEYS = [
+        '_agent_core_invocation',
+        '_hatfield_suppress_developer_role',
+        'stream',
+        'tools_ref',
+        'turn_no',
+        'run_id',
+    ];
+
     private readonly EventSourceHttpClient $httpClient;
 
     public function __construct(
@@ -40,6 +55,7 @@ class CodexModelClient implements ModelClientInterface
             throw new InvalidArgumentException(\sprintf('Payload must be an array, but a string was given to "%s".', self::class));
         }
 
+        // Transform structured output options before option sanitization.
         if (isset($options[PlatformSubscriber::RESPONSE_FORMAT]['json_schema']['schema'])) {
             $schema = $options[PlatformSubscriber::RESPONSE_FORMAT]['json_schema'];
             $options['text']['format'] = $schema;
@@ -49,6 +65,9 @@ class CodexModelClient implements ModelClientInterface
             unset($options[PlatformSubscriber::RESPONSE_FORMAT]);
         }
 
+        // Strip Hatfield/Symfony AI internal keys that are not valid Codex API fields.
+        $bodyOptions = array_diff_key($options, array_flip(self::INTERNAL_OPTION_KEYS));
+
         $requestOptions = [
             'auth_bearer' => $this->accessToken,
             'headers' => [
@@ -57,7 +76,7 @@ class CodexModelClient implements ModelClientInterface
                 'originator' => $this->originator,
                 'OpenAI-Beta' => 'responses=experimental',
             ],
-            'json' => array_merge($options, ['model' => $model->getName()], $payload),
+            'json' => array_merge($bodyOptions, ['model' => $model->getName()], $payload),
         ];
 
         return new RawHttpResult($this->httpClient->request('POST', $this->baseUrl.$this->path, $requestOptions));
