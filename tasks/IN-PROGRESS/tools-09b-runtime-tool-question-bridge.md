@@ -67,7 +67,7 @@ This follows TOOLS-09, which implements bash as a background-managed foreground-
 Status: IN-PROGRESS
 Branch: task/tools-09b-runtime-tool-question-bridge
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-09b-runtime-tool-question-bridge
-Fork run: 6rve3gftz4ui
+Fork run: djx7ma1em7ui
 PR URL:
 PR Status:
 Started: 2026-06-06T23:33:30.150Z
@@ -113,3 +113,9 @@ Completed:
 - Summary: Second reviewer pass after commit b1d8b010 returned APPROVE WITH SUGGESTIONS. Reviewer confirmed all first-pass findings were addressed and found no critical issues. Two sensible actionable follow-ups are being fixed before PR: add missing RuntimeEventTypeEnum family test coverage for ToolQuestionRequested/tool_question, and set updatedAt explicitly in ToolQuestionStore::cancelPendingQuestionsCreatedBefore() bulk DQL cleanup. The theoretical TOCTOU locking suggestion was intentionally not forwarded because reviewer described the blast radius as negligible in the current single-controller/single-answer SQLite flow, and strict locking would require disproportionate SELECT FOR UPDATE/optimistic-lock changes before PR. Follow-up fork 6rve3gftz4ui launched to apply the two small fixes, run Castor validation, commit, and stop.
 - Second reviewer subagent verdict on current HEAD b1d8b010: APPROVE WITH SUGGESTIONS. Prior review findings verified fixed; no architecture/deptrac/runtime/TUI blockers found.
 - Fork 6rve3gftz4ui launched for final review follow-up: add ToolQuestionRequested familyProvider/helper predicate coverage and set updatedAt in stale pending ToolQuestion bulk cleanup.
+
+## Task workflow update - 2026-06-07T00:43:34.517Z
+- Recorded fork run: djx7ma1em7ui
+- Summary: Final reviewer pass after c6774966 returned APPROVE WITH SUGGESTIONS with no Issues and no Critical Issues. Reviewer verified all prior findings fixed: deptrac duplicate removed, ToolQuestionStore answer/cancel idempotent, QueryBuilder/dead API removed, answer parsing consolidated, startup stale cleanup safe, bulk cleanup updates updatedAt, and ToolQuestionRequested family/helper tests present. One reasonable high-value NTH remains: add kernel-backed ToolQuestionStore integration coverage for create/poll/answer/cancel/stale cleanup. Fork djx7ma1em7ui launched with default fork settings to add that test using IsolatedKernelTestCase/test container, run Castor validation, commit, and stop. Other NTHs intentionally skipped: no debug log for no questions found (would add log noise), no extra entity factory validation because the single production caller already caps command preview.
+- Final reviewer subagent verdict on HEAD c6774966: APPROVE WITH SUGGESTIONS, with no actionable Issues/Critical Issues. Security notes and design notes were non-blocking.
+- Fork djx7ma1em7ui launched to address the only reasonable pre-PR NTH: kernel-backed ToolQuestionStore integration test.
