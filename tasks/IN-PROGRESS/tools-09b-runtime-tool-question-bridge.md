@@ -67,7 +67,7 @@ This follows TOOLS-09, which implements bash as a background-managed foreground-
 Status: IN-PROGRESS
 Branch: task/tools-09b-runtime-tool-question-bridge
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-09b-runtime-tool-question-bridge
-Fork run: f3yg0pj1tpq2
+Fork run: cxwd2p2eqmmt
 PR URL: https://github.com/ineersa/agent-core/pull/99
 PR Status: open
 Started: 2026-06-06T23:33:30.150Z
@@ -301,3 +301,8 @@ Castor Check Output SHA256: 47cd96b0b58c66f04734662d5fb5d2abe66498d8979238ab044a
 - Summary: Fork f3yg0pj1tpq2 completed the missing background completion follow-up fix. Commit 9821fd8c (`TOOLS-09B: Refresh background process completions`) on task branch, worktree clean. Commit-local stat: 4 files changed, 103 insertions, 16 deletions. Production fix: `BackgroundProcessCompletionPoller::poll()` now refreshes unfinished background process statuses from filesystem state before querying pending notifications, so status-file-completed processes get `finishedAt` populated without requiring manual `bg_status`. `BackgroundProcessManager::refreshAllUnfinished()` is now public with poller-focused docblock. `BashTool` background handoff now says `You will be notified when the process finishes.` Regression coverage added for a backgrounded process with `finishedAt = null`, real status file, and real log file; test asserts follow-up, finished status, and notified marker. Foreground/non-backgrounded no-notify behavior preserved.
 - User smoke bug root cause fixed: completion poller previously queried `finishedAt IS NOT NULL` before any DB refresh, so natural process completion was invisible until `bg_status` refreshed the row.
 - Implementation phase STOP boundary observed after recording fork result: no reviewer, no castor check, no move_task(to=CODE-REVIEW), no PR creation, no task-branch push from orchestrator.
+
+## Task workflow update - 2026-06-07T20:47:00.140Z
+- Recorded fork run: cxwd2p2eqmmt
+- Summary: Launched tiny follow-up fork cxwd2p2eqmmt to clarify the background handoff hints now that auto-notify works. Observation: raw BashTool output already contained a one-line `bg_status log/stop` hint, but the model/user-visible paraphrase omitted it. Fork instructed to make the handoff more structured and harder to drop: keep `You will be notified when the process finishes`, add explicit fallback lines for `bg_status log pid=<pid>` and `bg_status stop pid=<pid>`, add/adjust BashTool prompt guidance so the model includes notification + fallback commands when summarizing a backgrounded command, add focused BashToolTest assertions, run Castor validation, commit, and stop without push/PR/status changes.
+- User requested adding back manual log/status hints after confirming background completion notification works.
