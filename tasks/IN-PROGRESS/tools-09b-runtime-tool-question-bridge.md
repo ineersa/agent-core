@@ -67,7 +67,7 @@ This follows TOOLS-09, which implements bash as a background-managed foreground-
 Status: IN-PROGRESS
 Branch: task/tools-09b-runtime-tool-question-bridge
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-09b-runtime-tool-question-bridge
-Fork run: qh4y2dfae226
+Fork run: 92s164cbq9nx
 PR URL: https://github.com/ineersa/agent-core/pull/99
 PR Status: open
 Started: 2026-06-06T23:33:30.150Z
@@ -276,3 +276,9 @@ Castor Check Output SHA256: 47cd96b0b58c66f04734662d5fb5d2abe66498d8979238ab044a
 - Summary: Fork qh4y2dfae226 completed stale overlay close cleanup and committed 4e1a5c0b (`TOOLS-09B: Close stale tool question overlay`). Worktree verified clean at HEAD 4e1a5c0b, branch ahead of origin by 2 commits. Commit changed 2 files (8 insertions, 4 deletions): TickPollListener now passes QuestionController into handleToolTerminal, removes unused client param, cancels the matching active local tool question, and calls QuestionController::close() so the stale overlay disappears visually on matching tool terminal event. BackgroundProcessStatusCheckerTest unused CoversClass import removed. Fork deliberately did not add high-churn isolated handleToolTerminal tests; existing RuntimeEventPoller terminal callback tests and QuestionController close-safety tests cover the relevant seams.
 - Verified qh4y2dfae226 commit 4e1a5c0b exists at HEAD, worktree clean, branch ahead by 2 commits.
 - Next implementation item requested by user: implement original bg-process behavior where completed background process output is surfaced back as a user-level follow-up message, based on pi bg-process.ts scout findings.
+
+## Task workflow update - 2026-06-07T18:37:50.674Z
+- Recorded fork run: 92s164cbq9nx
+- Summary: Launched implementation fork 92s164cbq9nx to implement original bg-process behavior: completed explicitly-backgrounded bash process output should be surfaced as a synthetic user-level follow-up message using native `UserCommand(type: 'follow_up')`, analogous to pi `bg-process.ts` calling `pi.sendUserMessage(..., { deliverAs: 'followUp' })`. Fork instructed to persist explicit backgrounding + notification state on background_process, mark only accepted background commands as notification-eligible, add a controller-side BackgroundProcessCompletionPoller modeled on ToolQuestionPoller, send `[BG_PROCESS_DONE] ... Output (last 3000 chars)` follow-up on completion, mark notified only after successful send, add tests, run Castor validation, commit, and stop without push/PR/status changes.
+- Fork 92s164cbq9nx launched after qh4y2dfae226 completed, avoiding concurrent worktree edits.
+- Important fork constraint: do not notify all bash commands; only records explicitly marked as moved-to-background after user/adapter accepted backgrounding should auto-follow-up. Foreground bash processes also use BackgroundProcessManager and must not produce duplicate follow-up messages.
