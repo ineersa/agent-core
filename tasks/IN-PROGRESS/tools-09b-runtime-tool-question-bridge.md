@@ -67,7 +67,7 @@ This follows TOOLS-09, which implements bash as a background-managed foreground-
 Status: IN-PROGRESS
 Branch: task/tools-09b-runtime-tool-question-bridge
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-09b-runtime-tool-question-bridge
-Fork run: yd2co4vdi8aq
+Fork run: qh4y2dfae226
 PR URL: https://github.com/ineersa/agent-core/pull/99
 PR Status: open
 Started: 2026-06-06T23:33:30.150Z
@@ -257,3 +257,9 @@ Castor Check Output SHA256: 47cd96b0b58c66f04734662d5fb5d2abe66498d8979238ab044a
 - Reviewer on f62195f1: APPROVE WITH SUGGESTIONS. Actionable UX issue remains: stale overlay may not visually close because coordinator cancellation does not call QuestionController::close().
 - Reviewer minor cleanup: unused CoversClass import in tests/CodingAgent/Tool/ToolQuestion/BackgroundProcessStatusCheckerTest.php; unused `$client` parameter in src/Tui/Listener/TickPollListener.php::handleToolTerminal().
 - No code changes made by orchestrator. Next step should be a small implementation fork to address reviewer suggestions if user approves.
+
+## Task workflow update - 2026-06-07T18:26:11.412Z
+- Recorded fork run: qh4y2dfae226
+- Summary: Launched narrow implementation fork qh4y2dfae226 to fix the remaining visible stale-question overlay after tool terminal response. User smoke-tested f62195f1 and confirmed timeout/noop behavior appears fixed, but the question does not visually disappear. Fork instructed to pass/use QuestionController in TickPollListener tool-terminal handling and call close() after cancelling the matching active local tool question, remove unused handleToolTerminal $client param if present, remove unused CoversClass import in BackgroundProcessStatusCheckerTest, run Castor validation, commit, and stop.
+- Clarified behavior: once a command is explicitly moved to background, final stdout is not returned as the original tool result; it is retrieved via bg_status. Auto-injecting completed background output into the same assistant turn would be a separate background-notification feature. The bugfix scope remains unanswered-prompt completion and stale overlay cleanup.
+- Fork qh4y2dfae226 launched to close visible stale overlay and address reviewer cleanup nits.
