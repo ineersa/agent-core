@@ -213,7 +213,7 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                             ]);
 
                             return \sprintf(
-                                "Command moved to background.\nPID: %d\nLog: %s\n\nUse bg_status log pid=%d to check output, or bg_status stop pid=%d to terminate.",
+                                "Command moved to background.\nPID: %d\nLog: %s\n\nYou will be notified when the process finishes.\nUse bg_status log pid=%d for immediate output, or bg_status stop pid=%d to terminate.",
                                 $pid,
                                 $logPath,
                                 $pid,

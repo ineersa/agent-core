@@ -535,6 +535,29 @@ final class BackgroundProcessManager
         return $count;
     }
 
+    /**
+     * Refresh all unfinished entities so finished_at is populated
+     * for processes that completed without a list() call.
+     *
+     * Designed for controller pollers (BackgroundProcessCompletionPoller)
+     * that need to detect freshly-completed processes without first
+     * calling find() or list() on each entity.
+     *
+     * Safe to call repeatedly — only queries unfinished entities, checks
+     * status files and /proc/<pid>, and flushes any newly-resolved
+     * entities. Already-finished entities are skipped.
+     */
+    public function refreshAllUnfinished(): void
+    {
+        $entities = $this->store->fetchAllUnfinished();
+
+        foreach ($entities as $entity) {
+            $this->resolveEntityStatus($entity);
+        }
+
+        $this->store->flush();
+    }
+
     // ─── Private helpers ─────────────────────────────────────────────
 
     /**
@@ -597,21 +620,6 @@ final class BackgroundProcessManager
     private function refreshEntity(BackgroundProcess $entity): void
     {
         $this->resolveEntityStatus($entity);
-        $this->store->flush();
-    }
-
-    /**
-     * Refresh all unfinished entities so finished_at is populated
-     * for processes that completed without a list() call.
-     */
-    private function refreshAllUnfinished(): void
-    {
-        $entities = $this->store->fetchAllUnfinished();
-
-        foreach ($entities as $entity) {
-            $this->resolveEntityStatus($entity);
-        }
-
         $this->store->flush();
     }
 }

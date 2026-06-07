@@ -69,6 +69,24 @@ final class BackgroundProcessCompletionPoller
 
     private function poll(): void
     {
+        // Step 1: Refresh unfinished process statuses from filesystem state.
+        //
+        // A backgrounded process that finishes naturally only writes its
+        // status file; the DB entity still has finishedAt=NULL. Without
+        // this refresh, findPendingNotifications() below would never
+        // select it because the query requires finishedAt IS NOT NULL.
+        try {
+            $this->processManager->refreshAllUnfinished();
+        } catch (\Throwable $e) {
+            $this->logger->warning('bg_process_completion.refresh_failed', [
+                'component' => 'bg_process_completion.poller',
+                'event_type' => 'bg_process_completion.refresh_failed',
+                'exception' => $e->getMessage(),
+            ]);
+
+            return;
+        }
+
         try {
             $processes = $this->processStore->findPendingNotifications();
         } catch (\Throwable $e) {

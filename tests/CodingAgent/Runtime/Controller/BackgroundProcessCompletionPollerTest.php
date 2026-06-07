@@ -275,6 +275,67 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $this->assertNotNull($entity->completionNotifiedAt);
     }
 
+    public function testRegressionFreshBackgroundedProcessWithoutFinishedAt(): void
+    {
+        // Regression for the bug where a backgrounded process finishes
+        // naturally (writes status file, exits) but the DB entity still
+        // has finishedAt=NULL because no code calls resolveEntityStatus().
+        // The poller must refresh unfinished process statuses before
+        // querying for pending notifications.
+        $logPath = $this->tmpDir.'/test-regression.log';
+        file_put_contents($logPath, "regression output line\n");
+
+        $pid = 50001;
+        $statusPath = $this->tmpDir.'/'.$pid.'.status';
+        file_put_contents($statusPath, '0'); // exit code 0
+
+        $now = new \DateTimeImmutable();
+
+        $em = self::getContainer()->get(EntityManagerInterface::class);
+
+        // Persist a process with finishedAt=NULL and status=Running —
+        // exactly what the DB looks like after a backgrounded process
+        // has finished without any explicit list()/find() call.
+        $proc = new BackgroundProcess();
+        $proc->pid = $pid;
+        $proc->sessionId = 'test-regression-run';
+        $proc->command = 'echo "regression output"';
+        $proc->logPath = $logPath;
+        $proc->statusPath = $statusPath;
+        $proc->backgroundedAt = $now->modify('-60 seconds');
+        $proc->finishedAt = null;
+        $proc->exitCode = null;
+        $proc->status = BackgroundProcessStatusEnum::Running;
+        $proc->startedAt = $now->modify('-60 seconds');
+        $em->persist($proc);
+        $em->flush();
+
+        $store = self::getContainer()->get(ProcessStore::class);
+        $bgConfig = $this->createBgConfig();
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger());
+        $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
+
+        $poller = $this->createPoller($store, $manager);
+        $ref = new \ReflectionMethod($poller, 'poll');
+        $ref->invoke($poller);
+
+        // Assert follow_up was sent with [BG_PROCESS_DONE] prefix
+        $this->assertCount(1, $this->sentCommands);
+        [$runId, $command] = $this->sentCommands[0];
+        $this->assertSame('test-regression-run', $runId);
+        $this->assertSame('follow_up', $command->type);
+        $this->assertStringContainsString('[BG_PROCESS_DONE]', $command->text ?? '');
+        $this->assertStringContainsString('PID '.$pid, $command->text ?? '');
+        $this->assertStringContainsString('regression output', $command->text ?? '');
+
+        // Assert DB state was updated by the refresh
+        $entity = $this->findProcess($pid);
+        $this->assertNotNull($entity);
+        $this->assertNotNull($entity->finishedAt, 'finishedAt must be populated after refresh');
+        $this->assertSame(BackgroundProcessStatusEnum::Finished, $entity->status);
+        $this->assertNotNull($entity->completionNotifiedAt, 'completionNotifiedAt must be set after notification');
+    }
+
     private function createPoller(ProcessStore $store, BackgroundProcessManager $manager): BackgroundProcessCompletionPoller
     {
         return new BackgroundProcessCompletionPoller(
