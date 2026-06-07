@@ -294,6 +294,8 @@ final class RuntimeEventTypeTest extends TestCase
         foreach ($metadata as $case) {
             yield $case->name => [$case, 'metadata'];
         }
+
+        yield RuntimeEventTypeEnum::ToolQuestionRequested->name => [RuntimeEventTypeEnum::ToolQuestionRequested, 'tool_question'];
     }
 
     /**
@@ -324,6 +326,10 @@ final class RuntimeEventTypeTest extends TestCase
 
         $this->assertTrue(RuntimeEventTypeEnum::RunResumed->isLifecycle());
         $this->assertFalse(RuntimeEventTypeEnum::RunResumed->isCancellation());
+
+        $this->assertTrue(RuntimeEventTypeEnum::ToolQuestionRequested->isToolQuestion());
+        $this->assertFalse(RuntimeEventTypeEnum::ToolQuestionRequested->isLifecycle());
+        $this->assertFalse(RuntimeEventTypeEnum::ToolQuestionRequested->isHitl());
     }
 
     /**

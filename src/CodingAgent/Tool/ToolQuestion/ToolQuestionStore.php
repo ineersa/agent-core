@@ -234,6 +234,7 @@ final class ToolQuestionStore implements ToolQuestionStoreInterface
         $count = (int) $qb->update()
             ->set('tq.status', ':cancelled')
             ->set('tq.answeredAt', ':now')
+            ->set('tq.updatedAt', ':now')
             ->where('tq.status = :pending')
             ->andWhere('tq.createdAt < :cutoff')
             ->setParameter('cancelled', ToolQuestionStatusEnum::Cancelled->value)
