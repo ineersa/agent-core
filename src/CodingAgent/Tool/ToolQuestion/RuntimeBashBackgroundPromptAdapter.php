@@ -29,13 +29,17 @@ final readonly class RuntimeBashBackgroundPromptAdapter implements BashBackgroun
     /**
      * Poll interval in microseconds (100ms).
      * Matches BashTool's default poll interval for consistency.
+     *
+     * The polling loop is bounded by ToolContext timeout/cancellation.
+     * A simple 100ms interval is chosen over exponential backoff because
+     * the tool worker is intentionally blocked waiting for a user decision
+     * via the TUI overlay — prompt responsiveness is more important than
+     * DB query reduction in this single-controller SQLite workflow.
+     *
+     * @see ToolContext::timeoutSeconds() timeout governs pollDeadline
+     * @see CancellationTokenInterface::isCancellationRequested()
      */
     private const int POLL_INTERVAL_MICROS = 100_000;
-
-    /**
-     * Maximum preview characters to avoid storing full command text.
-     */
-    private const int MAX_PREVIEW_CHARS = 200;
 
     public function __construct(
         private readonly StackToolExecutionContextAccessor $contextAccessor,
@@ -66,7 +70,8 @@ final readonly class RuntimeBashBackgroundPromptAdapter implements BashBackgroun
         // Sanitize to avoid DB issues with special characters.
         $requestId = \sprintf('bash_bg_%s_%s_%d', $runId, $toolCallId, $pid);
 
-        // Cap and normalize the command preview.
+        // Cap and normalize the command preview using the entity-defined max length.
+        // The entity factory validates the cap, so this adapter truncates before creation.
         $commandPreview = $this->capPreview($command);
 
         $prompt = \sprintf(
@@ -153,15 +158,18 @@ final readonly class RuntimeBashBackgroundPromptAdapter implements BashBackgroun
 
     /**
      * Cap and normalize a command string for preview storage.
-     * Truncates to MAX_PREVIEW_CHARS and normalizes whitespace.
+     * Truncates to ToolQuestion::COMMAND_PREVIEW_MAX_LENGTH and normalizes whitespace.
+     *
+     * The entity factory validates this same limit, ensuring consistency.
      */
     private function capPreview(string $command): string
     {
         // Normalize whitespace
         $preview = preg_replace('/\s+/', ' ', trim($command)) ?? '';
 
-        if (mb_strlen($preview) > self::MAX_PREVIEW_CHARS) {
-            return mb_substr($preview, 0, self::MAX_PREVIEW_CHARS - 3).'...';
+        $max = ToolQuestion::COMMAND_PREVIEW_MAX_LENGTH;
+        if (mb_strlen($preview) > $max) {
+            return mb_substr($preview, 0, $max - 3).'...';
         }
 
         return $preview;

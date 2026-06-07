@@ -30,7 +30,7 @@ class ToolQuestion
 {
     use TimestampableLifecycleTrait;
 
-    private const int COMMAND_PREVIEW_MAX_LENGTH = 200;
+    public const int COMMAND_PREVIEW_MAX_LENGTH = 200;
 
     #[ORM\Id]
     #[ORM\GeneratedValue(strategy: 'AUTO')]
@@ -38,19 +38,19 @@ class ToolQuestion
     public int $id = 0;
 
     /** Unique request ID (e.g. 'bash_bg_run123_tc456_pid789'). */
-    #[ORM\Column(name: 'request_id', type: 'string', unique: true)]
+    #[ORM\Column(name: 'request_id', type: 'string', length: 255, unique: true)]
     public string $requestId = '';
 
     /** The run/session this question belongs to. */
-    #[ORM\Column(name: 'run_id', type: 'string')]
+    #[ORM\Column(name: 'run_id', type: 'string', length: 255)]
     public string $runId = '';
 
     /** The tool call ID within the run. */
-    #[ORM\Column(name: 'tool_call_id', type: 'string')]
+    #[ORM\Column(name: 'tool_call_id', type: 'string', length: 255)]
     public string $toolCallId = '';
 
     /** The tool name (e.g. 'bash'). */
-    #[ORM\Column(name: 'tool_name', type: 'string')]
+    #[ORM\Column(name: 'tool_name', type: 'string', length: 255)]
     public string $toolName = '';
 
     /** Process PID. */
@@ -58,15 +58,15 @@ class ToolQuestion
     public int $pid = 0;
 
     /** Path to the process log file. */
-    #[ORM\Column(name: 'log_path', type: 'string')]
+    #[ORM\Column(name: 'log_path', type: 'string', length: 255)]
     public string $logPath = '';
 
-    /** Capped command preview (max 200 chars). */
+    /** Capped command preview (max COMMAND_PREVIEW_MAX_LENGTH chars). */
     #[ORM\Column(name: 'command_preview', type: 'string', length: 200)]
     public string $commandPreview = '';
 
     /** Human-readable prompt text for the TUI question overlay. */
-    #[ORM\Column(type: 'string')]
+    #[ORM\Column(type: 'string', length: 255)]
     public string $prompt = '';
 
     /** Question kind (e.g. 'confirm'). */
@@ -74,7 +74,7 @@ class ToolQuestion
     public string $kind = 'confirm';
 
     /** Lifecycle status. */
-    #[ORM\Column(name: 'status', type: 'string', enumType: ToolQuestionStatusEnum::class)]
+    #[ORM\Column(name: 'status', type: 'string', length: 255, enumType: ToolQuestionStatusEnum::class)]
     public ToolQuestionStatusEnum $status = ToolQuestionStatusEnum::Pending;
 
     /** The boolean answer, set when status becomes Answered. */
@@ -106,7 +106,8 @@ class ToolQuestion
     /**
      * Factory method to create a pending tool question.
      *
-     * @throws \InvalidArgumentException when requestId is empty or commandPreview exceeds 200 chars
+     * @throws \InvalidArgumentException when requestId, runId, toolCallId, toolName, prompt, or kind is empty,
+     *                                   or when commandPreview exceeds the max length
      */
     public static function create(
         string $requestId,
@@ -121,6 +122,21 @@ class ToolQuestion
     ): self {
         if ('' === trim($requestId)) {
             throw new \InvalidArgumentException('requestId must not be empty');
+        }
+        if ('' === trim($runId)) {
+            throw new \InvalidArgumentException('runId must not be empty');
+        }
+        if ('' === trim($toolCallId)) {
+            throw new \InvalidArgumentException('toolCallId must not be empty');
+        }
+        if ('' === trim($toolName)) {
+            throw new \InvalidArgumentException('toolName must not be empty');
+        }
+        if ('' === trim($prompt)) {
+            throw new \InvalidArgumentException('prompt must not be empty');
+        }
+        if ('' === trim($kind)) {
+            throw new \InvalidArgumentException('kind must not be empty');
         }
 
         if (mb_strlen($commandPreview) > self::COMMAND_PREVIEW_MAX_LENGTH) {

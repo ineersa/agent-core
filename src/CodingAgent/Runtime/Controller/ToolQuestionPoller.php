@@ -116,6 +116,10 @@ final class ToolQuestionPoller
         }
 
         foreach ($questions as $question) {
+            // log_path and capped command_preview are intentionally included
+            // for the local TUI prompt display and a future log-tail affordance.
+            // These fields remain transcript=false and must NOT be added to
+            // structured logs — they are runtime event payload only.
             $event = new RuntimeEvent(
                 type: RuntimeEventTypeEnum::ToolQuestionRequested->value,
                 runId: $question->runId,
@@ -134,8 +138,27 @@ final class ToolQuestionPoller
                 ],
             );
 
-            $this->emitter->emit($event);
-            $this->store->markEmitted($question->requestId);
+            try {
+                $this->emitter->emit($event);
+
+                // Only mark emitted after successful emit. If markEmitted
+                // throws, the question stays un-emitted and will be
+                // re-emitted on the next poll. The TUI also deduplicates
+                // via handleToolQuestionRequested's hasRequest($requestId)
+                // check, so a duplicate event would be harmless.
+                $this->store->markEmitted($question->requestId);
+            } catch (\Throwable $e) {
+                $this->logger->warning('tool_question.poller_emit_failed', [
+                    'component' => 'tool_question.poller',
+                    'event_type' => 'tool_question.poller_emit_failed',
+                    'request_id' => $question->requestId,
+                    'run_id' => $question->runId,
+                    'exception' => $e->getMessage(),
+                ]);
+
+                // Continue to subsequent questions — a single failure must
+                // not block the rest of the pending queue.
+            }
         }
     }
 }

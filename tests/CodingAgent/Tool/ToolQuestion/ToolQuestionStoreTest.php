@@ -334,6 +334,94 @@ final class ToolQuestionStoreTest extends IsolatedKernelTestCase
         self::assertSame(200, \mb_strlen($q->commandPreview));
     }
 
+    // ── Test: entity factory additional field validation ────────────────
+
+    public function testCreateWithEmptyRunIdThrows(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('runId must not be empty');
+
+        ToolQuestion::create(
+            requestId: 'rq-1',
+            runId: '',
+            toolCallId: 'tc-1',
+            toolName: 'bash',
+            pid: 12345,
+            logPath: '/tmp/test.log',
+            commandPreview: 'test',
+            prompt: 'Test prompt?',
+        );
+    }
+
+    public function testCreateWithEmptyToolCallIdThrows(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('toolCallId must not be empty');
+
+        ToolQuestion::create(
+            requestId: 'rq-1',
+            runId: 'run-1',
+            toolCallId: '',
+            toolName: 'bash',
+            pid: 12345,
+            logPath: '/tmp/test.log',
+            commandPreview: 'test',
+            prompt: 'Test prompt?',
+        );
+    }
+
+    public function testCreateWithEmptyToolNameThrows(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('toolName must not be empty');
+
+        ToolQuestion::create(
+            requestId: 'rq-1',
+            runId: 'run-1',
+            toolCallId: 'tc-1',
+            toolName: '',
+            pid: 12345,
+            logPath: '/tmp/test.log',
+            commandPreview: 'test',
+            prompt: 'Test prompt?',
+        );
+    }
+
+    public function testCreateWithEmptyPromptThrows(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('prompt must not be empty');
+
+        ToolQuestion::create(
+            requestId: 'rq-1',
+            runId: 'run-1',
+            toolCallId: 'tc-1',
+            toolName: 'bash',
+            pid: 12345,
+            logPath: '/tmp/test.log',
+            commandPreview: 'test',
+            prompt: '',
+        );
+    }
+
+    public function testCreateWithEmptyKindThrows(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('kind must not be empty');
+
+        ToolQuestion::create(
+            requestId: 'rq-1',
+            runId: 'run-1',
+            toolCallId: 'tc-1',
+            toolName: 'bash',
+            pid: 12345,
+            logPath: '/tmp/test.log',
+            commandPreview: 'test',
+            prompt: 'Test prompt?',
+            kind: '',
+        );
+    }
+
     // ── Test: markEmitted deduplication ─────────────────────────────────
 
     public function testCreateAndMarkEmittedDeduplication(): void

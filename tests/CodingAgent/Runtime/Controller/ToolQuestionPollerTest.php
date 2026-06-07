@@ -122,6 +122,47 @@ final class ToolQuestionPollerTest extends TestCase
         $ref->invoke($poller);
     }
 
+    public function testPollContinuesWhenMarkEmittedThrows(): void
+    {
+        $q1 = $this->createTestQuestion(requestId: 'rq-1', runId: 'run-1', prompt: 'First?');
+        $q2 = $this->createTestQuestion(requestId: 'rq-2', runId: 'run-1', prompt: 'Second?');
+
+        $store = $this->createMock(ToolQuestionStoreInterface::class);
+        $store->expects($this->once())
+            ->method('findUnemittedPendingQuestions')
+            ->willReturn([$q1, $q2]);
+
+        // First markEmitted throws; second question's markEmitted succeeds.
+        $store->expects($this->exactly(2))
+            ->method('markEmitted')
+            ->willReturnCallback(function (string $id): void {
+                if ('rq-1' === $id) {
+                    throw new \RuntimeException('DB write failure');
+                }
+                // rq-2 succeeds
+            });
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())
+            ->method('warning')
+            ->with('tool_question.poller_emit_failed', $this->callback(fn (array $c): bool =>
+                ($c['request_id'] ?? '') === 'rq-1'
+                && str_contains($c['exception'] ?? '', 'DB write failure')
+            ));
+
+        $poller = new ToolQuestionPoller(
+            store: $store,
+            emitter: $this->createEmitter(),
+            logger: $logger,
+        );
+
+        $ref = new \ReflectionMethod($poller, 'poll');
+        $ref->invoke($poller);
+
+        // No exception should propagate; both questions were processed.
+        $this->addToAssertionCount(1);
+    }
+
     // ── cancelStalePendingOnStartup() behaviour ─────────────────────────
 
     public function testCancelStalePendingOnStartupDelegatesToStore(): void
