@@ -64,12 +64,12 @@ This follows TOOLS-09, which implements bash as a background-managed foreground-
 - Required validation is run through Castor, including `castor check` before handoff unless environment prerequisites are unavailable.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/tools-09b-runtime-tool-question-bridge
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-09b-runtime-tool-question-bridge
 Fork run: o30s2waurjqw
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/99
+PR Status: open
 Started: 2026-06-06T23:33:30.150Z
 Completed:
 
@@ -215,3 +215,16 @@ Completed:
 - Summary: Task-to-pr final reviewer on HEAD b40c0e93 returned APPROVED: no critical issues and no issues found. Reviewer verified architecture boundaries, runtime/TUI behavior, cross-process tool-question flow, Doctrine migration/entity/store correctness, structured logging privacy, composer.lock diff, and tests. Worktree remained clean at HEAD b40c0e93 after focused validation.
 - Final reviewer pass on b40c0e93 returned APPROVED.
 - Focused Castor validation passed on b40c0e93; worktree clean. Proceeding to move_task(to=CODE-REVIEW), which will run the full Castor quality gate and create the PR if successful.
+Castor Check Status: passed
+Castor Check Commit: b40c0e933a1eef1683a63070190833a940aee931
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 900s
+Castor Check Completed: 2026-06-07T17:36:21.115Z
+Castor Check Output SHA256: 47cd96b0b58c66f04734662d5fb5d2abe66498d8979238ab044a9138938b6444
+
+## Task workflow update - 2026-06-07T17:36:24.691Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: b40c0e933a1e.
+- Pushed task/tools-09b-runtime-tool-question-bridge to origin.
+- branch 'task/tools-09b-runtime-tool-question-bridge' set up to track 'origin/task/tools-09b-runtime-tool-question-bridge'.
+- Created PR: https://github.com/ineersa/agent-core/pull/99
