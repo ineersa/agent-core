@@ -67,7 +67,7 @@ This follows TOOLS-09, which implements bash as a background-managed foreground-
 Status: IN-PROGRESS
 Branch: task/tools-09b-runtime-tool-question-bridge
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-09b-runtime-tool-question-bridge
-Fork run: o30s2waurjqw
+Fork run: yd2co4vdi8aq
 PR URL: https://github.com/ineersa/agent-core/pull/99
 PR Status: open
 Started: 2026-06-06T23:33:30.150Z
@@ -238,3 +238,8 @@ Castor Check Output SHA256: 47cd96b0b58c66f04734662d5fb5d2abe66498d8979238ab044a
 ## Task workflow update - 2026-06-07T17:58:46.937Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: Review iteration opened for user smoke-test regressions in PR #99: unanswered bash background question can mask completed process as timeout, and stale question overlay remains actionable after tool completion. No GitHub PR comments yet; user reported issues directly during manual smoke testing.
+
+## Task workflow update - 2026-06-07T18:01:12.713Z
+- Recorded fork run: yd2co4vdi8aq
+- Summary: Launched implementation fork yd2co4vdi8aq to fix user smoke-test regressions in TOOLS-09B: process completion must win while bash background prompt is unanswered, and stale TUI tool question overlay must be removed/nooped after tool terminal response. Fork instructed to implement reuse-first fix, add regressions, run focused Castor validation plus test/deptrac/phpstan/cs-check, commit, and stop without push/PR/status changes.
+- Fork yd2co4vdi8aq instructions: add process-completion detection to RuntimeBashBackgroundPromptAdapter using a typed production status checker around BackgroundProcessManager or existing seam; after shouldBackground() returns, BashTool must immediately re-fetch status and handle finished process before background/decline logic; RuntimeEventPoller/TickPollListener should close active local tool question on matching tool terminal events using existing event stream; add regression tests in RuntimeBashBackgroundPromptAdapterTest, BashToolTest, and RuntimeEventPoller/QuestionCoordinator tests as appropriate.
