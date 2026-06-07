@@ -33,7 +33,7 @@ Notes:
 - Castor validation passes: focused tests, phpstan on changed auth/config/provider files, deptrac, cs-check.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/codex-auth-profiles-multiple-accounts
 Worktree: /home/ineersa/projects/agent-core-worktrees/codex-auth-profiles-multiple-accounts
 Fork run: ut2bh7fej4gj
@@ -98,3 +98,7 @@ Castor Check Output SHA256: 26180184825ff62806f719a2d50976c001d18700360ac193fe10
 - Pushed task/codex-auth-profiles-multiple-accounts to origin.
 - branch 'task/codex-auth-profiles-multiple-accounts' set up to track 'origin/task/codex-auth-profiles-multiple-accounts'.
 - Created PR: https://github.com/ineersa/agent-core/pull/100
+
+## Task workflow update - 2026-06-07T23:35:28.260Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: Review-iteration needed after user smoke test: PHAR `auth:codex --profile canada` and `auth:codex --help` fail because Symfony Console already has a global `--profile` option, producing `An option named "profile" already exists.` Need rename the command-specific option away from `--profile` and update docs/tests/errors accordingly.
