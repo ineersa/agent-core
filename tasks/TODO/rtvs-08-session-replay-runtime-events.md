@@ -1,44 +1,90 @@
-# RTVS-08 Session replay from runtime events
+# RTVS-08 Resume/relaunch integration from canonical events
 
 ## Goal
-Plan: .pi/plans/runtime-transcript-vertical-slice-plan.md
+Make `agent --resume=<session id>` / session relaunch reliable end-to-end by
+replaying canonical `.hatfield/sessions/<id>/events.jsonl` through the TUI
+transcript projection and reconstructed/checkpointed RunState.
 
-Scope:
-- On resume, load .hatfield/sessions/<id>/runtime-events.jsonl and rebuild TranscriptBlock projection through TranscriptProjector.
-- Treat transcript.jsonl as projection/cache data, not rendered ANSI strings.
-- Validate that replay from runtime events produces the same basic block list as live polling.
-- Preserve session_id === run_id assumptions and existing session directory rules.
+This task is the **final integration** in a three-task sequence:
 
-Exclusions:
-- Do not implement RuntimeEventPoller live integration; RTVS-07 owns that.
+```
+RTVS-08A  Remove transcript.jsonl, rebuild TUI transcript from events.jsonl
+RTVS-08B  Make events.jsonl complete, add deterministic RunState rebuild from events
+RTVS-08   [THIS TASK]  Resume/relaunch end-to-end integration, validation, docs
+```
+
+Note: `agent --resume=<sessionId>` already exists as a CLI flag in
+`src/CodingAgent/CLI/AgentCommand.php`. This task validates/fixes behavior, not
+add the flag from scratch.
+
+Plan reference (partially stale — see sequencing above):
+`.pi/plans/runtime-transcript-vertical-slice-plan.md`
+
+## Scope
+- Validate and fix `agent --resume=<sessionId>` / `InteractiveMode::run()` with
+  `sessionId` so it reliably replays transcript from canonical `events.jsonl`.
+- Verify that replay through `RuntimeEventMapper` + `TranscriptProjector` (from
+  RTVS-08A) produces the same basic block list as live polling.
+- Verify that the canonical event log (made complete by RTVS-08B) contains all
+  prompt-context mutations needed for transcript reconstruction and continuation.
+- Verify that `state.json` is treated as a rebuildable checkpoint/projection
+  and that a missing or stale checkpoint is recovered via RTVS-08B replay before
+  the run advances.
+- Verify that the TUI dedup cursor (`lastSeq`) is set to the max replayed
+  persistent event seq so the live poller does not duplicate history after resume.
+- Verify that activity state, pending HITL/cancel/error/tool state, and
+  continuation behavior are correct after resume.
+- Update docs (`docs/session-storage.md`, `docs/tui-architecture.md`,
+  related plan references) to reflect canonical `events.jsonl` as replay source
+  and remove stale `runtime-events.jsonl` references.
+
+## Exclusions
+- Do not revive or write to `runtime-events.jsonl`; it was deleted by the
+  async/headless plan and is superseded by canonical `events.jsonl`.
+- Do not add backward-compatibility fallback to old `transcript.jsonl` or
+  `runtime-events.jsonl` unless explicitly requested (project rules forbid it).
 - Do not implement fork/branch session trees.
 - Do not implement rich compaction UI.
+- Do not move state storage to the database or canonical event storage to DB.
+- Do not add the `--resume` CLI flag from scratch (it already exists).
 
-Dependencies:
-- RTVS-07 (RuntimeEventPoller projection integration) — MERGED.
-- RTVS-11 AC1 (explicit TUI run activity state) — completes the follow_up/steer
-  semantics that replay must preserve; replay should not codify the previous
-  getWorkingMessage() heuristic.
-- RTVS-11 AC2 (after_turn_commit_hook_fixed) — replay replaying persisted events
-  should not trigger hook deserialization warnings; fix must be in place before
-  heavy replay development to avoid noisy log noise.
-- Async/process runtime plan (RTVS-11 AC4) — deferred/separate, but the replay
-  design should anticipate that live polling may eventually come from a separate
-  headless process rather than in-process calls.
-
-Note: RTVS-09 and RTVS-10 have been removed per user decision. Their intent
-(regression coverage, manual smoke) is absorbed by existing tests and AGENTS.md
-validation rules.
-
-Parallelizable with: none remaining in the RTVS family.
-- Avoid concurrent edits to session replay code and RuntimeEventPoller.
+## Dependencies
+- **RTVS-08A** (Remove transcript.jsonl, rebuild TUI transcript from events.jsonl)
+  — **MUST be complete first.** RTVS-08A does the actual wire-up of
+  `SessionInitializer` event replay and removes `transcript.jsonl` I/O. RTVS-08
+  validates the integrated result end-to-end.
+- **RTVS-08B** (Canonical event completeness and RunState rebuild)
+  — **MUST be complete first.** RTVS-08B ensures `events.jsonl` contains all
+  replayable events user input events (prompts, steers, follow-ups, HITL
+  answers) and provides a deterministic `RunState` rebuild-from-events path.
+  RTVS-08 depends on events being complete for transcript and continuation.
+- RTVS-07 (RuntimeEventPoller projection integration) — **MERGED**; the live
+  polling path this resume path must not duplicate.
 
 ## Acceptance criteria
-- Resuming a session rebuilds transcript blocks from runtime-events.jsonl.
-- Replay is idempotent and does not duplicate streamed deltas.
-- transcript.jsonl, if written, contains projection/block data rather than ANSI-rendered strings.
-- Tests cover resume/replay for user+assistant and at least one cancellation or tool/HITL event.
-- castor deptrac passes.
+- `agent --resume=<sessionId>` loads an existing session and replays the full
+  transcript history from canonical `events.jsonl` through `RuntimeEventMapper`
+  + `TranscriptProjector` (from RTVS-08A).
+- Replay is idempotent and does **not** duplicate streamed deltas or blocks
+  when the live `RuntimeEventPoller` resumes polling after replay.
+- The TUI dedup cursor (`TuiSessionState::lastSeq`) is set to the max persistent
+  event seq consumed during replay so that subsequent live polling starts at the
+  correct position.
+- Resume recovers gracefully when `state.json` is missing or stale: the
+  RTVS-08B `RunState` replay/projector rebuilds the execution state from
+  `events.jsonl` before the run advances.
+- Activity state, pending HITL/cancel/error/tool-call state, and continuation
+  behavior are correct after resume — no stale working-message, zombie polling,
+  or desynchronized projector.
+- Tests cover resume for at least: user + assistant conversation,
+  one tool/HITL sequence, and one cancellation or error (where replayable).
+- No production code reads or writes the deleted `runtime-events.jsonl` or
+  relies on `transcript.jsonl` as a resume source.
+- `docs/session-storage.md` and related docs updated to reflect that
+  `events.jsonl` is the canonical replay source and `state.json` is a
+  rebuildable checkpoint.
+- `castor deptrac` passes; full validation (`castor check`) required for
+  changes touching TUI runtime, Messenger, or LLM-visible flow.
 
 ## Workflow metadata
 Status: TODO
@@ -52,3 +98,6 @@ Completed:
 
 ## Work log
 - Created: 2026-05-17T22:17:13.135Z
+- 2026-06-07: Rewritten to reflect new sequencing: RTVS-08A → RTVS-08B → RTVS-08.
+  Replaced stale `runtime-events.jsonl` references with canonical `events.jsonl`;
+  updated dependencies and acceptance criteria.
