@@ -151,6 +151,7 @@ final class CodexModelClientTest extends TestCase
         $resultCallback = static function (string $method, string $url, array $options): HttpResponse {
             $body = \json_decode($options['body'], true);
             self::assertArrayNotHasKey('_agent_core_invocation', $body);
+            self::assertArrayNotHasKey('_hatfield_reasoning', $body);
             self::assertArrayNotHasKey('_hatfield_suppress_developer_role', $body);
             // stream is NOT stripped — it is a valid Codex API field and is preserved
             self::assertTrue($body['stream']);
@@ -166,6 +167,7 @@ final class CodexModelClientTest extends TestCase
 
         $options = [
             '_agent_core_invocation' => ['some' => 'metadata'],
+            '_hatfield_reasoning' => 'medium',
             '_hatfield_suppress_developer_role' => true,
             'stream' => true,
             'tools_ref' => 'toolset-1',
@@ -256,6 +258,7 @@ final class CodexModelClientTest extends TestCase
 
             // Internal keys stripped
             self::assertArrayNotHasKey('_agent_core_invocation', $body);
+            self::assertArrayNotHasKey('_hatfield_reasoning', $body);
             self::assertArrayNotHasKey('_hatfield_suppress_developer_role', $body);
             self::assertArrayNotHasKey('tools_ref', $body);
             self::assertArrayNotHasKey('turn_no', $body);
@@ -269,6 +272,7 @@ final class CodexModelClientTest extends TestCase
 
         $options = [
             '_agent_core_invocation' => ['some' => 'data'],
+            '_hatfield_reasoning' => 'medium',
             '_hatfield_suppress_developer_role' => true,
             'tools_ref' => 'toolset-1',
             'turn_no' => 1,

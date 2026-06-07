@@ -56,22 +56,23 @@ final class CompatRequestShaper implements BeforeProviderRequestHookInterface
         array $options,
         ?CancellationTokenInterface $cancelToken = null,
     ): ?ProviderRequest {
+        // Always extract and strip the reasoning key before any early returns,
+        // so it never leaks into provider request bodies when model lookup fails.
+        $reasoningLevel = \is_string($options[self::REASONING_KEY] ?? null) ? $options[self::REASONING_KEY] : null;
+        $newOptions = $options;
+        unset($newOptions[self::REASONING_KEY]);
+
         $ref = $this->findModelRef($model);
 
         if (null === $ref) {
-            return null;
+            return $newOptions !== $options ? new ProviderRequest(options: $newOptions) : null;
         }
 
         $modelDef = $this->catalog->getModel($ref);
 
         if (null === $modelDef) {
-            return null;
+            return $newOptions !== $options ? new ProviderRequest(options: $newOptions) : null;
         }
-
-        // Separate internal keys from provider-visible options.
-        $reasoningLevel = \is_string($options[self::REASONING_KEY] ?? null) ? $options[self::REASONING_KEY] : null;
-        $newOptions = $options;
-        unset($newOptions[self::REASONING_KEY]);
 
         // ── Reasoning options ──
         if (null !== $reasoningLevel) {

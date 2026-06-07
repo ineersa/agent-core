@@ -208,6 +208,26 @@ final class CompatRequestShaperTest extends TestCase
         $this->assertNull($result);
     }
 
+    public function testStripsReasoningKeyEvenWhenModelNotFound(): void
+    {
+        $catalog = $this->makeCatalogWithProviders(['zai' => $this->makeZaiProvider()]);
+        $shaper = new CompatRequestShaper($catalog);
+
+        $result = $shaper->beforeProviderRequest(
+            'nonexistent-model',
+            [],
+            [CompatRequestShaper::REASONING_KEY => 'medium'],
+        );
+
+        $this->assertNotNull($result, 'Should return a ProviderRequest to carry the stripped options.');
+        $this->assertNotNull($result->options);
+        $this->assertArrayNotHasKey(
+            CompatRequestShaper::REASONING_KEY,
+            $result->options,
+            'REASONING_KEY must be stripped even when the model is not found.',
+        );
+    }
+
     public function testReturnsNullWhenNoAiConfig(): void
     {
         // No providers = no match possible
