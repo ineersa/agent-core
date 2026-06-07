@@ -95,7 +95,18 @@ final class ToolQuestionStore implements ToolQuestionStoreInterface
     }
 
     /**
-     * Find a question by request_id. Uses fresh DB read.
+     * Find a question by request_id.
+     *
+     * Clears the EntityManager identity map before each read to guarantee
+     * fresh data from the database. This is essential for cross-process
+     * reads — the tool worker writes, the controller answers, and this
+     * method must see the latest state regardless of which process
+     * previously loaded entities.
+     *
+     * Note: callers must not rely on previously managed entities remaining
+     * managed after this call, as clear() detaches all tracked objects.
+     * Any subsequent mutations require re-fetching the entity or calling
+     * merge().
      */
     public function findByRequestId(string $requestId): ?ToolQuestion
     {

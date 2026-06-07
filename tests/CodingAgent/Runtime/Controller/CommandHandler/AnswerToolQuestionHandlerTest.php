@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\CommandHandler;
 
-use Ineersa\CodingAgent\Entity\ToolQuestion;
 use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\AnswerToolQuestionHandler;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
