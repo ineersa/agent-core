@@ -67,7 +67,7 @@ This follows TOOLS-09, which implements bash as a background-managed foreground-
 Status: IN-PROGRESS
 Branch: task/tools-09b-runtime-tool-question-bridge
 Worktree: /home/ineersa/projects/agent-core-worktrees/tools-09b-runtime-tool-question-bridge
-Fork run: 043idi2hapr7
+Fork run: 90wun3bqege1
 PR URL:
 PR Status:
 Started: 2026-06-06T23:33:30.150Z
@@ -164,3 +164,9 @@ Completed:
 - Summary: Fork 043idi2hapr7 completed reviewer-fix pass and committed 837b31bf (`TOOLS-09B: Tighten tool question edge cases`). Worktree verified clean at HEAD 837b31bf. The commit changed 6 files (359 insertions, 17 deletions): ToolQuestion entity factory validation, ToolQuestionStore duplicate create idempotency/race fallback + enum/doc cleanup, ToolQuestionStoreInterface pollAnswer semantics doc, JsonlProcessAgentSessionClient answer_tool_question payload cleanup, new ToolQuestionPollerTest, and expanded ToolQuestionStoreTest. Actionable reviewer findings addressed: duplicate request_id create edge case, redundant JSONL answer assignment, false/cancelled pollAnswer semantics doc clarity, requestId and commandPreview entity guards, enum parameter consistency, DQL bulk update lifecycle comment, and ToolQuestionPoller coverage. Non-actionable suggestions skipped as previously decided: interface rename, AI tag pinning, cutoff configurability, DI-only resolver, and privacy changes for intentionally user-visible log_path/capped command_preview.
 - Verified fork 043idi2hapr7 commit 837b31bf on task/tools-09b-runtime-tool-question-bridge, worktree clean, commit stat 6 files / 359+ / 17-.
 - Next task-to-pr step: re-run reviewer on current HEAD 837b31bf.
+
+## Task workflow update - 2026-06-07T16:51:45.332Z
+- Recorded fork run: 90wun3bqege1
+- Summary: Re-review of HEAD 837b31bf returned APPROVE WITH SUGGESTIONS with no critical issues. Remaining sensible/actionable suggestions are being addressed before PR: isolate/log ToolQuestionPoller emit/markEmitted failures while continuing subsequent questions, document intentional log_path/capped command_preview payload privacy boundary, share ToolQuestion command preview length constant with RuntimeBashBackgroundPromptAdapter, add additional ToolQuestion factory guards and explicit column lengths, and add adapter polling-loop rationale comment. Explicitly skipped as non-actionable/design tradeoffs: replacing EntityManager::clear() with DBAL fresh reads, moving test spy helper, PHP typed const compatibility (project PHP >=8.5), startup cleanup cutoff configurability, and changing private test seam to production API. Fork 90wun3bqege1 launched to implement these fixes, validate, commit, and stop.
+- Second reviewer on HEAD 837b31bf: APPROVE WITH SUGGESTIONS, no critical issues. Actionable/sensible suggestions forwarded to fork 90wun3bqege1.
+- Fork 90wun3bqege1 launched for final review polish before another reviewer pass.
