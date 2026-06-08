@@ -87,13 +87,13 @@ Plan reference (partially stale — see sequencing above):
   changes touching TUI runtime, Messenger, or LLM-visible flow.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/rtvs-08-session-replay-runtime-events
+Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-08-session-replay-runtime-events
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-08T14:37:11.366Z
 Completed:
 
 ## Work log
@@ -101,3 +101,10 @@ Completed:
 - 2026-06-07: Rewritten to reflect new sequencing: RTVS-08A → RTVS-08B → RTVS-08.
   Replaced stale `runtime-events.jsonl` references with canonical `events.jsonl`;
   updated dependencies and acceptance criteria.
+
+## Task workflow update - 2026-06-08T14:37:11.367Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/rtvs-08-session-replay-runtime-events.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/rtvs-08-session-replay-runtime-events.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/rtvs-08-session-replay-runtime-events.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/rtvs-08-session-replay-runtime-events.
