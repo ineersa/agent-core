@@ -243,4 +243,50 @@ class ChatScreenTest extends TestCase
         self::assertCount(1, $sessionSegment);
         self::assertStringContainsString('new-session-id', $sessionSegment[0]->text);
     }
+
+    /**
+     * Draft sessions (empty session ID) produce no default footer
+     * segment, leaving only extension-contributed footer content.
+     */
+    #[Test]
+    public function testDraftFooterHasNoSessionSegment(): void
+    {
+        $draftScreen = new ChatScreen(
+            theme: $this->getTestTheme(),
+            sessionId: '',
+            promptEditor: new PromptEditor(),
+        );
+
+        $draftScreen->mount($this->tui);
+
+        // Reflect into the draft screen's footer data provider.
+        $screenRef = new \ReflectionClass($draftScreen);
+        $fdProp = $screenRef->getProperty('footerDataProvider');
+        /** @var FooterDataProvider $fd */
+        $fd = $fdProp->getValue($draftScreen);
+
+        $segments = $fd->getSegments();
+        self::assertEmpty(
+            $segments,
+            'Draft session with empty ID must produce zero default footer segments.',
+        );
+    }
+
+    /**
+     * Return a real ChatScreen-compatible theme for constructing
+     * additional screens without leaking the setUp instance.
+     */
+    private function getTestTheme(): TuiTheme
+    {
+        return new readonly class implements TuiTheme {
+            public function name(): string { return 'test'; }
+            public function color(ThemeColorEnum $color, string $text): string { return $text; }
+            public function accent(string $text): string { return $text; }
+            public function text(string $text): string { return $text; }
+            public function muted(string $text): string { return $text; }
+            public function success(string $text): string { return $text; }
+            public function warning(string $text): string { return $text; }
+            public function error(string $text): string { return $text; }
+        };
+    }
 }

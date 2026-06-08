@@ -285,7 +285,7 @@ class CancelListenerTest extends TestCase
             screen: $screen,
             sessionStore: $sessionStore,
             ticks: new \Ineersa\Tui\Runtime\TuiTickDispatcher(),
-            switch: $this->createStub(\Ineersa\Tui\Application\TuiSessionSwitchService::class),
+            switch: $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
         );
 
         $eventDispatcher = new \Symfony\Component\EventDispatcher\EventDispatcher();

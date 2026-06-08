@@ -223,9 +223,6 @@ final class SessionInitializerTest extends TestCase
         self::assertStringContainsString('no messages yet', $blocks[0]->text);
     }
 
-    /**
-     * Recursively remove a directory.
-     */
     // ── initializeDraft (lazy draft sessions) ────────────────────────
 
     public function testInitializeDraftReturnsEmptySessionId(): void
@@ -268,6 +265,9 @@ final class SessionInitializerTest extends TestCase
         self::assertStringContainsString('Welcome to Hatfield', $blocks[0]->text);
     }
 
+    /**
+     * Recursively remove a directory.
+     */
     private function rmDir(string $dir): void
     {
         if (!is_dir($dir)) {

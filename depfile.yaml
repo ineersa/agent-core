@@ -292,7 +292,6 @@ parameters:
       - TuiTranscript
       - TuiScreen
       - TuiTheme
-      - TuiApplication
       - SymfonyTui
 
     TuiScreen:
