@@ -29,7 +29,7 @@ Parallelizable with: EDITOR-06, EDITOR-07.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/editor-08-completion-foundation-slash
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-08-completion-foundation-slash
 Fork run: ep50gog8hj4v
@@ -182,11 +182,11 @@ Risks/notes for implementor:
 - Summary: Final reviewer subagent verdict for current HEAD 01915f6f: APPROVE. Reviewer confirmed prior suggestions resolved: explicit registry order assertion in SlashCommandCompletionProviderTest and documenting non-end CompletionContext cursor-offset MVP behavior test. No critical issues, bugs, or blockers. Branch was rebased cleanly on origin/main by fork vj4a4dwv1v0w; current task worktree status clean.
 - task-to-pr final review: reviewer approved HEAD 01915f6f after review-iteration forks cf6u7r92u2yu and vj4a4dwv1v0w. Focused Castor validation passed locally; proceeding to move_task(to="CODE-REVIEW") for full LLM_MODE=true castor check quality gate and PR creation.
 Castor Check Status: passed
-Castor Check Commit: 5efd6f10a6c2bc6cf9f4caa23be8de2a553b9a2a
+Castor Check Commit: f23e391178954d20845280bc716c7d3ce11371e8
 Castor Check Command: LLM_MODE=true castor check
 Castor Check Timeout: 900s
-Castor Check Completed: 2026-06-08T20:55:00.784Z
-Castor Check Output SHA256: 70165f7b2ad4883e52dc901c69ee78c76b9769a405152cf9dbb437fb41f207f0
+Castor Check Completed: 2026-06-08T21:21:46.358Z
+Castor Check Output SHA256: aa818267bd5a5aa09bfcadffdbaedf4e90f7df2250149e7e5d3201ce20f36bf3
 
 ## Task workflow update - 2026-06-08T16:22:19.800Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -321,3 +321,10 @@ Castor Check Output SHA256: 70165f7b2ad4883e52dc901c69ee78c76b9769a405152cf9dbb4
 - Recorded fork run: ep50gog8hj4v
 - Validation: fork ep50gog8hj4v: castor test --filter=Completion passed (81 tests, 168 assertions); fork ep50gog8hj4v: castor test --filter=ModelPicker passed (7 tests, 22 assertions); fork ep50gog8hj4v: castor test --filter=PromptHistory passed (29 tests, 58 assertions); fork ep50gog8hj4v: castor deptrac passed (0 violations); fork ep50gog8hj4v: castor phpstan passed (0 errors); fork ep50gog8hj4v: castor cs-check clean; fork ep50gog8hj4v: castor cs-fix fixed 0 files; fork ep50gog8hj4v: LLM_MODE=true castor check passed (2129 tests, TUI E2E, real LLM, controller E2E, deptrac, phpstan, cs-check); orchestrator git verification: worktree clean at f23e3911; diff vs origin/main is 23 files, 2507 insertions, 206 deletions
 - Summary: Final review-iterate fork ep50gog8hj4v completed at commit f23e3911 (fix(editor-08): remove cursor-movement workaround and current-model from favourites picker). Fixes: /model-favourites picker no longer marks/accent-colours the current model and only shows favorite state; PromptEditor removed setTextWithCursorAtEnd() cursor-navigation workaround and now exposes replaceText(), which clears the editor and inserts the accepted completion through public EditorWidget::handleInput() so the cursor lands naturally at the end for single-line slash completion; CompletionListener call site and stale docblocks/tests updated. Confirmed Symfony TUI EditorWidget has no public cursor setter; EditorDocument cursor setters exist but document is private, so the implementation avoids cursor management instead of working around private internals.
+
+## Task workflow update - 2026-06-08T21:21:47.638Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: f23e39117895.
+- Pushed task/editor-08-completion-foundation-slash to origin.
+- branch 'task/editor-08-completion-foundation-slash' set up to track 'origin/task/editor-08-completion-foundation-slash'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/106
