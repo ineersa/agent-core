@@ -28,14 +28,22 @@ Parallelizable with: EDITOR-06 and EDITOR-08, but avoid concurrent session stora
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/editor-07-prompt-history-session-persistence
+Worktree: /home/ineersa/projects/agent-core-worktrees/editor-07-prompt-history-session-persistence
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-08T00:25:29.815Z
 Completed:
 
 ## Work log
 - Created: 2026-05-18T00:15:49.260Z
+
+## Task workflow update - 2026-06-08T00:25:29.816Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/editor-07-prompt-history-session-persistence.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/editor-07-prompt-history-session-persistence.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/editor-07-prompt-history-session-persistence.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/editor-07-prompt-history-session-persistence.
+- Summary: Starting implementation. Planning decision: do not add prompt_history.jsonl, do not read events.jsonl a second time, and do not duplicate prompt text in a separate history list. Implement prompt history as a cursor-only navigator over existing session state/projection user-message blocks that are already rebuilt from canonical events/state during resume. Avoid direct SQLite access from TUI; use existing runtime/TUI projection boundaries.
