@@ -50,6 +50,11 @@ parameters:
         - type: directory
           value: src/Tui/Command/.*
 
+    - name: TuiCompletion
+      collectors:
+        - type: directory
+          value: src/Tui/Completion/.*
+
     - name: TuiPicker
       collectors:
         - type: directory
@@ -265,6 +270,8 @@ parameters:
       - TuiScreen
       - TuiTranscript
       - TuiCommand
+      - TuiCompletion
+      - TuiEditor
       - TuiPicker
       - TuiFooter
       - TuiQuestion
@@ -321,6 +328,9 @@ parameters:
       - TuiTheme
 
     TuiCommand: ~
+
+    TuiCompletion:
+      - TuiCommand
 
     TuiPicker:
       - AppConfig
