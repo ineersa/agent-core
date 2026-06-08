@@ -260,7 +260,6 @@ All writes to session files are protected by Symfony Lock with `FlockStore`:
 | `SessionRunEventStore::append()` | `hatfield-run-<id>` | Single event append |
 | `HatfieldSessionStore::createSession()` | `hatfield-session-<id>` | Directory creation + metadata write |
 | `HatfieldSessionStore::updateMetadata()` | `hatfield-session-<id>` | Metadata read-merge-write |
-| `HatfieldSessionStore::appendTranscriptEntry()` | `hatfield-session-<id>` | Transcript append |
 
 Locks use the same in-process key space across session and run operations
 (`hatfield-run-<id>` for agent-core stores, `hatfield-session-<id>` for

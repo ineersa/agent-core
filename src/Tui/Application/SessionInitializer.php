@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
+use Ineersa\Tui\Runtime\ActivityStateMachine;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use Psr\Log\LoggerInterface;
@@ -166,6 +167,11 @@ final readonly class SessionInitializer
             if ($runtimeEvent->seq > $maxMappedSeq) {
                 $maxMappedSeq = $runtimeEvent->seq;
             }
+
+            // Restore activity state alongside transcript projection
+            // so the TUI correctly reflects the run's last known activity
+            // (e.g. WaitingHuman, Cancelled, Failed) after resume.
+            $state->activity = ActivityStateMachine::transition($state->activity, $runtimeEvent);
 
             $this->projector->accept($runtimeEvent->toArray());
         }

@@ -37,7 +37,7 @@ InteractiveMode::run(client, request, theme, sessionId)
               │
               ├─ TickEvent → TuiTickDispatcher
               │    ├─ TickPollListener → RuntimeEventPoller::poll()
-              │    │    └─ maps RuntimeEvent → TranscriptEntry → ChatScreen
+              │    │    └─ maps RuntimeEvent → TranscriptBlock via TranscriptProjector → ChatScreen
               │    └─ FooterStateListener → ChatScreen::refresh()
               │         └─ keeps elapsed time / throughput footer live
               │
@@ -416,8 +416,8 @@ producer receives the current `RenderContext` and sizes output accordingly.
 | Method | Purpose |
 |--------|---------|
 | `mount(Tui): void` | Create and attach all 13 widgets to TUI |
-| `setTranscriptEntries(TranscriptEntry[]): void` | Replace transcript content |
-| `appendTranscript(TranscriptEntry): void` | Add one entry to transcript |
+| `setTranscriptBlocks(TranscriptBlock[]): void` | Replace transcript content |
+| `appendTranscriptBlock(TranscriptBlock): void` | Add one block to transcript |
 | `clearEditor(): void` | Reset editor to empty |
 | `editorText(): string` | Read editor content |
 | `setWorkingMessage(?string): void` | Override working indicator |
@@ -436,7 +436,7 @@ is invalidated on tick via `ChatScreen::refresh()` so live values (elapsed time
 and throughput) update even when no runtime events arrive.
 
 ```
-setTranscriptEntries()  → transcriptRenderable + transcriptWidget.invalidate()
+setTranscriptBlocks()    → transcriptRenderable + transcriptWidget.invalidate()
 setWorkingMessage()     → registry + workingRenderable + workingWidget.invalidate()
 setStatus()             → registry + statusPanelRenderable + footerDataProvider
                           + statusPanelWidget.invalidate() + footerWidget.invalidate()
@@ -501,7 +501,7 @@ Classes that carry per-run state were moved to `src/Tui/Runtime/` to keep
 |-------|------|----------------|
 | `TuiSessionState` | `src/Tui/Runtime/TuiSessionState.php` | Mutable state bag (session ID, handle, transcript, poll state) |
 | `TuiRuntimeContext` | `src/Tui/Runtime/TuiRuntimeContext.php` | Per-run context value object passed to listener registrars |
-| `RuntimeEventPoller` | `src/Tui/Runtime/RuntimeEventPoller.php` | Throttled polling, sequence deduplication, event → plain TranscriptEntry mapping, footer usage accumulation |
+| `RuntimeEventPoller` | `src/Tui/Runtime/RuntimeEventPoller.php` | Throttled polling, sequence deduplication, event → TranscriptBlock via TranscriptProjector, footer usage accumulation |
 | `TuiTickDispatcher` | `src/Tui/Runtime/TuiTickDispatcher.php` | Multiplexes Symfony TUI's single `onTick()` callback to multiple handlers |
 
 ### TuiSessionState
@@ -515,7 +515,7 @@ final class TuiSessionState
     public bool $resuming;
     public ?RunHandle $handle;
     public ?StartRunRequest $request;
-    /** @var list<TranscriptEntry> */
+    /** @var list<TranscriptBlock> */
     public array $transcript = [];
     public int $lastSeq = 0;
     public float $lastPoll = 0.0;
@@ -523,10 +523,18 @@ final class TuiSessionState
     // Footer/runtime projection state
     public string $footerModel = '';
     public string $footerReasoning = '';
-    public int $inputTokens = 0;
-    public int $outputTokens = 0;
-    public float $totalCost = 0.0;
     public int $contextWindow = 0;
+
+    /**
+     * Usage/token projection for the TUI footer.
+     *
+     * Holds both session-level accumulated metrics (inputTokens, outputTokens,
+     * totalCost) and per-turn metrics (turnOutputTokens, turnStartTime,
+     * llmEndTime, latestInputTokens). Per-turn fields are reset on each
+     * TurnStarted event via UsageProjection::resetTurn().
+     */
+    public UsageProjection $usage;
+
     public float $sessionStartTime = 0.0;
     public string $cwd = '';
     public string $branch = '';
@@ -548,37 +556,57 @@ TuiTickDispatcher::dispatch(event)
     ▼
 RuntimeEventPoller::poll(state, client)
     │
-    ├─ client->events(runId)        → iterable<RuntimeEvent>
-    ├─ skip events with seq ≤ lastSeq (dedup)
-    ├─ formatEventToEntry(event) → TranscriptEntry (plain model, NO theme)
-    ├─ append to state.transcript[]
-    ├─ feed canonical RuntimeEvent to TranscriptProjector
+    ├─ client->events(runId)          → iterable<RuntimeEvent>
+    ├─ skip events with seq ≤ lastSeq  (dedup)
+    ├─ ActivityStateMachine::transition()  → updates state.activity
+    ├─ projector->accept(event)        → TranscriptProjector dispatches to subscribers
+    ├─ synchronizeProjectedBlocks()    → merges projector blocks into state.transcript
     │
     ▼
-ChatScreen::appendTranscript(entry)
+ChatScreen::setTranscriptBlocks(blocks)
     │
-    ├─ Updates TranscriptWidget with new entries
-    └─ TranscriptWidget sets TextWidget text (with role prefixes + theme)
+    ├─ Updates transcript widget with new TranscriptBlock DTOs
+    └─ Renders blocks with role prefixes + theme colors at display time
     │
     └─ FooterStateListener handler
          └─ ChatScreen::refresh() so live footer values re-render
 ```
 
-### Event → transcript entry mapping
+### Event → transcript block projection
 
-`RuntimeEventPoller::formatEventToEntry()` maps runtime events to plain
-`TranscriptEntry` objects. Theming and role prefixes (❯ ◇ ●) are applied at
-render time by `TranscriptEntry::render()`:
+The `TranscriptProjector` dispatches raw runtime event arrays through
+Symfony EventDispatcher to family-grouped projection subscribers
+(`UserMessageProjectionSubscriber`, `AssistantStreamProjectionSubscriber`,
+`ToolProjectionSubscriber`, `HitlProjectionSubscriber`,
+`CancellationProjectionSubscriber`, `RunLifecycleProjectionSubscriber`).
+Each subscriber produces `TranscriptBlock` DTOs with a
+`TranscriptBlockKindEnum` kind. Theming and role prefixes (❯ ◇ ●) are
+applied at display time by `TranscriptBlockWidget`:
 
-| Event type | Entry role | Example text | Display prefix (applied by render()) |
-|------------|------------|-------------|--------------------------------------|
-| `run_started` | `system` | `Run started: <prompt>` | (none, accent-colored) |
-| `message_update` | `assistant` | `<truncated content>` | `◇ ` |
-| `message_end` | `assistant` | `(end of message)` | `◇ ` (muted) |
-| `tool_execution_start` | `tool` | `<tool> <input>` | `● ` |
-| `tool_execution_end` | `tool` | `<tool> <summary>` | `● ` |
-| `turn_start/end`, `agent_start/end` | — | (null: not displayed) | — |
-| Unknown types | `system` | `· <type>` | (muted) |
+| Block kind | Example output | Display prefix |
+|------------|----------------|----------------|
+| `UserMessage` | `<prompt text>` | `❯ ` |
+| `AssistantMessage` | `<response text>` | `◇ ` |
+| `AssistantThinking` | `<thinking text>` | `◇ ` (collapsed by default) |
+| `ToolCall` | Tool call with arguments | `● ` |
+| `ToolResult` | Tool execution result/summary | `● ` |
+| `Question` | HITL question (AgentCore interrupt) | `● ` |
+| `Approval` | HITL approval request | `● ` |
+| `Cancelled` | Cancellation notice | (muted) |
+| `Error` | Error message block | (warning-colored) |
+| `System` | Status/placeholder messages | (muted) |
+
+Notes:
+- `CancellationRequested` is a marker-only runtime event with no transcript block;
+  the `Cancelled` block is created by the terminal `run.cancelled` / `turn.cancelled` event.
+- `ToolCall` blocks are transient-only (streaming seq=0) and do not appear in
+  canonical `events.jsonl` replay; `ToolResult` blocks are the canonical
+  persistent projection of tool execution events.
+- HITL blocks (`Question`, `Approval`) are produced by AgentCore interrupt events
+  and are distinct from local TUI question overlays. Local TUI questions are
+  ephemeral UI state and do not produce transcript blocks.
+- `Progress` blocks (from `TranscriptBlockKindEnum::Progress`) are produced by
+  progress/status runtime events when projection is enabled.
 
 ## Dependency boundaries
 
