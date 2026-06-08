@@ -29,7 +29,7 @@ Parallelizable with: EDITOR-06, EDITOR-07.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/editor-08-completion-foundation-slash
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-08-completion-foundation-slash
 Fork run: 4jg84u1ws7le
@@ -248,3 +248,7 @@ Castor Check Output SHA256: cfccc5b650aca9efb5f8afd1273f4a1bb691f45479a7a66355a0
 - Pushed task/editor-08-completion-foundation-slash to origin.
 - branch 'task/editor-08-completion-foundation-slash' set up to track 'origin/task/editor-08-completion-foundation-slash'.
 - PR already exists: https://github.com/ineersa/agent-core/pull/106
+
+## Task workflow update - 2026-06-08T18:14:55.190Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: User smoke-test found blocking UX/behavior issues after PR update: completion overlay is rendered above/on top of editor instead of below/near editor; accepting/selecting /help with Enter/submit sends plain `/` or slash text to LLM instead of executing slash command path; accepted command cursor/text placement needs command plus trailing whitespace so additional args type after the command; visual highlighting should match existing question/model selection patterns instead of plain text; CompletionListener is hard to read and should be simplified; investigate whether slot input-handler system is being used appropriately versus current InputEvent listener routing.
