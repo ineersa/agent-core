@@ -32,7 +32,7 @@ Parallelizable with: EDITOR-06, EDITOR-07.
 Status: IN-PROGRESS
 Branch: task/editor-08-completion-foundation-slash
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-08-completion-foundation-slash
-Fork run: khs37ecmrerb
+Fork run: cf6u7r92u2yu
 PR URL: https://github.com/ineersa/agent-core/pull/106
 PR Status: open
 Started: 2026-06-08T15:02:47.293Z
@@ -205,3 +205,9 @@ Castor Check Output SHA256: bd21b9356056178d2d80e64bb0c6ca64a9ed70629d487ab7627b
 ## Task workflow update - 2026-06-08T16:33:20.182Z
 - Recorded fork run: khs37ecmrerb
 - Summary: Launched task-review-iterate fork khs37ecmrerb to reproduce user smoke-test failure in real TUI. Fork instructions require running the designed manual test agent via `castor run:agent-test`, driving tmux with keys, verifying whether completion appears after typing `/` and after Tab, fixing live slash completion if reproduced, updating tests, running Castor validation, and committing fixes on the task branch.
+
+## Task workflow update - 2026-06-08T16:55:28.803Z
+- Recorded fork run: cf6u7r92u2yu
+- Validation: castor test --filter=Completion: ok (74 tests, 159 assertions); castor test --filter=PromptHistory: ok (29 tests, 58 assertions); castor deptrac: ok (0 violations); castor phpstan: ok (0 errors); castor cs-check: ok; LLM_MODE=true castor check: ok (deptrac + test(2118) + controller E2E + real LLM E2E + TUI E2E + phpstan + cs); Manual TUI: typing / opens overlay ✓; Manual TUI: typing /h refines to /help ✓; Manual TUI: backspace reverts to full list ✓; Manual TUI: Tab from /h accepts /help ✓
+- Summary: Review-iteration fork completed at HEAD 2d05c69f. Bug reproduced (typing / did not show autocomplete in real TUI) and fixed. Core change: added predictNextText() helper and live-completion branch in CompletionListener priority-90 listener — opens/refines overlay on typing without stealing input. Also handles \x08 backspace for terminal compat. Manual tmux verification confirmed: typing / immediately shows overlay, /h refines to /help, backspace reverts, Tab accepts. Full Castor quality gate passed (deptrac + 2118 tests + controller E2E + real LLM E2E + TUI E2E + phpstan + cs). Two files changed: CompletionListener.php (+100/-18), CompletionListenerTest.php (+112/-0, 7 new tests, 2 updated).
+- Review-iteration: reproduced bug in real TUI (no autocomplete on typing /). Implemented predictNextText() predictive overlay opening in CompletionListener. Restarted and verified with fresh tmux session. Full LLM_MODE=true castor check passed.
