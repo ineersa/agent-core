@@ -29,7 +29,7 @@ Parallelizable with: EDITOR-06, EDITOR-07.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/editor-08-completion-foundation-slash
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-08-completion-foundation-slash
 Fork run: cf6u7r92u2yu
@@ -220,3 +220,7 @@ Castor Check Output SHA256: 83a1d2b4efc86fe2b0d27b8694499b922ccc94caf94dc6e1c967
 - PR already exists: https://github.com/ineersa/agent-core/pull/106
 - Validation: LLM_MODE=true castor check: ok (deptrac + test(2118) + controller E2E + real LLM E2E + TUI E2E + phpstan + cs); Manual TUI: typing / opens overlay ✓, /h refines ✓, backspace reverts ✓, Tab accepts ✓
 - Summary: Review-iteration fix: live completion now opens on typing / (not just Tab). Verified via manual tmux testing and full LLM_MODE=true castor check.
+
+## Task workflow update - 2026-06-08T17:04:03.700Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: Post-fix reviewer subagent reviewed live slash completion commit 2d05c69f and returned APPROVE WITH SUGGESTIONS. No blockers/critical issues. Moving back to IN-PROGRESS for a small task-review-iterate cleanup fork addressing actionable review items: misleading/typo test names, dead redundant predictNextText guard, docblock typo/comment clarity, grapheme-aware backspace prediction or documented limitation, and small tests for backspace-to-empty plus navigation after live-open.
