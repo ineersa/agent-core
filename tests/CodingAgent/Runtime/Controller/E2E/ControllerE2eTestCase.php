@@ -51,6 +51,23 @@ abstract class ControllerE2eTestCase extends TestCase
     }
 
     /**
+     * @return list<string> Extra CLI arguments appended to `agent --controller`.
+     *                         Default excludes bash for deterministic E2E tests.
+     */
+    protected function controllerExtraArgs(): array
+    {
+        return ['--tools-excluded=bash'];
+    }
+
+    /**
+     * @return string Extra YAML appended to the generated `.hatfield/settings.yaml`.
+     */
+    protected function extraSettingsYaml(): string
+    {
+        return '';
+    }
+
+    /**
      * @return array<string, string> Extra lines for diagnostics output.
      */
     protected function extraDiagnostics(): array
@@ -121,7 +138,10 @@ abstract class ControllerE2eTestCase extends TestCase
 
         $pipes = [];
         $process = @proc_open(
-            [$php, $script, 'agent', '--controller', '--cwd='.$this->tempDir, '--tools-excluded=bash'],
+            array_merge(
+                [$php, $script, 'agent', '--controller', '--cwd='.$this->tempDir],
+                $this->controllerExtraArgs(),
+            ),
             $descriptors,
             $pipes,
             $this->tempDir,
@@ -488,6 +508,11 @@ extensions:
             protected_read_patterns: []
             dangerous_command_patterns: []
 YAML;
+
+        $extraYaml = $this->extraSettingsYaml();
+        if ('' !== $extraYaml) {
+            $settings .= "\n".$extraYaml;
+        }
 
         file_put_contents($this->tempDir.'/.hatfield/settings.yaml', $settings);
         file_put_contents($this->tempDir.'/.hatfield/.gitignore', "*\n");

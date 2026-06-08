@@ -139,14 +139,14 @@ Use Castor only. Required commands for implementation handoff:
 - All QA/test/lint/static-analysis commands are run via Castor; full `LLM_MODE=true castor check` is required before CODE-REVIEW because this changes LLM-visible flow.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/output-cap-llm-visible-tool-results
 Worktree: /home/ineersa/projects/agent-core-worktrees/output-cap-llm-visible-tool-results
 Fork run: 6cd1x0bomv62
 PR URL: https://github.com/ineersa/agent-core/pull/102
-PR Status: open
+PR Status: merged
 Started: 2026-06-07T23:37:20.748Z
-Completed:
+Completed: 2026-06-08T00:27:35.372Z
 
 ## Work log
 - Created: 2026-06-07T23:15:32.094Z
@@ -187,3 +187,27 @@ Castor Check Output SHA256: 07d23786471693ea7aa182b1be158c726772d82dbb989655cf32
 - Created PR: https://github.com/ineersa/agent-core/pull/102
 - Validation: Pre-PR reviewer: APPROVE WITH SUGGESTIONS; blockers none.; Pre-PR `castor test`: PASS (tests=1933, assertions=5737, errors=0, failures=0, skipped=0).; Pre-PR `castor deptrac`: PASS (violations=0, errors=0, uncovered=724, allowed=894).; Pre-PR `castor phpstan`: PASS (errors=0, file_errors=0).; Pre-PR `castor cs-check`: PASS (files_fixed=0).
 - Summary: Ready for code review. Implementation fork completed central LLM-visible tool-output capping via `OutputCapLlmTransformHook`, direct `bg_status log` capping, deterministic tests, and llm-real controller E2E coverage. Reviewer subagent found no blockers (`APPROVE WITH SUGGESTIONS`). Focused Castor validation passed before PR handoff.
+
+## Task workflow update - 2026-06-08T00:27:35.372Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/output-cap-llm-visible-tool-results into integration checkout.
+- Auto-merging tests/CodingAgent/Runtime/Controller/E2E/ControllerE2eTestCase.php
+Merge made by the 'ort' strategy.
+ src/CodingAgent/Tool/BgStatusTool.php              |   8 +-
+ src/CodingAgent/Tool/OutputCapLlmTransformHook.php | 129 ++++++++
+ .../Controller/E2E/ControllerE2eTestCase.php       |  27 +-
+ .../E2E/OutputCapReadFileControllerTest.php        | 199 ++++++++++++
+ tests/CodingAgent/Tool/BgStatusToolTest.php        |  66 +++-
+ .../Tool/OutputCapLlmTransformHookTest.php         | 351 +++++++++++++++++++++
+ 6 files changed, 777 insertions(+), 3 deletions(-)
+ create mode 100644 src/CodingAgent/Tool/OutputCapLlmTransformHook.php
+ create mode 100644 tests/CodingAgent/Runtime/Controller/E2E/OutputCapReadFileControllerTest.php
+ create mode 100644 tests/CodingAgent/Tool/OutputCapLlmTransformHookTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/output-cap-llm-visible-tool-results.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: GitHub PR state verified before DONE: MERGED, merge commit ff0ea8b3ee91406c0efef9b6edd6d16c093f2a32.; Integration checkout status before DONE: clean `main...origin/main`.
+- Summary: PR #102 was merged on GitHub by user. Moving task to DONE and syncing integration checkout.
+
+## Task workflow update - 2026-06-08T00:30:19.910Z
+- Validation: Post-merge `LLM_MODE=true castor check`: PASS / `quality: ok`.; Post-merge deptrac: ok (violations=0, errors=0, uncovered=726, allowed=904).; Post-merge PHAR rebuild/smoke: ok; PHAR built at `var/tmp/phar/hatfield.phar` (6.4 MB); smokes list/about/agent --help/writable-dir/cache-isolation ok.; Post-merge `castor test`: ok (tests=1994, assertions=5847, errors=0, failures=0, skipped=0; junit=var/reports/phpunit.junit.xml).; Post-merge `castor test:controller`: ok (tests=1, assertions=7, errors=0, failures=0, skipped=0; junit=var/reports/phpunit-controller.junit.xml).; Post-merge `castor test:llm-real`: ok (tests=5, assertions=35, errors=0, failures=0, skipped=0; junit=var/reports/phpunit-llm-real.junit.xml).; Post-merge `castor test:tui`: ok (tests=5, assertions=18, errors=0, failures=0, skipped=0; junit=var/reports/phpunit-tui.junit.xml).; Post-merge `castor phpstan`: ok (errors=0, file_errors=0).; Post-merge `castor cs-check`: ok (files_fixed=0).; Cleanup verified: `/home/ineersa/projects/agent-core-worktrees/output-cap-llm-visible-tool-results` removed; `git status --short --branch` clean (`## main...origin/main`).
+- Summary: Post-merge DONE validation completed. PR #102 is merged, task branch was merged into integration checkout, worktree removed, and integration checkout is clean on `main...origin/main`.
