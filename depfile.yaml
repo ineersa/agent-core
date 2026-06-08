@@ -95,6 +95,11 @@ parameters:
         - type: directory
           value: src/Tui/Question/.*
 
+    - name: TuiUtility
+      collectors:
+        - type: directory
+          value: src/Tui/Utility/.*
+
     - name: AppRuntimeContract
       collectors:
         - type: directory
@@ -269,6 +274,7 @@ parameters:
       - TuiFooter
       - TuiQuestion
       - TuiTheme
+      - TuiUtility
       - SymfonyTui
 
     TuiRuntime:
@@ -357,6 +363,9 @@ parameters:
       - TuiWidget
       - TuiTheme
       - SymfonyTui
+
+    TuiUtility:
+      - SymfonyProcess
 
     AppRuntimeInternals:
       - AppRuntimeContract
