@@ -280,8 +280,8 @@ final class HatfieldSessionStore
             $name = null !== $entity->name && '' !== trim($entity->name)
                 ? trim($entity->name)
                 : null;
-            $displayTitle = $this->resolveDisplayTitle($id, $name, $entity->prompt);
             $promptPreview = $this->resolvePromptPreview($entity->prompt);
+            $displayTitle = $this->resolveDisplayTitle($id, $name, $promptPreview);
 
             $result[] = [
                 'sessionId' => $id,
@@ -317,17 +317,19 @@ final class HatfieldSessionStore
     /**
      * Compute the user-visible display title without mutating the DB.
      *
-     * Fallback order: explicit name → truncated prompt → "Session <id>".
+     * Accepts an already-computed prompt preview so the caller avoids
+     * duplicate mb_strimwidth work when also storing the preview.
+     *
+     * Fallback order: explicit name → prompt preview → "Session <id>".
      */
-    private function resolveDisplayTitle(string $sessionId, ?string $name, ?string $prompt): string
+    private function resolveDisplayTitle(string $sessionId, ?string $name, ?string $promptPreview): string
     {
         if (null !== $name && '' !== $name) {
             return $name;
         }
 
-        $preview = $this->resolvePromptPreview($prompt);
-        if (null !== $preview) {
-            return $preview;
+        if (null !== $promptPreview) {
+            return $promptPreview;
         }
 
         return "Session {$sessionId}";
