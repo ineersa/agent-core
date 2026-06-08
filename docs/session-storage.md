@@ -57,14 +57,38 @@ and `updateMetadata()`.  The returned array shape for callers:
     'model_provider' => 'deepseek',              // nullable
     'model_name'     => 'deepseek-v4-pro',       // nullable
     'reasoning'  => 'medium',                    // nullable
+    'name'       => 'Write a README',              // non-empty, initialized from first user message
 ]
 ```
 
 Non-null keys are always present; nullable fields are only included when
-non-null. There is no separate public_id column — the auto-increment
-integer primary key is cast to string for all external identifiers.
+non-null. `name` is always a non-empty string, initialized from the
+first user message (trimmed, collapsed to one line, capped at 200 chars)
+during session creation and later renameable via `/rename`. There is no
+separate public_id column — the auto-increment integer primary key is
+cast to string for all external identifiers.
 
 Future forking will add parent_id/root_id support (see [Future fork tree](#future-fork-tree)).
+
+### Session naming and display
+
+The `name` column is a non-empty display name guaranteed to be present
+for every session. It is initialized from the first user message/prompt
+on creation (trimmed, internal whitespace collapsed to single spaces,
+and capped at 200 characters via Symfony String).  Empty or
+whitespace-only prompts receive the deterministic default `"Session"`.
+Persisted in `hatfield_session.name` and returned unconditionally by
+`loadMetadata()` and `listSessions()`.
+
+A stored non-empty `name` is always the `displayTitle` in picker output.
+The `promptPreview` field remains a separate computed value (first 60
+characters of the prompt, with `...` ellipsis when truncated) for rich
+picker display, but does not determine the display title.
+
+`updateMetadata(['name' => ...])` supports renaming (e.g. via `/rename`).
+Empty, whitespace-only, null, or non-string values are normalized to the
+same deterministic default `"Session"` — the name column is never null
+and never empty after an update.
 
 ### Storage model at a glance
 
@@ -388,11 +412,11 @@ embedded IDs.
 | Messenger synchronous bus wiring | High | `config/packages/messenger.yaml` buses have empty middleware arrays. `RunOrchestrator` handlers are registered but messages may not be dispatched. Required for actual run persistence end-to-end. |
 | File-backed CommandStore | Medium | `InMemoryCommandStore` loses pending commands on restart. Step IDs use `hrtime()` so duplicates are unlikely, but file backing would improve durability. |
 | File-backed MessageIdempotencyService | Low | In-memory idempotency state is lost on restart. Not critical because step IDs are time-based and won't repeat. |
-| Session listing (`listSessions()`) | Medium | Need `HatfieldSessionStore::listSessions()` + `HatfieldSessionStore::tree()` before building `/sessions` UI. |
+| Session listing (`listSessions()`) | **Done** | `HatfieldSessionStore::listSessions()` returns catalog rows with `displayTitle`. Tree listing (`tree()`) remains future (SESSION-05/06/07). |
 | Session pruning/cleanup | Low | No auto-expiry or `session:prune` command. Orphaned sessions accumulate. |
 | Fork command (`session:fork`) | Medium | Planned; storage model is ready. Needs rewrite logic + CLI command. |
 | Attachments storage (`attachments/`) | Low | Directory created in layout docs but not yet used. Will store pasted files, images, diffs. |
-| Session rename / alias | Low | Session IDs are auto-increment numeric strings — not human-memorable. Aliases or titles would help. |
+| Session rename / alias | **In progress** | SESSION-01 added `name` column (non-null, initialized from first user message) + listing; SESSION-04 `/rename` is the TUI command. |
 | Runtime event streaming | Medium | Current polling is synchronous full-scan. Incremental delivery would improve large sessions. |
 | Rebuild `state.json` from `events.jsonl` | **Done** | `RunStateReplayService` rebuilds RunState from canonical events when `state.json` is missing or stale. `state.json` is now a disposable cache. |
 ## Related documents

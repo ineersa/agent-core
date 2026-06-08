@@ -7,6 +7,9 @@ namespace Ineersa\CodingAgent\Session;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
+use Ineersa\CodingAgent\Entity\HatfieldSessionRepository;
+
+use function Symfony\Component\String\u;
 
 /**
  * Session persistence backed by the hatfield_session DB table and the
@@ -20,9 +23,13 @@ use Ineersa\CodingAgent\Entity\HatfieldSession;
  *     events.jsonl        AgentCore RunEvent canonical stream (via SessionRunEventStore)
  *     (no separate projection file — transcript rebuilt from events.jsonl)
  *
- * Session metadata (identity, prompt, model, reasoning, fork tree links)
- * lives in the hatfield_session DB table — not in a metadata.yaml file.
- * The DB row is the canonical source of truth for session identity.
+ * Session metadata (identity, prompt, model, reasoning, name,
+ * fork tree links) lives in the hatfield_session DB table — not in a
+ * metadata.yaml file.  The DB row is the canonical source of truth for
+ * session identity.
+ *
+ * A user-visible display name (`name`), initialized from the first user
+ * message and later customizable via `/rename`.
  *
  * session_id === run_id in Hatfield. One directory equals one session
  * equals one agent run equals one future fork tree node.
@@ -48,9 +55,10 @@ final class HatfieldSessionStore
      * Create a new session, insert a DB metadata row, and return its ID.
      *
      * Inserts a HatfieldSession entity to obtain an auto-increment
-     * integer ID, then creates the session directory under
-     * .hatfield/sessions/<id>/ containing state.json and events.jsonl
-     * (all empty).
+     * integer ID, generates the initial session name from the prompt
+     * (trimmed, collapsed to one line, capped at 200 chars), then
+     * creates the session directory under .hatfield/sessions/<id>/
+     * containing state.json and events.jsonl (both empty).
      *
      * Metadata is the DB row — no metadata.yaml is written.
      *
@@ -68,6 +76,7 @@ final class HatfieldSessionStore
         $session = new HatfieldSession();
         $session->cwd = $this->appConfig->cwd;
         $session->prompt = '' !== $prompt ? $prompt : null;
+        $session->name = $this->resolveDefaultName($prompt);
 
         $this->entityManager->persist($session);
         $this->entityManager->flush();
@@ -100,8 +109,8 @@ final class HatfieldSessionStore
      *
      * Returns the same array shape callers expect: session_id, run_id,
      * parent_id, root_id, created_at, updated_at, cwd, prompt, model,
-     * model_provider, model_name, reasoning. Only returns keys with
-     * non-null values (except session_id/run_id/cwd/created_at/updated_at
+     * model_provider, model_name, reasoning, name. Only returns keys with
+     * non-null values (except session_id/run_id/cwd/name/created_at/updated_at
      * which are always present).
      *
      * @return array<string, mixed>|null Null if the session row does not exist
@@ -147,6 +156,7 @@ final class HatfieldSessionStore
         if (null !== $entity->reasoning) {
             $meta['reasoning'] = $entity->reasoning;
         }
+        $meta['name'] = $entity->name;
 
         return $meta;
     }
@@ -206,6 +216,19 @@ final class HatfieldSessionStore
             $entity->cwd = $meta['cwd'];
             $dirty = true;
         }
+        if (\array_key_exists('name', $meta)) {
+            if (\is_string($meta['name'])) {
+                $name = u($meta['name'])
+                    ->trim()
+                    ->replaceMatches('/\s+/u', ' ')
+                    ->truncate(200, '');
+                $nameStr = $name->toString();
+                $entity->name = '' !== $nameStr ? $nameStr : 'Session';
+            } else {
+                $entity->name = 'Session';
+            }
+            $dirty = true;
+        }
 
         if ($dirty) {
             $this->entityManager->flush();
@@ -224,6 +247,60 @@ final class HatfieldSessionStore
     }
 
     /**
+     * Return all sessions with metadata suitable for picker/catalog display,
+     * sorted by updated_at DESC (most recent first).
+     *
+     * Delegates the DB query to HatfieldSessionRepository::findForCatalog()
+     * and enriches each row with a computed, non-persisted promptPreview.
+     * The `name` field is guaranteed non-empty (generated from the first user
+     * message or set to the fallback "Session"); `displayTitle` equals `name`.
+     *
+     * @return list<array{
+     *     sessionId: string,
+     *     name: string,
+     *     displayTitle: string,
+     *     cwd: string,
+     *     prompt: ?string,
+     *     promptPreview: ?string,
+     *     model: ?string,
+     *     model_provider: ?string,
+     *     model_name: ?string,
+     *     reasoning: ?string,
+     *     created_at: string,
+     *     updated_at: string,
+     * }>
+     */
+    public function listSessions(): array
+    {
+        $entities = $this->getRepository()->findForCatalog();
+        $result = [];
+
+        foreach ($entities as $entity) {
+            $id = (string) $entity->id;
+            $name = $entity->name;
+            $promptPreview = $this->resolvePromptPreview($entity->prompt);
+            $displayTitle = $this->resolveDisplayTitle($id, $name, $promptPreview);
+
+            $result[] = [
+                'sessionId' => $id,
+                'name' => $name,
+                'displayTitle' => $displayTitle,
+                'cwd' => $entity->cwd,
+                'prompt' => $entity->prompt,
+                'promptPreview' => $promptPreview,
+                'model' => $entity->model,
+                'model_provider' => $entity->modelProvider,
+                'model_name' => $entity->modelName,
+                'reasoning' => $entity->reasoning,
+                'created_at' => $entity->createdAt->format(\DateTimeInterface::ATOM),
+                'updated_at' => $entity->updatedAt->format(\DateTimeInterface::ATOM),
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
      * Resolve the sessions base path from Hatfield config.
      *
      * Uses sessions.path from the fully resolved config (after defaults,
@@ -233,6 +310,72 @@ final class HatfieldSessionStore
     public function resolveSessionsBasePath(): string
     {
         return $this->getSessionsDir();
+    }
+
+    /**
+     * Compute the user-visible display title without mutating the DB.
+     *
+     * Accepts an already-computed prompt preview so the caller avoids
+     * duplicate truncation when also storing the preview.
+     *
+     * Fallback order: name → prompt preview → "Session <id>".
+     * The name branch is always taken in normal operation (name is
+     * guaranteed non-empty by createSession and updateMetadata); the
+     * other branches are defensive only.
+     */
+    private function resolveDisplayTitle(string $sessionId, string $name, ?string $promptPreview): string
+    {
+        if ('' !== $name) {
+            return $name;
+        }
+
+        if (null !== $promptPreview) {
+            return $promptPreview;
+        }
+
+        return "Session {$sessionId}";
+    }
+
+    /**
+     * Build a graphene-safe truncated prompt preview via Symfony String.
+     *
+     * Returns null when the prompt is empty or null.
+     */
+    private function resolvePromptPreview(?string $prompt): ?string
+    {
+        if (null === $prompt || '' === $prompt) {
+            return null;
+        }
+
+        return u($prompt)->truncate(60, '...')->toString();
+    }
+
+    /**
+     * Generate the initial session name from the first user message.
+     *
+     * Trims leading/trailing whitespace, collapses internal whitespace/
+     * newlines to single spaces, and truncates to 200 characters
+     * (grapheme-safe via Symfony String).  Empty/whitespace-only prompts
+     * receive the deterministic fallback "Session".
+     */
+    private function resolveDefaultName(?string $prompt): string
+    {
+        if (null === $prompt || '' === trim($prompt)) {
+            return 'Session';
+        }
+
+        $name = u($prompt)
+            ->trim()
+            ->replaceMatches('/\s+/u', ' ')
+            ->truncate(200, '');
+
+        $nameStr = $name->toString();
+
+        if ('' === $nameStr) {
+            return 'Session';
+        }
+
+        return $nameStr;
     }
 
     /**
@@ -305,5 +448,19 @@ final class HatfieldSessionStore
     private function getSessionDir(string $sessionId): string
     {
         return $this->getSessionsDir().'/'.$sessionId;
+    }
+
+    /**
+     * Retrieve the HatfieldSessionRepository from the EntityManager.
+     *
+     * Lazy accessor avoids a constructor dependency that would force
+     * test callers to provide a mockable (non-final) repository.
+     */
+    private function getRepository(): HatfieldSessionRepository
+    {
+        $repo = $this->entityManager->getRepository(HatfieldSession::class);
+        \assert($repo instanceof HatfieldSessionRepository);
+
+        return $repo;
     }
 }
