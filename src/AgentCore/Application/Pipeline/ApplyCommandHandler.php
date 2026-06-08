@@ -334,6 +334,8 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             retryableFailure: false,
         );
 
+        $humanResponseMessageArray = $humanResponseMessage->toArray();
+
         $event = $this->eventFactory->event(
             runId: $runId,
             seq: $nextState->lastSeq,
@@ -344,6 +346,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 'idempotency_key' => $message->idempotencyKey(),
                 'question_id' => \is_string($message->payload['question_id'] ?? null) ? $message->payload['question_id'] : null,
                 'answer' => \is_string($message->payload['answer'] ?? null) ? $message->payload['answer'] : null,
+                'message' => $humanResponseMessageArray,
                 'options' => $options,
             ],
         );

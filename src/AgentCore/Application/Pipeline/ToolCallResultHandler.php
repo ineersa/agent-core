@@ -166,7 +166,9 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             $interruptPayload = null;
 
             foreach ($outcome->orderedResults as $orderedResult) {
-                $messages[] = $this->messageNormalizer->toolMessage($orderedResult);
+                $toolMsg = $this->messageNormalizer->toolMessage($orderedResult);
+                $messages[] = $toolMsg;
+                $toolMsgArray = $toolMsg->toArray();
 
                 $eventSpecs[] = [
                     'type' => RunEventTypeEnum::MessageStart->value,
@@ -181,6 +183,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                     'payload' => [
                         'message_role' => 'tool',
                         'tool_call_id' => $orderedResult->toolCallId,
+                        'message' => $toolMsgArray,
                     ],
                 ];
 
