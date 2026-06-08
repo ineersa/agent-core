@@ -29,13 +29,13 @@ Parallelizable with: EDITOR-06, EDITOR-07.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/editor-08-completion-foundation-slash
+Worktree: /home/ineersa/projects/agent-core-worktrees/editor-08-completion-foundation-slash
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-08T15:02:47.293Z
 Completed:
 
 ## Work log
@@ -139,3 +139,10 @@ Risks/notes for implementor:
 - Runtime-registered commands like /model must be available. Ensure CompletionListener registration order does not query provider before ModelControlListener registers /model; querying on Tab rather than constructor/open-time service creation should handle this.
 - Completion rendering must not execute commands. Enter remains submit; Tab accepts completion.
 - No file mention provider in this task; leave provider shape ready for EDITOR-09.
+
+## Task workflow update - 2026-06-08T15:02:47.293Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/editor-08-completion-foundation-slash.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/editor-08-completion-foundation-slash.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/editor-08-completion-foundation-slash.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/editor-08-completion-foundation-slash.
