@@ -199,7 +199,9 @@ final class CompletionListener implements TuiListenerRegistrar
                 }
 
                 // ── Non-predictable input while menu is open ───────────────
-                // Escape sequences, control chars, etc. — close stale menu.
+                // Inputs predictNextText cannot model (remaining escape
+                // sequences, CSI codes, or unrecognised control chars) —
+                // close stale menu.
                 if ($state->isOpen()) {
                     self::closeOverlay($screen, $overlayWidget);
                     $state->close();
@@ -274,7 +276,7 @@ final class CompletionListener implements TuiListenerRegistrar
      * Predict the editor text after a keystroke is applied.
      *
      * Returns null when the keystroke cannot be modelled with the
-     * cursot-at-end heuristic (escape sequences, control chars,
+     * cursor-at-end heuristic (escape sequences, control chars,
      * etc.), in which case the overlay should be closed if open.
      *
      * The editor cursor is always at the end of text in the
@@ -289,17 +291,14 @@ final class CompletionListener implements TuiListenerRegistrar
             return null;
         }
 
-        // Escape / CSI sequences — cannot predict.
+        // Escape / CSI sequences — cannot predict
+        // (also catches Shift+Tab / \x1b[Z).
         if ("\x1b" === $data[0] || "\x9b" === $data[0]) {
             return null;
         }
 
-        // Tab and Shift+Tab are handled by explicit branches above.
-        if ("\t" === $data || "\x1b[Z" === $data) {
-            return null;
-        }
-
-        // Ctrl-letter and other control chars — editor won't insert.
+        // Ctrl-letter (including Tab) and other control chars —
+        // editor won't insert printable text for these.
         if (1 === $len && \ord($data) < 32) {
             return null;
         }
@@ -309,14 +308,21 @@ final class CompletionListener implements TuiListenerRegistrar
             return null;
         }
 
-        // Backspace / Delete — remove last byte (cursor-at-end MVP).
+        // Backspace / Delete — remove last char (cursor-at-end MVP).
         // \x7f is DEL (Linux/macOS), \x08 is BS/Ctrl+H (some terminals).
         if ("\x7f" === $data || "\x08" === $data) {
             if ('' === $current) {
                 return null;
             }
 
-            return substr($current, 0, -1);
+            // Use preg_replace for grapheme-safe removal of the last
+            // character. Falls back to byte-level substr for resilience.
+            $trimmed = preg_replace('/.$/usD', '', $current);
+            if (null === $trimmed || $trimmed === $current) {
+                return substr($current, 0, -1);
+            }
+
+            return $trimmed;
         }
 
         // Printable character — append.

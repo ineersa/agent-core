@@ -354,7 +354,7 @@ final class CompletionListenerTest extends TestCase
     }
 
     #[Test]
-    public function backspaceAfterSlashClosesCompletion(): void
+    public function backspaceRefinesCompletionToWiderMatch(): void
     {
         $this->tui->setFocus($this->screen->editorWidget());
 
@@ -368,6 +368,25 @@ final class CompletionListenerTest extends TestCase
         $this->tui->handleInput("\x7f");
 
         $this->assertSame('/', $this->editor->getText());
+    }
+
+    #[Test]
+    public function backspaceToEmptyClosesCompletionOverlay(): void
+    {
+        $this->tui->setFocus($this->screen->editorWidget());
+
+        // Type '/' — live completion opens.
+        $this->tui->handleInput('/');
+        $this->assertSame('/', $this->editor->getText());
+
+        // Backspace to empty — predicted text '' has no slash context,
+        // overlay must close.
+        $this->tui->handleInput("\x7f");
+        $this->assertSame('', $this->editor->getText());
+
+        // Verify completion is closed: Tab on empty does nothing.
+        $this->tui->handleInput("\t");
+        $this->assertSame('', $this->editor->getText());
     }
 
     #[Test]
@@ -391,7 +410,24 @@ final class CompletionListenerTest extends TestCase
     }
 
     #[Test]
-    public function stylingNoMatchInputWhileMenuOpenClosesOverlay(): void
+    public function upDownNavigationWorksAfterLiveCompletionOpen(): void
+    {
+        $this->tui->setFocus($this->screen->editorWidget());
+
+        // Type '/' — live completion opens (no Tab needed).
+        $this->tui->handleInput('/');
+
+        // Navigate Down — moves to index 1 (/exit, alphabetically
+        // after /clear at index 0).
+        $this->tui->handleInput("\x1b[B");
+
+        // Tab accepts the navigated (not first) suggestion.
+        $this->tui->handleInput("\t");
+        $this->assertSame('/exit ', $this->editor->getText());
+    }
+
+    #[Test]
+    public function typingNoMatchInputWhileMenuOpenClosesOverlay(): void
     {
         // Simulate natural typing: focus editor and type '/'
         $this->tui->setFocus($this->screen->editorWidget());
