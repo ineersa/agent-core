@@ -139,12 +139,12 @@ Use Castor only. Required commands for implementation handoff:
 - All QA/test/lint/static-analysis commands are run via Castor; full `LLM_MODE=true castor check` is required before CODE-REVIEW because this changes LLM-visible flow.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/output-cap-llm-visible-tool-results
 Worktree: /home/ineersa/projects/agent-core-worktrees/output-cap-llm-visible-tool-results
 Fork run: 6cd1x0bomv62
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/102
+PR Status: open
 Started: 2026-06-07T23:37:20.748Z
 Completed:
 
@@ -172,3 +172,18 @@ Completed:
 ## Task workflow update - 2026-06-08T00:07:39.151Z
 - Validation: Reviewer verdict: APPROVE WITH SUGGESTIONS; blockers: none.; Focused validation on worktree: `castor test` PASS (tests=1933, assertions=5737, errors=0, failures=0, skipped=0; junit=var/reports/phpunit.junit.xml).; Focused validation on worktree: `castor deptrac` PASS (violations=0, errors=0, uncovered=724, allowed=894).; Focused validation on worktree: `castor phpstan` PASS (errors=0, file_errors=0).; Focused validation on worktree: `castor cs-check` PASS (files_fixed=0).; Post-validation worktree status: clean at `63b44c66`.
 - Summary: Task-to-PR review phase: reviewer subagent returned `APPROVE WITH SUGGESTIONS` with no blocking/critical issues. Non-blocking notes included a potentially misleading `BgStatusTool` log-cap comment and future edge-case considerations for non-array content parts/details consumers. Parent verified worktree remains clean at HEAD `63b44c66`.
+Castor Check Status: passed
+Castor Check Commit: 63b44c6669d486be1bc0e5ddc053d932b3216b38
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 900s
+Castor Check Completed: 2026-06-08T00:10:22.472Z
+Castor Check Output SHA256: 07d23786471693ea7aa182b1be158c726772d82dbb989655cf3269be61954928
+
+## Task workflow update - 2026-06-08T00:10:25.641Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: 63b44c6669d4.
+- Pushed task/output-cap-llm-visible-tool-results to origin.
+- branch 'task/output-cap-llm-visible-tool-results' set up to track 'origin/task/output-cap-llm-visible-tool-results'.
+- Created PR: https://github.com/ineersa/agent-core/pull/102
+- Validation: Pre-PR reviewer: APPROVE WITH SUGGESTIONS; blockers none.; Pre-PR `castor test`: PASS (tests=1933, assertions=5737, errors=0, failures=0, skipped=0).; Pre-PR `castor deptrac`: PASS (violations=0, errors=0, uncovered=724, allowed=894).; Pre-PR `castor phpstan`: PASS (errors=0, file_errors=0).; Pre-PR `castor cs-check`: PASS (files_fixed=0).
+- Summary: Ready for code review. Implementation fork completed central LLM-visible tool-output capping via `OutputCapLlmTransformHook`, direct `bg_status log` capping, deterministic tests, and llm-real controller E2E coverage. Reviewer subagent found no blockers (`APPROVE WITH SUGGESTIONS`). Focused Castor validation passed before PR handoff.
