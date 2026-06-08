@@ -188,3 +188,8 @@ Castor Check Output SHA256: c797e68bab73c8de86b410e3e17c6535c4fd7d6a12db8c99a94a
 ## Task workflow update - 2026-06-08T16:52:08.241Z
 - Recorded fork run: 1qneis5qtler
 - User requested documentation-only follow-up after Windows WezTerm/SSH/tmux smoke test. Launched fork 1qneis5qtler to document `/copy` OSC-52/tmux caveats, required `allow-passthrough on`/`set-clipboard on`/Ms checks, and remote `xclip` limitation.
+
+## Task workflow update - 2026-06-08T16:54:03.370Z
+- Recorded fork run: 1qneis5qtler
+- Validation: Docs fork reported: castor cs-check — passed (files_fixed=0); Orchestrator verification: git status --short --branch clean and ahead 1; git diff --stat HEAD~1..HEAD shows docs/tui-architecture.md | 38 insertions; full origin/main...HEAD stat shows 8 files changed, 661 insertions.
+- Summary: Documentation fork 1qneis5qtler completed and committed b8926e44 on the task branch. Added `Clipboard and OSC-52 notes` to docs/tui-architecture.md documenting `/copy` clipboard fallback behavior, remote tmux/SSH config (`set-clipboard on`, `allow-passthrough on`, Ms checks), and that xclip/xsel in tmux target the remote clipboard rather than local Windows/WezTerm over SSH. Orchestrator verified clean worktree; branch is one commit ahead of origin; docs commit diff stat: 1 file changed, 38 insertions.
