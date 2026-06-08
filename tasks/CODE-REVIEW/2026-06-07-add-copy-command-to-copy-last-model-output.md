@@ -113,12 +113,12 @@ The handler needs `TranscriptBlockKindEnum` from `CodingAgent/Runtime/Projection
 - No deptrac violations
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/2026-06-07-add-copy-command-to-copy-last-model-output
 Worktree: /home/ineersa/projects/agent-core-worktrees/2026-06-07-add-copy-command-to-copy-last-model-output
 Fork run: y1mkmqrfyah1
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/107
+PR Status: open
 Started: 2026-06-08T15:50:52.930Z
 Completed:
 
@@ -167,3 +167,16 @@ Completed:
 - Validation: Reviewer subagent final review — APPROVED; no critical issues, no issues, no nice-to-haves remaining.; Current task branch HEAD: ba53a5b6a8650a65877ddade09ab78af11d83947; git diff --stat origin/main...HEAD — 7 files changed, 623 insertions; castor test — passed (tests=2057, assertions=6046, errors=0, failures=0, skipped=0); castor deptrac — passed (violations=0, errors=0, uncovered=728, allowed=925); castor phpstan — passed (errors=0, file_errors=0); castor cs-check — passed (files_fixed=0); git status --short --branch — clean on task/2026-06-07-add-copy-command-to-copy-last-model-output
 - Summary: Reviewer final decision: APPROVED for current HEAD ba53a5b6a8650a65877ddade09ab78af11d83947. Reviewer found no remaining actionable issues; previous catch-block documentation NTH was addressed. Local focused validation completed successfully and worktree remained clean.
 - Task-to-PR review loop complete: initial reviewer suggestions addressed by fork 7pz8dv5s6fb1, follow-up catch documentation addressed by fork y1mkmqrfyah1, final reviewer decision APPROVED at ba53a5b6a8650a65877ddade09ab78af11d83947. Focused Castor validation passed: test, deptrac, phpstan, cs-check.
+Castor Check Status: passed
+Castor Check Commit: ba53a5b6a8650a65877ddade09ab78af11d83947
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 900s
+Castor Check Completed: 2026-06-08T16:31:42.732Z
+Castor Check Output SHA256: c797e68bab73c8de86b410e3e17c6535c4fd7d6a12db8c99a94a6332bf721b46
+
+## Task workflow update - 2026-06-08T16:31:46.856Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: ba53a5b6a865.
+- Pushed task/2026-06-07-add-copy-command-to-copy-last-model-output to origin.
+- branch 'task/2026-06-07-add-copy-command-to-copy-last-model-output' set up to track 'origin/task/2026-06-07-add-copy-command-to-copy-last-model-output'.
+- Created PR: https://github.com/ineersa/agent-core/pull/107
