@@ -228,6 +228,7 @@ compaction:
     reserve_tokens: 16384
     keep_recent_tokens: 20000
     max_summary_tokens: null
+    model: null
 ```
 
 Field meanings:
@@ -238,6 +239,7 @@ Field meanings:
 | `reserve_tokens` | Tokens reserved for the next model response. Used by auto trigger policy. |
 | `keep_recent_tokens` | Approximate number of newest tokens to retain raw after compaction. |
 | `max_summary_tokens` | Optional cap for summary generation. If null, use `floor(reserve_tokens * 0.8)`. |
+| `model` | Override for the summarization model. `null` uses the active session model. When set, use format `provider/model`, e.g. `llama_cpp/flash`. |
 
 Auto-compaction phase may later add:
 
@@ -266,7 +268,7 @@ case ContextCompacted = 'context_compacted';
 case ContextCompactionFailed = 'context_compaction_failed';
 ```
 
-If implementation scope needs to be smaller, `context_compacted` is the required event; start/failure events are recommended for observability and TUI feedback.
+All three events are mandatory for Phase 1. They provide TUI feedback (working/status/error messages) and observability (structured logs per event).
 
 ### 7.2 `context_compaction_started` payload
 
@@ -460,6 +462,7 @@ CompactionSettingsDTO
   - reserveTokens: int
   - keepRecentTokens: int
   - maxSummaryTokens: ?int
+  - model: ?string
 
 CompactionPreparationDTO
   - messagesToSummarize: list<AgentMessage>
@@ -497,6 +500,12 @@ $platform->invoke(new ModelInvocationRequest(
     ),
 ));
 ```
+
+Model resolution:
+
+- If `settings.model` is a non-null string, parse as `provider/model` and use that provider and model.
+- If `settings.model` is null, use the active session provider and model.
+- The resolved model is passed as `$compactionModel` in the `ModelInvocationRequest`.
 
 Requirements:
 
@@ -582,18 +591,20 @@ Add to `AgentSessionClient`:
 public function compact(string $runId, ?string $customInstructions = null): void;
 ```
 
-Implement in:
+Phase 1 must implement in both:
 
-- `InProcessAgentSessionClient`
-- `JsonlProcessAgentSessionClient`
+- `InProcessAgentSessionClient::compact()` — calls `AgentRunnerInterface::compact()` directly.
+- `JsonlProcessAgentSessionClient::compact()` — sends a JSONL `RuntimeCommand` of type `compact`.
 
-Add JSONL runtime command type:
+Add JSONL runtime command type to `RuntimeCommand`:
 
 ```json
 {"type":"compact","run_id":"...","custom_instructions":"..."}
 ```
 
-The headless controller must route this to `AgentRunnerInterface::compact()`.
+`HeadlessController` must route the `compact` command type to `AgentRunnerInterface::compact()`.
+
+If compaction is requested during an active run (streaming, tool-running, or mid-turn), queue the command until the next safe turn boundary. Do not reject the request. The existing PendingCommand mechanism in the command mailbox handles this naturally.
 
 ### 14.2 TUI slash command
 
@@ -609,6 +620,7 @@ Validation:
 - If no active session: status `No active session to compact.`
 - If terminal run: status `Cannot compact a completed run.`
 - If compaction is already running: status `Compaction already in progress.`
+- If the run is active (streaming, mid-turn), the runtime queues the command; the TUI may show a queued status.
 - Otherwise call `AgentSessionClient::compact()`.
 
 During compaction:
@@ -622,6 +634,17 @@ After success:
 ```text
 ⧉ Conversation compacted. Token estimate: 142k -> 38k.
 ```
+
+After failure (including empty summary):
+
+```text
+Compaction failed: <reason message>
+```
+
+Example failure messages:
+
+- `Compaction failed: The model returned an empty summary.`
+- `Compaction failed: The provider reported an error.`
 
 Do not print the full summary into the normal transcript by default. It can be available in debug details or events.
 
@@ -738,7 +761,7 @@ Failure cases:
 | Not enough messages to compact | No state mutation; show status explaining nothing to compact. |
 | No safe cut point | No state mutation; emit failure/no-op event. |
 | LLM summarization error | Emit `context_compaction_failed`; preserve original messages. |
-| Empty summary | Use fallback text `(The model did not produce a summary.)` or treat as failure. Prefer failure for Phase 1. |
+| Empty summary | Always a failure. Emit `context_compaction_failed` with reason `empty_summary`. Preserve original messages unchanged. Display a user-visible error in the TUI. |
 | Run cancelled during compaction | Abort; no state mutation. |
 | State changed before result commit | Re-run preparation or fail safely; do not apply stale compacted messages. |
 
@@ -828,7 +851,53 @@ castor check
 
 For runtime/TUI/LLM-visible changes, `castor check` is required. If required prerequisites are unavailable, leave the task IN-PROGRESS and record the blocker.
 
-## 21. Phased implementation
+## 21. Task Breakdown and Execution Order
+
+Each task is a medium-sized implementation slice with its own task file, acceptance criteria, and Castor validation.
+
+### 21.1 Task summary table
+
+| Task | File | Scope | Dependencies | Parallel OK? |
+|---|---|---|---|---|
+| **COMP-00** | `tasks/TODO/comp-00-replay-foundation.md` | Fix replay `assistant_message` mismatch; add replay coverage for normal and full-message-list replacement semantics. | None | With COMP-01 |
+| **COMP-01** | `tasks/TODO/comp-01-compactor-service-settings-prompt.md` | Compaction settings DTO, `SessionCompactor` preparation/safe-cut/prompt/result algorithms, DTOs. | None | With COMP-00 |
+| **COMP-02** | `tasks/TODO/comp-02-core-compaction-pipeline-events.md` | Core pipeline handler, all three mandatory events, no-tools model invocation, `RunState.messages` replacement, replay integration. | COMP-00, COMP-01 | After both land |
+| **COMP-03** | `tasks/TODO/comp-03-runtime-transports-and-tui-compact-command.md` | `AgentSessionClient::compact()` for both runtimes, JSONL protocol, HeadlessController routing, TUI `/compact` slash command, active-run queuing. | COMP-02 | With COMP-04 |
+| **COMP-04** | `tasks/TODO/comp-04-compaction-hooks-and-observability.md` | Before-compaction hook contracts, hook result DTOs, after-compaction event observation, structured logging, TUI event projection. | COMP-02 | With COMP-03 |
+| **COMP-05** | `tasks/TODO/comp-05-manual-compaction-e2e-validation-docs.md` | LLM smoke test, settings/user docs, E2E validation, Phase 1 acceptance checklist sign-off. | COMP-02, COMP-03, COMP-04 | After all three land |
+| **COMP-06** | `tasks/TODO/comp-06-auto-compaction-reserve-token-policy.md` | Auto-compaction trigger policy, after-turn and pre-LLM-call checks, overflow recovery, circuit breaker. Phase 2. | COMP-05 | After Phase 1 ships |
+
+### 21.2 Execution graph
+
+```text
+Wave 0 (parallel)
+  COMP-00 ─┬─┐
+  COMP-01 ─┘ │
+             │
+Wave 1       │
+  COMP-02 ◄──┘  (depends on COMP-00 + COMP-01)
+       │
+       ├──────────────┐
+       │              │
+Wave 2 (parallel)     │
+  COMP-03 ◄───────────┤  (depends on COMP-02)
+  COMP-04 ◄───────────┘  (depends on COMP-02, coordinate event/runtime names with COMP-03)
+       │
+Wave 3 │
+  COMP-05 ◄── COMP-02 + COMP-03 + COMP-04  (integration, E2E, docs, smoke)
+       │
+Wave 4 (Phase 2)
+  COMP-06 ◄── COMP-05  (auto-compaction on stable manual foundation)
+```
+
+### 21.3 Coordination notes
+
+- COMP-03 and COMP-04 run in parallel after COMP-02 lands. Both must agree on runtime event names (`context_compaction_started`, `context_compacted`, `context_compaction_failed`), the `AgentSessionClient::compact()` signature, and JSONL `RuntimeCommand` wire format. Implementors should coordinate these before starting.
+- COMP-05 depends on COMP-04 only if hooks emit events that runtime/TUI projection must surface in the final E2E validation. If hooks are deferred to a later Phase 1 follow-up, COMP-05 can gate on COMP-02 + COMP-03 only.
+- All tasks must load the `testing` skill before validation because compaction touches runtime, TUI, Messenger, and LLM-visible flow.
+- Each task's acceptance criteria are authoritative for its scope. This breakdown references them; it does not duplicate them.
+
+## 22. Phased implementation
 
 ### Phase 0: Replay prerequisite
 
@@ -843,15 +912,17 @@ Acceptance:
 
 Implement:
 
-- compaction settings,
+- compaction settings including configurable `model` override,
 - `SessionCompactor` preparation and message construction,
 - summarization prompt construction,
-- no-tools model invocation,
+- no-tools model invocation with model resolution from settings,
 - core compaction command/pipeline,
-- `context_compaction_started`, `context_compacted`, `context_compaction_failed`,
+- all three mandatory events: `context_compaction_started`, `context_compacted`, `context_compaction_failed`,
 - `RunState.messages` replacement,
-- runtime `compact()` API,
-- TUI `/compact [instructions]`,
+- runtime `compact()` API in both `InProcessAgentSessionClient` and `JsonlProcessAgentSessionClient`,
+- JSONL `compact` command and `HeadlessController` routing,
+- active-run queuing to next safe turn boundary,
+- TUI `/compact [instructions]` with user-visible errors on failure,
 - replay tests,
 - unit tests,
 - LLM smoke test.
@@ -864,6 +935,11 @@ Acceptance:
 - Second `/compact` works naturally.
 - Resume/replay preserves compacted context.
 - Tool calls/results are not split.
+- Both in-process and process/JSONL runtime paths work.
+- Compaction during an active run queues until the next safe boundary.
+- Configurable `model` override works when set.
+- All three events are emitted in correct order.
+- Empty summaries fail and show a TUI error.
 - `castor check` passes.
 
 ### Phase 2: Auto-compaction
@@ -892,30 +968,53 @@ Potential future work:
 - dedicated summarization model override,
 - compact summary debug viewer.
 
-## 22. Open questions
+## 23. Resolved decisions
 
-1. **Phase 1 runtime scope**
-   - Should Phase 1 support both in-process and process/JSONL runtime, or is in-process enough for the first slice?
-   - Recommendation: support both if feasible because runtime/TUI validation may exercise process mode.
+These decisions are definitive for Phase 1 implementation.
 
-Must support both.
+### 23.1 Phase 1 runtime scope
 
-2. **Compaction model selection**
-   - Should compaction use the same model as the session, or a configurable model?
-   - Recommendation: same model for Phase 1; add configurable override later.
-By default session model, must be configurable in settings, e.g. model: <provider>/<model>
+Phase 1 MUST support both runtime paths:
 
-3. **Manual compaction during active run**
-   - Queue until a safe boundary or reject while active?
-   - Recommendation: queue if the core command mailbox supports it cleanly; otherwise reject in Phase 1 with clear status.
-Queue until a safe boundary
+- `InProcessAgentSessionClient::compact()` calls `AgentRunnerInterface::compact()` directly.
+- `JsonlProcessAgentSessionClient::compact()` sends a JSONL `compact` command.
+- `HeadlessController` must route the `compact` command type.
 
-4. **Event granularity**
-   - Add start/compacted/failed events, or only compacted?
-   - Recommendation: add all three for TUI feedback and observability.
-add all three for TUI feedback and observability
+### 23.2 Compaction model selection
 
-5. **Empty summary behavior**
-   - Treat as failure or use fallback text?
-   - Recommendation: treat as failure in Phase 1 to avoid silently degrading context.
-Treat as failure always, show error to user in TUI
+The summarization model defaults to the active session model.
+
+The model is configurable via the `compaction.model` setting:
+
+```yaml
+compaction:
+    model: null           # null = use session model
+    # model: llama_cpp/flash  # override: provider/model
+```
+
+Model resolution in code:
+1. If `compaction.model` is a non-null string, parse as `provider/model`.
+2. If null, use the current session provider and model.
+
+### 23.3 Manual compaction during active run
+
+Compaction requested during an active run (streaming, tool-running, mid-turn) must queue until the next safe turn boundary. Do not reject the request.
+
+The existing PendingCommand mechanism in the command mailbox is the natural queuing approach.
+
+### 23.4 Event granularity
+
+All three event types are mandatory:
+
+- `context_compaction_started` — emitted before the LLM summarization call.
+- `context_compacted` — emitted after successful state replacement.
+- `context_compaction_failed` — emitted on any compaction failure.
+
+### 23.5 Empty summary behavior
+
+An empty or whitespace-only summary from the model is always a failure.
+
+- Emit `context_compaction_failed` with reason `empty_summary`.
+- Preserve original `RunState.messages` unchanged.
+- Display a user-visible error in the TUI: `Compaction failed: The model returned an empty summary.`
+- Do not use fallback text.
