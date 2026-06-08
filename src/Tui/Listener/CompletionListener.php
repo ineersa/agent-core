@@ -19,15 +19,17 @@ use Symfony\Component\Tui\Widget\TextWidget;
 /**
  * Registers TUI-level input listeners for slash command completion.
  *
- * Completion is triggered by Tab when the current editor text contains
- * a slash command context (text starting with "/" or after a newline
- * at column 0).  A non-focused overlay menu is rendered above the editor.
+ * Completion opens automatically as the user types a leading "/"
+ * (or after a newline at column 0) and refines suggestions on further
+ * keystrokes.  Tab opens the overlay explicitly and accepts the
+ * selected suggestion.
  *
  * Input routing:
+ *  - Typing: opens/refines completion when predicted text has slash context
  *  - Tab: open completion when closed; accept selected when open
  *  - Escape: close completion without clearing editor text
  *  - Up/Down: navigate suggestions (only when menu is open)
- *  - Normal typing: closes stale menu, passes through
+ *  - Normal non-slash typing or other input: closes stale menu, passes through
  *
  * Uses a TUI-level {@see InputEvent} listener at priority 90, below
  * {@see CtrlCInputInterceptor} (100) and {@see ModelControlListener}
@@ -166,14 +168,41 @@ final class CompletionListener implements TuiListenerRegistrar
                     return;
                 }
 
-                // ── Normal input while menu is open ──────────────────────
-                // Close stale menu and let input through to editor.
+                // ── Live completion on typing ────────────────────────────
+                // Predict the editor state after the key reaches the
+                // editor, then open/refine or close the overlay accordingly.
+                // Never stop propagation — the editor MUST receive the key.
+                $predictedText = self::predictNextText($editor->getText(), $data);
+
+                if (null !== $predictedText) {
+                    $ctx = CompletionContext::forCursorAtEnd($predictedText);
+                    $suggestions = $provider->getSuggestions($ctx);
+
+                    if ([] !== $suggestions) {
+                        // Open or refine the completion overlay.
+                        $state->open($suggestions);
+                        self::closeOverlay($screen, $overlayWidget);
+                        $overlayWidget = self::renderOverlay($screen, $theme, $state);
+                        $screen->requestRender();
+
+                        return;
+                    }
+
+                    // Predicted text no longer has suggestions.
+                    if ($state->isOpen()) {
+                        self::closeOverlay($screen, $overlayWidget);
+                        $state->close();
+                        $screen->requestRender();
+                    }
+
+                    return;
+                }
+
+                // ── Non-predictable input while menu is open ───────────────
+                // Escape sequences, control chars, etc. — close stale menu.
                 if ($state->isOpen()) {
                     self::closeOverlay($screen, $overlayWidget);
                     $state->close();
-
-                    // Still request render so dropped overlay is painted,
-                    // but do NOT stop propagation — editor must handle the key.
                     $screen->requestRender();
                 }
             },
@@ -239,6 +268,59 @@ final class CompletionListener implements TuiListenerRegistrar
             $screen->removeOverlay($overlayWidget);
             $overlayWidget = null;
         }
+    }
+
+    /**
+     * Predict the editor text after a keystroke is applied.
+     *
+     * Returns null when the keystroke cannot be modelled with the
+     * cursot-at-end heuristic (escape sequences, control chars,
+     * etc.), in which case the overlay should be closed if open.
+     *
+     * The editor cursor is always at the end of text in the
+     * EDITOR-08 MVP; future phases with real cursor tracking
+     * should update this to splice at the cursor position.
+     */
+    private static function predictNextText(string $current, string $data): ?string
+    {
+        $len = \strlen($data);
+
+        if (0 === $len) {
+            return null;
+        }
+
+        // Escape / CSI sequences — cannot predict.
+        if ("\x1b" === $data[0] || "\x9b" === $data[0]) {
+            return null;
+        }
+
+        // Tab and Shift+Tab are handled by explicit branches above.
+        if ("\t" === $data || "\x1b[Z" === $data) {
+            return null;
+        }
+
+        // Ctrl-letter and other control chars — editor won't insert.
+        if (1 === $len && \ord($data) < 32) {
+            return null;
+        }
+
+        // Enter / Return — editor submits, don't predict.
+        if ("\n" === $data || "\r" === $data) {
+            return null;
+        }
+
+        // Backspace / Delete — remove last byte (cursor-at-end MVP).
+        // \x7f is DEL (Linux/macOS), \x08 is BS/Ctrl+H (some terminals).
+        if ("\x7f" === $data || "\x08" === $data) {
+            if ('' === $current) {
+                return null;
+            }
+
+            return substr($current, 0, -1);
+        }
+
+        // Printable character — append.
+        return $current.$data;
     }
 
     /**

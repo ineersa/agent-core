@@ -290,19 +290,116 @@ final class CompletionListenerTest extends TestCase
         $this->assertSame('/', $this->editor->getText());
     }
 
-    // ── Normal typing closes stale menu ───────────────────────────
+    // ── Live completion opens on slash typing ─────────────────────
 
     #[Test]
-    public function normalInputClosesCompletionMenu(): void
+    public function typingSlashOpensCompletionOverlay(): void
+    {
+        $this->tui->setFocus($this->screen->editorWidget());
+
+        // Type '/' — completion should open based on predicted text.
+        // Editor must still receive the '/' character.
+        $this->tui->handleInput('/');
+
+        $this->assertSame('/', $this->editor->getText());
+    }
+
+    #[Test]
+    public function typingSlashThenLetterRefinesCompletion(): void
+    {
+        $this->tui->setFocus($this->screen->editorWidget());
+
+        // Type '/h' — prediction '/h' should refine overlay to /help only.
+        $this->tui->handleInput('/');
+        $this->tui->handleInput('h');
+
+        // Editor has '/h' inserted naturally.
+        $this->assertSame('/h', $this->editor->getText());
+
+        // Tab should accept the first (and only) suggestion /help.
+        $this->tui->handleInput("\t");
+        $this->assertSame('/help ', $this->editor->getText());
+    }
+
+    #[Test]
+    public function typingSlashThenRefineThenAcceptWorks(): void
+    {
+        $this->tui->setFocus($this->screen->editorWidget());
+
+        // Type '/e' — should refine to /exit.
+        $this->tui->handleInput('/');
+        $this->tui->handleInput('e');
+
+        $this->assertSame('/e', $this->editor->getText());
+
+        // Tab accepts the matching suggestion.
+        $this->tui->handleInput("\t");
+        $this->assertSame('/exit ', $this->editor->getText());
+    }
+
+    #[Test]
+    public function typingNonSlashTextDoesNotOpenCompletion(): void
+    {
+        $this->tui->setFocus($this->screen->editorWidget());
+
+        // Type "hello" — no slash context, completion must NOT open.
+        $this->tui->handleInput('h');
+        $this->tui->handleInput('e');
+
+        $this->assertSame('he', $this->editor->getText());
+
+        // Tab on non-slash text must not trigger completion.
+        $this->tui->handleInput("\t");
+        $this->assertSame('he', $this->editor->getText());
+    }
+
+    #[Test]
+    public function backspaceAfterSlashClosesCompletion(): void
+    {
+        $this->tui->setFocus($this->screen->editorWidget());
+
+        // Type '/h' — completion opens with /help.
+        $this->tui->handleInput('/');
+        $this->tui->handleInput('h');
+
+        $this->assertSame('/h', $this->editor->getText());
+
+        // Backspace removes 'h' — predicted text is '/' which still matches.
+        $this->tui->handleInput("\x7f");
+
+        $this->assertSame('/', $this->editor->getText());
+    }
+
+    #[Test]
+    public function liveTypingRefinesButTabStillRequiredToAccept(): void
+    {
+        $this->tui->setFocus($this->screen->editorWidget());
+
+        // Type '/help' — typing should refine but NOT auto-accept.
+        $this->tui->handleInput('/');
+        $this->tui->handleInput('h');
+        $this->tui->handleInput('e');
+        $this->tui->handleInput('l');
+        $this->tui->handleInput('p');
+
+        // Editor has '/help' exactly as typed — not '/help '.
+        $this->assertSame('/help', $this->editor->getText());
+
+        // Tab still accepts and inserts trailing space.
+        $this->tui->handleInput("\t");
+        $this->assertSame('/help ', $this->editor->getText());
+    }
+
+    #[Test]
+    public function stylingNoMatchInputWhileMenuOpenClosesOverlay(): void
     {
         // Simulate natural typing: focus editor and type '/'
         $this->tui->setFocus($this->screen->editorWidget());
         $this->tui->handleInput('/');
 
-        // Open menu
-        $this->tui->handleInput("\t");
-
-        // Type a character — should close menu and pass through to editor
+        // Overlay is already open from live completion.  No Tab needed.
+        // Type 'x' — predicted '/x' has no suggestions, overlay closes.
+        // Editor must still receive the 'x'.
         $this->tui->handleInput('x');
 
         // Text should be "/x" (cursor was after '/' from natural typing)
@@ -310,14 +407,11 @@ final class CompletionListenerTest extends TestCase
     }
 
     #[Test]
-    public function afterNormalInputClosesMenuTabCanReopen(): void
+    public function afterNoMatchInputClosesMenuTabCanReopen(): void
     {
         // Simulate natural typing: focus editor and type '/'
         $this->tui->setFocus($this->screen->editorWidget());
         $this->tui->handleInput('/');
-
-        // Open menu
-        $this->tui->handleInput("\t");
 
         // Type 'x' — closes menu, inserts 'x'
         $this->tui->handleInput('x');
