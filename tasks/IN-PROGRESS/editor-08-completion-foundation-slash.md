@@ -32,7 +32,7 @@ Parallelizable with: EDITOR-06, EDITOR-07.
 Status: IN-PROGRESS
 Branch: task/editor-08-completion-foundation-slash
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-08-completion-foundation-slash
-Fork run: whu7d1ikvvdi
+Fork run: ljsv66d8tm3t
 PR URL: https://github.com/ineersa/agent-core/pull/106
 PR Status: open
 Started: 2026-06-08T15:02:47.293Z
@@ -292,3 +292,7 @@ Castor Check Output SHA256: debe9bd7027e19303b9c02304ed5ca7a47ca6fa64294edb887b3
 ## Task workflow update - 2026-06-08T20:35:31.493Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: User smoke-tested latest EDITOR-08 PR and requested another review-iterate pass. Required fixes: /model and favorites command UX cleanup; remove keybinding/instruction prose from slash command descriptions and show those hints only in actual SelectListWidget picker headers; replace /model fav with /model-favourites command; model/favorites pickers currently mount below footer and should mount below editor; current model should use theme accent in picker rows; PR comments also require slash completion to trigger only when '/' is first symbol (no newline contexts), remove unacceptable production reflection in PromptEditor cursor placement, and simplify model textual command shape to /model <provider/modelname> plus /model-favourites <provider/modelname> (no /model select).
+
+## Task workflow update - 2026-06-08T20:36:24.571Z
+- Recorded fork run: ljsv66d8tm3t
+- Summary: Launched review-iterate implementation fork ljsv66d8tm3t for latest user smoke feedback and PR comments. Required fixes: clean /model metadata/descriptions, replace /model fav with canonical /model-favourites, simplify /model args to direct provider/model instead of /model select, mount model/favorites pickers below editor via ChatScreen overlay API, accent current model rows, remove newline slash-completion contexts, remove production reflection from PromptEditor cursor-at-end workaround, and preserve prior completion behavior/validation.
