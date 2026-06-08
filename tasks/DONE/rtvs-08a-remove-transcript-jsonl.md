@@ -34,14 +34,14 @@ No compatibility fallback to old `transcript.jsonl` should be added unless expli
 - `castor deptrac` passes; full validation must use Castor per project rules.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/rtvs-08a-remove-transcript-jsonl
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-08a-remove-transcript-jsonl
 Fork run: v4ckfu6y2a4s
 PR URL: https://github.com/ineersa/agent-core/pull/101
-PR Status: open
+PR Status: merged
 Started: 2026-06-07T21:23:43.851Z
-Completed:
+Completed: 2026-06-08T00:06:49.699Z
 
 ## Work log
 - Created: 2026-06-07T00:17:18.300Z
@@ -110,3 +110,12 @@ Castor Check Output SHA256: d0d4ec47584bafae7222162adb41f75acfdaaa259e4856d6b465
 - Created PR: https://github.com/ineersa/agent-core/pull/101
 - Validation: Reviewer subagent: APPROVED at HEAD 9248af7c; castor test: PASS (1932 tests, 5722 assertions); castor test:tui: PASS (5 tests, 18 assertions); castor test:controller: PASS (1 test, 7 assertions); castor test:llm-real: PASS (4 tests, 29 assertions); castor deptrac: PASS (0 violations); castor phpstan: PASS (0 errors); castor cs-check: PASS (0 files fixed); fork-reported castor check: PASS (all gates green)
 - Summary: RTVS-08A implementation ready for code review at HEAD 9248af7c. Reviewer subagent final verdict APPROVED. Full Castor check was run by gate-fix fork and passed; move_task will rerun quality gate before pushing/PR. Removed transcript.jsonl production I/O and DTO/service, replay resume transcript from events.jsonl via RuntimeEventMapper + TranscriptProjector, added canonical user-message derivation for initial prompt/steer/follow_up, updated docs/tests/snapshots, merged latest main, and addressed reviewer findings.
+
+## Task workflow update - 2026-06-08T00:06:49.699Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/rtvs-08a-remove-transcript-jsonl into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/rtvs-08a-remove-transcript-jsonl.
+- Pulled integration checkout: Already up to date..
+- Validation: GitHub PR #101 state: MERGED; git pull --ff-only on main: fast-forwarded to merge commit 8086e63e; CODE-REVIEW Castor quality gate: PASS at task commit 9248af7c (LLM_MODE=true castor check)
+- Summary: PR #101 was merged on GitHub and integration checkout was fast-forwarded to origin/main before completion. RTVS-08A is complete: transcript.jsonl production I/O removed, resume replay uses events.jsonl through RuntimeEventMapper + TranscriptProjector, canonical user-message derivation added, docs/tests/snapshots updated, and full Castor quality gate passed during CODE-REVIEW.
