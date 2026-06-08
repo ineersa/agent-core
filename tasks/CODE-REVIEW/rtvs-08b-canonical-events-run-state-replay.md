@@ -36,12 +36,12 @@ Recommended sequencing:
 - Validation uses Castor per project rules; runtime/Messenger changes require full `castor check` before CODE-REVIEW.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/rtvs-08b-canonical-events-run-state-replay
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-08b-canonical-events-run-state-replay
 Fork run: hwptg9frdqqv
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/104
+PR Status: open
 Started: 2026-06-08T00:15:30.019Z
 Completed:
 
@@ -95,3 +95,16 @@ Completed:
 - Summary: Final reviewer-fix fork completed at commit f7c14f0d. Addressed 7 reviewer findings: tool-call-only assistant message replay via replayAssistantMessage() helper, duplicate seq detection with RunStateReplayException, docs overclaim removed (corrupt→missing/stale), by-ref accumulator invariant documented in replay() docblock, unused applyMessageEnd pendingToolCalls parameter removed, explicit DI wiring in services.yaml, and 5 new tests (tool-call-only assistant, duplicate seq, command_rejected, continue, llm_step_aborted). Final reviewer returned APPROVED — all prior findings resolved, no new issues. Local validation: castor test 2045/2045, deptrac 0 violations, phpstan 0 errors, cs-check clean.
 - task-to-pr: final reviewer returned APPROVED at f7c14f0d. All prior findings confirmed resolved. No blocking issues remain.
 - task-to-pr: local validation castor test 2045/2045, deptrac 0, phpstan 0, cs-check clean. Moving to CODE-REVIEW.
+Castor Check Status: passed
+Castor Check Commit: f7c14f0d578243b2709003303a88109982c03eec
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 240s
+Castor Check Completed: 2026-06-08T01:51:43.643Z
+Castor Check Output SHA256: 76bc5710c370d035b88a5c02312ff509d59c8da1f76a403e1bf78f71f11b9d4f
+
+## Task workflow update - 2026-06-08T01:51:46.972Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (240s timeout). Commit: f7c14f0d5782.
+- Pushed task/rtvs-08b-canonical-events-run-state-replay to origin.
+- branch 'task/rtvs-08b-canonical-events-run-state-replay' set up to track 'origin/task/rtvs-08b-canonical-events-run-state-replay'.
+- Created PR: https://github.com/ineersa/agent-core/pull/104
