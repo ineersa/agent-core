@@ -523,10 +523,18 @@ final class TuiSessionState
     // Footer/runtime projection state
     public string $footerModel = '';
     public string $footerReasoning = '';
-    public int $inputTokens = 0;
-    public int $outputTokens = 0;
-    public float $totalCost = 0.0;
     public int $contextWindow = 0;
+
+    /**
+     * Usage/token projection for the TUI footer.
+     *
+     * Holds both session-level accumulated metrics (inputTokens, outputTokens,
+     * totalCost) and per-turn metrics (turnOutputTokens, turnStartTime,
+     * llmEndTime, latestInputTokens). Per-turn fields are reset on each
+     * TurnStarted event via UsageProjection::resetTurn().
+     */
+    public UsageProjection $usage;
+
     public float $sessionStartTime = 0.0;
     public string $cwd = '';
     public string $branch = '';
@@ -580,14 +588,25 @@ applied at display time by `TranscriptBlockWidget`:
 | `UserMessage` | `<prompt text>` | `❯ ` |
 | `AssistantMessage` | `<response text>` | `◇ ` |
 | `AssistantThinking` | `<thinking text>` | `◇ ` (collapsed by default) |
-| `ToolExecution` | `<tool name> <summary>` | `● ` |
-| `ToolQuestion` | Tool question overlay (TUI inline) | — |
-| `HitlQuestion` | HITL question overlay (TUI inline) | — |
-| `Cancellation` | Cancellation notice | (muted) |
-| `CancellationRequested` | "Cancelling…" | (muted) |
-| `RunLifecycle` | Run started/completed/failed notice | (accent-colored) |
+| `ToolCall` | Tool call with arguments | `● ` |
+| `ToolResult` | Tool execution result/summary | `● ` |
+| `Question` | HITL question (AgentCore interrupt) | `● ` |
+| `Approval` | HITL approval request | `● ` |
+| `Cancelled` | Cancellation notice | (muted) |
 | `Error` | Error message block | (warning-colored) |
 | `System` | Status/placeholder messages | (muted) |
+
+Notes:
+- `CancellationRequested` is a marker-only runtime event with no transcript block;
+  the `Cancelled` block is created by the terminal `run.cancelled` / `turn.cancelled` event.
+- `ToolCall` blocks are transient-only (streaming seq=0) and do not appear in
+  canonical `events.jsonl` replay; `ToolResult` blocks are the canonical
+  persistent projection of tool execution events.
+- HITL blocks (`Question`, `Approval`) are produced by AgentCore interrupt events
+  and are distinct from local TUI question overlays. Local TUI questions are
+  ephemeral UI state and do not produce transcript blocks.
+- `Progress` blocks (from `TranscriptBlockKindEnum::Progress`) are produced by
+  progress/status runtime events when projection is enabled.
 
 ## Dependency boundaries
 

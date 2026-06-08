@@ -160,6 +160,14 @@ final class SessionInitializerReplayTest extends TestCase
 
         // Activity: Running (run was in-progress at event seq=2)
         self::assertSame(RunActivityStateEnum::Running, $state->activity);
+
+        // No replayed blocks should be left in streaming state
+        foreach ($blocks as $block) {
+            self::assertFalse($block->streaming, sprintf(
+                'Block %s should not be streaming after replay',
+                $block->kind->value,
+            ));
+        }
     }
 
     // ── Tool + HITL sequence ───────────────────────────────────────────────
@@ -367,6 +375,14 @@ final class SessionInitializerReplayTest extends TestCase
             ],
         ]);
 
+        // Simulate the live poller: construct a fresh mapper+translator pair
+        // independent from the one used during SessionInitializer replay.
+        // This mirrors how the poller creates its own mapping chain per tick
+        // rather than sharing state with the initial replay path.
+        $pollerMapper = new RuntimeEventMapper(
+            new RuntimeEventTranslator(new EventDispatcher()),
+        );
+
         // Re-read events and feed only the new one (simulating poller dedup)
         $allEvents = $this->eventStore->allFor($runId);
         $newBlocks = 0;
@@ -374,14 +390,14 @@ final class SessionInitializerReplayTest extends TestCase
             if ($runEvent->seq <= $state->lastSeq) {
                 continue; // Would be skipped by poller
             }
-            $runtimeEvent = (new RuntimeEventMapper(
-                new RuntimeEventTranslator(new EventDispatcher()),
-            ))->toRuntimeEvent($runEvent);
+            $runtimeEvent = $pollerMapper->toRuntimeEvent($runEvent);
             if (null !== $runtimeEvent) {
                 $this->projector->accept($runtimeEvent->toArray());
                 ++$newBlocks;
             }
         }
+
+        self::assertSame(1, $newBlocks, 'Expected exactly one new mapped event at seq 3.');
 
         $blocksAfterNewEvent = $this->projector->blocks();
         self::assertGreaterThan(
@@ -424,6 +440,45 @@ final class SessionInitializerReplayTest extends TestCase
 
         // Activity should be WaitingHuman after last event
         self::assertSame(RunActivityStateEnum::WaitingHuman, $state->activity);
+    }
+
+    // ── Dropped/null-mapped events ─────────────────────────────────────────
+
+    public function testReplayAdvancesLastSeqForDroppedEvents(): void
+    {
+        $runId = 'run-dropped-'.bin2hex(random_bytes(4));
+        $this->ensureSessionDir($runId);
+
+        // 1: run_started (mapped → UserMessage block)
+        $this->append($runId, 1, 'run_started', [
+            'step_id' => 'step-1',
+            'payload' => [
+                'messages' => [
+                    ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hi']]],
+                ],
+            ],
+        ]);
+
+        // 2: tool_batch_committed (DROPPED by RuntimeEventTranslator — no mapped event)
+        $this->append($runId, 2, 'tool_batch_committed', []);
+
+        // 3: agent_command_queued (DROPPED by RuntimeEventTranslator)
+        $this->append($runId, 3, 'agent_command_queued', [
+            'kind' => 'steer',
+            'idempotency_key' => 'ik-drop',
+        ]);
+
+        $state = new TuiSessionState($runId, true);
+        $blocks = $this->sessionInit->buildInitialTranscript($state);
+
+        // lastSeq must be 3 (max source seq), not 1 (max mapped seq).
+        // This prevents the live poller from re-processing dropped events.
+        self::assertSame(3, $state->lastSeq, 'lastSeq must advance to max source seq even when events are dropped');
+
+        // The mapped events still produce at least the UserMessage block
+        $kinds = array_map(static fn($b) => $b->kind, $blocks);
+        self::assertContains(TranscriptBlockKindEnum::UserMessage, $kinds);
+        self::assertNotEmpty($blocks, 'Mapped events should produce at least some blocks');
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────
