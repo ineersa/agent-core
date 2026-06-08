@@ -98,12 +98,12 @@ public function listSessions(string $sortBy = 'updated_at', int $limit = 50, str
 - Validation uses Castor per project rules.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/session-01-session-catalog-and-names
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-01-session-catalog-and-names
 Fork run: qmzc7sgd4u8g
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/108
+PR Status: open
 Started: 2026-06-08T16:11:14.248Z
 Completed:
 
@@ -159,3 +159,18 @@ Completed:
 - Validation: Reviewer verdict: APPROVED at HEAD `fb23b07a`.; Local focused validation before transition: `castor test` PASS — 2082 tests, 6144 assertions; `castor deptrac` PASS; `castor phpstan` PASS; `castor cs-check` PASS.; CODE-REVIEW transition full gate: FAILED in `test:tui` — TuiAgentSmokeTest timeouts after ~40s with transcript stuck at `◐ Working...`.; Diagnostic rerun: `castor test:tui` FAILED — 5 tests, 9 assertions, 2 errors, 1 failure; same Working timeout/no assistant or error block.; Diagnostic rerun: `castor test:llm-real` FAILED — 5 tests, 24 assertions, 5 failures; failures include `Idle timeout reached for http://192.168.2.38:9052/v1/chat/completions` and queued `llm_<run>` messages.; Second diagnostic rerun: `castor test:llm-real` FAILED again with same endpoint/LLM-real failures.
 - Summary: Attempted CODE-REVIEW transition for SESSION-01 at approved HEAD `fb23b07a`. `move_task(to=CODE-REVIEW)` full Castor quality gate failed during TUI E2E: TUI remained at `Working...` and timed out waiting for assistant/error output. Immediate reruns showed environment-level LLM E2E failure unrelated to SESSION-01: `castor test:tui` reproduced the same Working timeout; `castor test:llm-real` failed twice across all 5 LLM-real tests with queued `llm_<run>` messages and `Idle timeout reached for http://192.168.2.38:9052/v1/chat/completions`. Since SESSION-01 touches only session metadata/listing and local unit/integration/deptrac/phpstan/cs-check all pass, no implementation fork was launched. Task remains IN-PROGRESS until the llama.cpp test endpoint/LLM E2E environment recovers and full gate can pass.
 - task-to-pr: full Castor gate is blocked by external llama.cpp/LLM E2E endpoint idle timeouts, so task remains IN-PROGRESS; retry CODE-REVIEW transition once LLM E2E environment is healthy.
+Castor Check Status: passed
+Castor Check Commit: fb23b07a575cddecd030d9901cc5c676a3b0c668
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 900s
+Castor Check Completed: 2026-06-08T18:07:31.184Z
+Castor Check Output SHA256: 06e0576d6bed89759b1af481fd8bf382f8f35866f86e7f1bd305cc549fdbfa7a
+
+## Task workflow update - 2026-06-08T18:07:35.070Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: fb23b07a575c.
+- Pushed task/session-01-session-catalog-and-names to origin.
+- branch 'task/session-01-session-catalog-and-names' set up to track 'origin/task/session-01-session-catalog-and-names'.
+- Created PR: https://github.com/ineersa/agent-core/pull/108
+- Validation: Reviewer verdict: APPROVED at HEAD `fb23b07a`.; Local validation: `castor test` PASS — 2082 tests, 6144 assertions, 0 errors/failures/skipped.; Local validation: `castor deptrac` PASS — 0 violations, 0 errors.; Local validation: `castor phpstan` PASS — 0 errors.; Local validation: `castor cs-check` PASS — 0 files fixed.; Previous full gate blocker: LLM/TUI E2E endpoint idle timeout; user indicated endpoint should be healthy now.
+- Summary: SESSION-01 is ready for code review. Strict reviewer approved HEAD `fb23b07a`; focused local validation passed. Previous full-gate failure was diagnosed as external LLM E2E endpoint idle timeout; retrying now after endpoint recovery. Implementation adds nullable session names, migration/runtime migration registration, DB-backed catalog listing API, deterministic display-title fallback, tests, and docs.
