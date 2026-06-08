@@ -113,14 +113,21 @@ The handler needs `TranscriptBlockKindEnum` from `CodingAgent/Runtime/Projection
 - No deptrac violations
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/2026-06-07-add-copy-command-to-copy-last-model-output
+Worktree: /home/ineersa/projects/agent-core-worktrees/2026-06-07-add-copy-command-to-copy-last-model-output
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-08T15:50:52.930Z
 Completed:
 
 ## Work log
 - Created: 2026-06-07T23:55:11.356Z
+
+## Task workflow update - 2026-06-08T15:50:52.930Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/2026-06-07-add-copy-command-to-copy-last-model-output.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/2026-06-07-add-copy-command-to-copy-last-model-output.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/2026-06-07-add-copy-command-to-copy-last-model-output.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/2026-06-07-add-copy-command-to-copy-last-model-output.
