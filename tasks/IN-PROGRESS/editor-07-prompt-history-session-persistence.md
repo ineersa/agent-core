@@ -31,7 +31,7 @@ Parallelizable with: EDITOR-06 and EDITOR-08, but avoid concurrent session stora
 Status: IN-PROGRESS
 Branch: task/editor-07-prompt-history-session-persistence
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-07-prompt-history-session-persistence
-Fork run:
+Fork run: w6zyj6680lic
 PR URL:
 PR Status:
 Started: 2026-06-08T00:25:29.815Z
@@ -47,3 +47,7 @@ Completed:
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/editor-07-prompt-history-session-persistence.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/editor-07-prompt-history-session-persistence.
 - Summary: Starting implementation. Planning decision: do not add prompt_history.jsonl, do not read events.jsonl a second time, and do not duplicate prompt text in a separate history list. Implement prompt history as a cursor-only navigator over existing session state/projection user-message blocks that are already rebuilt from canonical events/state during resume. Avoid direct SQLite access from TUI; use existing runtime/TUI projection boundaries.
+
+## Task workflow update - 2026-06-08T00:26:25.866Z
+- Recorded fork run: w6zyj6680lic
+- Launched implementation fork w6zyj6680lic in worktree /home/ineersa/projects/agent-core-worktrees/editor-07-prompt-history-session-persistence. Fork instructions require cursor-only prompt history over existing TuiSessionState/projection user-message blocks, no new prompt_history.jsonl, no second events.jsonl replay, no prompt-string duplication, and Castor-only validation.
