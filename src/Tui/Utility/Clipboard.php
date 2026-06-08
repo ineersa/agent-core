@@ -53,8 +53,7 @@ final class Clipboard
 
     private static function osc52ToStdout(string $text, bool $wrapForTmux): bool
     {
-        // Empty string clears clipboard per OSC-52; if you prefer no-op on empty:
-        // if ($text === '') return false;
+        // Empty string clears clipboard per OSC-52, consistent with how pbcopy/xclip behave.
 
         $b64 = base64_encode($text);
         $osc = "\x1b]52;c;{$b64}\x07"; // BEL-terminated is broadly supported
@@ -91,6 +90,9 @@ final class Clipboard
 
             return $p->isSuccessful();
         } catch (\Throwable) {
+            // Intentional local degradation: clipboard probing/copy is best-effort;
+            // failures (process timeout, SIGPIPE, etc.) must not propagate into the
+            // TUI event loop.
             return false;
         }
     }
@@ -104,6 +106,8 @@ final class Clipboard
 
             return $which->isSuccessful();
         } catch (\Throwable) {
+            // Intentional local degradation: probing for optional system tools is
+            // best-effort; command lookup failures are non-fatal.
             return false;
         }
     }
