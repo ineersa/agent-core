@@ -6,7 +6,7 @@ namespace Ineersa\Tui\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\Tui\Application\TuiSessionSwitchService;
+use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Screen\ChatScreen;
 use Symfony\Component\Tui\Tui;
 
@@ -16,8 +16,8 @@ use Symfony\Component\Tui\Tui;
  * Carries all the services and state a listener registrar needs
  * to attach closures or event listeners to the TUI instance.
  *
- * The {@see TuiSessionSwitchService} is bound per-iteration and
- * enables slash commands to request session switches.
+ * The {@see TuiSessionSwitchServiceInterface} is bound per-iteration
+ * and enables slash commands to request session switches.
  */
 final readonly class TuiRuntimeContext
 {
@@ -28,7 +28,7 @@ final readonly class TuiRuntimeContext
         public ChatScreen $screen,
         public HatfieldSessionStore $sessionStore,
         public TuiTickDispatcher $ticks,
-        public TuiSessionSwitchService $switch,
+        public TuiSessionSwitchServiceInterface $switch,
     ) {
     }
 }

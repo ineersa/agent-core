@@ -100,7 +100,7 @@ final class SubmitListener implements TuiListenerRegistrar
 
             try {
                 // Start a run if this is the first message
-                if (null === $state->handle && null === $state->request) {
+                if (null === $state->handle && (null === $state->request || '' === $state->sessionId)) {
                     // ── Draft session promotion ──
                     // If this is a lazy draft (sessionId === ''), create the
                     // real session row now so no orphan records are left when
@@ -114,10 +114,19 @@ final class SubmitListener implements TuiListenerRegistrar
                             'session_id' => $state->sessionId,
                         ]);
                     }
-                    $state->request = new StartRunRequest(
+
+                    // Merge any pre-configured draft request (e.g. from /new --model)
+                    // with the submitted text so model/reasoning metadata carries
+                    // forward and the run starts with the user-typed prompt.
+                    $mergedRequest = new StartRunRequest(
                         prompt: $text,
                         runId: $state->sessionId,
+                        cwd: $state->request?->cwd,
+                        options: $state->request?->options,
+                        model: $state->request?->model,
+                        reasoning: $state->request?->reasoning,
                     );
+                    $state->request = $mergedRequest;
                     $state->handle = $client->start($state->request);
                     $state->activity = RunActivityStateEnum::Starting;
                     $sessionStore->updateMetadata(

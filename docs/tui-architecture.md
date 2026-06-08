@@ -15,7 +15,9 @@ InteractiveMode::run(client, request, theme, sessionId)
     ├─ 1. ThemeFactory::create()      → TuiTheme
     │
     ├─ 2. SessionInitializer::initialize(sessionId, request)
-    │        └─ new or resume → TuiSessionState
+    │        ├─ new with prompt → create session row + TuiSessionState
+    │        ├─ new without prompt → lazy draft (no DB row until first message)
+    │        └─ resume → TuiSessionState
     │
     ├─ 3. $screen = new ChatScreen(theme, sessionId)
     │        └─ $screen->mount($tui)
@@ -23,17 +25,19 @@ InteractiveMode::run(client, request, theme, sessionId)
     │
     ├─ 4. $ticks = new TuiTickDispatcher()
     │
-    ├─ 5. $context = new TuiRuntimeContext(tui, client, state, screen, sessionStore, ticks)
+    ├─ 5. wire switch service into current iteration
     │
-    ├─ 6. foreach($listenerRegistrars as $registrar)
+    ├─ 6. $context = new TuiRuntimeContext(tui, client, state, screen, sessionStore, ticks, switch)
+    │
+    ├─ 7. foreach($listenerRegistrars as $registrar)
     │        └─ $registrar->register($context)
     │             ├─ $context->tui->addListener(fn(Event $e) => ...)
     │             └─ $context->ticks->add(fn(TickEvent $e) => ...)
     │
-    ├─ 7. $tui->onTick(fn(TickEvent $e) => $ticks->dispatch($e))
+    ├─ 8. $tui->onTick(fn(TickEvent $e) => $ticks->dispatch($e))
     │        └─ single Symfony TUI tick callback; dispatcher multiplexes handlers
     │
-    └─ 8. $tui->run()                    ← blocks via Revolt suspension
+    └─ 9. $tui->run()                    ← blocks via Revolt suspension
               │
               ├─ TickEvent → TuiTickDispatcher
               │    ├─ TickPollListener → RuntimeEventPoller::poll()
@@ -42,6 +46,7 @@ InteractiveMode::run(client, request, theme, sessionId)
               │         └─ keeps elapsed time / throughput footer live
               │
               ├─ SubmitEvent → SubmitListener
+              │    ├─ first message on draft → promote draft to real session + start run
               │    └─ start run / send follow-up → AgentSessionClient
               │
               ├─ CancelEvent → CancelListener
@@ -54,6 +59,13 @@ InteractiveMode::run(client, request, theme, sessionId)
               └─ InputEvent → CtrlCInputInterceptor (priority 100)
                    ├─ Ctrl+D → $tui->stop()
                    └─ Ctrl+C → cancel / double-press quit
+
+  ── Session switch loop (TuiSessionSwitchService) ──
+  │
+  ├─ After $tui->run() returns, check for pending switch target
+  ├─ If resume target: rebuild with new session ID + replay events
+  ├─ If draft target: rebuild with empty session ID (lazy promotion later)
+  └─ Loop: re-enter step 1 with new target session
 ```
 
 ## Event loop
@@ -61,12 +73,16 @@ InteractiveMode::run(client, request, theme, sessionId)
 The TUI runs an interactive event loop powered by **Symfony TUI**
 (`Symfony\Component\Tui\Tui`) with **Revolt** as the event loop backend.
 
-Entry point: `Ineersa\Tui\Application\InteractiveMode::run()` is a thin
-orchestrator that creates the theme, session state, and `ChatScreen`,
-builds `TuiRuntimeContext`, iterates over DI-tagged `TuiListenerRegistrar`
-services, installs one Symfony TUI `onTick()` callback backed by
-`TuiTickDispatcher`, and calls `$tui->run()` which blocks until a listener
-calls `$tui->stop()`.
+Entry point: `Ineersa\Tui\Application\InteractiveMode::run()` is a
+loop-based orchestrator that creates the theme, session state, and
+`ChatScreen` for the current target, builds `TuiRuntimeContext`, iterates
+over DI-tagged `TuiListenerRegistrar` services, installs one Symfony TUI
+`onTick()` callback backed by `TuiTickDispatcher`, and calls `$tui->run()`
+which blocks until a listener calls `$tui->stop()`. After the event loop
+exits, the method checks for a pending session switch target.  If a switch
+was requested (via `TuiSessionSwitchService`), fresh TUI/session objects
+are rebuilt for the target and the loop continues — all within the same
+CLI process.
 
 `Symfony\Component\Tui\Tui::onTick()` is a single-slot setter, not an
 additive listener API. TUI code must register tick work through

@@ -9,13 +9,15 @@ use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
+use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Tui\Tui;
 
 /**
  * Session switch lifecycle seam for the TUI.
  *
- * SESSION-03 slash commands (/new, /resume) call {@see requestResume()}
+ * Future slash commands (e.g. /new, /resume) call {@see requestResume()}
  * or {@see requestNewDraft()} to trigger a session switch.  The service
  * cancels the current run, resets stateful singletons, records the
  * pending target, and calls {@see Tui::stop()} to exit the current event
@@ -30,7 +32,7 @@ use Symfony\Component\Tui\Tui;
  * TranscriptProjectorInterface, HatfieldSessionStore) are injected once
  * via the constructor.
  */
-class TuiSessionSwitchService
+class TuiSessionSwitchService implements TuiSessionSwitchServiceInterface
 {
     // ── Per-iteration bindings (reset each loop) ──
     private ?Tui $tui = null;
@@ -46,6 +48,7 @@ class TuiSessionSwitchService
         private readonly QuestionCoordinator $questionCoordinator,
         private readonly QuestionController $questionController,
         private readonly TranscriptProjectorInterface $projector,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -147,7 +150,8 @@ class TuiSessionSwitchService
      * Cancel the currently active run, if any.
      *
      * Best-effort: if the run is already terminal or cancel fails,
-     * the error is swallowed — the session switch proceeds anyway.
+     * a structured diagnostic is logged and the session switch proceeds.
+     * The switch must never be blocked by a failed cancellation.
      */
     private function cancelCurrentRun(): void
     {
@@ -155,10 +159,20 @@ class TuiSessionSwitchService
             return;
         }
 
+        $runId = $this->state->handle->runId;
+
         try {
-            $this->client->cancel($this->state->handle->runId);
-        } catch (\Throwable) {
-            // Best effort — run may already be terminal.
+            $this->client->cancel($runId);
+        } catch (\Throwable $e) {
+            // Best effort — log the failure so operators can diagnose
+            // but do not block the session switch.
+            $this->logger->warning('Session switch: cancel of previous run failed', [
+                'component' => 'TuiSessionSwitchService',
+                'event_type' => 'switch_cancel_failed',
+                'run_id' => $runId,
+                'exception_class' => $e::class,
+                'exception_message' => $e->getMessage(),
+            ]);
         }
     }
 

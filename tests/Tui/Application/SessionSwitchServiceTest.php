@@ -17,6 +17,7 @@ use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Tui\Tui;
 
 #[CoversClass(TuiSessionSwitchService::class)]
@@ -36,11 +37,13 @@ final class SessionSwitchServiceTest extends TestCase
         ?QuestionCoordinator $coordinator = null,
         ?QuestionController $controller = null,
         ?TranscriptProjectorInterface $projector = null,
+        ?LoggerInterface $logger = null,
     ): TuiSessionSwitchService {
         return new TuiSessionSwitchService(
             $coordinator ?? $this->createCoordinator(),
             $controller ?? $this->createController($coordinator ?? $this->createCoordinator()),
             $projector ?? $this->createStub(TranscriptProjectorInterface::class),
+            $logger ?? $this->createStub(LoggerInterface::class),
         );
     }
 
@@ -65,7 +68,7 @@ final class SessionSwitchServiceTest extends TestCase
         $projector = $this->createStub(TranscriptProjectorInterface::class);
         $tui = new Tui();
 
-        $service = new TuiSessionSwitchService($coordinator, $controller, $projector);
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
         $service->bindForIteration($tui, $this->createStub(AgentSessionClient::class), new TuiSessionState('old', false));
 
         $service->requestResume('42');
@@ -90,7 +93,7 @@ final class SessionSwitchServiceTest extends TestCase
         $projector = $this->createStub(TranscriptProjectorInterface::class);
         $tui = new Tui();
 
-        $service = new TuiSessionSwitchService($coordinator, $controller, $projector);
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
         $service->bindForIteration($tui, $this->createStub(AgentSessionClient::class), new TuiSessionState('old', false));
 
         $service->requestNewDraft();
@@ -113,7 +116,7 @@ final class SessionSwitchServiceTest extends TestCase
         $projector = $this->createStub(TranscriptProjectorInterface::class);
         $tui = new Tui();
 
-        $service = new TuiSessionSwitchService($coordinator, $controller, $projector);
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
         $service->bindForIteration($tui, $this->createStub(AgentSessionClient::class), new TuiSessionState('old', false));
 
         $req = new StartRunRequest(prompt: 'from /new', runId: '');
@@ -145,7 +148,7 @@ final class SessionSwitchServiceTest extends TestCase
         $projector = $this->createStub(TranscriptProjectorInterface::class);
         $tui = new Tui();
 
-        $service = new TuiSessionSwitchService($coordinator, $controller, $projector);
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
         $service->bindForIteration($tui, $this->createStub(AgentSessionClient::class), new TuiSessionState('old', false));
 
         $service->requestNewDraft();
@@ -179,7 +182,7 @@ final class SessionSwitchServiceTest extends TestCase
         $state = new TuiSessionState('old', false);
         $state->handle = new RunHandle('old-run-id', 'running');
 
-        $service = new TuiSessionSwitchService($coordinator, $controller, $projector);
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
         $service->bindForIteration($tui, $client, $state);
 
         $service->requestResume('42');
@@ -199,7 +202,7 @@ final class SessionSwitchServiceTest extends TestCase
         $state = new TuiSessionState('old', false);
         // No handle — no active run
 
-        $service = new TuiSessionSwitchService($coordinator, $controller, $projector);
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
         $service->bindForIteration($tui, $this->createStub(AgentSessionClient::class), $state);
 
         // Should not throw
@@ -218,9 +221,48 @@ final class SessionSwitchServiceTest extends TestCase
 
         $tui = new Tui();
 
-        $service = new TuiSessionSwitchService($coordinator, $controller, $projector);
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
         $service->bindForIteration($tui, $this->createStub(AgentSessionClient::class), new TuiSessionState('old', false));
 
         $service->requestResume('42');
+    }
+
+    public function testSwitchProceedsWhenCancelFails(): void
+    {
+        $coordinator = $this->createCoordinator();
+        $controller = $this->createController($coordinator);
+        $projector = $this->createStub(TranscriptProjectorInterface::class);
+        $tui = new Tui();
+
+        // Client whose cancel() throws — simulating a terminal run that
+        // cannot be cancelled (e.g. process already exited).
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects(self::once())
+            ->method('cancel')
+            ->with('old-run-id')
+            ->willThrowException(new \RuntimeException('Run already finished'));
+
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects(self::once())
+            ->method('warning')
+            ->with(
+                self::stringContains('Session switch'),
+                self::callback(static fn (array $c) => 'old-run-id' === $c['run_id']
+                    && 'switch_cancel_failed' === ($c['event_type'] ?? null)),
+            );
+
+        $state = new TuiSessionState('old', false);
+        $state->handle = new RunHandle('old-run-id', 'running');
+
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $logger);
+        $service->bindForIteration($tui, $client, $state);
+
+        // Should not throw — switch must proceed
+        $service->requestResume('42');
+        self::assertTrue($service->hasPendingSwitch());
+
+        $target = $service->consumePendingSwitch();
+        self::assertNotNull($target);
+        self::assertSame('42', $target->sessionId);
     }
 }

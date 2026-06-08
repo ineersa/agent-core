@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Screen;
 
 use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\Footer\FooterDataProvider;
+use Ineersa\Tui\Footer\FooterSegment;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
@@ -193,25 +195,52 @@ class ChatScreenTest extends TestCase
         return array_values($root->all());
     }
 
+    /**
+     * Reflect into ChatScreen to read footer segments.
+     *
+     * @return list<FooterSegment>
+     */
+    private function getFooterSegments(): array
+    {
+        $screenRef = new \ReflectionClass($this->screen);
+        $fdProp = $screenRef->getProperty('footerDataProvider');
+        /** @var FooterDataProvider $fd */
+        $fd = $fdProp->getValue($this->screen);
+
+        return $fd->getSegments();
+    }
+
     // ── Session ID update ──
 
     #[Test]
-    public function testUpdateSessionIdDoesNotThrow(): void
+    public function testUpdateSessionIdUpdatesFooterSegmentText(): void
     {
-        // After construction, updating the session ID should succeed.
+        // Call updateSessionId to change the session displayed in the footer.
         $this->screen->updateSessionId('new-session-id');
 
-        // No assertion beyond not throwing — the provider was replaced.
-        $this->addToAssertionCount(1);
+        // Assert the default footer segment text now reflects the new session ID.
+        $segments = $this->getFooterSegments();
+        $sessionSegment = array_values(array_filter(
+            $segments,
+            static fn (FooterSegment $s) => str_contains($s->text, 'session'),
+        ));
+        self::assertCount(1, $sessionSegment);
+        self::assertStringContainsString('new-session-id', $sessionSegment[0]->text);
     }
 
     #[Test]
-    public function testUpdateSessionIdAfterMountDoesNotThrow(): void
+    public function testUpdateSessionIdAfterMountUpdatesFooter(): void
     {
         $this->screen->mount($this->tui);
 
         $this->screen->updateSessionId('new-session-id');
 
-        $this->addToAssertionCount(1);
+        $segments = $this->getFooterSegments();
+        $sessionSegment = array_values(array_filter(
+            $segments,
+            static fn (FooterSegment $s) => str_contains($s->text, 'session'),
+        ));
+        self::assertCount(1, $sessionSegment);
+        self::assertStringContainsString('new-session-id', $sessionSegment[0]->text);
     }
 }

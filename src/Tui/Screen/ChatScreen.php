@@ -502,13 +502,6 @@ final class ChatScreen
     }
 
     /**
-     * Create the default footer segment provider.
-     *
-     * Only shows the current session ID so users can distinguish sessions.
-     * All other footer content (model, usage, elapsed, cwd, branch) is
-     * contributed by {@see FooterStateListener} via addFooterProvider().
-     */
-    /**
      * Update the session ID displayed in the default footer segment.
      *
      * Used by SubmitListener when a draft session (empty ID) is

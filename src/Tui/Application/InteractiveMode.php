@@ -110,8 +110,9 @@ final readonly class InteractiveMode
             } elseif ('' !== $targetSessionId) {
                 $state = $this->sessionInit->initialize($targetSessionId, $targetRequest);
             } else {
-                // Fresh session with no explicit request: create via store
-                $state = $this->sessionInit->initialize('', null);
+                // Fresh session — pass through any initial request so
+                // `bin/console agent --prompt ...` starts a run immediately.
+                $state = $this->sessionInit->initialize('', $targetRequest);
             }
             $state->transcript = $this->sessionInit->buildInitialTranscript($state);
 

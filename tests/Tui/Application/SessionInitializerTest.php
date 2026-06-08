@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
@@ -225,6 +226,48 @@ final class SessionInitializerTest extends TestCase
     /**
      * Recursively remove a directory.
      */
+    // ── initializeDraft (lazy draft sessions) ────────────────────────
+
+    public function testInitializeDraftReturnsEmptySessionId(): void
+    {
+        // Draft init is pure in-memory — no projector interaction.
+        $this->projector->expects(self::never())->method('reset');
+        $this->projector->expects(self::never())->method('accept');
+
+        $state = $this->sessionInit->initializeDraft();
+
+        self::assertSame('', $state->sessionId);
+        self::assertFalse($state->resuming);
+        self::assertNull($state->request);
+        self::assertNull($state->handle);
+    }
+
+    public function testInitializeDraftWithRequestPreservesRequest(): void
+    {
+        $this->projector->expects(self::never())->method('reset');
+        $this->projector->expects(self::never())->method('accept');
+
+        $request = new StartRunRequest(prompt: '', runId: '', model: 'gpt-4');
+        $state = $this->sessionInit->initializeDraft($request);
+
+        self::assertSame('', $state->sessionId);
+        self::assertSame($request, $state->request);
+    }
+
+    public function testBuildInitialTranscriptForDraftReturnsWelcome(): void
+    {
+        // Draft sessions never enter the replay path, so projector is unused.
+        $this->projector->expects(self::never())->method('reset');
+        $this->projector->expects(self::never())->method('accept');
+
+        $state = $this->sessionInit->initializeDraft();
+        $blocks = $this->sessionInit->buildInitialTranscript($state);
+
+        self::assertCount(1, $blocks);
+        self::assertSame(TranscriptBlockKindEnum::System, $blocks[0]->kind);
+        self::assertStringContainsString('Welcome to Hatfield', $blocks[0]->text);
+    }
+
     private function rmDir(string $dir): void
     {
         if (!is_dir($dir)) {
