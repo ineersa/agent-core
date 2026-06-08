@@ -39,7 +39,7 @@ Recommended sequencing:
 Status: IN-PROGRESS
 Branch: task/rtvs-08b-canonical-events-run-state-replay
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-08b-canonical-events-run-state-replay
-Fork run: h3dua8nfckje
+Fork run: kbxztzgspzhz
 PR URL:
 PR Status:
 Started: 2026-06-08T00:15:30.019Z
@@ -76,3 +76,9 @@ Completed:
 - reviewer: key issue RunStateReplayService::applyLlmStepCompleted appends pending tool calls but real LlmStepResultHandler resets pendingToolCalls before adding current step tool calls; suggested reset accumulator to match handler semantics.
 - reviewer: branch divergence warning — branch should be rebased/merged onto latest origin/main before PR to preserve output-cap code and avoid conflicts.
 - reviewer: cleanup suggestions — remove duplicate param-only docblocks in RunStateReplayService around applyLlmStepCompleted/applyMessageEnd/applyToolExecutionStart; consider documenting public replay() contiguity precondition and revisiting nullable RunStateReplayService injection later.
+
+## Task workflow update - 2026-06-08T01:09:37.674Z
+- Recorded fork run: kbxztzgspzhz
+- Validation: Fork reported: castor test --filter=RunStateReplayServiceTest PASS (17 tests, 73 assertions); Fork reported: castor test PASS (2040 tests, 5978 assertions); Fork reported: castor deptrac PASS (0 violations, 0 errors); Fork reported: castor phpstan PASS (0 errors, 0 file_errors); Fork reported: castor cs-check PASS (0 files fixed); Fork reported: castor test:controller PASS (1 test, 7 assertions); Fork reported: castor test:llm-real PASS (5 tests, 35 assertions); Fork reported: castor test:tui PASS (5 tests, 18 assertions); Parent verification: git status clean at 09e82d22; git diff --stat origin/main...HEAD shows 8 files changed, 1323 insertions, 9 deletions
+- Summary: Reviewer-fix fork completed and committed 09e82d22. Fork first merged latest origin/main with clean merge commit 695330b8, preserving main/output-cap/prompt-history changes. Addressed reviewer suggestions: RunStateReplayService::applyLlmStepCompleted now resets pendingToolCalls before adding current step tool calls, matching LlmStepResultHandler; added replay test proving stale pending tool calls do not survive later LLM step; removed duplicate/incomplete docblocks; documented public replay() sorted/contiguous-events precondition. Worktree verified clean at 09e82d22; diff vs origin/main remains expected 8 RTVS-08B files.
+- reviewer-iterate fork kbxztzgspzhz: merged origin/main cleanly (695330b8), fixed pendingToolCalls reducer semantics, added focused regression test, cleaned docblocks, documented replay() integrity precondition, committed 09e82d22.
