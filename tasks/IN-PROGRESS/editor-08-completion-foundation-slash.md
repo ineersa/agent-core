@@ -32,7 +32,7 @@ Parallelizable with: EDITOR-06, EDITOR-07.
 Status: IN-PROGRESS
 Branch: task/editor-08-completion-foundation-slash
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-08-completion-foundation-slash
-Fork run: vj4a4dwv1v0w
+Fork run: khs37ecmrerb
 PR URL: https://github.com/ineersa/agent-core/pull/106
 PR Status: open
 Started: 2026-06-08T15:02:47.293Z
@@ -201,3 +201,7 @@ Castor Check Output SHA256: bd21b9356056178d2d80e64bb0c6ca64a9ed70629d487ab7627b
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Validation: User smoke test: after typing '/', no autocomplete was visible.
 - Summary: User smoke-tested PR #106 and reported no autocomplete menu appears after typing '/'. Moving back to IN-PROGRESS for task-review-iterate investigation. Next action: launch fork to run the real manual TUI test flow via Castor/tmux, send keys, verify slash completion visibility/behavior, and fix implementation if reproduction confirms a bug.
+
+## Task workflow update - 2026-06-08T16:33:20.182Z
+- Recorded fork run: khs37ecmrerb
+- Summary: Launched task-review-iterate fork khs37ecmrerb to reproduce user smoke-test failure in real TUI. Fork instructions require running the designed manual test agent via `castor run:agent-test`, driving tmux with keys, verifying whether completion appears after typing `/` and after Tab, fixing live slash completion if reproduced, updating tests, running Castor validation, and committing fixes on the task branch.
