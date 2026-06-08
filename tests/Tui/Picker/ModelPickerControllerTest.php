@@ -130,25 +130,6 @@ class ModelPickerControllerTest extends TestCase
     }
 
     #[Test]
-    public function testBuildFavoritesItemsMarksCurrentModel(): void
-    {
-        $service = $this->buildService();
-        $state = new TuiSessionState('test');
-
-        $items = FavoritePickerController::buildFavoritesItems($service, $this->createTheme(), $state);
-
-        // Current model (default: deepseek/deepseek-v4-pro) should have ❯ marker
-        $currentFound = false;
-        foreach ($items as $item) {
-            if (str_contains($item['label'], '❯')) {
-                $currentFound = true;
-                break;
-            }
-        }
-        self::assertTrue($currentFound, 'Current model should be marked with ❯');
-    }
-
-    #[Test]
     public function testBuildFavoritesItemsNonFavoriteHasNoMarker(): void
     {
         $service = $this->buildService();

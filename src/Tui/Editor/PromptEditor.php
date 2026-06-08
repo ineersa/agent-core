@@ -62,30 +62,34 @@ final class PromptEditor
     }
 
     /**
-     * Set editor text and reposition the cursor at the end.
+     * Replace all editor text and leave the cursor at the end.
      *
-     * EditorWidget::setText() resets the cursor to (0,0).  This helper
-     * moves the cursor to the end of the last line using only public
-     * EditorWidget APIs: handleInput() with standard ANSI cursor-movement
-     * escape sequences that EditorWidget's built-in keybindings dispatch.
+     * Clears the editor, then inserts the replacement text through
+     * the editor's normal character-input path.  Because EditorWidget
+     * does not expose a public cursor-position API and the task policy
+     * forbids private-property access (reflection, Closure::bind), we
+     * avoid cursor management entirely: insertText() advances the
+     * cursor past every typed character.
      *
-     * Strategy: setText to insert the content, then simulate DOWN arrow
-     * for each line beyond the first, followed by END to hit the line end.
-     * These are public EditorWidget::handleInput() calls — no reflection,
-     * Closure::bind, or private-property access.
+     * This method is safe for printable single-line text without
+     * terminal control characters — the current use case is
+     * slash-completion acceptance at replacementStart 0 where the
+     * insert text is a single-line ASCII command with trailing space.
+     *
+     * Open question: Symfony TUI has no public cursor setter on
+     * EditorWidget, so any future feature needing arbitrary cursor
+     * positioning after setText() will need the same constraint
+     * awareness or a contribution upstream.
      */
-    public function setTextWithCursorAtEnd(string $text): void
+    public function replaceText(string $text): void
     {
-        $this->widget->setText($text);
+        // Clear puts the cursor at (0,0).
+        $this->widget->setText('');
 
-        // Move cursor down N-1 lines (cursor starts at line 0).
-        $newlineCount = substr_count($text, "\n");
-        for ($i = 0; $i < $newlineCount; ++$i) {
-            $this->widget->handleInput("\x1b[B");
-        }
-
-        // Move to the end of the current line.
-        $this->widget->handleInput("\x1b[F");
+        // Regular text insertion advances cursor past every character.
+        // EditorWidget::handleInput() delegates to
+        // EditorDocument::insertText() which slides the cursor forward.
+        $this->widget->handleInput($text);
     }
 
     // ─── Lifecycle ───────────────────────────────────────────────

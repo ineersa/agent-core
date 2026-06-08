@@ -16,8 +16,8 @@ use Symfony\Component\Tui\Event\InputEvent;
  * Registers TUI-level input listeners for slash command completion.
  *
  * Completion opens automatically as the user types a leading &quot;/&quot;
- * (or after a newline at column 0) and refines suggestions on further
- * keystrokes.  Tab opens the overlay explicitly and accepts the
+ * and refines suggestions on further keystrokes.  Tab opens the
+ * overlay explicitly and accepts the
  * selected suggestion; Enter accepts the suggestion, then submits
  * the now-completed text through the normal SubmitListener path.
  *
@@ -273,9 +273,13 @@ final class CompletionListener implements TuiListenerRegistrar
     /**
      * Apply a completion suggestion to the editor.
      *
-     * Uses {@see PromptEditor::setTextWithCursorAtEnd()} so the cursor
-     * lands after the inserted command text (with trailing space),
-     * allowing the user to type arguments naturally after acceptance.
+     * Uses {@see PromptEditor::replaceText()} so the cursor lands after
+     * the inserted command text (with trailing space), allowing the user
+     * to type arguments naturally after acceptance.
+     *
+     * {@see PromptEditor::replaceText()} clears and re-enters all text
+     * through the editor's public character-input path because Symfony
+     * TUI does not expose a public cursor-setter on EditorWidget.
      */
     private static function applySuggestion(
         PromptEditor $editor,
@@ -288,6 +292,6 @@ final class CompletionListener implements TuiListenerRegistrar
             $suggestion->replacementStart,
             $suggestion->replacementLength,
         );
-        $editor->setTextWithCursorAtEnd($new);
+        $editor->replaceText($new);
     }
 }

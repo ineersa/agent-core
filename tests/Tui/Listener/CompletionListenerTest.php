@@ -588,25 +588,6 @@ final class CompletionListenerTest extends TestCase
     }
 
     #[Test]
-    public function tabAcceptPreservesMultilineCursorPlacement(): void
-    {
-        $this->tui->setFocus($this->screen->editorWidget());
-
-        // Complete a slash command on single-line text first,
-        // then use setTextWithCursorAtEnd to simulate the multiline
-        // state after acceptance (slash-completion only triggers
-        // at text start, not after newlines, per MVP).
-        $this->editor->setTextWithCursorAtEnd("previous line\n/clear ");
-
-        $this->assertSame("previous line\n/clear ", $this->editor->getText());
-
-        // Type after acceptance — cursor must be at end of last line.
-        $this->tui->handleInput('a');
-
-        $this->assertSame("previous line\n/clear a", $this->editor->getText());
-    }
-
-    #[Test]
     public function enterAcceptThenTypeArgsWorks(): void
     {
         $this->tui->setFocus($this->screen->editorWidget());

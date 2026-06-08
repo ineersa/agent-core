@@ -20,12 +20,15 @@ use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 
 /**
- * Interactive favorites picker accessed via /model fav.
+ * Interactive favorites picker accessed via /model-favourites.
  *
  * Shows all available models with * markers for favorites.
  * Space toggles favorite on the selected row.
  * Enter closes the picker (no model change).
  * Escape cancels without changes.
+ *
+ * Only the favorite marker is shown — the current model marker
+ * belongs in the main model picker, not here.
  */
 final class FavoritePickerController
 {
@@ -60,7 +63,6 @@ final class FavoritePickerController
 
         $tui = $this->tui;
         $screen = $this->screen;
-        $state = $this->state;
 
         // ── Header — instructional line above the list (muted theme colour) ──
         $headerText = $screen->theme()->muted(
@@ -94,7 +96,7 @@ final class FavoritePickerController
         $logger = $this->logger;
 
         $listWidget->onInput(static function (string $data) use (
-            $modelService, $listWidget, $screen, $logger, $state,
+            $modelService, $listWidget, $screen, $logger,
         ): bool {
             // We handle space via select_toggle_fav in keybindings,
             // but SelectListWidget routes confirm to select_confirm.
@@ -131,7 +133,7 @@ final class FavoritePickerController
             }
 
             // Rebuild items with updated favorite markers
-            $newItems = FavoritePickerController::buildFavoritesItems($modelService, $screen->theme(), $state);
+            $newItems = FavoritePickerController::buildFavoritesItems($modelService, $screen->theme());
             $listWidget->setItems($newItems);
 
             // Restore selection
@@ -177,28 +179,24 @@ final class FavoritePickerController
     }
 
     /**
-     * Build items: all models, favorites marked with *, current marked with ❯.
+     * Build items: all models, favorites marked with * (warning token).
+     *
+     * The current model is not shown here — this picker is only for
+     * favorite toggles.  The main model picker owns the current-model
+     * accent and ❯ marker.
      *
      * @return list<array{value: string, label: string}>
      */
-    public static function buildFavoritesItems(ModelSelectionService $modelService, TuiTheme $theme, ?TuiSessionState $state = null): array
+    public static function buildFavoritesItems(ModelSelectionService $modelService, TuiTheme $theme): array
     {
         $all = $modelService->getAvailableModels();
         $favorites = $modelService->getFavoriteModels();
         $favSet = array_flip($favorites);
-        $currentModel = null !== $state ? $modelService->getCurrentModel($state->sessionId) : null;
-        $currentStr = null !== $currentModel ? $currentModel->toString() : null;
 
         $items = [];
         foreach ($all as $ref) {
             $refStr = $ref->toString();
             $isFav = isset($favSet[$refStr]);
-            $isCurrent = $refStr === $currentStr;
-
-            // Current model marker (accent) — matches the model picker pattern.
-            $pointer = $isCurrent
-                ? $theme->color(ThemeColorEnum::Accent, '❯')
-                : ' ';
 
             // Favourite marker coloured with Warning token so
             // favourited rows stand out from plain ones.
@@ -207,12 +205,9 @@ final class FavoritePickerController
                 : ' ';
 
             $label = \sprintf(
-                '%s %s  %s',
-                $pointer,
+                '%s %s',
                 $marker,
-                $isCurrent
-                    ? $theme->color(ThemeColorEnum::Accent, $refStr)
-                    : $refStr,
+                $refStr,
             );
 
             $items[] = [
@@ -225,12 +220,12 @@ final class FavoritePickerController
     }
 
     /**
-     * Build items: all models, favorites marked with *, current with ❯.
+     * Build items: all models, favorites marked with *.
      *
      * @return list<array{value: string, label: string}>
      */
     private function buildItems(): array
     {
-        return self::buildFavoritesItems($this->modelService, $this->screen->theme(), $this->state);
+        return self::buildFavoritesItems($this->modelService, $this->screen->theme());
     }
 }
