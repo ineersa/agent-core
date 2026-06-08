@@ -113,14 +113,14 @@ The handler needs `TranscriptBlockKindEnum` from `CodingAgent/Runtime/Projection
 - No deptrac violations
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/2026-06-07-add-copy-command-to-copy-last-model-output
 Worktree: /home/ineersa/projects/agent-core-worktrees/2026-06-07-add-copy-command-to-copy-last-model-output
 Fork run: 1qneis5qtler
 PR URL: https://github.com/ineersa/agent-core/pull/107
-PR Status: open
+PR Status: merged
 Started: 2026-06-08T15:50:52.930Z
-Completed:
+Completed: 2026-06-08T17:09:06.989Z
 
 ## Work log
 - Created: 2026-06-07T23:55:11.356Z
@@ -205,3 +205,11 @@ Castor Check Output SHA256: fe7319516f5efe07f768c5524dac86b2fd2503d81505dde5fd0d
 - Pushed task/2026-06-07-add-copy-command-to-copy-last-model-output to origin.
 - branch 'task/2026-06-07-add-copy-command-to-copy-last-model-output' set up to track 'origin/task/2026-06-07-add-copy-command-to-copy-last-model-output'.
 - PR already exists: https://github.com/ineersa/agent-core/pull/107
+
+## Task workflow update - 2026-06-08T17:09:06.989Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/2026-06-07-add-copy-command-to-copy-last-model-output into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/2026-06-07-add-copy-command-to-copy-last-model-output.
+- Pulled integration checkout: Already up to date..
+- Summary: Completing reviewed task after PR #107 was already merged via GitHub UI at 2026-06-08T17:08:33Z. Integration checkout was fast-forwarded to origin/main before task completion; merge commit 047b22ef includes the task branch changes.
