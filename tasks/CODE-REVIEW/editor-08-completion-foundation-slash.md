@@ -29,7 +29,7 @@ Parallelizable with: EDITOR-06, EDITOR-07.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/editor-08-completion-foundation-slash
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-08-completion-foundation-slash
 Fork run: whu7d1ikvvdi
@@ -182,11 +182,11 @@ Risks/notes for implementor:
 - Summary: Final reviewer subagent verdict for current HEAD 01915f6f: APPROVE. Reviewer confirmed prior suggestions resolved: explicit registry order assertion in SlashCommandCompletionProviderTest and documenting non-end CompletionContext cursor-offset MVP behavior test. No critical issues, bugs, or blockers. Branch was rebased cleanly on origin/main by fork vj4a4dwv1v0w; current task worktree status clean.
 - task-to-pr final review: reviewer approved HEAD 01915f6f after review-iteration forks cf6u7r92u2yu and vj4a4dwv1v0w. Focused Castor validation passed locally; proceeding to move_task(to="CODE-REVIEW") for full LLM_MODE=true castor check quality gate and PR creation.
 Castor Check Status: passed
-Castor Check Commit: cd15bcb2679b42659512be81f54de01a4bcaa718
+Castor Check Commit: 6a0b3093db31c1f761c27f3333e243273e699b4f
 Castor Check Command: LLM_MODE=true castor check
 Castor Check Timeout: 900s
-Castor Check Completed: 2026-06-08T18:31:38.109Z
-Castor Check Output SHA256: 0f9abb40227b376bcdfa8a6ef6a02221383d87e3b7ec3e37b720f607bc8ad9ff
+Castor Check Completed: 2026-06-08T19:53:11.020Z
+Castor Check Output SHA256: debe9bd7027e19303b9c02304ed5ca7a47ca6fa64294edb887b3bb8d798e57a2
 
 ## Task workflow update - 2026-06-08T16:22:19.800Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -281,3 +281,10 @@ Castor Check Output SHA256: 0f9abb40227b376bcdfa8a6ef6a02221383d87e3b7ec3e37b720
 - Recorded fork run: whu7d1ikvvdi
 - Validation: fork whu7d1ikvvdi: castor test --filter=Completion passed (82 tests, 176 assertions); fork whu7d1ikvvdi: castor test --filter=SlashCommandRegistry passed (37 tests, 83 assertions); fork whu7d1ikvvdi: castor test --filter=PromptHistory passed (29 tests, 58 assertions); fork whu7d1ikvvdi: castor deptrac passed (0 violations); fork whu7d1ikvvdi: castor phpstan passed (0 errors); fork whu7d1ikvvdi: castor cs-check clean; fork whu7d1ikvvdi: LLM_MODE=true castor check passed (2131 tests, TUI E2E, real LLM, controller E2E, deptrac, phpstan, cs-check); orchestrator git verification: worktree clean at 6a0b3093; diff vs origin/main is 17 files, 2365 insertions, 18 deletions
 - Summary: Implementation fork whu7d1ikvvdi completed at commit 6a0b3093 (fix(editor-08): accent highlighting, help fallback, and argument expectations). Fixes: CompletionMenu selected row now embeds theme accent styling before SelectListWidget rendering and descriptions are muted; header uses literal UTF-8 em dash (`—`) instead of escaped text; CommandMetadata gained acceptsArguments flag; SlashCommandRegistry strips extra args for no-arg commands while preserving args for commands that declare acceptsArguments; /model declares acceptsArguments true; unknown /help args fall back to general help listing rather than 'Unknown command'.
+
+## Task workflow update - 2026-06-08T19:53:12.365Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: 6a0b3093db31.
+- Pushed task/editor-08-completion-foundation-slash to origin.
+- branch 'task/editor-08-completion-foundation-slash' set up to track 'origin/task/editor-08-completion-foundation-slash'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/106
