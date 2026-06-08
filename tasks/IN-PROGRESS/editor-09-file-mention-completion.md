@@ -27,13 +27,13 @@ Parallelizable with: EDITOR-10.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/editor-09-file-mention-completion
+Worktree: /home/ineersa/projects/agent-core-worktrees/editor-09-file-mention-completion
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-08T23:47:05.979Z
 Completed:
 
 ## Work log
@@ -212,3 +212,11 @@ Use Castor only:
 - Very large repos need caps/timeouts/old-index retention.
 - Cursor placement inside quoted directory completions may be limited by current Symfony EditorWidget public API. Do not use ReflectionClass, Closure::bind, or private-property hacks in production.
 - Do not add production APIs solely for tests. Use real constructors/services or test-local fixtures/builders.
+
+## Task workflow update - 2026-06-08T23:47:05.980Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/editor-09-file-mention-completion.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/editor-09-file-mention-completion.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/editor-09-file-mention-completion.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/editor-09-file-mention-completion.
+- Summary: Started implementation phase for EDITOR-09. Scope is indexed, non-fuzzy @ file/path mention completion using a background/safe Symfony Finder index builder and in-memory provider search; no fd, no auto-download, no git ls-files, no recursive filesystem work in TUI input handling.
