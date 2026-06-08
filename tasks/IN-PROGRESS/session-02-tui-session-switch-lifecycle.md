@@ -140,7 +140,7 @@ class SessionSwitchService {
 Status: IN-PROGRESS
 Branch: task/session-02-tui-session-switch-lifecycle
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-02-tui-session-switch-lifecycle
-Fork run:
+Fork run: bxv5ii084s6a
 PR URL:
 PR Status:
 Started: 2026-06-08T21:50:11.525Z
@@ -160,3 +160,8 @@ Completed:
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/session-02-tui-session-switch-lifecycle.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/session-02-tui-session-switch-lifecycle.
 - Summary: Starting SESSION-02 implementation after task-explain. User-approved architecture: controlled rebuild of TUI objects inside the same CLI process, cancel/reset active HITL/questions on switch, include lazy fresh-draft support for future `/new`, and avoid `AgentSessionClient` API expansion unless implementation proves necessary.
+
+## Task workflow update - 2026-06-08T21:51:01.587Z
+- Recorded fork run: bxv5ii084s6a
+- Summary: Implementation fork launched for SESSION-02. Scope: add reusable TUI session switch lifecycle seam using controlled TUI object rebuild inside the same CLI process; reset/cancel active question/HITL state; add lazy fresh-draft support for future `/new`; keep `AgentSessionClient` interface unchanged unless impossible; fix concrete process transport session respawn behavior if needed; add tests/docs; run Castor validation subset.
+- task-start: launched implementation fork bxv5ii084s6a in worktree `/home/ineersa/projects/agent-core-worktrees/session-02-tui-session-switch-lifecycle` with user-approved architecture decisions and scout findings.
