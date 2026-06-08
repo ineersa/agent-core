@@ -34,12 +34,12 @@ No compatibility fallback to old `transcript.jsonl` should be added unless expli
 - `castor deptrac` passes; full validation must use Castor per project rules.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/rtvs-08a-remove-transcript-jsonl
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-08a-remove-transcript-jsonl
 Fork run: v4ckfu6y2a4s
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/101
+PR Status: open
 Started: 2026-06-07T21:23:43.851Z
 Completed:
 
@@ -95,3 +95,18 @@ Completed:
 ## Task workflow update - 2026-06-08T00:00:48.422Z
 - Validation: Reviewer subagent final verdict at HEAD 9248af7c: APPROVED; Fork-reported castor check at HEAD 9248af7c: PASS (all gates green)
 - Summary: Post-snapshot final reviewer check approved current HEAD 9248af7c. Reviewer confirmed the only change since previous approval is the startup snapshot adding `❯ hello from tmux e2e`, which correctly reflects canonical user message projection from --prompt/run_started.
+Castor Check Status: passed
+Castor Check Commit: 9248af7c027af7e2e5088122a220d116dc6a4095
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 900s
+Castor Check Completed: 2026-06-08T00:03:12.484Z
+Castor Check Output SHA256: d0d4ec47584bafae7222162adb41f75acfdaaa259e4856d6b46576ec14c4295f
+
+## Task workflow update - 2026-06-08T00:03:16.224Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: 9248af7c027a.
+- Pushed task/rtvs-08a-remove-transcript-jsonl to origin.
+- branch 'task/rtvs-08a-remove-transcript-jsonl' set up to track 'origin/task/rtvs-08a-remove-transcript-jsonl'.
+- Created PR: https://github.com/ineersa/agent-core/pull/101
+- Validation: Reviewer subagent: APPROVED at HEAD 9248af7c; castor test: PASS (1932 tests, 5722 assertions); castor test:tui: PASS (5 tests, 18 assertions); castor test:controller: PASS (1 test, 7 assertions); castor test:llm-real: PASS (4 tests, 29 assertions); castor deptrac: PASS (0 violations); castor phpstan: PASS (0 errors); castor cs-check: PASS (0 files fixed); fork-reported castor check: PASS (all gates green)
+- Summary: RTVS-08A implementation ready for code review at HEAD 9248af7c. Reviewer subagent final verdict APPROVED. Full Castor check was run by gate-fix fork and passed; move_task will rerun quality gate before pushing/PR. Removed transcript.jsonl production I/O and DTO/service, replay resume transcript from events.jsonl via RuntimeEventMapper + TranscriptProjector, added canonical user-message derivation for initial prompt/steer/follow_up, updated docs/tests/snapshots, merged latest main, and addressed reviewer findings.
