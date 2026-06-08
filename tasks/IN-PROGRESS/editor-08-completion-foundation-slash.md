@@ -29,7 +29,7 @@ Parallelizable with: EDITOR-06, EDITOR-07.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/editor-08-completion-foundation-slash
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-08-completion-foundation-slash
 Fork run: vj4a4dwv1v0w
@@ -196,3 +196,8 @@ Castor Check Output SHA256: bd21b9356056178d2d80e64bb0c6ca64a9ed70629d487ab7627b
 - Created PR: https://github.com/ineersa/agent-core/pull/106
 - Validation: Reviewer subagent final verdict at HEAD 01915f6f: APPROVE; castor test: ok (tests=2112, assertions=6145, errors=0, failures=0, skipped=0); castor deptrac: ok (violations=0, errors=0, uncovered=735, allowed=923); castor phpstan: ok (errors=0, file_errors=0); castor cs-check: ok (files_fixed=0)
 - Summary: EDITOR-08 prepared for code review at HEAD 01915f6f. Reviewer verdict: APPROVE. Focused local validation passed: castor test (2112 tests, 6145 assertions), castor deptrac (0 violations), castor phpstan (0 errors), castor cs-check (clean). Review-iteration forks addressed all actionable suggestions: CompletionContext DTO and provider signature, Ctrl+C/D overlay cleanup listener, isolated non-execution test fixture, clarified alias/canonical test comment, explicit registry-order assertion, and non-end cursor-offset documenting test.
+
+## Task workflow update - 2026-06-08T16:32:41.894Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Validation: User smoke test: after typing '/', no autocomplete was visible.
+- Summary: User smoke-tested PR #106 and reported no autocomplete menu appears after typing '/'. Moving back to IN-PROGRESS for task-review-iterate investigation. Next action: launch fork to run the real manual TUI test flow via Castor/tmux, send keys, verify slash completion visibility/behavior, and fix implementation if reproduction confirms a bug.
