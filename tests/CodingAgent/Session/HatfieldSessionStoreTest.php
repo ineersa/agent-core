@@ -168,6 +168,20 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         self::assertArrayNotHasKey('name', $meta, 'Null must clear the name');
     }
 
+    public function testUpdateMetadataClearsNameOnWhitespaceOnly(): void
+    {
+        $sessionId = $this->store->createSession('test');
+
+        // Set a name first, then overwrite with whitespace-only string.
+        $this->store->updateMetadata($sessionId, ['name' => 'Named']);
+        $meta = $this->store->loadMetadata($sessionId);
+        self::assertSame('Named', $meta['name'] ?? null);
+
+        $this->store->updateMetadata($sessionId, ['name' => '   ']);
+        $meta = $this->store->loadMetadata($sessionId);
+        self::assertArrayNotHasKey('name', $meta, 'Whitespace-only name must be cleared');
+    }
+
     public function testUpdateMetadataIgnoresUnknownKeys(): void
     {
         $sessionId = $this->store->createSession('test');
@@ -183,9 +197,12 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
     public function testListSessionsReturnsCreatedSessionsDefaultOrder(): void
     {
         $id1 = $this->store->createSession('first session');
-        // Ensure distinct updated_at timestamps by sleeping a full second.
-        // SQLite datetime has second granularity; same-second creates tie-break
-        // arbitrarily by row order.
+        // SQLite DATETIME has second granularity and TimestampableLifecycleTrait
+        // sets updated_at via Clock::get()->now() at PrePersist time.
+        // Two sessions created in the same second get identical timestamps,
+        // making DESC ordering non-deterministic. Sleeping one second guarantees
+        // distinct timestamps without requiring FrozenClock (unavailable in this
+        // Symfony Clock component version) or production test-only APIs.
         sleep(1);
         $id2 = $this->store->createSession('second session');
 
@@ -212,10 +229,19 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         self::assertArrayHasKey('cwd', $row);
         self::assertArrayHasKey('prompt', $row);
         self::assertArrayHasKey('promptPreview', $row);
+        // Stable picker DTO: model fields are always present (nullable).
+        self::assertArrayHasKey('model', $row);
+        self::assertArrayHasKey('model_provider', $row);
+        self::assertArrayHasKey('model_name', $row);
+        self::assertArrayHasKey('reasoning', $row);
         self::assertArrayHasKey('created_at', $row);
         self::assertArrayHasKey('updated_at', $row);
 
         self::assertNull($row['name']);
+        self::assertNull($row['model']);
+        self::assertNull($row['model_provider']);
+        self::assertNull($row['model_name']);
+        self::assertNull($row['reasoning']);
         self::assertSame('Hello World', $row['prompt']);
         self::assertSame('Hello World', $row['promptPreview']);
     }

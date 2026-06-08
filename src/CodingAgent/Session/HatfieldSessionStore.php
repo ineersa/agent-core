@@ -283,31 +283,20 @@ final class HatfieldSessionStore
             $displayTitle = $this->resolveDisplayTitle($id, $name, $entity->prompt);
             $promptPreview = $this->resolvePromptPreview($entity->prompt);
 
-            $row = [
+            $result[] = [
                 'sessionId' => $id,
                 'name' => $name,
                 'displayTitle' => $displayTitle,
                 'cwd' => $entity->cwd,
                 'prompt' => $entity->prompt,
                 'promptPreview' => $promptPreview,
+                'model' => $entity->model,
+                'model_provider' => $entity->modelProvider,
+                'model_name' => $entity->modelName,
+                'reasoning' => $entity->reasoning,
                 'created_at' => $entity->createdAt->format(\DateTimeInterface::ATOM),
                 'updated_at' => $entity->updatedAt->format(\DateTimeInterface::ATOM),
             ];
-
-            if (null !== $entity->model) {
-                $row['model'] = $entity->model;
-            }
-            if (null !== $entity->modelProvider) {
-                $row['model_provider'] = $entity->modelProvider;
-            }
-            if (null !== $entity->modelName) {
-                $row['model_name'] = $entity->modelName;
-            }
-            if (null !== $entity->reasoning) {
-                $row['reasoning'] = $entity->reasoning;
-            }
-
-            $result[] = $row;
         }
 
         return $result;
@@ -355,14 +344,7 @@ final class HatfieldSessionStore
             return null;
         }
 
-        // Use mb_strimwidth when available; fall back to plain substr + ellipsis.
-        if (\function_exists('mb_strimwidth')) {
-            $preview = mb_strimwidth($prompt, 0, 60, '...');
-        } else {
-            $preview = \strlen($prompt) > 60
-                ? substr($prompt, 0, 60).'...'
-                : $prompt;
-        }
+        $preview = mb_strimwidth($prompt, 0, 60, '...');
 
         return $preview;
     }
