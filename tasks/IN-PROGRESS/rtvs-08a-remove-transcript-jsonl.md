@@ -37,7 +37,7 @@ No compatibility fallback to old `transcript.jsonl` should be added unless expli
 Status: IN-PROGRESS
 Branch: task/rtvs-08a-remove-transcript-jsonl
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-08a-remove-transcript-jsonl
-Fork run: 8966325f
+Fork run: v4ckfu6y2a4s
 PR URL:
 PR Status:
 Started: 2026-06-07T21:23:43.851Z
@@ -86,3 +86,8 @@ Completed:
 ## Task workflow update - 2026-06-07T23:50:18.665Z
 - Validation: move_task CODE-REVIEW full Castor gate: FAILED; Failure: castor check -> test:tui failed; tests/Tui/E2E/TuiStartupSnapshotTest::testStartupLayoutMatchesGoldenSnapshot snapshot mismatch; Diff excerpt: actual contains `❯ hello from tmux e2e` before `◐ Working...`; expected had only `◐ Working...` at that location
 - Summary: move_task(to=CODE-REVIEW) attempted full Castor quality gate but failed; task remains IN-PROGRESS. Gate failure is in TUI snapshot test: TuiStartupSnapshotTest expected startup snapshot without submitted editor text, but actual normalized snapshot includes `❯ hello from tmux e2e` above Working. Need fork to analyze whether this is intentional UI shift from canonical-only user echo/removing local transcript block and update code/snapshot via Castor-only workflow.
+
+## Task workflow update - 2026-06-08T00:00:01.309Z
+- Recorded fork run: v4ckfu6y2a4s
+- Validation: castor test:tui-update: PASS/updated golden snapshot; castor test:tui: PASS (5 tests, 18 assertions); castor deptrac: PASS (0 violations); castor phpstan: PASS (0 errors); castor cs-check: PASS (0 files fixed); castor test: PASS (1932 tests, 5722 assertions); castor test:controller: PASS (1 test, 7 assertions); castor test:llm-real: PASS (4 tests, 29 assertions); castor check: PASS (all gates green)
+- Summary: Castor-gate fix fork completed and committed 9248af7c. Root cause of previous CODE-REVIEW gate failure was stale TUI startup golden snapshot: RTVS-08A correctly projects the initial --prompt user message from canonical run_started/user_messages, rendering `❯ hello from tmux e2e`. Fork updated tests/Tui/Snapshots/startup-120x40.txt by one line. Worktree clean at 9248af7c.
