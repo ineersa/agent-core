@@ -29,12 +29,12 @@ Parallelizable with: EDITOR-06, EDITOR-07.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/editor-08-completion-foundation-slash
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-08-completion-foundation-slash
 Fork run: vj4a4dwv1v0w
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/106
+PR Status: open
 Started: 2026-06-08T15:02:47.293Z
 Completed:
 
@@ -181,3 +181,18 @@ Risks/notes for implementor:
 - Validation: Reviewer subagent on /home/ineersa/projects/agent-core-worktrees/editor-08-completion-foundation-slash at HEAD 01915f6f: APPROVE; git status --short --branch: ## task/editor-08-completion-foundation-slash (clean); castor test: ok (tests=2112, assertions=6145, errors=0, failures=0, skipped=0); castor deptrac: ok (violations=0, errors=0, uncovered=735, allowed=923); castor phpstan: ok (errors=0, file_errors=0); castor cs-check: ok (files_fixed=0)
 - Summary: Final reviewer subagent verdict for current HEAD 01915f6f: APPROVE. Reviewer confirmed prior suggestions resolved: explicit registry order assertion in SlashCommandCompletionProviderTest and documenting non-end CompletionContext cursor-offset MVP behavior test. No critical issues, bugs, or blockers. Branch was rebased cleanly on origin/main by fork vj4a4dwv1v0w; current task worktree status clean.
 - task-to-pr final review: reviewer approved HEAD 01915f6f after review-iteration forks cf6u7r92u2yu and vj4a4dwv1v0w. Focused Castor validation passed locally; proceeding to move_task(to="CODE-REVIEW") for full LLM_MODE=true castor check quality gate and PR creation.
+Castor Check Status: passed
+Castor Check Commit: 01915f6f7c3acd43736b0fc4e09441e2671b6978
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 900s
+Castor Check Completed: 2026-06-08T16:22:15.994Z
+Castor Check Output SHA256: bd21b9356056178d2d80e64bb0c6ca64a9ed70629d487ab7627bb9c3eab4ac2c
+
+## Task workflow update - 2026-06-08T16:22:19.800Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: 01915f6f7c3a.
+- Pushed task/editor-08-completion-foundation-slash to origin.
+- branch 'task/editor-08-completion-foundation-slash' set up to track 'origin/task/editor-08-completion-foundation-slash'.
+- Created PR: https://github.com/ineersa/agent-core/pull/106
+- Validation: Reviewer subagent final verdict at HEAD 01915f6f: APPROVE; castor test: ok (tests=2112, assertions=6145, errors=0, failures=0, skipped=0); castor deptrac: ok (violations=0, errors=0, uncovered=735, allowed=923); castor phpstan: ok (errors=0, file_errors=0); castor cs-check: ok (files_fixed=0)
+- Summary: EDITOR-08 prepared for code review at HEAD 01915f6f. Reviewer verdict: APPROVE. Focused local validation passed: castor test (2112 tests, 6145 assertions), castor deptrac (0 violations), castor phpstan (0 errors), castor cs-check (clean). Review-iteration forks addressed all actionable suggestions: CompletionContext DTO and provider signature, Ctrl+C/D overlay cleanup listener, isolated non-execution test fixture, clarified alias/canonical test comment, explicit registry-order assertion, and non-end cursor-offset documenting test.
