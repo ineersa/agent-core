@@ -87,12 +87,12 @@ Plan reference (partially stale — see sequencing above):
   changes touching TUI runtime, Messenger, or LLM-visible flow.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/rtvs-08-session-replay-runtime-events
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-08-session-replay-runtime-events
 Fork run: hl2c2mio273b
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/105
+PR Status: open
 Started: 2026-06-08T14:37:11.366Z
 Completed:
 
@@ -136,3 +136,16 @@ Completed:
 - Validation: move_task(to=CODE-REVIEW) reached branch push; remote head verified at c6b69c688a09d194ac7b4d75581282752a2d33d7; PR creation failed: gh is not authenticated for github.com account ineersa; token in default is invalid
 - Summary: Attempted move_task to CODE-REVIEW after reviewer approval and local validation. Branch `task/rtvs-08-session-replay-runtime-events` was pushed to origin at c6b69c688a09d194ac7b4d75581282752a2d33d7, but PR creation failed because `gh` is not authenticated (`token in default is invalid`). Task remains IN-PROGRESS pending GitHub CLI authentication or manual PR creation.
 - task-to-pr blocker: CODE-REVIEW transition could not complete because gh auth is invalid. Options: user runs `gh auth login -h github.com` then retry move_task, or user manually creates PR from branch `task/rtvs-08-session-replay-runtime-events`.
+Castor Check Status: passed
+Castor Check Commit: c6b69c688a09d194ac7b4d75581282752a2d33d7
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 900s
+Castor Check Completed: 2026-06-08T15:38:44.814Z
+Castor Check Output SHA256: d13a1ec7e60ab8bb3537ea34dcc622c687f4e419ec25a2cccfc85658bc4dfb34
+
+## Task workflow update - 2026-06-08T15:38:47.901Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: c6b69c688a09.
+- Pushed task/rtvs-08-session-replay-runtime-events to origin.
+- branch 'task/rtvs-08-session-replay-runtime-events' set up to track 'origin/task/rtvs-08-session-replay-runtime-events'.
+- Created PR: https://github.com/ineersa/agent-core/pull/105
