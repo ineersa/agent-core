@@ -57,6 +57,7 @@ and `updateMetadata()`.  The returned array shape for callers:
     'model_provider' => 'deepseek',              // nullable
     'model_name'     => 'deepseek-v4-pro',       // nullable
     'reasoning'  => 'medium',                    // nullable
+    'name'       => 'My session',                // nullable, user-visible display name
 ]
 ```
 
@@ -65,6 +66,24 @@ non-null. There is no separate public_id column — the auto-increment
 integer primary key is cast to string for all external identifiers.
 
 Future forking will add parent_id/root_id support (see [Future fork tree](#future-fork-tree)).
+
+### Session naming and display
+
+The `name` column is an optional user-visible display name, nullable by
+default. It is persisted in the `hatfield_session` DB table and returned
+by `loadMetadata()` and `listSessions()`.  When `name` is null (the
+common case for unnamed sessions), the display title is computed
+deterministically without mutating the database:
+
+1. **Explicit name** — returned as-is when set (via `/rename`).
+2. **Prompt preview** — the initial prompt truncated to 60 characters
+   (multibyte-safe) with a `...` ellipsis suffix.
+3. **`Session <id>`** — when no prompt exists.
+
+This fallback is computed by `HatfieldSessionStore::listSessions()`
+as the `displayTitle` field — a non-persisted, picker-friendly value.
+The raw `name` field is always available separately for commands that
+need the canonical value.
 
 ### Storage model at a glance
 
@@ -388,11 +407,11 @@ embedded IDs.
 | Messenger synchronous bus wiring | High | `config/packages/messenger.yaml` buses have empty middleware arrays. `RunOrchestrator` handlers are registered but messages may not be dispatched. Required for actual run persistence end-to-end. |
 | File-backed CommandStore | Medium | `InMemoryCommandStore` loses pending commands on restart. Step IDs use `hrtime()` so duplicates are unlikely, but file backing would improve durability. |
 | File-backed MessageIdempotencyService | Low | In-memory idempotency state is lost on restart. Not critical because step IDs are time-based and won't repeat. |
-| Session listing (`listSessions()`) | Medium | Need `HatfieldSessionStore::listSessions()` + `HatfieldSessionStore::tree()` before building `/sessions` UI. |
+| Session listing (`listSessions()`) | **Done** | `HatfieldSessionStore::listSessions()` returns catalog rows with `displayTitle`. Tree listing (`tree()`) remains future (SESSION-05/06/07). |
 | Session pruning/cleanup | Low | No auto-expiry or `session:prune` command. Orphaned sessions accumulate. |
 | Fork command (`session:fork`) | Medium | Planned; storage model is ready. Needs rewrite logic + CLI command. |
 | Attachments storage (`attachments/`) | Low | Directory created in layout docs but not yet used. Will store pasted files, images, diffs. |
-| Session rename / alias | Low | Session IDs are auto-increment numeric strings — not human-memorable. Aliases or titles would help. |
+| Session rename / alias | **In progress** | SESSION-01 added `name` column + listing; SESSION-04 `/rename` is the TUI command. |
 | Runtime event streaming | Medium | Current polling is synchronous full-scan. Incremental delivery would improve large sessions. |
 | Rebuild `state.json` from `events.jsonl` | **Done** | `RunStateReplayService` rebuilds RunState from canonical events when `state.json` is missing or stale. `state.json` is now a disposable cache. |
 ## Related documents

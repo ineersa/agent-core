@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Session;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
+use Ineersa\CodingAgent\Entity\HatfieldSessionRepository;
 
 /**
  * Session persistence backed by the hatfield_session DB table and the
@@ -20,9 +21,14 @@ use Ineersa\CodingAgent\Entity\HatfieldSession;
  *     events.jsonl        AgentCore RunEvent canonical stream (via SessionRunEventStore)
  *     (no separate projection file — transcript rebuilt from events.jsonl)
  *
- * Session metadata (identity, prompt, model, reasoning, fork tree links)
- * lives in the hatfield_session DB table — not in a metadata.yaml file.
- * The DB row is the canonical source of truth for session identity.
+ * Session metadata (identity, prompt, model, reasoning, name,
+ * fork tree links) lives in the hatfield_session DB table — not in a
+ * metadata.yaml file.  The DB row is the canonical source of truth for
+ * session identity.
+ *
+ * An optional user-visible display name (the `name` column) can be set
+ * via /rename.  Unnamed sessions use a deterministic fallback: the
+ * truncated initial prompt, or `Session <id>` when no prompt exists.
  *
  * session_id === run_id in Hatfield. One directory equals one session
  * equals one agent run equals one future fork tree node.
@@ -147,6 +153,9 @@ final class HatfieldSessionStore
         if (null !== $entity->reasoning) {
             $meta['reasoning'] = $entity->reasoning;
         }
+        if (null !== $entity->name) {
+            $meta['name'] = $entity->name;
+        }
 
         return $meta;
     }
@@ -206,6 +215,12 @@ final class HatfieldSessionStore
             $entity->cwd = $meta['cwd'];
             $dirty = true;
         }
+        if (\array_key_exists('name', $meta)) {
+            $entity->name = \is_string($meta['name'])
+                ? ('' !== trim($meta['name']) ? trim($meta['name']) : null)
+                : null;
+            $dirty = true;
+        }
 
         if ($dirty) {
             $this->entityManager->flush();
@@ -224,6 +239,81 @@ final class HatfieldSessionStore
     }
 
     /**
+     * Return recent sessions with metadata suitable for picker/catalog display.
+     *
+     * Delegates the DB query to HatfieldSessionRepository::findForCatalog()
+     * and enriches each row with a computed, non-persisted displayTitle.
+     * The display fallback is deterministic and does not mutate the DB:
+     *   1. Explicit name (non-empty trimmed)
+     *   2. Truncated prompt preview (multibyte-safe, 60 chars + ellipsis)
+     *   3. "Session <id>"
+     *
+     * @param string $sortBy External key: 'updated_at', 'created_at', 'prompt', or 'name'
+     * @param int    $limit  Max results (1..200)
+     * @param string $order  'ASC' or 'DESC'
+     *
+     * @return list<array{
+     *     sessionId: string,
+     *     name: ?string,
+     *     displayTitle: string,
+     *     cwd: string,
+     *     prompt: ?string,
+     *     promptPreview: ?string,
+     *     model: ?string,
+     *     model_provider: ?string,
+     *     model_name: ?string,
+     *     reasoning: ?string,
+     *     created_at: string,
+     *     updated_at: string,
+     * }>
+     */
+    public function listSessions(
+        string $sortBy = 'updated_at',
+        int $limit = 50,
+        string $order = 'DESC',
+    ): array {
+        $entities = $this->getRepository()->findForCatalog($sortBy, $limit, $order);
+        $result = [];
+
+        foreach ($entities as $entity) {
+            $id = (string) $entity->id;
+            $name = null !== $entity->name && '' !== trim($entity->name)
+                ? trim($entity->name)
+                : null;
+            $displayTitle = $this->resolveDisplayTitle($id, $name, $entity->prompt);
+            $promptPreview = $this->resolvePromptPreview($entity->prompt);
+
+            $row = [
+                'sessionId' => $id,
+                'name' => $name,
+                'displayTitle' => $displayTitle,
+                'cwd' => $entity->cwd,
+                'prompt' => $entity->prompt,
+                'promptPreview' => $promptPreview,
+                'created_at' => $entity->createdAt->format(\DateTimeInterface::ATOM),
+                'updated_at' => $entity->updatedAt->format(\DateTimeInterface::ATOM),
+            ];
+
+            if (null !== $entity->model) {
+                $row['model'] = $entity->model;
+            }
+            if (null !== $entity->modelProvider) {
+                $row['model_provider'] = $entity->modelProvider;
+            }
+            if (null !== $entity->modelName) {
+                $row['model_name'] = $entity->modelName;
+            }
+            if (null !== $entity->reasoning) {
+                $row['reasoning'] = $entity->reasoning;
+            }
+
+            $result[] = $row;
+        }
+
+        return $result;
+    }
+
+    /**
      * Resolve the sessions base path from Hatfield config.
      *
      * Uses sessions.path from the fully resolved config (after defaults,
@@ -233,6 +323,48 @@ final class HatfieldSessionStore
     public function resolveSessionsBasePath(): string
     {
         return $this->getSessionsDir();
+    }
+
+    /**
+     * Compute the user-visible display title without mutating the DB.
+     *
+     * Fallback order: explicit name → truncated prompt → "Session <id>".
+     */
+    private function resolveDisplayTitle(string $sessionId, ?string $name, ?string $prompt): string
+    {
+        if (null !== $name && '' !== $name) {
+            return $name;
+        }
+
+        $preview = $this->resolvePromptPreview($prompt);
+        if (null !== $preview) {
+            return $preview;
+        }
+
+        return "Session {$sessionId}";
+    }
+
+    /**
+     * Build a multibyte-safe truncated prompt preview.
+     *
+     * Returns null when the prompt is empty or null.
+     */
+    private function resolvePromptPreview(?string $prompt): ?string
+    {
+        if (null === $prompt || '' === $prompt) {
+            return null;
+        }
+
+        // Use mb_strimwidth when available; fall back to plain substr + ellipsis.
+        if (\function_exists('mb_strimwidth')) {
+            $preview = mb_strimwidth($prompt, 0, 60, '...');
+        } else {
+            $preview = \strlen($prompt) > 60
+                ? substr($prompt, 0, 60).'...'
+                : $prompt;
+        }
+
+        return $preview;
     }
 
     /**
@@ -305,5 +437,19 @@ final class HatfieldSessionStore
     private function getSessionDir(string $sessionId): string
     {
         return $this->getSessionsDir().'/'.$sessionId;
+    }
+
+    /**
+     * Retrieve the HatfieldSessionRepository from the EntityManager.
+     *
+     * Lazy accessor avoids a constructor dependency that would force
+     * test callers to provide a mockable (non-final) repository.
+     */
+    private function getRepository(): HatfieldSessionRepository
+    {
+        $repo = $this->entityManager->getRepository(HatfieldSession::class);
+        \assert($repo instanceof HatfieldSessionRepository);
+
+        return $repo;
     }
 }

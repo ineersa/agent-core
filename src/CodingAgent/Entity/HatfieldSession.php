@@ -70,6 +70,10 @@ class HatfieldSession
     #[ORM\Column(type: 'string', nullable: true)]
     public ?string $reasoning = null;
 
+    /** Optional user-visible display name set via /rename. Null for unnamed sessions. */
+    #[ORM\Column(type: 'string', length: 255, nullable: true)]
+    public ?string $name = null;
+
     #[ORM\Column(name: 'created_at', type: 'datetime_immutable')]
     public \DateTimeImmutable $createdAt;
 
