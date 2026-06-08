@@ -98,14 +98,14 @@ public function listSessions(string $sortBy = 'updated_at', int $limit = 50, str
 - Validation uses Castor per project rules.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/session-01-session-catalog-and-names
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-01-session-catalog-and-names
 Fork run: xnok4c30na04
 PR URL: https://github.com/ineersa/agent-core/pull/108
-PR Status: open
+PR Status: merged
 Started: 2026-06-08T16:11:14.248Z
-Completed:
+Completed: 2026-06-08T19:44:29.455Z
 
 ## Work log
 - Created: 2026-06-07T20:45:08.344Z
@@ -216,3 +216,22 @@ Castor Check Output SHA256: fb76f54c1d7fd626a17fb75d5043bebd8f4cb1ccc6d18afd45b5
 - PR already exists: https://github.com/ineersa/agent-core/pull/108
 - Validation: Reviewer verdict: APPROVED at HEAD `bfc4bfca`.; Local validation: `castor test --filter=HatfieldSessionStoreTest` PASS — 28 tests, 117 assertions.; Local validation: `castor test --filter=SessionAwareModelResolverTest` PASS — 7 tests, 16 assertions.; Local validation: `castor test` PASS — 2087 tests, 6166 assertions, 0 errors/failures/skipped.; Local validation: `castor deptrac` PASS — 0 violations, 0 errors.; Local validation: `castor phpstan` PASS — 0 errors.; Local validation: `castor cs-check` PASS — 0 files fixed.
 - Summary: SESSION-01 PR #108 feedback has been addressed and approved. Updated HEAD `bfc4bfca` makes session `name` non-null/generated from the first prompt and capped at 200 chars, uses Symfony String for normalization/truncation, removes sort/order complexity, removes list limits, and cleans reviewer-noted comments. Final reviewer approved; focused local Castor validation passed.
+
+## Task workflow update - 2026-06-08T19:44:29.455Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/session-01-session-catalog-and-names into integration checkout.
+- Merge made by the 'ort' strategy.
+ docs/session-storage.md                            |  32 +-
+ migrations/Version20260608162000.php               |  26 ++
+ src/CodingAgent/Entity/HatfieldSession.php         |   5 +
+ .../Entity/HatfieldSessionRepository.php           |  18 ++
+ .../Migrations/ApplicationMigrationExecutor.php    |   1 +
+ src/CodingAgent/Session/HatfieldSessionStore.php   | 173 +++++++++-
+ .../Config/SessionAwareModelResolverTest.php       |  24 ++
+ .../Session/HatfieldSessionStoreTest.php           | 354 +++++++++++++++++++++
+ 8 files changed, 621 insertions(+), 12 deletions(-)
+ create mode 100644 migrations/Version20260608162000.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/session-01-session-catalog-and-names.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: Confirmed task is in CODE-REVIEW with PR URL https://github.com/ineersa/agent-core/pull/108.; Confirmed GitHub PR #108 state is MERGED, base main, head task/session-01-session-catalog-and-names.; Confirmed integration checkout status clean before DONE transition.
+- Summary: PR #108 for SESSION-01 was already merged on GitHub (mergedAt 2026-06-08T19:43:50Z). Completing task workflow by syncing/merging into integration checkout and cleaning up the worktree.
