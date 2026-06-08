@@ -148,3 +148,7 @@ Completed:
 
 ## Work log
 - Created: 2026-06-07T20:45:22.373Z
+
+## Task workflow update - 2026-06-08T21:50:05.792Z
+- Summary: Task-explain decisions confirmed by user before task-start: (1) Accept controlled rebuild of TUI objects inside the same CLI process as the session switch lifecycle; true in-place listener/context mutation is not required for this task. (2) Switching with active HITL/questions should cancel/reset local question state rather than reject the switch. (3) SESSION-02 should include enough lazy fresh-draft support so SESSION-03 `/new` can call the lifecycle seam without creating orphan DB/session rows before the first submitted prompt. (4) Prefer the simpler runtime boundary first: do not add `AgentSessionClient` API unless necessary; fix concrete process-client/session respawn behavior if needed.
+- task-explain: user approved controlled TUI loop rebuild, cancel/reset active questions on switch, lazy draft support for `/new`, and no AgentSessionClient interface expansion unless proven necessary. Starting implementation phase next.
