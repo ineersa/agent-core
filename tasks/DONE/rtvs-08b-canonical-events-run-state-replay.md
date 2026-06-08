@@ -129,3 +129,7 @@ Castor Check Output SHA256: 76bc5710c370d035b88a5c02312ff509d59c8da1f76a403e1bf7
  create mode 100644 tests/AgentCore/Application/Handler/RunStateReplayServiceTest.php
 - Removed worktree /home/ineersa/projects/agent-core-worktrees/rtvs-08b-canonical-events-run-state-replay.
 - Pulled integration checkout: Merge made by the 'ort' strategy..
+
+## Task workflow update - 2026-06-08T01:59:04.687Z
+- Validation: PR #104 merged at 2026-06-08T01:55:30Z; move_task DONE: merged cleanly via ort strategy, 9 files changed +1576/-9; LLM_MODE=true castor check: deptrac 0 violations; LLM_MODE=true castor check: PHAR build ok, smoke tests ok; LLM_MODE=true castor check: test 2045/2045 (5999 assertions, 0 errors/failures/skipped); LLM_MODE=true castor check: test:controller 1/1 (7 assertions); LLM_MODE=true castor check: test:llm-real 5/5 (37 assertions); LLM_MODE=true castor check: test:tui 5/5 (18 assertions); LLM_MODE=true castor check: phpstan 0 errors, cs-check clean, quality: ok
+- Summary: RTVS-08B merged and validated. PR #104 merged at 2026-06-08T01:55:30Z. Integration checkout merged cleanly via ort strategy. Post-merge full Castor quality gate passed: deptrac 0 violations, PHAR build ok, test 2045/2045 (5999 assertions), test:controller 1/1, test:llm-real 5/5, test:tui 5/5, phpstan 0 errors, cs-check clean, quality: ok. Worktree removed, git status clean on main.
