@@ -28,14 +28,14 @@ Parallelizable with: EDITOR-06 and EDITOR-08, but avoid concurrent session stora
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/editor-07-prompt-history-session-persistence
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-07-prompt-history-session-persistence
 Fork run: 6126vm4szkvv
 PR URL: https://github.com/ineersa/agent-core/pull/103
-PR Status: open
+PR Status: merged
 Started: 2026-06-08T00:25:29.815Z
-Completed:
+Completed: 2026-06-08T01:05:08.707Z
 
 ## Work log
 - Created: 2026-05-18T00:15:49.260Z
@@ -82,3 +82,12 @@ Castor Check Output SHA256: 0fe1a88462a74aed21023c51a031f695f9ec3ffbad2fd3d2f3a6
 - Pushed task/editor-07-prompt-history-session-persistence to origin.
 - branch 'task/editor-07-prompt-history-session-persistence' set up to track 'origin/task/editor-07-prompt-history-session-persistence'.
 - Created PR: https://github.com/ineersa/agent-core/pull/103
+
+## Task workflow update - 2026-06-08T01:05:08.707Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/editor-07-prompt-history-session-persistence into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/editor-07-prompt-history-session-persistence.
+- Pulled integration checkout: Already up to date..
+- Validation: gh pr view https://github.com/ineersa/agent-core/pull/103: state=MERGED, mergedAt=2026-06-08T01:04:15Z, base=main, head=task/editor-07-prompt-history-session-persistence; git pull --ff-only on integration checkout: fast-forwarded ac15ae60..c518c0a3 and pulled the four EDITOR-07 files
+- Summary: Completing reviewed task. PR #103 was already merged on GitHub at 2026-06-08T01:04:15Z; integration checkout was fast-forwarded with git pull --ff-only before moving task DONE.
