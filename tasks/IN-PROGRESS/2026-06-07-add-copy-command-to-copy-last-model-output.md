@@ -116,7 +116,7 @@ The handler needs `TranscriptBlockKindEnum` from `CodingAgent/Runtime/Projection
 Status: IN-PROGRESS
 Branch: task/2026-06-07-add-copy-command-to-copy-last-model-output
 Worktree: /home/ineersa/projects/agent-core-worktrees/2026-06-07-add-copy-command-to-copy-last-model-output
-Fork run: y1mkmqrfyah1
+Fork run: 1qneis5qtler
 PR URL: https://github.com/ineersa/agent-core/pull/107
 PR Status: open
 Started: 2026-06-08T15:50:52.930Z
@@ -184,3 +184,7 @@ Castor Check Output SHA256: c797e68bab73c8de86b410e3e17c6535c4fd7d6a12db8c99a94a
 ## Task workflow update - 2026-06-08T16:51:37.132Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: Reopened from code review for documentation-only follow-up requested by user after Windows-over-SSH/tmux smoke test: document that tmux OSC-52 passthrough requires `allow-passthrough on`, `set-clipboard on`, and that `xclip` copy-mode bindings target the remote Linux clipboard rather than local Windows/WezTerm clipboard.
+
+## Task workflow update - 2026-06-08T16:52:08.241Z
+- Recorded fork run: 1qneis5qtler
+- User requested documentation-only follow-up after Windows WezTerm/SSH/tmux smoke test. Launched fork 1qneis5qtler to document `/copy` OSC-52/tmux caveats, required `allow-passthrough on`/`set-clipboard on`/Ms checks, and remote `xclip` limitation.
