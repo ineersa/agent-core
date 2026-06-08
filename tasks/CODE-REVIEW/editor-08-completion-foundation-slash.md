@@ -29,7 +29,7 @@ Parallelizable with: EDITOR-06, EDITOR-07.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/editor-08-completion-foundation-slash
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-08-completion-foundation-slash
 Fork run: 4jg84u1ws7le
@@ -182,11 +182,11 @@ Risks/notes for implementor:
 - Summary: Final reviewer subagent verdict for current HEAD 01915f6f: APPROVE. Reviewer confirmed prior suggestions resolved: explicit registry order assertion in SlashCommandCompletionProviderTest and documenting non-end CompletionContext cursor-offset MVP behavior test. No critical issues, bugs, or blockers. Branch was rebased cleanly on origin/main by fork vj4a4dwv1v0w; current task worktree status clean.
 - task-to-pr final review: reviewer approved HEAD 01915f6f after review-iteration forks cf6u7r92u2yu and vj4a4dwv1v0w. Focused Castor validation passed locally; proceeding to move_task(to="CODE-REVIEW") for full LLM_MODE=true castor check quality gate and PR creation.
 Castor Check Status: passed
-Castor Check Commit: 2d05c69ff7ecb728e413715c428e1b0ea7fbc426
+Castor Check Commit: 28be38000c9975e45dd55f51c51d4f7b32d02879
 Castor Check Command: LLM_MODE=true castor check
 Castor Check Timeout: 900s
-Castor Check Completed: 2026-06-08T16:57:52.962Z
-Castor Check Output SHA256: 83a1d2b4efc86fe2b0d27b8694499b922ccc94caf94dc6e1c9671e402e08ae25
+Castor Check Completed: 2026-06-08T18:02:05.210Z
+Castor Check Output SHA256: cfccc5b650aca9efb5f8afd1273f4a1bb691f45479a7a66355a0f15af86147c7
 
 ## Task workflow update - 2026-06-08T16:22:19.800Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -241,3 +241,10 @@ Castor Check Output SHA256: 83a1d2b4efc86fe2b0d27b8694499b922ccc94caf94dc6e1c967
 ## Task workflow update - 2026-06-08T17:45:41.738Z
 - Validation: move_task(to=CODE-REVIEW): Castor quality gate failed; task remains IN-PROGRESS; castor test:tui: failed (tests=5, assertions=9, errors=2, failures=1); TuiAgentSmokeTest timed out with UI stuck at Working and no assistant/error block; Direct diagnostic: GET http://127.0.0.1:9052/v1/models returned 200; Direct diagnostic: POST http://127.0.0.1:9052/v1/chat/completions with a tiny prompt timed out after 30s; Focused local non-E2E validation at HEAD 28be3800 had passed earlier: castor test (2120 tests), deptrac 0 violations, phpstan 0 errors, cs-check clean; Reviewer subagent final verdict at HEAD 28be3800: APPROVE
 - Summary: Attempted move_task(to=CODE-REVIEW) after final reviewer approval at HEAD 28be3800, but the Castor quality gate failed in TUI E2E. Follow-up diagnostics show this is an environment/prerequisite blocker rather than an EDITOR-08 code regression: `castor test:tui` consistently times out with the TUI stuck at '◐ Working...' waiting for assistant/error blocks, and a direct POST to llama.cpp test server `http://127.0.0.1:9052/v1/chat/completions` timed out after 30s even though `/v1/models` responds 200. Because runtime/TUI validation requires the real LLM path, task remains IN-PROGRESS until the llama_cpp_test/test server on port 9052 can complete chat requests and the full gate can pass. Worktree is clean at 28be3800 and 2 commits ahead of origin/task/editor-08-completion-foundation-slash; PR #106 is not updated with the two cleanup commits yet because move_task gate did not pass.
+
+## Task workflow update - 2026-06-08T18:02:07.083Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: 28be38000c99.
+- Pushed task/editor-08-completion-foundation-slash to origin.
+- branch 'task/editor-08-completion-foundation-slash' set up to track 'origin/task/editor-08-completion-foundation-slash'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/106
