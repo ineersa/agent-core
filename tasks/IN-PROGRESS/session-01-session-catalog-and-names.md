@@ -116,3 +116,8 @@ Completed:
 - Created worktree /home/ineersa/projects/agent-core-worktrees/session-01-session-catalog-and-names.
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/session-01-session-catalog-and-names.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/session-01-session-catalog-and-names.
+
+## Task workflow update - 2026-06-08T16:18:02.842Z
+- Validation: Scouts inspected session entity/repository/store, migration executor, DB test patterns, and docs/downstream session task prerequisites.
+- Summary: Start-phase scouts completed. Current implementation seams: add nullable `name` field to `HatfieldSession`, new migration adding `hatfield_session.name`, add migration FQCN to `ApplicationMigrationExecutor::KNOWN_MIGRATIONS`, add repository query method for recent/listed sessions, extend `HatfieldSessionStore::loadMetadata()`/`updateMetadata()` and add `listSessions()` with deterministic computed display title fallback. Tests should primarily extend `HatfieldSessionStoreTest` using `IsolatedKernelTestCase`, and add/adjust `SessionAwareModelResolverTest` coverage so extra `name` metadata does not affect model resolution. Docs update target is `docs/session-storage.md` metadata shape, naming/display subsection, and open gaps table.
+- task-start: launched 3 scouts for code/API seams, tests/DB patterns, and docs/downstream picker requirements. Preparing implementation fork.
