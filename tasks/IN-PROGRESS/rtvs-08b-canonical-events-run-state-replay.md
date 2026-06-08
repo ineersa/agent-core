@@ -36,14 +36,23 @@ Recommended sequencing:
 - Validation uses Castor per project rules; runtime/Messenger changes require full `castor check` before CODE-REVIEW.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/rtvs-08b-canonical-events-run-state-replay
+Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-08b-canonical-events-run-state-replay
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-08T00:15:30.019Z
 Completed:
 
 ## Work log
 - Created: 2026-06-07T16:26:19.504Z
+
+## Task workflow update - 2026-06-08T00:15:30.019Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/rtvs-08b-canonical-events-run-state-replay.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/rtvs-08b-canonical-events-run-state-replay.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/rtvs-08b-canonical-events-run-state-replay.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/rtvs-08b-canonical-events-run-state-replay.
+- Validation: Pre-start task context read: tasks/TODO/rtvs-08b-canonical-events-run-state-replay.md; Referenced docs/tasks read: docs/session-storage.md, tasks/TODO/rtvs-08-session-replay-runtime-events.md, tasks/DONE/rtvs-08a-remove-transcript-jsonl.md; Integration checkout status before move: clean and in sync with origin/main
+- Summary: Starting RTVS-08B task-start phase. Main agent remains orchestrator; implementation will be delegated to a fork after scout context gathering. RTVS-08A is DONE/merged, so this task starts from main with transcript.jsonl removed and TUI transcript replay already backed by events.jsonl.
