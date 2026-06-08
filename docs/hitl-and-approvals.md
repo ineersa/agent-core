@@ -106,7 +106,7 @@ defines the full HITL family:
    ```
 
 4. **Runtime event emission**: The event is written to the session's
-   `runtime-events.jsonl` projection and emitted through the runtime event FIFO queue
+   canonical `events.jsonl` and emitted through the runtime event FIFO queue
    (`InProcessAgentSessionClient` in-process mode) or stdout JSONL (controller mode).
 
 ### Answer routing: answer_human command
