@@ -28,11 +28,8 @@ use function Symfony\Component\String\u;
  * metadata.yaml file.  The DB row is the canonical source of truth for
  * session identity.
  *
- * An optional user-visible display name (the `name` column) can be set
- * via /rename.  It is initialized from the first user message (trimmed,
- * collapsed to one line, capped at 200 chars) and guaranteed non-empty.
- * Unnamed/explicitly-cleared sessions receive the default fallback
- * "Session".
+ * A user-visible display name (`name`), initialized from the first user
+ * message and later customizable via `/rename`.
  *
  * session_id === run_id in Hatfield. One directory equals one session
  * equals one agent run equals one future fork tree node.

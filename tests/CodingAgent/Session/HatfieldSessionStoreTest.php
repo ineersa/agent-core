@@ -297,8 +297,8 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
 
     public function testListSessionsReturnsAllSessionsNoLimit(): void
     {
-        // Create more sessions than the old default limit (50) to prove
-        // listSessions returns them all.
+        // Create multiple sessions and verify all are returned;
+        // the catalog query no longer applies a max-result cap.
         $ids = [];
         for ($i = 0; $i < 3; $i++) {
             $ids[] = $this->store->createSession("session {$i}");
