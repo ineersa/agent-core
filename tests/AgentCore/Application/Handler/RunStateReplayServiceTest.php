@@ -518,6 +518,155 @@ final class RunStateReplayServiceTest extends TestCase
         self::assertSame('user', $messages[1]->role);
     }
 
+    // ── Tool-call-only assistant message replay ────────────────────────────
+
+    public function testReplayToolCallOnlyAssistantMessage(): void
+    {
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'step_id' => 's1',
+            'payload' => ['messages' => []],
+        ]);
+
+        // Tool-call-only assistant message: content is null, tool_calls at root.
+        // This matches AgentMessageNormalizer::assistantMessagePayload() shape.
+        $this->appendEvent(RunEventTypeEnum::LlmStepCompleted->value, 2, [
+            'step_id' => 's1',
+            'assistant_message' => [
+                'role' => 'assistant',
+                'content' => null,
+                'tool_calls' => [
+                    ['id' => 'tc-1', 'name' => 'read', 'arguments' => [], 'order_index' => 0],
+                ],
+            ],
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        $messages = $result->rebuiltState->messages;
+        self::assertCount(1, $messages, 'Tool-call-only assistant message must be replayed.');
+        self::assertSame('assistant', $messages[0]->role);
+        self::assertSame([], $messages[0]->content);
+        self::assertArrayHasKey('tool_calls', $messages[0]->metadata);
+        self::assertCount(1, $messages[0]->metadata['tool_calls']);
+        self::assertSame('tc-1', $messages[0]->metadata['tool_calls'][0]['id']);
+
+        // Pending tool calls must be populated.
+        $pendingCalls = $result->rebuiltState->pendingToolCalls;
+        self::assertArrayHasKey('tc-1', $pendingCalls);
+        self::assertFalse($pendingCalls['tc-1']);
+    }
+
+    // ── Duplicate sequence detection ──────────────────────────────────────
+
+    public function testDuplicateSequenceThrowsException(): void
+    {
+        // Two events with the same seq number.
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'step_id' => 's1',
+            'payload' => ['messages' => []],
+        ]);
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'step_id' => 's2',
+            'payload' => ['messages' => []],
+        ]);
+
+        $state = new RunState(
+            runId: $this->runId,
+            status: RunStatus::Running,
+            version: 1,
+            turnNo: 0,
+            lastSeq: 0,
+        );
+
+        $this->expectException(RunStateReplayException::class);
+        $this->expectExceptionMessage('duplicate sequence');
+
+        $this->service->rebuildIfStale($state, $this->runId);
+    }
+
+    // ── Command rejected replay ─────────────────────────────────────────────
+
+    public function testReplayAgentCommandRejected(): void
+    {
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'step_id' => 's1',
+            'payload' => ['messages' => []],
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::AgentCommandRejected->value, 2, [
+            'kind' => 'cancel',
+            'reason' => 'Run already cancelling.',
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        self::assertSame(RunStatus::Running, $result->rebuiltState->status, 'Rejected command must not change status.');
+        self::assertSame('Run already cancelling.', $result->rebuiltState->errorMessage);
+    }
+
+    // ── Agent command applied kind 'continue' ───────────────────────────────
+
+    public function testReplayAgentCommandAppliedContinue(): void
+    {
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'step_id' => 's1',
+            'payload' => ['messages' => []],
+        ]);
+
+        // WaitingHuman event followed by continue command.
+        $this->appendEvent(RunEventTypeEnum::WaitingHuman->value, 2, [
+            'tool_call_id' => 'tc-h',
+            'tool_name' => 'ask_user',
+            'question_id' => 'q1',
+        ]);
+
+        $this->appendEvent(RunEventTypeEnum::AgentCommandApplied->value, 3, [
+            'kind' => 'continue',
+            'idempotency_key' => 'idem-cont',
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        self::assertSame(RunStatus::Running, $result->rebuiltState->status, 'Continue command must restore Running status.');
+        self::assertNull($result->rebuiltState->errorMessage);
+    }
+
+    // ── LlmStepAborted no mutation ──────────────────────────────────────────
+
+    public function testReplayLlmStepAbortedNoMutation(): void
+    {
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'step_id' => 's1',
+            'payload' => [
+                'messages' => [
+                    ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hello']], 'is_error' => false],
+                ],
+            ],
+        ]);
+
+        // llm_step_aborted carries no assistant message content.
+        $this->appendEvent(RunEventTypeEnum::LlmStepAborted->value, 2, [
+            'step_id' => 's1',
+            'stop_reason' => 'cancelled',
+            'usage' => ['total_tokens' => 0],
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        // Only the initial user message should be present.
+        self::assertCount(1, $result->rebuiltState->messages, 'llm_step_aborted must not append a message.');
+        self::assertSame('user', $result->rebuiltState->messages[0]->role);
+        self::assertSame(RunStatus::Running, $result->rebuiltState->status);
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────
 
     /**

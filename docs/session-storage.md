@@ -123,8 +123,8 @@ expected version, and writes only if they match — preventing race conditions
 in concurrent message processing.
 
 **`state.json` is a rebuildable hot checkpoint/projection**, not a required
-source of truth.  When `state.json` is missing, stale (`lastSeq` behind the
-max canonical event sequence), or corrupt, the pipeline automatically rebuilds
+source of truth.  When `state.json` is missing or stale (`lastSeq` behind the
+max canonical event sequence), the pipeline automatically rebuilds
 the RunState from `events.jsonl` via `RunStateReplayService` before advancing
 the run.  The canonical event stream in `events.jsonl` is the single source
 of truth; `state.json` is a materialized cache that can be discarded and

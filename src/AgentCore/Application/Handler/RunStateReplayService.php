@@ -70,6 +70,21 @@ final readonly class RunStateReplayService
         RunLogContext::enter(['run_id' => $runId, 'component' => 'replay']);
 
         try {
+            // Detect duplicates before contiguity check so the diagnostic
+            // reports the right failure reason and replay never processes
+            // duplicate sequences.
+            $duplicateSeqs = $this->duplicateSequences($sortedEvents);
+            if ([] !== $duplicateSeqs) {
+                $this->logger->error('run_state_replay.duplicate_sequences', [
+                    'run_id' => $runId,
+                    'event_count' => \count($sortedEvents),
+                    'duplicate_sequences' => $duplicateSeqs,
+                    'duplicate_count' => \count($duplicateSeqs),
+                ]);
+
+                throw new RunStateReplayException(\sprintf('Cannot replay run %s: event history contains %d duplicate sequence number(s): %s.', $runId, \count($duplicateSeqs), implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))));
+            }
+
             $missingSequences = $this->missingSequences($sortedEvents);
             $isContiguous = [] === $missingSequences;
 
@@ -125,11 +140,21 @@ final readonly class RunStateReplayService
      * retryableFailure} are populated from events; isStreaming is false
      * and streamingMessage is null after replay.
      *
-     * **Caller must provide sorted, contiguous events.** This method does
-     * NOT detect gaps or validate ordering.  Use {@see rebuildIfStale()}
-     * for production replay that includes contiguity checks.
+     * **Caller must provide sorted, contiguous, duplicate-free events.**
+     * This method does NOT detect gaps, validate ordering, or check for
+     * duplicate sequences.  Use {@see rebuildIfStale()} for production
+     * replay that includes full integrity checks (contiguity + duplicates).
      *
-     * @param list<RunEvent> $events sorted ascending by seq, no gaps
+     * **By-ref accumulator invariant:** Reducers mutate {@see $messages} and
+     * {@see $pendingToolCalls} by reference as the source of truth for the
+     * replayed collections.  Intermediate {@see RunState} objects produced by
+     * each iteration carry stale copies of {@see RunState::$messages} and
+     * {@see RunState::$pendingToolCalls}; only the final copy built after the
+     * loop reflects the complete replayed state.  Future reducers MUST NOT
+     * rely on {@see $state->messages} or {@see $state->pendingToolCalls}
+     * for current accumulator state during iteration.
+     *
+     * @param list<RunEvent> $events sorted ascending by seq, no gaps, no duplicates
      */
     public function replay(RunState $existingState, array $events): RunState
     {
@@ -141,6 +166,8 @@ final readonly class RunStateReplayService
             lastSeq: 0,
         );
 
+        // By-ref accumulators: reducers append to these arrays; intermediate
+        // RunState objects carry stale copies (see docblock invariant above).
         $messages = [];
         $pendingToolCalls = [];
 
@@ -205,7 +232,7 @@ final readonly class RunStateReplayService
             RunEventTypeEnum::ToolExecutionEnd->value,
             RunEventTypeEnum::ToolCallResultReceived->value => $this->applyNoMutation($event, $state),
             RunEventTypeEnum::MessageStart->value => $this->applyNoMutation($event, $state),
-            RunEventTypeEnum::MessageEnd->value => $this->applyMessageEnd($payload, $state, $messages, $pendingToolCalls),
+            RunEventTypeEnum::MessageEnd->value => $this->applyMessageEnd($payload, $state, $messages),
             RunEventTypeEnum::ToolBatchCommitted->value => $this->applyToolBatchCommitted($state, $pendingToolCalls),
             RunEventTypeEnum::WaitingHuman->value => $this->applyWaitingHuman($state),
             RunEventTypeEnum::AgentEnd->value => $this->applyAgentEnd($payload, $state),
@@ -427,7 +454,10 @@ final readonly class RunStateReplayService
         $assistantPayload = \is_array($payload['assistant_message'] ?? null) ? $payload['assistant_message'] : null;
 
         if (null !== $assistantPayload) {
-            $msg = AgentMessage::fromPayload($assistantPayload);
+            // Replay the assistant payload via a dedicated helper that
+            // handles tool-call-only messages (content: null) which
+            // AgentMessage::fromPayload() would reject.
+            $msg = $this->replayAssistantMessage($assistantPayload);
             if (null !== $msg) {
                 $messages[] = $msg;
             }
@@ -502,9 +532,8 @@ final readonly class RunStateReplayService
     /**
      * @param array<string, mixed> $payload
      * @param list<AgentMessage>   $messages
-     * @param array<string, bool>  $pendingToolCalls
      */
-    private function applyMessageEnd(array $payload, RunState $state, array &$messages, array &$pendingToolCalls): RunState
+    private function applyMessageEnd(array $payload, RunState $state, array &$messages): RunState
     {
         $messageRole = \is_string($payload['message_role'] ?? null) ? $payload['message_role'] : null;
 
@@ -588,6 +617,29 @@ final readonly class RunStateReplayService
     // ── Integrity helpers ───────────────────────────────────────────────────
 
     /**
+     * Identifies duplicate event sequence numbers.
+     *
+     * @param list<RunEvent> $events sorted ascending by seq
+     *
+     * @return list<int> duplicate sequence numbers
+     */
+    private function duplicateSequences(array $events): array
+    {
+        $duplicates = [];
+        $seen = [];
+
+        foreach ($events as $event) {
+            if (\in_array($event->seq, $seen, true)) {
+                $duplicates[] = $event->seq;
+            } else {
+                $seen[] = $event->seq;
+            }
+        }
+
+        return $duplicates;
+    }
+
+    /**
      * Orders events by their sequence number in ascending order.
      *
      * @param list<RunEvent> $events
@@ -627,6 +679,57 @@ final readonly class RunStateReplayService
         }
 
         return $missing;
+    }
+
+    /**
+     * Replays an assistant message payload from the canonical event stream.
+     *
+     * Differs from {@see AgentMessage::fromPayload()} in one key aspect:
+     * when the real {@see AgentMessageNormalizer::assistantMessagePayload()}
+     * produces content:null for a tool-call-only assistant response,
+     * {@see AgentMessage::fromPayload()} rejects the payload (it requires
+     * content to be an array).  This helper detects that case and constructs
+     * an {@see AgentMessage} with empty content and tool calls placed in
+     * metadata, matching the semantics of
+     * {@see AgentMessageNormalizer::assistantMessage()}.
+     *
+     * @param array<string, mixed> $payload
+     */
+    private function replayAssistantMessage(array $payload): ?AgentMessage
+    {
+        $msg = AgentMessage::fromPayload($payload);
+
+        // fromPayload succeeded — standard path for text-bearing messages.
+        if (null !== $msg) {
+            return $msg;
+        }
+
+        // Only handle assistant-role payloads where content is null/missing.
+        // fromPayload rejects these because is_array(content) fails, but
+        // the real AgentMessageNormalizer produces this shape for
+        // tool-call-only assistant responses.
+        $role = $payload['role'] ?? null;
+
+        if ('assistant' !== $role) {
+            return null;
+        }
+
+        $metadata = [];
+        $rawToolCalls = \is_array($payload['tool_calls'] ?? null) ? $payload['tool_calls'] : [];
+        if ([] !== $rawToolCalls) {
+            $metadata['tool_calls'] = $rawToolCalls;
+        }
+
+        $details = \is_array($payload['details'] ?? null) && [] !== $payload['details']
+            ? $payload['details']
+            : null;
+
+        return new AgentMessage(
+            role: 'assistant',
+            content: [],
+            details: $details,
+            metadata: $metadata,
+        );
     }
 
     /**

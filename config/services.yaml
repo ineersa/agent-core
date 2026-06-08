@@ -416,6 +416,7 @@ services:
   Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor:
     arguments:
       $handlers: !tagged_iterator agent_core.run_message_handler
+      $runStateReplayService: '@Ineersa\AgentCore\Application\Handler\RunStateReplayService'
 
   Ineersa\AgentCore\Application\Handler\StepDispatcher:
     arguments:
