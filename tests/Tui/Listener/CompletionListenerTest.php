@@ -15,6 +15,7 @@ use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Completion\SlashCommandCompletionProvider;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\CompletionListener;
+use Ineersa\Tui\Listener\CompletionMenu;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
@@ -26,6 +27,7 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Tui\Tui;
 
 #[CoversClass(CompletionListener::class)]
+#[CoversClass(CompletionMenu::class)]
 final class CompletionListenerTest extends TestCase
 {
     private PromptEditor $editor;
@@ -474,6 +476,157 @@ final class CompletionListenerTest extends TestCase
         $this->tui->handleInput("\t");
 
         $this->assertSame('/exit ', $this->editor->getText());
+    }
+
+    // ── Enter accepts + submits ───────────────────────────────────
+
+    #[Test]
+    public function enterAcceptsSuggestionAndSubmitsWhenMenuOpen(): void
+    {
+        $this->tui->setFocus($this->screen->editorWidget());
+
+        // Wire onSubmit to capture the submitted text from EditorWidget.
+        $submittedText = null;
+        $this->screen->editorWidget()->onSubmit(
+            static function (\Symfony\Component\Tui\Event\SubmitEvent $event) use (&$submittedText): void {
+                $submittedText = $event->getValue();
+            },
+        );
+
+        $this->editor->setText('/he');
+
+        // Tab: open menu
+        $this->tui->handleInput("\t");
+        $this->assertSame('/he', $this->editor->getText());
+
+        // Enter: accept first suggestion (/help) + let Enter propagate to
+        // EditorWidget → submit fires.
+        $this->tui->handleInput("\n");
+
+        // Editor text was set to '/help ' by completion acceptance.
+        // SubmitListener would normally extract() and clear, but in this
+        // fixture only EditorWidget's raw SubmitEvent fires.
+        $this->assertSame('/help ', $this->editor->getText());
+
+        // onSubmit callback received the completed command text.
+        $this->assertSame('/help ', $submittedText);
+    }
+
+    #[Test]
+    public function enterAfterNavigationSubmitsSelectedCommand(): void
+    {
+        $this->tui->setFocus($this->screen->editorWidget());
+
+        $submittedText = null;
+        $this->screen->editorWidget()->onSubmit(
+            static function (\Symfony\Component\Tui\Event\SubmitEvent $event) use (&$submittedText): void {
+                $submittedText = $event->getValue();
+            },
+        );
+
+        $this->editor->setText('/');
+
+        // Tab: open menu
+        $this->tui->handleInput("\t");
+
+        // Navigate Down twice (built-ins: /clear, /exit, /help)
+        $this->tui->handleInput("\x1b[B");
+        $this->tui->handleInput("\x1b[B");
+
+        // Enter: accept /help + submit
+        $this->tui->handleInput("\n");
+
+        $this->assertSame('/help ', $this->editor->getText());
+        $this->assertSame('/help ', $submittedText);
+    }
+
+    #[Test]
+    public function enterPassesThroughWhenMenuClosed(): void
+    {
+        $this->tui->setFocus($this->screen->editorWidget());
+
+        // No slash context — completion stays closed for Enter.
+        $this->editor->setText('hello');
+
+        $submittedText = null;
+        $this->screen->editorWidget()->onSubmit(
+            static function (\Symfony\Component\Tui\Event\SubmitEvent $event) use (&$submittedText): void {
+                $submittedText = $event->getValue();
+            },
+        );
+
+        $this->tui->handleInput("\n");
+
+        // Completion has no menu open — Enter passes through.
+        $this->assertSame('hello', $this->editor->getText());
+        $this->assertSame('hello', $submittedText);
+    }
+
+    // ── Cursor at end after acceptance ────────────────────────────
+
+    #[Test]
+    public function typingAfterTabAcceptAppendsArgsAfterCommand(): void
+    {
+        $this->tui->setFocus($this->screen->editorWidget());
+
+        $this->editor->setText('/');
+
+        // Navigate to /help (index 2 of built-ins: clear, exit, help)
+        $this->tui->handleInput("\t");   // open
+        $this->tui->handleInput("\x1b[B"); // down → /exit
+        $this->tui->handleInput("\x1b[B"); // down → /help
+        $this->tui->handleInput("\t");   // accept
+
+        $this->assertSame('/help ', $this->editor->getText());
+
+        // Type additional arguments — must appear AFTER the command.
+        $this->tui->handleInput('f');
+        $this->tui->handleInput('o');
+        $this->tui->handleInput('o');
+
+        $this->assertSame('/help foo', $this->editor->getText());
+    }
+
+    #[Test]
+    public function tabAcceptPreservesMultilineCursorPlacement(): void
+    {
+        $this->tui->setFocus($this->screen->editorWidget());
+
+        $this->editor->setText("previous line\n/");
+
+        // Accept first suggestion (/clear)
+        $this->tui->handleInput("\t"); // open
+        $this->tui->handleInput("\t"); // accept
+
+        $this->assertSame("previous line\n/clear ", $this->editor->getText());
+
+        // Type after acceptance — cursor must be at end of last line.
+        $this->tui->handleInput('a');
+
+        $this->assertSame("previous line\n/clear a", $this->editor->getText());
+    }
+
+    #[Test]
+    public function enterAcceptThenTypeArgsWorks(): void
+    {
+        $this->tui->setFocus($this->screen->editorWidget());
+
+        $this->editor->setText('/ex');
+
+        // Tab: open (only /exit matches /ex)
+        $this->tui->handleInput("\t");
+
+        // Enter: accept /exit + submit propagates
+        $this->tui->handleInput("\n");
+
+        $this->assertSame('/exit ', $this->editor->getText());
+
+        // Type args after Enter-submit acceptance
+        $this->tui->handleInput('a');
+        $this->tui->handleInput('r');
+        $this->tui->handleInput('g');
+
+        $this->assertSame('/exit arg', $this->editor->getText());
     }
 
     // ── Command execution not invoked on Tab ──────────────────────

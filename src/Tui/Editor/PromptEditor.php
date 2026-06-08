@@ -61,6 +61,35 @@ final class PromptEditor
         $this->widget->setText($text);
     }
 
+    /**
+     * Set editor text and reposition the cursor at the end.
+     *
+     * Symfony EditorWidget does not expose a public cursor API.
+     * This adapter uses a tightly-scoped reflection access on the
+     * private EditorDocument so the cursor lands after the inserted
+     * command text rather than at line 0/col 0 (the setText default).
+     *
+     * Replace with a public cursor API if/when Symfony exposes one.
+     * Keep the reflection internal to PromptEditor; callers must not
+     * replicate this pattern.
+     */
+    public function setTextWithCursorAtEnd(string $text): void
+    {
+        $this->widget->setText($text);
+
+        // Access the private EditorDocument so we can move the
+        // cursor after the default setText reset.
+        $docProp = (new \ReflectionClass($this->widget))->getProperty('document');
+        /** @var \Symfony\Component\Tui\Widget\Editor\EditorDocument $document */
+        $document = $docProp->getValue($this->widget);
+
+        $lines = $document->getLines();
+        $lastLine = \count($lines) - 1;
+        $document->setCursorLine($lastLine);
+        $document->setCursorCol(\strlen($lines[$lastLine]));
+        $this->widget->invalidate();
+    }
+
     // ─── Lifecycle ───────────────────────────────────────────────
 
     /**
