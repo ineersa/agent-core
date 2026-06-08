@@ -29,7 +29,7 @@ Parallelizable with: EDITOR-06, EDITOR-07.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/editor-08-completion-foundation-slash
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-08-completion-foundation-slash
 Fork run: ljsv66d8tm3t
@@ -182,11 +182,11 @@ Risks/notes for implementor:
 - Summary: Final reviewer subagent verdict for current HEAD 01915f6f: APPROVE. Reviewer confirmed prior suggestions resolved: explicit registry order assertion in SlashCommandCompletionProviderTest and documenting non-end CompletionContext cursor-offset MVP behavior test. No critical issues, bugs, or blockers. Branch was rebased cleanly on origin/main by fork vj4a4dwv1v0w; current task worktree status clean.
 - task-to-pr final review: reviewer approved HEAD 01915f6f after review-iteration forks cf6u7r92u2yu and vj4a4dwv1v0w. Focused Castor validation passed locally; proceeding to move_task(to="CODE-REVIEW") for full LLM_MODE=true castor check quality gate and PR creation.
 Castor Check Status: passed
-Castor Check Commit: 6a0b3093db31c1f761c27f3333e243273e699b4f
+Castor Check Commit: 5efd6f10a6c2bc6cf9f4caa23be8de2a553b9a2a
 Castor Check Command: LLM_MODE=true castor check
 Castor Check Timeout: 900s
-Castor Check Completed: 2026-06-08T19:53:11.020Z
-Castor Check Output SHA256: debe9bd7027e19303b9c02304ed5ca7a47ca6fa64294edb887b3bb8d798e57a2
+Castor Check Completed: 2026-06-08T20:55:00.784Z
+Castor Check Output SHA256: 70165f7b2ad4883e52dc901c69ee78c76b9769a405152cf9dbb437fb41f207f0
 
 ## Task workflow update - 2026-06-08T16:22:19.800Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -301,3 +301,10 @@ Castor Check Output SHA256: debe9bd7027e19303b9c02304ed5ca7a47ca6fa64294edb887b3
 - Recorded fork run: ljsv66d8tm3t
 - Validation: fork ljsv66d8tm3t: castor test --filter=ModelCommandHandler passed (17 tests, 50 assertions); fork ljsv66d8tm3t: castor test --filter=ModelPicker passed (8 tests, 23 assertions); fork ljsv66d8tm3t: castor test --filter=PickerOverlay passed (9 tests, 17 assertions); fork ljsv66d8tm3t: castor test --filter=SlashCommandCompletionProvider passed (24 tests, 42 assertions); fork ljsv66d8tm3t: castor test --filter=Completion passed (82 tests, 170 assertions); fork ljsv66d8tm3t: castor test --filter=SlashCommandRegistry passed (37 tests, 83 assertions); fork ljsv66d8tm3t: castor test --filter=PromptHistory passed (29 tests, 58 assertions); fork ljsv66d8tm3t: castor deptrac passed (0 violations); fork ljsv66d8tm3t: castor phpstan passed (0 errors); fork ljsv66d8tm3t: castor cs-check clean; fork ljsv66d8tm3t: LLM_MODE=true castor check passed (2131 tests, TUI E2E, real LLM, controller E2E, deptrac, phpstan, cs-check); orchestrator git verification: worktree clean at 5efd6f10; diff vs origin/main is 24 files, 2547 insertions, 211 deletions
 - Summary: Implementation fork ljsv66d8tm3t completed at commit 5efd6f10 (fix(editor-08): model/favourites UX, picker slot, accent, and no-reflection cursor). Fixes: /model metadata cleaned and simplified to /model [provider/modelname]; canonical /model-favourites command added with singular alias; /model select/sel/fav subcommands removed; picker keybind instructions removed from slash-command descriptions and kept in picker headers; PickerOverlay now mounts via ChatScreen::insertOverlayAfterEditor() so model/favorites pickers render below editor instead of below footer; current model labels are theme-accented in model and favorites pickers; SlashCommandCompletionProvider now only triggers when editor text starts with `/`; PromptEditor cursor-at-end behavior no longer uses production reflection, using public EditorWidget input handling instead.
+
+## Task workflow update - 2026-06-08T20:55:02.172Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: 5efd6f10a6c2.
+- Pushed task/editor-08-completion-foundation-slash to origin.
+- branch 'task/editor-08-completion-foundation-slash' set up to track 'origin/task/editor-08-completion-foundation-slash'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/106
