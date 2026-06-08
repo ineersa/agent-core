@@ -98,7 +98,7 @@ public function listSessions(string $sortBy = 'updated_at', int $limit = 50, str
 - Validation uses Castor per project rules.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/session-01-session-catalog-and-names
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-01-session-catalog-and-names
 Fork run: qmzc7sgd4u8g
@@ -174,3 +174,8 @@ Castor Check Output SHA256: 06e0576d6bed89759b1af481fd8bf382f8f35866f86e7f1bd305
 - Created PR: https://github.com/ineersa/agent-core/pull/108
 - Validation: Reviewer verdict: APPROVED at HEAD `fb23b07a`.; Local validation: `castor test` PASS — 2082 tests, 6144 assertions, 0 errors/failures/skipped.; Local validation: `castor deptrac` PASS — 0 violations, 0 errors.; Local validation: `castor phpstan` PASS — 0 errors.; Local validation: `castor cs-check` PASS — 0 files fixed.; Previous full gate blocker: LLM/TUI E2E endpoint idle timeout; user indicated endpoint should be healthy now.
 - Summary: SESSION-01 is ready for code review. Strict reviewer approved HEAD `fb23b07a`; focused local validation passed. Previous full-gate failure was diagnosed as external LLM E2E endpoint idle timeout; retrying now after endpoint recovery. Implementation adds nullable session names, migration/runtime migration registration, DB-backed catalog listing API, deterministic display-title fallback, tests, and docs.
+
+## Task workflow update - 2026-06-08T19:14:31.147Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Validation: Read PR #108 inline comments via `gh api repos/ineersa/agent-core/pulls/108/comments --paginate`.; PR comments: HatfieldSession name should be non-null/default from first user message; use Symfony String component for truncation/width; remove sort/order because always same; remove limit entirely.
+- Summary: Moving SESSION-01 back to IN-PROGRESS to address PR #108 code review feedback. Inline comments require: make session `name` non-null and default it from first user message stripped/truncated to 200 chars; prefer Symfony String over `mb_strimwidth()`/manual multibyte truncation; remove unused sort/order catalog complexity; remove catalog limit. Main agent remains orchestrator; implementation will be delegated to a fork.
