@@ -101,7 +101,7 @@ public function listSessions(string $sortBy = 'updated_at', int $limit = 50, str
 Status: IN-PROGRESS
 Branch: task/session-01-session-catalog-and-names
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-01-session-catalog-and-names
-Fork run: 8hpsi5tn7cpa
+Fork run: qmzc7sgd4u8g
 PR URL:
 PR Status:
 Started: 2026-06-08T16:11:14.248Z
@@ -148,3 +148,9 @@ Completed:
 - Validation: Reviewer verdict on `d59bd304`: APPROVE WITH SUGGESTIONS; no critical issues, no issues.; Prior review findings confirmed resolved: stable row shape, whitespace-only name test, mb_strimwidth fallback removal, timestamp-ordering rationale.
 - Summary: Final reviewer pass on HEAD `d59bd304` returned APPROVE WITH SUGGESTIONS. Prior findings all resolved and no issues/blockers remain. Remaining actionable/sensible items before strict approval: simplify duplicate `resolvePromptPreview()` call in `HatfieldSessionStore::listSessions()`/`resolveDisplayTitle()`, and refresh/rebase branch onto current `origin/main` to remove two-dot branch-base hygiene noise around unrelated task metadata files. Pre-existing `loadMetadata()` asymmetric nullable key policy is noted as awareness only and not changing because tests/docs intentionally document current contract.
 - task-to-pr: launching second review-fix fork for remaining simplify + branch hygiene items before requesting strict APPROVED.
+
+## Task workflow update - 2026-06-08T17:18:22.117Z
+- Recorded fork run: qmzc7sgd4u8g
+- Validation: Verified worktree clean at HEAD `fb23b07a` on branch `task/session-01-session-catalog-and-names`.; Verified branch commits vs origin/main: `2064d8c3` implementation, `4af49e18` review findings, `fb23b07a` simplify display fallback.; Verified canonical diff `origin/main...HEAD`: 8 expected files only; 510 insertions, 5 deletions.; Reviewer verdict: APPROVED for HEAD `fb23b07a`; no issues or blockers.; Local validation: `castor test` PASS — 2082 tests, 6144 assertions, 0 errors/failures/skipped.; Local validation: `castor deptrac` PASS — 0 violations, 0 errors.; Local validation: `castor phpstan` PASS — 0 errors, 0 file errors.; Local validation: `castor cs-check` PASS — 0 files fixed.
+- Summary: Task-to-PR review completed. Second review-fix fork rebased branch onto current `origin/main`, leaving three SESSION-01 commits, and added commit `fb23b07a` simplifying catalog display fallback to compute prompt preview once per row. Canonical PR diff (`origin/main...HEAD`) verified as exactly the expected 8 SESSION-01 files. Strict final reviewer returned APPROVED for HEAD `fb23b07a` with no required/actionable changes. Ready for CODE-REVIEW transition/full Castor gate.
+- task-to-pr: second review-fix fork qmzc7sgd4u8g completed at fb23b07a; strict reviewer approved; focused local Castor validation passed; moving to CODE-REVIEW next.
