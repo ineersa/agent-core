@@ -173,13 +173,27 @@ final class SlashCommandRegistryTest extends TestCase
     }
 
     #[Test]
-    public function executeHelpWithUnknownCommandShowsError(): void
+    public function executeHelpWithUnknownCommandFallsBackToGeneralHelp(): void
     {
+        // `/help nonexistent` falls back to the general help listing
+        // instead of returning an "Unknown command" error.
         $result = $this->registry->execute(new SlashCommand('help', 'nonexistent', '/help nonexistent'));
 
         self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertSame('muted', $result->style);
-        self::assertStringContainsString('Unknown command: /nonexistent', $result->text);
+        self::assertStringContainsString('Available commands:', $result->text);
+        self::assertStringNotContainsString('Unknown command: /nonexistent', $result->text);
+    }
+
+    #[Test]
+    public function executeHelpWithRandomArgFallsBackToGeneralHelp(): void
+    {
+        // `/help 123` should NOT report "Unknown command: /123".
+        $result = $this->registry->execute(new SlashCommand('help', '123', '/help 123'));
+
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringContainsString('Available commands:', $result->text);
+        self::assertStringNotContainsString('Unknown command: /123', $result->text);
+        self::assertStringNotContainsString('/123', $result->text);
     }
 
     #[Test]
@@ -326,7 +340,7 @@ final class SlashCommandRegistryTest extends TestCase
         $handler = new EchoHandler();
 
         $this->registry->register(
-            new CommandMetadata(name: 'echo', aliases: ['e'], description: 'Echo args'),
+            new CommandMetadata(name: 'echo', aliases: ['e'], description: 'Echo args', acceptsArguments: true),
             $handler,
         );
 
@@ -334,6 +348,58 @@ final class SlashCommandRegistryTest extends TestCase
 
         self::assertInstanceOf(TranscriptMessage::class, $result);
         self::assertStringContainsString('got args: hello world', $result->text);
+    }
+
+    // ─── Argument expectations ────────────────────────────────────────
+
+    #[Test]
+    public function noArgCommandIgnoresExtraArgs(): void
+    {
+        // /clear (acceptsArguments=false by default) — args are stripped.
+        $result = $this->registry->execute(new SlashCommand('clear', 'whatever', '/clear whatever'));
+
+        self::assertInstanceOf(ClearTranscript::class, $result);
+    }
+
+    #[Test]
+    public function exitCommandIgnoresExtraArgs(): void
+    {
+        // /exit (acceptsArguments=false by default) — args are stripped.
+        $result = $this->registry->execute(new SlashCommand('exit', 'now', '/exit now'));
+
+        self::assertInstanceOf(ExitApplication::class, $result);
+    }
+
+    #[Test]
+    public function argAcceptingCommandReceivesArgs(): void
+    {
+        $handler = new EchoHandler();
+        $this->registry->register(
+            new CommandMetadata(name: 'argcmd', description: 'Accepts args', acceptsArguments: true),
+            $handler,
+        );
+
+        $result = $this->registry->execute(new SlashCommand('argcmd', 'hello world', '/argcmd hello world'));
+
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringContainsString('got args: hello world', $result->text);
+    }
+
+    #[Test]
+    public function defaultCustomCommandDoesNotAcceptArgs(): void
+    {
+        // Default acceptsArguments=false: handler receives empty args even
+        // if the user typed extras.
+        $handler = new EchoHandler();
+        $this->registry->register(
+            new CommandMetadata(name: 'noarg', description: 'Does not accept args'),
+            $handler,
+        );
+
+        $result = $this->registry->execute(new SlashCommand('noarg', 'stripped', '/noarg stripped'));
+
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringContainsString('got args: (none)', $result->text);
     }
 
     // ─── Metadata access ─────────────────────────────────────────────

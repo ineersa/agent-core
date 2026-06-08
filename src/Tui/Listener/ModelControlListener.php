@@ -61,6 +61,7 @@ final class ModelControlListener implements TuiListenerRegistrar
                     aliases: ['m'],
                     description: 'Interactive model selection. /model opens the model picker (arrows move, Enter selects, Esc cancels, Ctrl+F toggles favorite). /model fav opens the favorites picker (Space toggles, Enter saves).',
                     usage: '/model | /model select <provider/modelname> | /model fav | /model fav <provider/modelname>',
+                    acceptsArguments: true,
                 ),
                 $modelHandler,
             );

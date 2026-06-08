@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Listener;
 
 use Ineersa\Tui\Completion\CompletionState;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\SelectListWidget;
@@ -22,6 +23,11 @@ use Symfony\Component\Tui\Widget\TextWidget;
  * menu stays visible.  Navigation / accept / cancel is driven by the
  * {@see CompletionListener} InputEvent handler, not by SelectListWidget's
  * built-in keybindings.
+ *
+ * Selected-row highlighting uses the app theme accent colour, matching the
+ * visual pattern established by ModelPickerController and QuestionController
+ * where labels are theme-coloured before being passed into SelectListWidget.
+ * SelectListWidget's native selected style (bold) layers on top.
  *
  * Uses {@see ChatScreen::insertOverlayAfterEditor()} so the menu renders
  * below the prompt instead of overlaying it (unlike question/picker menus
@@ -54,13 +60,17 @@ final class CompletionMenu
 
         $header = new TextWidget(
             text: $this->theme->muted(
-                'Slash commands \u{2014} arrows move, Tab inserts, Enter runs, Esc closes',
+                'Slash commands — arrows move, Tab inserts, Enter runs, Esc closes',
             ),
             truncate: true,
         );
         $this->container->add($header);
 
-        $items = self::buildItems($state->getSuggestions());
+        $items = self::buildItems(
+            $state->getSuggestions(),
+            $this->theme,
+            $state->getSelectedIndex(),
+        );
 
         $this->listWidget = new SelectListWidget(
             items: $items,
@@ -85,7 +95,11 @@ final class CompletionMenu
             return;
         }
 
-        $items = self::buildItems($state->getSuggestions());
+        $items = self::buildItems(
+            $state->getSuggestions(),
+            $this->theme,
+            $state->getSelectedIndex(),
+        );
         $this->listWidget->setItems($items);
         $this->listWidget->setSelectedIndex($state->getSelectedIndex());
     }
@@ -113,20 +127,34 @@ final class CompletionMenu
      * Build SelectListWidget item arrays from completion suggestions.
      *
      * Value is the suggestion index (string) so callers can map back
-     * when needed; label and description come directly from the DTO.
+     * when needed.  The label is theme-coloured (accent when selected,
+     * default when not) so the selected row is visibly distinct beyond
+     * SelectListWidget's built-in bold alone.  Descriptions are rendered
+     * in muted colour, matching ModelPickerController's description style.
      *
      * @param list<\Ineersa\Tui\Completion\CompletionSuggestion> $suggestions
      *
      * @return list<array{value: string, label: string, description?: string}>
      */
-    private static function buildItems(array $suggestions): array
-    {
+    private static function buildItems(
+        array $suggestions,
+        TuiTheme $theme,
+        int $selectedIndex,
+    ): array {
         $items = [];
         foreach ($suggestions as $i => $s) {
+            $label = $i === $selectedIndex
+                ? $theme->color(ThemeColorEnum::Accent, $s->display)
+                : $s->display;
+
+            $description = '' !== $s->description
+                ? $theme->muted($s->description)
+                : '';
+
             $items[] = [
                 'value' => (string) $i,
-                'label' => $s->display,
-                'description' => $s->description,
+                'label' => $label,
+                'description' => $description,
             ];
         }
 
