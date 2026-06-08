@@ -57,33 +57,38 @@ and `updateMetadata()`.  The returned array shape for callers:
     'model_provider' => 'deepseek',              // nullable
     'model_name'     => 'deepseek-v4-pro',       // nullable
     'reasoning'  => 'medium',                    // nullable
-    'name'       => 'My session',                // nullable, user-visible display name
+    'name'       => 'Write a README',              // non-empty, initialized from first user message
 ]
 ```
 
 Non-null keys are always present; nullable fields are only included when
-non-null. There is no separate public_id column — the auto-increment
-integer primary key is cast to string for all external identifiers.
+non-null. `name` is always a non-empty string, initialized from the
+first user message (trimmed, collapsed to one line, capped at 200 chars)
+during session creation and later renameable via `/rename`. There is no
+separate public_id column — the auto-increment integer primary key is
+cast to string for all external identifiers.
 
 Future forking will add parent_id/root_id support (see [Future fork tree](#future-fork-tree)).
 
 ### Session naming and display
 
-The `name` column is an optional user-visible display name, nullable by
-default. It is persisted in the `hatfield_session` DB table and returned
-by `loadMetadata()` and `listSessions()`.  When `name` is null (the
-common case for unnamed sessions), the display title is computed
-deterministically without mutating the database:
+The `name` column is a non-empty display name guaranteed to be present
+for every session. It is initialized from the first user message/prompt
+on creation (trimmed, internal whitespace collapsed to single spaces,
+and capped at 200 characters via Symfony String).  Empty or
+whitespace-only prompts receive the deterministic default `"Session"`.
+Persisted in `hatfield_session.name` and returned unconditionally by
+`loadMetadata()` and `listSessions()`.
 
-1. **Explicit name** — returned as-is when set (via `/rename`).
-2. **Prompt preview** — the initial prompt truncated to 60 characters
-   (multibyte-safe) with a `...` ellipsis suffix.
-3. **`Session <id>`** — when no prompt exists.
+A stored non-empty `name` is always the `displayTitle` in picker output.
+The `promptPreview` field remains a separate computed value (first 60
+characters of the prompt, with `...` ellipsis when truncated) for rich
+picker display, but does not determine the display title.
 
-This fallback is computed by `HatfieldSessionStore::listSessions()`
-as the `displayTitle` field — a non-persisted, picker-friendly value.
-The raw `name` field is always available separately for commands that
-need the canonical value.
+`updateMetadata(['name' => ...])` supports renaming (e.g. via `/rename`).
+Empty, whitespace-only, null, or non-string values are normalized to the
+same deterministic default `"Session"` — the name column is never null
+and never empty after an update.
 
 ### Storage model at a glance
 
@@ -411,7 +416,7 @@ embedded IDs.
 | Session pruning/cleanup | Low | No auto-expiry or `session:prune` command. Orphaned sessions accumulate. |
 | Fork command (`session:fork`) | Medium | Planned; storage model is ready. Needs rewrite logic + CLI command. |
 | Attachments storage (`attachments/`) | Low | Directory created in layout docs but not yet used. Will store pasted files, images, diffs. |
-| Session rename / alias | **In progress** | SESSION-01 added `name` column + listing; SESSION-04 `/rename` is the TUI command. |
+| Session rename / alias | **In progress** | SESSION-01 added `name` column (non-null, initialized from first user message) + listing; SESSION-04 `/rename` is the TUI command. |
 | Runtime event streaming | Medium | Current polling is synchronous full-scan. Incremental delivery would improve large sessions. |
 | Rebuild `state.json` from `events.jsonl` | **Done** | `RunStateReplayService` rebuilds RunState from canonical events when `state.json` is missing or stale. `state.json` is now a disposable cache. |
 ## Related documents

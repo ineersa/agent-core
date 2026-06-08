@@ -9,6 +9,8 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Entity\HatfieldSessionRepository;
 
+use function Symfony\Component\String\u;
+
 /**
  * Session persistence backed by the hatfield_session DB table and the
  * Hatfield config filesystem.
@@ -27,8 +29,10 @@ use Ineersa\CodingAgent\Entity\HatfieldSessionRepository;
  * session identity.
  *
  * An optional user-visible display name (the `name` column) can be set
- * via /rename.  Unnamed sessions use a deterministic fallback: the
- * truncated initial prompt, or `Session <id>` when no prompt exists.
+ * via /rename.  It is initialized from the first user message (trimmed,
+ * collapsed to one line, capped at 200 chars) and guaranteed non-empty.
+ * Unnamed/explicitly-cleared sessions receive the default fallback
+ * "Session".
  *
  * session_id === run_id in Hatfield. One directory equals one session
  * equals one agent run equals one future fork tree node.
@@ -54,9 +58,10 @@ final class HatfieldSessionStore
      * Create a new session, insert a DB metadata row, and return its ID.
      *
      * Inserts a HatfieldSession entity to obtain an auto-increment
-     * integer ID, then creates the session directory under
-     * .hatfield/sessions/<id>/ containing state.json and events.jsonl
-     * (all empty).
+     * integer ID, generates the initial session name from the prompt
+     * (trimmed, collapsed to one line, capped at 200 chars), then
+     * creates the session directory under .hatfield/sessions/<id>/
+     * containing state.json and events.jsonl (both empty).
      *
      * Metadata is the DB row — no metadata.yaml is written.
      *
@@ -74,6 +79,7 @@ final class HatfieldSessionStore
         $session = new HatfieldSession();
         $session->cwd = $this->appConfig->cwd;
         $session->prompt = '' !== $prompt ? $prompt : null;
+        $session->name = $this->resolveDefaultName($prompt);
 
         $this->entityManager->persist($session);
         $this->entityManager->flush();
@@ -106,8 +112,8 @@ final class HatfieldSessionStore
      *
      * Returns the same array shape callers expect: session_id, run_id,
      * parent_id, root_id, created_at, updated_at, cwd, prompt, model,
-     * model_provider, model_name, reasoning. Only returns keys with
-     * non-null values (except session_id/run_id/cwd/created_at/updated_at
+     * model_provider, model_name, reasoning, name. Only returns keys with
+     * non-null values (except session_id/run_id/cwd/name/created_at/updated_at
      * which are always present).
      *
      * @return array<string, mixed>|null Null if the session row does not exist
@@ -153,9 +159,7 @@ final class HatfieldSessionStore
         if (null !== $entity->reasoning) {
             $meta['reasoning'] = $entity->reasoning;
         }
-        if (null !== $entity->name) {
-            $meta['name'] = $entity->name;
-        }
+        $meta['name'] = $entity->name;
 
         return $meta;
     }
@@ -216,9 +220,16 @@ final class HatfieldSessionStore
             $dirty = true;
         }
         if (\array_key_exists('name', $meta)) {
-            $entity->name = \is_string($meta['name'])
-                ? ('' !== trim($meta['name']) ? trim($meta['name']) : null)
-                : null;
+            if (\is_string($meta['name'])) {
+                $name = u($meta['name'])
+                    ->trim()
+                    ->replaceMatches('/\s+/u', ' ')
+                    ->truncate(200, '');
+                $nameStr = $name->toString();
+                $entity->name = '' !== $nameStr ? $nameStr : 'Session';
+            } else {
+                $entity->name = 'Session';
+            }
             $dirty = true;
         }
 
@@ -239,22 +250,17 @@ final class HatfieldSessionStore
     }
 
     /**
-     * Return recent sessions with metadata suitable for picker/catalog display.
+     * Return all sessions with metadata suitable for picker/catalog display,
+     * sorted by updated_at DESC (most recent first).
      *
      * Delegates the DB query to HatfieldSessionRepository::findForCatalog()
-     * and enriches each row with a computed, non-persisted displayTitle.
-     * The display fallback is deterministic and does not mutate the DB:
-     *   1. Explicit name (non-empty trimmed)
-     *   2. Truncated prompt preview (multibyte-safe, 60 chars + ellipsis)
-     *   3. "Session <id>"
-     *
-     * @param string $sortBy External key: 'updated_at', 'created_at', 'prompt', or 'name'
-     * @param int    $limit  Max results (1..200)
-     * @param string $order  'ASC' or 'DESC'
+     * and enriches each row with a computed, non-persisted promptPreview.
+     * The `name` field is guaranteed non-empty (generated from the first user
+     * message or set to the fallback "Session"); `displayTitle` equals `name`.
      *
      * @return list<array{
      *     sessionId: string,
-     *     name: ?string,
+     *     name: string,
      *     displayTitle: string,
      *     cwd: string,
      *     prompt: ?string,
@@ -267,19 +273,14 @@ final class HatfieldSessionStore
      *     updated_at: string,
      * }>
      */
-    public function listSessions(
-        string $sortBy = 'updated_at',
-        int $limit = 50,
-        string $order = 'DESC',
-    ): array {
-        $entities = $this->getRepository()->findForCatalog($sortBy, $limit, $order);
+    public function listSessions(): array
+    {
+        $entities = $this->getRepository()->findForCatalog();
         $result = [];
 
         foreach ($entities as $entity) {
             $id = (string) $entity->id;
-            $name = null !== $entity->name && '' !== trim($entity->name)
-                ? trim($entity->name)
-                : null;
+            $name = $entity->name;
             $promptPreview = $this->resolvePromptPreview($entity->prompt);
             $displayTitle = $this->resolveDisplayTitle($id, $name, $promptPreview);
 
@@ -318,13 +319,16 @@ final class HatfieldSessionStore
      * Compute the user-visible display title without mutating the DB.
      *
      * Accepts an already-computed prompt preview so the caller avoids
-     * duplicate mb_strimwidth work when also storing the preview.
+     * duplicate truncation when also storing the preview.
      *
-     * Fallback order: explicit name → prompt preview → "Session <id>".
+     * Fallback order: name → prompt preview → "Session <id>".
+     * The name branch is always taken in normal operation (name is
+     * guaranteed non-empty by createSession and updateMetadata); the
+     * other branches are defensive only.
      */
-    private function resolveDisplayTitle(string $sessionId, ?string $name, ?string $promptPreview): string
+    private function resolveDisplayTitle(string $sessionId, string $name, ?string $promptPreview): string
     {
-        if (null !== $name && '' !== $name) {
+        if ('' !== $name) {
             return $name;
         }
 
@@ -336,7 +340,7 @@ final class HatfieldSessionStore
     }
 
     /**
-     * Build a multibyte-safe truncated prompt preview.
+     * Build a graphene-safe truncated prompt preview via Symfony String.
      *
      * Returns null when the prompt is empty or null.
      */
@@ -346,9 +350,35 @@ final class HatfieldSessionStore
             return null;
         }
 
-        $preview = mb_strimwidth($prompt, 0, 60, '...');
+        return u($prompt)->truncate(60, '...')->toString();
+    }
 
-        return $preview;
+    /**
+     * Generate the initial session name from the first user message.
+     *
+     * Trims leading/trailing whitespace, collapses internal whitespace/
+     * newlines to single spaces, and truncates to 200 characters
+     * (grapheme-safe via Symfony String).  Empty/whitespace-only prompts
+     * receive the deterministic fallback "Session".
+     */
+    private function resolveDefaultName(?string $prompt): string
+    {
+        if (null === $prompt || '' === trim($prompt)) {
+            return 'Session';
+        }
+
+        $name = u($prompt)
+            ->trim()
+            ->replaceMatches('/\s+/u', ' ')
+            ->truncate(200, '');
+
+        $nameStr = $name->toString();
+
+        if ('' === $nameStr) {
+            return 'Session';
+        }
+
+        return $nameStr;
     }
 
     /**

@@ -70,9 +70,10 @@ class HatfieldSession
     #[ORM\Column(type: 'string', nullable: true)]
     public ?string $reasoning = null;
 
-    /** Optional user-visible display name set via /rename. Null for unnamed sessions. */
-    #[ORM\Column(type: 'string', length: 255, nullable: true)]
-    public ?string $name = null;
+    /** User-visible session display name, initialized from the first user message
+     * and later renameable via /rename. Capped at 200 characters. */
+    #[ORM\Column(type: 'string', length: 200)]
+    public string $name = '';
 
     #[ORM\Column(name: 'created_at', type: 'datetime_immutable')]
     public \DateTimeImmutable $createdAt;

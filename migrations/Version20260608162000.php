@@ -11,12 +11,12 @@ final class Version20260608162000 extends AbstractMigration
 {
     public function getDescription(): string
     {
-        return 'Add optional session display name column to hatfield_session';
+        return 'Add mandatory session display name column to hatfield_session';
     }
 
     public function up(Schema $schema): void
     {
-        $this->addSql('ALTER TABLE hatfield_session ADD COLUMN name VARCHAR(255) DEFAULT NULL');
+        $this->addSql("ALTER TABLE hatfield_session ADD COLUMN name VARCHAR(200) DEFAULT '' NOT NULL");
     }
 
     public function down(Schema $schema): void
