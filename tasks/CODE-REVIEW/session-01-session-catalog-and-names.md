@@ -98,7 +98,7 @@ public function listSessions(string $sortBy = 'updated_at', int $limit = 50, str
 - Validation uses Castor per project rules.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/session-01-session-catalog-and-names
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-01-session-catalog-and-names
 Fork run: xnok4c30na04
@@ -160,11 +160,11 @@ Completed:
 - Summary: Attempted CODE-REVIEW transition for SESSION-01 at approved HEAD `fb23b07a`. `move_task(to=CODE-REVIEW)` full Castor quality gate failed during TUI E2E: TUI remained at `Working...` and timed out waiting for assistant/error output. Immediate reruns showed environment-level LLM E2E failure unrelated to SESSION-01: `castor test:tui` reproduced the same Working timeout; `castor test:llm-real` failed twice across all 5 LLM-real tests with queued `llm_<run>` messages and `Idle timeout reached for http://192.168.2.38:9052/v1/chat/completions`. Since SESSION-01 touches only session metadata/listing and local unit/integration/deptrac/phpstan/cs-check all pass, no implementation fork was launched. Task remains IN-PROGRESS until the llama.cpp test endpoint/LLM E2E environment recovers and full gate can pass.
 - task-to-pr: full Castor gate is blocked by external llama.cpp/LLM E2E endpoint idle timeouts, so task remains IN-PROGRESS; retry CODE-REVIEW transition once LLM E2E environment is healthy.
 Castor Check Status: passed
-Castor Check Commit: fb23b07a575cddecd030d9901cc5c676a3b0c668
+Castor Check Commit: bfc4bfca7b4af69c2296a80ef64e19443774c50d
 Castor Check Command: LLM_MODE=true castor check
 Castor Check Timeout: 900s
-Castor Check Completed: 2026-06-08T18:07:31.184Z
-Castor Check Output SHA256: 06e0576d6bed89759b1af481fd8bf382f8f35866f86e7f1bd305cc549fdbfa7a
+Castor Check Completed: 2026-06-08T19:41:53.403Z
+Castor Check Output SHA256: fb76f54c1d7fd626a17fb75d5043bebd8f4cb1ccc6d18afd45b57c09f55caad9
 
 ## Task workflow update - 2026-06-08T18:07:35.070Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -207,3 +207,12 @@ Castor Check Output SHA256: 06e0576d6bed89759b1af481fd8bf382f8f35866f86e7f1bd305
 - Validation: Reviewer verdict: APPROVED for HEAD `bfc4bfca`.; Local validation at HEAD `bfc4bfca`: `castor test --filter=HatfieldSessionStoreTest` PASS — 28 tests, 117 assertions.; Local validation at HEAD `bfc4bfca`: `castor test --filter=SessionAwareModelResolverTest` PASS — 7 tests, 16 assertions.; Local validation at HEAD `bfc4bfca`: `castor test` PASS — 2087 tests, 6166 assertions.; Local validation at HEAD `bfc4bfca`: `castor deptrac` PASS — 0 violations.; Local validation at HEAD `bfc4bfca`: `castor phpstan` PASS — 0 errors.; Local validation at HEAD `bfc4bfca`: `castor cs-check` PASS — 0 files fixed.
 - Summary: Final reviewer sign-off completed for HEAD `bfc4bfca`. Reviewer verdict: APPROVED. Confirmed all PR #108 inline comments addressed: non-null `name` generated from first prompt and capped at 200, Symfony String truncation/normalization, no sort/order parameters, no list limit. Confirmed cleanup findings fixed: `HatfieldSessionStore` docblock no longer says optional name, stale no-limit test comment removed. No issues/blockers remain.
 - task-review-iterate: final reviewer approved bfc4bfca; moving back to CODE-REVIEW/full gate.
+
+## Task workflow update - 2026-06-08T19:41:55.208Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: bfc4bfca7b4a.
+- Pushed task/session-01-session-catalog-and-names to origin.
+- branch 'task/session-01-session-catalog-and-names' set up to track 'origin/task/session-01-session-catalog-and-names'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/108
+- Validation: Reviewer verdict: APPROVED at HEAD `bfc4bfca`.; Local validation: `castor test --filter=HatfieldSessionStoreTest` PASS — 28 tests, 117 assertions.; Local validation: `castor test --filter=SessionAwareModelResolverTest` PASS — 7 tests, 16 assertions.; Local validation: `castor test` PASS — 2087 tests, 6166 assertions, 0 errors/failures/skipped.; Local validation: `castor deptrac` PASS — 0 violations, 0 errors.; Local validation: `castor phpstan` PASS — 0 errors.; Local validation: `castor cs-check` PASS — 0 files fixed.
+- Summary: SESSION-01 PR #108 feedback has been addressed and approved. Updated HEAD `bfc4bfca` makes session `name` non-null/generated from the first prompt and capped at 200 chars, uses Symfony String for normalization/truncation, removes sort/order complexity, removes list limits, and cleans reviewer-noted comments. Final reviewer approved; focused local Castor validation passed.
