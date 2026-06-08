@@ -28,12 +28,12 @@ Parallelizable with: EDITOR-06 and EDITOR-08, but avoid concurrent session stora
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/editor-07-prompt-history-session-persistence
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-07-prompt-history-session-persistence
 Fork run: 6126vm4szkvv
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/103
+PR Status: open
 Started: 2026-06-08T00:25:29.815Z
 Completed:
 
@@ -69,3 +69,16 @@ Completed:
 - Recorded fork run: 6126vm4szkvv
 - Validation: follow-up fork reported: castor test --filter=PromptHistory ok (29 tests, 58 assertions); follow-up fork reported: castor deptrac ok (0 violations); follow-up fork reported: castor phpstan ok (0 errors); follow-up fork reported: castor cs-check ok; parent checked: git diff --stat 4b1412fd..3ac834d9 shows 4 files changed, 67 insertions, 11 deletions; parent checked: git diff --check 4b1412fd..3ac834d9 passed; parent checked: worktree status clean at HEAD 3ac834d9
 - Summary: Follow-up fork completed at commit 3ac834d9 (fix(editor-07): address reviewer suggestions). Parent checked follow-up diff: 4 files changed, 67 insertions, 11 deletions; worktree clean at HEAD 3ac834d9. Changes address reviewer suggestions without altering core design: Up at oldest active history entry is consumed as no-op; PromptHistoryListener docblock now explicitly warns EditorWidget::onInput() is single-slot and future completion work must compose; unused test imports removed; currentCursor() renamed to currentBlockIndex(). User smoke tested and reports it works. Reviewer was not relaunched per user instruction.
+Castor Check Status: passed
+Castor Check Commit: 3ac834d95a3520634e67e0202d987affc8d1ca95
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 900s
+Castor Check Completed: 2026-06-08T00:58:18.785Z
+Castor Check Output SHA256: 0fe1a88462a74aed21023c51a031f695f9ec3ffbad2fd3d2f3a62341b3d03fb5
+
+## Task workflow update - 2026-06-08T00:58:22.057Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: 3ac834d95a35.
+- Pushed task/editor-07-prompt-history-session-persistence to origin.
+- branch 'task/editor-07-prompt-history-session-persistence' set up to track 'origin/task/editor-07-prompt-history-session-persistence'.
+- Created PR: https://github.com/ineersa/agent-core/pull/103
