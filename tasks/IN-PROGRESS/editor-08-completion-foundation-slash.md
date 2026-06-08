@@ -32,7 +32,7 @@ Parallelizable with: EDITOR-06, EDITOR-07.
 Status: IN-PROGRESS
 Branch: task/editor-08-completion-foundation-slash
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-08-completion-foundation-slash
-Fork run: mhatywlucexw
+Fork run: 4jg84u1ws7le
 PR URL: https://github.com/ineersa/agent-core/pull/106
 PR Status: open
 Started: 2026-06-08T15:02:47.293Z
@@ -228,3 +228,7 @@ Castor Check Output SHA256: 83a1d2b4efc86fe2b0d27b8694499b922ccc94caf94dc6e1c967
 ## Task workflow update - 2026-06-08T17:04:24.555Z
 - Recorded fork run: mhatywlucexw
 - Summary: After user smoke-test fix commit 2d05c69f, reviewer subagent returned APPROVE WITH SUGGESTIONS. No blockers. Launched cleanup fork mhatywlucexw to address actionable low-risk items: rename misleading/typo tests, add backspace-to-empty and live-open navigation coverage, remove dead predictNextText guard, fix docblock/comment typos, and make backspace prediction grapheme-aware if low risk. Full gate will be rerun when moving back to CODE-REVIEW.
+
+## Task workflow update - 2026-06-08T17:10:54.763Z
+- Recorded fork run: 4jg84u1ws7le
+- Summary: Cleanup commit 401b7436 was re-reviewed: verdict APPROVE WITH SUGGESTIONS, no blockers. Launched tiny fork 4jg84u1ws7le to correct technically inaccurate comment wording from 'grapheme-safe' to UTF-8/code-point-safe backspace prediction. Skipping NTH multibyte/fallback test notes as low-priority MVP nice-to-haves.
