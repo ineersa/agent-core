@@ -101,7 +101,7 @@ public function listSessions(string $sortBy = 'updated_at', int $limit = 50, str
 Status: IN-PROGRESS
 Branch: task/session-01-session-catalog-and-names
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-01-session-catalog-and-names
-Fork run: ge9ed9uc2eaa
+Fork run: 8hpsi5tn7cpa
 PR URL:
 PR Status:
 Started: 2026-06-08T16:11:14.248Z
@@ -137,3 +137,9 @@ Completed:
 - Validation: Reviewer verdict: APPROVE WITH SUGGESTIONS for HEAD 8813499c.; Post-fetch branch diff verified clean: 8 expected SESSION-01 files only; no unrelated task files in `git diff --name-status origin/main...HEAD`.
 - Summary: Reviewer subagent reviewed HEAD `8813499c` and returned APPROVE WITH SUGGESTIONS. Actionable findings to address before PR: (1) `HatfieldSessionStore::listSessions()` PHPDoc promises always-present nullable model/reasoning keys, while implementation conditionally omits them; (2) add whitespace-only name-clearing test; (3) remove inconsistent/dead `mb_strimwidth()` fallback branch; (4) evaluate/improve timestamp-ordering test using `sleep(1)` or document why it remains necessary. Reviewer also flagged apparent unrelated task files, but after fetching `origin/main`, `git diff origin/main...HEAD` contains only the expected 8 SESSION-01 files, so no branch pollution fix is needed.
 - task-to-pr: reviewer pass completed; launching fork to address actionable suggestions.
+
+## Task workflow update - 2026-06-08T16:49:06.464Z
+- Recorded fork run: 8hpsi5tn7cpa
+- Validation: Verified worktree clean on branch `task/session-01-session-catalog-and-names` at `d59bd304`.; Verified review-fix commit stat: 2 files changed, 35 insertions, 27 deletions.; Fork validation: `castor test --filter=HatfieldSessionStoreTest` PASS — 23 tests, 95 assertions.; Fork validation: `castor test --filter=SessionAwareModelResolverTest` PASS — 7 tests, 16 assertions.; Fork validation: `castor test` PASS — 2070 tests, 6097 assertions.; Fork validation: `castor deptrac` PASS — 0 violations, 0 errors.; Fork validation: `castor phpstan` PASS — 0 errors, 0 file errors.; Fork validation: `castor cs-check` PASS — clean, 0 files fixed.
+- Summary: Review-fix fork completed at commit `d59bd304` (`SESSION-01: Address catalog review findings`). Verified worktree clean at HEAD. Changes address reviewer suggestions: `listSessions()` rows now always include nullable `model`, `model_provider`, `model_name`, and `reasoning` keys; added whitespace-only name clearing coverage; removed inconsistent `mb_strimwidth()` fallback; retained `sleep(1)` in ordering test with stronger rationale because current Symfony Clock package lacks deterministic override helpers.
+- task-to-pr: review-fix fork 8hpsi5tn7cpa completed and committed d59bd304; rerunning reviewer on current HEAD.
