@@ -219,3 +219,8 @@ Completed:
 - Validation: move_task(to=CODE-REVIEW) second attempt: full Castor gate FAILED at `test:llm-real` / `ViewImageToolE2eTest::testViewImageToolProducesMetadata` assertion.; Diagnostic rerun: `castor test:llm-real` PASS — tests=5, assertions=37, errors=0, failures=0, skipped=0.
 - Summary: Second move to CODE-REVIEW failed during full Castor gate at `test:llm-real`, specifically `ViewImageToolE2eTest::testViewImageToolProducesMetadata`. This matches prior known real-LLM flakiness and is unrelated to SESSION-02 changes; immediate rerun of `castor test:llm-real` passed. No implementation fork launched. Retrying CODE-REVIEW transition.
 - task-to-pr: full gate encountered transient ViewImageToolE2eTest llm-real flake; subset rerun passed, retrying CODE-REVIEW without code changes.
+
+## Task workflow update - 2026-06-08T23:59:40.101Z
+- Validation: move_task(to=CODE-REVIEW) third attempt: full Castor gate FAILED at `test:llm-real` / `ViewImageToolE2eTest::testViewImageToolProducesMetadata`, line 93 `Failed asserting that false is true`.; Diagnostic rerun: `castor test:llm-real` PASS — tests=5, assertions=37, errors=0, failures=0, skipped=0.
+- Summary: Third move to CODE-REVIEW also failed during full Castor gate at the same unrelated `ViewImageToolE2eTest` llm-real test (line 93 `Failed asserting that false is true`). Immediate standalone rerun of `castor test:llm-real` passed again. This continues to indicate transient real-LLM E2E flakiness, not a SESSION-02 code failure. Retrying CODE-REVIEW gate once more without code changes.
+- task-to-pr: repeated unrelated ViewImageToolE2eTest llm-real flake in full gate; standalone llm-real rerun passed; retrying move_task again without code changes.
