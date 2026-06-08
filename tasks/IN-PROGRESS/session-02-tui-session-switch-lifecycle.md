@@ -140,7 +140,7 @@ class SessionSwitchService {
 Status: IN-PROGRESS
 Branch: task/session-02-tui-session-switch-lifecycle
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-02-tui-session-switch-lifecycle
-Fork run: 39ygty1r7rws
+Fork run: wem261x41dp6
 PR URL:
 PR Status:
 Started: 2026-06-08T21:50:11.525Z
@@ -203,3 +203,9 @@ Completed:
 - Validation: move_task(to=CODE-REVIEW) Castor gate FAILED: `test:tui` failed — tests=5, assertions=9, errors=1, failures=1.; Failure: `TuiAgentSmokeTest::testTypePromptAndVerifyTranscriptBlocks` — user block did not appear because runtime error displayed.; Failure: `TuiAgentSmokeTest::testMultiTurnConversationOrder` — timeout waiting for `❯`; pane showed runtime error `StartRunRequest::__construct(): Argument #3 ($cwd) must be of type string, null given`, called from `SubmitListener.php:121`.
 - Summary: First move to CODE-REVIEW failed during full Castor quality gate at `test:tui`. TUI E2E exposed a runtime error in draft promotion: `StartRunRequest::__construct(): Argument #3 ($cwd) must be of type string, null given` from `src/Tui/Listener/SubmitListener.php:121`. Root cause: promotion creates `StartRunRequest` using `$state->request?->cwd` and `$state->request?->options` without defaults; for plain lazy draft startup, `$state->request` is null, so `cwd` and `options` are null. Task remains IN-PROGRESS. Launching a narrow fix fork.
 - task-to-pr: full gate caught draft promotion StartRunRequest default bug; launching fix fork before retrying CODE-REVIEW.
+
+## Task workflow update - 2026-06-08T23:44:10.738Z
+- Recorded fork run: wem261x41dp6
+- Validation: Verified worktree clean at HEAD `c43badb4`.; Fork validation: `castor test --filter=testDraftPromotion` PASS — 2 tests, 14 assertions.; Fork validation: `castor test` PASS — 2187 tests, 6386 assertions, 0 errors/failures/skipped.; Fork validation: `castor deptrac` PASS — 0 violations, 0 errors.; Fork validation: `castor phpstan` PASS — 0 errors, 0 file errors.; Fork validation: `castor cs-check` PASS — clean, 0 files fixed.; Fork validation: `castor test:tui` PASS — 5 tests, 18 assertions, 0 errors/failures/skipped; confirms original gate failure resolved.
+- Summary: Gate-fix fork completed at commit `c43badb4` (`SESSION-02: Fix draft promotion request defaults`). It fixes the TUI E2E gate failure by defaulting `StartRunRequest` draft-promotion fields in `SubmitListener`: `cwd` now defaults to `''` and `options` defaults to `[]` when `state->request` is null. Added two regression tests covering plain draft null-request defaults and configured draft request value preservation. Verified worktree clean at HEAD `c43badb4`; cumulative branch diff is 20 files (+1083/-61).
+- task-to-pr: gate-fix fork wem261x41dp6 completed at c43badb4; original TUI E2E gate subset now passes; running focused reviewer before retrying CODE-REVIEW.
