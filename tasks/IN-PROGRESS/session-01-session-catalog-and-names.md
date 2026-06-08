@@ -98,14 +98,21 @@ public function listSessions(string $sortBy = 'updated_at', int $limit = 50, str
 - Validation uses Castor per project rules.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/session-01-session-catalog-and-names
+Worktree: /home/ineersa/projects/agent-core-worktrees/session-01-session-catalog-and-names
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-08T16:11:14.248Z
 Completed:
 
 ## Work log
 - Created: 2026-06-07T20:45:08.344Z
+
+## Task workflow update - 2026-06-08T16:11:14.248Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/session-01-session-catalog-and-names.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/session-01-session-catalog-and-names.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/session-01-session-catalog-and-names.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/session-01-session-catalog-and-names.
