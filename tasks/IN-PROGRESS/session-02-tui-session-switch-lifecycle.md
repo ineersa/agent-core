@@ -137,13 +137,13 @@ class SessionSwitchService {
 - Validation uses Castor per project rules; runtime/TUI changes require full `castor check` before CODE-REVIEW.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/session-02-tui-session-switch-lifecycle
+Worktree: /home/ineersa/projects/agent-core-worktrees/session-02-tui-session-switch-lifecycle
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-08T21:50:11.525Z
 Completed:
 
 ## Work log
@@ -152,3 +152,11 @@ Completed:
 ## Task workflow update - 2026-06-08T21:50:05.792Z
 - Summary: Task-explain decisions confirmed by user before task-start: (1) Accept controlled rebuild of TUI objects inside the same CLI process as the session switch lifecycle; true in-place listener/context mutation is not required for this task. (2) Switching with active HITL/questions should cancel/reset local question state rather than reject the switch. (3) SESSION-02 should include enough lazy fresh-draft support so SESSION-03 `/new` can call the lifecycle seam without creating orphan DB/session rows before the first submitted prompt. (4) Prefer the simpler runtime boundary first: do not add `AgentSessionClient` API unless necessary; fix concrete process-client/session respawn behavior if needed.
 - task-explain: user approved controlled TUI loop rebuild, cancel/reset active questions on switch, lazy draft support for `/new`, and no AgentSessionClient interface expansion unless proven necessary. Starting implementation phase next.
+
+## Task workflow update - 2026-06-08T21:50:11.525Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/session-02-tui-session-switch-lifecycle.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/session-02-tui-session-switch-lifecycle.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/session-02-tui-session-switch-lifecycle.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/session-02-tui-session-switch-lifecycle.
+- Summary: Starting SESSION-02 implementation after task-explain. User-approved architecture: controlled rebuild of TUI objects inside the same CLI process, cancel/reset active HITL/questions on switch, include lazy fresh-draft support for future `/new`, and avoid `AgentSessionClient` API expansion unless implementation proves necessary.
