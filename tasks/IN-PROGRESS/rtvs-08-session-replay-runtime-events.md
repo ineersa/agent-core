@@ -90,7 +90,7 @@ Plan reference (partially stale — see sequencing above):
 Status: IN-PROGRESS
 Branch: task/rtvs-08-session-replay-runtime-events
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-08-session-replay-runtime-events
-Fork run: av5e2wo5qm90
+Fork run: hl2c2mio273b
 PR URL:
 PR Status:
 Started: 2026-06-08T14:37:11.366Z
@@ -120,3 +120,9 @@ Completed:
 - Summary: Implementation fork completed RTVS-08 at commit 5034ee0b (`RTVS-08: Validate canonical session resume replay`). Verified worktree is clean on branch task/rtvs-08-session-replay-runtime-events. Diff vs origin/main: 5 files changed, +527/-31. Production fix: SessionInitializer::replayFromEvents() now restores TuiSessionState::activity by applying ActivityStateMachine::transition() for each replayed RuntimeEvent, matching RuntimeEventPoller live behavior. Tests: added SessionInitializerReplayTest with real SessionRunEventStore + RuntimeEventMapper + TranscriptProjector/subscribers covering user+assistant, tool+HITL, cancellation, error, lastSeq/dedup, and WaitingHuman activity. Docs: updated active docs in docs/tui-architecture.md, docs/session-storage.md, and docs/hitl-and-approvals.md to remove stale TranscriptEntry/formatEventToEntry/runtime-events.jsonl/transcript append references. Fork verified RunStateReplayService is already wired through RunMessageProcessor before resume continuation, so no duplicate client-level replay wiring was added.
 - task-start: fork av5e2wo5qm90 completed implementation and committed 5034ee0b. No review/PR/gate step run per task-start workflow.
 - task-start: remaining known gaps are out of scope/pre-existing: transient ToolCall blocks are not replayed from canonical events, llm_step_aborted lacks assistant payload, and HITL kind defaults to question.
+
+## Task workflow update - 2026-06-08T15:14:23.297Z
+- Recorded fork run: hl2c2mio273b
+- Validation: Verified HEAD c6b69c68 and clean worktree; Verified branch diff vs origin/main: 5 files changed, 604 insertions, 34 deletions; Fork validation: castor test --filter=SessionInitializerReplayTest PASS (7/7, 32 assertions); Fork validation: castor test PASS (2052/2052, 6031 assertions); Fork validation: castor deptrac PASS (0 violations); Fork validation: castor phpstan PASS (0 errors); Fork validation: castor cs-check PASS (clean); Fork validation: castor test:tui PASS (5/5)
+- Summary: Review-fix fork completed at commit c6b69c68 (`RTVS-08: Address resume replay review findings`). Worktree clean. Addressed reviewer suggestions: corrected docs/tui-architecture.md projection table to actual TranscriptBlockKindEnum/current behavior, updated TuiSessionState pseudo-code to UsageProjection, strengthened dedup test with poller-mapper comment and exact new-block assertion, added dropped/null-mapped events lastSeq regression test, and asserted replayed user+assistant blocks are not streaming. Skipped optional unreadable chmod test due platform sensitivity.
+- task-review-iterate: fork hl2c2mio273b addressed all actionable reviewer suggestions; next step final reviewer pass.
