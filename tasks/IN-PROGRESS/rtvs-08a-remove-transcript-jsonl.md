@@ -91,3 +91,7 @@ Completed:
 - Recorded fork run: v4ckfu6y2a4s
 - Validation: castor test:tui-update: PASS/updated golden snapshot; castor test:tui: PASS (5 tests, 18 assertions); castor deptrac: PASS (0 violations); castor phpstan: PASS (0 errors); castor cs-check: PASS (0 files fixed); castor test: PASS (1932 tests, 5722 assertions); castor test:controller: PASS (1 test, 7 assertions); castor test:llm-real: PASS (4 tests, 29 assertions); castor check: PASS (all gates green)
 - Summary: Castor-gate fix fork completed and committed 9248af7c. Root cause of previous CODE-REVIEW gate failure was stale TUI startup golden snapshot: RTVS-08A correctly projects the initial --prompt user message from canonical run_started/user_messages, rendering `❯ hello from tmux e2e`. Fork updated tests/Tui/Snapshots/startup-120x40.txt by one line. Worktree clean at 9248af7c.
+
+## Task workflow update - 2026-06-08T00:00:48.422Z
+- Validation: Reviewer subagent final verdict at HEAD 9248af7c: APPROVED; Fork-reported castor check at HEAD 9248af7c: PASS (all gates green)
+- Summary: Post-snapshot final reviewer check approved current HEAD 9248af7c. Reviewer confirmed the only change since previous approval is the startup snapshot adding `❯ hello from tmux e2e`, which correctly reflects canonical user message projection from --prompt/run_started.
