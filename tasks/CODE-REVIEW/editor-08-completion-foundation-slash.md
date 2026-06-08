@@ -29,7 +29,7 @@ Parallelizable with: EDITOR-06, EDITOR-07.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/editor-08-completion-foundation-slash
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-08-completion-foundation-slash
 Fork run: iq1on3kp62zj
@@ -182,11 +182,11 @@ Risks/notes for implementor:
 - Summary: Final reviewer subagent verdict for current HEAD 01915f6f: APPROVE. Reviewer confirmed prior suggestions resolved: explicit registry order assertion in SlashCommandCompletionProviderTest and documenting non-end CompletionContext cursor-offset MVP behavior test. No critical issues, bugs, or blockers. Branch was rebased cleanly on origin/main by fork vj4a4dwv1v0w; current task worktree status clean.
 - task-to-pr final review: reviewer approved HEAD 01915f6f after review-iteration forks cf6u7r92u2yu and vj4a4dwv1v0w. Focused Castor validation passed locally; proceeding to move_task(to="CODE-REVIEW") for full LLM_MODE=true castor check quality gate and PR creation.
 Castor Check Status: passed
-Castor Check Commit: 28be38000c9975e45dd55f51c51d4f7b32d02879
+Castor Check Commit: cd15bcb2679b42659512be81f54de01a4bcaa718
 Castor Check Command: LLM_MODE=true castor check
 Castor Check Timeout: 900s
-Castor Check Completed: 2026-06-08T18:02:05.210Z
-Castor Check Output SHA256: cfccc5b650aca9efb5f8afd1273f4a1bb691f45479a7a66355a0f15af86147c7
+Castor Check Completed: 2026-06-08T18:31:38.109Z
+Castor Check Output SHA256: 0f9abb40227b376bcdfa8a6ef6a02221383d87e3b7ec3e37b720f607bc8ad9ff
 
 ## Task workflow update - 2026-06-08T16:22:19.800Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -261,3 +261,10 @@ Castor Check Output SHA256: cfccc5b650aca9efb5f8afd1273f4a1bb691f45479a7a66355a0
 - Recorded fork run: iq1on3kp62zj
 - Validation: fork iq1on3kp62zj: castor test --filter=Completion passed (82 tests, 176 assertions); fork iq1on3kp62zj: castor test --filter=PromptHistory passed (29 tests, 58 assertions); fork iq1on3kp62zj: castor deptrac passed (0 violations); fork iq1on3kp62zj: castor phpstan passed (0 errors); fork iq1on3kp62zj: castor cs-check clean; fork iq1on3kp62zj: LLM_MODE=true castor check passed including full test suite (2126 tests), controller E2E, real LLM, TUI E2E, deptrac, phpstan, cs-check; orchestrator git verification: worktree clean at cd15bcb2; diff vs origin/main is 13 files, 2240 insertions, 1 deletion
 - Summary: Implementation fork iq1on3kp62zj completed at commit cd15bcb2 (fix(editor-08): smoke-test fixes for completion UX and Enter routing). Fixes: completion overlay now renders below editor via new ChatScreen::insertOverlayAfterEditor(); completion menu extracted to CompletionMenu and rendered with passive Symfony SelectListWidget for native highlighting while editor remains focused; Enter while menu is open accepts selected suggestion then deliberately does not stop propagation so the normal EditorWidget submit/SubmitListener slash-command path runs; PromptEditor gained setTextWithCursorAtEnd() adapter workaround so accepted commands retain trailing whitespace and cursor lands after it for argument typing; CompletionListener simplified to input routing and documents why slot input handlers are not appropriate for priority/stopPropagation completion controls.
+
+## Task workflow update - 2026-06-08T18:31:39.461Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: cd15bcb2679b.
+- Pushed task/editor-08-completion-foundation-slash to origin.
+- branch 'task/editor-08-completion-foundation-slash' set up to track 'origin/task/editor-08-completion-foundation-slash'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/106
