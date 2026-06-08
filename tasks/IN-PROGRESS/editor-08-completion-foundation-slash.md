@@ -32,7 +32,7 @@ Parallelizable with: EDITOR-06, EDITOR-07.
 Status: IN-PROGRESS
 Branch: task/editor-08-completion-foundation-slash
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-08-completion-foundation-slash
-Fork run: ljsv66d8tm3t
+Fork run: ep50gog8hj4v
 PR URL: https://github.com/ineersa/agent-core/pull/106
 PR Status: open
 Started: 2026-06-08T15:02:47.293Z
@@ -312,3 +312,7 @@ Castor Check Output SHA256: 70165f7b2ad4883e52dc901c69ee78c76b9769a405152cf9dbb4
 ## Task workflow update - 2026-06-08T21:12:34.933Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: User smoke-tested latest EDITOR-08 PR and requested final tiny fixes: model-favourites picker should not show current model with accent/arrow; PromptEditor::setTextWithCursorAtEnd() public-key cursor mangement via DOWN/END is a slippery slope and should be replaced with a simpler approach if Symfony TUI has no proper public cursor API. Initial analysis: Symfony EditorWidget exposes no public cursor setters; EditorDocument has setters but is private, so extension/reflection is not acceptable. Since slash completion now only applies at leading slash/full text replacement, we can avoid cursor movement by clearing the editor and inserting accepted text through public EditorWidget::handleInput() so the cursor naturally lands at the end.
+
+## Task workflow update - 2026-06-08T21:13:03.650Z
+- Recorded fork run: ep50gog8hj4v
+- Summary: Launched final review-iterate fork ep50gog8hj4v. Scope: remove current-model arrow/accent from /model-favourites picker; replace PromptEditor manual cursor movement (DOWN/END handleInput cursor navigation) with a no-cursor-management public API approach by clearing editor text and inserting accepted completion text through normal EditorWidget::handleInput(); fix stale comments/tests; validate with Castor.
