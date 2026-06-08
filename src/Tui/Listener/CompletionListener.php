@@ -315,8 +315,9 @@ final class CompletionListener implements TuiListenerRegistrar
                 return null;
             }
 
-            // Use preg_replace for grapheme-safe removal of the last
-            // character. Falls back to byte-level substr for resilience.
+            // Use preg_replace for UTF-8 code-point-safe removal of the
+            // last character. Sufficient for ASCII slash command contexts;
+            // falls back to byte-level substr for resilience.
             $trimmed = preg_replace('/.$/usD', '', $current);
             if (null === $trimmed || $trimmed === $current) {
                 return substr($current, 0, -1);
