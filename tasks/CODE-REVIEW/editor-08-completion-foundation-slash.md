@@ -29,7 +29,7 @@ Parallelizable with: EDITOR-06, EDITOR-07.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/editor-08-completion-foundation-slash
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-08-completion-foundation-slash
 Fork run: cf6u7r92u2yu
@@ -182,11 +182,11 @@ Risks/notes for implementor:
 - Summary: Final reviewer subagent verdict for current HEAD 01915f6f: APPROVE. Reviewer confirmed prior suggestions resolved: explicit registry order assertion in SlashCommandCompletionProviderTest and documenting non-end CompletionContext cursor-offset MVP behavior test. No critical issues, bugs, or blockers. Branch was rebased cleanly on origin/main by fork vj4a4dwv1v0w; current task worktree status clean.
 - task-to-pr final review: reviewer approved HEAD 01915f6f after review-iteration forks cf6u7r92u2yu and vj4a4dwv1v0w. Focused Castor validation passed locally; proceeding to move_task(to="CODE-REVIEW") for full LLM_MODE=true castor check quality gate and PR creation.
 Castor Check Status: passed
-Castor Check Commit: 01915f6f7c3acd43736b0fc4e09441e2671b6978
+Castor Check Commit: 2d05c69ff7ecb728e413715c428e1b0ea7fbc426
 Castor Check Command: LLM_MODE=true castor check
 Castor Check Timeout: 900s
-Castor Check Completed: 2026-06-08T16:22:15.994Z
-Castor Check Output SHA256: bd21b9356056178d2d80e64bb0c6ca64a9ed70629d487ab7627bb9c3eab4ac2c
+Castor Check Completed: 2026-06-08T16:57:52.962Z
+Castor Check Output SHA256: 83a1d2b4efc86fe2b0d27b8694499b922ccc94caf94dc6e1c9671e402e08ae25
 
 ## Task workflow update - 2026-06-08T16:22:19.800Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -211,3 +211,12 @@ Castor Check Output SHA256: bd21b9356056178d2d80e64bb0c6ca64a9ed70629d487ab7627b
 - Validation: castor test --filter=Completion: ok (74 tests, 159 assertions); castor test --filter=PromptHistory: ok (29 tests, 58 assertions); castor deptrac: ok (0 violations); castor phpstan: ok (0 errors); castor cs-check: ok; LLM_MODE=true castor check: ok (deptrac + test(2118) + controller E2E + real LLM E2E + TUI E2E + phpstan + cs); Manual TUI: typing / opens overlay ✓; Manual TUI: typing /h refines to /help ✓; Manual TUI: backspace reverts to full list ✓; Manual TUI: Tab from /h accepts /help ✓
 - Summary: Review-iteration fork completed at HEAD 2d05c69f. Bug reproduced (typing / did not show autocomplete in real TUI) and fixed. Core change: added predictNextText() helper and live-completion branch in CompletionListener priority-90 listener — opens/refines overlay on typing without stealing input. Also handles \x08 backspace for terminal compat. Manual tmux verification confirmed: typing / immediately shows overlay, /h refines to /help, backspace reverts, Tab accepts. Full Castor quality gate passed (deptrac + 2118 tests + controller E2E + real LLM E2E + TUI E2E + phpstan + cs). Two files changed: CompletionListener.php (+100/-18), CompletionListenerTest.php (+112/-0, 7 new tests, 2 updated).
 - Review-iteration: reproduced bug in real TUI (no autocomplete on typing /). Implemented predictNextText() predictive overlay opening in CompletionListener. Restarted and verified with fresh tmux session. Full LLM_MODE=true castor check passed.
+
+## Task workflow update - 2026-06-08T16:57:54.873Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: 2d05c69ff7ec.
+- Pushed task/editor-08-completion-foundation-slash to origin.
+- branch 'task/editor-08-completion-foundation-slash' set up to track 'origin/task/editor-08-completion-foundation-slash'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/106
+- Validation: LLM_MODE=true castor check: ok (deptrac + test(2118) + controller E2E + real LLM E2E + TUI E2E + phpstan + cs); Manual TUI: typing / opens overlay ✓, /h refines ✓, backspace reverts ✓, Tab accepts ✓
+- Summary: Review-iteration fix: live completion now opens on typing / (not just Tab). Verified via manual tmux testing and full LLM_MODE=true castor check.
