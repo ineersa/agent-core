@@ -33,11 +33,9 @@ final class Clipboard
             // 1) tmux internal buffer (may or may not reach system clipboard depending on tmux config)
             if (self::runPipe(['tmux', 'load-buffer', '-'], $text)) {
                 // Best-effort: also push to host clipboard via OSC-52 passthrough
-                if (self::osc52ToStdout($text, true)) {
-                    return true;
-                }
+                self::osc52ToStdout($text, true);
 
-                return true; // at least in tmux buffer
+                return true; // tmux buffer loaded successfully
             }
             // 2) Direct OSC-52 passthrough to the outer terminal
             if (self::osc52ToStdout($text, true)) {
@@ -88,6 +86,7 @@ final class Clipboard
         try {
             $p = new Process($cmd);
             $p->setInput($input);
+            $p->setTimeout(5);
             $p->run();
 
             return $p->isSuccessful();
@@ -100,6 +99,7 @@ final class Clipboard
     {
         try {
             $which = new Process(['which', $cmd]);
+            $which->setTimeout(2);
             $which->run();
 
             return $which->isSuccessful();

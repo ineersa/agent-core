@@ -37,12 +37,12 @@ final class CopyCommandHandler implements SlashCommandHandler
 
     public function handle(SlashCommand $command): CommandResult
     {
-        // Find the last assistant message block (scan from end)
+        // Find the last assistant message block (scan from end using index)
+        $blocks = $this->state->transcript;
         $lastAssistant = null;
-        /** @var \Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock $block */
-        foreach (array_reverse($this->state->transcript) as $block) {
-            if (TranscriptBlockKindEnum::AssistantMessage === $block->kind) {
-                $lastAssistant = $block;
+        for ($i = \count($blocks) - 1; $i >= 0; --$i) {
+            if (TranscriptBlockKindEnum::AssistantMessage === $blocks[$i]->kind) {
+                $lastAssistant = $blocks[$i];
                 break;
             }
         }

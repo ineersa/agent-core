@@ -124,6 +124,30 @@ final class CopyCommandHandlerTest extends TestCase
     }
 
     #[Test]
+    public function copiesEmptyAssistantMessageText(): void
+    {
+        $state = new TuiSessionState('test-session');
+        $state->transcript = [
+            $this->buildBlock('b1', TranscriptBlockKindEnum::AssistantMessage, 1, ''),
+        ];
+
+        $capturedText = 'NOT_CALLED';
+        $copyFn = static function (string $text) use (&$capturedText): bool {
+            $capturedText = $text;
+
+            return true;
+        };
+
+        $handler = new CopyCommandHandler($state, $copyFn);
+        $result = $handler->handle(new SlashCommand('copy', '', '/copy'));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertSame('Copied last model output to clipboard.', $result->text);
+        $this->assertSame('', $result->style);
+        $this->assertSame('', $capturedText);
+    }
+
+    #[Test]
     public function returnsFailureWhenCopyReturnsFalse(): void
     {
         $state = new TuiSessionState('test-session');
