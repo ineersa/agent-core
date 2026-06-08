@@ -492,6 +492,44 @@ Each registrar receives a `TuiRuntimeContext` value object carrying:
 | `$sessionStore` | `HatfieldSessionStore` | Session persistence |
 | `$ticks` | `TuiTickDispatcher` | Per-run tick handler multiplexer |
 
+## Clipboard and OSC-52 notes
+
+The `/copy` slash command (alias `/cp`) copies the last assistant message
+from the transcript to the system clipboard using a cross-platform fallback
+chain — `pbcopy` (macOS), `clip` (Windows), `wl-copy`/`xclip`/`xsel` (Linux),
+tmux buffers, and OSC-52 terminal escape sequences.
+
+### Inside tmux over SSH
+
+When the agent runs on a remote host inside tmux, clipboard tools like
+`xclip` or `xsel` target the **remote** X/Wayland clipboard, not your local
+machine. This is unrelated to OSC-52 and will not update your local clipboard
+over SSH unless X forwarding is separately bridged.
+
+For local clipboard updates through tmux (e.g. WezTerm on Windows over SSH),
+configure the remote tmux:
+
+```tmux
+set -s set-clipboard on
+set -g allow-passthrough on
+# If tmux lacks the Ms terminfo capability for your terminal:
+set -as terminal-features ',wezterm:clipboard'
+```
+
+Verify current state inside tmux:
+
+```bash
+tmux show -g allow-passthrough   # must be on for DCS passthrough
+tmux show -s set-clipboard       # must be on for clipboard forwarding
+tmux info | grep 'Ms:'           # terminfo clipboard capability present?
+```
+
+> **Note:** tmux `allow-passthrough` defaults to `off` (since tmux 3.2),
+> which silently drops DCS passthrough sequences such as the wrapped OSC-52
+> `\ePtmux;\e]52;…\e\\` that the utility uses inside tmux. Without this,
+> `/copy` may report success (the tmux buffer was loaded) while the local
+> terminal clipboard remains unchanged.
+
 ## Runtime namespaces
 
 Classes that carry per-run state were moved to `src/Tui/Runtime/` to keep
