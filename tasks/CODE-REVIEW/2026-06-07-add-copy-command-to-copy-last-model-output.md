@@ -113,7 +113,7 @@ The handler needs `TranscriptBlockKindEnum` from `CodingAgent/Runtime/Projection
 - No deptrac violations
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/2026-06-07-add-copy-command-to-copy-last-model-output
 Worktree: /home/ineersa/projects/agent-core-worktrees/2026-06-07-add-copy-command-to-copy-last-model-output
 Fork run: 1qneis5qtler
@@ -168,11 +168,11 @@ Completed:
 - Summary: Reviewer final decision: APPROVED for current HEAD ba53a5b6a8650a65877ddade09ab78af11d83947. Reviewer found no remaining actionable issues; previous catch-block documentation NTH was addressed. Local focused validation completed successfully and worktree remained clean.
 - Task-to-PR review loop complete: initial reviewer suggestions addressed by fork 7pz8dv5s6fb1, follow-up catch documentation addressed by fork y1mkmqrfyah1, final reviewer decision APPROVED at ba53a5b6a8650a65877ddade09ab78af11d83947. Focused Castor validation passed: test, deptrac, phpstan, cs-check.
 Castor Check Status: passed
-Castor Check Commit: ba53a5b6a8650a65877ddade09ab78af11d83947
+Castor Check Commit: b8926e44a72e0afbc48c9bdcc5996cd8ee847e9e
 Castor Check Command: LLM_MODE=true castor check
 Castor Check Timeout: 900s
-Castor Check Completed: 2026-06-08T16:31:42.732Z
-Castor Check Output SHA256: c797e68bab73c8de86b410e3e17c6535c4fd7d6a12db8c99a94a6332bf721b46
+Castor Check Completed: 2026-06-08T17:02:57.036Z
+Castor Check Output SHA256: fe7319516f5efe07f768c5524dac86b2fd2503d81505dde5fd0d9a5a24cccfa7
 
 ## Task workflow update - 2026-06-08T16:31:46.856Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -198,3 +198,10 @@ Castor Check Output SHA256: c797e68bab73c8de86b410e3e17c6535c4fd7d6a12db8c99a94a
 - Validation: Documentation reviewer subagent — APPROVED; no actionable documentation correctness issues.; Current task branch HEAD: b8926e44a72e0afbc48c9bdcc5996cd8ee847e9e; git diff --stat origin/main...HEAD — 8 files changed, 661 insertions; castor test — passed (tests=2057, assertions=6046, errors=0, failures=0, skipped=0); castor deptrac — passed (violations=0, errors=0, uncovered=728, allowed=925); castor phpstan — passed (errors=0, file_errors=0); castor cs-check — passed (files_fixed=0); git status --short --branch — clean, ahead 1 before PR update
 - Summary: Documentation follow-up reviewer decision: APPROVED for current HEAD b8926e44a72e0afbc48c9bdcc5996cd8ee847e9e. Reviewer verified the new `Clipboard and OSC-52 notes` section is technically accurate against the Clipboard implementation and tmux behavior, with no actionable issues. Focused Castor validation passed at current HEAD.
 - Documentation follow-up complete: fork 1qneis5qtler added tmux/OSC-52 notes, reviewer approved, and focused validation passed at b8926e44a72e0afbc48c9bdcc5996cd8ee847e9e. Ready to move back to CODE-REVIEW and update PR #107.
+
+## Task workflow update - 2026-06-08T17:02:58.878Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: b8926e44a72e.
+- Pushed task/2026-06-07-add-copy-command-to-copy-last-model-output to origin.
+- branch 'task/2026-06-07-add-copy-command-to-copy-last-model-output' set up to track 'origin/task/2026-06-07-add-copy-command-to-copy-last-model-output'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/107
