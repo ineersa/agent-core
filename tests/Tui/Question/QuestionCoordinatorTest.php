@@ -466,4 +466,94 @@ final class QuestionCoordinatorTest extends TestCase
 
         self::assertFalse($coordinator->hasRequest('nonexistent'));
     }
+
+    // ─── Reset (session switch lifecycle) ──────────────────────────────
+
+    public function testResetWithNoActiveQuestionIsNoOp(): void
+    {
+        $coordinator = new QuestionCoordinator();
+
+        $coordinator->reset();
+
+        self::assertNull($coordinator->activeRequest());
+        self::assertFalse($coordinator->actionRequired());
+    }
+
+    public function testResetClearsActiveQuestion(): void
+    {
+        $coordinator = new QuestionCoordinator();
+        $coordinator->enqueue($this->tuiRequest('r1'));
+
+        self::assertTrue($coordinator->actionRequired());
+
+        $coordinator->reset();
+
+        self::assertNull($coordinator->activeRequest());
+        self::assertNull($coordinator->activeStatus());
+        self::assertFalse($coordinator->actionRequired());
+    }
+
+    public function testResetClearsQueuedQuestions(): void
+    {
+        $coordinator = new QuestionCoordinator();
+        $coordinator->enqueue($this->tuiRequest('r1'));
+        $coordinator->enqueue($this->tuiRequest('r2'));
+        $coordinator->enqueue($this->tuiRequest('r3'));
+
+        // r1 is active, r2+r3 are queued
+        self::assertSame('r1', $coordinator->activeRequest()?->requestId);
+
+        $coordinator->reset();
+
+        // After reset, everything is cleared — including the queue
+        self::assertNull($coordinator->activeRequest());
+        self::assertFalse($coordinator->actionRequired());
+
+        // Enqueueing after reset works normally
+        $coordinator->enqueue($this->tuiRequest('r4'));
+        self::assertSame('r4', $coordinator->activeRequest()?->requestId);
+    }
+
+    public function testResetDoesNotInvokeCallbacks(): void
+    {
+        $coordinator = new QuestionCoordinator();
+        $answerFired = false;
+        $cancelFired = false;
+
+        $coordinator->enqueue(
+            $this->tuiRequest('r1'),
+            onAnswer: function () use (&$answerFired): void {
+                $answerFired = true;
+            },
+            onCancel: function () use (&$cancelFired): void {
+                $cancelFired = true;
+            },
+        );
+        $coordinator->enqueue($this->tuiRequest('r2'));
+
+        $coordinator->reset();
+
+        self::assertFalse($answerFired, 'Answer callback must not be invoked during reset');
+        self::assertFalse($cancelFired, 'Cancel callback must not be invoked during reset');
+        self::assertNull($coordinator->activeRequest());
+    }
+
+    public function testResetClearsRequestIdsTracking(): void
+    {
+        $coordinator = new QuestionCoordinator();
+        $coordinator->enqueue($this->tuiRequest('r1'));
+        $coordinator->enqueue($this->tuiRequest('r2'));
+
+        self::assertTrue($coordinator->hasRequest('r1'));
+        self::assertTrue($coordinator->hasRequest('r2'));
+
+        $coordinator->reset();
+
+        self::assertFalse($coordinator->hasRequest('r1'));
+        self::assertFalse($coordinator->hasRequest('r2'));
+
+        // After reset, the same ID can be re-enqueued without triggering the duplicate guard
+        $coordinator->enqueue($this->tuiRequest('r1'));
+        self::assertTrue($coordinator->hasRequest('r1'));
+    }
 }

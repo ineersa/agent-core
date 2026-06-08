@@ -143,6 +143,8 @@ final class CopyCommandRegistrarTest extends TestCase
             state: $state,
             screen: $screen,
             sessionStore: $sessionStore,
+            ticks: new \Ineersa\Tui\Runtime\TuiTickDispatcher(),
+            switch: $this->createStub(\Ineersa\Tui\Application\TuiSessionSwitchService::class),
         );
     }
 

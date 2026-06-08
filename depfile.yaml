@@ -263,6 +263,7 @@ parameters:
       - TuiFooter
       - TuiWidget
       - TuiTheme
+      - TuiQuestion
       - SymfonyTui
       - SymfonyConsole
 
@@ -291,6 +292,7 @@ parameters:
       - TuiTranscript
       - TuiScreen
       - TuiTheme
+      - TuiApplication
       - SymfonyTui
 
     TuiScreen:

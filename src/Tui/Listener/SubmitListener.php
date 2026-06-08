@@ -21,6 +21,7 @@ use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Tui\Event\SubmitEvent;
 use Symfony\Component\Tui\Tui;
 
@@ -43,6 +44,7 @@ final class SubmitListener implements TuiListenerRegistrar
         private readonly TranscriptBlockFactory $blockFactory,
         private readonly QuestionCoordinator $coordinator,
         private readonly QuestionController $questionController,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -59,12 +61,14 @@ final class SubmitListener implements TuiListenerRegistrar
         $questionCoordinator = $this->coordinator;
         $questionController = $this->questionController;
 
+        $logger = $this->logger;
+
         // Wire the question controller with TUI runtime references
         $questionController->setRuntimeRefs($context, $screen);
 
         $context->tui->addListener(static function (SubmitEvent $event) use (
             $client, $sessionStore, $state, $screen, $tui, $router, $blockFactory,
-            $questionCoordinator, $questionController,
+            $questionCoordinator, $questionController, $logger,
         ) {
             $text = $screen->extract();
             if ('' === $text) {
@@ -97,6 +101,19 @@ final class SubmitListener implements TuiListenerRegistrar
             try {
                 // Start a run if this is the first message
                 if (null === $state->handle && null === $state->request) {
+                    // ── Draft session promotion ──
+                    // If this is a lazy draft (sessionId === ''), create the
+                    // real session row now so no orphan records are left when
+                    // /new is typed but never followed by a message.
+                    if ('' === $state->sessionId) {
+                        $state->sessionId = $sessionStore->createSession($text);
+                        $screen->updateSessionId($state->sessionId);
+                        $logger->info('Draft session promoted to real session', [
+                            'component' => 'SubmitListener',
+                            'event_type' => 'draft_promoted',
+                            'session_id' => $state->sessionId,
+                        ]);
+                    }
                     $state->request = new StartRunRequest(
                         prompt: $text,
                         runId: $state->sessionId,

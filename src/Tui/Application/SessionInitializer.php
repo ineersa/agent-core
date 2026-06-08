@@ -44,6 +44,26 @@ final readonly class SessionInitializer
     }
 
     /**
+     * Initialize a fresh draft session state without creating a DB row.
+     *
+     * The session is created lazily by SubmitListener when the user
+     * submits their first message — no orphan DB/session records are
+     * created if the user types /new and never sends a message.
+     *
+     * @param StartRunRequest|null $request Optional pre-configured request
+     */
+    public function initializeDraft(?StartRunRequest $request = null): TuiSessionState
+    {
+        $state = new TuiSessionState('', false);
+
+        if (null !== $request) {
+            $state->request = $request;
+        }
+
+        return $state;
+    }
+
+    /**
      * Initialize session state and return ready-to-use TuiSessionState.
      *
      * @param string               $sessionId Existing session ID to resume; empty = new session
@@ -97,10 +117,13 @@ final readonly class SessionInitializer
             return $this->replayFromEvents($state);
         }
 
-        // New session: no file persistence — events.jsonl is the canonical record.
+        // Fresh session or draft: no file persistence — events.jsonl is the canonical record.
         // A welcome block is returned for in-memory display only.
+        // For draft sessions (sessionId === ''), use a placeholder runId.
+        $runId = '' !== $state->sessionId ? $state->sessionId : '(new draft)';
+
         return [$this->blockFactory->system(
-            runId: $state->sessionId,
+            runId: $runId,
             text: 'Welcome to Hatfield. Type a message below to start.',
             seq: 1,
         )];

@@ -192,4 +192,26 @@ class ChatScreenTest extends TestCase
 
         return array_values($root->all());
     }
+
+    // ── Session ID update ──
+
+    #[Test]
+    public function testUpdateSessionIdDoesNotThrow(): void
+    {
+        // After construction, updating the session ID should succeed.
+        $this->screen->updateSessionId('new-session-id');
+
+        // No assertion beyond not throwing — the provider was replaced.
+        $this->addToAssertionCount(1);
+    }
+
+    #[Test]
+    public function testUpdateSessionIdAfterMountDoesNotThrow(): void
+    {
+        $this->screen->mount($this->tui);
+
+        $this->screen->updateSessionId('new-session-id');
+
+        $this->addToAssertionCount(1);
+    }
 }
