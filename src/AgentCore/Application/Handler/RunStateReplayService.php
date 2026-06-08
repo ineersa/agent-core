@@ -1,0 +1,746 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ineersa\AgentCore\Application\Handler;
+
+use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
+use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Infrastructure\RunLogContext;
+use Psr\Log\LoggerInterface;
+
+/**
+ * Rebuilds AgentCore {@see RunState} from the canonical event stream.
+ *
+ * Replay order: sort by seq ascending, verify contiguity, reduce events
+ * into a RunState with status, turn, messages, pending tool calls,
+ * errors, and retryability.  The rebuilt state preserves the version
+ * from the existing stored state (or 0 when missing) so CAS-based
+ * writers can safely continue; the CAS version is a concurrency
+ * counter, not derivable from events.
+ *
+ * Callers should check {@see RunStateReplayResult::$rebuilt} to decide
+ * whether to persist the replayed state before advancing the run.
+ */
+final readonly class RunStateReplayService
+{
+    public function __construct(
+        private EventStoreInterface $eventStore,
+        private LoggerInterface $logger,
+    ) {
+    }
+
+    /**
+     * Rebuilds RunState from events if the stored state is missing or stale.
+     *
+     * - No events → returns RunStateReplayResult::noEvents().
+     * - State is current (stored lastSeq >= max event seq) → returns RunStateReplayResult::current().
+     * - State is stale or missing → replays and returns RunStateReplayResult::rebuilt().
+     * - Non-contiguous history → logs the gap but does NOT return a rebuilt state
+     *   (throws an exception; caller should not proceed with partial state).
+     *
+     * @throws RunStateReplayException when event history is non-contiguous
+     */
+    public function rebuildIfStale(RunState $state, string $runId): RunStateReplayResult
+    {
+        $events = $this->eventStore->allFor($runId);
+
+        if ([] === $events) {
+            $this->logger->debug('run_state_replay.no_events', [
+                'run_id' => $runId,
+                'component' => 'replay',
+            ]);
+
+            return RunStateReplayResult::noEvents();
+        }
+
+        $sortedEvents = $this->sortBySequence($events);
+        $maxEventSeq = $this->maxSequence($sortedEvents);
+
+        // Stored state is current — no rebuild needed.
+        if ($state->lastSeq >= $maxEventSeq) {
+            return RunStateReplayResult::current($maxEventSeq, \count($sortedEvents));
+        }
+
+        RunLogContext::enter(['run_id' => $runId, 'component' => 'replay']);
+
+        try {
+            // Detect duplicates before contiguity check so the diagnostic
+            // reports the right failure reason and replay never processes
+            // duplicate sequences.
+            $duplicateSeqs = $this->duplicateSequences($sortedEvents);
+            if ([] !== $duplicateSeqs) {
+                $this->logger->error('run_state_replay.duplicate_sequences', [
+                    'run_id' => $runId,
+                    'event_count' => \count($sortedEvents),
+                    'duplicate_sequences' => $duplicateSeqs,
+                    'duplicate_count' => \count($duplicateSeqs),
+                ]);
+
+                throw new RunStateReplayException(\sprintf('Cannot replay run %s: event history contains %d duplicate sequence number(s): %s.', $runId, \count($duplicateSeqs), implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))));
+            }
+
+            $missingSequences = $this->missingSequences($sortedEvents);
+            $isContiguous = [] === $missingSequences;
+
+            $this->logger->info('run_state_replay.rebuilding', [
+                'run_id' => $runId,
+                'state_last_seq' => $state->lastSeq,
+                'event_last_seq' => $maxEventSeq,
+                'event_count' => \count($sortedEvents),
+                'is_contiguous' => $isContiguous,
+                'missing_sequences_count' => \count($missingSequences),
+            ]);
+
+            if (!$isContiguous) {
+                $this->logger->error('run_state_replay.non_contiguous', [
+                    'run_id' => $runId,
+                    'state_last_seq' => $state->lastSeq,
+                    'event_last_seq' => $maxEventSeq,
+                    'event_count' => \count($sortedEvents),
+                    'missing_sequences' => $missingSequences,
+                ]);
+
+                throw new RunStateReplayException(\sprintf('Cannot replay run %s: event history has %d missing sequences. Expected contiguous range 1..%d, found gaps at: %s.', $runId, \count($missingSequences), $maxEventSeq, implode(', ', array_map('strval', \array_slice($missingSequences, 0, 10)))));
+            }
+
+            $rebuiltState = $this->replay($state, $sortedEvents);
+
+            $this->logger->info('run_state_replay.rebuilt', [
+                'run_id' => $runId,
+                'replayed_seq_count' => \count($sortedEvents),
+                'rebuilt_message_count' => \count($rebuiltState->messages),
+                'rebuilt_status' => $rebuiltState->status->value,
+                'rebuilt_turn_no' => $rebuiltState->turnNo,
+            ]);
+
+            return RunStateReplayResult::rebuilt(
+                $rebuiltState,
+                $maxEventSeq,
+                \count($sortedEvents),
+                $isContiguous,
+                $missingSequences,
+            );
+        } finally {
+            RunLogContext::leave();
+        }
+    }
+
+    /**
+     * Replays the full event history into a RunState.
+     *
+     * The returned state preserves the current stored version for CAS
+     * correctness.  The state is built from scratch: only {status, turnNo,
+     * lastSeq, activeStepId, pendingToolCalls, errorMessage, messages,
+     * retryableFailure} are populated from events; isStreaming is false
+     * and streamingMessage is null after replay.
+     *
+     * **Caller must provide sorted, contiguous, duplicate-free events.**
+     * This method does NOT detect gaps, validate ordering, or check for
+     * duplicate sequences.  Use {@see rebuildIfStale()} for production
+     * replay that includes full integrity checks (contiguity + duplicates).
+     *
+     * **By-ref accumulator invariant:** Reducers mutate {@see $messages} and
+     * {@see $pendingToolCalls} by reference as the source of truth for the
+     * replayed collections.  Intermediate {@see RunState} objects produced by
+     * each iteration carry stale copies of {@see RunState::$messages} and
+     * {@see RunState::$pendingToolCalls}; only the final copy built after the
+     * loop reflects the complete replayed state.  Future reducers MUST NOT
+     * rely on {@see $state->messages} or {@see $state->pendingToolCalls}
+     * for current accumulator state during iteration.
+     *
+     * @param list<RunEvent> $events sorted ascending by seq, no gaps, no duplicates
+     */
+    public function replay(RunState $existingState, array $events): RunState
+    {
+        $state = new RunState(
+            runId: $existingState->runId,
+            status: RunStatus::Queued,
+            version: $existingState->version,
+            turnNo: 0,
+            lastSeq: 0,
+        );
+
+        // By-ref accumulators: reducers append to these arrays; intermediate
+        // RunState objects carry stale copies (see docblock invariant above).
+        $messages = [];
+        $pendingToolCalls = [];
+
+        foreach ($events as $event) {
+            $state = $this->applyEvent($state, $event, $messages, $pendingToolCalls);
+
+            // Advance lastSeq to the current event's sequence number.
+            $state = new RunState(
+                runId: $state->runId,
+                status: $state->status,
+                version: $state->version,
+                turnNo: $state->turnNo,
+                lastSeq: $event->seq,
+                isStreaming: $state->isStreaming,
+                streamingMessage: $state->streamingMessage,
+                pendingToolCalls: $state->pendingToolCalls,
+                errorMessage: $state->errorMessage,
+                messages: $state->messages,
+                activeStepId: $state->activeStepId,
+                retryableFailure: $state->retryableFailure,
+            );
+        }
+
+        // Copy mutable collections back into a new RunState with final values.
+        return new RunState(
+            runId: $state->runId,
+            status: $state->status,
+            version: $state->version,
+            turnNo: $state->turnNo,
+            lastSeq: $state->lastSeq,
+            isStreaming: false,
+            streamingMessage: null,
+            pendingToolCalls: $pendingToolCalls,
+            errorMessage: $state->errorMessage,
+            messages: $messages,
+            activeStepId: $state->activeStepId,
+            retryableFailure: $state->retryableFailure,
+        );
+    }
+
+    /**
+     * @param list<AgentMessage>  $messages
+     * @param array<string, bool> $pendingToolCalls
+     */
+    private function applyEvent(
+        RunState $state,
+        RunEvent $event,
+        array &$messages,
+        array &$pendingToolCalls,
+    ): RunState {
+        $payload = $event->payload;
+
+        return match ($event->type) {
+            RunEventTypeEnum::RunStarted->value => $this->applyRunStarted($event, $state, $messages),
+            RunEventTypeEnum::TurnAdvanced->value => $this->applyTurnAdvanced($payload, $state),
+            RunEventTypeEnum::AgentCommandApplied->value => $this->applyAgentCommandApplied($payload, $state, $messages),
+            RunEventTypeEnum::AgentCommandRejected->value => $this->applyCommandRejected($payload, $state),
+            RunEventTypeEnum::LlmStepCompleted->value => $this->applyLlmStepCompleted($payload, $state, $messages, $pendingToolCalls),
+            RunEventTypeEnum::LlmStepFailed->value => $this->applyLlmStepFailed($payload, $state),
+            RunEventTypeEnum::LlmStepAborted->value => $this->applyNoMutation($event, $state),
+            RunEventTypeEnum::ToolExecutionStart->value => $this->applyToolExecutionStart($payload, $pendingToolCalls, $state),
+            RunEventTypeEnum::ToolExecutionEnd->value,
+            RunEventTypeEnum::ToolCallResultReceived->value => $this->applyNoMutation($event, $state),
+            RunEventTypeEnum::MessageStart->value => $this->applyNoMutation($event, $state),
+            RunEventTypeEnum::MessageEnd->value => $this->applyMessageEnd($payload, $state, $messages),
+            RunEventTypeEnum::ToolBatchCommitted->value => $this->applyToolBatchCommitted($state, $pendingToolCalls),
+            RunEventTypeEnum::WaitingHuman->value => $this->applyWaitingHuman($state),
+            RunEventTypeEnum::AgentEnd->value => $this->applyAgentEnd($payload, $state),
+            RunEventTypeEnum::AgentStart->value,
+            RunEventTypeEnum::TurnStart->value,
+            RunEventTypeEnum::MessageUpdate->value,
+            RunEventTypeEnum::ToolExecutionUpdate->value,
+            RunEventTypeEnum::TurnEnd->value,
+            RunEventTypeEnum::AgentCommandQueued->value,
+            RunEventTypeEnum::AgentCommandSuperseded->value,
+            RunEventTypeEnum::StaleResultIgnored->value => $this->applyNoMutation($event, $state),
+            default => $this->applyNoMutation($event, $state),
+        };
+    }
+
+    // ── Event reducers ──────────────────────────────────────────────────────
+
+    /**
+     * @param list<AgentMessage> $messages
+     */
+    private function applyRunStarted(RunEvent $event, RunState $state, array &$messages): RunState
+    {
+        $payload = $event->payload;
+        $stepId = \is_string($payload['step_id'] ?? null) ? $payload['step_id'] : null;
+
+        // Initial messages are nested under payload.payload.messages
+        // (StartRunHandler normalizes the StartRunPayload into the event).
+        $innerPayload = \is_array($payload['payload'] ?? null) ? $payload['payload'] : [];
+        $rawMessages = \is_array($innerPayload['messages'] ?? null) ? $innerPayload['messages'] : [];
+
+        foreach ($rawMessages as $rawMessage) {
+            if (!\is_array($rawMessage)) {
+                continue;
+            }
+
+            $msg = AgentMessage::fromPayload($rawMessage);
+            if (null !== $msg) {
+                $messages[] = $msg;
+            }
+        }
+
+        return new RunState(
+            runId: $state->runId,
+            status: RunStatus::Running,
+            version: $state->version,
+            turnNo: 0,
+            lastSeq: $event->seq,
+            isStreaming: false,
+            streamingMessage: null,
+            pendingToolCalls: [],
+            errorMessage: null,
+            messages: $state->messages, // placeholder; actual messages in $messages by-ref
+            activeStepId: $stepId,
+            retryableFailure: false,
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function applyTurnAdvanced(array $payload, RunState $state): RunState
+    {
+        $turnNo = \is_int($payload['turn_no'] ?? null) ? $payload['turn_no'] : $state->turnNo;
+        $stepId = \is_string($payload['step_id'] ?? null) ? $payload['step_id'] : $state->activeStepId;
+
+        return new RunState(
+            runId: $state->runId,
+            status: RunStatus::Running,
+            version: $state->version,
+            turnNo: $turnNo,
+            lastSeq: $state->lastSeq,
+            isStreaming: $state->isStreaming,
+            streamingMessage: $state->streamingMessage,
+            pendingToolCalls: $state->pendingToolCalls,
+            errorMessage: null,
+            messages: $state->messages,
+            activeStepId: $stepId,
+            retryableFailure: false,
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @param list<AgentMessage>   $messages
+     */
+    private function applyAgentCommandApplied(array $payload, RunState $state, array &$messages): RunState
+    {
+        $kind = \is_string($payload['kind'] ?? null) ? $payload['kind'] : null;
+
+        // steer / follow_up: append message to prompt context
+        if (\in_array($kind, ['steer', 'follow_up'], true)) {
+            $messagePayload = \is_array($payload['message'] ?? null) ? $payload['message'] : null;
+            if (null !== $messagePayload) {
+                $msg = AgentMessage::fromPayload($messagePayload);
+                if (null !== $msg) {
+                    $messages[] = $msg;
+                }
+            }
+
+            return new RunState(
+                runId: $state->runId,
+                status: RunStatus::Running,
+                version: $state->version,
+                turnNo: $state->turnNo,
+                lastSeq: $state->lastSeq,
+                isStreaming: $state->isStreaming,
+                streamingMessage: $state->streamingMessage,
+                pendingToolCalls: $state->pendingToolCalls,
+                errorMessage: null,
+                messages: $state->messages,
+                activeStepId: $state->activeStepId,
+                retryableFailure: false,
+            );
+        }
+
+        // human_response: append message and transition to Running
+        if ('human_response' === $kind) {
+            $messagePayload = \is_array($payload['message'] ?? null) ? $payload['message'] : null;
+            if (null !== $messagePayload) {
+                $msg = AgentMessage::fromPayload($messagePayload);
+                if (null !== $msg) {
+                    $messages[] = $msg;
+                }
+            }
+
+            return new RunState(
+                runId: $state->runId,
+                status: RunStatus::Running,
+                version: $state->version,
+                turnNo: $state->turnNo,
+                lastSeq: $state->lastSeq,
+                isStreaming: $state->isStreaming,
+                streamingMessage: $state->streamingMessage,
+                pendingToolCalls: $state->pendingToolCalls,
+                errorMessage: null,
+                messages: $state->messages,
+                activeStepId: $state->activeStepId,
+                retryableFailure: false,
+            );
+        }
+
+        // cancel: transition to Cancelling
+        if ('cancel' === $kind) {
+            $reason = \is_string($payload['reason'] ?? null) ? $payload['reason'] : null;
+
+            return new RunState(
+                runId: $state->runId,
+                status: RunStatus::Cancelling,
+                version: $state->version,
+                turnNo: $state->turnNo,
+                lastSeq: $state->lastSeq,
+                isStreaming: $state->isStreaming,
+                streamingMessage: $state->streamingMessage,
+                pendingToolCalls: $state->pendingToolCalls,
+                errorMessage: $reason,
+                messages: $state->messages,
+                activeStepId: $state->activeStepId,
+                retryableFailure: false,
+            );
+        }
+
+        // continue: restore to Running from WaitingHuman/Failed
+        if ('continue' === $kind) {
+            return new RunState(
+                runId: $state->runId,
+                status: RunStatus::Running,
+                version: $state->version,
+                turnNo: $state->turnNo,
+                lastSeq: $state->lastSeq,
+                isStreaming: $state->isStreaming,
+                streamingMessage: $state->streamingMessage,
+                pendingToolCalls: $state->pendingToolCalls,
+                errorMessage: null,
+                messages: $state->messages,
+                activeStepId: $state->activeStepId,
+                retryableFailure: false,
+            );
+        }
+
+        return $state;
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function applyCommandRejected(array $payload, RunState $state): RunState
+    {
+        $reason = \is_string($payload['reason'] ?? null) ? $payload['reason'] : null;
+
+        return new RunState(
+            runId: $state->runId,
+            status: $state->status,
+            version: $state->version,
+            turnNo: $state->turnNo,
+            lastSeq: $state->lastSeq,
+            isStreaming: $state->isStreaming,
+            streamingMessage: $state->streamingMessage,
+            pendingToolCalls: $state->pendingToolCalls,
+            errorMessage: $reason ?? $state->errorMessage,
+            messages: $state->messages,
+            activeStepId: $state->activeStepId,
+            retryableFailure: $state->retryableFailure,
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @param list<AgentMessage>   $messages
+     * @param array<string, bool>  $pendingToolCalls
+     */
+    private function applyLlmStepCompleted(array $payload, RunState $state, array &$messages, array &$pendingToolCalls): RunState
+    {
+        // Reset pending tool calls before processing the current step's calls.
+        // This matches LlmStepResultHandler, which replaces pendingToolCalls
+        // with the current assistant message's tool calls rather than
+        // accumulating across steps.
+        $pendingToolCalls = [];
+
+        $assistantPayload = \is_array($payload['assistant_message'] ?? null) ? $payload['assistant_message'] : null;
+
+        if (null !== $assistantPayload) {
+            // Replay the assistant payload via a dedicated helper that
+            // handles tool-call-only messages (content: null) which
+            // AgentMessage::fromPayload() would reject.
+            $msg = $this->replayAssistantMessage($assistantPayload);
+            if (null !== $msg) {
+                $messages[] = $msg;
+            }
+
+            // Track pending tool calls from the assistant message.
+            $toolCalls = \is_array($assistantPayload['tool_calls'] ?? null) ? $assistantPayload['tool_calls'] : [];
+            foreach ($toolCalls as $toolCall) {
+                if (!\is_array($toolCall) || !\is_string($toolCall['id'] ?? null)) {
+                    continue;
+                }
+
+                $pendingToolCalls[$toolCall['id']] = false;
+            }
+        }
+
+        return new RunState(
+            runId: $state->runId,
+            status: RunStatus::Running,
+            version: $state->version,
+            turnNo: $state->turnNo,
+            lastSeq: $state->lastSeq,
+            isStreaming: $state->isStreaming,
+            streamingMessage: $state->streamingMessage,
+            pendingToolCalls: $state->pendingToolCalls,
+            errorMessage: null,
+            messages: $state->messages,
+            activeStepId: $state->activeStepId,
+            retryableFailure: false,
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function applyLlmStepFailed(array $payload, RunState $state): RunState
+    {
+        $error = \is_array($payload['error'] ?? null) ? $payload['error'] : null;
+        $errorMessage = \is_string($error['message'] ?? null) ? $error['message'] : 'LLM worker failed.';
+        $retryable = \is_bool($payload['retryable'] ?? null) ? $payload['retryable'] : false;
+
+        return new RunState(
+            runId: $state->runId,
+            status: RunStatus::Failed,
+            version: $state->version,
+            turnNo: $state->turnNo,
+            lastSeq: $state->lastSeq,
+            isStreaming: false,
+            streamingMessage: null,
+            pendingToolCalls: [],
+            errorMessage: $errorMessage,
+            messages: $state->messages,
+            activeStepId: $state->activeStepId,
+            retryableFailure: $retryable,
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @param array<string, bool>  $pendingToolCalls
+     */
+    private function applyToolExecutionStart(array $payload, array &$pendingToolCalls, RunState $state): RunState
+    {
+        $toolCallId = \is_string($payload['tool_call_id'] ?? null) ? $payload['tool_call_id'] : null;
+
+        if (null !== $toolCallId) {
+            $pendingToolCalls[$toolCallId] = false;
+        }
+
+        return $state;
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @param list<AgentMessage>   $messages
+     */
+    private function applyMessageEnd(array $payload, RunState $state, array &$messages): RunState
+    {
+        $messageRole = \is_string($payload['message_role'] ?? null) ? $payload['message_role'] : null;
+
+        // Tool messages: append the serialized tool result from the event.
+        if ('tool' === $messageRole) {
+            $messagePayload = \is_array($payload['message'] ?? null) ? $payload['message'] : null;
+
+            if (null !== $messagePayload) {
+                $msg = AgentMessage::fromPayload($messagePayload);
+                if (null !== $msg) {
+                    $messages[] = $msg;
+                }
+            }
+        }
+
+        return $state;
+    }
+
+    /**
+     * @param array<string, bool> $pendingToolCalls
+     */
+    private function applyToolBatchCommitted(RunState $state, array &$pendingToolCalls): RunState
+    {
+        $pendingToolCalls = [];
+
+        return $state;
+    }
+
+    private function applyWaitingHuman(RunState $state): RunState
+    {
+        return new RunState(
+            runId: $state->runId,
+            status: RunStatus::WaitingHuman,
+            version: $state->version,
+            turnNo: $state->turnNo,
+            lastSeq: $state->lastSeq,
+            isStreaming: $state->isStreaming,
+            streamingMessage: $state->streamingMessage,
+            pendingToolCalls: $state->pendingToolCalls,
+            errorMessage: $state->errorMessage,
+            messages: $state->messages,
+            activeStepId: $state->activeStepId,
+            retryableFailure: $state->retryableFailure,
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function applyAgentEnd(array $payload, RunState $state): RunState
+    {
+        $reason = \is_string($payload['reason'] ?? null) ? $payload['reason'] : null;
+
+        $status = match ($reason) {
+            'completed' => RunStatus::Completed,
+            'cancelled' => RunStatus::Cancelled,
+            default => RunStatus::Completed,
+        };
+
+        return new RunState(
+            runId: $state->runId,
+            status: $status,
+            version: $state->version,
+            turnNo: $state->turnNo,
+            lastSeq: $state->lastSeq,
+            isStreaming: false,
+            streamingMessage: null,
+            pendingToolCalls: [],
+            errorMessage: $state->errorMessage,
+            messages: $state->messages,
+            activeStepId: $state->activeStepId,
+            retryableFailure: false,
+        );
+    }
+
+    private function applyNoMutation(RunEvent $event, RunState $state): RunState
+    {
+        return $state;
+    }
+
+    // ── Integrity helpers ───────────────────────────────────────────────────
+
+    /**
+     * Identifies duplicate event sequence numbers.
+     *
+     * @param list<RunEvent> $events sorted ascending by seq
+     *
+     * @return list<int> duplicate sequence numbers
+     */
+    private function duplicateSequences(array $events): array
+    {
+        $duplicates = [];
+        $seen = [];
+
+        foreach ($events as $event) {
+            if (\in_array($event->seq, $seen, true)) {
+                $duplicates[] = $event->seq;
+            } else {
+                $seen[] = $event->seq;
+            }
+        }
+
+        return $duplicates;
+    }
+
+    /**
+     * Orders events by their sequence number in ascending order.
+     *
+     * @param list<RunEvent> $events
+     *
+     * @return list<RunEvent>
+     */
+    private function sortBySequence(array $events): array
+    {
+        usort($events, static fn (RunEvent $left, RunEvent $right): int => $left->seq <=> $right->seq);
+
+        return $events;
+    }
+
+    /**
+     * Identifies gaps in event sequences.
+     *
+     * @param list<RunEvent> $events sorted ascending by seq
+     *
+     * @return list<int>
+     */
+    private function missingSequences(array $events): array
+    {
+        $missing = [];
+        $expected = 1;
+
+        foreach ($events as $event) {
+            if ($event->seq < $expected) {
+                continue;
+            }
+
+            while ($expected < $event->seq) {
+                $missing[] = $expected;
+                ++$expected;
+            }
+
+            ++$expected;
+        }
+
+        return $missing;
+    }
+
+    /**
+     * Replays an assistant message payload from the canonical event stream.
+     *
+     * Differs from {@see AgentMessage::fromPayload()} in one key aspect:
+     * when the real {@see AgentMessageNormalizer::assistantMessagePayload()}
+     * produces content:null for a tool-call-only assistant response,
+     * {@see AgentMessage::fromPayload()} rejects the payload (it requires
+     * content to be an array).  This helper detects that case and constructs
+     * an {@see AgentMessage} with empty content and tool calls placed in
+     * metadata, matching the semantics of
+     * {@see AgentMessageNormalizer::assistantMessage()}.
+     *
+     * @param array<string, mixed> $payload
+     */
+    private function replayAssistantMessage(array $payload): ?AgentMessage
+    {
+        $msg = AgentMessage::fromPayload($payload);
+
+        // fromPayload succeeded — standard path for text-bearing messages.
+        if (null !== $msg) {
+            return $msg;
+        }
+
+        // Only handle assistant-role payloads where content is null/missing.
+        // fromPayload rejects these because is_array(content) fails, but
+        // the real AgentMessageNormalizer produces this shape for
+        // tool-call-only assistant responses.
+        $role = $payload['role'] ?? null;
+
+        if ('assistant' !== $role) {
+            return null;
+        }
+
+        $metadata = [];
+        $rawToolCalls = \is_array($payload['tool_calls'] ?? null) ? $payload['tool_calls'] : [];
+        if ([] !== $rawToolCalls) {
+            $metadata['tool_calls'] = $rawToolCalls;
+        }
+
+        $details = \is_array($payload['details'] ?? null) && [] !== $payload['details']
+            ? $payload['details']
+            : null;
+
+        return new AgentMessage(
+            role: 'assistant',
+            content: [],
+            details: $details,
+            metadata: $metadata,
+        );
+    }
+
+    /**
+     * @param list<RunEvent> $events
+     */
+    private function maxSequence(array $events): int
+    {
+        if ([] === $events) {
+            return 0;
+        }
+
+        return (int) max(array_map(static fn (RunEvent $event): int => $event->seq, $events));
+    }
+}

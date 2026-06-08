@@ -6,6 +6,8 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\MessageIdempotencyService;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
+use Ineersa\AgentCore\Application\Handler\RunStateReplayService;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
@@ -51,6 +53,7 @@ final readonly class RunMessageProcessor
         private StepDispatcher $stepDispatcher,
         iterable $handlers,
         private LoggerInterface $logger,
+        private ?RunStateReplayService $runStateReplayService = null,
     ) {
         $this->handlers = [...$handlers];
     }
@@ -98,6 +101,37 @@ final readonly class RunMessageProcessor
 
         for ($attempt = 0; $attempt < self::MAX_CAS_RETRIES; ++$attempt) {
             $state = $this->runStore->get($runId) ?? RunState::queued($runId);
+
+            // Rebuild stale or missing state from canonical events so the
+            // handler operates on a correct baseline.  This ensures that
+            // state.json is a rebuildable hot checkpoint, not a required
+            // source of truth.
+            if (null !== $this->runStateReplayService) {
+                try {
+                    $replayResult = $this->runStateReplayService->rebuildIfStale($state, $runId);
+
+                    if ($replayResult->rebuilt && null !== $replayResult->rebuiltState) {
+                        $state = $replayResult->rebuiltState;
+
+                        $this->logger->info('messenger.state.rebuilt_from_events', [
+                            'run_id' => $runId,
+                            'state_last_seq' => $replayResult->maxEventSeq,
+                            'event_count' => $replayResult->eventCount,
+                            'component' => 'runtime',
+                        ]);
+                    }
+                } catch (RunStateReplayException $replayException) {
+                    // Non-contiguous or corrupted history — fail explicitly
+                    // rather than continuing from a stale or queued state.
+                    $this->logger->error('messenger.state.replay_failed', [
+                        'run_id' => $runId,
+                        'reason' => $replayException->getMessage(),
+                        'component' => 'runtime',
+                    ]);
+
+                    throw $replayException;
+                }
+            }
 
             RunLogContext::enter(['retry_count' => $attempt]);
             try {
