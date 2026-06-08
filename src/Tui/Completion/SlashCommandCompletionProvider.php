@@ -16,6 +16,12 @@ use Ineersa\Tui\Command\SlashCommandRegistry;
  *
  * Uses {@see SlashCommandRegistry::allMetadata()} at suggestion time
  * so runtime-registered commands (e.g. /model) are included.
+ *
+ * EDITOR-08 limitation: only cursor-at-end is honoured.
+ * When {@see CompletionContext::$cursorByteOffset} is not at the
+ * end of the text, the last-line heuristic still operates on the
+ * suffix of the full text.  This matches the MVP where
+ * {@see PromptEditor} does not expose live cursor state.
  */
 final readonly class SlashCommandCompletionProvider implements CompletionProvider
 {
@@ -24,9 +30,9 @@ final readonly class SlashCommandCompletionProvider implements CompletionProvide
     ) {
     }
 
-    public function getSuggestions(string $text): array
+    public function getSuggestions(CompletionContext $context): array
     {
-        $slashContext = $this->extractSlashContext($text);
+        $slashContext = $this->extractSlashContext($context->text);
 
         if (null === $slashContext) {
             return [];

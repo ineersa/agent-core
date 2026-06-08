@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
+use Ineersa\Tui\Completion\CompletionContext;
 use Ineersa\Tui\Completion\CompletionState;
 use Ineersa\Tui\Completion\CompletionSuggestion;
 use Ineersa\Tui\Completion\SlashCommandCompletionProvider;
@@ -56,6 +57,30 @@ final class CompletionListener implements TuiListenerRegistrar
         /** @var ?ContainerWidget $overlayWidget */
         $overlayWidget = null;
 
+        // ── Priority 105: close overlay on Ctrl+C / Ctrl+D ──────────
+        // Runs BEFORE CtrlCInputInterceptor (100) so the completion
+        // overlay is torn down cleanly.  Does NOT stop propagation;
+        // CtrlCInputInterceptor still performs clear/quit logic.
+        $context->tui->addListener(
+            static function (InputEvent $event) use (
+                $screen, &$overlayWidget, $state,
+            ): void {
+                $data = $event->getData();
+
+                if ("\x03" === $data || "\x04" === $data) {
+                    if ($state->isOpen()) {
+                        self::closeOverlay($screen, $overlayWidget);
+                        $state->close();
+                        $screen->requestRender();
+                        // Do NOT stop propagation — let CtrlCInputInterceptor
+                        // and other listeners handle the clear/quit logic.
+                    }
+                }
+            },
+            priority: 105,
+        );
+
+        // ── Priority 90: completion Tab / Escape / Up/Down ──────────
         $context->tui->addListener(
             static function (InputEvent $event) use (
                 $state, $provider, $screen, $editor, $theme, &$overlayWidget,
@@ -85,7 +110,8 @@ final class CompletionListener implements TuiListenerRegistrar
 
                     // Menu closed: query provider and open if suggestions found.
                     $text = $editor->getText();
-                    $suggestions = $provider->getSuggestions($text);
+                    $ctx = CompletionContext::forCursorAtEnd($text);
+                    $suggestions = $provider->getSuggestions($ctx);
 
                     if ([] !== $suggestions) {
                         $state->open($suggestions);

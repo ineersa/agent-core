@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Tests\Completion;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\SlashCommandRegistry;
+use Ineersa\Tui\Completion\CompletionContext;
 use Ineersa\Tui\Completion\CompletionSuggestion;
 use Ineersa\Tui\Completion\SlashCommandCompletionProvider;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -30,7 +31,7 @@ final class SlashCommandCompletionProviderTest extends TestCase
     #[Test]
     public function returnsSuggestionsForSlashAtTextStart(): void
     {
-        $suggestions = $this->provider->getSuggestions('/');
+        $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd('/'));
 
         $this->assertNotEmpty($suggestions);
         // Built-in commands should appear
@@ -43,7 +44,7 @@ final class SlashCommandCompletionProviderTest extends TestCase
     #[Test]
     public function returnsSuggestionsForPartialSlashPrefix(): void
     {
-        $suggestions = $this->provider->getSuggestions('/he');
+        $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd('/he'));
 
         $this->assertNotEmpty($suggestions);
         $displays = array_map(static fn (CompletionSuggestion $s) => $s->display, $suggestions);
@@ -55,7 +56,7 @@ final class SlashCommandCompletionProviderTest extends TestCase
     #[Test]
     public function slashAloneShowsAllCommands(): void
     {
-        $suggestions = $this->provider->getSuggestions('/');
+        $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd('/'));
 
         // All built-in commands (clear, exit, help) should appear
         $this->assertGreaterThanOrEqual(3, \count($suggestions));
@@ -64,7 +65,7 @@ final class SlashCommandCompletionProviderTest extends TestCase
     #[Test]
     public function returnsSuggestionsAfterNewline(): void
     {
-        $suggestions = $this->provider->getSuggestions("hello\n/");
+        $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd("hello\n/"));
 
         $this->assertNotEmpty($suggestions);
         $displays = array_map(static fn (CompletionSuggestion $s) => $s->display, $suggestions);
@@ -74,7 +75,7 @@ final class SlashCommandCompletionProviderTest extends TestCase
     #[Test]
     public function returnsSuggestionsForPartialPrefixAfterNewline(): void
     {
-        $suggestions = $this->provider->getSuggestions("hello\n/ex");
+        $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd("hello\n/ex"));
 
         $this->assertNotEmpty($suggestions);
         $displays = array_map(static fn (CompletionSuggestion $s) => $s->display, $suggestions);
@@ -85,7 +86,7 @@ final class SlashCommandCompletionProviderTest extends TestCase
     #[Test]
     public function preservesTextBeforeLastNewline(): void
     {
-        $suggestions = $this->provider->getSuggestions("/help\n/");
+        $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd("/help\n/"));
 
         $this->assertNotEmpty($suggestions);
         // The replacementStart should point to the second "/" position
@@ -100,40 +101,40 @@ final class SlashCommandCompletionProviderTest extends TestCase
     #[Test]
     public function returnsEmptyForNonSlashText(): void
     {
-        $this->assertSame([], $this->provider->getSuggestions('hello'));
+        $this->assertSame([], $this->provider->getSuggestions(CompletionContext::forCursorAtEnd('hello')));
     }
 
     #[Test]
     public function returnsEmptyForEmptyString(): void
     {
-        $this->assertSame([], $this->provider->getSuggestions(''));
+        $this->assertSame([], $this->provider->getSuggestions(CompletionContext::forCursorAtEnd('')));
     }
 
     #[Test]
     public function returnsEmptyForMidLineSlash(): void
     {
         // Slash that is not at line start — no completion trigger
-        $this->assertSame([], $this->provider->getSuggestions('hello /he'));
+        $this->assertSame([], $this->provider->getSuggestions(CompletionContext::forCursorAtEnd('hello /he')));
     }
 
     #[Test]
     public function returnsEmptyForLeadingSpaces(): void
     {
         // Spaces before "/" mean it's not at column 0
-        $this->assertSame([], $this->provider->getSuggestions('  /he'));
+        $this->assertSame([], $this->provider->getSuggestions(CompletionContext::forCursorAtEnd('  /he')));
     }
 
     #[Test]
     public function returnsEmptyForEscapedSlash(): void
     {
         // "//" is an escaped slash, not a command
-        $this->assertSame([], $this->provider->getSuggestions('//'));
+        $this->assertSame([], $this->provider->getSuggestions(CompletionContext::forCursorAtEnd('//')));
     }
 
     #[Test]
     public function returnsEmptyForEscapedSlashAfterNewline(): void
     {
-        $this->assertSame([], $this->provider->getSuggestions("hello\n//"));
+        $this->assertSame([], $this->provider->getSuggestions(CompletionContext::forCursorAtEnd("hello\n//")));
     }
 
     // ── Alias matching ──────────────────────────────────────────────
@@ -142,7 +143,7 @@ final class SlashCommandCompletionProviderTest extends TestCase
     public function aliasPrefixSuggestsCanonicalCommand(): void
     {
         // /q is an alias for /exit
-        $suggestions = $this->provider->getSuggestions('/q');
+        $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd('/q'));
 
         $this->assertNotEmpty($suggestions);
         $displays = array_map(static fn (CompletionSuggestion $s) => $s->display, $suggestions);
@@ -159,7 +160,7 @@ final class SlashCommandCompletionProviderTest extends TestCase
     public function aliasPrefixPartialMatch(): void
     {
         // /cl is an alias prefix for /clear (alias: cls)
-        $suggestions = $this->provider->getSuggestions('/cl');
+        $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd('/cl'));
 
         $this->assertNotEmpty($suggestions);
         $displays = array_map(static fn (CompletionSuggestion $s) => $s->display, $suggestions);
@@ -171,7 +172,7 @@ final class SlashCommandCompletionProviderTest extends TestCase
     {
         // /exit has aliases: quit, q
         // Both "q" and "quit" match "/q" prefix
-        $suggestions = $this->provider->getSuggestions('/q');
+        $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd('/q'));
 
         // /exit should appear exactly once
         $exitSuggestions = array_filter(
@@ -197,7 +198,7 @@ final class SlashCommandCompletionProviderTest extends TestCase
             $this->createStub(SlashCommandHandler::class),
         );
 
-        $suggestions = $this->provider->getSuggestions('/m');
+        $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd('/m'));
 
         $this->assertNotEmpty($suggestions);
         $displays = array_map(static fn (CompletionSuggestion $s) => $s->display, $suggestions);
@@ -217,7 +218,7 @@ final class SlashCommandCompletionProviderTest extends TestCase
             $this->createStub(SlashCommandHandler::class),
         );
 
-        $suggestions = $this->provider->getSuggestions('/');
+        $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd('/'));
 
         $displays = array_map(static fn (CompletionSuggestion $s) => $s->display, $suggestions);
         $this->assertContains('/custom', $displays);
@@ -236,7 +237,7 @@ final class SlashCommandCompletionProviderTest extends TestCase
             $this->createStub(SlashCommandHandler::class),
         );
 
-        $suggestions = $this->provider->getSuggestions('/m');
+        $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd('/m'));
 
         $displays = array_map(static fn (CompletionSuggestion $s) => $s->display, $suggestions);
         $this->assertContains('/model', $displays);
@@ -247,7 +248,7 @@ final class SlashCommandCompletionProviderTest extends TestCase
     #[Test]
     public function suggestionsIncludeDescription(): void
     {
-        $suggestions = $this->provider->getSuggestions('/he');
+        $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd('/he'));
 
         $help = $this->findByDisplay($suggestions, '/help');
         $this->assertNotNull($help);
@@ -257,7 +258,7 @@ final class SlashCommandCompletionProviderTest extends TestCase
     #[Test]
     public function suggestionInsertTextIncludesTrailingSpaceForCommand(): void
     {
-        $suggestions = $this->provider->getSuggestions('/cle');
+        $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd('/cle'));
 
         $clear = $this->findByDisplay($suggestions, '/clear');
         $this->assertNotNull($clear);
@@ -267,7 +268,7 @@ final class SlashCommandCompletionProviderTest extends TestCase
     #[Test]
     public function replacementRangeCoversSlashAndPrefix(): void
     {
-        $suggestions = $this->provider->getSuggestions('/he');
+        $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd('/he'));
 
         $help = $this->findByDisplay($suggestions, '/help');
         $this->assertNotNull($help);
@@ -279,7 +280,7 @@ final class SlashCommandCompletionProviderTest extends TestCase
     #[Test]
     public function replacementRangeAfterNewline(): void
     {
-        $suggestions = $this->provider->getSuggestions("hello\n/ex");
+        $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd("hello\n/ex"));
 
         $exit = $this->findByDisplay($suggestions, '/exit');
         $this->assertNotNull($exit);
@@ -293,7 +294,7 @@ final class SlashCommandCompletionProviderTest extends TestCase
     #[Test]
     public function suggestionsArePreservedInRegistryOrder(): void
     {
-        $suggestions = $this->provider->getSuggestions('/');
+        $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd('/'));
 
         $displays = array_map(static fn (CompletionSuggestion $s) => $s->display, $suggestions);
         // Registry sorts by canonical name

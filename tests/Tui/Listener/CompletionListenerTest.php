@@ -368,28 +368,130 @@ final class CompletionListenerTest extends TestCase
             }
         };
 
-        // Register via a fresh registry for this test
+        // Isolated TUI + screen — does NOT reuse setUp's listener.
+        $isolatedTui = new Tui();
+        $isolatedEditor = new PromptEditor();
+        $theme = new DefaultTheme(new ThemePalette('default'));
+        $isolatedScreen = new ChatScreen($theme, 'test-session', $isolatedEditor);
+        $isolatedScreen->mount($isolatedTui);
+        $isolatedTui->setFocus($isolatedScreen->editorWidget());
+
         $registry = new SlashCommandRegistry();
         $registry->register(
             new CommandMetadata(name: 'testcmd', aliases: [], description: 'Test'),
             $handler,
         );
 
-        // Re-register with test-specific provider
         $provider = new SlashCommandCompletionProvider($registry);
         $listener = new CompletionListener($provider);
 
-        $context = $this->createContext();
-        $listener->register($context);
+        $client = $this->createStub(AgentSessionClient::class);
+        $state = new TuiSessionState('test-session');
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'default'),
+            logging: new LoggingConfig(),
+            cwd: sys_get_temp_dir(),
+        );
+        $sessionStore = new HatfieldSessionStore(
+            appConfig: $appConfig,
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+        );
+        $isolatedContext = new TuiRuntimeContext(
+            tui: $isolatedTui,
+            client: $client,
+            state: $state,
+            screen: $isolatedScreen,
+            sessionStore: $sessionStore,
+        );
+        $listener->register($isolatedContext);
 
-        $this->editor->setText('/test');
+        $isolatedEditor->setText('/test');
 
         // Tab opens completion, Tab accepts
-        $this->tui->handleInput("\t");
-        $this->tui->handleInput("\t");
+        $isolatedTui->handleInput("\t");
+        $isolatedTui->handleInput("\t");
 
         $this->assertFalse($callCount->called, 'Slash command handler must not be invoked via Tab completion.');
-        $this->assertSame('/testcmd ', $this->editor->getText());
+        $this->assertSame('/testcmd ', $isolatedEditor->getText());
+    }
+
+    // ── Ctrl+C / Ctrl+D tears down completion overlay ────────────
+
+    #[Test]
+    public function ctrlCClearsCompletionOverlay(): void
+    {
+        $this->editor->setText('/');
+
+        // Open menu
+        $this->tui->handleInput("\t");
+
+        // Ctrl+C should close the overlay (priority 105 listener).
+        // Propagation is NOT stopped so CtrlCInputInterceptor
+        // still receives the key (not tested here since we don't
+        // register the full interceptor chain).
+        $exception = null;
+        try {
+            $this->tui->handleInput("\x03");
+        } catch (\Throwable $e) {
+            $exception = $e;
+        }
+
+        // The key must not crash or throw after overlay close.
+        $this->assertNull($exception, 'Ctrl+C must not throw when completion overlay closes.');
+
+        // Re-open and accept to verify state machine is still healthy.
+        $this->editor->setText('/');
+        $this->tui->handleInput("\t");
+        $this->tui->handleInput("\t");
+        // First alphabetical suggestion is /clear
+        $this->assertStringStartsWith('/clear', $this->editor->getText());
+    }
+
+    #[Test]
+    public function ctrlDClearsCompletionOverlay(): void
+    {
+        $this->editor->setText('/');
+
+        // Open menu
+        $this->tui->handleInput("\t");
+
+        // Ctrl+D should close the overlay (priority 105 listener).
+        // Propagation is NOT stopped so downstream listeners
+        // (CtrlCInputInterceptor, editor) still handle the key.
+        $exception = null;
+        try {
+            $this->tui->handleInput("\x04");
+        } catch (\Throwable $e) {
+            $exception = $e;
+        }
+
+        $this->assertNull($exception, 'Ctrl+D must not throw when completion overlay closes.');
+
+        // Re-open and accept to verify state machine is still healthy.
+        $this->editor->setText('/');
+        $this->tui->handleInput("\t");
+        $this->tui->handleInput("\t");
+        // First alphabetical suggestion is /clear
+        $this->assertStringStartsWith('/clear', $this->editor->getText());
+    }
+
+    #[Test]
+    public function ctrlCDoesNothingWhenCompletionClosed(): void
+    {
+        $this->editor->setText('hello');
+
+        // No menu open — Ctrl+C should not crash.
+        // Without CtrlCInputInterceptor registered in this isolated
+        // fixture, the key may be consumed by the editor; verify no
+        // exception is thrown.
+        $exception = null;
+        try {
+            $this->tui->handleInput("\x03");
+        } catch (\Throwable $e) {
+            $exception = $e;
+        }
+
+        $this->assertNull($exception, 'Ctrl+C with no completion open must not throw.');
     }
 
     // ── Overlay lifecycle (open/close is idempotent) ──────────────

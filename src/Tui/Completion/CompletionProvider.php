@@ -7,15 +7,17 @@ namespace Ineersa\Tui\Completion;
 /**
  * Contract for completion suggestion providers.
  *
- * Providers produce typed suggestion lists from editor text context.
+ * Providers produce typed suggestion lists from editor context.
  * Returns an empty list when the provider does not apply.
+ *
+ * The {@see CompletionContext} DTO carries full editor text and cursor
+ * position.  EDITOR-08 operates with cursor-at-end because
+ * {@see PromptEditor} does not expose live cursor state yet.
  */
 interface CompletionProvider
 {
     /**
-     * @param string $text Current editor text (cursor-at-end for MVP)
-     *
      * @return list<CompletionSuggestion>
      */
-    public function getSuggestions(string $text): array;
+    public function getSuggestions(CompletionContext $context): array;
 }
