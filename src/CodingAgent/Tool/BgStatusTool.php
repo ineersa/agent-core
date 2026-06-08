@@ -35,6 +35,7 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
         private readonly BackgroundProcessManager $manager,
         private readonly BackgroundProcessConfig $config,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
+        private readonly OutputCap $outputCap,
     ) {
     }
 
@@ -182,7 +183,12 @@ final class BgStatusTool implements HatfieldToolProviderInterface, ToolHandlerIn
         $lines[] = $result->content;
         $lines[] = '--- END LOG ---';
 
-        return implode("\n", $lines);
+        $text = implode("\n", $lines);
+
+        // Cap oversized log output before returning to the model.
+        // Uses the log path to select an appropriate doc-like cap
+        // so log tails have a higher ceiling than code tool output.
+        return $this->outputCap->process($text, $result->logPath);
     }
 
     /**
