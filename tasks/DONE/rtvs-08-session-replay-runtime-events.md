@@ -87,14 +87,14 @@ Plan reference (partially stale — see sequencing above):
   changes touching TUI runtime, Messenger, or LLM-visible flow.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/rtvs-08-session-replay-runtime-events
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-08-session-replay-runtime-events
 Fork run: hl2c2mio273b
 PR URL: https://github.com/ineersa/agent-core/pull/105
-PR Status: open
+PR Status: merged
 Started: 2026-06-08T14:37:11.366Z
-Completed:
+Completed: 2026-06-08T15:57:46.614Z
 
 ## Work log
 - Created: 2026-05-17T22:17:13.135Z
@@ -149,3 +149,12 @@ Castor Check Output SHA256: d13a1ec7e60ab8bb3537ea34dcc622c687f4e419ec25a2cccfc8
 - Pushed task/rtvs-08-session-replay-runtime-events to origin.
 - branch 'task/rtvs-08-session-replay-runtime-events' set up to track 'origin/task/rtvs-08-session-replay-runtime-events'.
 - Created PR: https://github.com/ineersa/agent-core/pull/105
+
+## Task workflow update - 2026-06-08T15:57:46.614Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/rtvs-08-session-replay-runtime-events into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/rtvs-08-session-replay-runtime-events.
+- Pulled integration checkout: Already up to date..
+- Validation: PR #105 state: MERGED, mergedAt 2026-06-08T15:55:20Z
+- Summary: PR #105 was already merged on GitHub (merge commit ac2dc874). Integration checkout was synced onto origin/main, then task moved to DONE. Note: unrelated copy-command work present in integration checkout was preserved in named stashes before merge/sync: `pre-rtvs08-done-unrelated-main-untracked` and `pre-rtvs08-done-unrelated-copy-command-work`.
