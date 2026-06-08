@@ -27,16 +27,15 @@ final class PickerOverlayTest extends TestCase
         self::assertFalse($overlay->isOpen());
         self::assertNull($overlay->listWidget());
 
-        $tui = $this->createMock(Tui::class);
-        $tui->expects(self::once())->method('add');
-        $tui->expects(self::once())->method('setFocus');
-        $tui->expects(self::once())->method('requestRender');
-
+        $promptEditor = new PromptEditor();
         $screen = new ChatScreen(
             new DefaultTheme(new ThemePalette('test', [])),
             'test-session',
-            new PromptEditor(),
+            $promptEditor,
         );
+
+        $tui = new Tui();
+        $screen->mount($tui);
 
         $listWidget = new SelectListWidget(items: [
             ['value' => 'a', 'label' => 'A'],
@@ -54,17 +53,15 @@ final class PickerOverlayTest extends TestCase
     {
         $overlay = new PickerOverlay();
 
-        $tui = $this->createMock(Tui::class);
-        $tui->expects(self::once())->method('add');
-        $tui->expects(self::once())->method('setFocus');
-        $tui->expects(self::once())->method('requestRender');
-        $tui->expects(self::once())->method('remove');
-
+        $promptEditor = new PromptEditor();
         $screen = new ChatScreen(
             new DefaultTheme(new ThemePalette('test', [])),
             'test-session',
-            new PromptEditor(),
+            $promptEditor,
         );
+
+        $tui = new Tui();
+        $screen->mount($tui);
 
         $listWidget = new SelectListWidget(items: [['value' => 'a', 'label' => 'A']]);
         $header = new TextWidget(text: 'H', truncate: true);
@@ -81,18 +78,15 @@ final class PickerOverlayTest extends TestCase
     {
         $overlay = new PickerOverlay();
 
-        $tui = $this->createMock(Tui::class);
-        $tui->expects(self::once())->method('add');
-        $tui->expects(self::once())->method('setFocus');
-        $tui->expects(self::once())->method('requestRender');
-        // remove should only be called once despite two close() calls
-        $tui->expects(self::once())->method('remove');
-
+        $promptEditor = new PromptEditor();
         $screen = new ChatScreen(
             new DefaultTheme(new ThemePalette('test', [])),
             'test-session',
-            new PromptEditor(),
+            $promptEditor,
         );
+
+        $tui = new Tui();
+        $screen->mount($tui);
 
         $listWidget = new SelectListWidget(items: [['value' => 'a', 'label' => 'A']]);
         $header = new TextWidget(text: 'H', truncate: true);
@@ -120,13 +114,15 @@ final class PickerOverlayTest extends TestCase
     {
         $overlay = new PickerOverlay();
 
-        $tui = $this->createStub(Tui::class);
-
+        $promptEditor = new PromptEditor();
         $screen = new ChatScreen(
             new DefaultTheme(new ThemePalette('test', [])),
             'test-session',
-            new PromptEditor(),
+            $promptEditor,
         );
+
+        $tui = new Tui();
+        $screen->mount($tui);
 
         $listWidget = new SelectListWidget(items: [['value' => 'a', 'label' => 'A']]);
         $header = new TextWidget(text: 'H', truncate: true);
@@ -151,18 +147,18 @@ final class PickerOverlayTest extends TestCase
         self::assertNull($overlay->screen());
     }
 
-    public function testMountAddsContainerToTuiAndSetsFocus(): void
+    public function testMountUsesInsertOverlayAfterEditor(): void
     {
-        $tui = $this->createMock(Tui::class);
-        $tui->expects(self::once())->method('add')->with(self::isInstanceOf(ContainerWidget::class));
-        $tui->expects(self::once())->method('setFocus')->with(self::isInstanceOf(SelectListWidget::class));
-        $tui->expects(self::once())->method('requestRender')->with(true);
-
+        // The overlay should mount below the editor, not at TUI root.
+        $promptEditor = new PromptEditor();
         $screen = new ChatScreen(
             new DefaultTheme(new ThemePalette('test', [])),
             'test-session',
-            new PromptEditor(),
+            $promptEditor,
         );
+
+        $tui = new Tui();
+        $screen->mount($tui);
 
         $listWidget = new SelectListWidget(items: [
             ['value' => 'a', 'label' => 'A'],
@@ -173,5 +169,6 @@ final class PickerOverlayTest extends TestCase
         $overlay->mount($tui, $screen, $listWidget, $header);
 
         self::assertTrue($overlay->isOpen());
+        self::assertSame($listWidget, $overlay->listWidget());
     }
 }

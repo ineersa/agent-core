@@ -18,8 +18,8 @@ use Symfony\Component\Tui\Event\InputEvent;
  * Registers model/reasoning controls in the TUI.
  *
  * On registration:
- *  - /model command registered in the slash command registry
- *    (opens interactive SelectListWidget; textual subcommands remain)
+ *  - /model command: open interactive model picker or select by ref
+ *  - /model-favourites command: open favorites picker or toggle by ref
  *  - Ctrl+P listener cycles favorite models
  *  - Shift+Tab listener cycles reasoning levels
  *
@@ -59,10 +59,28 @@ final class ModelControlListener implements TuiListenerRegistrar
                 new CommandMetadata(
                     name: 'model',
                     aliases: ['m'],
-                    description: 'Interactive model selection. /model opens the model picker (arrows move, Enter selects, Esc cancels, Ctrl+F toggles favorite). /model fav opens the favorites picker (Space toggles, Enter saves).',
-                    usage: '/model | /model select <provider/modelname> | /model fav | /model fav <provider/modelname>',
+                    description: 'Select the active AI model',
+                    usage: '/model [provider/modelname]',
+                    acceptsArguments: true,
                 ),
                 $modelHandler,
+            );
+        }
+
+        // ── Register /model-favourites slash command ──
+        $favCmdHandler = new ModelCommandHandler($modelService, $appConfig, $state, $this->pickerController, $this->favPickerController, $this->logger, isFavourites: true);
+        if ($this->commandRegistry->has('model-favourites')) {
+            $this->commandRegistry->setHandler('model-favourites', $favCmdHandler);
+        } else {
+            $this->commandRegistry->register(
+                new CommandMetadata(
+                    name: 'model-favourites',
+                    aliases: ['model-favourite'],
+                    description: 'Manage favourite AI models',
+                    usage: '/model-favourites [provider/modelname]',
+                    acceptsArguments: true,
+                ),
+                $favCmdHandler,
             );
         }
 

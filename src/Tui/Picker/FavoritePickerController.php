@@ -20,12 +20,15 @@ use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 
 /**
- * Interactive favorites picker accessed via /model fav.
+ * Interactive favorites picker accessed via /model-favourites.
  *
  * Shows all available models with * markers for favorites.
  * Space toggles favorite on the selected row.
  * Enter closes the picker (no model change).
  * Escape cancels without changes.
+ *
+ * Only the favorite marker is shown — the current model marker
+ * belongs in the main model picker, not here.
  */
 final class FavoritePickerController
 {
@@ -60,7 +63,6 @@ final class FavoritePickerController
 
         $tui = $this->tui;
         $screen = $this->screen;
-        $state = $this->state;
 
         // ── Header — instructional line above the list (muted theme colour) ──
         $headerText = $screen->theme()->muted(
@@ -177,7 +179,11 @@ final class FavoritePickerController
     }
 
     /**
-     * Build items: all models, favorites marked with *.
+     * Build items: all models, favorites marked with * (warning token).
+     *
+     * The current model is not shown here — this picker is only for
+     * favorite toggles.  The main model picker owns the current-model
+     * accent and ❯ marker.
      *
      * @return list<array{value: string, label: string}>
      */

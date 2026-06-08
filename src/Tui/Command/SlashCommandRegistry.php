@@ -116,7 +116,18 @@ final class SlashCommandRegistry
 
         // Custom handler takes precedence (allows overriding built-in help)
         if (null !== $canonical && isset($this->handlers[$canonical])) {
-            return $this->handlers[$canonical]->handle($command);
+            $effectiveCommand = $command;
+
+            // When the command does not declare that it accepts arguments,
+            // silently strip any extra text so `/clear foo` behaves like
+            // `/clear` and `/exit now` like `/exit` — avoiding misleading
+            // "Unknown command" errors for built-in no-arg commands.
+            $meta = $this->metadata[$canonical] ?? null;
+            if (null !== $meta && !$meta->acceptsArguments && '' !== $command->args) {
+                $effectiveCommand = new SlashCommand($command->name, '', $command->originalText);
+            }
+
+            return $this->handlers[$canonical]->handle($effectiveCommand);
         }
 
         // Built-in help (only if no custom handler registered)
@@ -282,15 +293,12 @@ final class SlashCommandRegistry
         $normalized = trim($name);
         $meta = $this->getMetadata($normalized);
 
+        // Unknown command name in `/help <name>` — fall back to the
+        // general help listing instead of reporting an error, so
+        // accidental `/help 123` (or any unrecognised arg) simply
+        // displays available commands.
         if (null === $meta) {
-            return new TranscriptMessage(
-                \sprintf(
-                    'Unknown command: /%s. Type /help for available commands.',
-                    $normalized,
-                ),
-                'system',
-                'muted',
-            );
+            return $this->buildHelpMessage('');
         }
 
         $lines = [

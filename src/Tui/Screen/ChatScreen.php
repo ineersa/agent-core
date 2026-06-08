@@ -425,9 +425,45 @@ final class ChatScreen
     }
 
     /**
+     * Insert an interactive overlay widget below the editor.
+     *
+     * Removes the below-editor area and footer, adds the overlay, then
+     * restores everything in original order so the overlay renders
+     * directly below the editor:
+     *
+     *   … → editor → overlay → belowEditorWidget → footerSep → footer
+     *
+     * Used by completion menus that should appear below the prompt
+     * while the editor keeps focus (unlike question/picker overlays
+     * which steal focus and render above the editor).
+     *
+     * @throws \LogicException when the screen has not been mounted yet
+     */
+    public function insertOverlayAfterEditor(AbstractWidget $widget): void
+    {
+        if (null === $this->tui) {
+            throw new \LogicException('insertOverlayAfterEditor() requires ChatScreen to be mounted first. Call mount() before inserting overlays.');
+        }
+
+        // Remove everything below the editor (reverse mount order).
+        $this->tui->remove($this->footerWidget);
+        $this->tui->remove($this->footerSepWidget);
+        $this->tui->remove($this->belowEditorWidget);
+
+        // Add the overlay (appended after the editor).
+        $this->tui->add($widget);
+
+        // Restore below-editor widgets in original mount order.
+        $this->tui->add($this->belowEditorWidget);
+        $this->tui->add($this->footerSepWidget);
+        $this->tui->add($this->footerWidget);
+    }
+
+    /**
      * Remove an overlay widget from the TUI root.
      *
-     * Companion to {@see insertOverlayBeforeEditor()}. Safe to call before
+     * Companion to {@see insertOverlayBeforeEditor()} and
+     * {@see insertOverlayAfterEditor()}. Safe to call before
      * mount — it is a no-op when the screen has not been mounted yet.
      */
     public function removeOverlay(AbstractWidget $widget): void

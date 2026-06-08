@@ -61,6 +61,37 @@ final class PromptEditor
         $this->widget->setText($text);
     }
 
+    /**
+     * Replace all editor text and leave the cursor at the end.
+     *
+     * Clears the editor, then inserts the replacement text through
+     * the editor's normal character-input path.  Because EditorWidget
+     * does not expose a public cursor-position API and the task policy
+     * forbids private-property access (reflection, Closure::bind), we
+     * avoid cursor management entirely: insertText() advances the
+     * cursor past every typed character.
+     *
+     * This method is safe for printable single-line text without
+     * terminal control characters — the current use case is
+     * slash-completion acceptance at replacementStart 0 where the
+     * insert text is a single-line ASCII command with trailing space.
+     *
+     * Open question: Symfony TUI has no public cursor setter on
+     * EditorWidget, so any future feature needing arbitrary cursor
+     * positioning after setText() will need the same constraint
+     * awareness or a contribution upstream.
+     */
+    public function replaceText(string $text): void
+    {
+        // Clear puts the cursor at (0,0).
+        $this->widget->setText('');
+
+        // Regular text insertion advances cursor past every character.
+        // EditorWidget::handleInput() delegates to
+        // EditorDocument::insertText() which slides the cursor forward.
+        $this->widget->handleInput($text);
+    }
+
     // ─── Lifecycle ───────────────────────────────────────────────
 
     /**

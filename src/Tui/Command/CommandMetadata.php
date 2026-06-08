@@ -14,16 +14,21 @@ namespace Ineersa\Tui\Command;
 final readonly class CommandMetadata
 {
     /**
-     * @param string       $name        Canonical command name (lowercase, e.g. "help")
-     * @param list<string> $aliases     Alternative names (e.g. ["h", "?"])
-     * @param string       $description One-line summary for /help listing
-     * @param string       $usage       Usage example (e.g. "/help [command]")
+     * @param string       $name             Canonical command name (lowercase, e.g. "help")
+     * @param list<string> $aliases          Alternative names (e.g. ["h", "?"])
+     * @param string       $description      One-line summary for /help listing
+     * @param string       $usage            Usage example (e.g. "/help [command]")
+     * @param bool         $acceptsArguments Whether the command expects and consumes
+     *                                       arguments.  When false, any extra text after
+     *                                       the command is silently ignored so `/clear foo`
+     *                                       executes just like `/clear`.  Default false.
      */
     public function __construct(
         public string $name,
         public array $aliases = [],
         public string $description = '',
         public string $usage = '',
+        public bool $acceptsArguments = false,
     ) {
     }
 }

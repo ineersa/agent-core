@@ -195,6 +195,16 @@ class ModelCommandHandlerTest extends TestCase
         return new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, $favPickerController, new NullLogger());
     }
 
+    private function makeFavHandler(array $aiData = []): ModelCommandHandler
+    {
+        $appConfig = $this->makeAppConfig([] !== $aiData ? $aiData : $this->standardAiData());
+
+        $pickerController = new ModelPickerController($this->modelService, $appConfig, new NullLogger());
+        $favPickerController = new FavoritePickerController($this->modelService, new NullLogger());
+
+        return new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, $favPickerController, new NullLogger(), isFavourites: true);
+    }
+
     private function slash(string $name, string $args = ''): SlashCommand
     {
         $fullText = '/'.$name;
@@ -219,7 +229,7 @@ class ModelCommandHandlerTest extends TestCase
         self::assertStringContainsString('Available models:', $result->text);
         self::assertStringContainsString('deepseek/deepseek-v4-pro', $result->text);
         self::assertStringContainsString('zai/glm-5.1', $result->text);
-        self::assertStringContainsString('Ctrl+P', $result->text);
+        self::assertStringContainsString('/model <provider/modelname>', $result->text);
     }
 
     #[Test]
@@ -253,37 +263,25 @@ class ModelCommandHandlerTest extends TestCase
     }
 
     // ──────────────────────────────────────────────
-    //  /model select <provider/model>
+    //  /model <provider/modelname> — direct select
     // ──────────────────────────────────────────────
 
     #[Test]
-    public function testSelectExistingModel(): void
-    {
-        $handler = $this->makeHandler();
-        $result = $handler->handle($this->slash('model', 'select zai/glm-5.1'));
-
-        self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertStringContainsString('Model changed to zai/glm-5.1', $result->text);
-
-        // Footer state should be updated
-        self::assertSame('glm-5.1', $this->state->footerModel);
-    }
-
-    #[Test]
-    public function testSelectViaDirectModelname(): void
+    public function testDirectModelRefSelectsModel(): void
     {
         $handler = $this->makeHandler();
         $result = $handler->handle($this->slash('model', 'zai/glm-5.1'));
 
         self::assertInstanceOf(TranscriptMessage::class, $result);
         self::assertStringContainsString('Model changed to zai/glm-5.1', $result->text);
+        self::assertSame('glm-5.1', $this->state->footerModel);
     }
 
     #[Test]
-    public function testSelectUnknownModelReturnsError(): void
+    public function testDirectModelUnknownModelReturnsError(): void
     {
         $handler = $this->makeHandler();
-        $result = $handler->handle($this->slash('model', 'select mystery/ghost'));
+        $result = $handler->handle($this->slash('model', 'mystery/ghost'));
 
         self::assertInstanceOf(TranscriptMessage::class, $result);
         self::assertStringContainsString('not available', $result->text);
@@ -291,21 +289,10 @@ class ModelCommandHandlerTest extends TestCase
     }
 
     #[Test]
-    public function testSelectWithoutArgsShowsUsage(): void
+    public function testDirectModelInvalidRefReturnsError(): void
     {
         $handler = $this->makeHandler();
-        $result = $handler->handle($this->slash('model', 'select'));
-
-        self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertStringContainsString('Usage:', $result->text);
-        self::assertSame('muted', $result->style);
-    }
-
-    #[Test]
-    public function testSelectInvalidRefReturnsError(): void
-    {
-        $handler = $this->makeHandler();
-        $result = $handler->handle($this->slash('model', 'select not-a-valid-ref'));
+        $result = $handler->handle($this->slash('model', 'not-a-valid-ref'));
 
         self::assertInstanceOf(TranscriptMessage::class, $result);
         self::assertStringContainsString('Invalid model reference', $result->text);
@@ -313,11 +300,11 @@ class ModelCommandHandlerTest extends TestCase
     }
 
     // ──────────────────────────────────────────────
-    //  /model fav
+    //  /model-favourites (no args) — list favourites
     // ──────────────────────────────────────────────
 
     #[Test]
-    public function testFavWithoutArgsListsFavorites(): void
+    public function testFavouritesWithoutArgsListsFavourites(): void
     {
         $aiData = $this->standardAiData();
         $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro', 'zai/glm-5.1'];
@@ -326,42 +313,41 @@ class ModelCommandHandlerTest extends TestCase
         $homeWriter = new HomeSettingsWriter($pathResolver);
         $this->modelService = new ModelSelectionService($appConfig, new ModelResolver($appConfig, $this->sessionMetaStore), new ModelSettingsPersister($homeWriter, $this->sessionMetaStore));
         $pickerController = new ModelPickerController($this->modelService, $appConfig, new NullLogger());
-        $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, new FavoritePickerController($this->modelService, new NullLogger()), new NullLogger());
+        $favPickerController = new FavoritePickerController($this->modelService, new NullLogger());
+        $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, $favPickerController, new NullLogger(), isFavourites: true);
 
-        // Fallback textual list shows all models with * markers
-        $result = $handler->handle($this->slash('model', 'fav'));
+        $result = $handler->handle($this->slash('model-favourites'));
 
         self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertStringContainsString('Favorite models (* = favorite):', $result->text);
+        self::assertStringContainsString('Favourite models (* = favourite):', $result->text);
         self::assertStringContainsString('deepseek/deepseek-v4-pro', $result->text);
         self::assertStringContainsString('zai/glm-5.1', $result->text);
     }
 
     #[Test]
-    public function testFavWithoutFavoritesShowsEmptyMessage(): void
+    public function testFavouritesWithoutFavouritesShowsAllModels(): void
     {
-        $handler = $this->makeHandler();
-        $result = $handler->handle($this->slash('model', 'fav'));
+        $handler = $this->makeFavHandler();
+        $result = $handler->handle($this->slash('model-favourites'));
 
         self::assertInstanceOf(TranscriptMessage::class, $result);
-        // New fav list shows all models, none marked with *
-        self::assertStringContainsString('Favorite models (* = favorite):', $result->text);
+        self::assertStringContainsString('Favourite models (* = favourite):', $result->text);
         self::assertStringContainsString('deepseek/deepseek-v4-pro', $result->text);
         self::assertStringContainsString('zai/glm-5.1', $result->text);
     }
 
     #[Test]
-    public function testFavAddModel(): void
+    public function testFavouritesAddModel(): void
     {
-        $handler = $this->makeHandler();
-        $result = $handler->handle($this->slash('model', 'fav zai/glm-5.1'));
+        $handler = $this->makeFavHandler();
+        $result = $handler->handle($this->slash('model-favourites', 'zai/glm-5.1'));
 
         self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertStringContainsString('Added zai/glm-5.1 to favorites', $result->text);
+        self::assertStringContainsString('Added zai/glm-5.1 to favourites', $result->text);
     }
 
     #[Test]
-    public function testFavRemoveModel(): void
+    public function testFavouritesRemoveModel(): void
     {
         $aiData = $this->standardAiData();
         $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro', 'zai/glm-5.1'];
@@ -370,19 +356,20 @@ class ModelCommandHandlerTest extends TestCase
         $homeWriter = new HomeSettingsWriter($pathResolver);
         $this->modelService = new ModelSelectionService($appConfig, new ModelResolver($appConfig, $this->sessionMetaStore), new ModelSettingsPersister($homeWriter, $this->sessionMetaStore));
         $pickerController = new ModelPickerController($this->modelService, $appConfig, new NullLogger());
-        $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, new FavoritePickerController($this->modelService, new NullLogger()), new NullLogger());
+        $favPickerController = new FavoritePickerController($this->modelService, new NullLogger());
+        $handler = new ModelCommandHandler($this->modelService, $appConfig, $this->state, $pickerController, $favPickerController, new NullLogger(), isFavourites: true);
 
-        $result = $handler->handle($this->slash('model', 'fav deepseek/deepseek-v4-pro'));
+        $result = $handler->handle($this->slash('model-favourites', 'deepseek/deepseek-v4-pro'));
 
         self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertStringContainsString('Removed deepseek/deepseek-v4-pro from favorites', $result->text);
+        self::assertStringContainsString('Removed deepseek/deepseek-v4-pro from favourites', $result->text);
     }
 
     #[Test]
-    public function testFavUnknownModelReturnsError(): void
+    public function testFavouritesUnknownModelReturnsError(): void
     {
-        $handler = $this->makeHandler();
-        $result = $handler->handle($this->slash('model', 'fav mystery/ghost'));
+        $handler = $this->makeFavHandler();
+        $result = $handler->handle($this->slash('model-favourites', 'mystery/ghost'));
 
         self::assertInstanceOf(TranscriptMessage::class, $result);
         self::assertStringContainsString('not available', $result->text);
@@ -404,71 +391,80 @@ class ModelCommandHandlerTest extends TestCase
     }
 
     #[Test]
-    public function testSelAliasWorks(): void
+    public function testFavouritesAliasWorks(): void
     {
-        $handler = $this->makeHandler();
-        $result = $handler->handle($this->slash('model', 'sel zai/glm-5.1'));
+        $handler = $this->makeFavHandler();
+        $result = $handler->handle($this->slash('model-favourite'));
 
         self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertStringContainsString('Model changed to zai/glm-5.1', $result->text);
+        self::assertStringContainsString('Favourite models (* = favourite):', $result->text);
     }
 
     // ──────────────────────────────────────────────
-    //  Immediate favorite visibility after toggle
+    //  Immediate favourite visibility after toggle
     // ──────────────────────────────────────────────
 
     #[Test]
-    public function testFavListReflectsToggleImmediately(): void
+    public function testFavouritesListReflectsToggleImmediately(): void
     {
-        $handler = $this->makeHandler();
+        $handler = $this->makeFavHandler();
 
-        // Toggle a favorite
-        $handler->handle($this->slash('model', 'fav zai/glm-5.1'));
+        // Toggle a favourite
+        $handler->handle($this->slash('model-favourites', 'zai/glm-5.1'));
 
-        // Immediately list favorites (falls back to text since no TUI) —
-        // should show the newly favorited model with * marker
-        $result = $handler->handle($this->slash('model', 'fav'));
+        // List favourites — should show the newly favourited model with * marker
+        $result = $handler->handle($this->slash('model-favourites'));
 
         self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertStringContainsString('Favorite models (* = favorite):', $result->text);
+        self::assertStringContainsString('Favourite models (* = favourite):', $result->text);
         self::assertStringContainsString('zai/glm-5.1', $result->text);
         self::assertStringContainsString('*', $result->text);
     }
 
     #[Test]
-    public function testModelListReflectsFavToggleImmediately(): void
+    public function testModelListReflectsFavouritesToggleImmediately(): void
     {
         $handler = $this->makeHandler();
+        $favHandler = $this->makeFavHandler();
 
-        // Toggle a favorite
-        $handler->handle($this->slash('model', 'fav zai/glm-5.1'));
+        // Toggle a favourite via /model-favourites
+        $favHandler->handle($this->slash('model-favourites', 'zai/glm-5.1'));
 
-        // Immediately list models — the new favorite should be marked with ★
+        // List models via /model — the new favourite should be marked with ★
         $result = $handler->handle($this->slash('model'));
 
         self::assertInstanceOf(TranscriptMessage::class, $result);
-        // The zai/glm-5.1 line should appear with a star somewhere nearby
-        // (the exact ANSI/format differs, but ★ must appear)
         self::assertStringContainsString('★', $result->text);
     }
 
     #[Test]
-    public function testFavAddThenRemoveReflectedImmediately(): void
+    public function testFavouritesAddThenRemoveReflectedImmediately(): void
     {
-        $handler = $this->makeHandler();
+        $handler = $this->makeFavHandler();
 
-        // Add a favorite
-        $handler->handle($this->slash('model', 'fav zai/glm-5.1'));
+        // Add a favourite
+        $handler->handle($this->slash('model-favourites', 'zai/glm-5.1'));
 
         // Remove it
-        $result = $handler->handle($this->slash('model', 'fav zai/glm-5.1'));
-        self::assertStringContainsString('Removed zai/glm-5.1 from favorites', $result->text);
+        $result = $handler->handle($this->slash('model-favourites', 'zai/glm-5.1'));
+        self::assertStringContainsString('Removed zai/glm-5.1 from favourites', $result->text);
 
-        // List now — both models shown, none marked with *
-        $listResult = $handler->handle($this->slash('model', 'fav'));
-        self::assertStringContainsString('Favorite models (* = favorite):', $listResult->text);
-        // deepseek/deepseek-v4-pro should appear without * marker
+        // List — both models shown, none marked with *
+        $listResult = $handler->handle($this->slash('model-favourites'));
+        self::assertStringContainsString('Favourite models (* = favourite):', $listResult->text);
         self::assertStringContainsString('deepseek/deepseek-v4-pro', $listResult->text);
         self::assertStringContainsString('zai/glm-5.1', $listResult->text);
+    }
+
+    #[Test]
+    public function testModelListDoesNotMentionCtrlP(): void
+    {
+        // The model list text should not contain picker keybind prose.
+        $handler = $this->makeHandler();
+        $result = $handler->handle($this->slash('model'));
+
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringNotContainsString('Ctrl+P', $result->text);
+        self::assertStringNotContainsString('Shift+Tab', $result->text);
     }
 }
