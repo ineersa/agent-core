@@ -265,6 +265,80 @@ final class SessionInitializerTest extends TestCase
         self::assertStringContainsString('Welcome to Hatfield', $blocks[0]->text);
     }
 
+    // ── Draft promotion request construction ─────────────────────────
+
+    /**
+     * Guards the SubmitListener draft promotion code path at line ~119:
+     * when $state->request is null (plain /new with no model/options/cwd),
+     * cwd and options must default to '' and [] — StartRunRequest rejects
+     * null for these non-nullable typed properties.
+     */
+    public function testDraftPromotionStartRunRequestNullDefaultsDoNotTypeError(): void
+    {
+        // Does not touch projector — this is a pure DTO construction test.
+        $this->projector->expects(self::never())->method('reset');
+        $this->projector->expects(self::never())->method('accept');
+
+        $stateRequest = null;
+        $sessionId = 'promo-test-42';
+        $text = 'Hello from draft';
+
+        $request = new StartRunRequest(
+            prompt: $text,
+            runId: $sessionId,
+            cwd: $stateRequest->cwd ?? '',
+            options: $stateRequest->options ?? [],
+            model: $stateRequest?->model,
+            reasoning: $stateRequest?->reasoning,
+        );
+
+        self::assertSame('Hello from draft', $request->prompt);
+        self::assertSame('promo-test-42', $request->runId);
+        self::assertSame('', $request->cwd);
+        self::assertSame([], $request->options);
+        self::assertNull($request->model);
+        self::assertNull($request->reasoning);
+    }
+
+    /**
+     * Companion guard: when /new --model gpt-4 sets state->request with
+     * configured values, the merged request must carry them forward while
+     * using the user-typed prompt text.
+     */
+    public function testDraftPromotionStartRunRequestPreservesDraftValues(): void
+    {
+        // Does not touch projector — pure DTO construction test.
+        $this->projector->expects(self::never())->method('reset');
+        $this->projector->expects(self::never())->method('accept');
+
+        $stateRequest = new StartRunRequest(
+            prompt: 'stale',
+            runId: '',
+            cwd: '/custom/path',
+            options: ['foo' => 'bar'],
+            model: 'gpt-4',
+            reasoning: 'high',
+        );
+        $sessionId = 'promo-test-43';
+        $text = 'Real user message';
+
+        $request = new StartRunRequest(
+            prompt: $text,
+            runId: $sessionId,
+            cwd: $stateRequest->cwd,
+            options: $stateRequest->options,
+            model: $stateRequest->model,
+            reasoning: $stateRequest->reasoning,
+        );
+
+        self::assertSame('Real user message', $request->prompt);
+        self::assertSame('promo-test-43', $request->runId);
+        self::assertSame('/custom/path', $request->cwd);
+        self::assertSame(['foo' => 'bar'], $request->options);
+        self::assertSame('gpt-4', $request->model);
+        self::assertSame('high', $request->reasoning);
+    }
+
     /**
      * Recursively remove a directory.
      */

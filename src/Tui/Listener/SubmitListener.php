@@ -121,8 +121,8 @@ final class SubmitListener implements TuiListenerRegistrar
                     $mergedRequest = new StartRunRequest(
                         prompt: $text,
                         runId: $state->sessionId,
-                        cwd: $state->request?->cwd,
-                        options: $state->request?->options,
+                        cwd: $state->request->cwd ?? '',
+                        options: $state->request->options ?? [],
                         model: $state->request?->model,
                         reasoning: $state->request?->reasoning,
                     );
