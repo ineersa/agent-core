@@ -127,6 +127,27 @@ final class SessionAwareModelResolverTest extends KernelTestCase
         );
    }
 
+    public function testNameMetadataDoesNotAffectModelResolution(): void
+    {
+        $resolver = $this->createResolver($this->standardAiData());
+        $sessionId = $this->writeSessionMetadata('sess-name', [
+            'model' => 'llama_cpp/flash',
+            'name' => 'My Session',
+        ]);
+
+        $result = $resolver->resolve(
+            'deepseek/deepseek-v4-pro',
+            new MessageBag(),
+            new ModelInvocationInput(runId: $sessionId),
+            new ModelResolutionOptions(),
+        );
+
+        // name metadata must not affect model or reasoning resolution
+        self::assertSame('llama_cpp/flash', $result->model);
+        self::assertSame('llama_cpp', $result->providerId);
+        self::assertSame('medium', $result->reasoning);
+    }
+
     public function testResolveThrowsWhenNoModelsConfiguredAndLegacyDefaultProvided(): void
     {
         $resolver = $this->createResolver([]);
@@ -222,6 +243,9 @@ final class SessionAwareModelResolverTest extends KernelTestCase
         }
         if (isset($meta['reasoning']) && \is_string($meta['reasoning'])) {
             $entity->reasoning = $meta['reasoning'];
+        }
+        if (isset($meta['name']) && \is_string($meta['name'])) {
+            $entity->name = $meta['name'];
         }
 
         $this->entityManager->flush();

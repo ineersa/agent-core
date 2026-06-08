@@ -28,4 +28,22 @@ final class HatfieldSessionRepository extends ServiceEntityRepository
     {
         parent::__construct($registry, HatfieldSession::class);
     }
+
+    /**
+     * Return all sessions sorted by updated_at DESC for catalog/picker display.
+     *
+     * No sort/order/limit parameters — callers get the full list in a
+     * fixed order.  No DQL injection surface because the sort column and
+     * direction are hard-coded.
+     *
+     * @return list<HatfieldSession>
+     */
+    public function findForCatalog(): array
+    {
+        /* @var list<HatfieldSession> */
+        return $this->createQueryBuilder('s')
+            ->orderBy('s.updatedAt', 'DESC')
+            ->getQuery()
+            ->getResult();
+    }
 }
