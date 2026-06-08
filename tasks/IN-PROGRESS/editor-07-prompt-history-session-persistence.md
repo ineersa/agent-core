@@ -64,3 +64,8 @@ Completed:
 ## Task workflow update - 2026-06-08T00:53:39.257Z
 - Recorded fork run: 6126vm4szkvv
 - Launched follow-up implementation fork 6126vm4szkvv to address reviewer suggestions: consume Up at oldest active history entry as no-op with tests; clarify PromptHistoryListener onInput single-slot/future composition comment; remove unused test imports; optionally rename currentCursor() to currentBlockIndex() and remove PHPDoc-only import if low-risk. Fork instructed to preserve cursor-only/no-new-storage design and run Castor validation.
+
+## Task workflow update - 2026-06-08T00:56:05.263Z
+- Recorded fork run: 6126vm4szkvv
+- Validation: follow-up fork reported: castor test --filter=PromptHistory ok (29 tests, 58 assertions); follow-up fork reported: castor deptrac ok (0 violations); follow-up fork reported: castor phpstan ok (0 errors); follow-up fork reported: castor cs-check ok; parent checked: git diff --stat 4b1412fd..3ac834d9 shows 4 files changed, 67 insertions, 11 deletions; parent checked: git diff --check 4b1412fd..3ac834d9 passed; parent checked: worktree status clean at HEAD 3ac834d9
+- Summary: Follow-up fork completed at commit 3ac834d9 (fix(editor-07): address reviewer suggestions). Parent checked follow-up diff: 4 files changed, 67 insertions, 11 deletions; worktree clean at HEAD 3ac834d9. Changes address reviewer suggestions without altering core design: Up at oldest active history entry is consumed as no-op; PromptHistoryListener docblock now explicitly warns EditorWidget::onInput() is single-slot and future completion work must compose; unused test imports removed; currentCursor() renamed to currentBlockIndex(). User smoke tested and reports it works. Reviewer was not relaunched per user instruction.
