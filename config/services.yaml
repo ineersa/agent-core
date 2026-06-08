@@ -290,7 +290,6 @@ services:
   Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter:
     arguments:
       $eventClient: '@Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient'
-      $transcriptPersistence: '@Ineersa\CodingAgent\Runtime\Session\TranscriptPersistenceService'
 
   Ineersa\CodingAgent\Runtime\Controller\HeadlessController:
     arguments:
@@ -319,10 +318,6 @@ services:
 
   Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface:
     alias: Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector
-
-  Ineersa\CodingAgent\Runtime\Session\TranscriptPersistenceService:
-    arguments:
-      $projector: '@Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface'
 
   # ─── Symfony AI Platform wiring ───
   # PlatformInterface reads Hatfield config from autowired AppConfig,

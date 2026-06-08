@@ -18,8 +18,6 @@ use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
@@ -66,7 +64,6 @@ class ModelCommandHandlerTest extends TestCase
                 logging: new LoggingConfig(),
                 cwd: $this->tempDir.'/project',
             ),
-            lockFactory: new LockFactory(new FlockStore()),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
         $this->sessionMetaStore = new SessionMetadataStore($hatfieldSessionStore);

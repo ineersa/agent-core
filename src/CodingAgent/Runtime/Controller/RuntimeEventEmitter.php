@@ -9,7 +9,6 @@ use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
-use Ineersa\CodingAgent\Runtime\Session\TranscriptPersistenceService;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
 
@@ -20,7 +19,7 @@ use Revolt\EventLoop;
  * All runtime event writes go through this class. Cursor tracking auto-registers
  * on RunStarted/RunResumed events and releases on terminal events
  * (RunCompleted/RunFailed/RunCancelled). The drain loop polls eventClient per
- * active run, skips already-seen events by cursor, feeds transcript persistence,
+ * active run, skips already-seen events by cursor,
  * and writes to stdout via JsonlCodec.
  */
 final class RuntimeEventEmitter
@@ -38,7 +37,6 @@ final class RuntimeEventEmitter
 
     public function __construct(
         private readonly ?InProcessAgentSessionClient $eventClient,
-        private readonly ?TranscriptPersistenceService $transcriptPersistence,
         private readonly RuntimeExceptionBoundary $boundary,
         private readonly LoggerInterface $logger,
     ) {
@@ -112,8 +110,7 @@ final class RuntimeEventEmitter
      * Register the canonical event drain loop.
      *
      * Polls InProcessAgentSessionClient for each active run, forwards
-     * unseen events to stdout, and persists transcript blocks after
-     * each drain cycle.
+     * unseen events to stdout.
      */
     public function startDrainLoop(float $interval = 0.05): void
     {
@@ -153,9 +150,6 @@ final class RuntimeEventEmitter
                             $cursor = $this->runEventCursors[$runId];
                         }
                     }
-
-                    // Persist finalized transcript blocks after draining events.
-                    $this->persistTranscripts($runId);
                 } catch (\Throwable $e) {
                     // Event drain failures can stall the TUI silently.
                     // Delegate capture=0 rethrow to boundary.
@@ -200,8 +194,6 @@ final class RuntimeEventEmitter
 
     private function emitInternal(RuntimeEvent $event): void
     {
-        $this->feedPersister($event);
-
         if (null === $this->stdout) {
             return;
         }
@@ -230,36 +222,5 @@ final class RuntimeEventEmitter
         }
 
         fflush($this->stdout);
-    }
-
-    private function feedPersister(RuntimeEvent $event): void
-    {
-        if (null === $this->transcriptPersistence) {
-            return;
-        }
-        try {
-            $this->transcriptPersistence->feed($event);
-        } catch (\Throwable $e) {
-            // Best-effort: persister failures must not break the event loop.
-            $this->logger->debug('Transcript persister feed failed', [
-                'exception' => $e,
-            ]);
-        }
-    }
-
-    private function persistTranscripts(string $runId): void
-    {
-        if (null === $this->transcriptPersistence) {
-            return;
-        }
-        try {
-            $this->transcriptPersistence->persist($runId);
-        } catch (\Throwable $e) {
-            // Best-effort: persistence failures must not break the event loop.
-            $this->logger->debug('Transcript persistence failed', [
-                'run_id' => $runId,
-                'exception' => $e,
-            ]);
-        }
     }
 }

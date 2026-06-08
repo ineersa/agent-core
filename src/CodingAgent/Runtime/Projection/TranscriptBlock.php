@@ -11,7 +11,7 @@ namespace Ineersa\CodingAgent\Runtime\Projection;
  * conversation. They are produced by the TranscriptProjector from raw
  * RuntimeEvents and consumed by TUI rendering widgets.
  *
- * Blocks are immutable value objects. Serialization for transcript.jsonl
+ * Blocks are immutable value objects produced by ProjectionPipeline subscribers
  * persistence is handled via Symfony Serializer (ObjectNormalizer + BackedEnumNormalizer).
  */
 final readonly class TranscriptBlock

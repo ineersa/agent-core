@@ -289,7 +289,6 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             sessionClient: $this->clientSpy,
             emitter: new RuntimeEventEmitter(
                 eventClient: null,
-                transcriptPersistence: null,
                 boundary: new RuntimeExceptionBoundary(new EventDispatcher()),
                 logger: $this->createStub(LoggerInterface::class),
             ),
@@ -370,7 +369,6 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             sessionClient: $this->clientSpy,
             emitter: new RuntimeEventEmitter(
                 eventClient: null,
-                transcriptPersistence: null,
                 boundary: new RuntimeExceptionBoundary(new EventDispatcher()),
                 logger: $this->createStub(LoggerInterface::class),
             ),

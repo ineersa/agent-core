@@ -13,10 +13,10 @@
 - **Canonical directory name.** The directory name under `.hatfield/sessions/` is
   the authoritative identity. Embedded IDs inside files are validated on read and
   must match the directory name. A mismatch indicates data corruption.
-- **Append-only event stream.** `events.jsonl` is the canonical record of
+- **Canonical event stream.** `events.jsonl` is the single source of truth for
   everything that happened in a run. `state.json` is a materialized RunState
-  snapshot and concurrency checkpoint. `transcript.jsonl` is a projection that
-  can be rebuilt from the canonical stream if necessary.
+  snapshot and concurrency checkpoint. The TUI transcript projection is rebuilt
+  from the canonical event stream on resume and during live polling.
 
 ## Directory layout
 
@@ -24,7 +24,6 @@
 .hatfield/sessions/<id>/
   state.json               AgentCore RunState materialized snapshot/checkpoint
   events.jsonl             AgentCore RunEvent canonical event stream
-  transcript.jsonl         TUI/user-facing transcript projection
   attachments/             (future) pasted files, images, diffs
 ```
 
@@ -37,7 +36,6 @@ lives in the `hatfield_session` database table, not in a metadata.yaml file.
 |------|-----------|------------|---------|--------|
 | `state.json` | No — materialized snapshot/checkpoint | `SessionRunStore::compareAndSwap()` | `SessionRunStore::get()`, resume flow | JSON (Symfony Serializer) |
 | `events.jsonl` | **Yes — canonical domain event stream** | `SessionRunEventStore::append()` | `SessionRunEventStore::allFor()`, `InProcessAgentSessionClient::events()`, TUI tick callback | JSONL (EventPayloadNormalizer) |
-| `transcript.jsonl` | No — TUI projection | `HatfieldSessionStore::appendTranscriptEntry()` | `HatfieldSessionStore::getTranscript()`, resume display | JSONL (TranscriptEntry DTO) |
 
 ### Session metadata (database)
 
@@ -87,13 +85,9 @@ Current-state snapshot / checkpoint
 └───────────────┬──────────────────────────────────────────┘
                 │ projects user/protocol views
                 ▼
-TUI/protocol projections
-┌──────────────────────────┐
-│ transcript.jsonl         │
-│ user-facing transcript   │
-└──────────────────────────┘
+TUI transcript is rebuilt from events.jsonl via
+RuntimeEventMapper + TranscriptProjector during resume and live polling.
 ```
-
 In the current local filesystem implementation, both the canonical stream and
 materialized snapshot live under `.hatfield/sessions/<id>/`. In a future
 web/server deployment, the same concepts may be backed by database rows/tables
@@ -147,55 +141,26 @@ Lines are appended under a Symfony Lock (`FlockStore`). `allFor()` reads all
 lines, validates embedded `run_id` against the directory name, and sorts by
 `seq` before returning.
 
-### transcript.jsonl
-
-One JSON object per line, produced by `TranscriptEntry::toArray()`:
-
-```jsonl
-{"role":"user","text":"Write a README","meta":{"session_id":"42"},"created_at":"2026-05-13T12:00:05+00:00"}
-{"role":"assistant","text":"I'll create a README.md","meta":{"run_id":"42","seq":4},"created_at":"2026-05-13T12:00:06+00:00"}
-```
-
-Roles include `user`, `assistant`, `tool`, `system`, and `error`.
-
-
-This file is a debug/projection log. The canonical source of events is `events.jsonl`.
 
 ### Runtime event → transcript projection
 
-The TUI layer reads runtime events and projects them into the user-visible transcript:
+The TUI layer reads runtime events and projects them into the user-visible transcript via `RuntimeEventMapper` + `TranscriptProjector`:
 
 ```
-events.jsonl                    RuntimeEventPoller             transcript.jsonl
-(canonical)                     (src/Tui/Runtime/)             (projection)
-────────────────────────────────────────────────────────────────────────────────
-                                ┌──────────────────┐
- SessionRunEventStore::allFor() │ RuntimeEventPoller│  formatEventToEntry()
- ──────────────────────────────▶│ ::poll()           │──────────────────────▶
- (InProcessAgentSessionClient)  │                    │
-                                │ • throttle (50ms)  │  RuntimeEvent
- from process stdout (JSONL)    │ • dedup by seq     │  → TranscriptEntry
- ──────────────────────────────▶│ • persist runtime  │  (plain model, no theme)
- (JsonlProcessAgentSessionClt)  │ • map to transcript│
-                                └────────┬───────────┘
-                                         │
-                                         ▼
-                                  TuiSessionState
-                                  $state->transcript[]
-                                         │
-                                         ▼
-                                  ChatScreen::appendTranscript()
-                                         │
-                                         ▼
-                                  TranscriptWidget → live display
-                                  (role prefixes + theme applied
-                                   by TranscriptEntry::render())
+events.jsonl          RuntimeEventMapper          TranscriptProjector         TuiSessionState::transcript
+(canonical)           (translates RunEvent        (builds TranscriptBlock     (in-memory block list
+                      → RuntimeEvent)             via EventDispatcher         used for display)
+                                                   subscribers)
+────────────────────────────────────────────────────────────────────────────────────────────────────
 ```
 
-Key: runtime events flow through `RuntimeEventPoller` which produces plain
-`TranscriptEntry` objects. Theming and role-based display prefixes (❯ ◇ ●)
-are applied at render time by `TranscriptEntry::render()` in the TUI widget
-layer — not during persistence.
+On resume, `SessionInitializer::buildInitialTranscript()` replays events from
+`events.jsonl` through the mapper and projector to rebuild the full transcript
+history. The poller's `lastSeq` cursor prevents duplicate processing of already-
+projected events.
+
+No separate transcript.jsonl file is written. Transcript blocks are a derived
+projection of the canonical event stream and are never persisted independently.
 
 ## ID rules and integrity checks
 
@@ -217,7 +182,6 @@ layer — not during persistence.
    - `state.json` — top-level `runId` key
    - `events.jsonl` — `run_id` field in every line
    - `hatfield_session` DB row — `session_id`, `run_id`; set `parent_id` and `root_id`
-   - `transcript.jsonl` — `meta.run_id` and `meta.session_id` where present
 
 ## Resume flow
 
@@ -384,7 +348,6 @@ Implementation outline:
    - `hatfield_session` DB row (set parent_id, root_id)
    - `state.json`
    - `events.jsonl`
-   - `transcript.jsonl`
 4. Set `parent_id`, `root_id`, and `fork` block in DB metadata.
 5. Resume: `php bin/console agent --resume bbb222`.
 

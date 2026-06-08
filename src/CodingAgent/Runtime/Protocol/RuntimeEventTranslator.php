@@ -103,12 +103,18 @@ final class RuntimeEventTranslator
     private function onRunStarted(RunEvent $runEvent): RuntimeEvent
     {
         $p = $runEvent->payload;
+        $userMessages = $this->extractUserMessages($runEvent);
+
+        $payload = ['step_id' => (string) ($p['step_id'] ?? '')];
+        if ([] !== $userMessages) {
+            $payload['user_messages'] = $userMessages;
+        }
 
         return new RuntimeEvent(
             type: RuntimeEventTypeEnum::RunStarted->value,
             runId: $runEvent->runId,
             seq: $runEvent->seq,
-            payload: ['step_id' => (string) ($p['step_id'] ?? '')],
+            payload: $payload,
         );
     }
 
@@ -280,7 +286,9 @@ final class RuntimeEventTranslator
 
     /**
      * Resolve agent_command_applied with explicit priority:
-     * human_response → human_input.answered, cancel → cancellation.requested,
+     * steer/follow_up → user.message_submitted,
+     * human_response → human_input.answered,
+     * cancel → cancellation.requested,
      * everything else → status.updated.
      */
     private function onAgentCommandApplied(RunEvent $runEvent): RuntimeEvent
@@ -306,6 +314,27 @@ final class RuntimeEventTranslator
                 runId: $runEvent->runId,
                 seq: $runEvent->seq,
                 payload: ['kind' => $kind, 'reason' => 'user_cancelled'],
+            );
+        }
+
+        if (\in_array($kind, ['steer', 'follow_up'], true)) {
+            // Extract message text from the serialized message payload
+            // included by CommandMailboxPolicy.
+            $messagePayload = $p['message'] ?? [];
+            $text = \is_string($p['text'] ?? null) ? $p['text'] : '';
+            if ('' === $text && \is_array($messagePayload)) {
+                $text = $this->extractTextFromContent($messagePayload['content'] ?? []);
+            }
+            $idempotencyKey = (string) ($p['idempotency_key'] ?? '');
+
+            return new RuntimeEvent(
+                type: RuntimeEventTypeEnum::UserMessageSubmitted->value,
+                runId: $runEvent->runId,
+                seq: $runEvent->seq,
+                payload: [
+                    'message_id' => \sprintf('user_%s_%d_%s', $runEvent->runId, $runEvent->seq, $idempotencyKey),
+                    'text' => $text,
+                ],
             );
         }
 
@@ -342,6 +371,41 @@ final class RuntimeEventTranslator
     // ── Helpers ────────────────────────────────────────────────────────────
 
     /**
+     * Extract initial user messages from the normalized StartRunPayload so
+     * events.jsonl replay can project user message transcript blocks.
+     *
+     * Only role===user messages with non-empty text are included; system and
+     * context messages are intentionally skipped to avoid leaking full prompts.
+     *
+     * @return list<array{message_id: string, text: string}>
+     */
+    private function extractUserMessages(RunEvent $runEvent): array
+    {
+        $normalizedPayload = $runEvent->payload['payload'] ?? [];
+        $messages = $normalizedPayload['messages'] ?? [];
+        if (!\is_array($messages)) {
+            return [];
+        }
+
+        $userMessages = [];
+        foreach ($messages as $msg) {
+            $role = (string) ($msg['role'] ?? '');
+            if ('user' !== $role) {
+                continue;
+            }
+            $text = $this->extractTextFromContent($msg['content'] ?? []);
+            if ('' !== $text) {
+                $userMessages[] = [
+                    'message_id' => \sprintf('initial_%s_%d', $runEvent->runId, \count($userMessages)),
+                    'text' => $text,
+                ];
+            }
+        }
+
+        return $userMessages;
+    }
+
+    /**
      * Legacy fallback: extract text from the normalized assistant_message
      * payload array produced by AgentMessageNormalizer::assistantMessagePayload().
      *
@@ -349,11 +413,18 @@ final class RuntimeEventTranslator
      */
     private function extractAssistantText(mixed $assistantMessage): string
     {
-        if (!\is_array($assistantMessage)) {
-            return '';
-        }
+        return \is_array($assistantMessage)
+            ? $this->extractTextFromContent($assistantMessage['content'] ?? null)
+            : '';
+    }
 
-        $content = $assistantMessage['content'] ?? null;
+    /**
+     * Extract text content from a content array (list of typed content blocks).
+     *
+     * @param array<int, array<string, mixed>>|mixed $content
+     */
+    private function extractTextFromContent(mixed $content): string
+    {
         if (!\is_array($content) || [] === $content) {
             return '';
         }
@@ -365,6 +436,6 @@ final class RuntimeEventTranslator
             }
         }
 
-        return [] !== $parts ? implode('', $parts) : '';
+        return implode('', $parts);
     }
 }

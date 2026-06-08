@@ -582,7 +582,7 @@ final class TuiAgentSmokeTest extends TestCase
 
         foreach (\array_slice($dirs, 0, 3) as $sessionDir) {
             \fwrite(\STDERR, "Session: {$sessionDir}\n\n");
-            foreach (['events.jsonl', 'transcript.jsonl', 'state.json', 'idempotency.jsonl'] as $file) {
+            foreach (['events.jsonl', 'state.json', 'idempotency.jsonl'] as $file) {
                 $path = $sessionDir . '/' . $file;
                 if (\file_exists($path)) {
                     $content = (string) \file_get_contents($path);

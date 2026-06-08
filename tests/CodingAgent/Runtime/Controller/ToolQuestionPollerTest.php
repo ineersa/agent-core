@@ -17,9 +17,9 @@ use Symfony\Component\EventDispatcher\EventDispatcher;
  * @covers \Ineersa\CodingAgent\Runtime\Controller\ToolQuestionPoller
  *
  * RuntimeEventEmitter is final and cannot be mocked, so we use a real
- * emitter with null eventClient/transcriptPersistence. Its emit() call
- * is a no-op when stdout is null (openStdout not called) and persister
- * is null — no side effects, no throws. We verify behaviour through
+ * emitter with null eventClient. Its emit() call
+ * is a no-op when stdout is null (openStdout not called)
+ * — no side effects, no throws. We verify behaviour through
  * store mocks (findUnemittedPendingQuestions → markEmitted chain).
  */
 final class ToolQuestionPollerTest extends TestCase
@@ -28,7 +28,6 @@ final class ToolQuestionPollerTest extends TestCase
     {
         return new RuntimeEventEmitter(
             eventClient: null,
-            transcriptPersistence: null,
             boundary: new RuntimeExceptionBoundary(new EventDispatcher()),
             logger: $this->createStub(LoggerInterface::class),
         );

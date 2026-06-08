@@ -52,7 +52,6 @@ final class SessionRunStoreTest extends TestCase
         );
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
-            lockFactory: new LockFactory(new FlockStore()),
             entityManager: $this->entityManager,
         );
 
@@ -141,7 +140,6 @@ final class SessionRunStoreTest extends TestCase
         );
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
-            lockFactory: new LockFactory(new FlockStore()),
             entityManager: $this->entityManager,
         );
         $newStore = new SessionRunStore(

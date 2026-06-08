@@ -20,8 +20,6 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
-use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
 
 /**
  * Coordinator-level tests for ModelSelectionService.
@@ -71,7 +69,6 @@ class ModelSelectionServiceTest extends KernelTestCase
                 logging: new LoggingConfig(),
                 cwd: $this->tempDir.'/project',
             ),
-            lockFactory: new LockFactory(new FlockStore()),
             entityManager: $this->entityManager,
         );
         $this->sessionMetaStore = new SessionMetadataStore($hatfieldSessionStore);

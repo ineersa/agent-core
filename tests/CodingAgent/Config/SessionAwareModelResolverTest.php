@@ -9,8 +9,6 @@ use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\HomeSettingsWriter;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -171,7 +169,6 @@ final class SessionAwareModelResolverTest extends KernelTestCase
                 logging: new LoggingConfig(),
                 cwd: $this->tempDir.'/project',
             ),
-            lockFactory: new LockFactory(new FlockStore()),
             entityManager: $this->entityManager,
         );
         $sessionMetaStore = new SessionMetadataStore($hatfieldSessionStore);

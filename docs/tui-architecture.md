@@ -552,7 +552,7 @@ RuntimeEventPoller::poll(state, client)
     ├─ skip events with seq ≤ lastSeq (dedup)
     ├─ formatEventToEntry(event) → TranscriptEntry (plain model, NO theme)
     ├─ append to state.transcript[]
-    ├─ persist to transcript.jsonl
+    ├─ feed canonical RuntimeEvent to TranscriptProjector
     │
     ▼
 ChatScreen::appendTranscript(entry)

@@ -26,8 +26,6 @@ use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
-use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\TextWidget;
@@ -277,7 +275,6 @@ class CancelListenerTest extends TestCase
         );
         $sessionStore = new HatfieldSessionStore(
             appConfig: $appConfig,
-            lockFactory: new LockFactory(new FlockStore()),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
 

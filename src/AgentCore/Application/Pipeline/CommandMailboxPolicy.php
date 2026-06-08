@@ -149,11 +149,19 @@ final readonly class CommandMailboxPolicy
 
                 $messages[] = $hydratedMessage;
                 $this->commandStore->markApplied($state->runId, $pendingCommand->idempotencyKey);
+
+                // Include serialized message payload so events.jsonl replay
+                // can reconstruct user message transcript blocks.
+                $messageArray = $hydratedMessage->toArray();
+                $text = self::extractMessageText($messageArray);
+
                 $eventSpecs[] = [
                     'type' => RunEventTypeEnum::AgentCommandApplied->value,
                     'payload' => [
                         'kind' => $pendingCommand->kind,
                         'idempotency_key' => $pendingCommand->idempotencyKey,
+                        'message' => $messageArray,
+                        'text' => $text,
                         'options' => [
                             'cancel_safe' => $pendingCommand->options->safe,
                         ],
@@ -320,5 +328,27 @@ final readonly class CommandMailboxPolicy
                 : $state->activeStepId,
             retryableFailure: $overrides['retryableFailure'] ?? $state->retryableFailure,
         );
+    }
+
+    /**
+     * Extract concatenated text content from an AgentMessage-like array.
+     *
+     * @param array<string, mixed> $messageArray
+     */
+    private static function extractMessageText(array $messageArray): string
+    {
+        $content = $messageArray['content'] ?? [];
+        if (!\is_array($content)) {
+            return '';
+        }
+
+        $parts = [];
+        foreach ($content as $block) {
+            if (\is_array($block) && isset($block['text']) && ('text' === ($block['type'] ?? null))) {
+                $parts[] = (string) $block['text'];
+            }
+        }
+
+        return implode('', $parts);
     }
 }

@@ -631,8 +631,6 @@ pgrep -f messenger:consume
         ├── events.jsonl       Canonical events (append-only, LOCK_EX)
         │                      Each line: {v, type, runId, seq, timestamp, payload}
         │                      seq starts at 1 (seq=0 reserved for transient)
-        ├── transcript.jsonl   Projected transcript blocks (regenerated)
-        │                      [{role, content, timestamp, ...}]
         └── idempotency.jsonl  Cross-process idempotency log
                                {idempotencyKey, timestamp, handlerClass}
                                Used by RunMessageProcessor for CAS retry
