@@ -15,8 +15,12 @@ use Ineersa\Tui\Runtime\TuiRuntimeContext;
  * history mode.
  *
  * Design decisions:
- *  - Single composite callback on onInput() — leaves the slot open for
- *    future EDITOR-08 completion to register via an on-input chain pattern.
+ *  - EditorWidget::onInput() is single-slot (only one callback can be
+ *    installed; calling it again replaces the previous handler).
+ *    EDITOR-08 completions or any future feature that also needs raw
+ *    editor input interception MUST compose with this callback — either
+ *    by introducing a composite/dispatch handler that calls all registered
+ *    handlers in order, or by merging both behaviours into one closure.
  *  - Uses the editor widget's own {@see Keybindings::matches()} so the
  *    same terminal escape sequences that the editor itself recognizes
  *    for cursor_up / cursor_down are used, avoiding raw-escape fragility.
@@ -56,6 +60,14 @@ final class PromptHistoryListener implements TuiListenerRegistrar
                         $screen->requestRender();
 
                         return true; // Consume the event
+                    }
+
+                    // At the oldest prompt while navigating — consume the
+                    // event as a no-op instead of letting the editor handle
+                    // cursor_up.  This prevents cursor movement within any
+                    // recalled multiline text when there is no older history.
+                    if ($navigator->isNavigating()) {
+                        return true;
                     }
                 }
 

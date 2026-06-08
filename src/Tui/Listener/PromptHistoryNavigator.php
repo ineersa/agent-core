@@ -128,11 +128,11 @@ final class PromptHistoryNavigator
     }
 
     /**
-     * Return the current cursor position for test assertions only.
+     * Return the current block index for test assertions only.
      *
      * @internal
      */
-    public function currentCursor(): ?int
+    public function currentBlockIndex(): ?int
     {
         return $this->currentBlockIndex;
     }

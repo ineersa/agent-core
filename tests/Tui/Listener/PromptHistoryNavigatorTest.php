@@ -201,6 +201,30 @@ final class PromptHistoryNavigatorTest extends TestCase
         $this->assertSame('prompt 1', $result);
     }
 
+    // ─── Up at oldest stays in place ─────────────────────────
+
+    #[Test]
+    public function upAtOldestWhileNavigatingIsNoOpCursorStays(): void
+    {
+        $blocks = [
+            self::userBlock('oldest', 'user-1', 'run-1', 1),
+            self::assistantBlock('reply', 'asst-1', 'run-1', 2),
+            self::userBlock('newer', 'user-2', 'run-1', 3),
+        ];
+
+        // Navigate back to oldest
+        $this->navigator->previous($blocks); // index 2 (newer)
+        $this->navigator->previous($blocks); // index 0 (oldest)
+
+        $this->assertSame(0, $this->navigator->currentBlockIndex());
+
+        // Up again — no older message, cursor stays at 0
+        $result = $this->navigator->previous($blocks);
+        $this->assertNull($result);
+        $this->assertSame(0, $this->navigator->currentBlockIndex());
+        $this->assertTrue($this->navigator->isNavigating());
+    }
+
     // ─── No user blocks at all ────────────────────────────────
 
     #[Test]
@@ -217,16 +241,16 @@ final class PromptHistoryNavigatorTest extends TestCase
         $this->assertFalse($this->navigator->isNavigating());
     }
 
-    // ─── currentCursor for diagnostics ────────────────────────
+    // ─── currentBlockIndex for diagnostics ────────────────────
 
     #[Test]
-    public function currentCursorIsNullWhenNotNavigating(): void
+    public function currentBlockIndexIsNullWhenNotNavigating(): void
     {
-        $this->assertNull($this->navigator->currentCursor());
+        $this->assertNull($this->navigator->currentBlockIndex());
     }
 
     #[Test]
-    public function currentCursorReturnsBlockIndexWhenNavigating(): void
+    public function currentBlockIndexReturnsBlockIndexWhenNavigating(): void
     {
         $blocks = [
             self::userBlock('prompt 1', 'user-1', 'run-1', 1),
@@ -235,7 +259,7 @@ final class PromptHistoryNavigatorTest extends TestCase
 
         $this->navigator->previous($blocks); // index 1 (newest)
 
-        $this->assertSame(1, $this->navigator->currentCursor());
+        $this->assertSame(1, $this->navigator->currentBlockIndex());
     }
 
     // ─── Helpers ──────────────────────────────────────────────

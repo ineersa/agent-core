@@ -13,10 +13,8 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\PromptHistoryListener;
-use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
-use Ineersa\Tui\Runtime\TuiTickDispatcher;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
@@ -252,6 +250,28 @@ final class PromptHistoryListenerTest extends TestCase
         $this->editor->getWidget()->handleInput("\x1bOA");
 
         $this->assertSame('my prompt', $this->editor->getText());
+    }
+
+    // ─── Up at oldest multiline prompt is consumed as no-op ──
+
+    #[Test]
+    public function upAtOldestMultilinePromptIsConsumedAsNoOp(): void
+    {
+        $multiline = "line 1\nline 2\nline 3";
+        $this->state->transcript = [
+            self::userBlock($multiline, 1),
+        ];
+
+        $this->registerListener();
+
+        // Recall the only (and oldest) prompt
+        $this->editor->getWidget()->handleInput("\x1b[A");
+        $this->assertSame($multiline, $this->editor->getText());
+
+        // Press Up again — at oldest, should be consumed as no-op
+        // (not let through to editor cursor movement within multiline text)
+        $this->editor->getWidget()->handleInput("\x1b[A");
+        $this->assertSame($multiline, $this->editor->getText());
     }
 
     // ─── Multiline prompts are preserved ──────────────────────
