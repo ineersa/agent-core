@@ -101,7 +101,7 @@ public function listSessions(string $sortBy = 'updated_at', int $limit = 50, str
 Status: IN-PROGRESS
 Branch: task/session-01-session-catalog-and-names
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-01-session-catalog-and-names
-Fork run:
+Fork run: ge9ed9uc2eaa
 PR URL:
 PR Status:
 Started: 2026-06-08T16:11:14.248Z
@@ -121,3 +121,8 @@ Completed:
 - Validation: Scouts inspected session entity/repository/store, migration executor, DB test patterns, and docs/downstream session task prerequisites.
 - Summary: Start-phase scouts completed. Current implementation seams: add nullable `name` field to `HatfieldSession`, new migration adding `hatfield_session.name`, add migration FQCN to `ApplicationMigrationExecutor::KNOWN_MIGRATIONS`, add repository query method for recent/listed sessions, extend `HatfieldSessionStore::loadMetadata()`/`updateMetadata()` and add `listSessions()` with deterministic computed display title fallback. Tests should primarily extend `HatfieldSessionStoreTest` using `IsolatedKernelTestCase`, and add/adjust `SessionAwareModelResolverTest` coverage so extra `name` metadata does not affect model resolution. Docs update target is `docs/session-storage.md` metadata shape, naming/display subsection, and open gaps table.
 - task-start: launched 3 scouts for code/API seams, tests/DB patterns, and docs/downstream picker requirements. Preparing implementation fork.
+
+## Task workflow update - 2026-06-08T16:18:51.112Z
+- Recorded fork run: ge9ed9uc2eaa
+- Summary: Implementation fork launched in task worktree `/home/ineersa/projects/agent-core-worktrees/session-01-session-catalog-and-names` with exact SESSION-01 instructions covering entity/migration/runtime migration list, repository/store listing API, metadata name handling, tests, docs, Castor validation subset, and commit expectations.
+- task-start: launched implementation fork ge9ed9uc2eaa. Main agent will verify commit/diff and record validation when the fork report arrives.
