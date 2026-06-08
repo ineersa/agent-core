@@ -39,7 +39,7 @@ Recommended sequencing:
 Status: IN-PROGRESS
 Branch: task/rtvs-08b-canonical-events-run-state-replay
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-08b-canonical-events-run-state-replay
-Fork run:
+Fork run: h3dua8nfckje
 PR URL:
 PR Status:
 Started: 2026-06-08T00:15:30.019Z
@@ -63,3 +63,9 @@ Completed:
 - Scout #1: AgentCore event emission coverage — critical gaps are tool result message content missing from tool events and human_response command event missing full AgentMessage; StartRun and steer/follow_up message coverage exists post-RTVS-08A; llm_step_completed has assistant_message; pendingToolCalls derivable from tool_execution_start/end.
 - Scout #2: replay/storage/resume — ReplayService builds PromptState only; RunMessageProcessor uses runStore->get() ?? RunState::queued(), so missing state.json on existing runs is incorrect; proposed RunStateReplayService using EventStoreInterface + RunStoreInterface, detecting sequence gaps and rebuilding/persisting checkpoint before Continue/handler processing.
 - Scout #3: tests/docs — add RunState replay tests for initial+assistant, follow_up/steer, tool result, HITL/cancel/error, non-contiguous history, missing/stale state.json; update docs/session-storage.md stale claims that state.json is required/not rebuildable.
+
+## Task workflow update - 2026-06-08T00:37:25.500Z
+- Recorded fork run: h3dua8nfckje
+- Validation: Fork reported: castor test --filter=RunStateReplayServiceTest PASS (16 tests, 67 assertions); Fork reported: focused handler/replay tests PASS (38 tests across handler classes); Fork reported: castor test PASS (2001 tests, 5866 assertions); Fork reported: castor test:tui PASS (5 tests, 18 assertions); Fork reported: castor test:controller PASS (1 test, 7 assertions); Fork reported: castor test:llm-real PASS (4 tests, 29 assertions); Fork reported: castor deptrac PASS (0 violations, 0 errors); Fork reported: castor phpstan PASS (0 errors, 0 file_errors); Fork reported: castor cs-check PASS (0 files fixed); Parent verification: git status clean at commit 30757408; git diff --stat origin/main...HEAD shows 8 files changed, 1272 insertions, 9 deletions
+- Summary: Implementation fork completed RTVS-08B and committed 30757408 on branch task/rtvs-08b-canonical-events-run-state-replay. Verified worktree clean and diff matches expected scope: 8 files changed (4 new, 4 modified), including new RunStateReplayService/Result/Exception, RunStateReplayServiceTest, event payload additions for human_response/tool message_end, RunMessageProcessor stale/missing state replay integration, and docs/session-storage.md updates. events.jsonl now carries replay-critical tool-result and HITL message payloads; RunState can be deterministically rebuilt from canonical events; missing/stale state.json is recovered before processing.
+- task-start fork h3dua8nfckje: implemented canonical event completeness + deterministic RunState replay. New service reduces canonical RunEvent stream into RunState, throws on non-contiguous history, treats empty event stream as no-events, and integrates in RunMessageProcessor before handler execution when state is missing/stale. Tool result AgentMessage payloads are now included in tool message_end events; human_response applied events now include full serialized AgentMessage. Full PR/review/gate intentionally not started per task-start workflow.
