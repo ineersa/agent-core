@@ -297,8 +297,27 @@ final class SlashCommandCompletionProviderTest extends TestCase
         $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd('/'));
 
         $displays = array_map(static fn (CompletionSuggestion $s) => $s->display, $suggestions);
-        // Registry sorts by canonical name
-        $this->assertSame($displays, array_values($displays)); // Verify preservation of order
+        // Registry sorts alphabetically by canonical name: clear → exit → help
+        $expected = ['/clear', '/exit', '/help'];
+        $this->assertSame($expected, $displays);
+    }
+
+    // ── Cursor offset MVP behaviour ───────────────────────────────
+
+    #[Test]
+    public function midTextCursorStillOperatesCursorAtEndForMvp(): void
+    {
+        // EDITOR-08 intentionally ignores cursorByteOffset and uses
+        // cursor-at-end heuristic. When PromptEditor exposes live
+        // cursor state in a future phase, this test should be updated
+        // or removed to verify cursor-aware prefix extraction.
+        $context = new CompletionContext('/he', 1); // cursor between '/' and 'h'
+        $suggestions = $this->provider->getSuggestions($context);
+
+        // MVP still sees the full last-line prefix "he" → suggests /help
+        $this->assertNotEmpty($suggestions);
+        $displays = array_map(static fn (CompletionSuggestion $s) => $s->display, $suggestions);
+        $this->assertContains('/help', $displays);
     }
 
     // ── Helpers ────────────────────────────────────────────────────
