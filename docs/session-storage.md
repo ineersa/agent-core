@@ -77,11 +77,11 @@ Canonical history
 └───────────────┬──────────────────────────────────────────┘
                 │ materializes current run state
                 ▼
-Current-state snapshot / checkpoint
+Current-state snapshot / checkpoint (rebuildable)
 ┌──────────────────────────────────────────────────────────┐
 │ state.json                                               │
 │ serialized RunState used for fast resume + CAS version   │
-│ operationally required today; not auto-rebuilt yet       │
+│ auto-rebuilt from events.jsonl when missing or stale     │
 └───────────────┬──────────────────────────────────────────┘
                 │ projects user/protocol views
                 ▼
@@ -122,11 +122,13 @@ Written atomically by `SessionRunStore::compareAndSwap()` under a Symfony Lock
 expected version, and writes only if they match — preventing race conditions
 in concurrent message processing.
 
-Although `state.json` is conceptually derivable from the canonical event stream,
-the current resume flow reads it directly. There is not yet an automatic
-"rebuild state from `events.jsonl` when `state.json` is missing or corrupt"
-fallback, so it should be treated as a required materialized snapshot today, not
-as a disposable cache.
+**`state.json` is a rebuildable hot checkpoint/projection**, not a required
+source of truth.  When `state.json` is missing, stale (`lastSeq` behind the
+max canonical event sequence), or corrupt, the pipeline automatically rebuilds
+the RunState from `events.jsonl` via `RunStateReplayService` before advancing
+the run.  The canonical event stream in `events.jsonl` is the single source
+of truth; `state.json` is a materialized cache that can be discarded and
+recreated at any time.
 
 ### events.jsonl
 
@@ -393,7 +395,7 @@ embedded IDs.
 | Attachments storage (`attachments/`) | Low | Directory created in layout docs but not yet used. Will store pasted files, images, diffs. |
 | Session rename / alias | Low | Session IDs are auto-increment numeric strings — not human-memorable. Aliases or titles would help. |
 | Runtime event streaming | Medium | Current polling is synchronous full-scan. Incremental delivery would improve large sessions. |
-| Rebuild `state.json` from `events.jsonl` | Medium | Would make the materialized snapshot fully recoverable and justify treating it as a disposable cache. |
+| Rebuild `state.json` from `events.jsonl` | **Done** | `RunStateReplayService` rebuilds RunState from canonical events when `state.json` is missing or stale. `state.json` is now a disposable cache. |
 ## Related documents
 
 - [Hatfield Settings](settings.md) — configuring session path and theme
