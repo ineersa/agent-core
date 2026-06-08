@@ -9,19 +9,19 @@ use Ineersa\Tui\Command\SlashCommandRegistry;
 /**
  * Completion provider for slash commands.
  *
- * Triggers only when the current cursor-at-end context is a slash
- * at start of text or after a newline at column 0.  Matches both
- * canonical command names and aliases; inserts canonical command
- * text when an alias match is accepted.
+ * Triggers only when editor text starts with a leading slash.
+ * Matches both canonical command names and aliases; inserts
+ * canonical command text when an alias match is accepted.
  *
  * Uses {@see SlashCommandRegistry::allMetadata()} at suggestion time
- * so runtime-registered commands (e.g. /model) are included.
+ * so runtime-registered commands (e.g. /model, /model-favourites)
+ * are included.
  *
  * EDITOR-08 limitation: only cursor-at-end is honoured.
  * When {@see CompletionContext::$cursorByteOffset} is not at the
- * end of the text, the last-line heuristic still operates on the
- * suffix of the full text.  This matches the MVP where
- * {@see PromptEditor} does not expose live cursor state.
+ * end of the text, the entire text is still used as the prefix.
+ * This matches the MVP where {@see PromptEditor} does not expose
+ * live cursor state.
  */
 final readonly class SlashCommandCompletionProvider implements CompletionProvider
 {
@@ -82,48 +82,27 @@ final readonly class SlashCommandCompletionProvider implements CompletionProvide
     /**
      * Extract the slash prefix and its replacement start position.
      *
-     * Only triggers when the text ends with a slash command context:
-     * text starts with "/", or text contains "\n/" where "/" is at
-     * column 0 of the last line.  Escaped slashes "//" are NOT
-     * treated as slash commands.
+     * Only triggers when the full editor text starts with "/".
+     * Escaped slashes "//" are NOT treated as slash commands.
+     * Text where "/" appears after a newline or elsewhere does not
+     * trigger completion — the leading character must be "/".
      *
      * @return array{string, int}|null [prefix (after slash), replacementStart byte offset]
      */
     private function extractSlashContext(string $text): ?array
     {
-        $len = \strlen($text);
-
-        // Empty text — no context
-        if (0 === $len) {
-            return null;
-        }
-
-        // Find the start of the last line
-        $lastNewlinePos = strrpos($text, "\n");
-
-        if (false === $lastNewlinePos) {
-            // Single-line text
-            $line = $text;
-            $lineStart = 0;
-        } else {
-            // Multi-line — check the last line
-            $lineStart = $lastNewlinePos + 1;
-            $line = substr($text, $lineStart);
-        }
-
-        // Must start with "/"
-        if (!str_starts_with($line, '/')) {
+        if (!str_starts_with($text, '/')) {
             return null;
         }
 
         // "//" is an escaped slash — not a command
-        if (\strlen($line) >= 2 && '/' === $line[1]) {
+        if (\strlen($text) >= 2 && '/' === $text[1]) {
             return null;
         }
 
-        // Prefix is everything after the "/"
-        $prefix = substr($line, 1);
+        // Prefix is everything after the leading "/"
+        $prefix = substr($text, 1);
 
-        return [$prefix, $lineStart];
+        return [$prefix, 0];
     }
 }

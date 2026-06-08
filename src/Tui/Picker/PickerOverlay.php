@@ -23,14 +23,17 @@ final class PickerOverlay
     private ?ContainerWidget $container = null;
     private ?SelectListWidget $listWidget = null;
     private bool $isOpen = false;
-    private ?Tui $tui = null;
     private ?ChatScreen $screen = null;
 
     /**
-     * Mount the overlay into the TUI widget tree.
+     * Mount the overlay below the editor via the ChatScreen overlay API.
      *
      * Creates a ContainerWidget wrapping the header and list widgets,
-     * adds it to the TUI, and sets focus to the list.
+     * inserts it below the editor (same visual slot as completion menus),
+     * and sets focus to the list.
+     *
+     * Uses {@see ChatScreen::insertOverlayAfterEditor()} so the picker
+     * renders above the footer, not below it.
      */
     public function mount(Tui $tui, ChatScreen $screen, SelectListWidget $listWidget, TextWidget $header): void
     {
@@ -38,7 +41,6 @@ final class PickerOverlay
             return;
         }
 
-        $this->tui = $tui;
         $this->screen = $screen;
         $this->listWidget = $listWidget;
 
@@ -46,7 +48,7 @@ final class PickerOverlay
         $this->container->add($header);
         $this->container->add($this->listWidget);
 
-        $tui->add($this->container);
+        $screen->insertOverlayAfterEditor($this->container);
         $tui->setFocus($this->listWidget);
         $tui->requestRender(true);
         $this->isOpen = true;
@@ -60,13 +62,12 @@ final class PickerOverlay
      */
     public function close(): void
     {
-        if (null !== $this->container && null !== $this->tui) {
-            $this->tui->remove($this->container);
+        if (null !== $this->container && null !== $this->screen) {
+            $this->screen->removeOverlay($this->container);
         }
 
         $this->container = null;
         $this->listWidget = null;
-        $this->tui = null;
         $this->screen = null;
         $this->isOpen = false;
     }

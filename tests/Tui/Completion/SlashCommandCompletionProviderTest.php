@@ -63,37 +63,23 @@ final class SlashCommandCompletionProviderTest extends TestCase
     }
 
     #[Test]
-    public function returnsSuggestionsAfterNewline(): void
+    public function slashAfterNewlineDoesNotTrigger(): void
     {
-        $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd("hello\n/"));
-
-        $this->assertNotEmpty($suggestions);
-        $displays = array_map(static fn (CompletionSuggestion $s) => $s->display, $suggestions);
-        $this->assertContains('/clear', $displays);
+        // Slash after a newline is not at text start — no completion.
+        $this->assertSame([], $this->provider->getSuggestions(CompletionContext::forCursorAtEnd("hello\n/")));
     }
 
     #[Test]
-    public function returnsSuggestionsForPartialPrefixAfterNewline(): void
+    public function slashAfterNewlineWithPrefixDoesNotTrigger(): void
     {
-        $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd("hello\n/ex"));
-
-        $this->assertNotEmpty($suggestions);
-        $displays = array_map(static fn (CompletionSuggestion $s) => $s->display, $suggestions);
-        $this->assertContains('/exit', $displays);
-        $this->assertNotContains('/clear', $displays);
+        $this->assertSame([], $this->provider->getSuggestions(CompletionContext::forCursorAtEnd("hello\n/ex")));
     }
 
     #[Test]
-    public function preservesTextBeforeLastNewline(): void
+    public function slashAfterNewlineHasNoSuggestions(): void
     {
-        $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd("/help\n/"));
-
-        $this->assertNotEmpty($suggestions);
-        // The replacementStart should point to the second "/" position
-        // "/help\n/" = 7 chars, last newline at pos 5, "/" at pos 6
-        foreach ($suggestions as $s) {
-            $this->assertSame(6, $s->replacementStart);
-        }
+        // Text with a slash after newline — still after a newline, not at start.
+        $this->assertSame([], $this->provider->getSuggestions(CompletionContext::forCursorAtEnd("/help\n/")));
     }
 
     // ── Non-slash context returns empty ──────────────────────────────
@@ -159,7 +145,7 @@ final class SlashCommandCompletionProviderTest extends TestCase
     #[Test]
     public function aliasPrefixPartialMatch(): void
     {
-        // /cl is an alias prefix for /clear (alias: cls)
+        // /cl matches /clear by canonical name prefix (not via alias cls).
         $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd('/cl'));
 
         $this->assertNotEmpty($suggestions);
@@ -278,15 +264,10 @@ final class SlashCommandCompletionProviderTest extends TestCase
     }
 
     #[Test]
-    public function replacementRangeAfterNewline(): void
+    public function slashAfterNewlineHasNoReplacementRange(): void
     {
-        $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd("hello\n/ex"));
-
-        $exit = $this->findByDisplay($suggestions, '/exit');
-        $this->assertNotNull($exit);
-        // "hello\n/ex" — "/ex" starts at pos 6, length 3
-        $this->assertSame(6, $exit->replacementStart);
-        $this->assertSame(3, $exit->replacementLength);
+        // Newline slash does not trigger — replacement range is N/A.
+        $this->assertSame([], $this->provider->getSuggestions(CompletionContext::forCursorAtEnd("hello\n/ex")));
     }
 
     // ── Deterministic ordering ──────────────────────────────────────
@@ -307,14 +288,13 @@ final class SlashCommandCompletionProviderTest extends TestCase
     #[Test]
     public function midTextCursorStillOperatesCursorAtEndForMvp(): void
     {
-        // EDITOR-08 intentionally ignores cursorByteOffset and uses
-        // cursor-at-end heuristic. When PromptEditor exposes live
-        // cursor state in a future phase, this test should be updated
-        // or removed to verify cursor-aware prefix extraction.
+        // EDITOR-08 only triggers when text starts with "/".
+        // Non-start slash contexts are ignored until live cursor
+        // state is exposed in a future phase.
         $context = new CompletionContext('/he', 1); // cursor between '/' and 'h'
         $suggestions = $this->provider->getSuggestions($context);
 
-        // MVP still sees the full last-line prefix "he" → suggests /help
+        // MVP still sees the full prefix "he" → suggests /help
         $this->assertNotEmpty($suggestions);
         $displays = array_map(static fn (CompletionSuggestion $s) => $s->display, $suggestions);
         $this->assertContains('/help', $displays);

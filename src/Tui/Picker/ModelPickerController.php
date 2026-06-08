@@ -230,7 +230,9 @@ final class ModelPickerController
                 '%s %s  %s',
                 $pointer,
                 $star,
-                $refStr,
+                $isCurrent
+                    ? $theme->color(ThemeColorEnum::Accent, $refStr)
+                    : $refStr,
             );
 
             $items[] = [

@@ -18,15 +18,17 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 use Psr\Log\LoggerInterface;
 
 /**
- * Handles /model slash commands: interactive picker, selection, and favorites.
+ * Handles /model and /model-favourites slash commands.
  *
  * Lives in TuiListener (not TuiCommand) because it needs
  * ModelSelectionService from CodingAgent/Config, which TuiCommand
  * cannot import per deptrac rules.
  *
- * /model with no args opens an interactive selectable list via
- * {@see ModelPickerController}.  Textual subcommands (/model select,
- * /model fav) remain available as keyboard-free fallbacks.
+ * /model: no args opens the interactive model picker; with a
+ * provider/modelname ref selects the model directly.
+ *
+ * /model-favourites: no args opens the favorites picker; with a
+ * provider/modelname ref toggles favorite status.
  *
  * Updates TuiSessionState fields for immediate footer refresh after
  * model/reasoning changes.
@@ -40,6 +42,7 @@ final class ModelCommandHandler implements SlashCommandHandler
         private readonly ModelPickerController $pickerController,
         private readonly FavoritePickerController $favPickerController,
         private readonly LoggerInterface $logger,
+        private readonly bool $isFavourites = false,
     ) {
     }
 
@@ -47,12 +50,20 @@ final class ModelCommandHandler implements SlashCommandHandler
     {
         $args = trim($command->args);
 
-        // /model (no args) → open interactive picker
+        if ($this->isFavourites) {
+            return $this->handleFavourites($args);
+        }
+
+        return $this->handleModel($args);
+    }
+
+    // ── /model ──────────────────────────────────────────────────────
+
+    private function handleModel(string $args): CommandResult
+    {
         if ('' === $args) {
             $this->pickerController->open();
 
-            // If the picker couldn't open (e.g. no TUI refs in tests),
-            // fall back to the textual list.
             if (!$this->pickerController->isOpen()) {
                 return $this->buildModelListMessage();
             }
@@ -60,30 +71,30 @@ final class ModelCommandHandler implements SlashCommandHandler
             return new NoOp();
         }
 
-        // Parse subcommand or provider/model reference
-        $parts = explode(' ', $args, 2);
-        $first = $parts[0];
-        $rest = $parts[1] ?? '';
-
-        return match ($first) {
-            'select', 'sel' => $this->selectModel($rest),
-            'fav' => $this->toggleFavoriteCommand($rest),
-            default => $this->selectModel($args), // try as direct provider/modelname
-        };
+        return $this->selectModel($args);
     }
 
-    // ── Subcommand: /model select <provider/model> ──
+    // ── /model-favourites ────────────────────────────────────────────
+
+    private function handleFavourites(string $args): CommandResult
+    {
+        if ('' === $args) {
+            $this->favPickerController->open();
+
+            if ($this->favPickerController->isOpen()) {
+                return new NoOp();
+            }
+
+            return $this->buildFavoritesListMessage();
+        }
+
+        return $this->toggleFavorite($args);
+    }
+
+    // ── Model selection ─────────────────────────────────────────────
 
     private function selectModel(string $modelSpec): CommandResult
     {
-        if ('' === $modelSpec) {
-            return new TranscriptMessage(
-                "Usage: /model select <provider/modelname>\n\nType /model to see available models.",
-                'system',
-                'muted',
-            );
-        }
-
         $ref = AiModelReference::tryParse($modelSpec);
         if (null === $ref) {
             return new TranscriptMessage(
@@ -107,7 +118,6 @@ final class ModelCommandHandler implements SlashCommandHandler
             return new TranscriptMessage($e->getMessage(), 'system', 'muted');
         }
 
-        // Update footer state for immediate refresh — reset to off when model doesn't support thinking
         $this->state->footerModel = FooterStateInitializer::shortModelName(
             $ref->providerId.'/'.$ref->modelName,
         );
@@ -120,22 +130,10 @@ final class ModelCommandHandler implements SlashCommandHandler
         );
     }
 
-    // ── Subcommand: /model fav <provider/model> ──
+    // ── Favorite toggling ───────────────────────────────────────────
 
-    private function toggleFavoriteCommand(string $modelSpec): CommandResult
+    private function toggleFavorite(string $modelSpec): CommandResult
     {
-        if ('' === $modelSpec) {
-            // Open interactive favorites picker
-            $this->favPickerController->open();
-
-            if ($this->favPickerController->isOpen()) {
-                return new NoOp();
-            }
-
-            // Fallback: textual list when TUI refs not available (tests, etc.)
-            return $this->buildFavoritesListMessage();
-        }
-
         $ref = AiModelReference::tryParse($modelSpec);
         if (null === $ref) {
             return new TranscriptMessage(
@@ -154,17 +152,17 @@ final class ModelCommandHandler implements SlashCommandHandler
 
             if ($wasFavorite) {
                 return new TranscriptMessage(
-                    \sprintf('Removed %s from favorites.', $ref->toString()),
+                    \sprintf('Removed %s from favourites.', $ref->toString()),
                     'system',
                 );
             }
 
             return new TranscriptMessage(
-                \sprintf('Added %s to favorites.', $ref->toString()),
+                \sprintf('Added %s to favourites.', $ref->toString()),
                 'system',
             );
         } catch (\RuntimeException $e) {
-            $this->logger->warning('Failed to toggle favorite', [
+            $this->logger->warning('Failed to toggle favourite', [
                 'exception' => $e,
                 'model' => $ref->toString(),
             ]);
@@ -173,7 +171,7 @@ final class ModelCommandHandler implements SlashCommandHandler
         }
     }
 
-    // ── Model list formatting ──
+    // ── Model list formatting ───────────────────────────────────────
 
     private function buildModelListMessage(): TranscriptMessage
     {
@@ -212,8 +210,6 @@ final class ModelCommandHandler implements SlashCommandHandler
 
         $lines = ['Available models:', ''];
 
-        $favCount = 0;
-
         foreach ($ordered as $i => $ref) {
             $refStr = $ref->toString();
             $isFav = isset($favSet[$refStr]);
@@ -222,10 +218,6 @@ final class ModelCommandHandler implements SlashCommandHandler
             $n = \sprintf('%2d.', $i + 1);
             $star = $isFav ? '★' : ' ';
             $current = $isCurrent ? ' (current)' : '';
-
-            if ($isFav) {
-                ++$favCount;
-            }
 
             $lines[] = \sprintf(
                 '  %s %s %s%s',
@@ -237,18 +229,16 @@ final class ModelCommandHandler implements SlashCommandHandler
         }
 
         $lines[] = '';
-        $lines[] = 'Type /model select <provider/modelname> to select a model.';
-        $lines[] = 'Type /model fav <provider/modelname> to toggle favorite.';
-        $lines[] = 'Press Ctrl+P to cycle favorite models.';
-        $lines[] = 'Press Shift+Tab to cycle reasoning levels.';
+        $lines[] = 'Type /model <provider/modelname> to select a model.';
+        $lines[] = 'Type /model-favourites <provider/modelname> to toggle a favourite.';
 
         return new TranscriptMessage(implode("\n", $lines), 'system');
     }
 
-    // ── Helpers ──
+    // ── Favorites list formatting ────────────────────────────────────
 
     /**
-     * Build a textual favorites list (fallback when picker can't open).
+     * Build a textual favourites list (fallback when picker can't open).
      */
     private function buildFavoritesListMessage(): TranscriptMessage
     {
@@ -264,7 +254,7 @@ final class ModelCommandHandler implements SlashCommandHandler
             );
         }
 
-        $lines = ['Favorite models (* = favorite):', ''];
+        $lines = ['Favourite models (* = favourite):', ''];
         foreach ($all as $i => $ref) {
             $refStr = $ref->toString();
             $isFav = isset($favSet[$refStr]);
@@ -272,8 +262,7 @@ final class ModelCommandHandler implements SlashCommandHandler
             $lines[] = \sprintf('  %2d. %s %s', $i + 1, $marker, $refStr);
         }
         $lines[] = '';
-        $lines[] = 'Type /model fav <provider/modelname> to toggle a favorite.';
-        $lines[] = 'Type /model fav (no args) to open the interactive picker.';
+        $lines[] = 'Type /model-favourites <provider/modelname> to toggle a favourite.';
 
         return new TranscriptMessage(implode("\n", $lines), 'system');
     }

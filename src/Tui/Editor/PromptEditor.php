@@ -64,30 +64,28 @@ final class PromptEditor
     /**
      * Set editor text and reposition the cursor at the end.
      *
-     * Symfony EditorWidget does not expose a public cursor API.
-     * This adapter uses a tightly-scoped reflection access on the
-     * private EditorDocument so the cursor lands after the inserted
-     * command text rather than at line 0/col 0 (the setText default).
+     * EditorWidget::setText() resets the cursor to (0,0).  This helper
+     * moves the cursor to the end of the last line using only public
+     * EditorWidget APIs: handleInput() with standard ANSI cursor-movement
+     * escape sequences that EditorWidget's built-in keybindings dispatch.
      *
-     * Replace with a public cursor API if/when Symfony exposes one.
-     * Keep the reflection internal to PromptEditor; callers must not
-     * replicate this pattern.
+     * Strategy: setText to insert the content, then simulate DOWN arrow
+     * for each line beyond the first, followed by END to hit the line end.
+     * These are public EditorWidget::handleInput() calls — no reflection,
+     * Closure::bind, or private-property access.
      */
     public function setTextWithCursorAtEnd(string $text): void
     {
         $this->widget->setText($text);
 
-        // Access the private EditorDocument so we can move the
-        // cursor after the default setText reset.
-        $docProp = (new \ReflectionClass($this->widget))->getProperty('document');
-        /** @var \Symfony\Component\Tui\Widget\Editor\EditorDocument $document */
-        $document = $docProp->getValue($this->widget);
+        // Move cursor down N-1 lines (cursor starts at line 0).
+        $newlineCount = substr_count($text, "\n");
+        for ($i = 0; $i < $newlineCount; ++$i) {
+            $this->widget->handleInput("\x1b[B");
+        }
 
-        $lines = $document->getLines();
-        $lastLine = \count($lines) - 1;
-        $document->setCursorLine($lastLine);
-        $document->setCursorCol(\strlen($lines[$lastLine]));
-        $this->widget->invalidate();
+        // Move to the end of the current line.
+        $this->widget->handleInput("\x1b[F");
     }
 
     // ─── Lifecycle ───────────────────────────────────────────────

@@ -94,7 +94,7 @@ final class FavoritePickerController
         $logger = $this->logger;
 
         $listWidget->onInput(static function (string $data) use (
-            $modelService, $listWidget, $screen, $logger,
+            $modelService, $listWidget, $screen, $logger, $state,
         ): bool {
             // We handle space via select_toggle_fav in keybindings,
             // but SelectListWidget routes confirm to select_confirm.
@@ -131,7 +131,7 @@ final class FavoritePickerController
             }
 
             // Rebuild items with updated favorite markers
-            $newItems = FavoritePickerController::buildFavoritesItems($modelService, $screen->theme());
+            $newItems = FavoritePickerController::buildFavoritesItems($modelService, $screen->theme(), $state);
             $listWidget->setItems($newItems);
 
             // Restore selection
@@ -177,20 +177,28 @@ final class FavoritePickerController
     }
 
     /**
-     * Build items: all models, favorites marked with *.
+     * Build items: all models, favorites marked with *, current marked with ❯.
      *
      * @return list<array{value: string, label: string}>
      */
-    public static function buildFavoritesItems(ModelSelectionService $modelService, TuiTheme $theme): array
+    public static function buildFavoritesItems(ModelSelectionService $modelService, TuiTheme $theme, ?TuiSessionState $state = null): array
     {
         $all = $modelService->getAvailableModels();
         $favorites = $modelService->getFavoriteModels();
         $favSet = array_flip($favorites);
+        $currentModel = null !== $state ? $modelService->getCurrentModel($state->sessionId) : null;
+        $currentStr = null !== $currentModel ? $currentModel->toString() : null;
 
         $items = [];
         foreach ($all as $ref) {
             $refStr = $ref->toString();
             $isFav = isset($favSet[$refStr]);
+            $isCurrent = $refStr === $currentStr;
+
+            // Current model marker (accent) — matches the model picker pattern.
+            $pointer = $isCurrent
+                ? $theme->color(ThemeColorEnum::Accent, '❯')
+                : ' ';
 
             // Favourite marker coloured with Warning token so
             // favourited rows stand out from plain ones.
@@ -199,9 +207,12 @@ final class FavoritePickerController
                 : ' ';
 
             $label = \sprintf(
-                '%s %s',
+                '%s %s  %s',
+                $pointer,
                 $marker,
-                $refStr,
+                $isCurrent
+                    ? $theme->color(ThemeColorEnum::Accent, $refStr)
+                    : $refStr,
             );
 
             $items[] = [
@@ -214,12 +225,12 @@ final class FavoritePickerController
     }
 
     /**
-     * Build items: all models, favorites marked with *.
+     * Build items: all models, favorites marked with *, current with ❯.
      *
      * @return list<array{value: string, label: string}>
      */
     private function buildItems(): array
     {
-        return self::buildFavoritesItems($this->modelService, $this->screen->theme());
+        return self::buildFavoritesItems($this->modelService, $this->screen->theme(), $this->state);
     }
 }
