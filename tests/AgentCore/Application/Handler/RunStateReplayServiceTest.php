@@ -444,6 +444,58 @@ final class RunStateReplayServiceTest extends TestCase
 
     // ── Multiple messages from run_started ──────────────────────────────────
 
+    // ── Pending tool call reset across steps ────────────────────────────────
+
+    public function testLlmStepCompletedResetsPendingToolCallsFromPriorStep(): void
+    {
+        $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [
+            'step_id' => 's1',
+            'payload' => ['messages' => []],
+        ]);
+
+        // First LLM step with tool calls tc-1 and tc-2.
+        $this->appendEvent(RunEventTypeEnum::LlmStepCompleted->value, 2, [
+            'step_id' => 's1',
+            'assistant_message' => [
+                'role' => 'assistant',
+                'content' => [['type' => 'text', 'text' => 'First step.']],
+                'tool_calls' => [
+                    ['id' => 'tc-1', 'name' => 'read', 'arguments' => [], 'order_index' => 0],
+                    ['id' => 'tc-2', 'name' => 'write', 'arguments' => [], 'order_index' => 1],
+                ],
+                'is_error' => false,
+            ],
+        ]);
+
+        // Second LLM step with only tc-3.
+        // If replay accumulates instead of resetting, pendingToolCalls will still
+        // hold tc-1 and tc-2 alongside tc-3.
+        $this->appendEvent(RunEventTypeEnum::LlmStepCompleted->value, 3, [
+            'step_id' => 's2',
+            'assistant_message' => [
+                'role' => 'assistant',
+                'content' => [['type' => 'text', 'text' => 'Second step.']],
+                'tool_calls' => [
+                    ['id' => 'tc-3', 'name' => 'search', 'arguments' => [], 'order_index' => 0],
+                ],
+                'is_error' => false,
+            ],
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        $pendingCalls = $result->rebuiltState->pendingToolCalls;
+        self::assertCount(1, $pendingCalls, 'Only tc-3 should survive; tc-1 and tc-2 must be dropped.');
+        self::assertArrayHasKey('tc-3', $pendingCalls);
+        self::assertArrayNotHasKey('tc-1', $pendingCalls);
+        self::assertArrayNotHasKey('tc-2', $pendingCalls);
+        self::assertFalse($pendingCalls['tc-3']);
+    }
+
+    // ── Multiple messages from run_started ──────────────────────────────────
+
     public function testRunStartedWithMultipleMessagesRebuildsAll(): void
     {
         $this->appendEvent(RunEventTypeEnum::RunStarted->value, 1, [

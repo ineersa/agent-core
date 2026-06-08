@@ -125,7 +125,11 @@ final readonly class RunStateReplayService
      * retryableFailure} are populated from events; isStreaming is false
      * and streamingMessage is null after replay.
      *
-     * @param list<RunEvent> $events sorted ascending by seq
+     * **Caller must provide sorted, contiguous events.** This method does
+     * NOT detect gaps or validate ordering.  Use {@see rebuildIfStale()}
+     * for production replay that includes contiguity checks.
+     *
+     * @param list<RunEvent> $events sorted ascending by seq, no gaps
      */
     public function replay(RunState $existingState, array $events): RunState
     {
@@ -408,16 +412,18 @@ final readonly class RunStateReplayService
     }
 
     /**
-     * @param list<AgentMessage>  $messages
-     * @param array<string, bool> $pendingToolCalls
-     */
-    /**
      * @param array<string, mixed> $payload
      * @param list<AgentMessage>   $messages
      * @param array<string, bool>  $pendingToolCalls
      */
     private function applyLlmStepCompleted(array $payload, RunState $state, array &$messages, array &$pendingToolCalls): RunState
     {
+        // Reset pending tool calls before processing the current step's calls.
+        // This matches LlmStepResultHandler, which replaces pendingToolCalls
+        // with the current assistant message's tool calls rather than
+        // accumulating across steps.
+        $pendingToolCalls = [];
+
         $assistantPayload = \is_array($payload['assistant_message'] ?? null) ? $payload['assistant_message'] : null;
 
         if (null !== $assistantPayload) {
@@ -479,9 +485,6 @@ final readonly class RunStateReplayService
     }
 
     /**
-     * @param array<string, bool> $pendingToolCalls
-     */
-    /**
      * @param array<string, mixed> $payload
      * @param array<string, bool>  $pendingToolCalls
      */
@@ -496,10 +499,6 @@ final readonly class RunStateReplayService
         return $state;
     }
 
-    /**
-     * @param list<AgentMessage>  $messages
-     * @param array<string, bool> $pendingToolCalls
-     */
     /**
      * @param array<string, mixed> $payload
      * @param list<AgentMessage>   $messages
