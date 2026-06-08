@@ -39,7 +39,7 @@ Recommended sequencing:
 Status: IN-PROGRESS
 Branch: task/rtvs-08b-canonical-events-run-state-replay
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-08b-canonical-events-run-state-replay
-Fork run: kbxztzgspzhz
+Fork run: hwptg9frdqqv
 PR URL:
 PR Status:
 Started: 2026-06-08T00:15:30.019Z
@@ -88,3 +88,10 @@ Completed:
 - Summary: Final reviewer pass at HEAD 09e82d22 returned APPROVE WITH SUGGESTIONS. Previous findings were confirmed resolved: pendingToolCalls reset, branch divergence/merge, duplicate docblocks, replay precondition docs. New actionable findings to address before PR: tool-call-only assistant messages with content:null are dropped by replay because AgentMessage::fromPayload rejects null content; duplicate event sequence numbers are skipped by missingSequences() but still replayed; docs claim corrupt state auto-rebuild though code only handles missing/stale; by-ref accumulator pattern needs a stronger maintainability comment; applyMessageEnd has unused pendingToolCalls parameter; high-value test gap for RunMessageProcessor + RunStateReplayService integration; smaller reducer test gaps for AgentCommandRejected, continue, and LlmStepAborted.
 - reviewer: actionable bug/edge case — applyLlmStepCompleted drops tool-call-only assistant messages when payload content is null; replay must preserve assistant message to avoid prompt-history gaps.
 - reviewer: actionable edge/docs/quality suggestions — detect duplicate seqs, fix docs corrupt-state wording, document accumulator source-of-truth invariant, remove/comment unused applyMessageEnd pendingToolCalls parameter, add integration/reducer tests where sensible.
+
+## Task workflow update - 2026-06-08T01:48:26.537Z
+- Recorded fork run: hwptg9frdqqv
+- Validation: Final reviewer verdict at f7c14f0d: APPROVED — all prior findings resolved, no new issues; castor test PASS (2045 tests, 5999 assertions, 0 errors, 0 failures, 0 skipped); castor deptrac PASS (0 violations, 0 errors); castor phpstan PASS (0 errors, 0 file_errors); castor cs-check PASS (0 files fixed); Worktree clean at f7c14f0d; git diff --stat origin/main...HEAD shows 9 files changed, 1576 insertions, 9 deletions
+- Summary: Final reviewer-fix fork completed at commit f7c14f0d. Addressed 7 reviewer findings: tool-call-only assistant message replay via replayAssistantMessage() helper, duplicate seq detection with RunStateReplayException, docs overclaim removed (corrupt→missing/stale), by-ref accumulator invariant documented in replay() docblock, unused applyMessageEnd pendingToolCalls parameter removed, explicit DI wiring in services.yaml, and 5 new tests (tool-call-only assistant, duplicate seq, command_rejected, continue, llm_step_aborted). Final reviewer returned APPROVED — all prior findings resolved, no new issues. Local validation: castor test 2045/2045, deptrac 0 violations, phpstan 0 errors, cs-check clean.
+- task-to-pr: final reviewer returned APPROVED at f7c14f0d. All prior findings confirmed resolved. No blocking issues remain.
+- task-to-pr: local validation castor test 2045/2045, deptrac 0, phpstan 0, cs-check clean. Moving to CODE-REVIEW.
