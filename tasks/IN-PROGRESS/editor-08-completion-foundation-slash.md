@@ -32,7 +32,7 @@ Parallelizable with: EDITOR-06, EDITOR-07.
 Status: IN-PROGRESS
 Branch: task/editor-08-completion-foundation-slash
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-08-completion-foundation-slash
-Fork run: 4jg84u1ws7le
+Fork run: iq1on3kp62zj
 PR URL: https://github.com/ineersa/agent-core/pull/106
 PR Status: open
 Started: 2026-06-08T15:02:47.293Z
@@ -252,3 +252,7 @@ Castor Check Output SHA256: cfccc5b650aca9efb5f8afd1273f4a1bb691f45479a7a66355a0
 ## Task workflow update - 2026-06-08T18:14:55.190Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: User smoke-test found blocking UX/behavior issues after PR update: completion overlay is rendered above/on top of editor instead of below/near editor; accepting/selecting /help with Enter/submit sends plain `/` or slash text to LLM instead of executing slash command path; accepted command cursor/text placement needs command plus trailing whitespace so additional args type after the command; visual highlighting should match existing question/model selection patterns instead of plain text; CompletionListener is hard to read and should be simplified; investigate whether slot input-handler system is being used appropriately versus current InputEvent listener routing.
+
+## Task workflow update - 2026-06-08T18:17:47.998Z
+- Recorded fork run: iq1on3kp62zj
+- Summary: Launched implementation fork iq1on3kp62zj to address user smoke-test blockers: render completion below editor; switch menu rendering/highlighting to Symfony SelectListWidget like model/question patterns; Enter while menu open should accept selected command then propagate to normal submit so slash command executes; accepted completion must leave cursor after trailing whitespace so args type after command; simplify CompletionListener via extracted menu/controller helper; document why slot input handlers are not appropriate for consumable priority-sensitive completion keys.
