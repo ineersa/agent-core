@@ -131,3 +131,7 @@ Completed:
 - Created worktree /home/ineersa/projects/agent-core-worktrees/2026-06-07-add-copy-command-to-copy-last-model-output.
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/2026-06-07-add-copy-command-to-copy-last-model-output.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/2026-06-07-add-copy-command-to-copy-last-model-output.
+
+## Task workflow update - 2026-06-08T15:54:28.638Z
+- Orchestrator claimed task and created worktree: /home/ineersa/projects/agent-core-worktrees/2026-06-07-add-copy-command-to-copy-last-model-output
+- Scout gathered implementation context: follow ModelControlListener registrar pattern, add CopyCommandHandler using TuiSessionState transcript and TranscriptBlockKindEnum::AssistantMessage, add Clipboard utility copied from reference, update depfile TuiUtility layer/rules, add listener/utility tests.
