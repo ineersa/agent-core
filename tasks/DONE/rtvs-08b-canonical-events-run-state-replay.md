@@ -36,14 +36,14 @@ Recommended sequencing:
 - Validation uses Castor per project rules; runtime/Messenger changes require full `castor check` before CODE-REVIEW.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/rtvs-08b-canonical-events-run-state-replay
 Worktree: /home/ineersa/projects/agent-core-worktrees/rtvs-08b-canonical-events-run-state-replay
 Fork run: hwptg9frdqqv
 PR URL: https://github.com/ineersa/agent-core/pull/104
-PR Status: open
+PR Status: merged
 Started: 2026-06-08T00:15:30.019Z
-Completed:
+Completed: 2026-06-08T01:56:02.779Z
 
 ## Work log
 - Created: 2026-06-07T16:26:19.504Z
@@ -108,3 +108,24 @@ Castor Check Output SHA256: 76bc5710c370d035b88a5c02312ff509d59c8da1f76a403e1bf7
 - Pushed task/rtvs-08b-canonical-events-run-state-replay to origin.
 - branch 'task/rtvs-08b-canonical-events-run-state-replay' set up to track 'origin/task/rtvs-08b-canonical-events-run-state-replay'.
 - Created PR: https://github.com/ineersa/agent-core/pull/104
+
+## Task workflow update - 2026-06-08T01:56:02.779Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/rtvs-08b-canonical-events-run-state-replay into integration checkout.
+- Merge made by the 'ort' strategy.
+ config/services.yaml                               |   1 +
+ docs/session-storage.md                            |  18 +-
+ .../Application/Dto/RunStateReplayResult.php       |  78 +++
+ .../Handler/RunStateReplayException.php            |  14 +
+ .../Application/Handler/RunStateReplayService.php  | 746 +++++++++++++++++++++
+ .../Application/Pipeline/ApplyCommandHandler.php   |   3 +
+ .../Application/Pipeline/RunMessageProcessor.php   |  34 +
+ .../Application/Pipeline/ToolCallResultHandler.php |   5 +-
+ .../Handler/RunStateReplayServiceTest.php          | 686 +++++++++++++++++++
+ 9 files changed, 1576 insertions(+), 9 deletions(-)
+ create mode 100644 src/AgentCore/Application/Dto/RunStateReplayResult.php
+ create mode 100644 src/AgentCore/Application/Handler/RunStateReplayException.php
+ create mode 100644 src/AgentCore/Application/Handler/RunStateReplayService.php
+ create mode 100644 tests/AgentCore/Application/Handler/RunStateReplayServiceTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/rtvs-08b-canonical-events-run-state-replay.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
