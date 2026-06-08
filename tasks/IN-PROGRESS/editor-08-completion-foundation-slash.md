@@ -29,7 +29,7 @@ Parallelizable with: EDITOR-06, EDITOR-07.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/editor-08-completion-foundation-slash
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-08-completion-foundation-slash
 Fork run: iq1on3kp62zj
@@ -268,3 +268,7 @@ Castor Check Output SHA256: 0f9abb40227b376bcdfa8a6ef6a02221383d87e3b7ec3e37b720
 - Pushed task/editor-08-completion-foundation-slash to origin.
 - branch 'task/editor-08-completion-foundation-slash' set up to track 'origin/task/editor-08-completion-foundation-slash'.
 - PR already exists: https://github.com/ineersa/agent-core/pull/106
+
+## Task workflow update - 2026-06-08T19:42:17.913Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: User smoke-tested latest PR update and found follow-up issues: completion row highlight is white instead of using theme accent like question/model patterns; typing `/help 123` routes to detailed help/unknown command (`Unknown command: /123...`) but commands that do not expect args should execute as the base command while commands that expect args should receive them; completion header text shows literal `\u{2014}` instead of an actual em dash/glyph. Task moved back to IN-PROGRESS for another review-iterate fix.
