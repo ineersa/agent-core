@@ -140,7 +140,7 @@ class SessionSwitchService {
 Status: IN-PROGRESS
 Branch: task/session-02-tui-session-switch-lifecycle
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-02-tui-session-switch-lifecycle
-Fork run: bxv5ii084s6a
+Fork run: o71nt0bj2cue
 PR URL:
 PR Status:
 Started: 2026-06-08T21:50:11.525Z
@@ -176,3 +176,9 @@ Completed:
 - Validation: Reviewer verdict: REQUEST CHANGES for HEAD `00ccaa4f`.; Reviewed diff vs origin/main: 16 files, +740/-48.
 - Summary: Reviewer subagent reviewed HEAD `00ccaa4f` and returned REQUEST CHANGES. Required findings: (1) `InteractiveMode` drops initial `StartRunRequest`/`--prompt` in the non-resume/non-draft branch by calling `initialize('', null)`, breaking prompt startup; (2) `TuiSessionSwitchService::cancelCurrentRun()` has an empty catch without diagnostic logging, violating AGENTS.md. Additional actionable findings: default no-arg startup now creates a lazy draft and should be explicitly documented/test-covered as intentional; draft-with-request path can drop first user message because `initializeDraft()` pre-populates `state->request`; stale duplicate `ChatScreen` docblock; TuiRuntime→TuiApplication dependency cycle from context importing concrete switch service; weak footer update tests; missing `initializeDraft()` test; class docblock references SESSION-03 too specifically. Launching fork to fix all actionable findings.
 - task-to-pr: reviewer found prompt-start regression, empty catch logging violation, draft-with-request edge case, and cleanup/test/design issues; launching review-fix fork.
+
+## Task workflow update - 2026-06-08T23:10:01.029Z
+- Recorded fork run: o71nt0bj2cue
+- Validation: Verified worktree clean at HEAD `7aa91215`.; Fork validation: `castor test --filter=SessionSwitchService` PASS — 10 tests, 35 assertions.; Fork validation: `castor test --filter=SessionInitializer` PASS — 14 tests, 64 assertions.; Fork validation: `castor test --filter=ChatScreen` PASS — 7 tests, 14 assertions.; Fork validation: `castor test --filter=QuestionCoordinator` PASS — 33 tests, 76 assertions.; Fork validation: `castor test` PASS — 2184 tests, 6371 assertions, 0 errors/failures/skipped.; Fork validation: `castor deptrac` PASS — 0 violations, 0 errors.; Fork validation: `castor phpstan` PASS — 0 errors, 0 file errors.; Fork validation: `castor cs-fix` + `castor cs-check` PASS — clean, 0 files fixed.
+- Summary: Review-fix fork completed at commit `7aa91215` (`SESSION-02: Address switch lifecycle review findings`). It addressed all reviewer findings: preserves initial `StartRunRequest` in `InteractiveMode`; injects logger and emits structured warning for best-effort cancel failure; fixes draft-with-request first-message promotion by allowing promotion when `sessionId === ''` and merging request metadata; documents intentional lazy no-argument draft behavior; removes stale `ChatScreen` docblock; adds `TuiSessionSwitchServiceInterface` in `src/Tui/Runtime/Contract/` and types `TuiRuntimeContext` against it; strengthens `ChatScreen` footer assertions; adds `SessionInitializer::initializeDraft()` coverage; rephrases task-specific service docs. Verified worktree clean and cumulative branch diff is 20 files (+964/-61).
+- task-to-pr: review-fix fork o71nt0bj2cue completed at 7aa91215; all initial reviewer findings addressed; proceeding to re-review current HEAD.
