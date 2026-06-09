@@ -154,7 +154,7 @@ If prerequisites for `LLM_MODE=true castor check` are unavailable (tmux or llama
 Status: IN-PROGRESS
 Branch: task/editor-11-shell-prefix-commands
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-11-shell-prefix-commands
-Fork run: yj85jyfihoh1
+Fork run: 5qvx1fcl3pvo
 PR URL:
 PR Status:
 Started: 2026-06-09T18:07:09.729Z
@@ -197,3 +197,7 @@ Completed:
 ## Task workflow update - 2026-06-09T19:25:02.956Z
 - Recorded fork run: yj85jyfihoh1
 - Summary: User smoke-tested b00a17de and reported the fixes do not work in real TUI: first-input `!ls` breaks/stalls the session so next message does nothing; after a normal first turn, second-turn `!ls` leaves `Working...`/`◐ Running...` stuck; prompt history still not fixed. Launched fork yj85jyfihoh1 with hard requirement to add real `TmuxHarness`/`TuiAgentSmokeTest` E2E coverage for these exact flows, reproduce before fixing, and only report success once `castor test:tui` proves the behavior.
+
+## Task workflow update - 2026-06-09T19:53:56.059Z
+- Recorded fork run: 5qvx1fcl3pvo
+- Summary: User correctly identified the new ShellPrefixSmokeTest can falsely pass: `!printf <marker>` includes the marker in the submitted command/user echo, and the test only checked marker anywhere plus `●` anywhere. Launched fork 5qvx1fcl3pvo to replace/fix the real TUI tests so they use `!ls -1` with a unique file in cwd whose name is not present in the submitted command, prove actual shell output, reproduce first-input and second-turn user failures, and fix root cause without speculative SafeGuard blame.
