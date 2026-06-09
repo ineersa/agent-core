@@ -129,7 +129,7 @@ $registry->register(
 - Validation uses Castor per project rules; runtime/TUI changes require full `castor check` before CODE-REVIEW.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/session-03-new-and-resume-commands
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-03-new-and-resume-commands
 Fork run: f8dpe4i2dflv
@@ -180,11 +180,11 @@ Completed:
 - Summary: SESSION-03 ready for CODE-REVIEW at HEAD `5ea4f71c` on branch `task/session-03-new-and-resume-commands`. Final reviewer returned APPROVED with no actionable issues after polish commit. Cumulative diff verified: 12 files changed (+1022/-1) vs origin/main, adding `/new`, direct `/resume <session id>`, `/resume` picker, docs, tests, and Deptrac allowance. Review-fix commits: `0d49c4b0` fixed invalid-session error rendering, malformed-ID validation, removed dead picker method/tests, documented state runtime ref, and added registrar tests; `5ea4f71c` fixed final docs/docblock/test cleanup and added `/resume 0` edge test.
 - task-to-pr: final reviewer approved HEAD 5ea4f71c; local Castor validation passed; proceeding to move_task CODE-REVIEW for full Castor quality gate and PR creation.
 Castor Check Status: passed
-Castor Check Commit: c0ece70b564a78b1e7b3c7b14df5d1099c3471ea
+Castor Check Commit: 8ed5d8780e3d15da787051b307548a55049c4c14
 Castor Check Command: LLM_MODE=true castor check
-Castor Check Timeout: 900s
-Castor Check Completed: 2026-06-09T17:12:28.266Z
-Castor Check Output SHA256: 9f406f219ad3e4c0f5803e58d9aa5e5f48f6097c84fe8d0e98c95cc164abd02f
+Castor Check Timeout: 240s
+Castor Check Completed: 2026-06-09T20:38:25.813Z
+Castor Check Output SHA256: 4aba58596d8cab118448c5286f3da9a44cc62e73dbdb834c4482656d4ba81e59
 
 ## Task workflow update - 2026-06-09T15:29:46.700Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -324,3 +324,10 @@ Castor Check Output SHA256: 9f406f219ad3e4c0f5803e58d9aa5e5f48f6097c84fe8d0e98c9
 - Documented session ID 1 determinism in assertResumedFollowUpEvents()
 
 Validation: deptrac 0 violations, cs-check clean, phpstan 0 new errors (1 pre-existing from EDITOR-09 merge).
+
+## Task workflow update - 2026-06-09T20:38:27.100Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (240s timeout). Commit: 8ed5d8780e3d.
+- Pushed task/session-03-new-and-resume-commands to origin.
+- branch 'task/session-03-new-and-resume-commands' set up to track 'origin/task/session-03-new-and-resume-commands'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/111
