@@ -154,7 +154,7 @@ If prerequisites for `LLM_MODE=true castor check` are unavailable (tmux or llama
 Status: IN-PROGRESS
 Branch: task/editor-11-shell-prefix-commands
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-11-shell-prefix-commands
-Fork run: 35690yw4z4l5
+Fork run: j9zu4yefhdip
 PR URL:
 PR Status:
 Started: 2026-06-09T18:07:09.729Z
@@ -184,3 +184,7 @@ Completed:
 - Recorded fork run: 35690yw4z4l5
 - Validation: Verified worktree HEAD: a27b407d feat(editor-11): execute ! shell prefix commands; Verified diff vs origin/main: 16 files changed, 555 insertions, 35 deletions; expected TUI command/router/listener, runtime contract/protocol/client/controller, and tests only; Verified integration checkout clean after recovery; Fork-reported Castor validation: castor test passed (2261 tests, 6586 assertions); castor deptrac passed (0 violations); castor phpstan passed (0 errors); castor cs-check clean; LLM_MODE=true castor check passed all gates including controller, llm-real, and tui-e2e
 - Summary: Implementation complete at commit a27b407d1f655b86125bbf609d4a7b2314d9105c on task/editor-11-shell-prefix-commands. Simplified EDITOR-11 MVP implemented: single `!<command>` prefix routes to DispatchShellCommand; `!!` is rejected/unsupported and never executes; shell execution goes through AgentSessionClient runtime boundary and shared ToolExecutorInterface/BashTool path; in-process and JSONL/headless paths support `shell_command`; shell output is projected through tool_execution events/transcript projection and does not trigger an LLM turn or add model context. Recovery fork also ported the two stray files from integration checkout into the task worktree and removed the stray files, leaving integration checkout clean. Worktree clean and ready for task-to-pr when requested.
+
+## Task workflow update - 2026-06-09T19:04:24.659Z
+- Recorded fork run: j9zu4yefhdip
+- Summary: User smoke-tested commit a27b407d and found two regressions: TUI remains stuck at `◐ Running...` after shell command completion, and submitted `!<command>` entries are not included in prompt history. Launched fix fork j9zu4yefhdip to emit/propagate terminal events needed to clear working state and record shell submissions in the user transcript/history stream without adding shell output to model context or triggering an LLM turn.
