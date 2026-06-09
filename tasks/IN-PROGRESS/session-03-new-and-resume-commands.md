@@ -313,3 +313,14 @@ Castor Check Output SHA256: 9f406f219ad3e4c0f5803e58d9aa5e5f48f6097c84fe8d0e98c9
 - Validation: Fork validation: TUI E2E pass — 5 tests, 18 assertions.; Fork validation: full test suite pass — 2238/2238 (9 skipped).; Fork validation: vendor/bin/deptrac 0 violations.; Fork validation: vendor/bin/phpstan 0 errors.; Fork validation: vendor/bin/php-cs-fixer dry-run clean.
 - Summary: Fork `f8dpe4i2dflv` completed at HEAD `7b76c10d` with properly hardened TUI E2E tests. Verified by main agent reading actual test code — all false-positive paths removed: no `✕` error-block fallbacks in either test; first-run assistant response is mandatory (no catch-fallback); count-delta assertions for both `❯` and `◇` with baseline recorded AFTER the session switch rebuild (not before), so tests cannot be satisfied by pre-switch history; post-baseline `✕` assertion explicitly fails the test; `assertResumedFollowUpEvents()` helper parses `events.jsonl` and asserts `agent_command_queued kind=follow_up` exists, `agent_command_applied kind=follow_up` exists, and no Cancelling rejection reason appears in applied payload. Hardened tests pass — `/resume` does NOT reproduce user's reported hang at this HEAD. Cumulative: 22 files, +1856/-13.
 - task-review-iterate: verified f8dpe4i2dflv hardened tests by reading actual code; false positives confirmed removed; no reviewer; running castor test:tui to verify.
+
+## Task workflow update - 2026-06-09T20:33:28.812Z
+- Summary: Reviewer suggestions addressed at HEAD ce00d306:
+- Added StartRunRequest::withModel() with-er method
+- Simplified ModelControlListener draft model carry using withModel()
+- Added inline note about empty-prompt carrier in draft sessions
+- Separated comment blocks in JsonlProcessAgentSessionClient::ensureProcessRunning()
+- Removed redundant trim() in ResumeSessionCommandHandler
+- Documented session ID 1 determinism in assertResumedFollowUpEvents()
+
+Validation: deptrac 0 violations, cs-check clean, phpstan 0 new errors (1 pre-existing from EDITOR-09 merge).
