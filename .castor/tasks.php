@@ -614,7 +614,7 @@ function phar_clean(): void
  * be validated with real user-visible workflows.
  */
 #[AsTask(name: 'test:tui', description: 'Run TUI e2e snapshot tests (requires tmux), using the built PHAR')]
-function test_tui(): void
+function test_tui(string $filter = ''): void
 {
     try {
         $pharPath = \CastorTasks\phar_ensure();
@@ -625,13 +625,15 @@ function test_tui(): void
 
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
+    $filterFlag = '' !== $filter ? ' --filter='.escapeshellarg($filter) : '';
+
     if (is_llm_mode()) {
-        run_quality_step('test:tui', $pharEnv.'vendor/bin/phpunit --group tui-e2e', 'phpunit-tui.junit.xml', 'phpunit-tui.log');
+        run_quality_step('test:tui', $pharEnv.'vendor/bin/phpunit --group tui-e2e'.$filterFlag, 'phpunit-tui.junit.xml', 'phpunit-tui.log');
 
         return;
     }
 
-    run($pharEnv.'vendor/bin/phpunit '.phpunit_strict_issue_flags().' --group tui-e2e --colors=always');
+    run($pharEnv.'vendor/bin/phpunit '.phpunit_strict_issue_flags().' --group tui-e2e'.$filterFlag.' --colors=always');
 }
 
 /**
@@ -647,7 +649,7 @@ function test_tui(): void
  *   LLAMA_CPP_API_KEY    (optional, default: configured api_key or dummy)
  */
 #[AsTask(name: 'test:llm-real', description: 'Run opt-in real llama.cpp smoke test against configured llama_cpp provider')]
-function test_llm_real(): void
+function test_llm_real(string $filter = ''): void
 {
     try {
         $pharPath = \CastorTasks\phar_ensure();
@@ -658,13 +660,15 @@ function test_llm_real(): void
 
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
+    $filterFlag = '' !== $filter ? ' --filter='.escapeshellarg($filter) : '';
+
     if (is_llm_mode()) {
-        run_quality_step('test:llm-real', $pharEnv.'LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit --group llm-real', 'phpunit-llm-real.junit.xml', 'phpunit-llm-real.log');
+        run_quality_step('test:llm-real', $pharEnv.'LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit --group llm-real'.$filterFlag, 'phpunit-llm-real.junit.xml', 'phpunit-llm-real.log');
 
         return;
     }
 
-    run($pharEnv.'LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit '.phpunit_strict_issue_flags().' --group llm-real --colors=always');
+    run($pharEnv.'LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit '.phpunit_strict_issue_flags().' --group llm-real'.$filterFlag.' --colors=always');
 }
 
 /**
@@ -679,7 +683,7 @@ function test_llm_real(): void
  * Same fast test model as test:llm-real and TUI E2E tests.
  */
 #[AsTask(name: 'test:controller', description: 'Run controller E2E smoke test (spawns --controller, sends JSONL)')]
-function test_controller(): void
+function test_controller(string $filter = ''): void
 {
     try {
         $pharPath = \CastorTasks\phar_ensure();
@@ -690,17 +694,19 @@ function test_controller(): void
 
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
+    $filterFlag = ' --filter='.escapeshellarg('' !== $filter ? $filter : 'ControllerSmokeTest');
+
     if (is_llm_mode()) {
-        run_quality_step('test:controller', $pharEnv.'LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit --filter ControllerSmokeTest', 'phpunit-controller.junit.xml', 'phpunit-controller.log');
+        run_quality_step('test:controller', $pharEnv.'LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit'.$filterFlag, 'phpunit-controller.junit.xml', 'phpunit-controller.log');
 
         return;
     }
 
-    run($pharEnv.'LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit '.phpunit_strict_issue_flags().' --filter ControllerSmokeTest --colors=always');
+    run($pharEnv.'LLAMA_CPP_SMOKE_TEST=1 vendor/bin/phpunit '.phpunit_strict_issue_flags().$filterFlag.' --colors=always');
 }
 
 #[AsTask(name: 'test:tui-update', description: 'Run TUI e2e tests and update golden snapshots')]
-function test_tui_update(): void
+function test_tui_update(string $filter = ''): void
 {
     try {
         $pharPath = \CastorTasks\phar_ensure();
@@ -711,13 +717,15 @@ function test_tui_update(): void
 
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
+    $filterFlag = '' !== $filter ? ' --filter='.escapeshellarg($filter) : '';
+
     if (is_llm_mode()) {
-        run_quality_step('test:tui-update', $pharEnv.'HATFIELD_UPDATE_SNAPSHOTS=1 vendor/bin/phpunit --group tui-e2e', 'phpunit-tui-update.junit.xml', 'phpunit-tui-update.log');
+        run_quality_step('test:tui-update', $pharEnv.'HATFIELD_UPDATE_SNAPSHOTS=1 vendor/bin/phpunit --group tui-e2e'.$filterFlag, 'phpunit-tui-update.junit.xml', 'phpunit-tui-update.log');
 
         return;
     }
 
-    run($pharEnv.'HATFIELD_UPDATE_SNAPSHOTS=1 vendor/bin/phpunit '.phpunit_strict_issue_flags().' --group tui-e2e --colors=always');
+    run($pharEnv.'HATFIELD_UPDATE_SNAPSHOTS=1 vendor/bin/phpunit '.phpunit_strict_issue_flags().' --group tui-e2e'.$filterFlag.' --colors=always');
 }
 
 /**

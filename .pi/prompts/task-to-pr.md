@@ -27,6 +27,7 @@ If you catch yourself about to open an editor, write a file, or run a code chang
 2. **Review quality**
    - Run the reviewer subagent on the worktree (subagent agent="reviewer" cwd=worktree).
    - Use the researcher subagent for web searches or web-based research when up-to-date external information is needed.
+   - **For TUI tasks: instruct the reviewer to explicitly check for and reject work that lacks a real TmuxHarness + test LLM E2E proof of the user-visible feature.** Mocks, service-only tests, custom PHP smoke scripts, and picker/footer visibility assertions are NOT substitutes and must be flagged as a blocker.
    - If reviewer returns REQUEST CHANGES or APPROVE WITH SUGGESTIONS, analyze **all actionable findings** (not only CRITICAL/BUG), create exact fork instructions, and launch a fork.
    - Address all sensible findings across severity levels: CRITICAL, BUG, EDGE CASE, SEC, CONVENTION, SIMPLIFY, NAMING, DEAD CODE, and reasonable NTH items. Skip only clearly subjective style preferences or items the reviewer explicitly marks as non-actionable.
    - Repeat until reviewer returns APPROVED for current HEAD.
@@ -34,6 +35,7 @@ If you catch yourself about to open an editor, write a file, or run a code chang
 3. **Run focused local validation**
    - Run fast Castor validation on the worktree:
      `castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`.
+   - **For TUI tasks: also run `castor test:tui` as part of local validation.** The TUI E2E proof test must pass before moving to CODE-REVIEW.
    - Optionally run `castor test --filter=...` for targeted coverage.
    - Do NOT run `LLM_MODE=true castor check` here — `move_task(to="CODE-REVIEW")`
      runs the full Castor quality gate automatically.

@@ -19,6 +19,12 @@ parameters:
     # its queries and avoids O(N) cross-session filesystem scans.
     env(HATFIELD_SESSION_ID): ''
 
+    # Single source of truth for the file mention completion index path.
+    # Built from %app.cwd% so it respects --cwd.  Injected into
+    # FileMentionIndexReader and CompletionFileIndexRefreshCommand
+    # to avoid path duplication.
+    app.file_mention_index_path: '%app.cwd%/.hatfield/cache/file-mentions/index.jsonl'
+
 services:
   _defaults:
     autowire: true
@@ -438,3 +444,48 @@ services:
 
   Ineersa\AgentCore\Contract\Model\PlatformInterface:
     alias: Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter
+
+  # ─── Completion providers ────────────────────────────────────
+  # CompletionProvider implementations are auto-tagged for the
+  # composite registry.  Priority order: slash commands before
+  # file mentions so leading "/" doesn't trigger both providers.
+
+  Ineersa\Tui\Completion\SlashCommandCompletionProvider:
+    tags:
+      - { name: 'app.completion_provider', priority: 100 }
+
+  Ineersa\Tui\Completion\FileMentionCompletionProvider:
+    tags:
+      - { name: 'app.completion_provider', priority: 90 }
+
+  Ineersa\Tui\Completion\FileMentionIndexReader:
+    arguments:
+      $indexPath: '%app.file_mention_index_path%'
+
+  # Composite provider aggregates all tagged CompletionProvider
+  # implementations.  CompletionListener depends on CompletionProvider
+  # (not a concrete type), so DI resolves this composite.
+  Ineersa\Tui\Completion\CompletionProviderRegistry:
+    arguments:
+      $providers: !tagged_iterator app.completion_provider
+
+  Ineersa\Tui\Completion\CompletionProvider:
+    alias: Ineersa\Tui\Completion\CompletionProviderRegistry
+
+  # CLI command for file mention index refresh.
+  # Recurrently invoked by Symfony Scheduler via #[AsPeriodicTask].
+  # Its non-autowire-able string parameters are resolved from
+  # container parameters — no path duplication across config/code.
+  Ineersa\CodingAgent\CLI\CompletionFileIndexRefreshCommand: ~
+
+  # File mention index builder — shared by the console command and
+  # the startup listener.  Not autowireable (string constructor args
+  # for cwd and index path).
+  Ineersa\CodingAgent\CLI\FileMentionIndexBuilder:
+    arguments:
+      $cwd: '%app.cwd%'
+      $indexPath: '%app.file_mention_index_path%'
+
+  # Synchronous startup index build so @ completion works before the
+  # first Scheduler cycle (periodic tasks fire at now + period).
+  Ineersa\CodingAgent\CLI\FileMentionIndexStartupListener:

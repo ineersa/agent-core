@@ -40,6 +40,7 @@ If you catch yourself about to open an editor, write a file, or run a code chang
    - Write exact implementation instructions covering each actionable comment.
    - Group nearby changes into single edits where possible.
    - Specify exact files, old/new text patterns, validation steps, and limits of authority.
+   - **For TUI tasks: if the fix addresses user-visible behavior or workflow, the instructions MUST require adding or updating the real TmuxHarness + test LLM E2E test for the affected feature path.** If the task previously lacked such a test, this iteration must remediate that gap.
    - Pass those instructions directly to the fork.
 
 5. **Launch a fork**
@@ -51,10 +52,12 @@ If you catch yourself about to open an editor, write a file, or run a code chang
    - Confirm the fork committed (check git log on worktree).
    - Inspect `git diff --stat HEAD~1` or `git show --stat HEAD` for the fork commit.
    - Run focused Castor validation: `castor test --filter=...`, `castor deptrac`, `castor phpstan`, `castor cs-check`.
+   - **For TUI tasks: run `castor test:tui` to confirm the E2E proof test added/updated by this iteration passes.**
    - Verify no unintended changes (only the advertised files changed).
 
 7. **Re-review**
    - Run the reviewer subagent again on the worktree at the new HEAD.
+   - **For TUI tasks: instruct the reviewer to verify a real TmuxHarness + test LLM E2E proof exists and covers the user-visible feature path.** Reject the iteration if it lacks this proof or substitutes mocks.
    - If REQUEST CHANGES again, repeat from step 4 with the new feedback.
    - If APPROVED, move the task back to CODE-REVIEW with `move_task`. This reruns the full Castor gate before pushing.
 

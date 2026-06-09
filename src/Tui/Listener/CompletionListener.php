@@ -13,13 +13,16 @@ use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Symfony\Component\Tui\Event\InputEvent;
 
 /**
- * Registers TUI-level input listeners for slash command completion.
+ * Registers TUI-level input listeners for editor completion.
+ *
+ * Delegates to a {@see CompletionProvider} (typically a composite)
+ * that handles both slash commands and @ file mentions.
  *
  * Completion opens automatically as the user types a leading &quot;/&quot;
- * and refines suggestions on further keystrokes.  Tab opens the
- * overlay explicitly and accepts the
- * selected suggestion; Enter accepts the suggestion, then submits
- * the now-completed text through the normal SubmitListener path.
+ * or &quot;@&quot; and refines suggestions on further keystrokes.  Tab opens
+ * the overlay explicitly and accepts the selected suggestion; Enter
+ * accepts the suggestion, then submits the now-completed text
+ * through the normal SubmitListener path.
  *
  * Input routing (priority 90, below CtrlCInputInterceptor 100 /
  * ModelControlListener 95, above slot handlers 50):
@@ -43,14 +46,14 @@ use Symfony\Component\Tui\Event\InputEvent;
 final class CompletionListener implements TuiListenerRegistrar
 {
     public function __construct(
-        private readonly CompletionProvider $slashProvider,
+        private readonly CompletionProvider $provider,
     ) {
     }
 
     public function register(TuiRuntimeContext $context): void
     {
         $state = new CompletionState();
-        $provider = $this->slashProvider;
+        $provider = $this->provider;
         $screen = $context->screen;
         $editor = $screen->promptEditor();
         $menu = new CompletionMenu($screen->theme());
