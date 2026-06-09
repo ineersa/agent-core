@@ -11,7 +11,7 @@ final readonly class TranscriptMessage implements CommandResult
 {
     /**
      * @param string $text  The message text to display
-     * @param string $role  Role hint: 'user', 'assistant', 'tool', or 'system'
+     * @param string $role  Role hint: 'user', 'assistant', 'tool', 'system', or 'error'
      * @param string $style Optional styling hint (e.g. 'accent', 'muted', 'error')
      */
     public function __construct(

@@ -622,7 +622,7 @@ message submission via `SubmitListener`.
 `TuiSessionSwitchServiceInterface::requestResume($sessionId)` which
 follows the same cancel/reset/rebuild path as `/new` but replays the
 session's transcript from `events.jsonl` via the canonical RTVS-08
-resume/replay pipeline. When not found, returns a muted error message.
+resume/replay pipeline. When not found, returns an error message.
 
 **Without arguments:** opens the interactive session picker — a
 `SelectListWidget` overlay that lists recent sessions (fresh from

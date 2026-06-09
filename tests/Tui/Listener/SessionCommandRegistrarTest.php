@@ -45,19 +45,20 @@ final class SessionCommandRegistrarTest extends TestCase
     {
         $registry = new SlashCommandRegistry();
 
-        $appConfig = new AppConfig(
-            tui: new TuiConfig(theme: 'default'),
-            logging: new LoggingConfig(),
-            cwd: $this->tmpDir,
-        );
         $sessionStore = new HatfieldSessionStore(
-            appConfig: $appConfig,
+            appConfig: new AppConfig(
+                tui: new TuiConfig(theme: 'default'),
+                logging: new LoggingConfig(),
+                cwd: $this->tmpDir,
+            ),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
-        $switch = $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class);
-        $picker = new SessionPickerController($sessionStore, $switch);
+        $picker = new SessionPickerController(
+            $sessionStore,
+            $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
+        );
 
-        return [$registry, $picker, $sessionStore, $switch];
+        return [$registry, $picker];
     }
 
     #[Test]

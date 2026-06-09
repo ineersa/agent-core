@@ -149,4 +149,22 @@ final class ResumeSessionCommandHandlerTest extends TestCase
         self::assertSame('error', $result->role);
         self::assertNull($switch->resumedSessionId, 'Switch should NOT be called for malformed ID');
     }
+
+    #[Test]
+    public function testHandleWithSessionIdZeroReturnsError(): void
+    {
+        $switch = $this->createSwitchSpy();
+        $em = $this->createStub(EntityManagerInterface::class);
+        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
+        $pickerController = new SessionPickerController($sessionStore, $switch);
+
+        $handler = new ResumeSessionCommandHandler($switch, $sessionStore, $pickerController);
+
+        $result = $handler->handle(new SlashCommand('resume', '0', '/resume 0'));
+
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringContainsString('0', $result->text);
+        self::assertSame('error', $result->role);
+        self::assertNull($switch->resumedSessionId, 'Switch should NOT be called for session 0');
+    }
 }
