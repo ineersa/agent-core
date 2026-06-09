@@ -132,7 +132,7 @@ $registry->register(
 Status: IN-PROGRESS
 Branch: task/session-03-new-and-resume-commands
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-03-new-and-resume-commands
-Fork run: l3ty7jvg13lg
+Fork run: ab4z9e1qii60
 PR URL: https://github.com/ineersa/agent-core/pull/111
 PR Status: open
 Started: 2026-06-09T01:24:48.923Z
@@ -259,3 +259,9 @@ Castor Check Output SHA256: 9f406f219ad3e4c0f5803e58d9aa5e5f48f6097c84fe8d0e98c9
 - Validation: Reviewer verdict at HEAD `8362e1c7`: APPROVE WITH SUGGESTIONS; no critical/issues requiring code fix except missing behavioral test and unresolved manual-smoke confirmation for model/Ctrl+P.
 - Summary: Reviewer reviewed HEAD `8362e1c7` and returned APPROVE WITH SUGGESTIONS. Confirmed fixes are correct: terminal-skip cancel prevents completed runs from being poisoned into Cancelling, and 0.5s SIGTERM grace for intentional session switches is safe because queues are session-scoped and orphaned consumers cannot steal new-session messages. Remaining actionable hardening: add test coverage for `TuiSessionSwitchService::cancelCurrentRun()` skipping cancel for terminal activities (Completed/Failed/Cancelled) with a non-null handle. Remaining user-smoke gap: model-default/Ctrl+P issue after `/new` was not reproduced/fixed by fork; reviewer suggested exact smoke steps and files (`ModelControlListener`, `ModelResolver`, `FooterStateInitializer`, `events.jsonl`). Launching follow-up fork to add terminal-skip tests and actually perform exact launched-agent smoke for `/new`, Ctrl+P, message submit, `/resume`, and typed follow-up; fix if reproduced.
 - task-review-iterate: launching follow-up fork for terminal-cancel test coverage and exact launched-agent smoke of /new default model, Ctrl+P, and /resume follow-up.
+
+## Task workflow update - 2026-06-09T18:05:21.411Z
+- Recorded fork run: ab4z9e1qii60
+- Validation: Fork focused validation: `castor test --filter=SessionSwitchServiceTest` PASS — 16 tests, 59 assertions.; Fork validation: `castor test` PASS — 2220 tests, 6493 assertions.; Fork validation: `castor deptrac` PASS — 0 violations.; Fork validation: `castor phpstan` PASS — 0 errors.; Fork validation: `castor cs-check` PASS — files_fixed=0.; Fork validation: `castor test:tui` PASS — 5 tests, 18 assertions.; Manual launched-agent smoke: `/new`, Ctrl+P, `/new` prompt, `/resume`, resumed follow-up all PASS; default model `◆ test`; timings `/new` 0.01s, `/resume` 0.01s.
+- Summary: Fork `ab4z9e1qii60` completed at HEAD `7bdda69c`. It added terminal-cancel skip test coverage in `tests/Tui/Application/SessionSwitchServiceTest.php`: data-provider coverage for Completed/Failed/Cancelled terminal activity states across both `requestResume()` and `requestNewDraft()`, verifying `AgentSessionClient::cancel()` is never called while the pending switch is still queued. It also performed real launched-agent smoke in isolated `var/tmp/smoke-s03-152f7091`: `/new` default model observed as `◆ test`, Ctrl+P after `/new` showed picker, prompt after `/new` got assistant response, `/resume` replayed transcript and follow-up got assistant response, timings `/new` 0.01s and `/resume` 0.01s. `events.jsonl` evidence showed harmless `agent_command_rejected kind=continue` for completed-run resume but `follow_up` queued/applied and no Cancelling poisoning events. No model/Ctrl+P production fix needed because the issue did not reproduce at current HEAD after prior fixes.
+- task-review-iterate: fork ab4z9e1qii60 added terminal-cancel tests and confirmed model/Ctrl+P/resume flows via launched-agent smoke; proceeding to final review.
