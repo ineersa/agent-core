@@ -140,7 +140,7 @@ class SessionSwitchService {
 Status: IN-PROGRESS
 Branch: task/session-02-tui-session-switch-lifecycle
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-02-tui-session-switch-lifecycle
-Fork run: ehto51bvnlcy
+Fork run: wnh6pcfbbcp8
 PR URL: https://github.com/ineersa/agent-core/pull/109
 PR Status: open
 Started: 2026-06-08T21:50:11.525Z
@@ -274,3 +274,9 @@ Castor Check Output SHA256: f8c752cb15b10d9961afd4a1f617f94ed8ca964bf1c85cdd4097
 - Validation: Reviewer verdict for HEAD `8ba068b3`: APPROVE WITH SUGGESTIONS.; Prior findings verified fixed: dispatch docblock, previousSessionId wiring, endReason enum, dispatcher test cleanup, lifecycle docs semantics.; PR #109 comments verified addressed: switch loop documents Revolt blocking/no CPU spin; lifecycle event seam is privacy-safe and exposed through `TuiRuntimeContext`.
 - Summary: Reviewer re-reviewed HEAD `8ba068b3` and returned APPROVE WITH SUGGESTIONS. All prior lifecycle REQUEST CHANGES and PR #109 inline comments are verified resolved. One small actionable quality cleanup remains: `InteractiveMode::dispatchSessionLifecycleStart()` has adjacent PHPDoc blocks; merge them so tooling sees both the method description and `@param`. Launching tiny cleanup fork.
 - task-review-iterate: reviewer found only a cosmetic but actionable adjacent-docblock cleanup in InteractiveMode; launching tiny fork.
+
+## Task workflow update - 2026-06-09T00:58:31.230Z
+- Recorded fork run: wnh6pcfbbcp8
+- Validation: Verified worktree clean at HEAD `94e849ae`.; Fork validation: `castor phpstan` PASS — 0 errors.; Fork validation: `castor cs-check` PASS — clean.; Fork validation: `castor test --filter=SessionLifecycle` PASS — 8 tests.
+- Summary: Tiny cleanup fork completed at commit `94e849ae` (`SESSION-02: Clean lifecycle startup docblock`). It merged the two adjacent PHPDoc blocks above `InteractiveMode::dispatchSessionLifecycleStart()` into a single docblock preserving the method rationale and `@param` annotation. Verified worktree clean; branch is ahead of origin by 3 review-fix commits (`3fe82266`, `8ba068b3`, `94e849ae`).
+- task-review-iterate: tiny docblock cleanup fork wnh6pcfbbcp8 completed at 94e849ae; requesting final reviewer sign-off.
