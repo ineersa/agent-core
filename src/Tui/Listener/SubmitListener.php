@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Command\ClearTranscript;
 use Ineersa\Tui\Command\CommandResult;
+use Ineersa\Tui\Command\DispatchShellCommand;
 use Ineersa\Tui\Command\ExitApplication;
 use Ineersa\Tui\Command\StatusUpdate;
 use Ineersa\Tui\Command\SubmissionRouter;
@@ -87,6 +88,16 @@ final class SubmitListener implements TuiListenerRegistrar
             $commandResult = $router->route($text);
 
             if (null !== $commandResult) {
+                // ── Shell command — dispatch to runtime for execution ──
+                if ($commandResult instanceof DispatchShellCommand) {
+                    self::handleShellCommand(
+                        $commandResult, $state, $screen, $sessionStore,
+                        $blockFactory, $client, $logger,
+                    );
+
+                    return;
+                }
+
                 // ── Local command — apply typed effect ──
                 self::applyCommandResult($commandResult, $state, $screen, $sessionStore, $tui, $blockFactory);
 
@@ -132,6 +143,30 @@ final class SubmitListener implements TuiListenerRegistrar
                         reasoning: $state->request?->reasoning,
                     );
                     $state->request = $mergedRequest;
+                    $state->handle = $client->start($state->request);
+                    $state->activity = RunActivityStateEnum::Starting;
+                    $sessionStore->updateMetadata(
+                        $state->sessionId,
+                        [
+                            'run_id' => $state->sessionId,
+                            'prompt' => $text,
+                        ],
+                    );
+                    $state->lastSeq = 0;
+                } elseif (null !== $state->handle && $state->isShellRun && $state->activity->isTerminal()) {
+                    // The previous run was a standalone shell command (first-input
+                    // !) that completed without ever calling runner->start().
+                    // Sending a follow_up on it would fail because the runner
+                    // does not know about this run ID.  Start a fresh LLM run
+                    // for this normal prompt.
+                    $state->isShellRun = false;
+                    $state->handle = null;
+
+                    $state->request = new StartRunRequest(
+                        prompt: $text,
+                        runId: $state->sessionId,
+                        cwd: $state->request->cwd ?? '',
+                    );
                     $state->handle = $client->start($state->request);
                     $state->activity = RunActivityStateEnum::Starting;
                     $sessionStore->updateMetadata(
@@ -232,6 +267,114 @@ final class SubmitListener implements TuiListenerRegistrar
 
         // NoOp, DispatchRuntime, and unknown future variants are silently ignored.
         // DispatchRuntime will be wired by future tasks that add runtime execution.
+    }
+
+    /**
+     * Handle shell command dispatch by sending it to the runtime for
+     * execution. Creates a session when this is the first submitted
+     * input. Shell commands do not invoke the LLM — output is projected
+     * through tool_execution events in the transcript.
+     *
+     * Adds a user-message transcript block with the original submitted
+     * text (including the `!` prefix) so the prompt history navigator
+     * can recall shell commands via Up/Down.
+     */
+    private static function handleShellCommand(
+        DispatchShellCommand $shellCommand,
+        TuiSessionState $state,
+        ChatScreen $screen,
+        HatfieldSessionStore $sessionStore,
+        TranscriptBlockFactory $blockFactory,
+        \Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient $client,
+        LoggerInterface $logger,
+    ): void {
+        try {
+            // Create a session if this is the first input.
+            if ('' === $state->sessionId) {
+                $state->sessionId = $sessionStore->createSession('!'.$shellCommand->command);
+                $screen->updateSessionId($state->sessionId);
+                $logger->info('Draft session promoted for shell command', [
+                    'component' => 'SubmitListener',
+                    'event_type' => 'draft_promoted_shell',
+                    'session_id' => $state->sessionId,
+                ]);
+            }
+
+            // Add a user-message block so prompt history (Up/Down)
+            // can recall the shell command after submission.
+            $userSeq = \count($state->transcript) + 1;
+            $state->transcript[] = $blockFactory->user(
+                runId: $state->sessionId,
+                text: $shellCommand->originalText,
+                seq: $userSeq,
+            );
+
+            if (null === $state->handle) {
+                // First input — execute shell without starting an LLM run.
+                // shellExecute() is synchronous in InProcess transport: the
+                // bash command executes, tool_exec events are persisted, and
+                // completeRun() writes the terminal AgentEnd event before we
+                // return. Transition to Completed immediately rather than
+                // relying on the tick/poller cycle, so the working indicator
+                // clears promptly. The poller will still pick up tool_exec
+                // events on the next tick and project them as transcript blocks.
+                $state->handle = $client->shellExecute(
+                    $shellCommand->command,
+                    $state->sessionId,
+                    $state->request->cwd ?? '',
+                );
+                $state->activity = RunActivityStateEnum::Completed;
+                $state->isShellRun = true; // track for normal-submit-after-shell restart
+                $sessionStore->updateMetadata(
+                    $state->sessionId,
+                    [
+                        'run_id' => $state->sessionId,
+                        'prompt' => '!'.$shellCommand->command,
+                    ],
+                );
+                $state->lastSeq = 0;
+            } else {
+                // Subsequent input — send shell command to existing run.
+                // executeShellCommand() writes tool_exec events synchronously.
+                $client->send(
+                    $state->handle->runId,
+                    new UserCommand(type: 'shell_command', text: $shellCommand->command),
+                );
+
+                // When the run is already terminal (prior LLM turn completed),
+                // the shell command tool_exec events transition the state machine
+                // to Running but nothing ever emits RunCompleted.  Write a
+                // terminal AgentEnd event so the tick poller sees RunCompleted
+                // and transitions back to Completed, clearing the working
+                // indicator.
+                if ($state->activity->isTerminal()) {
+                    $client->completeRun($state->handle->runId);
+                    $state->activity = RunActivityStateEnum::Completed;
+                }
+            }
+
+            // For first-input shellExecute(): the command completed synchronously
+            // and activity is already Completed — no working indicator needed.
+            //
+            // For subsequent shell commands (send()): the shell executes inline.
+            // The poller will pick up tool_exec events on the next tick. Show a
+            // brief running indicator until then; if the run was already terminal
+            // the tick will clear it (TickPollListener always sets based on
+            // authoritative activity state).
+            $screen->setWorkingMessage(
+                $state->activity->isTerminal() ? null : 'Running...',
+            );
+            $screen->setTranscriptBlocks($state->transcript);
+        } catch (\Throwable $e) {
+            $state->activity = RunActivityStateEnum::Failed;
+            $state->transcript[] = $blockFactory->error(
+                runId: $state->sessionId,
+                text: 'Shell command error: '.$e->getMessage(),
+                seq: \count($state->transcript) + 1,
+            );
+            $screen->setWorkingMessage('');
+            $screen->setTranscriptBlocks($state->transcript);
+        }
     }
 
     private static function blockForTranscriptMessage(

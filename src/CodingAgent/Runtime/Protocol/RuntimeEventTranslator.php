@@ -239,17 +239,29 @@ final class RuntimeEventTranslator
         $p = $runEvent->payload;
         $isError = (bool) ($p['is_error'] ?? false);
 
+        $payload = [
+            'tool_call_id' => (string) ($p['tool_call_id'] ?? ''),
+            'is_error' => $isError,
+            'order_index' => (int) ($p['order_index'] ?? 0),
+        ];
+
+        // Pass through result text when present (e.g. shell command output
+        // injected directly via EventStore, bypassing the normal pipeline).
+        if (isset($p['result']) && \is_string($p['result'])) {
+            $payload['result'] = $p['result'];
+        }
+
+        if (isset($p['duration_ms']) && \is_int($p['duration_ms'])) {
+            $payload['duration_ms'] = $p['duration_ms'];
+        }
+
         return new RuntimeEvent(
             type: $isError
                 ? RuntimeEventTypeEnum::ToolExecutionFailed->value
                 : RuntimeEventTypeEnum::ToolExecutionCompleted->value,
             runId: $runEvent->runId,
             seq: $runEvent->seq,
-            payload: [
-                'tool_call_id' => (string) ($p['tool_call_id'] ?? ''),
-                'is_error' => $isError,
-                'order_index' => (int) ($p['order_index'] ?? 0),
-            ],
+            payload: $payload,
         );
     }
 

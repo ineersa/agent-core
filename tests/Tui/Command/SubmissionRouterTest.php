@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Tests\Command;
 
 use Ineersa\Tui\Command\ClearTranscript;
 use Ineersa\Tui\Command\CommandParser;
+use Ineersa\Tui\Command\DispatchShellCommand;
 use Ineersa\Tui\Command\ExitApplication;
 use Ineersa\Tui\Command\NormalPromptCommand;
 use Ineersa\Tui\Command\ShellCommand;
@@ -155,25 +156,45 @@ final class SubmissionRouterTest extends TestCase
         self::assertInstanceOf(ExitApplication::class, $result);
     }
 
-    // ─── Shell commands → "not yet supported" ────────────────────────
+    // ─── Shell commands ────────────────────────────────────────────
 
     #[Test]
-    public function shellExclamationReturnsNotSupportedMessage(): void
+    public function shellExclamationDispatchesShellCommand(): void
     {
         $result = $this->router->route('!echo hello');
 
-        self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertStringContainsString('not yet supported', $result->text);
-        self::assertSame('muted', $result->style);
+        self::assertInstanceOf(DispatchShellCommand::class, $result);
+        self::assertSame('echo hello', $result->command);
+        self::assertSame('!echo hello', $result->originalText);
     }
 
     #[Test]
-    public function shellDoubleExclamationReturnsNotSupportedMessage(): void
+    public function shellDoubleExclamationReturnsUnsupportedMessage(): void
     {
         $result = $this->router->route('!!secret cmd');
 
         self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertStringContainsString('not yet supported', $result->text);
+        self::assertStringContainsString('not supported', $result->text);
+        self::assertSame('muted', $result->style);
+    }
+
+    #[Test]
+    public function shellEmptyCommandReturnsValidationMessage(): void
+    {
+        $result = $this->router->route('!');
+
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringContainsString('empty', $result->text);
+        self::assertSame('muted', $result->style);
+    }
+
+    #[Test]
+    public function shellWhitespaceOnlyCommandReturnsValidationMessage(): void
+    {
+        $result = $this->router->route('!   ');
+
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringContainsString('empty', $result->text);
         self::assertSame('muted', $result->style);
     }
 

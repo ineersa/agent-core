@@ -92,15 +92,17 @@ final class TickPollListener implements TuiListenerRegistrar
             // Update working status based on authoritative activity state.
             // SubmitListener sets 'Working...' optimistically on send;
             // this keeps it visible while active and clears it when idle/terminal.
-            static $lastMsg = null;
+            //
+            // Always call setWorkingMessage — don't use a static last-value
+            // cache. SubmitListener (and future features like shell commands)
+            // may call setWorkingMessage directly between tick cycles, and a
+            // stale static cache would skip the authoritative tick update,
+            // permanently leaving a stuck working message.
             $msg = (RunActivityStateEnum::Idle === $state->activity || $state->activity->isTerminal())
                 ? null
                 : 'Working...';
 
-            if ($msg !== $lastMsg) {
-                $screen->setWorkingMessage($msg);
-                $lastMsg = $msg;
-            }
+            $screen->setWorkingMessage($msg);
 
             return null;
         });

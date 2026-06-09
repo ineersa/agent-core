@@ -224,4 +224,14 @@ final class SpySessionClient implements AgentSessionClient
     {
         throw new \RuntimeException('Unexpected cancel()');
     }
+
+    public function shellExecute(string $command, string $sessionId, string $cwd): RunHandle
+    {
+        throw new \RuntimeException('Unexpected shellExecute()');
+    }
+
+    public function completeRun(string $runId): void
+    {
+        throw new \RuntimeException('Unexpected completeRun()');
+    }
 }

@@ -38,6 +38,18 @@ final class TuiSessionState
      */
     public RunActivityStateEnum $activity = RunActivityStateEnum::Idle;
 
+    /**
+     * Whether the current run was created by a shell-only ! command
+     * (shellExecute) rather than by a normal LLM start().  Only set
+     * for first-input standalone shell commands; subsequent ! commands
+     * during an active run keep the existing run identity.
+     *
+     * Used by SubmitListener to decide whether to send a follow_up
+     * (normal multi-turn) or start a fresh run (after a completed
+     * shell-only run whose runner was never initialised via start()).
+     */
+    public bool $isShellRun = false;
+
     /** @var list<TranscriptBlock> Transcript blocks (plain, un-themed) */
     public array $transcript = [];
 
