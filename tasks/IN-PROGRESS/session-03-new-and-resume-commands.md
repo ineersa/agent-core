@@ -129,14 +129,22 @@ $registry->register(
 - Validation uses Castor per project rules; runtime/TUI changes require full `castor check` before CODE-REVIEW.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/session-03-new-and-resume-commands
+Worktree: /home/ineersa/projects/agent-core-worktrees/session-03-new-and-resume-commands
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-09T01:24:48.923Z
 Completed:
 
 ## Work log
 - Created: 2026-06-07T20:45:37.774Z
+
+## Task workflow update - 2026-06-09T01:24:48.923Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/session-03-new-and-resume-commands.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/session-03-new-and-resume-commands.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/session-03-new-and-resume-commands.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/session-03-new-and-resume-commands.
+- Summary: Starting SESSION-03 task-start phase for `/new` and `/resume` TUI session commands. Dependencies SESSION-01, SESSION-02, and RTVS-08 are complete. Next steps: run focused scouts for slash command/picker/session-switch context, then launch one implementation fork in the task worktree. Per workflow, no PR/reviewer/gate step in this phase.
