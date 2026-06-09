@@ -132,7 +132,7 @@ $registry->register(
 Status: IN-PROGRESS
 Branch: task/session-03-new-and-resume-commands
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-03-new-and-resume-commands
-Fork run: 4n4aicv5vea1
+Fork run: f8dpe4i2dflv
 PR URL: https://github.com/ineersa/agent-core/pull/111
 PR Status: open
 Started: 2026-06-09T01:24:48.923Z
@@ -307,3 +307,9 @@ Castor Check Output SHA256: 9f406f219ad3e4c0f5803e58d9aa5e5f48f6097c84fe8d0e98c9
 ## Task workflow update - 2026-06-09T19:43:01.484Z
 - Validation: Main-agent test inspection: E2E tests currently have false-positive paths; not acceptable yet.
 - Summary: Manual inspection of fork `4n4aicv5vea1` tests at `ec82bbbf` found the required E2E proof is still insufficient/cheatable. `testNewSessionCommandAndGetAssistantResponse()` accepts `✕` error blocks as success and checks for any `◇` in terminal history after `/new`, which can be satisfied by the assistant response from the initial pre-`/new` `--prompt` run rather than a new response after the `/new` prompt. `testResumeSessionCommandAndGetAssistantResponse()` is stronger because it expects `◇ >= 2`, but it still falls back to waiting for `✕` and does not assert canonical `events.jsonl` evidence that `follow_up` was queued/applied and no Cancelling poison occurred. Required hardening: tests must only pass on a new assistant response (`◇`) after the tested action, using before/after count deltas for user and assistant blocks; error blocks must fail, not satisfy success; `/resume` test must inspect session artifacts/events to prove `agent_command_queued kind=follow_up` and `agent_command_applied kind=follow_up` occurred after resume, with no Cancelling poison/rejection. Current `ec82bbbf` cannot be accepted as satisfying the hard rule.
+
+## Task workflow update - 2026-06-09T19:53:36.171Z
+- Recorded fork run: f8dpe4i2dflv
+- Validation: Fork validation: TUI E2E pass — 5 tests, 18 assertions.; Fork validation: full test suite pass — 2238/2238 (9 skipped).; Fork validation: vendor/bin/deptrac 0 violations.; Fork validation: vendor/bin/phpstan 0 errors.; Fork validation: vendor/bin/php-cs-fixer dry-run clean.
+- Summary: Fork `f8dpe4i2dflv` completed at HEAD `7b76c10d` with properly hardened TUI E2E tests. Verified by main agent reading actual test code — all false-positive paths removed: no `✕` error-block fallbacks in either test; first-run assistant response is mandatory (no catch-fallback); count-delta assertions for both `❯` and `◇` with baseline recorded AFTER the session switch rebuild (not before), so tests cannot be satisfied by pre-switch history; post-baseline `✕` assertion explicitly fails the test; `assertResumedFollowUpEvents()` helper parses `events.jsonl` and asserts `agent_command_queued kind=follow_up` exists, `agent_command_applied kind=follow_up` exists, and no Cancelling rejection reason appears in applied payload. Hardened tests pass — `/resume` does NOT reproduce user's reported hang at this HEAD. Cumulative: 22 files, +1856/-13.
+- task-review-iterate: verified f8dpe4i2dflv hardened tests by reading actual code; false positives confirmed removed; no reviewer; running castor test:tui to verify.
