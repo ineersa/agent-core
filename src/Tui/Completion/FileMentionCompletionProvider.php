@@ -16,7 +16,8 @@ namespace Ineersa\Tui\Completion;
  *
  * Quoted path support: when the user types @"..., the raw query
  * is extracted from inside the quotes and inserted values preserve
- * the quoted context.
+ * the @ prefix and quoted context — the replacement range already
+ * covers the @ and opening quote, so no stripping is needed.
  *
  * The provider only reads from the cached index — it never
  * hits the filesystem directly.
@@ -24,6 +25,13 @@ namespace Ineersa\Tui\Completion;
 final readonly class FileMentionCompletionProvider implements CompletionProvider
 {
     private const int MAX_SUGGESTIONS = 30;
+
+    /**
+     * Characters that are safe in a path without quoting.
+     * Any character NOT in this whitelist triggers @"..." quoting
+     * in the inserted suggestion.
+     */
+    private const string SAFE_PATH_CHARS = 'A-Za-z0-9._@%+=:,/\-';
 
     public function __construct(
         private FileMentionIndexReader $indexReader,
@@ -117,6 +125,9 @@ final readonly class FileMentionCompletionProvider implements CompletionProvider
         // Build the editor insertion text.  The replacement range
         // covers the @ token plus any following text, so the inserted
         // text must include the @ prefix (and quotes when needed).
+        // No stripping is performed for quoted tokens — the replacement
+        // range already covers the @ and opening quote, and the
+        // insertText below starts with @" which replaces them correctly.
 
         $suffix = $entry->isDirectory ? '/' : ' ';
 
@@ -124,21 +135,6 @@ final readonly class FileMentionCompletionProvider implements CompletionProvider
             $insertText = '@"'.$displayPath.'"'.$suffix;
         } else {
             $insertText = '@'.$displayPath.$suffix;
-        }
-
-        // When the user typed @"..., the token's replacement range
-        // already covers the @ and the opening quote.  The insertText
-        // above would double-count the @ and quote, so we strip the
-        // prefix that is already in the replacement range.
-        // This is only for the quoted token case where the opening
-        // quote has been typed.
-        if ($token->isQuoted) {
-            // The replacement range starts at @ and includes the
-            // opening ".  The insert text above includes '@" ---
-            // strip the duplicated @ prefix to avoid double-@.
-            if (str_starts_with($insertText, '@')) {
-                $insertText = substr($insertText, 1);
-            }
         }
 
         if ($needsQuoting) {
@@ -214,35 +210,17 @@ final readonly class FileMentionCompletionProvider implements CompletionProvider
     }
 
     /**
-     * Whether a path needs quoting (contains spaces or special chars).
+     * Whether a path needs quoting because it contains characters
+     * unsafe for unquoted shell/editor completion insertion.
+     *
+     * A whitelist of safe characters is used — anything outside
+     * [A-Za-z0-9._@%+=:,/\\-] triggers quoting.  This covers
+     * whitespace, parentheses, ampersand, semicolon, pipe, angle
+     * brackets, dollar, bang, backtick, backslash, single/double
+     * quotes, hash, and other interpretation-sensitive chars.
      */
     private function needsPathQuoting(string $path): bool
     {
-        return str_contains($path, ' ');
-    }
-}
-
-/**
- * Internal value object for the currently active @ token.
- *
- * @internal public only for testability; consumers outside
- *           FileMentionCompletionProvider should not depend on this
- */
-final readonly class AtTokenContext
-{
-    /**
-     * @param string $query             Raw query text after @ and optional opening quote
-     * @param int    $replacementStart  Byte offset of @ in the editor text
-     * @param int    $replacementLength Number of bytes from @ to end of text
-     * @param bool   $isQuoted          Whether the token is quoted (@"...")
-     * @param string $rawText           Full editor text at time of extraction
-     */
-    public function __construct(
-        public string $query,
-        public int $replacementStart,
-        public int $replacementLength,
-        public bool $isQuoted,
-        public string $rawText,
-    ) {
+        return 1 === preg_match('#[^'.self::SAFE_PATH_CHARS.']#', $path);
     }
 }

@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\CLI;
 
-use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
-use Ineersa\Tui\Completion\FileMentionIndexReader;
 use Ineersa\Tui\Listener\TuiListenerRegistrar;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Psr\Log\LoggerInterface;
@@ -22,7 +20,8 @@ use Symfony\Component\Process\Process;
  *
  * The background process is intentionally detached — the TUI tick
  * does not wait for it.  Completion providers see the updated index
- * on the next {@see FileMentionIndexReader} reload when mtime changes.
+ * on the next {@see \Ineersa\Tui\Completion\FileMentionIndexReader}
+ * reload when mtime changes.
  *
  * Degradation: if spawning fails (e.g. missing executable, process
  * error), the failure is logged and the next tick retries.  The TUI
@@ -35,9 +34,8 @@ final class FileMentionIndexRefreshListener implements TuiListenerRegistrar
     private ?Process $runningProcess = null;
 
     public function __construct(
-        private readonly AppConfig $appConfig,
+        private readonly string $indexPath,
         private readonly RuntimeProcessConfig $processConfig,
-        private readonly FileMentionIndexReader $indexReader,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -54,14 +52,13 @@ final class FileMentionIndexRefreshListener implements TuiListenerRegistrar
      */
     private function makeTickHandler(): callable
     {
-        $appConfig = $this->appConfig;
+        $indexPath = $this->indexPath;
         $processConfig = $this->processConfig;
-        $indexReader = $this->indexReader;
         $logger = $this->logger;
         $self = $this;
 
         return static function () use (
-            $appConfig, $processConfig, $logger, $self,
+            $indexPath, $processConfig, $logger, $self,
         ): ?bool {
             // Clean up completed processes.
             if (null !== $self->runningProcess) {
@@ -79,8 +76,6 @@ final class FileMentionIndexRefreshListener implements TuiListenerRegistrar
                     return null;
                 }
             }
-
-            $indexPath = $appConfig->cwd.'/.hatfield/cache/file-mentions/index.jsonl';
 
             // Check staleness.
             if (is_file($indexPath)) {

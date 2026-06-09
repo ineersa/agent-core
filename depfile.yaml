@@ -342,8 +342,6 @@ parameters:
 
     TuiCompletion:
       - TuiCommand
-      - AppConfig
-      - SymfonyFinder
 
     TuiPicker:
       - AppConfig
@@ -454,6 +452,7 @@ parameters:
       - TuiTheme
       - SymfonyConsole
       - SymfonyProcess
+      - SymfonyFinder
 
     AppRuntimeProjectionPipeline:
       - AppRuntimeProjection

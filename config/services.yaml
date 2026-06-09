@@ -19,6 +19,12 @@ parameters:
     # its queries and avoids O(N) cross-session filesystem scans.
     env(HATFIELD_SESSION_ID): ''
 
+    # Single source of truth for the file mention completion index path.
+    # Built from %app.cwd% so it respects --cwd.  Injected into
+    # FileMentionIndexReader, CompletionFileIndexRefreshCommand, and
+    # FileMentionIndexRefreshListener to avoid path duplication.
+    app.file_mention_index_path: '%app.cwd%/.hatfield/cache/file-mentions/index.jsonl'
+
 services:
   _defaults:
     autowire: true
@@ -454,7 +460,7 @@ services:
 
   Ineersa\Tui\Completion\FileMentionIndexReader:
     arguments:
-      $indexPath: '@=service("Ineersa\\CodingAgent\\Config\\AppConfig").cwd ~ "/.hatfield/cache/file-mentions/index.jsonl"'
+      $indexPath: '%app.file_mention_index_path%'
 
   # Composite provider aggregates all tagged CompletionProvider
   # implementations.  CompletionListener depends on CompletionProvider
@@ -465,3 +471,15 @@ services:
 
   Ineersa\Tui\Completion\CompletionProvider:
     alias: Ineersa\Tui\Completion\CompletionProviderRegistry
+
+  # CLI command and listener for file mention index refresh.
+  # Their non-autowire-able string parameters are resolved from
+  # container parameters — no path duplication across config/code.
+  Ineersa\CodingAgent\CLI\CompletionFileIndexRefreshCommand:
+    arguments:
+      $cwd: '%app.cwd%'
+      $indexPath: '%app.file_mention_index_path%'
+
+  Ineersa\CodingAgent\CLI\FileMentionIndexRefreshListener:
+    arguments:
+      $indexPath: '%app.file_mention_index_path%'

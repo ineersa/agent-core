@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\Tests\Tui\Completion;
+namespace Ineersa\CodingAgent\Tests\CLI;
 
-use Ineersa\Tui\Completion\FileMentionIndexBuilder;
+use Ineersa\CodingAgent\CLI\FileMentionIndexBuilder;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;

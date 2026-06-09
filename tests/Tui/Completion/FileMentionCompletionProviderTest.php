@@ -319,8 +319,10 @@ final class FileMentionCompletionProviderTest extends TestCase
 
         // Both should appear, directory should come first due to +10 bonus.
         $this->assertCount(2, $suggestions);
-        $this->assertTrue(
-            $suggestions[0]->isDirectory ?? $this->dirDescription($suggestions[0]),
+        $this->assertSame(
+            'directory',
+            $suggestions[0]->description,
+            'Directory entry should appear before file entry due to scoring bonus.',
         );
     }
 
@@ -397,6 +399,102 @@ final class FileMentionCompletionProviderTest extends TestCase
         $this->assertCount(1, $suggestions);
     }
 
+    // ── Quoted @ preserves prefix ──────────────────────────────────
+
+    #[Test]
+    public function quotedPathSuggestionPreservesAtPrefixWhenApplied(): void
+    {
+        $provider = $this->providerWithEntries([
+            new FileMentionIndexEntryDTO('some dir/file.php', false),
+        ]);
+
+        $suggestions = $provider->getSuggestions(
+            CompletionContext::forCursorAtEnd('@"'),
+        );
+
+        $this->assertCount(1, $suggestions);
+
+        // Simulate how CompletionListener::applySuggestion() applies the
+        // suggestion: substr_replace with the insertion text, replacement
+        // start, and replacement length.
+        $currentText = '@"';
+        $applied = substr_replace(
+            $currentText,
+            $suggestions[0]->insertText,
+            $suggestions[0]->replacementStart,
+            $suggestions[0]->replacementLength,
+        );
+
+        // The applied text must start with @ so the @ token remains visible.
+        $this->assertStringStartsWith('@', $applied);
+        // Should look like @"some dir/file.php" with trailing space.
+        $this->assertSame('@"some dir/file.php" ', $applied);
+    }
+
+    #[Test]
+    public function quotedDirectorySuggestionIncludesAtPrefixAndTrailingSlash(): void
+    {
+        $provider = $this->providerWithEntries([
+            new FileMentionIndexEntryDTO('some dir', true),
+        ]);
+
+        $suggestions = $provider->getSuggestions(
+            CompletionContext::forCursorAtEnd('@"some'),
+        );
+
+        $this->assertCount(1, $suggestions);
+        $this->assertSame('directory', $suggestions[0]->description);
+
+        // Insert text starts with @" and ends with / (no trailing space for dirs).
+        $this->assertStringStartsWith('@"', $suggestions[0]->insertText);
+        $this->assertStringEndsWith('/', $suggestions[0]->insertText);
+
+        // Verify full application preserves the @ prefix.
+        $currentText = '@"some';
+        $applied = substr_replace(
+            $currentText,
+            $suggestions[0]->insertText,
+            $suggestions[0]->replacementStart,
+            $suggestions[0]->replacementLength,
+        );
+        $this->assertStringStartsWith('@', $applied);
+        $this->assertStringEndsWith('/', $applied);
+    }
+
+    // ── Expanded path quoting rules ─────────────────────────────────
+
+    #[Test]
+    public function pathsWithParenthesesAreQuoted(): void
+    {
+        $provider = $this->providerWithEntries([
+            new FileMentionIndexEntryDTO('file(foo).php', false),
+        ]);
+
+        $suggestions = $provider->getSuggestions(
+            CompletionContext::forCursorAtEnd('@file'),
+        );
+
+        $this->assertCount(1, $suggestions);
+        $this->assertStringStartsWith('@"', $suggestions[0]->insertText);
+        $this->assertStringEndsWith('" ', $suggestions[0]->insertText);
+        $this->assertStringContainsString('file(foo).php', $suggestions[0]->insertText);
+    }
+
+    #[Test]
+    public function pathsWithDollarSignAreQuoted(): void
+    {
+        $provider = $this->providerWithEntries([
+            new FileMentionIndexEntryDTO('file$var.txt', false),
+        ]);
+
+        $suggestions = $provider->getSuggestions(
+            CompletionContext::forCursorAtEnd('@file'),
+        );
+
+        $this->assertCount(1, $suggestions);
+        $this->assertStringStartsWith('@"', $suggestions[0]->insertText);
+    }
+
     // ─── Helpers ────────────────────────────────────────────────────
 
     /**
@@ -418,11 +516,6 @@ final class FileMentionCompletionProviderTest extends TestCase
         $reader = new FileMentionIndexReader($indexPath);
 
         return new FileMentionCompletionProvider($reader);
-    }
-
-    private function dirDescription(\Ineersa\Tui\Completion\CompletionSuggestion $s): bool
-    {
-        return $s->description === 'directory';
     }
 
     private function removeDir(string $dir): void

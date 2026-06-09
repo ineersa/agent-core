@@ -65,12 +65,17 @@ final class FileMentionIndexReaderTest extends TestCase
         $reader = new FileMentionIndexReader($path);
         $this->assertCount(1, $reader->getEntries());
 
-        // Wait 1 second to ensure mtime changes (filesystem resolution).
-        sleep(1);
+        // Write new content and advance the file mtime so the reader
+        // detects a change without relying on sleep().  file_put_contents
+        // resets mtime to now, so we bump it forward explicitly.
         file_put_contents($path, implode("\n", [
             '{"path":"second.php","dir":false}',
             '{"path":"third.php","dir":false}',
         ]));
+        $currentMtime = filemtime($path);
+        if (false !== $currentMtime) {
+            touch($path, $currentMtime + 5);
+        }
 
         $entries = $reader->getEntries();
         $this->assertCount(2, $entries);

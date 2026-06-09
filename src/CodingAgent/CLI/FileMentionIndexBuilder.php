@@ -2,8 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\Tui\Completion;
+namespace Ineersa\CodingAgent\CLI;
 
+use Ineersa\Tui\Completion\FileMentionIndexEntryDTO;
 use Symfony\Component\Finder\Finder;
 
 /**
@@ -18,7 +19,7 @@ use Symfony\Component\Finder\Finder;
  * Atomic-write strategy:
  *   1. Acquire an exclusive lock (flock + lock file).
  *   2. Scan with Finder into an in-memory buffer.
- *   3. Write to a temp file in the same directory as the target.
+ *   3. Write to a temp file, flush (fflush), and close.
  *   4. rename(tmp, target) — atomic on the same filesystem.
  *   5. Release lock.
  *
@@ -39,7 +40,7 @@ final readonly class FileMentionIndexBuilder
     /**
      * @param string            $cwd         Project root to scan
      * @param string            $indexPath   Target JSONL path
-     * @param list<string>|null $excludeDirs Directories to exclude beyond the built-in defaults
+     * @param list<string>|null $excludeDirs Directories to exclude (replaces built-in defaults when provided)
      */
     public function __construct(
         private string $cwd,
@@ -121,6 +122,13 @@ final readonly class FileMentionIndexBuilder
 
                 fwrite($handle, $line."\n");
                 ++$count;
+            }
+
+            // Flush buffered writes to the OS before rename so the
+            // atomic replacement sees complete data.  A partial write
+            // would survive rename and produce a corrupt index.
+            if (!fflush($handle)) {
+                throw new \RuntimeException('Failed to flush buffered writes for file mention index.');
             }
 
             return $count;

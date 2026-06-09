@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\CLI;
 
-use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\Tui\Completion\FileMentionIndexBuilder;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -13,6 +11,10 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 /**
  * Rebuild the file mention completion index from the project CWD.
+ *
+ * The index path and project CWD are injected as constructor
+ * arguments (resolved from container parameters) so callers do not
+ * need to derive or duplicate the path.
  *
  * Intended to be called offline (via a periodic tick or manually),
  * never from the TUI input handler.  Uses Symfony Finder with
@@ -29,24 +31,22 @@ use Symfony\Component\Console\Output\OutputInterface;
 final class CompletionFileIndexRefreshCommand extends Command
 {
     public function __construct(
-        private readonly AppConfig $appConfig,
+        private readonly string $cwd,
+        private readonly string $indexPath,
     ) {
         parent::__construct();
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $cwd = $this->appConfig->cwd;
-        $indexPath = $cwd.'/.hatfield/cache/file-mentions/index.jsonl';
-
         $builder = new FileMentionIndexBuilder(
-            cwd: $cwd,
-            indexPath: $indexPath,
+            cwd: $this->cwd,
+            indexPath: $this->indexPath,
         );
 
         try {
             $count = $builder->build();
-            $output->writeln("File mention index refreshed: {$count} entries written to {$indexPath}");
+            $output->writeln("File mention index refreshed: {$count} entries written to {$this->indexPath}");
 
             return Command::SUCCESS;
         } catch (\RuntimeException $e) {
