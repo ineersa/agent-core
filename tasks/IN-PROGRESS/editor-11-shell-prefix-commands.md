@@ -151,7 +151,7 @@ LLM_MODE=true castor check
 If prerequisites for `LLM_MODE=true castor check` are unavailable (tmux or llama.cpp test server on port 9052), the task must stay IN-PROGRESS with the blocker recorded.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/editor-11-shell-prefix-commands
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-11-shell-prefix-commands
 Fork run: 1wfisqt6byxp
@@ -238,3 +238,8 @@ Castor Check Output SHA256: 2be48eea98d9a4f6d9c03257010373b6e2024b64680d81e7c8d6
 - Created PR: https://github.com/ineersa/agent-core/pull/112
 - Validation: Reviewer: APPROVE WITH SUGGESTIONS, no blockers; castor test:tui: passed (9 tests, 23 assertions); castor test --filter='Shell|PromptHistory|SubmissionRouter|CommandParser|ShellCommandHandler': passed (79 tests, 171 assertions); castor test --filter=PharSmokeTest: passed (4 tests, 12 assertions); castor test: passed (2265 tests, 6598 assertions, 0 errors, 0 failures); castor deptrac: passed (0 violations); castor phpstan: passed (0 errors); castor cs-check: clean
 - Summary: Moving EDITOR-11 to CODE-REVIEW after reviewer APPROVE WITH SUGGESTIONS and passing validation. Implementation supports single `!<command>` shell prefix, rejects `!!`, routes through runtime/shared BashTool path, projects real shell output, avoids model-context injection/LLM turn, and includes real TUI E2E coverage for first-input `!ls -1`, second-turn `!ls -1`, prompt history recall, and `!!` rejection. Additional PHAR smoke isolation fix at 8045d904 prevents user HOME config from leaking into PHAR subprocess tests; full `castor test` passed after this fix.
+
+## Task workflow update - 2026-06-09T22:04:20.687Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Validation: gh pr view 112: state OPEN, mergeStateStatus DIRTY, head task/editor-11-shell-prefix-commands, base main; Integration checkout clean at 3b3096c1 before conflict-resolution iteration; Task worktree clean at 8045d904 before conflict-resolution iteration
+- Summary: PR #112 is conflict/dirty against main (`mergeStateStatus=DIRTY`). Moving back to IN-PROGRESS to resolve conflicts before merge. User authorized resolving conflicts and proceeding to DONE after validation.
