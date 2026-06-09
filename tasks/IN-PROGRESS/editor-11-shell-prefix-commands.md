@@ -154,7 +154,7 @@ If prerequisites for `LLM_MODE=true castor check` are unavailable (tmux or llama
 Status: IN-PROGRESS
 Branch: task/editor-11-shell-prefix-commands
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-11-shell-prefix-commands
-Fork run: j9zu4yefhdip
+Fork run: yj85jyfihoh1
 PR URL:
 PR Status:
 Started: 2026-06-09T18:07:09.729Z
@@ -193,3 +193,7 @@ Completed:
 - Recorded fork run: j9zu4yefhdip
 - Validation: Verified worktree HEAD: b00a17de fix(editor-11): clear working status after shell command and add prompt history support; Verified diff vs origin/main: 16 files changed, 750 insertions, 35 deletions; Verified integration checkout remains clean; Ran Castor focused validation: `castor test --filter='Shell|PromptHistory|SubmissionRouter|CommandParser'` passed (79 tests, 171 assertions); `castor deptrac` passed (0 violations); `castor phpstan` passed (0 errors); `castor cs-check` clean; Ran full `castor test`: failed only in `tests/CodingAgent/Phar/PharSmokeTest.php::testPharCacheIsolationUsesContentHash` because prod PHAR boot reads configured ai.default_model `llama_cpp_test/test`, which is unavailable in packaged provider list in this local env; unit/integration portion otherwise reported 2265 tests/6595 assertions before the single PHAR smoke error. This matches the known env-only PHAR smoke failure pattern, not an EDITOR-11 code failure.; Fork-reported validation before my check: focused shell/router/prompt-history tests passed; full suite/deptrac/phpstan passed in fork environment
 - Summary: Smoke regression fix complete at commit b00a17de on task/editor-11-shell-prefix-commands. Fixes: standalone shell command now emits a terminal run.completed path via AgentSessionClient::completeRun()/AgentEnd so TUI clears `◐ Running...`; submitted `!<command>` is added as a user-message transcript block so prompt history Up/Down can recall it; `!!` remains unsupported and shell output still does not enter model context or trigger LLM. Fork noted one remaining task-scope risk: shell commands submitted during an already-active agent run are still sent immediately through runtime command handling and not explicitly queued to avoid interleaving.
+
+## Task workflow update - 2026-06-09T19:25:02.956Z
+- Recorded fork run: yj85jyfihoh1
+- Summary: User smoke-tested b00a17de and reported the fixes do not work in real TUI: first-input `!ls` breaks/stalls the session so next message does nothing; after a normal first turn, second-turn `!ls` leaves `Working...`/`◐ Running...` stuck; prompt history still not fixed. Launched fork yj85jyfihoh1 with hard requirement to add real `TmuxHarness`/`TuiAgentSmokeTest` E2E coverage for these exact flows, reproduce before fixing, and only report success once `castor test:tui` proves the behavior.
