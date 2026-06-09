@@ -226,8 +226,7 @@ final readonly class InteractiveMode
      * Must be called AFTER listener registrars have wired their
      * subscriptions to $lifecycle, but BEFORE the TUI event loop
      * starts so subscribers can initialise state synchronously.
-     */
-    /**
+     *
      * @param string|null $previousSessionId session ID of the iteration just
      *                                       ended, or null for the first iteration
      */
