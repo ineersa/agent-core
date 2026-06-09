@@ -239,10 +239,10 @@ final class FileMentionCompletionProviderTest extends TestCase
             CompletionContext::forCursorAtEnd('@src'),
         );
 
-        // Find the directory suggestion.
+        // Find the directory suggestion by its display trailing slash.
         $dirSuggestion = null;
         foreach ($suggestions as $s) {
-            if ($s->description === 'directory') {
+            if (str_ends_with(trim($s->display), '/')) {
                 $dirSuggestion = $s;
                 break;
             }
@@ -266,7 +266,7 @@ final class FileMentionCompletionProviderTest extends TestCase
         );
 
         $this->assertCount(1, $suggestions);
-        $this->assertSame('file', $suggestions[0]->description);
+        $this->assertSame('', $suggestions[0]->description);
         $this->assertStringEndsWith(' ', $suggestions[0]->insertText);
     }
 
@@ -319,11 +319,119 @@ final class FileMentionCompletionProviderTest extends TestCase
 
         // Both should appear, directory should come first due to +10 bonus.
         $this->assertCount(2, $suggestions);
-        $this->assertSame(
-            'directory',
-            $suggestions[0]->description,
+        $this->assertTrue(
+            str_ends_with(trim($suggestions[0]->display), '/'),
             'Directory entry should appear before file entry due to scoring bonus.',
         );
+    }
+
+    // ── Whitespace closes unquoted @ token ───────────────────────────
+
+    #[Test]
+    public function trailingWhitespaceAfterAtTokenReturnsNoSuggestions(): void
+    {
+        $provider = $this->providerWithEntries([
+            new FileMentionIndexEntryDTO('src/foo.php', false),
+        ]);
+
+        // Whitespace immediately after the @ token closes it.
+        $suggestions = $provider->getSuggestions(
+            CompletionContext::forCursorAtEnd('Hello @Version '),
+        );
+
+        $this->assertSame([], $suggestions);
+    }
+
+    #[Test]
+    public function whitespaceWithinAtTokenReturnsNoSuggestions(): void
+    {
+        $provider = $this->providerWithEntries([
+            new FileMentionIndexEntryDTO('Version.php', false),
+        ]);
+
+        // Text after whitespace: "Hello @Version asd asd ..."
+        $suggestions = $provider->getSuggestions(
+            CompletionContext::forCursorAtEnd('Hello @Version asd asd'),
+        );
+
+        $this->assertSame([], $suggestions);
+    }
+
+    #[Test]
+    public function atTokenWithNoWhitespaceStillWorks(): void
+    {
+        $provider = $this->providerWithEntries([
+            new FileMentionIndexEntryDTO('Version.php', false),
+        ]);
+
+        // "Hello @Version" — no whitespace after @, should still trigger.
+        $suggestions = $provider->getSuggestions(
+            CompletionContext::forCursorAtEnd('Hello @Version'),
+        );
+
+        $this->assertCount(1, $suggestions);
+        $this->assertStringContainsString('Version', $suggestions[0]->display);
+    }
+
+    #[Test]
+    public function atTokenWithTabsReturnsNoSuggestions(): void
+    {
+        $provider = $this->providerWithEntries([
+            new FileMentionIndexEntryDTO('src/foo.php', false),
+        ]);
+
+        // Tab within the @ token text closes it.
+        $suggestions = $provider->getSuggestions(
+            CompletionContext::forCursorAtEnd("@src\tmore"),
+        );
+
+        $this->assertSame([], $suggestions);
+    }
+
+    #[Test]
+    public function leadingAtStillTriggers(): void
+    {
+        $provider = $this->providerWithEntries([
+            new FileMentionIndexEntryDTO('composer.json', false),
+        ]);
+
+        $suggestions = $provider->getSuggestions(
+            CompletionContext::forCursorAtEnd('@'),
+        );
+
+        $this->assertNotEmpty($suggestions);
+    }
+
+    // ── Quoted @ token closes on closing quote ───────────────────────
+
+    #[Test]
+    public function quotedTokenWithClosingQuoteReturnsNoSuggestions(): void
+    {
+        $provider = $this->providerWithEntries([
+            new FileMentionIndexEntryDTO('some dir/file.php', false),
+        ]);
+
+        // The closing quote completes the token.
+        $suggestions = $provider->getSuggestions(
+            CompletionContext::forCursorAtEnd('@"some dir/file.php"'),
+        );
+
+        $this->assertSame([], $suggestions);
+    }
+
+    #[Test]
+    public function quotedTokenWithoutClosingQuoteStillTriggers(): void
+    {
+        $provider = $this->providerWithEntries([
+            new FileMentionIndexEntryDTO('some dir/file.php', false),
+        ]);
+
+        // No closing quote — token still active.
+        $suggestions = $provider->getSuggestions(
+            CompletionContext::forCursorAtEnd('@"some dir'),
+        );
+
+        $this->assertNotEmpty($suggestions);
     }
 
     // ── Multiple @ in text uses the last one ───────────────────────
@@ -443,7 +551,7 @@ final class FileMentionCompletionProviderTest extends TestCase
         );
 
         $this->assertCount(1, $suggestions);
-        $this->assertSame('directory', $suggestions[0]->description);
+        $this->assertSame('', $suggestions[0]->description);
 
         // Insert text starts with @" and ends with / (no trailing space for dirs).
         $this->assertStringStartsWith('@"', $suggestions[0]->insertText);

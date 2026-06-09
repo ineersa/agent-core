@@ -146,7 +146,7 @@ final readonly class FileMentionCompletionProvider implements CompletionProvider
         return new CompletionSuggestion(
             display: $display,
             insertText: $insertText,
-            description: $entry->isDirectory ? 'directory' : 'file',
+            description: '',
             replacementStart: $token->replacementStart,
             replacementLength: $token->replacementLength,
         );
@@ -175,17 +175,35 @@ final readonly class FileMentionCompletionProvider implements CompletionProvider
         }
 
         // Check token boundary: @ must be at start of text or
-        // preceded by a whitespace/tab character.
+        // preceded by a whitespace/tab/newline character.
         if ($lastAt > 0 && !$this->isTokenBoundary($text[$lastAt - 1])) {
             return null;
         }
 
         $afterAt = substr($text, $lastAt + 1);
 
-        // Strip the opening quote so the query is the raw path text
-        // (e.g. @"src/foo → query = "src/foo").  The replacement
-        // range already covers the @ and opening quote.
-        $query = str_starts_with($afterAt, '"') ? substr($afterAt, 1) : $afterAt;
+        if (str_starts_with($afterAt, '"')) {
+            // Quoted token: strip opening quote; if a closing quote is
+            // already present before cursor/end, the token is complete
+            // and should not trigger completion (cursor-at-end MVP).
+            $inner = substr($afterAt, 1);
+            $closeQuotePos = strpos($inner, '"');
+
+            if (false !== $closeQuotePos) {
+                return null;
+            }
+
+            $query = $inner;
+        } else {
+            // Unquoted token: whitespace inside the token means the
+            // mention has ended — e.g. "Hello @Version asd" should
+            // not keep showing the completion for @Version.
+            if ('' !== $afterAt && preg_match('/\s/', $afterAt)) {
+                return null;
+            }
+
+            $query = $afterAt;
+        }
 
         return new AtTokenContext(
             query: $query,

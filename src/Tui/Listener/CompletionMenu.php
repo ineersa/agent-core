@@ -132,6 +132,11 @@ final class CompletionMenu
      * SelectListWidget's built-in bold alone.  Descriptions are rendered
      * in muted colour, matching ModelPickerController's description style.
      *
+     * When a suggestion has no description, the item array omits the
+     * 'description' key — this allows SelectListWidget to use the full
+     * available width for the label column (SelectListWidget clamps the
+     * label to 30 columns when descriptions are present).
+     *
      * @param list<\Ineersa\Tui\Completion\CompletionSuggestion> $suggestions
      *
      * @return list<array{value: string, label: string, description?: string}>
@@ -151,11 +156,19 @@ final class CompletionMenu
                 ? $theme->muted($s->description)
                 : '';
 
-            $items[] = [
+            $item = [
                 'value' => (string) $i,
                 'label' => $label,
-                'description' => $description,
             ];
+
+            // Omit the description key when empty so SelectListWidget
+            // renders the label at full width instead of clamping to
+            // 30 columns in two-column description mode.
+            if ('' !== $description) {
+                $item['description'] = $description;
+            }
+
+            $items[] = $item;
         }
 
         return $items;
