@@ -27,7 +27,7 @@ Parallelizable with: EDITOR-10.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/editor-09-file-mention-completion
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-09-file-mention-completion
 Fork run: cci724tc31fm
@@ -235,11 +235,11 @@ Use Castor only:
 - Summary: Task-to-PR review completed for EDITOR-09. Initial reviewer verdict at 26de6c67: REQUEST CHANGES; implementation fork produced b8bfb85c addressing critical quoted @ insertion bug, path quoting, dead/deptrac/path issues, builder move, tests. Re-review verdict at b8bfb85c: APPROVE WITH SUGGESTIONS; second implementation fork produced 051ec0ba addressing all remaining suggestions (removed unused AtTokenContext fields, fixed priority docblock, temp cleanup on exceptions, structured diagnostic logging, semantic lock-held exception, refresh command real failure visibility, corrected reader docblock, added builder→reader→provider round-trip test). Final reviewer verdict at 051ec0ba: APPROVE with no issues. Current worktree clean; HEAD 051ec0ba fix(editor-09): tighten file mention review cleanup.
 - task-to-pr review iteration: reviewer REQUEST CHANGES → fork fix commit b8bfb85c → reviewer APPROVE WITH SUGGESTIONS → fork cleanup commit 051ec0ba → final reviewer APPROVE. Ready to move to CODE-REVIEW for full Castor quality gate and PR creation.
 Castor Check Status: passed
-Castor Check Commit: 051ec0ba338b4f173f4b31f7dbc5270025404c96
+Castor Check Commit: a8ebb69626e6781198315e033ef06988ae964c78
 Castor Check Command: LLM_MODE=true castor check
 Castor Check Timeout: 900s
-Castor Check Completed: 2026-06-09T01:02:23.272Z
-Castor Check Output SHA256: 15eee4021a8efac1349c9f570c4a9e6217e2cc56cc309f3aeeedc055160649ad
+Castor Check Completed: 2026-06-09T15:49:28.566Z
+Castor Check Output SHA256: 1b1c06f5e40ab95a95ca2112e4bcf86577ad98ddc83947ba9000667d74a83c01
 
 ## Task workflow update - 2026-06-09T01:02:26.521Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -286,3 +286,12 @@ Castor Check Output SHA256: 15eee4021a8efac1349c9f570c4a9e6217e2cc56cc309f3aeeed
 ## Task workflow update - 2026-06-09T15:39:25.236Z
 - Validation: reviewer verdict: APPROVE WITH SUGGESTIONS; no blockers; reviewer-reported: castor test --filter=FileMention OK; reviewer-reported: castor test --filter=Completion OK; reviewer-reported: castor test --filter=PromptHistory OK; reviewer-reported: castor test full OK (2221 tests, 6464 assertions); reviewer-reported: castor deptrac OK (0 violations); reviewer-reported: castor phpstan OK (0 errors); reviewer-reported: castor cs-check OK; orchestrator verification: git status --short clean; diff vs origin/main = 22 files, 2712 insertions, 12 deletions; no session-switch/session-lifecycle files in diff
 - Summary: Reviewer subagent completed for EDITOR-09 at current HEAD a8ebb696 with verdict APPROVE WITH SUGGESTIONS. No critical/blocking issues found. Non-blocking suggestions: consider extracting/naming NullLock fallback in FileMentionIndexBuilder, replace ranking magic numbers with named constants, note CompletionProviderRegistry first-non-empty semantics for future providers, note FileMentionIndexReader intentionally keeps stale data if index disappears, consider dynamic completion header and capacity warning. Reviewer validation reported: castor test --filter=FileMention OK, castor test --filter=Completion OK, castor test --filter=PromptHistory OK, full castor test OK (2221 tests, 6464 assertions), castor deptrac OK, castor phpstan OK, castor cs-check OK. Orchestrator caveat: reviewer text included unrelated comments about session-switch lifecycle removal, but orchestrator verified `git diff --stat origin/main...HEAD` and `git diff --name-status` for session-related paths; current diff only contains EDITOR-09 file completion/scheduler/lock changes (22 files, 2712 insertions, 12 deletions) and no session-switch removal.
+
+## Task workflow update - 2026-06-09T15:49:30.988Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: a8ebb69626e6.
+- Pushed task/editor-09-file-mention-completion to origin.
+- branch 'task/editor-09-file-mention-completion' set up to track 'origin/task/editor-09-file-mention-completion'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/110
+- Validation: user smoke test: @ completion works, fast, path column good, whitespace closes completion; reviewer: APPROVE WITH SUGGESTIONS, no blockers; focused validation reported green: FileMention, Completion, PromptHistory, full castor test, deptrac, phpstan, cs-check
+- Summary: User smoke-tested latest EDITOR-09 changes and requested pushing changes for manual PR review. Latest HEAD a8ebb696 (`fix(editor-09): close @ completion on whitespace and widen path column`) keeps @ completion working, makes the file/path column wider, and closes unquoted @ completion after whitespace. Reviewer verdict was APPROVE WITH SUGGESTIONS with no blockers. Moving back to CODE-REVIEW to run the full Castor quality gate, push the branch, and update existing PR #110.
