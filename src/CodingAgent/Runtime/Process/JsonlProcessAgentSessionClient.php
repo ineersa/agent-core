@@ -76,6 +76,15 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     private bool $runtimeReadyReceived = false;
 
     /**
+     * Session ID that the currently running controller process was
+     * spawned with. When start() or resume() sets a different
+     * sessionId, ensureProcessRunning() must restart the process so
+     * the controller and its consumer subprocesses use the correct
+     * session-scoped queue names.
+     */
+    private ?string $processSessionId = null;
+
+    /**
      * Timestamps of recent controller restarts for rate-limiting.
      *
      * @var array<int, float>
@@ -162,8 +171,25 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     public function resume(string $runId): RunHandle
     {
+        // Reset stale flags from prior sessions / crash-recovery cycles.
+        // ensureProcessRunning() may have set autoResumed for a different
+        // session during events()/send()/cancel(); only an auto-resume
+        // triggered by THIS resume() call should suppress the write below.
+        // Mirrors start() which also resets these before a new run.
+        $this->autoResumed = false;
+
+        // runId is the session ID — update session-scoped queue DSNs.
+        $this->sessionId = $runId;
         $this->activeRunId = $runId;
         $this->ensureProcessRunning();
+
+        // Symmetric with start(): wait for runtime.ready before sending
+        // commands, so the controller and its consumer subprocesses have
+        // booted and the event loop is accepting input.  If the process
+        // was already running (no restart), runtimeReadyReceived is still
+        // true from the prior start() / crash-recovery resume, so this is
+        // a near-instant no-op.
+        $this->waitForRuntimeReady();
 
         // If ensureProcessRunning() auto-resumed the run after a restart,
         // skip the explicit resume write to avoid sending a duplicate command.
@@ -276,13 +302,34 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     private function ensureProcessRunning(): void
     {
+        // Force a restart when the session has changed so the controller
+        // and its consumer subprocesses are launched with the new session's
+        // env vars (queue DSNs, HATFIELD_SESSION_ID).
+        //
+        // The `null !== $processSessionId` guard avoids a harmless but
+        // wasteful stopProcess() / SIGTERM wait on the very first start()
+        // call, when processSessionId is still null.
+        //
+        // Session-change guard: the old controller process uses stale
+        // queue DSNs from the previous session.  Since cancelCurrentRun()
+        // already dispatched the cancel command through the old controller
+        // (or skipped it for terminal runs), use a short SIGTERM grace
+        // period — the old run state is preserved in the DB regardless.
+        $sessionChanged = null !== $this->sessionId
+            && null !== $this->processSessionId
+            && $this->sessionId !== $this->processSessionId;
+
+        if ($sessionChanged) {
+            $this->stopProcess(0.5);
+        }
+
         if (null !== $this->process && $this->isProcessRunning()) {
             return;
         }
 
         $hadRunningProcess = null !== $this->process;
 
-        if ($hadRunningProcess) {
+        if ($hadRunningProcess && !$sessionChanged) {
             $this->enforceRestartRateLimit();
         }
 
@@ -365,6 +412,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->stdoutBuffer = '';
         $this->stderrBuffer = '';
         $this->runtimeReadyReceived = false;
+        $this->processSessionId = $this->sessionId;
 
         stream_set_blocking($this->pipes[0], true);
         stream_set_blocking($this->pipes[1], false);
@@ -536,7 +584,14 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         );
     }
 
-    private function stopProcess(): void
+    /**
+     * @param float $sigtermGraceSeconds How long to wait for SIGTERM before SIGKILL.
+     *                                   Default 3.0s for crash recovery (allows the controller
+     *                                   to clean up consumers).  Use 0.5s for intentional
+     *                                   session-switch stops where the cancel has already been
+     *                                   dispatched and the old run state is preserved in the DB.
+     */
+    private function stopProcess(float $sigtermGraceSeconds = 3.0): void
     {
         foreach ($this->pipes as $pipe) {
             if (\is_resource($pipe)) {
@@ -551,7 +606,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
         if ($this->isProcessRunning()) {
             @proc_terminate($this->process, \SIGTERM);
-            $deadline = microtime(true) + 3.0;
+            $deadline = microtime(true) + $sigtermGraceSeconds;
             while ($this->isProcessRunning() && microtime(true) < $deadline) {
                 usleep(50_000);
             }

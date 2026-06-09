@@ -187,6 +187,25 @@ class ModelSelectionServiceTest extends KernelTestCase
         return $this->homeDir.'/.hatfield/settings.yaml';
     }
 
+    /**
+     * Build service AND return the AppConfig so tests can inspect in-memory state.
+     *
+     * @return array{0: ModelSelectionService, 1: AppConfig}
+     */
+    private function buildServiceWithConfig(array $aiData): array
+    {
+        $appConfig = $this->makeAppConfig($aiData);
+        $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
+        $homeWriter = new HomeSettingsWriter($pathResolver);
+        $resolver = new ModelResolver($appConfig, $this->sessionMetaStore);
+        $persister = new ModelSettingsPersister($homeWriter, $this->sessionMetaStore);
+
+        return [
+            new ModelSelectionService($appConfig, $resolver, $persister),
+            $appConfig,
+        ];
+    }
+
     private function standardAiData(): array
     {
         return [
@@ -532,5 +551,107 @@ class ModelSelectionServiceTest extends KernelTestCase
         $homeContent = file_get_contents($this->homeDir.'/.hatfield/settings.yaml');
         self::assertNotFalse($homeContent);
         self::assertStringContainsString('default_model: llama_cpp/flash', (string) $homeContent);
+    }
+
+    // ──────────────────────────────────────────────
+    //  In-memory AppConfig sync (SESSION-03)
+    // ──────────────────────────────────────────────
+
+    public function testChangeModelUpdatesAppConfigAndCatalogImmediately(): void
+    {
+        [$service, $appConfig] = $this->buildServiceWithConfig($this->standardAiData());
+
+        $service->changeModel(new AiModelReference('llama_cpp', 'flash'), $this->sessionId);
+
+        self::assertNotNull($appConfig->ai);
+        self::assertSame('llama_cpp/flash', $appConfig->ai->defaultModel);
+        self::assertNotNull($appConfig->catalog);
+        $catalogDefault = $appConfig->catalog->defaultModelReference();
+        self::assertNotNull($catalogDefault);
+        self::assertSame('llama_cpp/flash', $catalogDefault->toString());
+    }
+
+    public function testChangeReasoningUpdatesAppConfigImmediately(): void
+    {
+        [$service, $appConfig] = $this->buildServiceWithConfig($this->standardAiData());
+
+        $service->changeReasoning('xhigh', $this->sessionId);
+
+        self::assertNotNull($appConfig->ai);
+        self::assertSame('xhigh', $appConfig->ai->defaultReasoning);
+        // Model and favorites preserved
+        self::assertSame('deepseek/deepseek-v4-pro', $appConfig->ai->defaultModel);
+    }
+
+    public function testToggleFavoriteUpdatesAppConfigAndCatalogImmediately(): void
+    {
+        [$service, $appConfig] = $this->buildServiceWithConfig($this->standardAiData());
+
+        $service->toggleFavorite(new AiModelReference('llama_cpp', 'flash'));
+
+        self::assertNotNull($appConfig->ai);
+        self::assertContains('llama_cpp/flash', $appConfig->ai->favoriteModels);
+        // Model preserved
+        self::assertSame('deepseek/deepseek-v4-pro', $appConfig->ai->defaultModel);
+    }
+
+    public function testCycleFavoriteModelSyncsAppConfigModel(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro', 'llama_cpp/flash'];
+        [$service, $appConfig] = $this->buildServiceWithConfig($aiData);
+
+        // Cycle from 'deepseek/deepseek-v4-pro' (default) to 'llama_cpp/flash'
+        $next = $service->cycleFavoriteModel($this->sessionId);
+        self::assertNotNull($next);
+        self::assertSame('llama_cpp/flash', $next->toString());
+
+        // AppConfig in-memory must reflect the cycle immediately
+        self::assertNotNull($appConfig->ai);
+        self::assertSame('llama_cpp/flash', $appConfig->ai->defaultModel);
+
+        // Catalog defaultModelReference() must also reflect the change
+        $catalogDefault = $appConfig->catalog?->defaultModelReference();
+        self::assertNotNull($catalogDefault);
+        self::assertSame('llama_cpp/flash', $catalogDefault->toString());
+    }
+
+    public function testResolveInitialModelSeesUpdatedDefaultAfterChangeModel(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro', 'llama_cpp/flash'];
+        $service = $this->buildService($aiData);
+
+        // Before: default model resolves to 'deepseek/deepseek-v4-pro'
+        $before = $service->resolveInitialModel(null, '');
+        self::assertNotNull($before);
+        self::assertSame('deepseek/deepseek-v4-pro', $before->toString());
+
+        // Cycle via Ctrl+P equivalent
+        $service->cycleFavoriteModel($this->sessionId);
+
+        // After: default model resolves to the cycled-to model
+        $after = $service->resolveInitialModel(null, '');
+        self::assertNotNull($after);
+        self::assertSame('llama_cpp/flash', $after->toString());
+    }
+
+    public function testGetFavoriteModelsReflectsToggleImmediately(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['favorite_models'] = ['deepseek/deepseek-v4-pro'];
+        [$service, $appConfig] = $this->buildServiceWithConfig($aiData);
+
+        // Initially: 1 favorite
+        self::assertCount(1, $service->getFavoriteModels());
+
+        // Toggle add
+        $service->toggleFavorite(new AiModelReference('llama_cpp', 'flash'));
+
+        // getFavoriteModels() reads from AppConfig via getFavoriteRawList()
+        // favRaw is set by toggleFavorite but we need to verify AppConfig too
+        self::assertContains('llama_cpp/flash', $service->getFavoriteModels());
+        self::assertNotNull($appConfig->ai);
+        self::assertContains('llama_cpp/flash', $appConfig->ai->favoriteModels);
     }
 }

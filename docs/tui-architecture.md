@@ -591,6 +591,63 @@ tmux info | grep 'Ms:'           # terminfo clipboard capability present?
 > `/copy` may report success (the tmux buffer was loaded) while the local
 > terminal clipboard remains unchanged.
 
+## Session commands
+
+`/new` and `/resume` are registered via `SessionCommandRegistrar`
+(`src/Tui/Listener/SessionCommandRegistrar.php`), a
+`TuiListenerRegistrar` that wires handlers with per-iteration runtime
+references (switch service, session store, picker controller).
+
+### `/new` — start a fresh draft session
+
+```
+/new
+```
+
+Calls `TuiSessionSwitchServiceInterface::requestNewDraft()` which
+cancels the current run, resets stateful singletons, records a pending
+draft target, and calls `$tui->stop()` to exit the event loop.
+`InteractiveMode::run()` then rebuilds TUI/session objects with a
+lazy draft (no DB row created). The draft is promoted on first normal
+message submission via `SubmitListener`.
+
+### `/resume` — switch to another session
+
+```
+/resume [session id]
+```
+
+**With a session ID:** validates the session exists via
+`HatfieldSessionStore::exists()`. When found, calls
+`TuiSessionSwitchServiceInterface::requestResume($sessionId)` which
+follows the same cancel/reset/rebuild path as `/new` but replays the
+session's transcript from `events.jsonl` via the canonical RTVS-08
+resume/replay pipeline. When not found, returns an error message.
+
+**Without arguments:** opens the interactive session picker — a
+`SelectListWidget` overlay that lists recent sessions (fresh from
+`HatfieldSessionStore::listSessions()` each invocation). Arrow keys
+navigate, Enter resumes the selected session, Esc cancels without
+switching. The picker is implemented by
+`SessionPickerController` (`src/Tui/Picker/SessionPickerController.php`).
+
+### Session picker
+
+`SessionPickerController` follows the same pattern as
+`ModelPickerController`: per-iteration runtime refs via
+`setRuntimeRefs()`, `open()` builds items and mounts a
+`PickerOverlay`, `applySelectEffect()` calls the session switch
+service, and `closePicker()` tears down the widget tree.
+
+Items use a single-column `#<sessionId> — <displayTitle>` label
+with no `description` key so `SelectListWidget` renders at full
+terminal width instead of clamping the label column to 30 chars.
+The selected row receives `ThemeColorEnum::Accent` styling
+(consistent with `CompletionMenu` and `ModelPickerController`).
+When `listSessions()` returns zero results,
+a status message (`No sessions found`) is shown instead of the
+picker, and no switch occurs.
+
 ## Runtime namespaces
 
 Classes that carry per-run state were moved to `src/Tui/Runtime/` to keep

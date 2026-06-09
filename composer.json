@@ -35,7 +35,7 @@
         "doctrine/doctrine-migrations-bundle": "^3.0",
         "symfony/process": "^8.1",
         "league/oauth2-client": "^2.8",
-        "symfony/scheduler": "^7.4|^8.0"
+        "symfony/scheduler": "^8.1"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.94",

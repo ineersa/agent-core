@@ -28,4 +28,22 @@ final readonly class StartRunRequest
         public ?string $reasoning = null,
     ) {
     }
+
+    /**
+     * Return a copy of this request with the model field replaced.
+     *
+     * Used by ModelControlListener (Ctrl+P in draft sessions) to carry
+     * the selected model forward without reconstructing the full request.
+     */
+    public function withModel(?string $model): self
+    {
+        return new self(
+            prompt: $this->prompt,
+            runId: $this->runId,
+            cwd: $this->cwd,
+            options: $this->options,
+            model: $model,
+            reasoning: $this->reasoning,
+        );
+    }
 }

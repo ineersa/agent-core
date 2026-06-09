@@ -14,8 +14,10 @@ use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionRequest;
 use Ineersa\Tui\Question\QuestionSource;
+use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Tui\Tui;
@@ -225,6 +227,78 @@ final class SessionSwitchServiceTest extends TestCase
         $service->bindForIteration($tui, $this->createStub(AgentSessionClient::class), new TuiSessionState('old', false));
 
         $service->requestResume('42');
+    }
+
+    /**
+     * @return array<string, array{RunActivityStateEnum}>
+     */
+    public static function terminalActivityStates(): array
+    {
+        return [
+            'completed' => [RunActivityStateEnum::Completed],
+            'failed' => [RunActivityStateEnum::Failed],
+            'cancelled' => [RunActivityStateEnum::Cancelled],
+        ];
+    }
+
+    /**
+     * Terminal runs must never be cancelled — sending cancel to an
+     * already-terminal run would transition it to Cancelling and poison
+     * the run state, blocking all future resume / follow_up / steer
+     * commands.  The switch must still proceed (pending target set).
+     */
+    #[DataProvider('terminalActivityStates')]
+    public function testResumeSkipsCancelForTerminalRun(RunActivityStateEnum $activity): void
+    {
+        $coordinator = $this->createCoordinator();
+        $controller = $this->createController($coordinator);
+        $projector = $this->createStub(TranscriptProjectorInterface::class);
+        $tui = new Tui();
+
+        $client = $this->createMock(AgentSessionClient::class);
+        // Expect cancel to NEVER be called for terminal runs
+        $client->expects(self::never())->method('cancel');
+
+        $state = new TuiSessionState('old', false);
+        $state->handle = new RunHandle('old-run-id', 'completed');
+        $state->activity = $activity;
+
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
+        $service->bindForIteration($tui, $client, $state);
+
+        $service->requestResume('42');
+
+        self::assertTrue($service->hasPendingSwitch());
+        $target = $service->consumePendingSwitch();
+        self::assertNotNull($target);
+        self::assertSame('42', $target->sessionId);
+    }
+
+    #[DataProvider('terminalActivityStates')]
+    public function testNewDraftSkipsCancelForTerminalRun(RunActivityStateEnum $activity): void
+    {
+        $coordinator = $this->createCoordinator();
+        $controller = $this->createController($coordinator);
+        $projector = $this->createStub(TranscriptProjectorInterface::class);
+        $tui = new Tui();
+
+        $client = $this->createMock(AgentSessionClient::class);
+        // Expect cancel to NEVER be called for terminal runs
+        $client->expects(self::never())->method('cancel');
+
+        $state = new TuiSessionState('old', false);
+        $state->handle = new RunHandle('old-run-id', 'completed');
+        $state->activity = $activity;
+
+        $service = new TuiSessionSwitchService($coordinator, $controller, $projector, $this->createStub(LoggerInterface::class));
+        $service->bindForIteration($tui, $client, $state);
+
+        $service->requestNewDraft();
+
+        self::assertTrue($service->hasPendingSwitch());
+        $target = $service->consumePendingSwitch();
+        self::assertNotNull($target);
+        self::assertTrue($target->isDraft);
     }
 
     public function testSwitchProceedsWhenCancelFails(): void

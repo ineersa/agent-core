@@ -351,6 +351,7 @@ parameters:
 
     TuiPicker:
       - AppConfig
+      - AppSession
       - TuiRuntime
       - TuiScreen
       - TuiListener
