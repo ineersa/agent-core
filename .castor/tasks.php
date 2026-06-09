@@ -26,27 +26,84 @@ require_once __DIR__.'/helpers.php';
 #[AsTask(description: 'Run full QA (deptrac, phpunit, controller E2E, real LLM E2E, TUI E2E, phpstan, cs-fixer)')]
 function check(): void
 {
+    // Pre-build PHAR once to avoid race when parallel branches
+    // each call phar_ensure() independently.
+    $pharPath = '';
+    try {
+        $pharPath = \CastorTasks\phar_ensure();
+    } catch (Throwable $e) {
+        echo "PHAR ensure skipped: {$e->getMessage()}\n";
+    }
+    if ('' !== $pharPath) {
+        $GLOBALS['CASTOR_PHAR_READY'] = $pharPath;
+    }
+
     $failures = [];
 
     $GLOBALS['CASTOR_CHECK_AGGREGATING'] = true;
     try {
-        foreach ([
+        // Parallel group: static checks + main suite (no DB/tmux/LLM deps).
+        $parallelSteps = [
             'deptrac' => static fn () => deptrac(),
             'test' => static fn () => test(),
+            'phpstan' => static fn () => phpstan(),
+            'cs-check' => static fn () => cs_check(),
+        ];
+
+        // Serial group: tests that share DB file, tmux, or LLM endpoint.
+        $serialSteps = [
             'test:controller' => static fn () => test_controller(),
             'test:llm-real' => static fn () => test_llm_real(),
             'test:tui' => static fn () => test_tui(),
-            'phpstan' => static fn () => phpstan(),
-            'cs-check' => static fn () => cs_check(),
-        ] as $step => $runner) {
-            try {
-                $runner();
-            } catch (Throwable $exception) {
+        ];
+
+        $useParallel = \PHP_SAPI === 'cli' && \function_exists('pcntl_fork');
+
+        if ($useParallel) {
+            $forked = [];
+            foreach ($parallelSteps as $step => $runner) {
+                $pid = pcntl_fork();
+                if (-1 === $pid) {
+                    try { $runner(); } catch (Throwable $exception) {
+                        $failures[$step] = $exception->getMessage();
+                    }
+                } elseif (0 === $pid) {
+                    try { $runner(); exit(0); } catch (Throwable $exception) {
+                        fwrite(\STDERR, "{$step}: {$exception->getMessage()}\n");
+                        exit(1);
+                    }
+                } else {
+                    $forked[$step] = $pid;
+                }
+            }
+            foreach ($forked as $step => $pid) {
+                $status = 0;
+                pcntl_waitpid($pid, $status);
+                if (0 !== pcntl_wexitstatus($status)) {
+                    $failures[$step] = "{$step}: exit code ".pcntl_wexitstatus($status);
+                }
+            }
+        } else {
+            foreach ($parallelSteps as $step => $runner) {
+                try { $runner(); } catch (Throwable $exception) {
+                    $failures[$step] = $exception->getMessage();
+                }
+            }
+        }
+
+        // Serial steps: skip if earlier failures make them meaningless.
+        foreach ($serialSteps as $step => $runner) {
+            if ([] !== $failures) {
+                $failures[$step] = 'skipped (earlier failures)';
+                continue;
+            }
+            try { $runner(); } catch (Throwable $exception) {
                 $failures[$step] = $exception->getMessage();
             }
         }
     } finally {
         unset($GLOBALS['CASTOR_CHECK_AGGREGATING']);
+        unset($GLOBALS['CASTOR_PHAR_READY']);
     }
 
     if ([] !== $failures) {
@@ -124,13 +181,14 @@ function test(string $filter = ''): void
         fail_quality('test database migration failed: '.$migrate->getErrorOutput());
     }
 
-    // Ensure the PHAR is built so subprocess tests can reference it when
-    // HATFIELD_BINARY_PATH is set. Pure in-process tests ignore the env var.
-    $pharPath = '';
-    try {
-        $pharPath = \CastorTasks\phar_ensure();
-    } catch (Throwable $e) {
-        echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
+    // When check() pre-built the PHAR, skip the stale check + rebuild.
+    $pharPath = $GLOBALS['CASTOR_PHAR_READY'] ?? '';
+    if ('' === $pharPath) {
+        try {
+            $pharPath = \CastorTasks\phar_ensure();
+        } catch (Throwable $e) {
+            echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
+        }
     }
 
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
@@ -718,11 +776,14 @@ function phar_clean(): void
 #[AsTask(name: 'test:tui', description: 'Run TUI e2e snapshot tests (requires tmux), using the built PHAR')]
 function test_tui(string $filter = ''): void
 {
-    try {
-        $pharPath = \CastorTasks\phar_ensure();
-    } catch (Throwable $e) {
-        echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
-        $pharPath = '';
+    $pharPath = $GLOBALS['CASTOR_PHAR_READY'] ?? '';
+    if ('' === $pharPath) {
+        try {
+            $pharPath = \CastorTasks\phar_ensure();
+        } catch (Throwable $e) {
+            echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
+            $pharPath = '';
+        }
     }
 
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
@@ -753,11 +814,14 @@ function test_tui(string $filter = ''): void
 #[AsTask(name: 'test:llm-real', description: 'Run opt-in real llama.cpp smoke test against configured llama_cpp provider')]
 function test_llm_real(string $filter = ''): void
 {
-    try {
-        $pharPath = \CastorTasks\phar_ensure();
-    } catch (Throwable $e) {
-        echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
-        $pharPath = '';
+    $pharPath = $GLOBALS['CASTOR_PHAR_READY'] ?? '';
+    if ('' === $pharPath) {
+        try {
+            $pharPath = \CastorTasks\phar_ensure();
+        } catch (Throwable $e) {
+            echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
+            $pharPath = '';
+        }
     }
 
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
@@ -787,11 +851,14 @@ function test_llm_real(string $filter = ''): void
 #[AsTask(name: 'test:controller', description: 'Run controller E2E smoke test (spawns --controller, sends JSONL)')]
 function test_controller(string $filter = ''): void
 {
-    try {
-        $pharPath = \CastorTasks\phar_ensure();
-    } catch (Throwable $e) {
-        echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
-        $pharPath = '';
+    $pharPath = $GLOBALS['CASTOR_PHAR_READY'] ?? '';
+    if ('' === $pharPath) {
+        try {
+            $pharPath = \CastorTasks\phar_ensure();
+        } catch (Throwable $e) {
+            echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
+            $pharPath = '';
+        }
     }
 
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
@@ -810,11 +877,14 @@ function test_controller(string $filter = ''): void
 #[AsTask(name: 'test:tui-update', description: 'Run TUI e2e tests and update golden snapshots')]
 function test_tui_update(string $filter = ''): void
 {
-    try {
-        $pharPath = \CastorTasks\phar_ensure();
-    } catch (Throwable $e) {
-        echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
-        $pharPath = '';
+    $pharPath = $GLOBALS['CASTOR_PHAR_READY'] ?? '';
+    if ('' === $pharPath) {
+        try {
+            $pharPath = \CastorTasks\phar_ensure();
+        } catch (Throwable $e) {
+            echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
+            $pharPath = '';
+        }
     }
 
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
