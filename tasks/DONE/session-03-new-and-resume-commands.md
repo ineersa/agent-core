@@ -338,3 +338,6 @@ Validation: deptrac 0 violations, cs-check clean, phpstan 0 new errors (1 pre-ex
 - Already up to date.
 - Removed worktree /home/ineersa/projects/agent-core-worktrees/session-03-new-and-resume-commands.
 - Pulled integration checkout: Already up to date..
+
+## Task workflow update - 2026-06-09T21:35:04.993Z
+- Summary: Post-merge validation: castor check (LLM_MODE=true) passed all SESSION-03-relevant gates. test 2286/2286, test:tui 7/7 (25 assertions including hardened /new and /resume E2E), test:controller 1/1, deptrac 0 violations, phpstan 0 errors, cs-check clean. Pre-existing failures: PHAR smoke (HOME config leak, unrelated) and ViewImageToolE2eTest (flaky duplicate assertion, pre-existing LLM hallucination).
