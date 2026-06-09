@@ -30,7 +30,7 @@ Parallelizable with: EDITOR-10.
 Status: IN-PROGRESS
 Branch: task/editor-09-file-mention-completion
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-09-file-mention-completion
-Fork run: 5fvuqfenrbze
+Fork run: qdh0mthgma38
 PR URL: https://github.com/ineersa/agent-core/pull/110
 PR Status: open
 Started: 2026-06-08T23:47:05.979Z
@@ -260,3 +260,7 @@ Castor Check Output SHA256: 15eee4021a8efac1349c9f570c4a9e6217e2cc56cc309f3aeeed
 - Recorded fork run: 5fvuqfenrbze
 - Validation: fork-reported: castor run:agent-test exited 0; PHAR built; tmux session hatfield-agent-test created and used for @ completion smoke test; orchestrator verification: git status --short clean in worktree; HEAD bb047b78; git show --stat HEAD = 12 files changed, 246 insertions, 183 deletions
 - Summary: Review-iterate fork 5fvuqfenrbze completed at commit bb047b78 (`fix(editor-09): use scheduler and lock for file index refresh`). Verified worktree clean and HEAD exists. Last commit changed 12 files: added symfony/scheduler dependency/config, scheduler transport wiring, HeadlessController scheduler consumer launch, Symfony Lock-based FileMentionIndexBuilder changes, removal of FileMentionIndexRefreshListener tick/process spawner, command/test/deptrac updates. Fork reports real `castor run:agent-test` tmux smoke completed successfully and used the `hatfield-agent-test` session for `@` completion smoke testing. No reviewer launched per user instruction; task remains IN-PROGRESS pending user direction for review/CODE-REVIEW.
+
+## Task workflow update - 2026-06-09T01:42:41.334Z
+- Recorded fork run: qdh0mthgma38
+- Summary: Launched corrective review-iterate fork qdh0mthgma38 after user smoke test showed current HEAD bb047b78 still does not show @ completion in real TUI and scheduler implementation may be incorrect/over-engineered. Fork scope: reproduce failure with actual `castor run:agent-test` tmux session by sending literal `@` and capturing snapshot; fix real root cause so captured snapshot visibly shows file mention completion; inspect/clean current scheduler implementation against installed Symfony 8.1 Scheduler idioms, removing any app-authored weird transport/factory or custom TUI tick/process spawner; keep recurrence through Symfony Scheduler; keep builder on Symfony Lock with no manual flock; add regression tests; run Castor validation; commit and leave worktree clean. No reviewer launch.
