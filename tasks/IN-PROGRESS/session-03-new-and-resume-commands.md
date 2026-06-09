@@ -132,7 +132,7 @@ $registry->register(
 Status: IN-PROGRESS
 Branch: task/session-03-new-and-resume-commands
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-03-new-and-resume-commands
-Fork run: 97psp7ibkju0
+Fork run: yzrnx0rkco9y
 PR URL: https://github.com/ineersa/agent-core/pull/111
 PR Status: open
 Started: 2026-06-09T01:24:48.923Z
@@ -292,3 +292,8 @@ Castor Check Output SHA256: 9f406f219ad3e4c0f5803e58d9aa5e5f48f6097c84fe8d0e98c9
 ## Task workflow update - 2026-06-09T19:29:41.596Z
 - Summary: User explicitly rejected further reviewer loops and manual/fork smoke claims without real automated coverage. New hard acceptance requirement for SESSION-03 review iteration: implementation is NOT acceptable unless it adds real LLM/TmuxHarness E2E tests (no mocks, no service-only scripts) covering the exact failing flows: (1) launch TUI with test LLM, type `/new`, type `Hello`, wait for visible LLM assistant response; (2) launch/use TUI with existing session, execute `/resume` via the session picker/select-existing-session flow, type `Hello`, wait for the run to actually execute and visible LLM assistant response. Tests must use project TUI E2E/TmuxHarness infrastructure and the real `llama_cpp_test/test` endpoint, not custom PHP scripts, not mocked clients, not just checking picker visibility or footer text. Any fork report that lacks these tests and passing `castor test:tui`/full gate must be rejected and relaunched; no reviewer should be launched for this cycle unless the user explicitly asks.
 - task-review-iterate: user demands real automated LLM+TmuxHarness tests for /new prompt and /resume picker + follow-up before accepting any fix; no more reviewer loops.
+
+## Task workflow update - 2026-06-09T19:33:03.398Z
+- Recorded fork run: yzrnx0rkco9y
+- Validation: Fork `yzrnx0rkco9y` reported PHAR smoke fixed and validations passing, but validation is insufficient because required new real TUI E2E feature tests were not added.
+- Summary: Fork `yzrnx0rkco9y` completed at reported HEAD `a1305d76`, but it does NOT satisfy the user's explicit hard acceptance requirement. It fixed a PHAR smoke isolation issue in `tests/CodingAgent/Phar/PharSmokeTest.php` and classified the TUI timeout as flake, but it did not add real LLM + TmuxHarness E2E tests for the actual failing features: `/new` → type `Hello` → visible LLM response, and `/resume` via picker/select existing session → type `Hello` → visible LLM response. It also reported raw `vendor/bin/*` validation in the worktree, contrary to current AGENTS.md Castor rule for QA (even if fork claimed Castor unavailable). Therefore this fork result is incomplete for SESSION-03 review iteration and must not be accepted as ready for CODE-REVIEW until the required real feature tests exist and pass via Castor (`castor test:tui` and full gate).
