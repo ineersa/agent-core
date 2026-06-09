@@ -140,7 +140,7 @@ class SessionSwitchService {
 Status: IN-PROGRESS
 Branch: task/session-02-tui-session-switch-lifecycle
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-02-tui-session-switch-lifecycle
-Fork run: y5yg55qkpx9f
+Fork run: ehto51bvnlcy
 PR URL: https://github.com/ineersa/agent-core/pull/109
 PR Status: open
 Started: 2026-06-08T21:50:11.525Z
@@ -263,3 +263,9 @@ Castor Check Output SHA256: f8c752cb15b10d9961afd4a1f617f94ed8ca964bf1c85cdd4097
 - Validation: Reviewer verdict for lifecycle-event delta at HEAD `3fe82266`: REQUEST CHANGES.; Security/privacy review OK: lifecycle DTO carries IDs/booleans/reason only, no raw prompts/tool output/session content.; Deptrac boundary review OK for current new TUI runtime types.
 - Summary: Reviewer subagent reviewed lifecycle-event commit `3fe82266` and returned REQUEST CHANGES. Required fixes: (1) `TuiSessionLifecycleDispatcher::dispatch()` docblock falsely says subscriber errors do not short-circuit, but implementation propagates first exception and later subscribers are not called; update docblock to match implementation/docs/tests. (2) `docs/tui-architecture.md` and `TuiSessionLifecycleEventDTO` claim `previousSessionId` supports cross-session tracking, but `InteractiveMode` never populates it; either wire it or soften docs. Additional actionable cleanup: replace lifecycle end-reason magic strings with a semantic enum or at least typed constants, and rename/remove dead-code assertion in `testDispatchCallsSecondSubscriberAfterFirstThrows` because the test verifies the opposite. Launching fork to fix all actionable items.
 - task-review-iterate: lifecycle-event reviewer found docblock contradiction and unwired previousSessionId docs/field; launching targeted fix fork.
+
+## Task workflow update - 2026-06-09T00:53:31.586Z
+- Recorded fork run: ehto51bvnlcy
+- Validation: Verified worktree clean at HEAD `8ba068b3`.; Fork validation: `castor test --filter=SessionLifecycle` PASS — 8 tests, 19 assertions.; Fork validation: `castor test` PASS — 2195 tests, 6405 assertions, 0 errors/failures/skipped.; Fork validation: `castor deptrac` PASS — 0 violations, 0 errors, uncovered=744, allowed=982.; Fork validation: `castor phpstan` PASS — 0 errors, 0 file errors.; Fork validation: `castor cs-fix` then `castor cs-check` PASS — clean, 0 files fixed after fix.; Fork validation: `castor test:tui` PASS — 5 tests, 18 assertions.; Fork validation: `castor test:llm-real` PASS — 5 tests, 37 assertions.; Fork validation: `castor test:controller` PASS — 1 test, 7 assertions.
+- Summary: Lifecycle semantics fix fork completed at commit `8ba068b3` (`SESSION-02: Refine lifecycle event semantics`). It addressed all reviewer REQUEST CHANGES: corrected `TuiSessionLifecycleDispatcher::dispatch()` docblock to state subscriber exceptions propagate and later subscribers are not called; added `TuiSessionLifecycleEndReasonEnum` and typed lifecycle `endReason`; wired `previousSessionId` onto start/resume/draft-start events after switches; renamed/cleaned misleading dispatcher exception test; updated `docs/tui-architecture.md` lifecycle semantics. Verified worktree clean; branch is ahead of origin by 2 commits (`3fe82266`, `8ba068b3`). Cumulative diff vs origin/main: 25 files (+1563/-61).
+- task-review-iterate: lifecycle semantics fork ehto51bvnlcy completed at 8ba068b3; all requested lifecycle doc/semantics/test fixes applied; running reviewer again.
