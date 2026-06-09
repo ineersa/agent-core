@@ -335,10 +335,22 @@ final class SubmitListener implements TuiListenerRegistrar
                 $state->lastSeq = 0;
             } else {
                 // Subsequent input — send shell command to existing run.
+                // executeShellCommand() writes tool_exec events synchronously.
                 $client->send(
                     $state->handle->runId,
                     new UserCommand(type: 'shell_command', text: $shellCommand->command),
                 );
+
+                // When the run is already terminal (prior LLM turn completed),
+                // the shell command tool_exec events transition the state machine
+                // to Running but nothing ever emits RunCompleted.  Write a
+                // terminal AgentEnd event so the tick poller sees RunCompleted
+                // and transitions back to Completed, clearing the working
+                // indicator.
+                if ($state->activity->isTerminal()) {
+                    $client->completeRun($state->handle->runId);
+                    $state->activity = RunActivityStateEnum::Completed;
+                }
             }
 
             // For first-input shellExecute(): the command completed synchronously

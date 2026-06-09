@@ -11,14 +11,19 @@ use PHPUnit\Framework\TestCase;
 /**
  * End-to-end smoke test for the ! shell prefix feature.
  *
- * Starts the agent TUI with bash available (no --tools-excluded=bash),
- * sends !-prefixed shell commands, and verifies output appears in the
- * transcript with working status properly cleared.
+ * Starts the agent TUI with bash available, sends !-prefixed shell
+ * commands, and verifies actual command output appears (not just the
+ * submitted command echo).
  *
- * Also verifies shell commands are recallable via Up/Down prompt history.
- *
- * Uses an isolated project directory with SafeGuard configured to allow
- * deterministic harmless commands (printf, ls, echo).
+ * Test integrity design:
+ *  - Creates a unique marker file in the isolated project CWD.
+ *  - Sends `!ls -1` — the marker filename is NOT part of the
+ *    submitted command, so it can ONLY appear if real ls output
+ *    is captured.
+ *  - Asserts the unique marker file name appears in pane history.
+ *  - Asserts working status is cleared after shell command.
+ *  - Verifies follow-up normal prompt works after first-input shell.
+ *  - Verifies prompt history (Up) recalls submitted shell command.
  *
  * @group tui-e2e
  */
@@ -51,15 +56,18 @@ final class ShellPrefixSmokeTest extends TestCase
     /**
      * @test
      *
-     * First-input ! shell command (no prior LLM run):
-     *  - launches agent
-     *  - sends `!printf shell-prefix-e2e-ok`
-     *  - asserts shell output visible
-     *  - asserts working status NOT stuck
-     *  - sends a normal prompt and asserts the LLM responds
+     * First-input !ls -1: creates a unique marker file, sends `!ls -1`
+     * (NOT including the marker in the command text), and asserts the
+     * marker appears in the captured output — proving real command
+     * output was shown. Then sends a normal prompt and verifies the
+     * LLM responds, proving the session is not stuck.
      */
-    public function testShellPrefixAsFirstInputCompletesAndAllowsNextPrompt(): void
+    public function testFirstInputShellLsShowsOutputAndAllowsNextPrompt(): void
     {
+        // Create a unique marker file whose name is NOT in the command.
+        $marker = 'shell-e2e-marker-'.bin2hex(random_bytes(4)).'.txt';
+        touch($this->testProjectDir.'/'.$marker);
+
         $pane = $this->tmux->startDetached(
             command: $this->agentCommandWithBash(),
             prefix: 'hatfield-sh-first',
@@ -68,29 +76,25 @@ final class ShellPrefixSmokeTest extends TestCase
             cwd: $this->testProjectDir,
         );
 
-        // Wait for the agent to boot (logo visible).
+        // Wait for agent boot (logo visible).
         $this->tmux->waitForCaptureContains($pane, '█', 10.0);
 
-        // Send shell command as first input. Use a deterministic marker
-        // that is distinct from any user-block text so we can assert the
-        // actual tool-execution output, not just the command echo.
-        $shellMarker = 'e2e-shell-ok-'.bin2hex(random_bytes(4));
-        $this->tmux->sendLiteral($pane, '!printf '.$shellMarker);
+        // Send `!ls -1` — does NOT include the marker filename.
+        $this->tmux->sendLiteral($pane, '!ls -1');
         $this->tmux->sendKey($pane, 'Enter');
 
-        // Wait for the tool-result block (● prefix) containing our marker.
-        // The ● prefix is the TranscriptBlockKind::ToolResult indicator.
-        // We capture from history so content that scrolled off is included.
+        // Assert the unique marker file appears in full pane history
+        // (the marker is NOT in the command, so this proves real output).
         $this->tmux->waitForCallback(
             $pane,
-            static function (string $capture) use ($shellMarker): bool {
-                // Must see the output AND the ● tool-result prefix
-                // near it in the transcript (not just the user-block echo).
-                return str_contains($capture, $shellMarker)
-                    && str_contains($capture, '●');
+            static function (string $capture) use ($marker): bool {
+                return str_contains($capture, $marker);
             },
             timeout: 10.0,
-            message: sprintf('Shell output marker "%s" never appeared with tool-result prefix', $shellMarker),
+            message: sprintf(
+                'Marker file "%s" never appeared in captured output for !ls -1',
+                $marker,
+            ),
             history: 2000,
         );
 
@@ -102,27 +106,31 @@ final class ShellPrefixSmokeTest extends TestCase
                     && !str_contains($capture, 'Running...');
             },
             timeout: 5.0,
-            message: 'Working status never cleared',
+            message: 'Working/Running status never cleared after !ls -1',
             history: 2000,
         );
 
-        // ── Send a normal prompt to verify the session still works ──
+        // ── Send a normal prompt to verify the session is not stuck ──
         $this->tmux->sendLiteral($pane, 'Say exactly: hello');
         $this->tmux->sendKey($pane, 'Enter');
-
         $this->waitForLlmResponse($pane, 'hello');
     }
 
     /**
      * @test
      *
-     * Second-turn ! shell command (after an LLM response):
-     *  - launches agent, sends normal prompt, waits for response
-     *  - sends !printf, asserts output visible
-     *  - asserts Working... / Running... cleared
+     * Second-turn !ls -1 after a normal LLM prompt:
+     *  - Sends normal prompt, waits for response
+     *  - Sends !ls -1 with a unique marker file (marker NOT in command)
+     *  - Asserts marker appears in captured output
+     *  - Asserts working/status clears
      */
-    public function testShellPrefixAfterNormalTurnClearsWorkingStatus(): void
+    public function testShellPrefixAfterNormalTurnShowsOutputAndClearsStatus(): void
     {
+        // Create a unique marker file for the second turn.
+        $marker2 = 'shell-e2e-2nd-'.bin2hex(random_bytes(4)).'.txt';
+        touch($this->testProjectDir.'/'.$marker2);
+
         $pane = $this->tmux->startDetached(
             command: $this->agentCommandWithBash(),
             prefix: 'hatfield-sh-second',
@@ -131,7 +139,6 @@ final class ShellPrefixSmokeTest extends TestCase
             cwd: $this->testProjectDir,
         );
 
-        // Wait for boot.
         $this->tmux->waitForCaptureContains($pane, '█', 10.0);
 
         // Send normal first prompt and wait for LLM response.
@@ -139,24 +146,25 @@ final class ShellPrefixSmokeTest extends TestCase
         $this->tmux->sendKey($pane, 'Enter');
         $this->waitForLlmResponse($pane, 'hello');
 
-        // Send a shell command with a distinct marker.
-        $shellMarker2 = 'e2e-shell-2nd-'.bin2hex(random_bytes(4));
-        $this->tmux->sendLiteral($pane, '!printf '.$shellMarker2);
+        // Send !ls -1 (marker NOT in the command text).
+        $this->tmux->sendLiteral($pane, '!ls -1');
         $this->tmux->sendKey($pane, 'Enter');
 
-        // Wait for tool-result output.
+        // Assert marker file appears in captured output.
         $this->tmux->waitForCallback(
             $pane,
-            static function (string $capture) use ($shellMarker2): bool {
-                return str_contains($capture, $shellMarker2)
-                    && str_contains($capture, '●');
+            static function (string $capture) use ($marker2): bool {
+                return str_contains($capture, $marker2);
             },
             timeout: 10.0,
-            message: 'Shell output never appeared with tool-result prefix (second turn)',
+            message: sprintf(
+                'Marker file "%s" never appeared in captured output for second-turn !ls -1',
+                $marker2,
+            ),
             history: 2000,
         );
 
-        // Wait for tick and assert working cleared.
+        // ── Assert working status cleared ──
         $this->tmux->waitForCallback(
             $pane,
             static function (string $capture): bool {
@@ -172,13 +180,13 @@ final class ShellPrefixSmokeTest extends TestCase
     /**
      * @test
      *
-     * ! shell commands should be recallable via Up/Down prompt history.
-     *
-     * Sends a !printf, waits for output, then presses Up in the editor
-     * and asserts the editor contains the submitted shell command.
+     * !ls shell command should be recallable via Up prompt history.
      */
     public function testShellPrefixSubmissionIsInPromptHistory(): void
     {
+        $marker3 = 'shell-e2e-hist-'.bin2hex(random_bytes(4)).'.txt';
+        touch($this->testProjectDir.'/'.$marker3);
+
         $pane = $this->tmux->startDetached(
             command: $this->agentCommandWithBash(),
             prefix: 'hatfield-sh-hist',
@@ -189,25 +197,22 @@ final class ShellPrefixSmokeTest extends TestCase
 
         $this->tmux->waitForCaptureContains($pane, '█', 10.0);
 
-        // Send shell command with distinct marker.
-        $histMarker = 'e2e-shell-hist-'.bin2hex(random_bytes(4));
-        $fullCmd = '!printf '.$histMarker;
+        $fullCmd = '!ls -1';
         $this->tmux->sendLiteral($pane, $fullCmd);
         $this->tmux->sendKey($pane, 'Enter');
 
-        // Wait for tool-result output.
+        // Wait for marker file to appear — proves command executed.
         $this->tmux->waitForCallback(
             $pane,
-            static function (string $capture) use ($histMarker): bool {
-                return str_contains($capture, $histMarker)
-                    && str_contains($capture, '●');
+            static function (string $capture) use ($marker3): bool {
+                return str_contains($capture, $marker3);
             },
             timeout: 10.0,
-            message: 'Shell output never appeared in prompt-history test',
+            message: 'Shell output never appeared for prompt-history test',
             history: 2000,
         );
 
-        // Wait for tick processing.
+        // Wait for working status cleared + tick processing.
         usleep(300_000);
 
         // Press Up to recall the shell command from prompt history.
@@ -216,7 +221,6 @@ final class ShellPrefixSmokeTest extends TestCase
         // Wait for editor to update.
         usleep(200_000);
 
-        // Capture visible pane and assert editor contains the shell command.
         $capture = $this->tmux->capturePlain($pane);
 
         self::assertStringContainsString(
@@ -229,7 +233,7 @@ final class ShellPrefixSmokeTest extends TestCase
     /**
      * @test
      *
-     * The !! prefix must always display a clear unsupported message and
+     * The !! prefix must display a clear unsupported message and
      * must never execute any bash command.
      */
     public function testDoubleExclamationIsRejectedAndNeverExecutes(): void
@@ -244,11 +248,9 @@ final class ShellPrefixSmokeTest extends TestCase
 
         $this->tmux->waitForCaptureContains($pane, '█', 10.0);
 
-        // Submit !! which must not execute.
         $this->tmux->sendLiteral($pane, '!!echo should-not-run');
         $this->tmux->sendKey($pane, 'Enter');
 
-        // Wait for rejection message.
         usleep(500_000);
 
         $capture = $this->tmux->capturePlain($pane);
@@ -259,7 +261,6 @@ final class ShellPrefixSmokeTest extends TestCase
             '!! should produce a not-supported message',
         );
 
-        // Assert the command was NOT executed — output should NOT appear.
         self::assertStringNotContainsString(
             'should-not-run',
             $capture,
@@ -269,27 +270,18 @@ final class ShellPrefixSmokeTest extends TestCase
 
     // ── Helpers ───────────────────────────────────────────────
 
-    /**
-     * Wait for an LLM response containing the expected text, falling
-     * back from assistant block (◇) to error block (✕).
-     */
     private function waitForLlmResponse(TmuxPane $pane, string $expectedText): void
     {
-        $needle = '◇';
         try {
-            $this->tmux->waitForCaptureContains($pane, $needle, 30.0);
+            $this->tmux->waitForCaptureContains($pane, '◇', 30.0);
         } catch (\RuntimeException $e) {
-            $needle = '✕';
-            $this->tmux->waitForCaptureContains($pane, $needle, 10.0);
+            $this->tmux->waitForCaptureContains($pane, '✕', 10.0);
         }
 
-        // Verify the expected text is visible in history.
-        // Use history search to catch content that scrolled off-screen.
         try {
             $capture = $this->tmux->waitForHistoryContains($pane, $expectedText, 5.0, 2000);
             self::assertStringContainsString($expectedText, $capture);
         } catch (\RuntimeException $e) {
-            // If history search fails, check visible pane as well.
             $visible = $this->tmux->capturePlain($pane);
             self::assertStringContainsString(
                 $expectedText,
@@ -364,8 +356,7 @@ final class ShellPrefixSmokeTest extends TestCase
                             'edit' => 'edit',
                             'read' => 'read',
                         ],
-                        // Allow deterministic harmless commands for testing.
-                        'allow_command_patterns' => ['^printf\b', '^ls\b', '^echo\b'],
+                        'allow_command_patterns' => ['^ls\b', '^printf\b', '^echo\b'],
                         'allow_write_outside_cwd' => [],
                         'protected_read_patterns' => [],
                         'dangerous_command_patterns' => [],

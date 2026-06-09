@@ -65,10 +65,26 @@ final readonly class ShellCommandHandler
         $commandText = (string) ($command->payload['text'] ?? '');
         $standalone = (bool) ($command->payload['standalone'] ?? false);
 
+        // Shell-only runs do not emit RunStarted (they bypass start()),
+        // so the RuntimeEventEmitter drain loop never registers a cursor
+        // for this run and tool_exec events sit in the EventStore forever
+        // without being forwarded to the TUI.
+        //
+        // Emit a synthetic RunStarted event with seq 0 (transient) so the
+        // emitter registers a runEventCursors entry.  The drain loop will
+        // then pick up the canonical tool_exec events (seq > 0) on the
+        // next cycle and forward them to the TUI.  Seq 0 is skipped by
+        // the drain loop's cursor tracking so it does not interfere.
+        $event->emit(new RuntimeEvent(
+            type: RuntimeEventTypeEnum::RunStarted->value,
+            runId: $runId,
+            seq: 0,
+            payload: ['kind' => 'shell'],
+        ));
+
         // Delegate to the in-process client which executes bash through
         // the shared tool executor and persists tool_execution events to
-        // the canonical event store. The controller's periodic EventStore
-        // drain will pick them up and forward to TUI via the emitter.
+        // the canonical event store.
         $this->client->send($runId, new UserCommand(
             type: 'shell_command',
             text: $commandText,
