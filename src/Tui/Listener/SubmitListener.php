@@ -153,6 +153,30 @@ final class SubmitListener implements TuiListenerRegistrar
                         ],
                     );
                     $state->lastSeq = 0;
+                } elseif (null !== $state->handle && $state->isShellRun && $state->activity->isTerminal()) {
+                    // The previous run was a standalone shell command (first-input
+                    // !) that completed without ever calling runner->start().
+                    // Sending a follow_up on it would fail because the runner
+                    // does not know about this run ID.  Start a fresh LLM run
+                    // for this normal prompt.
+                    $state->isShellRun = false;
+                    $state->handle = null;
+
+                    $state->request = new StartRunRequest(
+                        prompt: $text,
+                        runId: $state->sessionId,
+                        cwd: $state->request->cwd ?? '',
+                    );
+                    $state->handle = $client->start($state->request);
+                    $state->activity = RunActivityStateEnum::Starting;
+                    $sessionStore->updateMetadata(
+                        $state->sessionId,
+                        [
+                            'run_id' => $state->sessionId,
+                            'prompt' => $text,
+                        ],
+                    );
+                    $state->lastSeq = 0;
                 } elseif (null !== $state->handle) {
                     // Route subsequent chat messages as follow_up or steer
                     // based on authoritative run activity state:
@@ -287,12 +311,20 @@ final class SubmitListener implements TuiListenerRegistrar
 
             if (null === $state->handle) {
                 // First input — execute shell without starting an LLM run.
+                // shellExecute() is synchronous in InProcess transport: the
+                // bash command executes, tool_exec events are persisted, and
+                // completeRun() writes the terminal AgentEnd event before we
+                // return. Transition to Completed immediately rather than
+                // relying on the tick/poller cycle, so the working indicator
+                // clears promptly. The poller will still pick up tool_exec
+                // events on the next tick and project them as transcript blocks.
                 $state->handle = $client->shellExecute(
                     $shellCommand->command,
                     $state->sessionId,
                     $state->request->cwd ?? '',
                 );
-                $state->activity = RunActivityStateEnum::Starting;
+                $state->activity = RunActivityStateEnum::Completed;
+                $state->isShellRun = true; // track for normal-submit-after-shell restart
                 $sessionStore->updateMetadata(
                     $state->sessionId,
                     [
@@ -309,16 +341,17 @@ final class SubmitListener implements TuiListenerRegistrar
                 );
             }
 
-            // For first-input shellExecute() in InProcess, the shell command
-            // completed synchronously and the completeRun() call already emitted
-            // AgentEnd. The TUI poller will transition to Completed on next tick
-            // and clear the working message. Show a brief working indicator until
-            // the poller processes the terminal event.
+            // For first-input shellExecute(): the command completed synchronously
+            // and activity is already Completed — no working indicator needed.
             //
-            // For subsequent shell commands via send(), the shell executes inline
-            // and the working message will stay Running if the agent is active, or
-            // be cleared on next tick if the run was already terminal.
-            $screen->setWorkingMessage('Running...');
+            // For subsequent shell commands (send()): the shell executes inline.
+            // The poller will pick up tool_exec events on the next tick. Show a
+            // brief running indicator until then; if the run was already terminal
+            // the tick will clear it (TickPollListener always sets based on
+            // authoritative activity state).
+            $screen->setWorkingMessage(
+                $state->activity->isTerminal() ? null : 'Running...',
+            );
             $screen->setTranscriptBlocks($state->transcript);
         } catch (\Throwable $e) {
             $state->activity = RunActivityStateEnum::Failed;
