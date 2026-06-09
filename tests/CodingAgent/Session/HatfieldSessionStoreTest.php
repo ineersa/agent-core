@@ -279,11 +279,13 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
     {
         $id1 = $this->store->createSession('first session');
         // SQLite DATETIME has second granularity and TimestampableLifecycleTrait
-        // sets updated_at via Clock::get()->now() at PrePersist time.
-        // Two sessions created in the same second get identical timestamps,
-        // making DESC ordering non-deterministic. Sleeping one second guarantees
-        // distinct timestamps without requiring FrozenClock (unavailable in this
-        // Symfony Clock component version) or production test-only APIs.
+        // sets updated_at at PrePersist time. Two sessions created in the same
+        // second get identical timestamps, making DESC ordering non-deterministic.
+        // A one-second sleep guarantees distinct timestamps.
+        // TODO: replace with Clock::set(new MockClock(...)) once this project
+        // migrates from TimestampableLifecycleTrait to using Clock::get() for
+        // the updatedAt field. Currently the trait uses new DateTimeImmutable()
+        // independent of the clock, so Clock mocking has no effect.
         sleep(1);
         $id2 = $this->store->createSession('second session');
 

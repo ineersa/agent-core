@@ -290,6 +290,58 @@ abstract class ControllerE2eTestCase extends TestCase
     // ── Event helpers ──
 
     /**
+     * Index events by type, returning `[type => [event, ...]]`.
+     *
+     * @param list<array<string, mixed>> $events
+     * @return array<string, list<array<string, mixed>>>
+     */
+    protected function indexByType(array $events): array
+    {
+        $byType = [];
+        foreach ($events as $e) {
+            $type = (string) ($e['type'] ?? 'unknown');
+            $byType[$type] = $byType[$type] ?? [];
+            $byType[$type][] = $e;
+        }
+
+        return $byType;
+    }
+
+    /**
+     * Check whether any command.ack event references the given command ID.
+     *
+     * @param list<array<string, mixed>> $events
+     */
+    protected function foundAck(array $events, string $cmdId): bool
+    {
+        foreach ($events as $event) {
+            if (($event['type'] ?? '') !== 'command.ack') {
+                continue;
+            }
+            $payload = $event['payload'] ?? [];
+            if (($payload['commandId'] ?? '') === $cmdId) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Assert that the start_run command was acknowledged.
+     *
+     * @param list<array<string, mixed>> $events
+     */
+    protected function assertStartRunAcked(array $events, string $cmdId): void
+    {
+        self::assertTrue(
+            $this->foundAck($events, $cmdId),
+            'Expected command.ack for start_run (cmdId='.$cmdId.'). '
+            .$this->collectDiagnostics($events),
+        );
+    }
+
+    /**
      * @return array<string, mixed>
      */
     protected function waitForEvent(string $type, float $timeout): array

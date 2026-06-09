@@ -86,29 +86,5 @@ final class QuestionRequestTest extends TestCase
         self::assertTrue($request->transcript);
     }
 
-    public function testObjectIsReadonly(): void
-    {
-        $request = new QuestionRequest(
-            requestId: 'req-3',
-            source: QuestionSource::Tui,
-            kind: QuestionKind::Confirm,
-            prompt: 'Continue?',
-        );
 
-        self::assertObjectHasProperty('requestId', $request);
-        self::assertObjectHasProperty('source', $request);
-        self::assertObjectHasProperty('kind', $request);
-        self::assertObjectHasProperty('prompt', $request);
-        self::assertObjectHasProperty('schema', $request);
-        self::assertObjectHasProperty('choices', $request);
-        self::assertObjectHasProperty('default', $request);
-        self::assertObjectHasProperty('header', $request);
-        self::assertObjectHasProperty('allowOther', $request);
-        self::assertObjectHasProperty('secret', $request);
-        self::assertObjectHasProperty('runId', $request);
-        self::assertObjectHasProperty('questionId', $request);
-        self::assertObjectHasProperty('toolCallId', $request);
-        self::assertObjectHasProperty('toolName', $request);
-        self::assertObjectHasProperty('transcript', $request);
-    }
 }

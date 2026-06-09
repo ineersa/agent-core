@@ -94,10 +94,7 @@ YAML;
         $byType = $this->indexByType($events);
 
         // Mandatory: controller acknowledged the start command.
-        self::assertTrue(
-            $this->foundAck($byType, $startCmdId),
-            'Expected command.ack for start_run. '.$this->collectDiagnostics($events),
-        );
+        $this->assertStartRunAcked($events, $startCmdId);
 
         // Mandatory: run started.
         self::assertArrayHasKey('run.started', $byType, 'Expected run.started. '
@@ -164,36 +161,4 @@ YAML;
         }
     }
 
-    /**
-     * @param list<array<string, mixed>> $events
-     *
-     * @return array<string, list<array<string, mixed>>>
-     */
-    private function indexByType(array $events): array
-    {
-        $byType = [];
-        foreach ($events as $e) {
-            $type = (string) ($e['type'] ?? 'unknown');
-            $byType[$type] = $byType[$type] ?? [];
-            $byType[$type][] = $e;
-        }
-
-        return $byType;
-    }
-
-    /**
-     * @param array<string, list<array<string, mixed>>> $byType
-     */
-    private function foundAck(array $byType, string $cmdId): bool
-    {
-        $acks = $byType['command.ack'] ?? [];
-        foreach ($acks as $ack) {
-            $payload = $ack['payload'] ?? [];
-            if (($payload['commandId'] ?? '') === $cmdId) {
-                return true;
-            }
-        }
-
-        return false;
-    }
 }

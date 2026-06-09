@@ -368,7 +368,7 @@ function cleanup(): void
         'phar',
         'phar-build',
         'run-agent-test-*',
-        'smoke-*',
+        'hatfield-llamacpp-*',
         'test-*',
     ];
 
@@ -384,6 +384,14 @@ function cleanup(): void
         }
     }
 
+    // ── var/test DB file ──
+    $testDb = $root.'/var/test/app_test.sqlite';
+    if (is_file($testDb)) {
+        unlink($testDb);
+        ++$removed;
+        echo "Removed var/test/app_test.sqlite\n";
+    }
+
     // ── Top-level generated directories ──
     $topDirs = [
         'var/cache',
@@ -397,6 +405,37 @@ function cleanup(): void
             rmtree($full);
             ++$removed;
             echo 'Removed '.$dir."\n";
+        }
+    }
+
+    // ── System temp test artifacts (outside var/tmp/, in /tmp) ──
+    $sysTmpPatterns = [
+        'hatfield-auth-test-*',
+        'hatfield-oauth-test-*',
+        'hatfield-phar-smoke-*',
+        'agent-core-soak-*',
+        'agent-core-structured-log-*',
+        'skills_registry_test_*',
+        'skills_builder_test_*',
+        'skills_discovery_test_*',
+        'agents_context_test_*',
+        'hatfield-session-runstore-*',
+        'hatfield-session-eventstore-*',
+        'hatfield-aggregate-resume-*',
+        'phar-cache-hash-test-*',
+        'hatfield-llamacpp-*',
+    ];
+
+    $sysTmp = sys_get_temp_dir();
+    foreach ($sysTmpPatterns as $pattern) {
+        $paths = glob($sysTmp.'/'.$pattern, \GLOB_ONLYDIR);
+        if (false === $paths) {
+            continue;
+        }
+        foreach ($paths as $path) {
+            rmtree($path);
+            ++$removed;
+            echo 'Removed '.$path."\n";
         }
     }
 

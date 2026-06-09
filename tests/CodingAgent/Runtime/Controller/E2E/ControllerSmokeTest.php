@@ -39,28 +39,9 @@ final class ControllerSmokeTest extends ControllerE2eTestCase
         ]);
 
         $events = $this->collectEvents(15.0);
-        $byType = [];
-        foreach ($events as $e) {
-            $type = (string) ($e['type'] ?? 'unknown');
-            $byType[$type] = $byType[$type] ?? [];
-            $byType[$type][] = $e;
-        }
+        $byType = $this->indexByType($events);
 
-        $acks = $byType['command.ack'] ?? [];
-        $foundStartAck = false;
-        foreach ($acks as $ack) {
-            $payload = $ack['payload'] ?? [];
-            if (($payload['commandId'] ?? '') === $startCmdId) {
-                $foundStartAck = true;
-                break;
-            }
-        }
-        self::assertTrue(
-            $foundStartAck,
-            'Expected command.ack for start_run command. '
-            .'Available acks: '.json_encode($acks, \JSON_THROW_ON_ERROR)."\n"
-            .$this->collectDiagnostics($events),
-        );
+        $this->assertStartRunAcked($events, $startCmdId);
 
         self::assertArrayHasKey(
             'run.started',

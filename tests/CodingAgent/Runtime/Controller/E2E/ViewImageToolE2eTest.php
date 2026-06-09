@@ -62,25 +62,10 @@ final class ViewImageToolE2eTest extends ControllerE2eTestCase
         ]);
 
         $events = $this->collectEvents(60.0);
-        $byType = [];
-        foreach ($events as $e) {
-            $type = (string) ($e['type'] ?? 'unknown');
-            $byType[$type] = $byType[$type] ?? [];
-            $byType[$type][] = $e;
-        }
+        $byType = $this->indexByType($events);
 
         // Verify command acknowledged
-        $acks = $byType['command.ack'] ?? [];
-        $foundStartAck = false;
-        foreach ($acks as $ack) {
-            $payload = $ack['payload'] ?? [];
-            if (($payload['commandId'] ?? '') === $startCmdId) {
-                $foundStartAck = true;
-                break;
-            }
-        }
-        self::assertTrue($foundStartAck, 'Expected command.ack for start_run. '
-            .$this->collectDiagnostics($events));
+        $this->assertStartRunAcked($events, $startCmdId);
 
         self::assertArrayHasKey('run.started', $byType, 'Expected run.started. '
             .$this->collectDiagnostics($events));
@@ -96,25 +81,35 @@ final class ViewImageToolE2eTest extends ControllerE2eTestCase
             .$this->collectDiagnostics($events),
         );
 
-        // Critical: gating must NOT produce the failure placeholder
-        $allText = '';
-        foreach ($events as $event) {
-            $text = $event['payload']['text'] ?? '';
-            if (\is_string($text)) {
-                $allText .= $text;
-            }
-        }
-        self::assertStringNotContainsString(
-            'does not support images',
-            strtolower($allText),
-            'Image gating must not report unsupported model. '
-            .'Text collected: '.substr($allText, 0, 500)."\n"
+        // Verify the image-capable tool was actually invoked.
+        // llcama_cpp_test/test supports images; the issue is confirming
+        // the view_image path executed, not rejecting generic LLM prose.
+        self::assertArrayHasKey('tool_batch_committed', $byType,
+            'view_image tool batch must be committed. '
+            .'If tool_batch_committed is missing, the view_image tool never executed. '
+            .'Event types: '.implode(', ', array_keys($byType))."\n"
             .$this->collectDiagnostics($events),
         );
 
-        if (isset($byType['tool_batch_committed'])) {
-            fwrite(\STDERR, "[INFO] view_image tool executed and batch committed.\n");
+        // The exact gating placeholder contains both "Actual image omitted"
+        // AND "active model does not support images" as a single phrase.
+        // Checking both together avoids false positives from the LLM
+        // naturally mentioning image support in its own explanatory prose.
+        $gatingPlaceholderFound = false;
+        foreach ($events as $event) {
+            $text = $event['payload']['text'] ?? '';
+            if (\is_string($text)
+                && str_contains($text, 'Actual image omitted')
+                && stripos($text, 'does not support images') !== false
+            ) {
+                $gatingPlaceholderFound = true;
+                break;
+            }
         }
+        self::assertFalse($gatingPlaceholderFound,
+            'Gating placeholder must not appear — tool_batch_committed proves the image was sent to the LLM. '
+            .$this->collectDiagnostics($events),
+        );
 
         $sessionDir = $this->tempDir.'/.hatfield/sessions/'.$this->runId;
         $this->assertSessionArtifactsExist($sessionDir, $events);
