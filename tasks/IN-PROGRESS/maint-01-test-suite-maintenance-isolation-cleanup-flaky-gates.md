@@ -50,13 +50,13 @@ Important non-goal: Do not delete valuable behavioral tests just to reduce count
 - `tests/AGENTS.md` or testing skill documents test standards: no structural getter-only tests, use shared fixtures/builders, use Castor, use TUI E2E proof for TUI behavior, and use cleanup/snapshot conventions.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates
+Worktree: /home/ineersa/projects/agent-core-worktrees/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-09T22:01:04.785Z
 Completed:
 
 ## Work log
@@ -190,3 +190,10 @@ Desired design:
 - If DB isolation cannot safely support parallel `castor test` + E2E groups, keep DB-using groups serialized but still run phpstan/deptrac/cs-check in parallel with test execution.
 
 Acceptance addendum: `LLM_MODE=true castor check` should either run independent branches in parallel safely, or explicitly document/encode why a branch remains serialized. Parallelization must not be merged until isolation artifacts prove there are no cross-run temp/session/HOME/DB collisions.
+
+## Task workflow update - 2026-06-09T22:01:04.785Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates.
