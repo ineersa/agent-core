@@ -1,0 +1,37 @@
+# PT-01 Prompt template core config, parser, loader, and catalog
+
+## Goal
+Reference plan: `.pi/plans/prompt-templates-implementation-plan.md`.
+
+Scope:
+- Implement the prompt-template foundation without wiring it into runtime/TUI behavior yet.
+- Add top-level Hatfield `prompts: []` settings support and path resolution.
+- Add AppPromptTemplate layer/classes for parsing args, substituting placeholders, parsing frontmatter, loading templates, diagnostics, load result, runtime CLI override config, and cached `PromptTemplateService`.
+- Add Runtime/Contract catalog DTO/interface needed by later TUI work; do not add a `PromptTemplateExpanderInterface`.
+- Canonicalize template names to lowercase using filename stem (`strtolower`/equivalent); `Review.md` and `review.md` collide as `review`.
+- Ignore unknown frontmatter keys, including Pi's `argument-hint`, for MVP.
+
+Dependencies: none.
+
+Enables parallel follow-up: PT-02 and PT-03 can start after this lands.
+
+## Acceptance criteria
+- `config/hatfield.defaults.yaml`, `.hatfield/settings.yaml` if applicable, `docs/settings.md` references if touched, and `AppConfig/AppConfigLoader` support top-level `prompts: []` only; no `prompts.paths` or `prompts.enabled`.
+- Prompt template parser/substitutor/frontmatter/loader/service classes exist under `src/CodingAgent/PromptTemplate/` with diagnostics for read/YAML/collision local degradation and no raw prompt/content in logs.
+- `PromptTemplateCatalogInterface` and `PromptTemplateCommand` (name, description only) exist under `src/CodingAgent/Runtime/Contract/` for TUI-safe catalog access.
+- Loader scans `~/.hatfield/prompts/*.md`, `<cwd>/.hatfield/prompts/*.md`, settings `prompts: []`, and CLI runtime paths non-recursively; first lowercase name wins; duplicates produce diagnostics.
+- Unit tests cover argument parsing, substitution, frontmatter parsing, loader order/collisions/lowercase canonicalization, ignored unknown frontmatter keys, config path resolution, and service caching/expansion behavior.
+- `castor test`, `castor deptrac`, `castor phpstan`, and `castor cs-check` pass for the focused implementation.
+
+## Workflow metadata
+Status: TODO
+Branch:
+Worktree:
+Fork run:
+PR URL:
+PR Status:
+Started:
+Completed:
+
+## Work log
+- Created: 2026-06-09T00:09:50.965Z
