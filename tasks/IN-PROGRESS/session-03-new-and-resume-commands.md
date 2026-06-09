@@ -129,7 +129,7 @@ $registry->register(
 - Validation uses Castor per project rules; runtime/TUI changes require full `castor check` before CODE-REVIEW.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/session-03-new-and-resume-commands
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-03-new-and-resume-commands
 Fork run: ft7c25fezpyf
@@ -192,3 +192,7 @@ Castor Check Output SHA256: 507c25ed333065ce5e4d285e4a3ed0e961e812feefd1fd2aa0cc
 - Pushed task/session-03-new-and-resume-commands to origin.
 - branch 'task/session-03-new-and-resume-commands' set up to track 'origin/task/session-03-new-and-resume-commands'.
 - Created PR: https://github.com/ineersa/agent-core/pull/111
+
+## Task workflow update - 2026-06-09T15:34:31.179Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: Review iteration requested by user after PR #111/manual TUI inspection. Issues to address: session picker rows use SelectListWidget descriptions causing label column clamp to 30 chars; combine `#id - name` into a single label with no description key for full-width rendering. TUI switch via `/new` and `/resume` leaves old TUI rendering above new TUI in snapshot, so session switches must properly clear/re-render the whole screen. Also align session picker selected-row styling with common widgets/completions theme colors such as accent selection.
