@@ -27,7 +27,7 @@ Parallelizable with: EDITOR-10.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/editor-09-file-mention-completion
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-09-file-mention-completion
 Fork run: swo88scbq93c
@@ -235,11 +235,11 @@ Use Castor only:
 - Summary: Task-to-PR review completed for EDITOR-09. Initial reviewer verdict at 26de6c67: REQUEST CHANGES; implementation fork produced b8bfb85c addressing critical quoted @ insertion bug, path quoting, dead/deptrac/path issues, builder move, tests. Re-review verdict at b8bfb85c: APPROVE WITH SUGGESTIONS; second implementation fork produced 051ec0ba addressing all remaining suggestions (removed unused AtTokenContext fields, fixed priority docblock, temp cleanup on exceptions, structured diagnostic logging, semantic lock-held exception, refresh command real failure visibility, corrected reader docblock, added builder→reader→provider round-trip test). Final reviewer verdict at 051ec0ba: APPROVE with no issues. Current worktree clean; HEAD 051ec0ba fix(editor-09): tighten file mention review cleanup.
 - task-to-pr review iteration: reviewer REQUEST CHANGES → fork fix commit b8bfb85c → reviewer APPROVE WITH SUGGESTIONS → fork cleanup commit 051ec0ba → final reviewer APPROVE. Ready to move to CODE-REVIEW for full Castor quality gate and PR creation.
 Castor Check Status: passed
-Castor Check Commit: a8ebb69626e6781198315e033ef06988ae964c78
+Castor Check Commit: 752425cfee617de3521d9596c312e2bc01f5c5a2
 Castor Check Command: LLM_MODE=true castor check
 Castor Check Timeout: 900s
-Castor Check Completed: 2026-06-09T15:49:28.566Z
-Castor Check Output SHA256: 1b1c06f5e40ab95a95ca2112e4bcf86577ad98ddc83947ba9000667d74a83c01
+Castor Check Completed: 2026-06-09T16:51:38.916Z
+Castor Check Output SHA256: 4ec6e7fcfd79ec711b3350fbc7b19e01118a6b9a48e8c30baf65d9c24707cf33
 
 ## Task workflow update - 2026-06-09T01:02:26.521Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -314,3 +314,12 @@ Castor Check Output SHA256: 1b1c06f5e40ab95a95ca2112e4bcf86577ad98ddc83947ba9000
 - Recorded fork run: swo88scbq93c
 - Validation: fork-reported: castor test --filter=FileMentionIndexBuilder OK (9 tests, 66 assertions); fork-reported: castor test --filter=FileMention OK (50 tests, 153 assertions); fork-reported: castor test --filter=Completion OK (130 tests, 277 assertions); fork-reported: castor test full OK (2221 tests, 6464 assertions); fork-reported: castor deptrac OK (0 violations); fork-reported: castor phpstan OK (0 errors); fork-reported: castor cs-check OK; orchestrator verification: git status clean; HEAD 752425cf; no nullable/fallback logger/lock patterns in target classes; acquire(false) unchanged; git diff --check clean
 - Summary: Follow-up review-iterate fork swo88scbq93c completed at commit 752425cf (`fix(editor-09): require non-null LoggerInterface and LockFactory`). It reordered FileMentionIndexBuilder constructor to make LoggerInterface and LockFactory required non-null autowired dependencies, converted logger dependencies in CompletionFileIndexRefreshCommand and FileMentionIndexStartupListener to non-null promoted readonly properties, and left `$lock->acquire(false)` unchanged for non-blocking scheduler-safe lock acquisition. Orchestrator verified worktree clean, no nullable LoggerInterface/LockFactory/NullLogger/NullLock patterns remain in the three target classes, and `acquire(false)` remains present.
+
+## Task workflow update - 2026-06-09T16:51:40.817Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: 752425cfee61.
+- Pushed task/editor-09-file-mention-completion to origin.
+- branch 'task/editor-09-file-mention-completion' set up to track 'origin/task/editor-09-file-mention-completion'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/110
+- Validation: fork-reported: castor test --filter=FileMentionIndexBuilder OK (9 tests, 66 assertions); fork-reported: castor test --filter=FileMention OK (50 tests, 153 assertions); fork-reported: castor test --filter=Completion OK (130 tests, 277 assertions); fork-reported: castor test full OK (2221 tests, 6464 assertions); fork-reported: castor deptrac OK (0 violations); fork-reported: castor phpstan OK (0 errors); fork-reported: castor cs-check OK; orchestrator verification: worktree clean; no nullable/fallback logger/lock patterns in target classes; acquire(false) unchanged
+- Summary: Review-iterate cleanup for PR #110 complete. Latest HEAD 752425cf (`fix(editor-09): require non-null LoggerInterface and LockFactory`) addresses inline comments by making LoggerInterface and LockFactory true non-null autowired dependencies in file mention index services, removing production NullLogger/NullLock fallbacks, and preserving non-blocking `$lock->acquire(false)` so scheduler refreshes skip instead of waiting behind an in-progress build. User requested push.
