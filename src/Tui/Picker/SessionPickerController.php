@@ -133,24 +133,19 @@ final class SessionPickerController
         $listWidget->onSelectionChange(
             static function (SelectionChangeEvent $event) use ($listWidget, $sessions, $theme): void {
                 $selectedValue = $event->getItem()['value'];
-                $newItems = [];
-                $newIndex = 0;
+                $selectedIdx = -1;
 
                 foreach ($sessions as $i => $s) {
-                    $displayTitle = $s['displayTitle'] ?? $s['name'] ?? 'Session';
-                    $sessionId = $s['sessionId'];
-                    $label = \sprintf('#%s — %s', $sessionId, $displayTitle);
+                    if ($s['sessionId'] === $selectedValue) {
+                        $selectedIdx = $i;
 
-                    if ($sessionId === $selectedValue) {
-                        $label = $theme->color(ThemeColorEnum::Accent, $label);
-                        $newIndex = \count($newItems);
+                        break;
                     }
-
-                    $newItems[] = ['value' => $sessionId, 'label' => $label];
                 }
 
+                $newItems = self::buildItemsStatic($sessions, $theme, selectedIndex: $selectedIdx);
                 $listWidget->setItems($newItems);
-                $listWidget->setSelectedIndex($newIndex);
+                $listWidget->setSelectedIndex(max(0, $selectedIdx));
             },
         );
 

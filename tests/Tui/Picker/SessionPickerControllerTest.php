@@ -100,6 +100,25 @@ final class SessionPickerControllerTest extends TestCase
     }
 
     #[Test]
+    public function testBuildItemsStaticAppliesAccentToNonZeroSelectedIndex(): void
+    {
+        $sessions = [
+            ['sessionId' => '1', 'name' => 'Session A', 'displayTitle' => 'Session A'],
+            ['sessionId' => '2', 'name' => 'Session B', 'displayTitle' => 'Session B'],
+            ['sessionId' => '3', 'name' => 'Session C', 'displayTitle' => 'Session C'],
+        ];
+
+        $palette = new ThemePalette('test', [ThemeColorEnum::Accent->value => '#FF00FF']);
+        $theme = new DefaultTheme($palette);
+        $accented = SessionPickerController::buildItemsStatic($sessions, $theme, selectedIndex: 1);
+
+        // Row 0 not accented, row 1 accented, row 2 not accented
+        self::assertStringNotContainsString("\x1b", $accented[0]['label']);
+        self::assertStringContainsString("\x1b", $accented[1]['label']);
+        self::assertStringNotContainsString("\x1b", $accented[2]['label']);
+    }
+
+    #[Test]
     public function testApplySelectEffectCallsSwitchResume(): void
     {
         $switch = new class implements TuiSessionSwitchServiceInterface {

@@ -76,6 +76,15 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     private bool $runtimeReadyReceived = false;
 
     /**
+     * Session ID that the currently running controller process was
+     * spawned with. When start() or resume() sets a different
+     * sessionId, ensureProcessRunning() must restart the process so
+     * the controller and its consumer subprocesses use the correct
+     * session-scoped queue names.
+     */
+    private ?string $processSessionId = null;
+
+    /**
      * Timestamps of recent controller restarts for rate-limiting.
      *
      * @var array<int, float>
@@ -162,6 +171,8 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     public function resume(string $runId): RunHandle
     {
+        // runId is the session ID — update session-scoped queue DSNs.
+        $this->sessionId = $runId;
         $this->activeRunId = $runId;
         $this->ensureProcessRunning();
 
@@ -276,6 +287,13 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     private function ensureProcessRunning(): void
     {
+        // Force a restart when the session has changed so the controller
+        // and its consumer subprocesses are launched with the new session's
+        // env vars (queue DSNs, HATFIELD_SESSION_ID).
+        if (null !== $this->sessionId && $this->sessionId !== $this->processSessionId) {
+            $this->stopProcess();
+        }
+
         if (null !== $this->process && $this->isProcessRunning()) {
             return;
         }
@@ -365,6 +383,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->stdoutBuffer = '';
         $this->stderrBuffer = '';
         $this->runtimeReadyReceived = false;
+        $this->processSessionId = $this->sessionId;
 
         stream_set_blocking($this->pipes[0], true);
         stream_set_blocking($this->pipes[1], false);
