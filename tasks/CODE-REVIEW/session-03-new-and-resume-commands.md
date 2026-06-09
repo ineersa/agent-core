@@ -129,7 +129,7 @@ $registry->register(
 - Validation uses Castor per project rules; runtime/TUI changes require full `castor check` before CODE-REVIEW.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/session-03-new-and-resume-commands
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-03-new-and-resume-commands
 Fork run: r86j2r41s76w
@@ -180,11 +180,11 @@ Completed:
 - Summary: SESSION-03 ready for CODE-REVIEW at HEAD `5ea4f71c` on branch `task/session-03-new-and-resume-commands`. Final reviewer returned APPROVED with no actionable issues after polish commit. Cumulative diff verified: 12 files changed (+1022/-1) vs origin/main, adding `/new`, direct `/resume <session id>`, `/resume` picker, docs, tests, and Deptrac allowance. Review-fix commits: `0d49c4b0` fixed invalid-session error rendering, malformed-ID validation, removed dead picker method/tests, documented state runtime ref, and added registrar tests; `5ea4f71c` fixed final docs/docblock/test cleanup and added `/resume 0` edge test.
 - task-to-pr: final reviewer approved HEAD 5ea4f71c; local Castor validation passed; proceeding to move_task CODE-REVIEW for full Castor quality gate and PR creation.
 Castor Check Status: passed
-Castor Check Commit: 5ea4f71c3c8d14a244d15347cf3d2bf90ec7d301
+Castor Check Commit: c0ece70b564a78b1e7b3c7b14df5d1099c3471ea
 Castor Check Command: LLM_MODE=true castor check
 Castor Check Timeout: 900s
-Castor Check Completed: 2026-06-09T15:29:42.650Z
-Castor Check Output SHA256: 507c25ed333065ce5e4d285e4a3ed0e961e812feefd1fd2aa0ccc81d5b3e3aa2
+Castor Check Completed: 2026-06-09T17:12:28.266Z
+Castor Check Output SHA256: 9f406f219ad3e4c0f5803e58d9aa5e5f48f6097c84fe8d0e98c95cc164abd02f
 
 ## Task workflow update - 2026-06-09T15:29:46.700Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -232,3 +232,10 @@ Castor Check Output SHA256: 507c25ed333065ce5e4d285e4a3ed0e961e812feefd1fd2aa0cc
 - Validation: Final reviewer verdict at HEAD `c0ece70b`: APPROVED — no actionable issues remain.; Local validation: `castor test` PASS — tests=2214, assertions=6469, errors=0, failures=0, skipped=0.; Local validation: `castor deptrac` PASS — violations=0, errors=0, uncovered=759, allowed=1015.; Local validation: `castor phpstan` PASS — errors=0, file_errors=0.; Local validation: `castor cs-check` PASS — files_fixed=0.; Local validation: `castor test:tui` PASS — tests=5, assertions=18, errors=0, failures=0, skipped=0.
 - Summary: SESSION-03 review iteration ready for CODE-REVIEW again at HEAD `c0ece70b`. Final reviewer returned APPROVED with no actionable issues after stale `$autoResumed` reset and docs update. Review-iteration commits since PR #111 initial approval: `c9d3f5de` fixed session picker full-width rendering/no description key, selected-row accent styling, and terminal clear on session switch; `2b488a84` fixed `/new` runtime startup by restarting process transport on session changes and nullsafe draft promotion; `67c12e21` hardened process resume by waiting for `runtime.ready` after session-switch process restarts and avoiding first-call no-op stop; `c0ece70b` reset stale `autoResumed` at top of `resume()` and updated picker docs. Cumulative diff vs origin/main verified: 15 files changed, +1173/-3.
 - task-review-iterate: final reviewer approved HEAD c0ece70b; local validation including TUI E2E passed; proceeding to move_task CODE-REVIEW for full Castor gate and PR update.
+
+## Task workflow update - 2026-06-09T17:12:30.362Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: c0ece70b564a.
+- Pushed task/session-03-new-and-resume-commands to origin.
+- branch 'task/session-03-new-and-resume-commands' set up to track 'origin/task/session-03-new-and-resume-commands'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/111
