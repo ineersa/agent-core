@@ -132,7 +132,7 @@ $registry->register(
 Status: IN-PROGRESS
 Branch: task/session-03-new-and-resume-commands
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-03-new-and-resume-commands
-Fork run: ab4z9e1qii60
+Fork run: k65v82rm36bs
 PR URL: https://github.com/ineersa/agent-core/pull/111
 PR Status: open
 Started: 2026-06-09T01:24:48.923Z
@@ -269,3 +269,8 @@ Castor Check Output SHA256: 9f406f219ad3e4c0f5803e58d9aa5e5f48f6097c84fe8d0e98c9
 ## Task workflow update - 2026-06-09T18:12:58.214Z
 - Summary: User invalidated fork `ab4z9e1qii60` smoke result. Real `castor run:agent` manual testing still shows regressions at/after HEAD `7bdda69c`: (1) start in a session, change model with Ctrl+P, then `/new` shows a different model; restarting the app shows the correct default model selected via Ctrl+P, so `/new` draft switch is not applying the same model/default resolution as a fresh startup; (2) `/resume`, type message: no follow-up happens and TUI hangs in Working; (3) `/new`, Ctrl+P is broken and does not cycle through all favorite models. User confirms tests were done with `castor run:agent`. Prior fork's smoke is insufficient/misleading because it used custom PHP smoke scripts and only checked picker visibility/default `test` in isolation rather than exact `castor run:agent` keystrokes, favorites cycling, model persistence/default resolution, and real follow-up after resume.
 - task-review-iterate: user reports fork smoke did not match real castor run:agent flow; launching stricter reproduction fork with exact tmux/castor run:agent workflow and model/favorites assertions.
+
+## Task workflow update - 2026-06-09T18:26:49.285Z
+- Recorded fork run: k65v82rm36bs
+- Summary: Fork `k65v82rm36bs` ended with a corrupted/truncated handoff (`Focused tests pass. Let me run the full suite:`) and did not commit. Worktree now has uncommitted changes in `src/CodingAgent/Config/ModelSelectionService.php` and `src/Tui/Listener/ModelControlListener.php`. Diff suggests the fork found likely model root causes: (1) `ModelSelectionService` persists model/reasoning/favorites to settings but does not update in-memory `AppConfig`, so current-process consumers such as `/new` draft initialization and Ctrl+P cycling continue using stale defaults/favorites until app restart; (2) after Ctrl+P on a draft (`sessionId === ''`), `ModelControlListener` updates footer state but does not carry the selected model into `TuiSessionState::$request`, so `SubmitListener` promotes the draft with no model and runtime falls back to stale config. These changes are unvalidated/uncommitted and may need cleanup/tests; launching recovery fork to continue or revert as appropriate, run exact `castor run:agent` tmux smoke, full Castor validation, and commit.
+- task-review-iterate: fork k65v82rm36bs incomplete; uncommitted model-selection changes left in worktree; launching recovery fork to validate/fix/commit or revert.
