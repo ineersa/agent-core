@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\CLI;
 
 use Psr\Log\LoggerInterface;
-use Psr\Log\NullLogger;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -36,14 +35,14 @@ use Symfony\Component\Scheduler\Attribute\AsPeriodicTask;
 #[AsPeriodicTask(frequency: 30, schedule: 'default')]
 final class CompletionFileIndexRefreshCommand extends Command
 {
-    private readonly LoggerInterface $logger;
+    private readonly ?LoggerInterface $logger;
 
     public function __construct(
         private readonly FileMentionIndexBuilder $builder,
         ?LoggerInterface $logger = null,
     ) {
         parent::__construct();
-        $this->logger = $logger ?? new NullLogger();
+        $this->logger = $logger;
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int

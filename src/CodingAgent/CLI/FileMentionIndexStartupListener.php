@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\CLI;
 use Ineersa\Tui\Listener\TuiListenerRegistrar;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Psr\Log\LoggerInterface;
-use Psr\Log\NullLogger;
 
 /**
  * Synchronous initial index build at TUI startup.
@@ -33,13 +32,13 @@ use Psr\Log\NullLogger;
  */
 final class FileMentionIndexStartupListener implements TuiListenerRegistrar
 {
-    private readonly LoggerInterface $logger;
+    private readonly ?LoggerInterface $logger;
 
     public function __construct(
         private readonly FileMentionIndexBuilder $builder,
         ?LoggerInterface $logger = null,
     ) {
-        $this->logger = $logger ?? new NullLogger();
+        $this->logger = $logger;
     }
 
     public function register(TuiRuntimeContext $context): void

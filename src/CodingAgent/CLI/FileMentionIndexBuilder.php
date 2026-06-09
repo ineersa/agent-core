@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\CLI;
 
 use Ineersa\Tui\Completion\FileMentionIndexEntryDTO;
 use Psr\Log\LoggerInterface;
-use Psr\Log\NullLogger;
 use Symfony\Component\Finder\Finder;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\LockInterface;
@@ -47,16 +46,14 @@ final class FileMentionIndexBuilder
     /** Cleanup-tracked temp path for atomic-write safety. */
     private ?string $tmpPath = null;
 
-    private readonly LoggerInterface $logger;
+    private readonly ?LoggerInterface $logger;
 
     /**
      * @param string               $cwd         Project root to scan
      * @param string               $indexPath   Target JSONL path
      * @param list<string>|null    $excludeDirs Directories to exclude (replaces built-in defaults when provided)
-     * @param LoggerInterface|null $logger      Optional logger for diagnostic events;
-     *                                          fallback NullLogger when null
-     * @param LockFactory|null     $lockFactory Optional lock factory for build
-     *                                          exclusion; fallback NullLock when null
+     * @param LoggerInterface|null $logger      Logger for diagnostic events (autowired by DI)
+     * @param LockFactory|null     $lockFactory Lock factory for build exclusion (autowired by DI)
      */
     public function __construct(
         private readonly string $cwd,
@@ -66,7 +63,7 @@ final class FileMentionIndexBuilder
         private readonly ?LockFactory $lockFactory = null,
     ) {
         $this->excludeDirs = $excludeDirs;
-        $this->logger = $logger ?? new NullLogger();
+        $this->logger = $logger;
     }
 
     /**
@@ -266,46 +263,14 @@ final class FileMentionIndexBuilder
     /**
      * Acquire a named lock keyed by the index path.
      *
-     * Returns the acquired LockInterface on success, null when the lock
-     * is already held (non-blocking attempt).
+     * Uses non-blocking acquire (false) so a scheduler refresh
+     * immediately returns null without waiting behind an in-progress
+     * index build — it does not pile up blocked workers.
+     *
+     * @return LockInterface|null acquired lock, or null when already held
      */
     private function acquireLock(): ?LockInterface
     {
-        if (null === $this->lockFactory) {
-            // No lock factory configured — proceed without locking.
-            // This path is used in tests and environments where lock
-            // infrastructure is unavailable.
-            return new class implements LockInterface {
-                public function acquire(?bool $blocking = null): bool
-                {
-                    return true;
-                }
-
-                public function refresh(?float $ttl = null): void
-                {
-                }
-
-                public function isAcquired(): bool
-                {
-                    return true;
-                }
-
-                public function release(): void
-                {
-                }
-
-                public function isExpired(): bool
-                {
-                    return false;
-                }
-
-                public function getRemainingLifetime(): ?float
-                {
-                    return null;
-                }
-            };
-        }
-
         // Hash the index path to create a stable, short resource name
         // that is safe for lock backends without character restrictions.
         $resourceKey = 'file_mention_index.'.hash('xxh32', $this->indexPath);
