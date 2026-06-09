@@ -41,7 +41,7 @@ If you catch yourself about to open an editor, write a file, or run a code chang
      - What changes in each file (new classes, modified methods, config changes).
      - Test files to create or update.
    - **Risks and open questions** — anything ambiguous, potentially breaking, or requiring a design decision.
-   - **Suggested validation** — which `castor` commands to run after implementation.
+   - **Suggested validation** — which `castor` commands to run after implementation. For TUI tasks: explicitly include the real TmuxHarness + test LLM E2E test that will prove the feature works, and note that `castor test:tui` and `LLM_MODE=true castor check` are required gates before CODE-REVIEW.
 
 4. **Discuss with the user**
    - Present the plan and explicitly ask for feedback.
