@@ -175,3 +175,18 @@ D. Refactor copy-paste sites gradually; do not combine with major test deletion 
 E. Remove/collapse low-value tests after helper extraction so the suite gets smaller and clearer.
 
 Implementation warning: this is a maintenance task; avoid broad production API changes just for tests. Shared helpers must live under tests/. Production code changes are acceptable only for real bugs such as phar_smoke HOME isolation/castor cleanup behavior or replacing sleep with existing clock seams.
+
+## Task workflow update - 2026-06-09T22:00:08.682Z
+- Summary: Add Castor check parallelization objective:
+
+Once isolation fixes are in place, optimize `castor check` by running independent validation phases in parallel where safe. This belongs in MAINT-01 because the task explicitly audits and fixes test isolation; parallel check is a good validation pressure test for that isolation.
+
+Desired design:
+- Run a single PHAR ensure/build step before parallel test groups so each worker does not independently rebuild or race on `var/tmp/phar` / `var/tmp/phar-build`.
+- Then run independent phases concurrently where safe: `castor test`, `castor test:controller`, `castor test:llm-real`, `castor test:tui`, `castor phpstan`, `castor deptrac`, `castor cs-check`.
+- Capture each branch output/report separately under `var/qa/` or branch-specific report files, then print a combined summary.
+- Do not fail-fast in a way that loses diagnostics; collect all branch results and report every failure.
+- Guard or serialize groups that remain unsafe after audit. Known risks to verify: shared `var/test/app_test.sqlite`, unique tmux session names, unique `var/tmp/test-*`/`var/tmp/tui-e2e-*` dirs, PHAR staging/cache races, and llama.cpp endpoint concurrency.
+- If DB isolation cannot safely support parallel `castor test` + E2E groups, keep DB-using groups serialized but still run phpstan/deptrac/cs-check in parallel with test execution.
+
+Acceptance addendum: `LLM_MODE=true castor check` should either run independent branches in parallel safely, or explicitly document/encode why a branch remains serialized. Parallelization must not be merged until isolation artifacts prove there are no cross-run temp/session/HOME/DB collisions.
