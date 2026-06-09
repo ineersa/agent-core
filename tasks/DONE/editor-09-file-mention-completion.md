@@ -30,7 +30,7 @@ Parallelizable with: EDITOR-10.
 Status: DONE
 Branch: task/editor-09-file-mention-completion
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-09-file-mention-completion
-Fork run: ymhdr2pc8fen
+Fork run: ojnds115tzcg
 PR URL: https://github.com/ineersa/agent-core/pull/110
 PR Status: merged
 Started: 2026-06-08T23:47:05.979Z
@@ -395,3 +395,8 @@ Merge made by the 'ort' strategy.
 - Pulled integration checkout: Already up to date..
 - Validation: PR #110 updated to 118d172e; move_task CODE-REVIEW quality gate passed at 118d172e; user approval: final stdout/logging cleanup accepted; proceed to merge and move DONE
 - Summary: User approved final EDITOR-09 PR #110 cleanup and said we can merge and move to DONE. PR #110 is open at head 118d172e; full Castor quality gate passed during CODE-REVIEW transition. Merging task branch into integration checkout and completing task.
+
+## Task workflow update - 2026-06-09T17:11:25.366Z
+- Recorded fork run: ojnds115tzcg
+- Validation: post-merge: first LLM_MODE=true castor check failed due missing local vendor package symfony/scheduler after merge; fixed by castor install; post-merge: second LLM_MODE=true castor check partial pass: deptrac OK, PHAR smoke OK, controller E2E OK, llm-real OK, tui-e2e OK, phpstan OK, cs-check OK; post-merge: unit test failed (3 errors) in CompletionListenerTest due TuiRuntimeContext constructor arity after SESSION-02 integration merge; fork ojnds115tzcg launched to fix tests
+- Summary: Post-merge validation started after task moved DONE. First `LLM_MODE=true castor check` on integration main failed because local vendor did not yet contain newly merged `symfony/scheduler`; ran `castor install`, which installed symfony/scheduler from composer.lock. Second `LLM_MODE=true castor check` progressed through deptrac, PHAR smoke, controller E2E, llm-real, tui-e2e, phpstan, cs-check, but unit `castor test` failed with 3 errors in `tests/Tui/Listener/CompletionListenerTest.php`: three EDITOR-09 test-local `new TuiRuntimeContext(...)` calls still passed only 5 args, while merged main now includes SESSION-02 constructor args `ticks`, `switch`, `lifecycle`. Launched post-merge fix fork ojnds115tzcg on integration main to update those tests only.
