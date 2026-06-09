@@ -151,14 +151,14 @@ LLM_MODE=true castor check
 If prerequisites for `LLM_MODE=true castor check` are unavailable (tmux or llama.cpp test server on port 9052), the task must stay IN-PROGRESS with the blocker recorded.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/editor-11-shell-prefix-commands
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-11-shell-prefix-commands
 Fork run: vb8egxvzru6l
 PR URL: https://github.com/ineersa/agent-core/pull/112
-PR Status: open
+PR Status: merged
 Started: 2026-06-09T18:07:09.729Z
-Completed:
+Completed: 2026-06-09T22:45:18.222Z
 
 ## Work log
 - Created: 2026-05-18T00:16:30.829Z
@@ -261,3 +261,37 @@ Castor Check Output SHA256: e3ae4160ed9699de24b6451a80c7fe0d7d708d622610b0f3fdba
 - PR already exists: https://github.com/ineersa/agent-core/pull/112
 - Validation: Conflict resolution fork vb8egxvzru6l complete at 591dfff3; Rebased onto origin/main; origin/main verified ancestor of task HEAD; Remote PR branch updated with `git push --force-with-lease origin task/editor-11-shell-prefix-commands` after non-fast-forward rejection from rebased history; Focused tests passed: `castor test --filter='Shell|PromptHistory|SubmissionRouter|CommandParser|ShellCommandHandler|PharSmokeTest'` (83 tests, 183 assertions); ShellPrefix TUI E2E passed: `castor test:tui --filter=ShellPrefix` (4 tests, 5 assertions); Full `castor test` passed (2296 tests, 6711 assertions); `castor deptrac` passed, `castor phpstan` passed, `castor cs-check` clean
 - Summary: Moving EDITOR-11 back to CODE-REVIEW after conflict resolution and safe force-with-lease update of the rebased PR branch. Branch is rebased onto origin/main at 591dfff3; sole conflict in PharSmokeTest resolved by keeping generalized HOME isolation. EDITOR-11 semantics preserved and focused validation passed, including ShellPrefix TUI E2E and full unit/integration suite. User authorized proceeding through CODE-REVIEW to DONE after conflict resolution.
+
+## Task workflow update - 2026-06-09T22:45:18.222Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/editor-11-shell-prefix-commands into integration checkout.
+- Merge made by the 'ort' strategy.
+ .../Runtime/Contract/AgentSessionClient.php        |  18 +
+ src/CodingAgent/Runtime/Contract/UserCommand.php   |   2 +-
+ .../CommandHandler/ShellCommandHandler.php         | 101 ++++++
+ .../InProcess/InProcessAgentSessionClient.php      | 137 ++++++++
+ .../Process/JsonlProcessAgentSessionClient.php     |  49 +++
+ .../Runtime/Protocol/RuntimeEventTranslator.php    |  22 +-
+ src/Tui/Command/CommandParser.php                  |  15 +-
+ src/Tui/Command/DispatchShellCommand.php           |  25 ++
+ src/Tui/Command/ShellCommand.php                   |   8 +-
+ src/Tui/Command/SubmissionRouter.php               |  26 +-
+ src/Tui/Listener/SubmitListener.php                | 143 ++++++++
+ src/Tui/Listener/TickPollListener.php              |  12 +-
+ src/Tui/Runtime/TuiSessionState.php                |  12 +
+ tests/CodingAgent/Phar/PharSmokeTest.php           |  93 ++---
+ .../BackgroundProcessCompletionPollerTest.php      |   9 +
+ .../CommandHandler/AnswerHumanHandlerTest.php      |  10 +
+ .../CommandHandler/ShellCommandHandlerTest.php     | 236 +++++++++++++
+ tests/Tui/Command/CommandParserTest.php            |  12 +-
+ tests/Tui/Command/SubmissionRouterTest.php         |  33 +-
+ tests/Tui/E2E/ShellPrefixSmokeTest.php             | 374 +++++++++++++++++++++
+ 20 files changed, 1251 insertions(+), 86 deletions(-)
+ create mode 100644 src/CodingAgent/Runtime/Controller/CommandHandler/ShellCommandHandler.php
+ create mode 100644 src/Tui/Command/DispatchShellCommand.php
+ create mode 100644 tests/CodingAgent/Runtime/Controller/CommandHandler/ShellCommandHandlerTest.php
+ create mode 100644 tests/Tui/E2E/ShellPrefixSmokeTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/editor-11-shell-prefix-commands.
+- Pulled integration checkout: Already up to date..
+- Validation: CODE-REVIEW gate passed at commit 591dfff35eab; PR #112 existing and branch pushed after rebase/conflict resolution; User authorized resolving conflicts and moving to DONE
+- Summary: Merging EDITOR-11 after conflict resolution, successful CODE-REVIEW gate, and user authorization to move to DONE. PR #112 branch rebased onto main at 591dfff3, full Castor quality gate passed during CODE-REVIEW transition. Implementation: single `!<command>` shell prefix, `!!` rejected, shell execution through runtime/shared BashTool path, transcript-visible output without model-context injection/LLM turn, synthetic shell RunStarted for JSONL/TUI drain forwarding, prompt-history support, real TUI E2E coverage, and PHAR smoke HOME isolation.
