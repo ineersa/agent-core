@@ -132,7 +132,7 @@ $registry->register(
 Status: IN-PROGRESS
 Branch: task/session-03-new-and-resume-commands
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-03-new-and-resume-commands
-Fork run: r86j2r41s76w
+Fork run: l3ty7jvg13lg
 PR URL: https://github.com/ineersa/agent-core/pull/111
 PR Status: open
 Started: 2026-06-09T01:24:48.923Z
@@ -243,3 +243,8 @@ Castor Check Output SHA256: 9f406f219ad3e4c0f5803e58d9aa5e5f48f6097c84fe8d0e98c9
 ## Task workflow update - 2026-06-09T17:16:07.633Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: User smoke-tested PR #111 at HEAD `c0ece70b` and found multiple regressions requiring another review iteration: (1) after `/resume`, typing a message does not resume/continue the run and TUI hangs in Working; (2) after `/new`, default model is incorrect; (3) after `/new`, Ctrl+P model cycling/picker is broken; (4) `/resume` and `/new` are much slower than before, possibly due sleeps/blocking process lifecycle such as process stop/restart. Need a fork to actually launch/test the agent manually (not only unit/TUI snapshots), inspect logs/snapshots/session artifacts, reproduce, fix root causes, and validate.
+
+## Task workflow update - 2026-06-09T17:16:50.275Z
+- Recorded fork run: l3ty7jvg13lg
+- Summary: Launched fork `l3ty7jvg13lg` for user-reported real smoke regressions at HEAD `c0ece70b`: `/resume` then typing hangs in Working and does not continue; `/new` has incorrect default model; `/new` breaks Ctrl+P model picker/cycling; `/new` and `/resume` are much slower than before. Fork instructed to actually launch/test the agent using project-supported Castor/tmux harnesses, inspect `.hatfield` logs/snapshots/session artifacts, reproduce `/new` and `/resume` flows manually, measure/understand slowness, fix root causes, and run full validation including `castor test:tui`.
+- task-review-iterate: fork l3ty7jvg13lg launched for manual smoke reproduction and fixes for resume hang, new-session model defaults, Ctrl+P, and switch slowness.
