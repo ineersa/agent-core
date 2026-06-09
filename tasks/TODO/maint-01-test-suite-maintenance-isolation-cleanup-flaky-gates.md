@@ -61,3 +61,117 @@ Completed:
 
 ## Work log
 - Created: 2026-06-09T21:53:09.939Z
+
+## Task workflow update - 2026-06-09T21:57:40.918Z
+- Summary: Additional clean-context implementation context from scout reports:
+
+Correction for ViewImageToolE2eTest: llama_cpp_test/test supports images. The failure is not because the test model lacks image support; the brittle part is that the test scans all LLM-generated prose for the generic phrase "does not support images". A model that supports images can still mention that phrase in explanatory prose. The robust assertion should prove the view_image path actually executed with image-capable flow and reject only the exact project gating placeholder text (for example text containing both "Actual image omitted" and "active model does not support images"), not arbitrary assistant wording.
+
+Snapshots policy: keep all useful test snapshots/artifacts by default, especially TUI E2E snapshots under var/tmp/tui-e2e-*/. They are inspection artifacts, not garbage. `castor cleanup` is the manual cleanup mechanism.
+
+Concrete copy-paste/refactor inventory the implementor should use:
+
+1. Manual recursive rmDir/rmdirRecursive duplication exists in at least these files and should be replaced by a shared helper (expand TestDirectoryIsolation::removeDirectory or equivalent):
+- tests/CodingAgent/Skills/SkillRegistryTest.php
+- tests/CodingAgent/Skills/SkillsContextBuilderTest.php
+- tests/CodingAgent/Skills/SkillDiscoveryTest.php
+- tests/CodingAgent/Config/SessionAwareModelResolverTest.php
+- tests/CodingAgent/Config/ModelSettingsPersisterTest.php
+- tests/CodingAgent/Config/AppConfigLoaderTest.php
+- tests/CodingAgent/Config/ModelSelectionServiceTest.php
+- tests/CodingAgent/Config/AppConfigTest.php
+- tests/CodingAgent/Tool/OutputCapLlmTransformHookTest.php
+- tests/CodingAgent/Tool/OutputCapTest.php
+- tests/CodingAgent/CLI/FileMentionIndexBuilderTest.php
+- tests/CodingAgent/CLI/CompletionFileIndexRefreshCommandTest.php
+- tests/Tui/Picker/ModelPickerControllerTest.php
+- tests/Tui/Completion/FileMentionCompletionProviderTest.php
+- tests/Tui/Completion/FileMentionIndexReaderTest.php
+- tests/Tui/Listener/CopyCommandRegistrarTest.php
+- tests/CodingAgent/Extension/ExtensionManagerTest.php
+- tests/CodingAgent/SystemPrompt/AgentsContextDiscoveryTest.php
+- tests/CodingAgent/SystemPrompt/SystemPromptBuilderTest.php
+- tests/Tui/Listener/SessionCommandRegistrarTest.php
+- tests/CodingAgent/Session/SessionRunStoreTest.php
+- tests/CodingAgent/Session/AggregateResumeTest.php
+- tests/CodingAgent/Logging/LogReaderTest.php
+
+2. Manual temp directory creation via sys_get_temp_dir() is duplicated and often unmanaged by castor cleanup. Migrate to project var/tmp helpers where possible. Scout examples:
+- tests/CodingAgent/Config/AppConfigTest.php
+- tests/CodingAgent/Config/AppConfigLoaderTest.php
+- tests/CodingAgent/Config/SessionAwareModelResolverTest.php
+- tests/CodingAgent/Config/ModelSelectionServiceTest.php
+- tests/CodingAgent/Config/ModelSettingsPersisterTest.php
+- tests/CodingAgent/Config/HomeSettingsWriterTest.php
+- tests/CodingAgent/Skills/SkillRegistryTest.php
+- tests/CodingAgent/Skills/SkillDiscoveryTest.php
+- tests/CodingAgent/SystemPrompt/AgentsContextDiscoveryTest.php
+- tests/CodingAgent/SystemPrompt/SystemPromptBuilderTest.php
+- tests/CodingAgent/Extension/ExtensionManagerTest.php
+- tests/Tui/Picker/ModelPickerControllerTest.php
+- tests/Tui/Listener/CopyCommandRegistrarTest.php
+- tests/Tui/Listener/ModelCommandHandlerTest.php
+- SessionRunStoreTest, AggregateResumeTest, SessionRunEventStoreTest, LogReaderTest also use system temp patterns.
+
+3. Manual .hatfield tree scaffolding is duplicated. Replace with TestDirectoryIsolation::createHatfieldTree or new helper:
+- tests/CodingAgent/Auth/CodexAuthStorageTest.php
+- tests/CodingAgent/Auth/CodexOAuthServiceTest.php
+- tests/CodingAgent/Config/SessionAwareModelResolverTest.php
+- tests/CodingAgent/Config/ModelSettingsPersisterTest.php
+- tests/CodingAgent/Config/AppConfigLoaderTest.php
+- tests/CodingAgent/Config/AppConfigTest.php
+- tests/CodingAgent/Config/HomeSettingsWriterTest.php
+- tests/CodingAgent/Session/SessionRunStoreTest.php
+- tests/Tui/Listener/CopyCommandRegistrarTest.php
+- tests/Tui/Picker/ModelPickerControllerTest.php
+- tests/AgentCore/Infrastructure/SymfonyAi/TraceReplayTest.php
+
+4. Manual settings.yaml heredocs are duplicated. Add helper(s) for minimal test home/project settings and test LLM settings. Scout examples:
+- tests/CodingAgent/Config/SessionAwareModelResolverTest.php
+- tests/CodingAgent/Config/ModelSettingsPersisterTest.php
+- tests/CodingAgent/Config/ModelSelectionServiceTest.php
+- tests/CodingAgent/Config/AppConfigLoaderTest.php
+- tests/CodingAgent/Config/AppConfigTest.php
+- tests/Tui/Picker/ModelPickerControllerTest.php
+- tests/Tui/E2E/TuiAgentSmokeTest.php
+- tests/Tui/E2E/TuiStartupSnapshotTest.php
+- tests/CodingAgent/Runtime/Controller/E2E/ControllerE2eTestCase.php
+
+5. Duplicate standardAiData/makeAppConfig/model service setup should be centralized in a TestAiConfigBuilder or fixture:
+- tests/CodingAgent/Config/ModelResolverTest.php
+- tests/CodingAgent/Config/SessionAwareModelResolverTest.php
+- tests/CodingAgent/Config/ModelSelectionServiceTest.php
+- tests/Tui/Picker/ModelPickerControllerTest.php
+- tests/Tui/Listener/ModelCommandHandlerTest.php
+- tests/AgentCore/Infrastructure/SymfonyAi/TraceReplayTest.php
+
+6. Duplicate MessageBus test doubles should be replaced by one shared TestMessageBus:
+- ExecutionWorkerTest CollectingMessageBus
+- ExecutionFailureDrillTest DrillCollectingMessageBus / FailingOnceMessageBus (keep failing variant if behavior differs)
+- StartRunHandlerTest StartRunRecordingBus
+- LlmStepResultHandlerTest LlmHandlerRecordingBus
+- ApplyCommandHandlerTest ApplyCommandRecordingBus
+- CommandMailboxPolicyTest MailboxRecordingMessageBus
+
+7. Duplicate TuiRuntimeContext construction should be replaced by TuiRuntimeContextBuilder:
+- tests/Tui/Listener/CompletionListenerTest.php
+- tests/Tui/Listener/PromptHistoryListenerTest.php
+- tests/Tui/Listener/CopyCommandRegistrarTest.php
+- tests/Tui/Listener/SessionCommandRegistrarTest.php
+- tests/Tui/Listener/CancelListenerTest.php
+
+8. Duplicate controller E2E event indexing/ack checks should move into ControllerE2eTestCase:
+- OutputCapReadFileControllerTest already has indexByType()/foundAck() style helpers.
+- ControllerSmokeTest, WriteFileToolE2eTest, ViewImageToolE2eTest still have inline event indexing/ack loops.
+
+9. Duplicate TUI E2E setup should become TuiE2eTestCase:
+- TuiAgentSmokeTest and TuiStartupSnapshotTest duplicate agentCommand(), createIsolatedProjectDir(), settings setup, snapshot/artifact flow.
+
+Recommended implementation sequence for maintainability:
+A. Fix gate blockers first: phar_smoke HOME isolation + ViewImageToolE2eTest robust assertion.
+B. Expand cleanup and artifact handling.
+C. Add shared helpers with no behavior change: TestMessageBus, TestLogger, ControllerE2eTestCase event helpers, directory isolation helpers.
+D. Refactor copy-paste sites gradually; do not combine with major test deletion in the same commit if it makes review noisy.
+E. Remove/collapse low-value tests after helper extraction so the suite gets smaller and clearer.
+
+Implementation warning: this is a maintenance task; avoid broad production API changes just for tests. Shared helpers must live under tests/. Production code changes are acceptable only for real bugs such as phar_smoke HOME isolation/castor cleanup behavior or replacing sleep with existing clock seams.
