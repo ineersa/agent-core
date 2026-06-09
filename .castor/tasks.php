@@ -346,6 +346,68 @@ function cache_clear(): void
 }
 
 /**
+ * Remove all temp/test artifacts.
+ *
+ * Cleans up var/tmp/ (test isolation dirs, PHAR builds, smoke dirs),
+ * var/cache/ (Symfony cache), var/logs/ (Monolog logs), and
+ * var/qa/ (QA report artifacts).  Safe to run anytime — only removes
+ * generated/transient files, never tracked sources or .gitkeep.
+ */
+#[AsTask(name: 'cleanup', description: 'Remove all temp/test artifacts (var/tmp/*, var/cache/, var/logs/, var/qa/)')]
+function cleanup(): void
+{
+    $root = realpath(__DIR__.'/..');
+    $tmpDir = $root.'/var/tmp';
+
+    $removed = 0;
+
+    // ── var/tmp subdirectories and glob patterns ──
+    $tmpPatterns = [
+        'tui-e2e-*',
+        'tui-failures',
+        'phar',
+        'phar-build',
+        'run-agent-test-*',
+        'smoke-*',
+        'test-*',
+    ];
+
+    foreach ($tmpPatterns as $pattern) {
+        $paths = glob($tmpDir.'/'.$pattern, \GLOB_ONLYDIR);
+        if (false === $paths) {
+            continue;
+        }
+        foreach ($paths as $path) {
+            rmtree($path);
+            ++$removed;
+            echo 'Removed '.str_replace($root.'/', '', $path)."\n";
+        }
+    }
+
+    // ── Top-level generated directories ──
+    $topDirs = [
+        'var/cache',
+        'var/logs',
+        'var/qa',
+    ];
+
+    foreach ($topDirs as $dir) {
+        $full = $root.'/'.$dir;
+        if (is_dir($full)) {
+            rmtree($full);
+            ++$removed;
+            echo 'Removed '.$dir."\n";
+        }
+    }
+
+    if (0 === $removed) {
+        echo 'cleanup: nothing to remove'."\n";
+    } else {
+        echo "\ncleanup: removed {$removed} items\n";
+    }
+}
+
+/**
  * Install dependencies.
  */
 #[AsTask(description: 'Install dependencies')]
@@ -374,6 +436,7 @@ function idea_run_configs(): void
         'cs-fix' => 'Run PHP CS Fixer and modify files in place.',
         'cs-check' => 'Run PHP CS Fixer dry-run check.',
         'cache:clear' => 'Remove generated QA caches and clear Symfony cache.',
+        'cleanup' => 'Remove all temp/test artifacts (var/tmp/*, var/cache/, var/logs/, var/qa/).',
         'log:tail' => 'Show recent log entries.',
         'log:search' => 'Search log entries.',
         'log:files' => 'List log files.',
@@ -1631,4 +1694,26 @@ function log_clear(string $olderThan = '7 days ago'): void
 {
     passthru(escapeshellcmd(\PHP_BINARY).' '.__DIR__.'/../bin/console log:clear --older-than='.escapeshellarg($olderThan), $exitCode);
     exit($exitCode);
+}
+
+/**
+ * Recursively remove a directory tree.  Used by the cleanup task
+ * to remove generated temp/test artifacts (not a Castor task itself).
+ */
+function rmtree(string $dir): void
+{
+    if (!is_dir($dir)) {
+        return;
+    }
+
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST,
+    );
+
+    foreach ($iterator as $entry) {
+        $entry->isDir() ? rmdir((string) $entry) : unlink((string) $entry);
+    }
+
+    rmdir($dir);
 }

@@ -113,6 +113,16 @@ Validation must exercise the real user flow: start agent, type prompt, submit, w
 
 If prerequisites are unavailable (tmux not installed, llama.cpp not reachable on port 9052), the task MUST remain IN-PROGRESS with exact environmental blocker output — never mark CODE-REVIEW or DONE without it.
 
+## TUI E2E snapshot artifacts
+
+After `castor test:tui`, passing test snapshots are kept at `var/tmp/tui-e2e-*/` for inspection. Each isolated test directory contains:
+- `.hatfield/tmp/tui/smoke/*.ansi` — ANSI terminal snapshots captured by `saveAnsiSnapshot()`
+- `.hatfield/sessions/<id>/events.jsonl` — canonical event log for resumed sessions
+
+After failures, diagnostics go to `var/tmp/tui-failures/` (ANSI snapshots + plain text dumps).
+
+Run `castor cleanup` to remove all temp/test artifacts.
+
 ## DB-touching tests
 
 If a test touches the database, it is an integration test, not a unit test. Use `KernelTestCase` + `static::getContainer()` for EntityManager/repository/services. Do not use standalone `ORMSetup`/`DriverManager`/`SchemaTool`/`EntityManager` factories in tests. Test DB is configured via `config/packages/test/doctrine.yaml`; DAMA/DoctrineTestBundle wraps each test in a transaction for rollback isolation. Schema is created once before the suite runs, not per test. Load test data via container EntityManager or fixtures, not manual in-memory SQLite factories.

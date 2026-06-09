@@ -26,6 +26,10 @@ use PHPUnit\Framework\TestCase;
  * On failure, dumps the ANSI snapshot and session files to stdout
  * for debugging.
  *
+ * On success, snapshots are kept in var/tmp/tui-e2e-XXXXXX/ for inspection
+ * (each test directory's .hatfield/tmp/tui/smoke/ contains .ansi files).
+ * Run `castor cleanup` to remove all temp/test artifacts.
+ *
  * @group tui-e2e
  */
 #[Group('tui-e2e')]
@@ -54,9 +58,9 @@ final class TuiAgentSmokeTest extends TestCase
         if (isset($this->tmux)) {
             $this->tmux->killAll();
         }
-        if (isset($this->testProjectDir)) {
-            $this->removeDir($this->testProjectDir);
-        }
+        // Snapshots are kept for inspection under var/tmp/tui-e2e-*/
+        // (each test's .hatfield/tmp/tui/smoke/ contains .ansi files).
+        // Run `castor cleanup` to remove all temp/test artifacts.
     }
 
     /**
@@ -595,26 +599,4 @@ final class TuiAgentSmokeTest extends TestCase
         }
     }
 
-    private function removeDir(string $dir): void
-    {
-        if (!\is_dir($dir)) {
-            return;
-        }
-
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-
-        foreach ($iterator as $file) {
-            if ($file->isDir()) {
-                \rmdir($file->getPathname());
-            } else {
-                @\chmod($file->getPathname(), 0o644);
-                \unlink($file->getPathname());
-            }
-        }
-
-        \rmdir($dir);
-    }
 }

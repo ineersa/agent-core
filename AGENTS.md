@@ -31,6 +31,16 @@ All E2E tests use `llama_cpp_test/test` (port 9052). Test groups: `#[Group('llm-
 
 **Load the `testing` skill** when: writing E2E tests, debugging controller/TUI test failures, or needing controller E2E internals, failure diagnostics, or the full testing matrix.
 
+### TUI E2E snapshot artifacts
+
+After `castor test:tui`, passing test snapshots are kept at `var/tmp/tui-e2e-*/` for inspection. Each isolated test directory contains:
+- `.hatfield/tmp/tui/smoke/*.ansi` — ANSI terminal snapshots captured by `saveAnsiSnapshot()`
+- `.hatfield/sessions/<id>/events.jsonl` — canonical event log for resumed sessions
+
+After failures, diagnostics go to `var/tmp/tui-failures/` (ANSI snapshots + plain text dumps).
+
+Run `castor cleanup` to remove all temp/test artifacts.
+
 ## Required runtime/TUI validation
 
 For changes touching TUI runtime, `AgentSessionClient`, Messenger, `TranscriptProjector`, `RuntimeEventPoller`, or LLM-visible flow: you MUST run `castor check`. Unit/container/mocked tests are not enough. If prerequisites (tmux, llama.cpp:9052) are unavailable, the task MUST stay IN-PROGRESS with the blocker — never mark CODE-REVIEW or DONE without validation.
