@@ -154,7 +154,7 @@ If prerequisites for `LLM_MODE=true castor check` are unavailable (tmux or llama
 Status: IN-PROGRESS
 Branch: task/editor-11-shell-prefix-commands
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-11-shell-prefix-commands
-Fork run: 5qvx1fcl3pvo
+Fork run: 1wfisqt6byxp
 PR URL:
 PR Status:
 Started: 2026-06-09T18:07:09.729Z
@@ -214,3 +214,7 @@ Completed:
 ## Task workflow update - 2026-06-09T20:45:57.623Z
 - Validation: move_task(to=CODE-REVIEW) full gate failed: only `castor test` failed in PharSmokeTest cache-isolation test due inherited real default_model `llama_cpp_test/test` unavailable under APP_ENV=prod; Gate passed: deptrac, test:controller, test:llm-real, test:tui, phpstan, cs-check
 - Summary: Attempted move to CODE-REVIEW after reviewer approval, but Castor quality gate failed only in full `castor test` at `tests/CodingAgent/Phar/PharSmokeTest.php::testPharCacheIsolationUsesContentHash`. All other gate steps passed: deptrac 0 violations, controller E2E, llm-real, tui-e2e (9 tests/23 assertions), phpstan, cs-check. Failure cause: PHAR smoke command `APP_ENV=prod php var/tmp/phar/hatfield.phar list` in temp cwd inherited real user config with `ai.default_model=llama_cpp_test/test`, which is unavailable in prod packaged providers. Task remains IN-PROGRESS until PHAR smoke isolation is fixed or otherwise resolved.
+
+## Task workflow update - 2026-06-09T20:46:51.060Z
+- Recorded fork run: 1wfisqt6byxp
+- Summary: CODE-REVIEW move was blocked by Castor gate failure isolated to `PharSmokeTest::testPharCacheIsolationUsesContentHash`: PHAR smoke subprocess inherited real user HOME config with unavailable `ai.default_model=llama_cpp_test/test` under APP_ENV=prod. Launched narrow fix fork 1wfisqt6byxp to isolate PHAR smoke HOME/config for subprocesses while preserving PHAR boot/cache-isolation test intent, then rerun Castor validation and retry CODE-REVIEW.
