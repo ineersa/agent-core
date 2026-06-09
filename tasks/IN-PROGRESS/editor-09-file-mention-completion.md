@@ -27,7 +27,7 @@ Parallelizable with: EDITOR-10.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/editor-09-file-mention-completion
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-09-file-mention-completion
 Fork run: swo88scbq93c
@@ -323,3 +323,8 @@ Castor Check Output SHA256: 4ec6e7fcfd79ec711b3350fbc7b19e01118a6b9a48e8c30baf65
 - PR already exists: https://github.com/ineersa/agent-core/pull/110
 - Validation: fork-reported: castor test --filter=FileMentionIndexBuilder OK (9 tests, 66 assertions); fork-reported: castor test --filter=FileMention OK (50 tests, 153 assertions); fork-reported: castor test --filter=Completion OK (130 tests, 277 assertions); fork-reported: castor test full OK (2221 tests, 6464 assertions); fork-reported: castor deptrac OK (0 violations); fork-reported: castor phpstan OK (0 errors); fork-reported: castor cs-check OK; orchestrator verification: worktree clean; no nullable/fallback logger/lock patterns in target classes; acquire(false) unchanged
 - Summary: Review-iterate cleanup for PR #110 complete. Latest HEAD 752425cf (`fix(editor-09): require non-null LoggerInterface and LockFactory`) addresses inline comments by making LoggerInterface and LockFactory true non-null autowired dependencies in file mention index services, removing production NullLogger/NullLock fallbacks, and preserving non-blocking `$lock->acquire(false)` so scheduler refreshes skip instead of waiting behind an in-progress build. User requested push.
+
+## Task workflow update - 2026-06-09T16:58:21.366Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Validation: PR/user discussion: scheduler consumer stdout is not controller JSONL directly, but output should still be logger-only because scheduler/default background command stdout is not intended user UI and can accumulate in supervisor process buffers
+- Summary: Review-iterate requested before final merge. User noticed CompletionFileIndexRefreshCommand writes scheduler/manual status to OutputInterface. Decision: scheduler-invoked background task should be silent on stdout and use structured logger instead; remove default output writes to avoid non-JSONL/protocol noise and un-drained scheduler consumer stdout growth. Preserve exit codes: build success SUCCESS, lock-held SUCCESS/no-op, failure FAILURE.
