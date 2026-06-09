@@ -248,3 +248,7 @@ Castor Check Output SHA256: f8c752cb15b10d9961afd4a1f617f94ed8ca964bf1c85cdd4097
 - Recorded fork run: y5yg55qkpx9f
 - Summary: Launched review-iteration fork to address PR #109 inline feedback. Scope: clarify that `InteractiveMode` switch loop blocks on Revolt/Tui::run() and does not spin CPU; add a minimal TUI session lifecycle event/hook seam for session start/resume/end/draft start, exposed through `TuiRuntimeContext` for current/future listener registrars, with focused tests/docs and Castor validation.
 - task-review-iterate: PR #109 inline comments read via gh; task moved back to IN-PROGRESS; implementation fork y5yg55qkpx9f launched for lifecycle event seam and switch-loop comment clarification.
+
+## Task workflow update - 2026-06-09T00:30:40.789Z
+- Summary: Additional user design constraint while review-fix fork is running: TUI session lifecycle events should be designed with future extension exposure in mind. SESSION-02 does not need to wire the full extension API yet, but event types/DTOs/dispatcher should be stable, semantic, privacy-safe, and easy to bridge later to extension hooks/listeners.
+- task-review-iterate: user clarified lifecycle events should later be exposed to extensions; will verify fork output supports that direction and request follow-up fixes if needed.
