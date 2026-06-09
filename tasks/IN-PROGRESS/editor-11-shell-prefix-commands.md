@@ -151,15 +151,23 @@ LLM_MODE=true castor check
 If prerequisites for `LLM_MODE=true castor check` are unavailable (tmux or llama.cpp test server on port 9052), the task must stay IN-PROGRESS with the blocker recorded.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/editor-11-shell-prefix-commands
+Worktree: /home/ineersa/projects/agent-core-worktrees/editor-11-shell-prefix-commands
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-09T18:07:09.729Z
 Completed:
 
 ## Work log
 - Created: 2026-05-18T00:16:30.829Z
 - Updated: 2026-06-09 — simplified per user decision to a single `!` shell execution mode with transcript output only and no model-context injection.
+
+## Task workflow update - 2026-06-09T18:07:09.729Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/editor-11-shell-prefix-commands.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/editor-11-shell-prefix-commands.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/editor-11-shell-prefix-commands.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/editor-11-shell-prefix-commands.
+- Summary: Starting implementation of simplified EDITOR-11 MVP: single `!<command>` shell execution mode, transcript output only, no model-context injection or LLM turn, `!!` out of scope.
