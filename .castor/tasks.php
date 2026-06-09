@@ -57,18 +57,23 @@ function check(): void
             'test:tui' => static fn () => test_tui(),
         ];
 
-        $useParallel = \PHP_SAPI === 'cli' && \function_exists('pcntl_fork');
+        $useParallel = \PHP_SAPI === 'cli' && function_exists('pcntl_fork');
 
         if ($useParallel) {
             $forked = [];
             foreach ($parallelSteps as $step => $runner) {
                 $pid = pcntl_fork();
                 if (-1 === $pid) {
-                    try { $runner(); } catch (Throwable $exception) {
+                    try {
+                        $runner();
+                    } catch (Throwable $exception) {
                         $failures[$step] = $exception->getMessage();
                     }
                 } elseif (0 === $pid) {
-                    try { $runner(); exit(0); } catch (Throwable $exception) {
+                    try {
+                        $runner();
+                        exit(0);
+                    } catch (Throwable $exception) {
                         fwrite(\STDERR, "{$step}: {$exception->getMessage()}\n");
                         exit(1);
                     }
@@ -85,7 +90,9 @@ function check(): void
             }
         } else {
             foreach ($parallelSteps as $step => $runner) {
-                try { $runner(); } catch (Throwable $exception) {
+                try {
+                    $runner();
+                } catch (Throwable $exception) {
                     $failures[$step] = $exception->getMessage();
                 }
             }
@@ -97,7 +104,9 @@ function check(): void
                 $failures[$step] = 'skipped (earlier failures)';
                 continue;
             }
-            try { $runner(); } catch (Throwable $exception) {
+            try {
+                $runner();
+            } catch (Throwable $exception) {
                 $failures[$step] = $exception->getMessage();
             }
         }
