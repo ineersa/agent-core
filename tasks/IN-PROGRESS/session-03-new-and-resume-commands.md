@@ -132,7 +132,7 @@ $registry->register(
 Status: IN-PROGRESS
 Branch: task/session-03-new-and-resume-commands
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-03-new-and-resume-commands
-Fork run: yzrnx0rkco9y
+Fork run: 4n4aicv5vea1
 PR URL: https://github.com/ineersa/agent-core/pull/111
 PR Status: open
 Started: 2026-06-09T01:24:48.923Z
@@ -297,3 +297,9 @@ Castor Check Output SHA256: 9f406f219ad3e4c0f5803e58d9aa5e5f48f6097c84fe8d0e98c9
 - Recorded fork run: yzrnx0rkco9y
 - Validation: Fork `yzrnx0rkco9y` reported PHAR smoke fixed and validations passing, but validation is insufficient because required new real TUI E2E feature tests were not added.
 - Summary: Fork `yzrnx0rkco9y` completed at reported HEAD `a1305d76`, but it does NOT satisfy the user's explicit hard acceptance requirement. It fixed a PHAR smoke isolation issue in `tests/CodingAgent/Phar/PharSmokeTest.php` and classified the TUI timeout as flake, but it did not add real LLM + TmuxHarness E2E tests for the actual failing features: `/new` → type `Hello` → visible LLM response, and `/resume` via picker/select existing session → type `Hello` → visible LLM response. It also reported raw `vendor/bin/*` validation in the worktree, contrary to current AGENTS.md Castor rule for QA (even if fork claimed Castor unavailable). Therefore this fork result is incomplete for SESSION-03 review iteration and must not be accepted as ready for CODE-REVIEW until the required real feature tests exist and pass via Castor (`castor test:tui` and full gate).
+
+## Task workflow update - 2026-06-09T19:42:05.068Z
+- Recorded fork run: 4n4aicv5vea1
+- Validation: Fork validation: `castor test:tui` PASS — 7 tests (2 new), 26 assertions.; Fork validation: `castor test` PASS — 2226 tests, 6518 assertions.; Fork validation: `castor deptrac` PASS — 0 violations.; Fork validation: `castor phpstan` PASS — 0 errors.; Fork validation: `castor cs-check` PASS — clean.
+- Summary: Fork `4n4aicv5vea1` completed at HEAD `ec82bbbf` and finally satisfies the user's hard TUI E2E proof requirement. It added two real LLM + `TmuxHarness` TUI E2E tests in `tests/Tui/E2E/TuiAgentSmokeTest.php` (no production changes): `testNewSessionCommandAndGetAssistantResponse()` launches real TUI with an initial completed prompt, runs `/new`, submits a second prompt, waits for visible user block and real assistant response; `testResumeSessionCommandAndGetAssistantResponse()` launches real TUI with an initial completed prompt, runs `/resume` with no args, selects the existing session from the picker, verifies replayed transcript, submits a follow-up prompt, and waits for a second real assistant response. These tests exercise the real `llama_cpp_test/test` endpoint, real tmux/TUI, session switch loop, lazy draft promotion, resume picker, follow_up path, RuntimeEvent pipeline, and visible transcript output. This replaces prior insufficient custom smoke reports. Prior fixes remain: model AppConfig sync, draft Ctrl+P carry, terminal cancel skip/test, process restart/readiness, PHAR HOME isolation.
+- task-review-iterate: accepted fork 4n4aicv5vea1 as satisfying hard E2E proof requirement; no reviewer per user instruction; proceeding to verify and move back to CODE-REVIEW.
