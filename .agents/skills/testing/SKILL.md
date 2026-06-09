@@ -11,10 +11,10 @@ description: "E2E and validation testing strategy. Load this skill when: writing
 castor check                # Full validation: deptrac → phpunit → controller E2E → real LLM E2E → TUI E2E → phpstan → cs-check
 castor test                 # unit/integration only; excludes tui-e2e and llm-real
 castor test --filter=X      # filter tests by name
-castor test:tui             # tmux TUI e2e snapshots
-castor test:tui-update      # update TUI snapshot baselines
-castor test:llm-real        # real llama.cpp smoke (ControllerSmokeTest, LlamaCppSmokeTest)
-castor test:controller      # controller E2E smoke test (spawns --controller)
+castor test:tui [--filter=X]    # tmux TUI e2e snapshots (filter optional)
+castor test:tui-update [--filter=X]  # update TUI snapshot baselines (filter optional)
+castor test:llm-real [--filter=X]   # real llama.cpp smoke (filter optional)
+castor test:controller [--filter=X] # controller E2E smoke test (filter optional, defaults to ControllerSmokeTest)
 castor deptrac              # architecture boundary validation
 castor phpstan [path]       # static analysis (optionally scoped to a path)
 castor phpstan:baseline     # regenerate phpstan baseline
