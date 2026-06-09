@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Tests\Support\AgentTestExecutable;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Process;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * Built PHAR smoke test.
@@ -159,9 +160,50 @@ final class PharSmokeTest extends TestCase
         $tmpCwd = sys_get_temp_dir().'/phar-cache-hash-test-'.bin2hex(random_bytes(8));
         @mkdir($tmpCwd, 0755, true);
 
+        // Isolate $HOME so the PHAR does not read the real user's home
+        // settings (which may reference a default model whose provider
+        // definition lives only in the project .hatfield/settings.yaml, not
+        // in the home file).  Without an isolated home, the PHAR boots in
+        // the temp CWD with only the home settings layer and fails loudly
+        // in AppConfig::validateDefaultModel().
+        $homeDir = $tmpCwd.'/home';
+        @mkdir($homeDir.'/.hatfield', 0755, true);
+        \file_put_contents($homeDir.'/.hatfield/settings.yaml', \Symfony\Component\Yaml\Yaml::dump([
+            'ai' => [
+                'default_model' => 'llama_cpp_test/test',
+                'providers' => [
+                    'llama_cpp_test' => [
+                        'type' => 'generic',
+                        'enabled' => true,
+                        'base_url' => 'http://192.168.2.38:9052/v1',
+                        'api' => 'openai-completions',
+                        'api_key' => 'dummy',
+                        'completions_path' => '/chat/completions',
+                        'supports_completions' => true,
+                        'supports_embeddings' => false,
+                        'models' => [
+                            'test' => [
+                                'name' => 'test',
+                                'context_window' => 32768,
+                                'max_tokens' => 32768,
+                                'input' => ['text', 'image'],
+                                'tool_calling' => true,
+                                'cost' => ['input' => 0, 'output' => 0],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ], 6, 4));
+
         try {
             $process = Process::fromShellCommandline(
-                \sprintf('APP_ENV=prod %s %s list', escapeshellarg($php), escapeshellarg($pharPath)),
+                \sprintf(
+                    'APP_ENV=prod HOME=%s %s %s list',
+                    \escapeshellarg($homeDir),
+                    \escapeshellarg($php),
+                    \escapeshellarg($pharPath),
+                ),
                 cwd: $tmpCwd,
             );
             $process->mustRun();
