@@ -259,6 +259,12 @@ Session switch lifecycle events (`/new`, `/resume`) use the same lazy draft
 path via `TuiSessionSwitchService::requestNewDraft()` — the draft is promoted
 on first submitted message regardless of how the draft was initiated.
 
+`/resume` switches to an existing session directly (with a session ID argument)
+or opens an interactive picker (no argument), relying on the canonical
+`events.jsonl` replay path from RTVS-08 to rebuild the transcript on resume.
+No orphan rows or session directories are created when draft sessions are
+discarded without submitting a message.
+
 ## Sessions base path resolution
 
 All stores must agree on the sessions base directory. This is resolved in
