@@ -132,7 +132,7 @@ $registry->register(
 Status: IN-PROGRESS
 Branch: task/session-03-new-and-resume-commands
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-03-new-and-resume-commands
-Fork run: yh7poaiaod4u
+Fork run: z7poew0kw610
 PR URL: https://github.com/ineersa/agent-core/pull/111
 PR Status: open
 Started: 2026-06-09T01:24:48.923Z
@@ -201,3 +201,9 @@ Castor Check Output SHA256: 507c25ed333065ce5e4d285e4a3ed0e961e812feefd1fd2aa0cc
 - Recorded fork run: yh7poaiaod4u
 - Summary: Launched review-iteration fork `yh7poaiaod4u` to address user/manual TUI feedback after PR #111: (1) change session picker rows to full-width single-column labels like `#id - name` with no `description` key because Symfony `SelectListWidget` clamps label column when description is present, (2) fix `/new` and `/resume` session switch rendering so old TUI content is cleared/re-rendered instead of leaving stacked screens, (3) align session picker selected-row styling with common completion/picker/theme accent behavior, with focused tests and `castor test:tui` validation required.
 - task-review-iterate: implementation fork yh7poaiaod4u launched in worktree `/home/ineersa/projects/agent-core-worktrees/session-03-new-and-resume-commands` for SelectListWidget single-column rows, full-screen switch rerender, and picker styling polish.
+
+## Task workflow update - 2026-06-09T15:48:15.927Z
+- Recorded fork run: z7poew0kw610
+- Validation: Partial fork yh7poaiaod4u validation before abort: `castor test` PASS — tests=2213, assertions=6466, errors=0, failures=0, skipped=0.; Partial fork yh7poaiaod4u validation before abort: `castor deptrac` PASS — violations=0, errors=0, uncovered=759, allowed=1016.; Partial fork yh7poaiaod4u validation before abort: `castor phpstan` PASS — errors=0, file_errors=0.; Partial fork yh7poaiaod4u validation before abort: `castor cs-check` FAIL — files_fixed=1; `castor test:tui` not reached.
+- Summary: Prior review-iteration fork `yh7poaiaod4u` died mid-run and left uncommitted changes in `InteractiveMode.php`, `SessionPickerController.php`, and `SessionPickerControllerTest.php`. Main agent inspected the dirty diff and began validation: `castor test` passed (2213 tests, 6466 assertions), `castor deptrac` passed (0 violations), `castor phpstan` passed, but `castor cs-check` failed with files_fixed=1 before `castor test:tui` could run. Per user direction, launched replacement fork `z7poew0kw610` with explicit first step to restore/discard the partial uncommitted changes back to clean HEAD `5ea4f71c`, then re-implement the SelectListWidget single-column rows, full-screen switch clear/re-render, and picker styling polish cleanly, with full validation including required `castor test:tui`.
+- task-review-iterate: partial fork yh7poaiaod4u was abandoned; replacement fork z7poew0kw610 launched to restore worktree and re-implement cleanly.
