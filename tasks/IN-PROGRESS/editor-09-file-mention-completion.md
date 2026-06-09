@@ -30,7 +30,7 @@ Parallelizable with: EDITOR-10.
 Status: IN-PROGRESS
 Branch: task/editor-09-file-mention-completion
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-09-file-mention-completion
-Fork run: qdh0mthgma38
+Fork run: 23kakivsyk3e
 PR URL: https://github.com/ineersa/agent-core/pull/110
 PR Status: open
 Started: 2026-06-08T23:47:05.979Z
@@ -269,3 +269,7 @@ Castor Check Output SHA256: 15eee4021a8efac1349c9f570c4a9e6217e2cc56cc309f3aeeed
 - Recorded fork run: qdh0mthgma38
 - Validation: orchestrator verification: git status --short clean; HEAD b9b4ea9c; orchestrator verification: git show --stat HEAD = 6 files changed, 92 insertions, 31 deletions; artifact caveat: latest run-agent-test snapshots inspected did not show @ completion; they show Working state after `Say exactly: hello`; orchestrator rerun: `castor run:agent-test` exited 1 with TUI stuck in Working state, so run-agent-test prompt flow is not sufficient evidence for @ completion in current environment
 - Summary: Corrective fork qdh0mthgma38 completed at commit b9b4ea9c (`fix(editor-09): add startup index build and clean up scheduler transport`). Orchestrator verification: worktree clean; last commit changed 6 files (removed explicit scheduler messenger transport config from normal/test messenger config, added FileMentionIndexStartupListener, simplified CompletionFileIndexRefreshCommand, service/deptrac updates). However the fork handoff did not include the mandatory concrete tmux commands/snapshot snippet proving `@` completion is visible. Local artifact inspection found the latest `var/tmp/run-agent-test-*/.hatfield/tmp/tui/latest.txt` snapshot still shows the prompt `Say exactly: hello` stuck in `◐ Working...`, not an `@` completion menu. An orchestrator rerun of `castor run:agent-test` also failed while the LLM was still working, so this fork result is insufficient as proof. No reviewer launched; task remains IN-PROGRESS for another targeted verification/fix fork.
+
+## Task workflow update - 2026-06-09T02:20:37.925Z
+- Recorded fork run: 23kakivsyk3e
+- Summary: Launched targeted verification/fix fork 23kakivsyk3e because qdh0mthgma38 did not provide concrete required tmux evidence and available run-agent-test snapshots still showed Working state. New fork scope: use Castor for build/QA; if `castor run:agent-test` blocks on LLM prompt, manually launch the PHAR in an isolated tmux session without `--prompt`, send literal `@`, capture and save a snapshot under `var/tmp/editor09-at-completion-after.txt` (or similar), and assert visible file mention completion menu/items. If current HEAD b9b4ea9c does not work, diagnose/fix the actual TUI path while preserving scheduler/lock constraints. No reviewer launch; no task file edits.
