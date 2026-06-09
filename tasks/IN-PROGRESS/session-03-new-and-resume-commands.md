@@ -132,7 +132,7 @@ $registry->register(
 Status: IN-PROGRESS
 Branch: task/session-03-new-and-resume-commands
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-03-new-and-resume-commands
-Fork run: p8kx4mfhqmug
+Fork run: r86j2r41s76w
 PR URL: https://github.com/ineersa/agent-core/pull/111
 PR Status: open
 Started: 2026-06-09T01:24:48.923Z
@@ -226,3 +226,9 @@ Castor Check Output SHA256: 507c25ed333065ce5e4d285e4a3ed0e961e812feefd1fd2aa0cc
 - Validation: Reviewer verdict at HEAD `67c12e21`: REQUEST CHANGES.; Reviewer found no critical/security issues; root commands and lifecycle mostly sound except stale autoResumed bug.
 - Summary: Final reviewer returned REQUEST CHANGES at HEAD `67c12e21`. Remaining bug: `JsonlProcessAgentSessionClient::resume()` does not reset stale `$autoResumed`; if `events()`/`send()` crash-recovers and sets `autoResumed=true` for one session, then user `/resume`s another session, the session-change restart path spawns a fresh process but `resume()` returns early because the stale flag is still true, skipping the resume command for the new session. Required fix: set `$this->autoResumed = false` at the top of `resume()` before `ensureProcessRunning()`, mirroring `start()`, with explanatory comment. Sensible doc cleanup: docs/tui-architecture.md session picker text still says muted `#sessionId` suffix, but implementation now uses full-width `#id — displayTitle` labels with no description key and accent selected row.
 - task-review-iterate: launching narrow fork to fix stale autoResumed flag in resume() and update stale session picker docs.
+
+## Task workflow update - 2026-06-09T17:09:46.470Z
+- Recorded fork run: r86j2r41s76w
+- Validation: Final reviewer verdict at HEAD `c0ece70b`: APPROVED — no actionable issues remain.; Local validation: `castor test` PASS — tests=2214, assertions=6469, errors=0, failures=0, skipped=0.; Local validation: `castor deptrac` PASS — violations=0, errors=0, uncovered=759, allowed=1015.; Local validation: `castor phpstan` PASS — errors=0, file_errors=0.; Local validation: `castor cs-check` PASS — files_fixed=0.; Local validation: `castor test:tui` PASS — tests=5, assertions=18, errors=0, failures=0, skipped=0.
+- Summary: SESSION-03 review iteration ready for CODE-REVIEW again at HEAD `c0ece70b`. Final reviewer returned APPROVED with no actionable issues after stale `$autoResumed` reset and docs update. Review-iteration commits since PR #111 initial approval: `c9d3f5de` fixed session picker full-width rendering/no description key, selected-row accent styling, and terminal clear on session switch; `2b488a84` fixed `/new` runtime startup by restarting process transport on session changes and nullsafe draft promotion; `67c12e21` hardened process resume by waiting for `runtime.ready` after session-switch process restarts and avoiding first-call no-op stop; `c0ece70b` reset stale `autoResumed` at top of `resume()` and updated picker docs. Cumulative diff vs origin/main verified: 15 files changed, +1173/-3.
+- task-review-iterate: final reviewer approved HEAD c0ece70b; local validation including TUI E2E passed; proceeding to move_task CODE-REVIEW for full Castor gate and PR update.
