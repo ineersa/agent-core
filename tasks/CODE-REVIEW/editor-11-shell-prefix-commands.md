@@ -151,12 +151,12 @@ LLM_MODE=true castor check
 If prerequisites for `LLM_MODE=true castor check` are unavailable (tmux or llama.cpp test server on port 9052), the task must stay IN-PROGRESS with the blocker recorded.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/editor-11-shell-prefix-commands
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-11-shell-prefix-commands
 Fork run: 1wfisqt6byxp
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/112
+PR Status: open
 Started: 2026-06-09T18:07:09.729Z
 Completed:
 
@@ -223,3 +223,18 @@ Completed:
 - Recorded fork run: 1wfisqt6byxp
 - Validation: Fork 1wfisqt6byxp validation: `castor test --filter=PharSmokeTest` passed (4 tests, 12 assertions); Fork 1wfisqt6byxp validation: focused shell/editor tests passed (79 tests, 171 assertions); Fork 1wfisqt6byxp validation: `castor test:tui` passed (9 tests, 23 assertions); Fork 1wfisqt6byxp validation: full `castor test` passed (2265 tests, 6598 assertions, 0 errors, 0 failures); Fork 1wfisqt6byxp validation: `castor deptrac` passed (0 violations), `castor phpstan` passed (0 errors), `castor cs-check` clean; Orchestrator verified integration checkout clean/no rebase state and task worktree clean before retrying CODE-REVIEW
 - Summary: PHAR smoke gate blocker fixed at commit 8045d904 (`fix(phar): isolate HOME in smoke tests to prevent user config leakage`). Change is test-only: `tests/CodingAgent/Phar/PharSmokeTest.php` now creates isolated empty HOME directories for PHAR subprocess calls and prefixes shell/Process commands with HOME=<isolated>, preventing real `~/.hatfield/settings.yaml` from leaking into APP_ENV=prod PHAR boot. This preserves PHAR boot/list/help/cache-isolation coverage while avoiding user-local `ai.default_model=llama_cpp_test/test` failures in packaged prod providers. Worktree verified clean at 8045d904; integration checkout verified clean at 49027e30 after transient rebase/conflict cleanup.
+Castor Check Status: passed
+Castor Check Commit: 8045d90486fa9c712dabd70f6a90f51825f565e4
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 900s
+Castor Check Completed: 2026-06-09T21:35:24.572Z
+Castor Check Output SHA256: 2be48eea98d9a4f6d9c03257010373b6e2024b64680d81e7c8d6fc7277c48cf9
+
+## Task workflow update - 2026-06-09T21:35:28.143Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: 8045d90486fa.
+- Pushed task/editor-11-shell-prefix-commands to origin.
+- branch 'task/editor-11-shell-prefix-commands' set up to track 'origin/task/editor-11-shell-prefix-commands'.
+- Created PR: https://github.com/ineersa/agent-core/pull/112
+- Validation: Reviewer: APPROVE WITH SUGGESTIONS, no blockers; castor test:tui: passed (9 tests, 23 assertions); castor test --filter='Shell|PromptHistory|SubmissionRouter|CommandParser|ShellCommandHandler': passed (79 tests, 171 assertions); castor test --filter=PharSmokeTest: passed (4 tests, 12 assertions); castor test: passed (2265 tests, 6598 assertions, 0 errors, 0 failures); castor deptrac: passed (0 violations); castor phpstan: passed (0 errors); castor cs-check: clean
+- Summary: Moving EDITOR-11 to CODE-REVIEW after reviewer APPROVE WITH SUGGESTIONS and passing validation. Implementation supports single `!<command>` shell prefix, rejects `!!`, routes through runtime/shared BashTool path, projects real shell output, avoids model-context injection/LLM turn, and includes real TUI E2E coverage for first-input `!ls -1`, second-turn `!ls -1`, prompt history recall, and `!!` rejection. Additional PHAR smoke isolation fix at 8045d904 prevents user HOME config from leaking into PHAR subprocess tests; full `castor test` passed after this fix.
