@@ -27,7 +27,7 @@ Parallelizable with: EDITOR-10.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/editor-09-file-mention-completion
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-09-file-mention-completion
 Fork run: cci724tc31fm
@@ -295,3 +295,8 @@ Castor Check Output SHA256: 1b1c06f5e40ab95a95ca2112e4bcf86577ad98ddc83947ba9000
 - PR already exists: https://github.com/ineersa/agent-core/pull/110
 - Validation: user smoke test: @ completion works, fast, path column good, whitespace closes completion; reviewer: APPROVE WITH SUGGESTIONS, no blockers; focused validation reported green: FileMention, Completion, PromptHistory, full castor test, deptrac, phpstan, cs-check
 - Summary: User smoke-tested latest EDITOR-09 changes and requested pushing changes for manual PR review. Latest HEAD a8ebb696 (`fix(editor-09): close @ completion on whitespace and widen path column`) keeps @ completion working, makes the file/path column wider, and closes unquoted @ completion after whitespace. Reviewer verdict was APPROVE WITH SUGGESTIONS with no blockers. Moving back to CODE-REVIEW to run the full Castor quality gate, push the branch, and update existing PR #110.
+
+## Task workflow update - 2026-06-09T16:06:40.169Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Validation: PR comments read via gh api; Decision: keep `$lock->acquire(false)` non-blocking; it skips refresh when another index build is running instead of blocking scheduled task/worker
+- Summary: Review-iterate requested after PR #110 inline comments. User confirmed `acquire(false)` should remain because non-blocking lock acquisition avoids scheduler pileups. Remaining comments to address: remove production NullLogger/logger-null fallbacks and require LoggerInterface via DI; remove optional LockFactory/NullLock fallback and require LockFactory via DI; update tests and constructor docs accordingly; clarify non-blocking acquire(false) if useful.
