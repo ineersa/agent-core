@@ -42,16 +42,30 @@ final class CompletionFileIndexRefreshCommand extends Command
         parent::__construct();
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output): int
+    protected function execute(InputInterface $input, OutputInterface $_output): int
     {
         try {
             $count = $this->builder->build();
-            $output->writeln("File mention index refreshed: {$count} entries written.");
+
+            $this->logger->debug(
+                'File mention index refreshed: {entry_count} entries written.',
+                [
+                    'component' => 'file_mention_index',
+                    'event_type' => 'file_mention_index.refresh_completed',
+                    'entry_count' => $count,
+                ],
+            );
 
             return Command::SUCCESS;
         } catch (FileMentionIndexLockHeldException $e) {
             // Lock held by another instance — no-op, not an error.
-            $output->writeln("File mention index refresh skipped: {$e->getMessage()}");
+            $this->logger->debug(
+                'File mention index: refresh skipped, lock held by concurrent builder.',
+                [
+                    'component' => 'file_mention_index',
+                    'event_type' => 'file_mention_index.refresh_lock_held',
+                ],
+            );
 
             return Command::SUCCESS;
         } catch (\RuntimeException $e) {
@@ -64,8 +78,6 @@ final class CompletionFileIndexRefreshCommand extends Command
                     'message' => $e->getMessage(),
                 ],
             );
-
-            $output->writeln("Error: file mention index refresh failed: {$e->getMessage()}");
 
             return Command::FAILURE;
         }
