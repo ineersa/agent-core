@@ -118,7 +118,22 @@ final readonly class InteractiveMode
         // iteration (no prior session).
         $previousSessionIdForLifecycle = null;
 
+        $needsTerminalClear = false;
+
         while (true) {
+            // ── Clear terminal when switching sessions ──
+            // Each loop iteration creates a fresh Tui whose ScreenWriter
+            // starts with empty previousLines.  On the first render
+            // ScreenWriter::writeInternal() calls fullRender() with
+            // $clear=false, appending output from the current cursor
+            // position instead of clearing the old TUI's rendered content.
+            // We must explicitly clear the screen before the new TUI
+            // paints so the old session's output does not remain visible.
+            if ($needsTerminalClear) {
+                fwrite(\STDOUT, "\x1b[2J\x1b[3J\x1b[H");
+                fflush(\STDOUT);
+            }
+
             // ── Initialize session state ──
             if ($isDraft) {
                 $state = $this->sessionInit->initializeDraft($targetRequest);
@@ -199,6 +214,7 @@ final readonly class InteractiveMode
 
             // ── After event loop exits: check for pending switch ──
             if (null !== $switchTarget) {
+                $needsTerminalClear = true;
                 // Record the session id we're leaving so the next
                 // iteration's lifecycle start event can reference
                 // it as previousSessionId.

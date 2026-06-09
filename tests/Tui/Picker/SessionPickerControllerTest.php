@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Picker\SessionPickerController;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Theme\DefaultTheme;
+use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
@@ -60,11 +61,13 @@ final class SessionPickerControllerTest extends TestCase
 
         self::assertCount(2, $items);
         self::assertSame('1', $items[0]['value']);
-        self::assertStringContainsString('My Coding Session', $items[0]['label']);
-        self::assertStringContainsString('#1', $items[0]['label']);
+        self::assertSame('#1 — My Coding Session', $items[0]['label']);
         self::assertSame('42', $items[1]['value']);
-        self::assertStringContainsString('Fix Auth Bug', $items[1]['label']);
-        self::assertStringContainsString('#42', $items[1]['label']);
+        self::assertSame('#42 — Fix Auth Bug', $items[1]['label']);
+
+        // No description key — full-width single-column rendering
+        self::assertArrayNotHasKey('description', $items[0]);
+        self::assertArrayNotHasKey('description', $items[1]);
     }
 
     #[Test]
@@ -73,6 +76,27 @@ final class SessionPickerControllerTest extends TestCase
         $items = SessionPickerController::buildItemsStatic([], $this->createTheme());
 
         self::assertSame([], $items);
+    }
+
+    #[Test]
+    public function testBuildItemsStaticAppliesAccentToSelectedIndex(): void
+    {
+        $sessions = [
+            ['sessionId' => '1', 'name' => 'Session A', 'displayTitle' => 'Session A'],
+            ['sessionId' => '2', 'name' => 'Session B', 'displayTitle' => 'Session B'],
+        ];
+
+        // Provide a real accent colour so ThemeColorEnum::Accent produces ANSI
+        $palette = new ThemePalette('test', [ThemeColorEnum::Accent->value => '#FF00FF']);
+        $theme = new DefaultTheme($palette);
+        $accented = SessionPickerController::buildItemsStatic($sessions, $theme, selectedIndex: 0);
+
+        self::assertStringContainsString('#1 — Session A', $accented[0]['label']);
+        self::assertStringContainsString('#2 — Session B', $accented[1]['label']);
+        // The accent-coloured label contains ANSI escape codes;
+        // the non-selected label does not.
+        self::assertStringContainsString("\x1b", $accented[0]['label']);
+        self::assertStringNotContainsString("\x1b", $accented[1]['label']);
     }
 
     #[Test]

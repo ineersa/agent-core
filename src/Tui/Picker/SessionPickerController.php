@@ -8,9 +8,11 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
+use Symfony\Component\Tui\Event\SelectionChangeEvent;
 use Symfony\Component\Tui\Input\Key;
 use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Tui;
@@ -110,12 +112,46 @@ final class SessionPickerController
         ]);
 
         // ── Build items ──
-        $items = self::buildItemsStatic($sessions, $screen->theme());
+        // Accent-colour the initially selected row (index 0) so the
+        // picker is visually consistent with CompletionMenu and
+        // ModelPickerController, which both use ThemeColorEnum::Accent
+        // for the highlighted entry.  SelectListWidget's native
+        // selected style (bold) layers on top.
+        $theme = $screen->theme();
+        $items = self::buildItemsStatic($sessions, $theme, selectedIndex: 0);
 
         $listWidget = new SelectListWidget(
             items: $items,
             maxVisible: 10,
             keybindings: $kb,
+        );
+
+        // ── Arrows → rebuild items so the newly selected row gets accent colour ──
+        // onSelectionChange fires only from cursor movement
+        // (moveCursorUp/Down etc.), not from setItems() or
+        // setSelectedIndex(), so there is no re-entrant loop.
+        $listWidget->onSelectionChange(
+            static function (SelectionChangeEvent $event) use ($listWidget, $sessions, $theme): void {
+                $selectedValue = $event->getItem()['value'];
+                $newItems = [];
+                $newIndex = 0;
+
+                foreach ($sessions as $i => $s) {
+                    $displayTitle = $s['displayTitle'] ?? $s['name'] ?? 'Session';
+                    $sessionId = $s['sessionId'];
+                    $label = \sprintf('#%s — %s', $sessionId, $displayTitle);
+
+                    if ($sessionId === $selectedValue) {
+                        $label = $theme->color(ThemeColorEnum::Accent, $label);
+                        $newIndex = \count($newItems);
+                    }
+
+                    $newItems[] = ['value' => $sessionId, 'label' => $label];
+                }
+
+                $listWidget->setItems($newItems);
+                $listWidget->setSelectedIndex($newIndex);
+            },
         );
 
         // ── Enter → resume selected session, close ──
@@ -150,27 +186,32 @@ final class SessionPickerController
     /**
      * Build picker items from session list rows (static, testable).
      *
-     * Each item has the session ID as value and a label showing
-     * the display title with a muted session-ID suffix so users
-     * can distinguish sessions with similar names.
+     * Each item has the session ID as value and a single-column label
+     * of the form "#<id> — <displayTitle>".  No description key is
+     * included so SelectListWidget renders items at full width instead
+     * of clamping the label column to min(30, maxLabelWidth).
+     *
+     * When {@see $selectedIndex} is provided, the matching row label is
+     * wrapped in the accent theme colour so the highlighted entry is
+     * visually consistent with CompletionMenu and ModelPickerController.
      *
      * @param list<array{sessionId: string, displayTitle: string, name: string, ...}> $sessions
      *
      * @return list<array{value: string, label: string}>
      */
-    public static function buildItemsStatic(array $sessions, TuiTheme $theme): array
+    public static function buildItemsStatic(array $sessions, TuiTheme $theme, int $selectedIndex = -1): array
     {
         $items = [];
 
-        foreach ($sessions as $s) {
+        foreach ($sessions as $i => $s) {
             $displayTitle = $s['displayTitle'] ?? $s['name'] ?? 'Session';
             $sessionId = $s['sessionId'];
 
-            $label = \sprintf(
-                '  %s  %s',
-                $displayTitle,
-                $theme->muted(\sprintf('#%s', $sessionId)),
-            );
+            $label = \sprintf('#%s — %s', $sessionId, $displayTitle);
+
+            if ($i === $selectedIndex) {
+                $label = $theme->color(ThemeColorEnum::Accent, $label);
+            }
 
             $items[] = [
                 'value' => $sessionId,
