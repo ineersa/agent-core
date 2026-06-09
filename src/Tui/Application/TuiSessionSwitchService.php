@@ -147,15 +147,28 @@ class TuiSessionSwitchService implements TuiSessionSwitchServiceInterface
     // ── Private helpers ──
 
     /**
-     * Cancel the currently active run, if any.
+     * Cancel the currently active run, if any and if active.
      *
-     * Best-effort: if the run is already terminal or cancel fails,
-     * a structured diagnostic is logged and the session switch proceeds.
-     * The switch must never be blocked by a failed cancellation.
+     * Only cancels runs that are actively processing (Starting, Running,
+     * WaitingHuman, Cancelling).  Terminal runs (Completed, Failed,
+     * Cancelled) are left untouched — sending a cancel to an already-
+     * terminal run would transition it to Cancelling and poison the run
+     * state, blocking all future resume / follow_up / steer commands.
+     *
+     * Best-effort: if cancel fails, a structured diagnostic is logged
+     * and the session switch proceeds — the switch must never be
+     * blocked by a failed cancellation.
      */
     private function cancelCurrentRun(): void
     {
         if (null === $this->state?->handle || null === $this->client) {
+            return;
+        }
+
+        // Never cancel terminal runs — they are already done and the
+        // cancel would poison them with a Cancelling status, blocking
+        // all future commands (continue, follow_up, steer).
+        if ($this->state->activity->isTerminal()) {
             return;
         }
 

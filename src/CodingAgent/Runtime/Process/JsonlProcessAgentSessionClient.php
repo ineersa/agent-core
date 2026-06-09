@@ -309,11 +309,17 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         // The `null !== $processSessionId` guard avoids a harmless but
         // wasteful stopProcess() / SIGTERM wait on the very first start()
         // call, when processSessionId is still null.
-        if (null !== $this->sessionId
+        // Session-change guard: the old controller process uses stale
+        // queue DSNs from the previous session.  Since cancelCurrentRun()
+        // already dispatched the cancel command through the old controller
+        // (or skipped it for terminal runs), use a short SIGTERM grace
+        // period — the old run state is preserved in the DB regardless.
+        $sessionChanged = null !== $this->sessionId
             && null !== $this->processSessionId
-            && $this->sessionId !== $this->processSessionId
-        ) {
-            $this->stopProcess();
+            && $this->sessionId !== $this->processSessionId;
+
+        if ($sessionChanged) {
+            $this->stopProcess(0.5);
         }
 
         if (null !== $this->process && $this->isProcessRunning()) {
@@ -322,7 +328,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
         $hadRunningProcess = null !== $this->process;
 
-        if ($hadRunningProcess) {
+        if ($hadRunningProcess && !$sessionChanged) {
             $this->enforceRestartRateLimit();
         }
 
@@ -577,7 +583,14 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         );
     }
 
-    private function stopProcess(): void
+    /**
+     * @param float $sigtermGraceSeconds How long to wait for SIGTERM before SIGKILL.
+     *                                   Default 3.0s for crash recovery (allows the controller
+     *                                   to clean up consumers).  Use 0.5s for intentional
+     *                                   session-switch stops where the cancel has already been
+     *                                   dispatched and the old run state is preserved in the DB.
+     */
+    private function stopProcess(float $sigtermGraceSeconds = 3.0): void
     {
         foreach ($this->pipes as $pipe) {
             if (\is_resource($pipe)) {
@@ -592,7 +605,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
         if ($this->isProcessRunning()) {
             @proc_terminate($this->process, \SIGTERM);
-            $deadline = microtime(true) + 3.0;
+            $deadline = microtime(true) + $sigtermGraceSeconds;
             while ($this->isProcessRunning() && microtime(true) < $deadline) {
                 usleep(50_000);
             }
