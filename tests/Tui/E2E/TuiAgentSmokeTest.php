@@ -441,11 +441,16 @@ final class TuiAgentSmokeTest extends TestCase
      * 2) Type /new and press Enter — triggers session switch to
      *    a lazy draft via TuiSessionSwitchService.
      * 3) Type a deterministic prompt and submit.
-     * 4) Assert the user block (❯) appears.
-     * 5) Wait for a real assistant response block (◇) — this proves
-     *    draft promotion, runtime startup, and the full Messenger →
-     *    EventStore → Mapper → Projector → TUI pipeline work after a
-     *    /new session switch.
+     * 4) Assert the user block (❯) appears, count increased.
+     * 5) Wait for a NEW real assistant response block (◇ count increased)
+     *    — this proves draft promotion, runtime startup, and the full
+     *    Messenger → EventStore → Mapper → Projector → TUI pipeline work
+     *    after a /new session switch.
+     *
+     * Hardened assertions (no ✕ fallback, no prior-history cheat):
+     * - Record ❯/◇ counts AFTER the /new TUI rebuild but BEFORE
+     *   the second prompt. Assert BOTH counts increase.
+     * - An error block (✕) after the /new prompt causes test failure.
      */
     public function testNewSessionCommandAndGetAssistantResponse(): void
     {
@@ -460,18 +465,8 @@ final class TuiAgentSmokeTest extends TestCase
             // ── First run (auto-submit via --prompt) ──
             $this->tmux->waitForCaptureContains($pane, '█', 10.0);
 
-            // Wait for the auto-submitted first run's assistant response
-            try {
-                $this->tmux->waitForCaptureContains($pane, '◇', 30.0);
-            } catch (\RuntimeException) {
-                $this->tmux->waitForCaptureContains($pane, '✕', 10.0);
-            }
-
-            $firstCapture = $this->tmux->capturePlain($pane);
-            self::assertTrue(
-                \str_contains($firstCapture, '◇') || \str_contains($firstCapture, '✕'),
-                'First run must produce assistant or error block. Capture: '.\substr($firstCapture, 0, 800),
-            );
+            // The first run MUST produce an assistant block.  No ✕ fallback.
+            $this->tmux->waitForCaptureContains($pane, '◇', 30.0);
 
             // ── Session switch via /new ──
             // The first session is completed; /new triggers a draft switch.
@@ -484,33 +479,47 @@ final class TuiAgentSmokeTest extends TestCase
             // new draft session has rendered.
             $this->tmux->waitForCaptureContains($pane, '█', 10.0);
 
+            // Record baseline counts BEFORE submitting the /new prompt.
+            // The tmux scrollback retains pre-clear content, so using
+            // counts-from-history is robust: we assert counts INCREASE
+            // regardless of how many ❯/◇ were in the first run's output.
+            $beforeCapture = $this->tmux->capturePlainWithHistory($pane);
+            $beforeUserCount = \substr_count($beforeCapture, '❯');
+            $beforeAssistantCount = \substr_count($beforeCapture, '◇');
+
             // ── Type prompt in new draft session ──
             $prompt2 = 'Respond with exactly one word: second.';
             $this->tmux->sendLiteral($pane, $prompt2);
             $this->tmux->sendKey($pane, 'Enter');
 
-            // User block MUST appear before the response streams in
-            try {
-                $this->tmux->waitForCaptureContains($pane, '❯', 5.0);
-            } catch (\RuntimeException $e) {
-                $this->dumpArtifacts($pane, '❯ user block did not appear after /new prompt');
-                self::fail('Transcript must display user block (❯) after /new + prompt submission.');
-            }
+            // A NEW user block (❯) must appear — count must increase
+            $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $capture): bool => \substr_count($capture, '❯') > $beforeUserCount,
+                10.0,
+                'New user block (❯) did not appear after /new prompt submission.',
+            );
 
-            // Wait for real LLM assistant response
-            try {
-                $this->tmux->waitForCaptureContains($pane, '◇', 30.0);
-            } catch (\RuntimeException) {
-                $this->tmux->waitForCaptureContains($pane, '✕', 10.0);
-            }
+            // A NEW assistant block (◇) must appear — count must increase.
+            // No ✕ fallback: an error block means the test is failing.
+            $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $capture): bool => \substr_count($capture, '◇') > $beforeAssistantCount,
+                40.0,
+                'New assistant block (◇) did not appear after /new prompt.',
+            );
 
             $finalCapture = $this->tmux->capturePlainWithHistory($pane);
             $this->saveAnsiSnapshot($pane, 'new-cmd-flow');
 
-            self::assertTrue(
-                \str_contains($finalCapture, '◇') || \str_contains($finalCapture, '✕'),
-                'After /new + prompt, transcript must show assistant (◇) or error (✕) block. '
-                    . \sprintf('Capture (%d lines):%s%s', \substr_count($finalCapture, "\n") + 1, "\n", $finalCapture),
+            // No error block must appear after the /new prompt.
+            // Only check the portion AFTER the baseline capture to avoid
+            // flagging a pre-existing ✕ from the first run.
+            $afterBaseline = \substr($finalCapture, \strlen($beforeCapture));
+            self::assertStringNotContainsString(
+                '✕',
+                $afterBaseline,
+                'No error block (✕) must appear after the /new prompt submission.',
             );
 
             // Processing… must be gone when settled
@@ -539,9 +548,16 @@ final class TuiAgentSmokeTest extends TestCase
      * 4) After the session switch the terminal is cleared, the
      *    transcript replays from events.jsonl, and the TUI rebuilds.
      * 5) Type a follow-up prompt and submit.
-     * 6) Assert the user block (❯) and a real assistant response (◇)
-     *    appear — proving follow_up works after resume and does NOT
-     *    hang on Working due to Cancelling poison.
+     * 6) Assert user block (❯ count increased) and assistant block
+     *    (◇ count increased) appear.
+     * 7) After the TUI exits, inspect events.jsonl to prove follow_up
+     *    was queued and applied without Cancelling poison.
+     *
+     * Hardened assertions (no ✕ fallback, no prior-history cheat):
+     * - Record ❯/◇ counts AFTER the /resume TUI rebuild but BEFORE
+     *   the follow-up submission. Assert BOTH counts increase.
+     * - No ✕ fallback: an error block after the follow-up fails the test.
+     * - JSONL verification: follow_up queued, applied, no cancellation rejection.
      */
     public function testResumeSessionCommandAndGetAssistantResponse(): void
     {
@@ -556,18 +572,8 @@ final class TuiAgentSmokeTest extends TestCase
             // ── First run (auto-submit via --prompt) creates session 1 ──
             $this->tmux->waitForCaptureContains($pane, '█', 10.0);
 
-            try {
-                $this->tmux->waitForCaptureContains($pane, '◇', 30.0);
-            } catch (\RuntimeException) {
-                $this->tmux->waitForCaptureContains($pane, '✕', 10.0);
-            }
-
-            $firstCapture = $this->tmux->capturePlain($pane);
-            self::assertTrue(
-                \str_contains($firstCapture, '◇') || \str_contains($firstCapture, '✕'),
-                'First run must produce assistant or error block before /resume. '
-                    . \sprintf('Capture (%d lines).', \substr_count($firstCapture, "\n") + 1),
-            );
+            // The first run MUST produce an assistant block.  No ✕ fallback.
+            $this->tmux->waitForCaptureContains($pane, '◇', 30.0);
 
             // ── /resume → picker ──
             $this->tmux->sendLiteral($pane, '/resume');
@@ -591,57 +597,46 @@ final class TuiAgentSmokeTest extends TestCase
             // The replayed transcript should show the old user prompt
             $this->tmux->waitForCaptureContains($pane, 'alpha', 5.0);
 
-            // ── Type follow-up in the resumed session ──
-            $followUpPrompt = 'Respond with exactly one word: beta.';
-            // Record current ❯ count so we can assert a NEW one appears
+            // ── Record baseline counts BEFORE follow-up ──
+            // Count from full history so we detect NEW blocks regardless
+            // of how many ❯/◇ the first run and replay left in scrollback.
             $beforeFollowUp = $this->tmux->capturePlainWithHistory($pane);
             $beforeUserCount = \substr_count($beforeFollowUp, '❯');
+            $beforeAssistantCount = \substr_count($beforeFollowUp, '◇');
 
+            // ── Type follow-up in the resumed session ──
+            $followUpPrompt = 'Respond with exactly one word: beta.';
             $this->tmux->sendLiteral($pane, $followUpPrompt);
             $this->tmux->sendKey($pane, 'Enter');
 
             // Wait for a NEW user block (❯ count increased)
-            try {
-                $this->tmux->waitForCallback(
-                    $pane,
-                    static fn (string $capture): bool => \substr_count($capture, '❯') > $beforeUserCount,
-                    10.0,
-                    'New user block (❯) did not appear after resume follow-up submission.',
-                );
-            } catch (\RuntimeException $e) {
-                $this->dumpArtifacts($pane, $e->getMessage());
-                self::fail('Resumed session must show a new user block (❯) after submitting a follow-up.');
-            }
+            $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $capture): bool => \substr_count($capture, '❯') > $beforeUserCount,
+                10.0,
+                'New user block (❯) did not appear after resume follow-up submission.',
+            );
 
-            // Wait for new assistant response — proves follow_up was
-            // queued/applied and not blocked by a Cancelling poison.
-            try {
-                $this->tmux->waitForCallback(
-                    $pane,
-                    static fn (string $capture): bool => \substr_count($capture, '◇') >= 2,
-                    40.0,
-                    'Second assistant block (◇) did not appear after resume follow-up.',
-                );
-            } catch (\RuntimeException) {
-                $this->tmux->waitForHistoryContains($pane, '✕', 10.0);
-            }
+            // Wait for a NEW assistant block (◇ count increased).
+            // No ✕ fallback: an error block means the test is failing.
+            $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $capture): bool => \substr_count($capture, '◇') > $beforeAssistantCount,
+                40.0,
+                'New assistant block (◇) did not appear after resume follow-up.',
+            );
 
             $finalCapture = $this->tmux->capturePlainWithHistory($pane);
             $this->saveAnsiSnapshot($pane, 'resume-cmd-flow');
 
-            // At least 2 ◇ blocks (first run + follow-up)
-            $asstCount = \substr_count($finalCapture, '◇');
-            self::assertGreaterThanOrEqual(
-                2,
-                $asstCount,
-                \sprintf(
-                    'Expected at least 2 assistant blocks (◇) after /resume + follow-up, got %d. '
-                        . 'Terminal history (%d lines):%s%s',
-                    $asstCount,
-                    \substr_count($finalCapture, "\n") + 1,
-                    "\n",
-                    $finalCapture,
-                ),
+            // No error block must appear after the follow-up.
+            // Only check the portion AFTER the baseline to avoid false
+            // positives from a pre-existing ✕ in the initial run.
+            $afterBaseline = \substr($finalCapture, \strlen($beforeFollowUp));
+            self::assertStringNotContainsString(
+                '✕',
+                $afterBaseline,
+                'No error block (✕) must appear after the resume follow-up submission.',
             );
 
             // Processing… must be gone
@@ -655,6 +650,11 @@ final class TuiAgentSmokeTest extends TestCase
             );
 
             $this->tmux->sendKey($pane, 'C-d');
+
+            // ── Verify events.jsonl contents ──
+            // The resumed session is session 1; check its events for
+            // follow_up queued, applied, and absence of Cancelling poison.
+            $this->assertResumedFollowUpEvents(1);
         } catch (\Throwable $e) {
             $this->dumpArtifacts($pane, $e->getMessage());
             try { $this->saveAnsiSnapshot($pane, 'resume-cmd-FAILURE'); } catch (\Throwable) {}
@@ -664,6 +664,92 @@ final class TuiAgentSmokeTest extends TestCase
     }
 
     // ── helpers ────────────────────────────────────────────
+
+    /**
+     * Verify events.jsonl for a resumed session: follow_up must be
+     * queued, applied, and NOT rejected with Cancelling poison.
+     *
+     * @param int $resumedSessionId the numeric session ID that was resumed
+     */
+    private function assertResumedFollowUpEvents(int $resumedSessionId): void
+    {
+        $eventsPath = \sprintf(
+            '%s/.hatfield/sessions/%d/events.jsonl',
+            $this->testProjectDir,
+            $resumedSessionId,
+        );
+
+        if (!\is_file($eventsPath)) {
+            self::fail(\sprintf(
+                'Resumed session %d events.jsonl not found at %s',
+                $resumedSessionId,
+                $eventsPath,
+            ));
+        }
+
+        $events = [];
+        foreach (\file($eventsPath, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES) as $line) {
+            $decoded = \json_decode($line, true);
+            if (\is_array($decoded)) {
+                $events[] = $decoded;
+            }
+        }
+
+        $hasQueued = false;
+        $hasApplied = false;
+        $lastFollowUpApplied = null;
+
+        foreach ($events as $event) {
+            $type = $event['type'] ?? '';
+            $payload = $event['payload'] ?? [];
+            $kind = \is_array($payload) ? ($payload['kind'] ?? '') : '';
+
+            if ('agent_command_queued' === $type && 'follow_up' === $kind) {
+                $hasQueued = true;
+            }
+
+            if ('agent_command_applied' === $type && 'follow_up' === $kind) {
+                $hasApplied = true;
+                $lastFollowUpApplied = $event;
+
+                // Check for Cancelling poison: if follow_up is applied with
+                // a rejection reason mentioning cancellation, the run is
+                // poisoned and resume is broken.
+                $reason = \is_array($payload) ? ($payload['reason'] ?? '') : '';
+                $lower = \strtolower($reason);
+                if (\str_contains($lower, 'cancelling') || \str_contains($lower, 'cancellation is in progress')) {
+                    self::fail(\sprintf(
+                        'Follow-up applied with Cancelling rejection. reason="%s". Events (%d):%s%s',
+                        $reason,
+                        \count($events),
+                        "\n",
+                        \json_encode($events, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES),
+                    ));
+                }
+            }
+        }
+
+        self::assertTrue(
+            $hasQueued,
+            \sprintf(
+                'No agent_command_queued kind=follow_up in events.jsonl. Events (%d):%s%s',
+                \count($events),
+                "\n",
+                \json_encode($events, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES),
+            ),
+        );
+
+        self::assertTrue(
+            $hasApplied,
+            \sprintf(
+                'No agent_command_applied kind=follow_up in events.jsonl. '
+                    . 'Follow-up may have been rejected silently. Events (%d):%s%s',
+                \count($events),
+                "\n",
+                \json_encode($events, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES),
+            ),
+        );
+    }
 
     private function agentCommand(string $prompt = ''): string
     {
