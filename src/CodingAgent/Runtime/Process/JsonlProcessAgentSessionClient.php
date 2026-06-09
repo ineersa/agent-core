@@ -171,6 +171,13 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     public function resume(string $runId): RunHandle
     {
+        // Reset stale flags from prior sessions / crash-recovery cycles.
+        // ensureProcessRunning() may have set autoResumed for a different
+        // session during events()/send()/cancel(); only an auto-resume
+        // triggered by THIS resume() call should suppress the write below.
+        // Mirrors start() which also resets these before a new run.
+        $this->autoResumed = false;
+
         // runId is the session ID — update session-scoped queue DSNs.
         $this->sessionId = $runId;
         $this->activeRunId = $runId;

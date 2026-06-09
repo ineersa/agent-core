@@ -639,9 +639,12 @@ switching. The picker is implemented by
 `PickerOverlay`, `applySelectEffect()` calls the session switch
 service, and `closePicker()` tears down the widget tree.
 
-Items display the session's `displayTitle` (always equals `name`)
-plus a muted `#sessionId` suffix so users can distinguish sessions
-with similar names. When `listSessions()` returns zero results,
+Items use a single-column `#<sessionId> — <displayTitle>` label
+with no `description` key so `SelectListWidget` renders at full
+terminal width instead of clamping the label column to 30 chars.
+The selected row receives `ThemeColorEnum::Accent` styling
+(consistent with `CompletionMenu` and `ModelPickerController`).
+When `listSessions()` returns zero results,
 a status message (`No sessions found`) is shown instead of the
 picker, and no switch occurs.
 
