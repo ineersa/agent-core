@@ -140,7 +140,7 @@ class SessionSwitchService {
 Status: IN-PROGRESS
 Branch: task/session-02-tui-session-switch-lifecycle
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-02-tui-session-switch-lifecycle
-Fork run: wem261x41dp6
+Fork run: y5yg55qkpx9f
 PR URL: https://github.com/ineersa/agent-core/pull/109
 PR Status: open
 Started: 2026-06-08T21:50:11.525Z
@@ -243,3 +243,8 @@ Castor Check Output SHA256: f8c752cb15b10d9961afd4a1f617f94ed8ca964bf1c85cdd4097
 ## Task workflow update - 2026-06-09T00:26:54.813Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: Moving SESSION-02 back to IN-PROGRESS to address PR #109 inline review feedback. Comments: (1) clarify that the `InteractiveMode` session switch `while (true)` loop does not spin CPU because `Tui::run()` blocks on Revolt suspension until `Tui::stop()` is called; (2) add or expose proper TUI lifecycle hooks/events for session start/end/resume rather than only hard-coded switch internals. Implementation will be done by fork per orchestrator workflow.
+
+## Task workflow update - 2026-06-09T00:27:26.104Z
+- Recorded fork run: y5yg55qkpx9f
+- Summary: Launched review-iteration fork to address PR #109 inline feedback. Scope: clarify that `InteractiveMode` switch loop blocks on Revolt/Tui::run() and does not spin CPU; add a minimal TUI session lifecycle event/hook seam for session start/resume/end/draft start, exposed through `TuiRuntimeContext` for current/future listener registrars, with focused tests/docs and Castor validation.
+- task-review-iterate: PR #109 inline comments read via gh; task moved back to IN-PROGRESS; implementation fork y5yg55qkpx9f launched for lifecycle event seam and switch-loop comment clarification.
