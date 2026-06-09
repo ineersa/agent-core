@@ -129,7 +129,7 @@ $registry->register(
 - Validation uses Castor per project rules; runtime/TUI changes require full `castor check` before CODE-REVIEW.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/session-03-new-and-resume-commands
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-03-new-and-resume-commands
 Fork run: r86j2r41s76w
@@ -239,3 +239,7 @@ Castor Check Output SHA256: 9f406f219ad3e4c0f5803e58d9aa5e5f48f6097c84fe8d0e98c9
 - Pushed task/session-03-new-and-resume-commands to origin.
 - branch 'task/session-03-new-and-resume-commands' set up to track 'origin/task/session-03-new-and-resume-commands'.
 - PR already exists: https://github.com/ineersa/agent-core/pull/111
+
+## Task workflow update - 2026-06-09T17:16:07.633Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: User smoke-tested PR #111 at HEAD `c0ece70b` and found multiple regressions requiring another review iteration: (1) after `/resume`, typing a message does not resume/continue the run and TUI hangs in Working; (2) after `/new`, default model is incorrect; (3) after `/new`, Ctrl+P model cycling/picker is broken; (4) `/resume` and `/new` are much slower than before, possibly due sleeps/blocking process lifecycle such as process stop/restart. Need a fork to actually launch/test the agent manually (not only unit/TUI snapshots), inspect logs/snapshots/session artifacts, reproduce, fix root causes, and validate.
