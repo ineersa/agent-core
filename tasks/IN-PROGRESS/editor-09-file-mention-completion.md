@@ -30,7 +30,7 @@ Parallelizable with: EDITOR-10.
 Status: IN-PROGRESS
 Branch: task/editor-09-file-mention-completion
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-09-file-mention-completion
-Fork run: 23kakivsyk3e
+Fork run: cci724tc31fm
 PR URL: https://github.com/ineersa/agent-core/pull/110
 PR Status: open
 Started: 2026-06-08T23:47:05.979Z
@@ -273,3 +273,7 @@ Castor Check Output SHA256: 15eee4021a8efac1349c9f570c4a9e6217e2cc56cc309f3aeeed
 ## Task workflow update - 2026-06-09T02:20:37.925Z
 - Recorded fork run: 23kakivsyk3e
 - Summary: Launched targeted verification/fix fork 23kakivsyk3e because qdh0mthgma38 did not provide concrete required tmux evidence and available run-agent-test snapshots still showed Working state. New fork scope: use Castor for build/QA; if `castor run:agent-test` blocks on LLM prompt, manually launch the PHAR in an isolated tmux session without `--prompt`, send literal `@`, capture and save a snapshot under `var/tmp/editor09-at-completion-after.txt` (or similar), and assert visible file mention completion menu/items. If current HEAD b9b4ea9c does not work, diagnose/fix the actual TUI path while preserving scheduler/lock constraints. No reviewer launch; no task file edits.
+
+## Task workflow update - 2026-06-09T15:16:58.204Z
+- Recorded fork run: cci724tc31fm
+- Summary: User smoke test passed: @ completion works, looks good, and is fast. Launched minor feedback fork cci724tc31fm to address two remaining UX issues: (1) make file completion path/first column wider (likely by suppressing low-value generic `file`/`directory` descriptions so SelectListWidget no longer clamps labels to 30 columns while preserving slash descriptions); (2) close @ completion once an unquoted @ token is followed by whitespace/continued normal text (e.g. `Hello @Version asd...`), while preserving `Hello @Version`, quoted path support, email non-trigger, and slash completion. No reviewer launch.
