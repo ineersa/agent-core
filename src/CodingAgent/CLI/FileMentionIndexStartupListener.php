@@ -32,13 +32,10 @@ use Psr\Log\LoggerInterface;
  */
 final class FileMentionIndexStartupListener implements TuiListenerRegistrar
 {
-    private readonly ?LoggerInterface $logger;
-
     public function __construct(
         private readonly FileMentionIndexBuilder $builder,
-        ?LoggerInterface $logger = null,
+        private readonly LoggerInterface $logger,
     ) {
-        $this->logger = $logger;
     }
 
     public function register(TuiRuntimeContext $context): void

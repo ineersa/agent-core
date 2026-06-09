@@ -35,14 +35,11 @@ use Symfony\Component\Scheduler\Attribute\AsPeriodicTask;
 #[AsPeriodicTask(frequency: 30, schedule: 'default')]
 final class CompletionFileIndexRefreshCommand extends Command
 {
-    private readonly ?LoggerInterface $logger;
-
     public function __construct(
         private readonly FileMentionIndexBuilder $builder,
-        ?LoggerInterface $logger = null,
+        private readonly LoggerInterface $logger,
     ) {
         parent::__construct();
-        $this->logger = $logger;
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int

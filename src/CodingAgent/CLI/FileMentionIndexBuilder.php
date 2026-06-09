@@ -46,24 +46,21 @@ final class FileMentionIndexBuilder
     /** Cleanup-tracked temp path for atomic-write safety. */
     private ?string $tmpPath = null;
 
-    private readonly ?LoggerInterface $logger;
-
     /**
-     * @param string               $cwd         Project root to scan
-     * @param string               $indexPath   Target JSONL path
-     * @param list<string>|null    $excludeDirs Directories to exclude (replaces built-in defaults when provided)
-     * @param LoggerInterface|null $logger      Logger for diagnostic events (autowired by DI)
-     * @param LockFactory|null     $lockFactory Lock factory for build exclusion (autowired by DI)
+     * @param string            $cwd         Project root to scan
+     * @param string            $indexPath   Target JSONL path
+     * @param LoggerInterface   $logger      Logger for diagnostic events (autowired by DI)
+     * @param LockFactory       $lockFactory Lock factory for build exclusion (autowired by DI)
+     * @param list<string>|null $excludeDirs Directories to exclude (replaces built-in defaults when provided)
      */
     public function __construct(
         private readonly string $cwd,
         private readonly string $indexPath,
+        private readonly LoggerInterface $logger,
+        private readonly LockFactory $lockFactory,
         ?array $excludeDirs = null,
-        ?LoggerInterface $logger = null,
-        private readonly ?LockFactory $lockFactory = null,
     ) {
         $this->excludeDirs = $excludeDirs;
-        $this->logger = $logger;
     }
 
     /**
