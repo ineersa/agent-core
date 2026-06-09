@@ -91,7 +91,7 @@ final class ChatScreen
 
     public function __construct(
         private readonly TuiTheme $theme,
-        private readonly string $sessionId,
+        private string $sessionId,
         private readonly PromptEditor $promptEditor,
     ) {
         $this->registry = new TuiSlotRegistry();
@@ -104,7 +104,7 @@ final class ChatScreen
         $this->statusPanelRenderable = new StatusPanelWidget();
         $this->footerDataProvider = new FooterDataProvider();
         $this->extensionContext = new SlotBasedTuiExtensionContext($this->registry, $this->footerDataProvider);
-        $this->footerDataProvider->addProvider($this->createDefaultFooterProvider());
+        $this->footerDataProvider->setProvider('_default', $this->createDefaultFooterProvider());
         $this->footerRenderable = new FooterBarWidget($this->footerDataProvider);
 
         // ── Top margin ──
@@ -501,6 +501,18 @@ final class ChatScreen
         return $this->extensionContext;
     }
 
+    /**
+     * Update the session ID displayed in the default footer segment.
+     *
+     * Used by SubmitListener when a draft session (empty ID) is
+     * promoted to a real session on the first submitted message.
+     */
+    public function updateSessionId(string $sessionId): void
+    {
+        $this->sessionId = $sessionId;
+        $this->footerDataProvider->setProvider('_default', $this->createDefaultFooterProvider());
+    }
+
     /* ────────── Helpers ────────── */
 
     /**
@@ -517,13 +529,6 @@ final class ChatScreen
         );
     }
 
-    /**
-     * Create the default footer segment provider.
-     *
-     * Only shows the current session ID so users can distinguish sessions.
-     * All other footer content (model, usage, elapsed, cwd, branch) is
-     * contributed by {@see FooterStateListener} via addFooterProvider().
-     */
     private function createDefaultFooterProvider(): FooterSegmentProvider
     {
         $sessionId = $this->sessionId;
@@ -537,6 +542,10 @@ final class ChatScreen
             /** @return list<FooterSegment> */
             public function getSegments(): array
             {
+                if ('' === $this->sessionId) {
+                    return [];
+                }
+
                 return [
                     new FooterSegment(
                         text: 'session '.$this->sessionId,

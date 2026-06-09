@@ -15,7 +15,9 @@ InteractiveMode::run(client, request, theme, sessionId)
     ├─ 1. ThemeFactory::create()      → TuiTheme
     │
     ├─ 2. SessionInitializer::initialize(sessionId, request)
-    │        └─ new or resume → TuiSessionState
+    │        ├─ new with prompt → create session row + TuiSessionState
+    │        ├─ new without prompt → lazy draft (no DB row until first message)
+    │        └─ resume → TuiSessionState
     │
     ├─ 3. $screen = new ChatScreen(theme, sessionId)
     │        └─ $screen->mount($tui)
@@ -23,17 +25,19 @@ InteractiveMode::run(client, request, theme, sessionId)
     │
     ├─ 4. $ticks = new TuiTickDispatcher()
     │
-    ├─ 5. $context = new TuiRuntimeContext(tui, client, state, screen, sessionStore, ticks)
+    ├─ 5. wire switch service into current iteration
     │
-    ├─ 6. foreach($listenerRegistrars as $registrar)
+    ├─ 6. $context = new TuiRuntimeContext(tui, client, state, screen, sessionStore, ticks, switch)
+    │
+    ├─ 7. foreach($listenerRegistrars as $registrar)
     │        └─ $registrar->register($context)
     │             ├─ $context->tui->addListener(fn(Event $e) => ...)
     │             └─ $context->ticks->add(fn(TickEvent $e) => ...)
     │
-    ├─ 7. $tui->onTick(fn(TickEvent $e) => $ticks->dispatch($e))
+    ├─ 8. $tui->onTick(fn(TickEvent $e) => $ticks->dispatch($e))
     │        └─ single Symfony TUI tick callback; dispatcher multiplexes handlers
     │
-    └─ 8. $tui->run()                    ← blocks via Revolt suspension
+    └─ 9. $tui->run()                    ← blocks via Revolt suspension
               │
               ├─ TickEvent → TuiTickDispatcher
               │    ├─ TickPollListener → RuntimeEventPoller::poll()
@@ -42,6 +46,7 @@ InteractiveMode::run(client, request, theme, sessionId)
               │         └─ keeps elapsed time / throughput footer live
               │
               ├─ SubmitEvent → SubmitListener
+              │    ├─ first message on draft → promote draft to real session + start run
               │    └─ start run / send follow-up → AgentSessionClient
               │
               ├─ CancelEvent → CancelListener
@@ -54,6 +59,13 @@ InteractiveMode::run(client, request, theme, sessionId)
               └─ InputEvent → CtrlCInputInterceptor (priority 100)
                    ├─ Ctrl+D → $tui->stop()
                    └─ Ctrl+C → cancel / double-press quit
+
+  ── Session switch loop (TuiSessionSwitchService) ──
+  │
+  ├─ After $tui->run() returns, check for pending switch target
+  ├─ If resume target: rebuild with new session ID + replay events
+  ├─ If draft target: rebuild with empty session ID (lazy promotion later)
+  └─ Loop: re-enter step 1 with new target session
 ```
 
 ## Event loop
@@ -61,17 +73,66 @@ InteractiveMode::run(client, request, theme, sessionId)
 The TUI runs an interactive event loop powered by **Symfony TUI**
 (`Symfony\Component\Tui\Tui`) with **Revolt** as the event loop backend.
 
-Entry point: `Ineersa\Tui\Application\InteractiveMode::run()` is a thin
-orchestrator that creates the theme, session state, and `ChatScreen`,
-builds `TuiRuntimeContext`, iterates over DI-tagged `TuiListenerRegistrar`
-services, installs one Symfony TUI `onTick()` callback backed by
-`TuiTickDispatcher`, and calls `$tui->run()` which blocks until a listener
-calls `$tui->stop()`.
+Entry point: `Ineersa\Tui\Application\InteractiveMode::run()` is a
+loop-based orchestrator that creates the theme, session state, and
+`ChatScreen` for the current target, builds `TuiRuntimeContext`, iterates
+over DI-tagged `TuiListenerRegistrar` services, installs one Symfony TUI
+`onTick()` callback backed by `TuiTickDispatcher`, and calls `$tui->run()`
+which blocks until a listener calls `$tui->stop()`. After the event loop
+exits, the method checks for a pending session switch target.  If a switch
+was requested (via `TuiSessionSwitchService`), fresh TUI/session objects
+are rebuilt for the target and the loop continues — all within the same
+CLI process.
 
 `Symfony\Component\Tui\Tui::onTick()` is a single-slot setter, not an
 additive listener API. TUI code must register tick work through
 `TuiTickDispatcher` (`$context->ticks->add(...)`) so runtime polling,
 footer refresh, and future tick handlers do not overwrite one another.
+
+### Session lifecycle hooks
+
+InteractiveMode creates a fresh `TuiSessionLifecycleDispatcher` each
+loop iteration and passes it into `TuiRuntimeContext::$lifecycle`.
+Listener registrars and future slash-command handlers can subscribe to
+session lifecycle events without coupling to the switch loop internals:
+
+```php
+$context->lifecycle->subscribe(function (TuiSessionLifecycleEventDTO $e): void {
+    if ($e->type === TuiSessionLifecycleEventTypeEnum::SessionStarted) {
+        // initialise per-session extension state
+    }
+});
+```
+
+Lifecycle events dispatched:
+
+| Event | When | sessionId | isDraft | resuming | previousSessionId |
+|---|---|---|---|---|---|
+| `SessionStarted` | Fresh session with a prompt | real | false | false | null or prior session ID |
+| `SessionResumed` | Existing session reloaded | real | false | true | null or prior session ID |
+| `SessionDraftStarted` | Lazy draft (no DB row yet) | '' | true | false | null or prior session ID |
+| `SessionEnded` | Session left (quit or switch) | real or '' | current | current | not applicable |
+
+`previousSessionId` is set on start/resume/draft-start events that
+follow a session switch, so subscribers can track which session the
+user came from.  It is `null` for the very first session in a process.
+
+`SessionEnded` carries an `endReason` field typed as
+`TuiSessionLifecycleEndReasonEnum` with values `Switch` or `Quit`.
+
+The dispatcher does **not** guard subscriber exceptions — if a
+subscriber throws, the exception propagates immediately and later
+subscribers are **not** called.  Subscribers that need local
+degradation (e.g. optional telemetry) must catch internally.
+
+### Revolt suspension (not CPU spin)
+
+The `while (true)` session-switch loop in `InteractiveMode::run()`
+does **not** busy-wait.  `$tui->run()` blocks via Revolt fiber
+suspension (`EventLoop::getSuspension(); $suspension->suspend()`)
+and resumes only when `$tui->stop()` is called or the user quits.
+The loop body executes once per session, then blocks until the
+next switch or quit.
 
 ### Keybindings
 

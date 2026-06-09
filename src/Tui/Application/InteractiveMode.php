@@ -10,6 +10,10 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\TuiListenerRegistrar;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
+use Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher;
+use Ineersa\Tui\Runtime\TuiSessionLifecycleEndReasonEnum;
+use Ineersa\Tui\Runtime\TuiSessionLifecycleEventDTO;
+use Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Runtime\TuiTickDispatcher;
 use Ineersa\Tui\Screen\ChatScreen;
@@ -34,6 +38,15 @@ use Symfony\Component\Tui\Tui;
  * Listener wiring is done via DI-tagged TuiListenerRegistrar services;
  * the registrars are stateless and receive a per-run TuiRuntimeContext.
  *
+ * ## Session switch lifecycle
+ *
+ * When a TUI slash command (/new, /resume) calls
+ * {@see TuiSessionSwitchService} to request a session switch, the
+ * service cancels the current run, resets stateful singletons, and
+ * calls {@see Tui::stop()}.  InteractiveMode then rebuilds fresh
+ * Tui/TuiSessionState/ChatScreen objects for the target session and
+ * re-enters the event loop — all within the same CLI process.
+ *
  * Must not import Ineersa\AgentCore\Application, Infrastructure, or Messenger directly.
  * Must not receive raw RunEvent, command buses, stores, or agent-core services.
  */
@@ -50,6 +63,7 @@ final readonly class InteractiveMode
         private PromptEditor $promptEditor,
         private TranscriptBlockFactory $blockFactory,
         private LoggerInterface $logger,
+        private TuiSessionSwitchService $switchService,
     ) {
     }
 
@@ -85,46 +99,169 @@ final readonly class InteractiveMode
 
         $theme = $this->themeFactory->create($theme);
 
-        // ── Initialize session ──
-        $state = $this->sessionInit->initialize($sessionId, $request);
-        $state->transcript = $this->sessionInit->buildInitialTranscript($state);
+        // ── Session switch loop ──
+        // Each iteration builds fresh TUI/session objects for the
+        // current target.  A session switch (via TuiSessionSwitchService)
+        // stops the event loop; we consume the pending target and loop.
+        //
+        // $tui->run() blocks via Revolt fiber suspension (not a CPU
+        // spin): it suspends the current fiber and resumes only when
+        // $tui->stop() is called or the user quits.  The while(true)
+        // therefore iterates once per session, not infinitely.
+        $targetSessionId = $sessionId;
+        $targetRequest = $request;
+        $isDraft = ('' === $sessionId && null === $request);
+        // Track the session id from the previous iteration so the
+        // next start/resume/draft-start lifecycle event can carry it
+        // as previousSessionId — useful for extensions tracking which
+        // session the user switched from.  Null for the very first
+        // iteration (no prior session).
+        $previousSessionIdForLifecycle = null;
 
-        // ── Build screen and mount widget tree ──
-        $tui = new Tui();
-        $screen = new ChatScreen($theme, $state->sessionId, $this->promptEditor);
-        $screen->mount($tui);
+        while (true) {
+            // ── Initialize session state ──
+            if ($isDraft) {
+                $state = $this->sessionInit->initializeDraft($targetRequest);
+            } elseif ('' !== $targetSessionId) {
+                $state = $this->sessionInit->initialize($targetSessionId, $targetRequest);
+            } else {
+                // Fresh session — pass through any initial request so
+                // `bin/console agent --prompt ...` starts a run immediately.
+                $state = $this->sessionInit->initialize('', $targetRequest);
+            }
+            $state->transcript = $this->sessionInit->buildInitialTranscript($state);
 
-        // Set initial transcript
-        $screen->setTranscriptBlocks($state->transcript);
+            // ── Build screen and mount widget tree ──
+            $tui = new Tui();
+            $screen = new ChatScreen($theme, $state->sessionId, $this->promptEditor);
+            $screen->mount($tui);
 
-        // ── Start or resume the run ──
-        $this->startOrResumeRun($client, $state, $screen);
+            // Set initial transcript
+            $screen->setTranscriptBlocks($state->transcript);
 
-        // ── Register listeners (DI-driven, stateless registrars) ──
-        $ticks = new TuiTickDispatcher();
-        $context = new TuiRuntimeContext(
-            tui: $tui,
-            client: $client,
-            state: $state,
-            screen: $screen,
-            sessionStore: $this->sessionStore,
-            ticks: $ticks,
-        );
+            // ── Start or resume the run ──
+            $this->startOrResumeRun($client, $state, $screen);
 
-        foreach ($this->listenerRegistrars as $registrar) {
-            $registrar->register($context);
+            // ── Register listeners (DI-driven, stateless registrars) ──
+            $ticks = new TuiTickDispatcher();
+            $lifecycle = new TuiSessionLifecycleDispatcher();
+
+            // Bind switch service to this iteration's objects
+            $this->switchService->bindForIteration($tui, $client, $state);
+
+            $context = new TuiRuntimeContext(
+                tui: $tui,
+                client: $client,
+                state: $state,
+                screen: $screen,
+                sessionStore: $this->sessionStore,
+                ticks: $ticks,
+                switch: $this->switchService,
+                lifecycle: $lifecycle,
+            );
+
+            foreach ($this->listenerRegistrars as $registrar) {
+                $registrar->register($context);
+            }
+
+            // Install single Symfony tick callback that multiplexes to all registered handlers
+            $tui->onTick(static fn (TickEvent $event): ?bool => $ticks->dispatch($event));
+
+            // Also register input handlers from the slot registry
+            $this->registerSlotInputHandlers($tui, $screen);
+
+            // ── Dispatch session lifecycle start event ──
+            // Must happen AFTER listener registrars have run so that
+            // subscribers to $context->lifecycle are already wired.
+            $this->dispatchSessionLifecycleStart(
+                $lifecycle,
+                $state,
+                $isDraft,
+                $targetSessionId,
+                $previousSessionIdForLifecycle,
+            );
+
+            $tui->setFocus($screen->editorWidget());
+            $tui->run();
+
+            // ── Determine exit reason and dispatch session ended ──
+            $switchTarget = $this->switchService->consumePendingSwitch();
+            $endReason = (null !== $switchTarget)
+                ? TuiSessionLifecycleEndReasonEnum::Switch
+                : TuiSessionLifecycleEndReasonEnum::Quit;
+            $lifecycle->dispatch(new TuiSessionLifecycleEventDTO(
+                type: TuiSessionLifecycleEventTypeEnum::SessionEnded,
+                sessionId: $state->sessionId,
+                isDraft: $isDraft,
+                resuming: $state->resuming,
+                endReason: $endReason,
+            ));
+
+            // ── After event loop exits: check for pending switch ──
+            if (null !== $switchTarget) {
+                // Record the session id we're leaving so the next
+                // iteration's lifecycle start event can reference
+                // it as previousSessionId.
+                $previousSessionIdForLifecycle = ('' !== $state->sessionId) ? $state->sessionId : null;
+                if ($switchTarget->isDraft) {
+                    $isDraft = true;
+                    $targetSessionId = '';
+                    $targetRequest = $switchTarget->request;
+                } else {
+                    $isDraft = false;
+                    $targetSessionId = $switchTarget->sessionId;
+                    $targetRequest = null;
+                }
+            } else {
+                break; // Normal exit — no pending switch
+            }
         }
 
-        // Install single Symfony tick callback that multiplexes to all registered handlers
-        $tui->onTick(static fn (TickEvent $event): ?bool => $ticks->dispatch($event));
-
-        // Also register input handlers from the slot registry
-        $this->registerSlotInputHandlers($tui, $screen);
-
-        $tui->setFocus($screen->editorWidget());
-        $tui->run();
-
         return Command::SUCCESS;
+    }
+
+    /**
+     * Dispatch the session lifecycle startup event.
+     *
+     * Must be called AFTER listener registrars have wired their
+     * subscriptions to $lifecycle, but BEFORE the TUI event loop
+     * starts so subscribers can initialise state synchronously.
+     *
+     * @param string|null $previousSessionId session ID of the iteration just
+     *                                       ended, or null for the first iteration
+     */
+    private function dispatchSessionLifecycleStart(
+        TuiSessionLifecycleDispatcher $lifecycle,
+        TuiSessionState $state,
+        bool $isDraft,
+        string $targetSessionId,
+        ?string $previousSessionId,
+    ): void {
+        if ($isDraft) {
+            $lifecycle->dispatch(new TuiSessionLifecycleEventDTO(
+                type: TuiSessionLifecycleEventTypeEnum::SessionDraftStarted,
+                sessionId: '',
+                isDraft: true,
+                resuming: false,
+                previousSessionId: $previousSessionId,
+            ));
+        } elseif ('' !== $targetSessionId) {
+            $lifecycle->dispatch(new TuiSessionLifecycleEventDTO(
+                type: TuiSessionLifecycleEventTypeEnum::SessionResumed,
+                sessionId: $state->sessionId,
+                isDraft: false,
+                resuming: true,
+                previousSessionId: $previousSessionId,
+            ));
+        } else {
+            $lifecycle->dispatch(new TuiSessionLifecycleEventDTO(
+                type: TuiSessionLifecycleEventTypeEnum::SessionStarted,
+                sessionId: $state->sessionId,
+                isDraft: false,
+                resuming: false,
+                previousSessionId: $previousSessionId,
+            ));
+        }
     }
 
     /**
@@ -135,6 +272,12 @@ final readonly class InteractiveMode
         TuiSessionState $state,
         ChatScreen $screen,
     ): void {
+        // Draft sessions (empty sessionId) never start a run here —
+        // the first message submitted later promotes them to a real session.
+        if ('' === $state->sessionId) {
+            return;
+        }
+
         if (null !== $state->request && '' !== $state->request->prompt) {
             try {
                 $state->handle = $client->start($state->request);

@@ -666,6 +666,9 @@ final class CompletionListenerTest extends TestCase
             state: $state,
             screen: $isolatedScreen,
             sessionStore: $sessionStore,
+            ticks: new \Ineersa\Tui\Runtime\TuiTickDispatcher(),
+            switch: $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
+            lifecycle: new \Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher(),
         );
         $listener->register($isolatedContext);
 
@@ -821,6 +824,9 @@ final class CompletionListenerTest extends TestCase
             state: $this->state,
             screen: $this->screen,
             sessionStore: $sessionStore,
+            ticks: new \Ineersa\Tui\Runtime\TuiTickDispatcher(),
+            switch: $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
+            lifecycle: new \Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher(),
         );
     }
 }

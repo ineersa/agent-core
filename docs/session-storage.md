@@ -242,6 +242,23 @@ php bin/console agent --prompt="Hello"
    `SessionRunStore::compareAndSwap()` and `SessionRunEventStore::append()`,
    creating `state.json` and `events.jsonl` entries.
 
+### Lazy draft sessions (no initial prompt)
+
+When the TUI starts without a prompt (`bin/console agent` with no `--prompt`
+and no `--resume`), the default behavior is a **lazy draft**:
+
+1. `SessionInitializer::initializeDraft()` creates a `TuiSessionState` with
+   an empty session ID — no DB row and no session directory are created.
+2. When the user submits their first message, `SubmitListener` detects the
+   empty session ID, calls `$sessionStore->createSession($text)` to create
+   the DB row and session directory, then starts a new run normally.
+3. If the user exits without typing a message, no orphan DB rows or session
+   directories are left behind.
+
+Session switch lifecycle events (`/new`, `/resume`) use the same lazy draft
+path via `TuiSessionSwitchService::requestNewDraft()` — the draft is promoted
+on first submitted message regardless of how the draft was initiated.
+
 ## Sessions base path resolution
 
 All stores must agree on the sessions base directory. This is resolved in

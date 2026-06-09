@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Screen;
 
 use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\Footer\FooterDataProvider;
+use Ineersa\Tui\Footer\FooterSegment;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
@@ -191,5 +193,100 @@ class ChatScreenTest extends TestCase
         $root = $rootProp->getValue($this->tui);
 
         return array_values($root->all());
+    }
+
+    /**
+     * Reflect into ChatScreen to read footer segments.
+     *
+     * @return list<FooterSegment>
+     */
+    private function getFooterSegments(): array
+    {
+        $screenRef = new \ReflectionClass($this->screen);
+        $fdProp = $screenRef->getProperty('footerDataProvider');
+        /** @var FooterDataProvider $fd */
+        $fd = $fdProp->getValue($this->screen);
+
+        return $fd->getSegments();
+    }
+
+    // ── Session ID update ──
+
+    #[Test]
+    public function testUpdateSessionIdUpdatesFooterSegmentText(): void
+    {
+        // Call updateSessionId to change the session displayed in the footer.
+        $this->screen->updateSessionId('new-session-id');
+
+        // Assert the default footer segment text now reflects the new session ID.
+        $segments = $this->getFooterSegments();
+        $sessionSegment = array_values(array_filter(
+            $segments,
+            static fn (FooterSegment $s) => str_contains($s->text, 'session'),
+        ));
+        self::assertCount(1, $sessionSegment);
+        self::assertStringContainsString('new-session-id', $sessionSegment[0]->text);
+    }
+
+    #[Test]
+    public function testUpdateSessionIdAfterMountUpdatesFooter(): void
+    {
+        $this->screen->mount($this->tui);
+
+        $this->screen->updateSessionId('new-session-id');
+
+        $segments = $this->getFooterSegments();
+        $sessionSegment = array_values(array_filter(
+            $segments,
+            static fn (FooterSegment $s) => str_contains($s->text, 'session'),
+        ));
+        self::assertCount(1, $sessionSegment);
+        self::assertStringContainsString('new-session-id', $sessionSegment[0]->text);
+    }
+
+    /**
+     * Draft sessions (empty session ID) produce no default footer
+     * segment, leaving only extension-contributed footer content.
+     */
+    #[Test]
+    public function testDraftFooterHasNoSessionSegment(): void
+    {
+        $draftScreen = new ChatScreen(
+            theme: $this->getTestTheme(),
+            sessionId: '',
+            promptEditor: new PromptEditor(),
+        );
+
+        $draftScreen->mount($this->tui);
+
+        // Reflect into the draft screen's footer data provider.
+        $screenRef = new \ReflectionClass($draftScreen);
+        $fdProp = $screenRef->getProperty('footerDataProvider');
+        /** @var FooterDataProvider $fd */
+        $fd = $fdProp->getValue($draftScreen);
+
+        $segments = $fd->getSegments();
+        self::assertEmpty(
+            $segments,
+            'Draft session with empty ID must produce zero default footer segments.',
+        );
+    }
+
+    /**
+     * Return a real ChatScreen-compatible theme for constructing
+     * additional screens without leaking the setUp instance.
+     */
+    private function getTestTheme(): TuiTheme
+    {
+        return new readonly class implements TuiTheme {
+            public function name(): string { return 'test'; }
+            public function color(ThemeColorEnum $color, string $text): string { return $text; }
+            public function accent(string $text): string { return $text; }
+            public function text(string $text): string { return $text; }
+            public function muted(string $text): string { return $text; }
+            public function success(string $text): string { return $text; }
+            public function warning(string $text): string { return $text; }
+            public function error(string $text): string { return $text; }
+        };
     }
 }
