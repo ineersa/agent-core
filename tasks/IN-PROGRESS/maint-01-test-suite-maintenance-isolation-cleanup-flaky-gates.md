@@ -53,7 +53,7 @@ Important non-goal: Do not delete valuable behavioral tests just to reduce count
 Status: IN-PROGRESS
 Branch: task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates
-Fork run:
+Fork run: 59h6xp2tn72u
 PR URL:
 PR Status:
 Started: 2026-06-09T22:01:04.785Z
@@ -197,3 +197,12 @@ Acceptance addendum: `LLM_MODE=true castor check` should either run independent 
 - Created worktree /home/ineersa/projects/agent-core-worktrees/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates.
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates.
+
+## Task workflow update - 2026-06-09T23:10:20.386Z
+- Recorded fork run: 59h6xp2tn72u
+- Validation: castor test — PASS (2269 tests, 6660 assertions, 0 errors/failures/skipped); castor deptrac — PASS (0 violations); castor phpstan — PASS (0 errors); castor cs-check — PASS after cs-fix; castor test:llm-real --filter ViewImageToolE2eTest — PASS (1 test, 11 assertions); castor phar:build — PASS / PHAR smoke ok (reported by fork); LLM_MODE=true castor check — not run by fork; full flow requires tmux + llama.cpp:9052 and should be run during task-to-pr/move_task gate
+- Summary: Continuation implementation fork completed. Worktree branch task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates is clean at HEAD 3cf1a257, with commits 660b2135, 39a24aa5, b69a059f, 3cf1a257 on top of task metadata. Cumulative diff vs origin/main: 21 files changed, +556/-435.
+
+Implemented: phar_smoke HOME isolation and try/finally temp cleanup; ViewImageToolE2eTest changed from brittle generic LLM-prose rejection to robust image/tool execution proof plus exact gating-placeholder rejection; castor cleanup expanded for var/tmp, var/test app DB, PHAR dirs, LlamaCpp dirs, and known system /tmp prefixes; ControllerE2eTestCase event helpers added and controller E2E tests migrated; shared TestMessageBus and TestLogger added and 6 duplicate MessageBus test doubles migrated; tests/AGENTS.md added with standards; low-value tests removed/collapsed (ClipboardTest deleted, QuestionRequest readonly-structure test removed, RunState tests collapsed); .agents/skills/testing points to tests/AGENTS.md; castor check parallelization added with one PHAR prebuild, pcntl_fork parallel group for deptrac/test/phpstan/cs-check, sequential fallback, and controller/llm-real/tui serialized for DB/tmux/LLM safety.
+
+Deferred by fork with rationale: TestAiConfigBuilder, TuiRuntimeContextBuilder, TuiE2eTestCase, full rmDir/sys_get_temp_dir migration, TUI startup usleep replacement, and HatfieldSessionStoreTest sleep removal. Fork found HatfieldSession/TimestampableLifecycleTrait uses direct new DateTimeImmutable(), so Clock mocking cannot remove sleep without production timestamp seam changes. Fork also found RuntimeEventTranslator drops tool_batch_committed from stdout stream, so ViewImageToolE2eTest now reads persisted events.jsonl for that proof.
