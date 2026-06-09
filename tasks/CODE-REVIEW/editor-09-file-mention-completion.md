@@ -27,12 +27,12 @@ Parallelizable with: EDITOR-10.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/editor-09-file-mention-completion
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-09-file-mention-completion
 Fork run: km3v1irhhahm
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/110
+PR Status: open
 Started: 2026-06-08T23:47:05.979Z
 Completed:
 
@@ -234,3 +234,16 @@ Use Castor only:
 - Validation: Reviewer subagent final verdict: APPROVE. Prior critical quoted @ bug and second-pass cleanup suggestions verified resolved.; Focused local validation on worktree: `castor test` PASS (2213 tests, 6453 assertions, 0 errors/failures/skipped).; Focused local validation on worktree: `castor deptrac` PASS (0 violations, 757 uncovered, 953 allowed).; Focused local validation on worktree: `castor phpstan` PASS (0 errors, 0 file errors).; Focused local validation on worktree: `castor cs-check` PASS (files_fixed=0).
 - Summary: Task-to-PR review completed for EDITOR-09. Initial reviewer verdict at 26de6c67: REQUEST CHANGES; implementation fork produced b8bfb85c addressing critical quoted @ insertion bug, path quoting, dead/deptrac/path issues, builder move, tests. Re-review verdict at b8bfb85c: APPROVE WITH SUGGESTIONS; second implementation fork produced 051ec0ba addressing all remaining suggestions (removed unused AtTokenContext fields, fixed priority docblock, temp cleanup on exceptions, structured diagnostic logging, semantic lock-held exception, refresh command real failure visibility, corrected reader docblock, added builder→reader→provider round-trip test). Final reviewer verdict at 051ec0ba: APPROVE with no issues. Current worktree clean; HEAD 051ec0ba fix(editor-09): tighten file mention review cleanup.
 - task-to-pr review iteration: reviewer REQUEST CHANGES → fork fix commit b8bfb85c → reviewer APPROVE WITH SUGGESTIONS → fork cleanup commit 051ec0ba → final reviewer APPROVE. Ready to move to CODE-REVIEW for full Castor quality gate and PR creation.
+Castor Check Status: passed
+Castor Check Commit: 051ec0ba338b4f173f4b31f7dbc5270025404c96
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 900s
+Castor Check Completed: 2026-06-09T01:02:23.272Z
+Castor Check Output SHA256: 15eee4021a8efac1349c9f570c4a9e6217e2cc56cc309f3aeeedc055160649ad
+
+## Task workflow update - 2026-06-09T01:02:26.521Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: 051ec0ba338b.
+- Pushed task/editor-09-file-mention-completion to origin.
+- branch 'task/editor-09-file-mention-completion' set up to track 'origin/task/editor-09-file-mention-completion'.
+- Created PR: https://github.com/ineersa/agent-core/pull/110
