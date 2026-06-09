@@ -53,6 +53,8 @@ framework:
         resources:
             default: flock
 
+    scheduler: ~
+
     cache:
         pools:
             cache.default:
