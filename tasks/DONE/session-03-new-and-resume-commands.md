@@ -129,14 +129,14 @@ $registry->register(
 - Validation uses Castor per project rules; runtime/TUI changes require full `castor check` before CODE-REVIEW.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/session-03-new-and-resume-commands
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-03-new-and-resume-commands
 Fork run: f8dpe4i2dflv
 PR URL: https://github.com/ineersa/agent-core/pull/111
-PR Status: open
+PR Status: merged
 Started: 2026-06-09T01:24:48.923Z
-Completed:
+Completed: 2026-06-09T21:31:18.574Z
 
 ## Work log
 - Created: 2026-06-07T20:45:37.774Z
@@ -331,3 +331,10 @@ Validation: deptrac 0 violations, cs-check clean, phpstan 0 new errors (1 pre-ex
 - Pushed task/session-03-new-and-resume-commands to origin.
 - branch 'task/session-03-new-and-resume-commands' set up to track 'origin/task/session-03-new-and-resume-commands'.
 - PR already exists: https://github.com/ineersa/agent-core/pull/111
+
+## Task workflow update - 2026-06-09T21:31:18.574Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/session-03-new-and-resume-commands into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/session-03-new-and-resume-commands.
+- Pulled integration checkout: Already up to date..
