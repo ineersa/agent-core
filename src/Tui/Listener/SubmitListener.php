@@ -250,6 +250,10 @@ final class SubmitListener implements TuiListenerRegistrar
      * execution. Creates a session when this is the first submitted
      * input. Shell commands do not invoke the LLM — output is projected
      * through tool_execution events in the transcript.
+     *
+     * Adds a user-message transcript block with the original submitted
+     * text (including the `!` prefix) so the prompt history navigator
+     * can recall shell commands via Up/Down.
      */
     private static function handleShellCommand(
         DispatchShellCommand $shellCommand,
@@ -271,6 +275,15 @@ final class SubmitListener implements TuiListenerRegistrar
                     'session_id' => $state->sessionId,
                 ]);
             }
+
+            // Add a user-message block so prompt history (Up/Down)
+            // can recall the shell command after submission.
+            $userSeq = \count($state->transcript) + 1;
+            $state->transcript[] = $blockFactory->user(
+                runId: $state->sessionId,
+                text: $shellCommand->originalText,
+                seq: $userSeq,
+            );
 
             if (null === $state->handle) {
                 // First input — execute shell without starting an LLM run.
@@ -296,6 +309,15 @@ final class SubmitListener implements TuiListenerRegistrar
                 );
             }
 
+            // For first-input shellExecute() in InProcess, the shell command
+            // completed synchronously and the completeRun() call already emitted
+            // AgentEnd. The TUI poller will transition to Completed on next tick
+            // and clear the working message. Show a brief working indicator until
+            // the poller processes the terminal event.
+            //
+            // For subsequent shell commands via send(), the shell executes inline
+            // and the working message will stay Running if the agent is active, or
+            // be cleared on next tick if the run was already terminal.
             $screen->setWorkingMessage('Running...');
             $screen->setTranscriptBlocks($state->transcript);
         } catch (\Throwable $e) {

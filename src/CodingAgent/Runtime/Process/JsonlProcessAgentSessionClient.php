@@ -315,6 +315,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             payload: [
                 'text' => $command,
                 'cwd' => $cwd,
+                'standalone' => true,
             ],
         );
 
@@ -327,6 +328,25 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         }
 
         return new RunHandle(runId: $sessionId, status: 'running');
+    }
+
+    public function completeRun(string $runId): void
+    {
+        $this->ensureProcessRunning();
+
+        $cmd = new RuntimeCommand(
+            id: uniqid('cmd_', true),
+            type: 'complete_run',
+            runId: $runId,
+        );
+
+        try {
+            $this->writeCommand($cmd);
+        } catch (\RuntimeException) {
+            // Pipe may have broken — restart and retry once.
+            $this->ensureProcessRunning();
+            $this->writeCommand($cmd);
+        }
     }
 
     private function ensureProcessRunning(): void

@@ -60,7 +60,7 @@ final readonly class SubmissionRouter
                 );
             }
 
-            return new DispatchShellCommand($parseResult->command);
+            return new DispatchShellCommand($parseResult->command, $parseResult->originalText);
         }
 
         // Normal prompt (including empty) → send to runtime

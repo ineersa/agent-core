@@ -82,6 +82,10 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             {
                 throw new \RuntimeException('Not expected in test');
             }
+
+            public function completeRun(string $runId): void
+            {
+            }
         };
 
         $this->tmpDir = sys_get_temp_dir().'/hatfield_poller_test_'.bin2hex(random_bytes(8));

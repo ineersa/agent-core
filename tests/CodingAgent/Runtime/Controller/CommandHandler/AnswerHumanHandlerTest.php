@@ -229,4 +229,9 @@ final class SpySessionClient implements AgentSessionClient
     {
         throw new \RuntimeException('Unexpected shellExecute()');
     }
+
+    public function completeRun(string $runId): void
+    {
+        throw new \RuntimeException('Unexpected completeRun()');
+    }
 }

@@ -198,7 +198,30 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             text: $command,
         ));
 
-        return new RunHandle(runId: $runId, status: 'running');
+        // Emit a terminal AgentEnd event so the TUI poller transitions
+        // from Running to Completed and clears the working indicator.
+        // Without this, the ActivityStateMachine never leaves Running
+        // because standalone shell commands only emit tool_execution
+        // events (no RunCompleted / AgentEnd).
+        $this->completeRun($runId);
+
+        return new RunHandle(runId: $runId, status: 'completed');
+    }
+
+    public function completeRun(string $runId): void
+    {
+        $existingEvents = $this->eventStore->allFor($runId);
+        $nextSeq = [] !== $existingEvents
+            ? max(array_map(static fn (RunEvent $e): int => $e->seq, $existingEvents)) + 1
+            : 1;
+
+        $this->eventStore->append(new RunEvent(
+            runId: $runId,
+            seq: $nextSeq,
+            turnNo: 0,
+            type: RunEventTypeEnum::AgentEnd->value,
+            payload: ['reason' => 'completed'],
+        ));
     }
 
     /**

@@ -165,6 +165,7 @@ final class SubmissionRouterTest extends TestCase
 
         self::assertInstanceOf(DispatchShellCommand::class, $result);
         self::assertSame('echo hello', $result->command);
+        self::assertSame('!echo hello', $result->originalText);
     }
 
     #[Test]

@@ -107,16 +107,96 @@ final class ShellCommandHandlerTest extends TestCase
         self::assertSame('shell_command', $this->spyClient->lastCommand->type);
         self::assertSame('', $this->spyClient->lastCommand->text);
     }
+
+    public function testStandaloneShellCommandCompletesRun(): void
+    {
+        $handler = new ShellCommandHandler($this->spyClient);
+
+        $command = new RuntimeCommand(
+            id: 'cmd_standalone',
+            type: 'shell_command',
+            runId: 'run-standalone-1',
+            payload: [
+                'text' => 'echo hello',
+                'standalone' => true,
+            ],
+        );
+
+        $event = new ControllerCommandEvent($command, static function (): void {});
+        $handler($event);
+
+        self::assertNotNull($this->spyClient->lastCommand);
+        self::assertSame('shell_command', $this->spyClient->lastCommand->type);
+        self::assertSame(1, $this->spyClient->completeRunCalls);
+        self::assertSame('run-standalone-1', $this->spyClient->lastCompletedRunId);
+    }
+
+    public function testInlineShellCommandDoesNotCompleteRun(): void
+    {
+        $handler = new ShellCommandHandler($this->spyClient);
+
+        // Non-standalone: sent via $client->send() from SubmitListener
+        // for subsequent shell commands during an agent run.
+        $command = new RuntimeCommand(
+            id: 'cmd_inline',
+            type: 'shell_command',
+            runId: 'run-inline-1',
+            payload: ['text' => 'echo done'],
+        );
+
+        $event = new ControllerCommandEvent($command, static function (): void {});
+        $handler($event);
+
+        self::assertNotNull($this->spyClient->lastCommand);
+        self::assertSame('shell_command', $this->spyClient->lastCommand->type);
+        self::assertSame(0, $this->spyClient->completeRunCalls);
+    }
+
+    public function testCompleteRunCommandDispatches(): void
+    {
+        $handler = new ShellCommandHandler($this->spyClient);
+
+        $command = new RuntimeCommand(
+            id: 'cmd_complete',
+            type: 'complete_run',
+            runId: 'run-complete-1',
+        );
+
+        $event = new ControllerCommandEvent($command, static function (): void {});
+        $handler($event);
+
+        self::assertSame(1, $this->spyClient->completeRunCalls);
+        self::assertSame('run-complete-1', $this->spyClient->lastCompletedRunId);
+        self::assertNull($this->spyClient->lastCommand);
+    }
+
+    public function testCompleteRunWithEmptyRunIdIsIgnored(): void
+    {
+        $handler = new ShellCommandHandler($this->spyClient);
+
+        $command = new RuntimeCommand(
+            id: 'cmd_complete_no_run',
+            type: 'complete_run',
+            runId: '',
+        );
+
+        $event = new ControllerCommandEvent($command, static function (): void {});
+        $handler($event);
+
+        self::assertSame(0, $this->spyClient->completeRunCalls);
+    }
 }
 
 /**
- * Test spy for AgentSessionClient::send() in shell command context.
+ * Test spy for AgentSessionClient in shell command context.
  *
  * @internal test helper
  */
 final class ShellCommandSpyClient implements AgentSessionClient
 {
     public ?UserCommand $lastCommand = null;
+    public int $completeRunCalls = 0;
+    public ?string $lastCompletedRunId = null;
 
     public function start(StartRunRequest $request): RunHandle
     {
@@ -146,5 +226,11 @@ final class ShellCommandSpyClient implements AgentSessionClient
     public function shellExecute(string $command, string $sessionId, string $cwd): RunHandle
     {
         throw new \RuntimeException('Unexpected shellExecute()');
+    }
+
+    public function completeRun(string $runId): void
+    {
+        ++$this->completeRunCalls;
+        $this->lastCompletedRunId = $runId;
     }
 }

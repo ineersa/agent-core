@@ -39,4 +39,13 @@ interface AgentSessionClient
      * @return RunHandle handle for polling events
      */
     public function shellExecute(string $command, string $sessionId, string $cwd): RunHandle;
+
+    /**
+     * Mark a run as completed by emitting a terminal AgentEnd event.
+     *
+     * Used by standalone shell commands (first-input !cmd) to signal
+     * the TUI poller that the shell-only action is finished so the
+     * working status transitions from Running to Completed.
+     */
+    public function completeRun(string $runId): void;
 }

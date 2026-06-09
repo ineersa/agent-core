@@ -12,11 +12,16 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 
 /**
- * Handles shell_command commands via Symfony EventDispatcher.
+ * Handles shell_command and complete_run commands via Symfony EventDispatcher.
  *
  * Receives shell_command RuntimeCommands from the TUI (via JSONL),
  * delegates to InProcessAgentSessionClient which executes bash through
  * the shared tool executor and emits canonical tool_execution events.
+ *
+ * When the standalone flag is set (shellExecute path), a terminal
+ * AgentEnd event is written to the EventStore so the TUI poller
+ * transitions from Running to Completed and clears the working
+ * indicator.
  *
  * Shell output appears in the transcript via the controller's periodic
  * EventStore drain — no LLM turn is triggered.
@@ -31,12 +36,21 @@ final readonly class ShellCommandHandler
 
     public function __invoke(ControllerCommandEvent $event): void
     {
-        if ('shell_command' !== $event->command->type) {
+        $command = $event->command;
+        $runId = $command->runId ?? '';
+
+        if ('complete_run' === $command->type) {
+            if ('' !== $runId) {
+                $this->client->completeRun($runId);
+            }
+
             return;
         }
 
-        $command = $event->command;
-        $runId = $command->runId ?? '';
+        if ('shell_command' !== $command->type) {
+            return;
+        }
+
         if ('' === $runId) {
             $event->emit(new RuntimeEvent(
                 type: RuntimeEventTypeEnum::ProtocolError->value,
@@ -49,6 +63,7 @@ final readonly class ShellCommandHandler
         }
 
         $commandText = (string) ($command->payload['text'] ?? '');
+        $standalone = (bool) ($command->payload['standalone'] ?? false);
 
         // Delegate to the in-process client which executes bash through
         // the shared tool executor and persists tool_execution events to
@@ -58,5 +73,13 @@ final readonly class ShellCommandHandler
             type: 'shell_command',
             text: $commandText,
         ));
+
+        // Standalone shell commands (first-input !cmd) need a terminal
+        // AgentEnd event so the TUI poller transitions from Running to
+        // Completed. Subsequent shell commands during an agent run must
+        // NOT complete the run — the agent is still working.
+        if ($standalone) {
+            $this->client->completeRun($runId);
+        }
     }
 }
