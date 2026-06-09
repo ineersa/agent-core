@@ -200,6 +200,11 @@ parameters:
         - type: classNameRegex
           value: '#^Symfony\\\\Component\\\\Process\\\\#i'
 
+    - name: SymfonyFinder
+      collectors:
+        - type: classNameRegex
+          value: '#^Symfony\\\\Component\\\\Finder\\\\#i'
+
     - name: SymfonySerializer
       collectors:
         - type: classNameRegex
@@ -337,6 +342,8 @@ parameters:
 
     TuiCompletion:
       - TuiCommand
+      - AppConfig
+      - SymfonyFinder
 
     TuiPicker:
       - AppConfig
@@ -432,8 +439,11 @@ parameters:
       - AppRuntimeInternals
       - AppSkills
       - AppSession
+      - AppConfig
       - TuiApplication
       - TuiListener
+      - TuiRuntime
+      - TuiCompletion
       - TuiHeader
       - TuiTranscript
       - TuiStatus
@@ -443,6 +453,7 @@ parameters:
       - TuiWidget
       - TuiTheme
       - SymfonyConsole
+      - SymfonyProcess
 
     AppRuntimeProjectionPipeline:
       - AppRuntimeProjection
@@ -494,6 +505,7 @@ parameters:
     SymfonyMessenger: ~
     SymfonyLock: ~
     SymfonyProcess: ~
+    SymfonyFinder: ~
     SymfonySerializer: ~
     SymfonyYaml: ~
     ForbiddenHttp: ~

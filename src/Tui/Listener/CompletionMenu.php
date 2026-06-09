@@ -60,7 +60,7 @@ final class CompletionMenu
 
         $header = new TextWidget(
             text: $this->theme->muted(
-                'Slash commands — arrows move, Tab inserts, Enter runs, Esc closes',
+                'Completions — arrows move, Tab inserts, Enter accepts+submits, Esc closes',
             ),
             truncate: true,
         );

@@ -789,6 +789,182 @@ final class CompletionListenerTest extends TestCase
         $this->assertSame('/', $this->editor->getText());
     }
 
+    // ── @ file mention completion ──────────────────────────────────
+
+    #[Test]
+    public function tabOpensFileCompletionForAtContext(): void
+    {
+        // Create a provider with a fake in-memory index.
+        $tmpDir = sys_get_temp_dir().'/editor09-listener-'.getmypid().'-'.hrtime(true);
+        mkdir($tmpDir, 0755, true);
+        $indexPath = $tmpDir.'/index.jsonl';
+
+        try {
+            file_put_contents($indexPath, implode("\n", [
+                '{"path":"src/foo.php","dir":false}',
+                '{"path":"src/bar.php","dir":false}',
+            ]));
+
+            $reader = new \Ineersa\Tui\Completion\FileMentionIndexReader($indexPath);
+            $fileProvider = new \Ineersa\Tui\Completion\FileMentionCompletionProvider($reader);
+            $registry = new \Ineersa\Tui\Completion\CompletionProviderRegistry([
+                new SlashCommandCompletionProvider($this->registry),
+                $fileProvider,
+            ]);
+
+            // Create fresh TUI and editor to avoid interference from setUp.
+            $isolatedTui = new Tui();
+            $isolatedEditor = new PromptEditor();
+            $theme = new DefaultTheme(new ThemePalette('default'));
+            $isolatedScreen = new ChatScreen($theme, 'test-session', $isolatedEditor);
+            $isolatedScreen->mount($isolatedTui);
+            $isolatedTui->setFocus($isolatedScreen->editorWidget());
+
+            $listener = new CompletionListener($registry);
+
+            $appConfig = new AppConfig(
+                tui: new TuiConfig(theme: 'default'),
+                logging: new LoggingConfig(),
+                cwd: sys_get_temp_dir(),
+            );
+            $sessionStore = new HatfieldSessionStore(
+                appConfig: $appConfig,
+                entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            );
+            $context = new TuiRuntimeContext(
+                tui: $isolatedTui,
+                client: $this->createStub(AgentSessionClient::class),
+                state: new TuiSessionState('test-session'),
+                screen: $isolatedScreen,
+                sessionStore: $sessionStore,
+            );
+            $listener->register($context);
+
+            // Tab on @ should open completion.
+            $isolatedEditor->setText('@');
+            $isolatedTui->handleInput("\t");
+
+            // Tab again should accept the first suggestion.
+            $isolatedTui->handleInput("\t");
+
+            $this->assertStringStartsWith('@src/', $isolatedEditor->getText());
+        } finally {
+            @unlink($indexPath);
+            @rmdir($tmpDir);
+        }
+    }
+
+    #[Test]
+    public function liveFileNameCompletionOpensOnAt(): void
+    {
+        $tmpDir = sys_get_temp_dir().'/editor09-live-'.getmypid().'-'.hrtime(true);
+        mkdir($tmpDir, 0755, true);
+        $indexPath = $tmpDir.'/index.jsonl';
+
+        try {
+            file_put_contents($indexPath, '{"path":"my-file.php","dir":false}');
+
+            $reader = new \Ineersa\Tui\Completion\FileMentionIndexReader($indexPath);
+            $fileProvider = new \Ineersa\Tui\Completion\FileMentionCompletionProvider($reader);
+            $registry = new \Ineersa\Tui\Completion\CompletionProviderRegistry([
+                new SlashCommandCompletionProvider($this->registry),
+                $fileProvider,
+            ]);
+
+            $isolatedTui = new Tui();
+            $isolatedEditor = new PromptEditor();
+            $theme = new DefaultTheme(new ThemePalette('default'));
+            $isolatedScreen = new ChatScreen($theme, 'test-session', $isolatedEditor);
+            $isolatedScreen->mount($isolatedTui);
+            $isolatedTui->setFocus($isolatedScreen->editorWidget());
+
+            $listener = new CompletionListener($registry);
+
+            $appConfig = new AppConfig(
+                tui: new TuiConfig(theme: 'default'),
+                logging: new LoggingConfig(),
+                cwd: sys_get_temp_dir(),
+            );
+            $sessionStore = new HatfieldSessionStore(
+                appConfig: $appConfig,
+                entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            );
+            $context = new TuiRuntimeContext(
+                tui: $isolatedTui,
+                client: $this->createStub(AgentSessionClient::class),
+                state: new TuiSessionState('test-session'),
+                screen: $isolatedScreen,
+                sessionStore: $sessionStore,
+            );
+            $listener->register($context);
+
+            // Typing @ should open completion live.
+            $isolatedEditor->setText('');
+            // handleInput("@") both inserts @ and triggers live completion.
+            $isolatedTui->handleInput("@");
+
+            // Tab should accept.
+            $isolatedTui->handleInput("\t");
+            $this->assertStringStartsWith('@my-file.php', $isolatedEditor->getText());
+        } finally {
+            @unlink($indexPath);
+            @rmdir($tmpDir);
+        }
+    }
+
+    #[Test]
+    public function escapeClosesFileCompletionWithoutClearingEditor(): void
+    {
+        $tmpDir = sys_get_temp_dir().'/editor09-escape-'.getmypid().'-'.hrtime(true);
+        mkdir($tmpDir, 0755, true);
+        $indexPath = $tmpDir.'/index.jsonl';
+
+        try {
+            file_put_contents($indexPath, '{"path":"src/file.php","dir":false}');
+
+            $reader = new \Ineersa\Tui\Completion\FileMentionIndexReader($indexPath);
+            $fileProvider = new \Ineersa\Tui\Completion\FileMentionCompletionProvider($reader);
+
+            $isolatedTui = new Tui();
+            $isolatedEditor = new PromptEditor();
+            $theme = new DefaultTheme(new ThemePalette('default'));
+            $isolatedScreen = new ChatScreen($theme, 'test-session', $isolatedEditor);
+            $isolatedScreen->mount($isolatedTui);
+            $isolatedTui->setFocus($isolatedScreen->editorWidget());
+
+            $listener = new CompletionListener($fileProvider);
+
+            $appConfig = new AppConfig(
+                tui: new TuiConfig(theme: 'default'),
+                logging: new LoggingConfig(),
+                cwd: sys_get_temp_dir(),
+            );
+            $sessionStore = new HatfieldSessionStore(
+                appConfig: $appConfig,
+                entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            );
+            $context = new TuiRuntimeContext(
+                tui: $isolatedTui,
+                client: $this->createStub(AgentSessionClient::class),
+                state: new TuiSessionState('test-session'),
+                screen: $isolatedScreen,
+                sessionStore: $sessionStore,
+            );
+            $listener->register($context);
+
+            $isolatedEditor->setText('@');
+            // Open via Tab.
+            $isolatedTui->handleInput("\t");
+
+            // Escape closes without clearing.
+            $isolatedTui->handleInput("\x1b");
+            $this->assertSame('@', $isolatedEditor->getText());
+        } finally {
+            @unlink($indexPath);
+            @rmdir($tmpDir);
+        }
+    }
+
     // ─── Helpers ────────────────────────────────────────────────────
 
     private function registerListener(): void
