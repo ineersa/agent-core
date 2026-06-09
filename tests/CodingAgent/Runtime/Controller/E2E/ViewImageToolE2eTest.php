@@ -81,25 +81,57 @@ final class ViewImageToolE2eTest extends ControllerE2eTestCase
             .$this->collectDiagnostics($events),
         );
 
-        // Verify the image-capable tool was actually invoked.
-        // llcama_cpp_test/test supports images; the issue is confirming
-        // the view_image path executed, not rejecting generic LLM prose.
-        self::assertArrayHasKey('tool_batch_committed', $byType,
-            'view_image tool batch must be committed. '
-            .'If tool_batch_committed is missing, the view_image tool never executed. '
+        // Verify the view_image tool was actually invoked.
+        // tool_execution.started / tool_execution.completed are streamed
+        // to stdout by the controller (unlike tool_batch_committed which is
+        // internal bookkeeping dropped from the runtime stream per
+        // RuntimeEventTranslator::drop()).
+        self::assertArrayHasKey('tool_execution.started', $byType,
+            'view_image tool must be invoked. '
+            .'Event types: '.implode(', ', array_keys($byType))."\n"
+            .$this->collectDiagnostics($events),
+        );
+        self::assertArrayHasKey('tool_execution.completed', $byType,
+            'view_image tool must complete. '
             .'Event types: '.implode(', ', array_keys($byType))."\n"
             .$this->collectDiagnostics($events),
         );
 
-        // The exact gating placeholder contains both "Actual image omitted"
-        // AND "active model does not support images" as a single phrase.
-        // Checking both together avoids false positives from the LLM
-        // naturally mentioning image support in its own explanatory prose.
+        // Verify the tool batch was committed in the persistence layer.
+        // tool_batch_committed is internal bookkeeping, not streamed to
+        // stdout, so we read events.jsonl directly.
+        $eventsJsonl = $this->tempDir.'/.hatfield/sessions/'.$this->runId.'/events.jsonl';
+        $persistedTypes = [];
+        if (is_file($eventsJsonl)) {
+            foreach (file($eventsJsonl, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES) as $line) {
+                try {
+                    $e = json_decode($line, true, 512, \JSON_THROW_ON_ERROR);
+                    $persistedTypes[] = $e['type'] ?? 'unknown';
+                } catch (\JsonException) {
+                    // skip unparseable lines
+                }
+            }
+        }
+        self::assertContains('tool_batch_committed', $persistedTypes,
+            'tool_batch_committed must exist in events.jsonl. '
+            .'Persisted types: '.implode(', ', array_unique($persistedTypes))."\n"
+            .$this->collectDiagnostics($events),
+        );
+
+        // Check for the gating placeholder in streamed events. The gating
+        // hook output is `[Tool result image: ...]` — a project-specific
+        // bracket-enclosed format that the LLM will NOT naturally produce.
+        // Only check tool_execution events and tool result messages where
+        // gating output would actually appear.
         $gatingPlaceholderFound = false;
-        foreach ($events as $event) {
+        $toolEvents = array_merge(
+            $byType['tool_execution.completed'] ?? [],
+            $byType['tool_execution.failed'] ?? [],
+        );
+        foreach ($toolEvents as $event) {
             $text = $event['payload']['text'] ?? '';
             if (\is_string($text)
-                && str_contains($text, 'Actual image omitted')
+                && str_contains($text, '[Tool result image:')
                 && stripos($text, 'does not support images') !== false
             ) {
                 $gatingPlaceholderFound = true;
@@ -107,7 +139,8 @@ final class ViewImageToolE2eTest extends ControllerE2eTestCase
             }
         }
         self::assertFalse($gatingPlaceholderFound,
-            'Gating placeholder must not appear — tool_batch_committed proves the image was sent to the LLM. '
+            'Gating placeholder must not appear in tool execution events — '
+            .'tool_batch_committed in events.jsonl proves the image was sent to the LLM. '
             .$this->collectDiagnostics($events),
         );
 

@@ -19,15 +19,14 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
+use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Messenger\Envelope;
-use Symfony\Component\Messenger\MessageBusInterface;
 
 final class LlmStepResultHandlerTest extends TestCase
 {
     public function testHandleWithToolCallsReturnsPostCommitBatchRegistrationCallback(): void
     {
-        $executionBus = new LlmHandlerRecordingBus();
+        $executionBus = new TestMessageBus();
         $stepDispatcher = new StepDispatcher($executionBus);
 
         $commandStore = new InMemoryCommandStore();
@@ -95,15 +94,4 @@ final class LlmStepResultHandlerTest extends TestCase
     }
 }
 
-final class LlmHandlerRecordingBus implements MessageBusInterface
-{
-    /** @var list<object> */
-    public array $messages = [];
 
-    public function dispatch(object $message, array $stamps = []): Envelope
-    {
-        $this->messages[] = $message;
-
-        return new Envelope($message, $stamps);
-    }
-}

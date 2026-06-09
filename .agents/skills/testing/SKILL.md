@@ -121,7 +121,7 @@ After `castor test:tui`, passing test snapshots are kept at `var/tmp/tui-e2e-*/`
 
 After failures, diagnostics go to `var/tmp/tui-failures/` (ANSI snapshots + plain text dumps).
 
-Run `castor cleanup` to remove all temp/test artifacts.
+Run `castor cleanup` to remove all temp/test artifacts. See `tests/AGENTS.md` for full test standards: shared helpers, directory isolation, what not to test, one-class-per-file rules.
 
 ## DB-touching tests
 

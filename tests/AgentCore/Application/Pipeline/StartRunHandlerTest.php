@@ -12,10 +12,9 @@ use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\Builder\StartRunMessageBuilder;
+use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Messenger\Envelope;
-use Symfony\Component\Messenger\MessageBusInterface;
 
 final class StartRunHandlerTest extends TestCase
 {
@@ -80,7 +79,7 @@ final class StartRunHandlerTest extends TestCase
 
     public function testHandleSchedulesInitialAdvanceAfterCommitWhenBusIsProvided(): void
     {
-        $commandBus = new StartRunRecordingBus();
+        $commandBus = new TestMessageBus();
 
         $handler = new StartRunHandler(
             eventFactory: new EventFactory(),
@@ -112,15 +111,4 @@ final class StartRunHandlerTest extends TestCase
     }
 }
 
-final class StartRunRecordingBus implements MessageBusInterface
-{
-    /** @var list<object> */
-    public array $messages = [];
 
-    public function dispatch(object $message, array $stamps = []): Envelope
-    {
-        $this->messages[] = $message;
-
-        return new Envelope($message, $stamps);
-    }
-}

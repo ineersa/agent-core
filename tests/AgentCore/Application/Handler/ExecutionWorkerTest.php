@@ -18,11 +18,9 @@ use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
+use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\CodingAgent\Tests\Support\TestLogger;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\AbstractLogger;
-use Stringable;
-use Symfony\Component\Messenger\Envelope;
-use Symfony\Component\Messenger\MessageBusInterface;
 
 final class ExecutionWorkerTest extends TestCase
 {
@@ -37,7 +35,7 @@ final class ExecutionWorkerTest extends TestCase
             }
         };
 
-        $commandBus = new CollectingMessageBus();
+        $commandBus = new TestMessageBus();
         $worker = new ExecuteLlmStepWorker($platform, $commandBus, 'test-model');
 
         $worker(new ExecuteLlmStep(
@@ -73,9 +71,9 @@ final class ExecutionWorkerTest extends TestCase
             }
         };
 
-        $commandBus = new CollectingMessageBus();
+        $commandBus = new TestMessageBus();
         $metrics = new RunMetrics();
-        $traceLogger = new WorkerTraceLogger();
+        $traceLogger = new TestLogger();
         $tracer = new RunTracer($traceLogger);
 
         $worker = new ExecuteLlmStepWorker($platform, $commandBus, 'test-model', $metrics, $tracer);
@@ -125,7 +123,7 @@ final class ExecutionWorkerTest extends TestCase
             }
         };
 
-        $commandBus = new CollectingMessageBus();
+        $commandBus = new TestMessageBus();
         $metrics = new RunMetrics();
         $worker = new ExecuteToolCallWorker($toolExecutor, $commandBus, null, $metrics);
 
@@ -166,7 +164,7 @@ final class ExecutionWorkerTest extends TestCase
             }
         };
 
-        $commandBus = new CollectingMessageBus();
+        $commandBus = new TestMessageBus();
         $worker = new ExecuteToolCallWorker($toolExecutor, $commandBus);
 
         $worker(new ExecuteToolCall(
@@ -194,31 +192,4 @@ final class ExecutionWorkerTest extends TestCase
     }
 }
 
-final class CollectingMessageBus implements MessageBusInterface
-{
-    /** @var list<object> */
-    public array $messages = [];
 
-    public function dispatch(object $message, array $stamps = []): Envelope
-    {
-        $this->messages[] = $message;
-
-        return new Envelope($message, $stamps);
-    }
-}
-
-final class WorkerTraceLogger extends AbstractLogger
-{
-    /** @var list<array{message: string, context: array<string, mixed>}> */
-    public array $records = [];
-
-    public function log($level, Stringable|string $message, array $context = []): void
-    {
-        unset($level);
-
-        $this->records[] = [
-            'message' => (string) $message,
-            'context' => $context,
-        ];
-    }
-}
