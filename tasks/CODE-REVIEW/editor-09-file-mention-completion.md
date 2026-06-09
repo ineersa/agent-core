@@ -27,7 +27,7 @@ Parallelizable with: EDITOR-10.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/editor-09-file-mention-completion
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-09-file-mention-completion
 Fork run: ymhdr2pc8fen
@@ -235,11 +235,11 @@ Use Castor only:
 - Summary: Task-to-PR review completed for EDITOR-09. Initial reviewer verdict at 26de6c67: REQUEST CHANGES; implementation fork produced b8bfb85c addressing critical quoted @ insertion bug, path quoting, dead/deptrac/path issues, builder move, tests. Re-review verdict at b8bfb85c: APPROVE WITH SUGGESTIONS; second implementation fork produced 051ec0ba addressing all remaining suggestions (removed unused AtTokenContext fields, fixed priority docblock, temp cleanup on exceptions, structured diagnostic logging, semantic lock-held exception, refresh command real failure visibility, corrected reader docblock, added builder→reader→provider round-trip test). Final reviewer verdict at 051ec0ba: APPROVE with no issues. Current worktree clean; HEAD 051ec0ba fix(editor-09): tighten file mention review cleanup.
 - task-to-pr review iteration: reviewer REQUEST CHANGES → fork fix commit b8bfb85c → reviewer APPROVE WITH SUGGESTIONS → fork cleanup commit 051ec0ba → final reviewer APPROVE. Ready to move to CODE-REVIEW for full Castor quality gate and PR creation.
 Castor Check Status: passed
-Castor Check Commit: 752425cfee617de3521d9596c312e2bc01f5c5a2
+Castor Check Commit: 118d172e13af4475b0b0b52666aca0d05f030ae4
 Castor Check Command: LLM_MODE=true castor check
 Castor Check Timeout: 900s
-Castor Check Completed: 2026-06-09T16:51:38.916Z
-Castor Check Output SHA256: 4ec6e7fcfd79ec711b3350fbc7b19e01118a6b9a48e8c30baf65d9c24707cf33
+Castor Check Completed: 2026-06-09T17:05:11.524Z
+Castor Check Output SHA256: f1112040ed5d4cf053d853cd4f7e8c7b4f2595c11494d7c04ad246048f992c5a
 
 ## Task workflow update - 2026-06-09T01:02:26.521Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -337,3 +337,12 @@ Castor Check Output SHA256: 4ec6e7fcfd79ec711b3350fbc7b19e01118a6b9a48e8c30baf65
 - Recorded fork run: ymhdr2pc8fen
 - Validation: fork-reported: castor test --filter=CompletionFileIndexRefreshCommand OK (3 tests); fork-reported: castor test --filter=FileMentionIndexBuilder OK (9 tests, 66 assertions); fork-reported: castor test --filter=FileMention OK (50 tests, 153 assertions); fork-reported: castor test --filter=Completion OK (133 tests, 284 assertions); fork-reported: castor deptrac OK (0 violations); fork-reported: castor phpstan OK (0 errors); fork-reported: castor cs-check OK; orchestrator verification: worktree clean; HEAD 118d172e; no OutputInterface writeln calls remain in CompletionFileIndexRefreshCommand; refresh_completed/refresh_lock_held/refresh_failed structured event types present; git diff --check clean
 - Summary: Final cleanup fork ymhdr2pc8fen completed at commit 118d172e (`fix(editor-09): route completion index refresh output through logger instead of stdout`). It removed all `OutputInterface::writeln()` calls from `CompletionFileIndexRefreshCommand`, added structured logger events for refresh success (`file_mention_index.refresh_completed`, `entry_count`) and lock-held skip (`file_mention_index.refresh_lock_held`), kept failure logging at error (`file_mention_index.refresh_failed`), preserved exit codes SUCCESS/SUCCESS/FAILURE, and added `CompletionFileIndexRefreshCommandTest` asserting no stdout display for success/lock-held/failure. Orchestrator verified worktree clean, no writeln calls remain in the command, structured event types are present, and git diff --check is clean.
+
+## Task workflow update - 2026-06-09T17:05:13.526Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: 118d172e13af.
+- Pushed task/editor-09-file-mention-completion to origin.
+- branch 'task/editor-09-file-mention-completion' set up to track 'origin/task/editor-09-file-mention-completion'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/110
+- Validation: fork-reported: castor test --filter=CompletionFileIndexRefreshCommand OK (3 tests); fork-reported: castor test --filter=FileMentionIndexBuilder OK; fork-reported: castor test --filter=FileMention OK; fork-reported: castor test --filter=Completion OK; fork-reported: castor deptrac OK; fork-reported: castor phpstan OK; fork-reported: castor cs-check OK; orchestrator: no OutputInterface writeln calls remain in CompletionFileIndexRefreshCommand; exit codes unchanged; worktree clean
+- Summary: Final PR #110 cleanup complete. Latest HEAD 118d172e (`fix(editor-09): route completion index refresh output through logger instead of stdout`) removes scheduler command stdout writes, routes success/lock-held/failure through structured logging, preserves exit codes, and adds CommandTester coverage asserting empty stdout for success/lock-held/failure. User requested this final fix before merge; moving to CODE-REVIEW to run full Castor gate and push PR update.
