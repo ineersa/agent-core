@@ -137,14 +137,14 @@ class SessionSwitchService {
 - Validation uses Castor per project rules; runtime/TUI changes require full `castor check` before CODE-REVIEW.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/session-02-tui-session-switch-lifecycle
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-02-tui-session-switch-lifecycle
 Fork run: wnh6pcfbbcp8
 PR URL: https://github.com/ineersa/agent-core/pull/109
-PR Status: open
+PR Status: merged
 Started: 2026-06-08T21:50:11.525Z
-Completed:
+Completed: 2026-06-09T01:19:02.477Z
 
 ## Work log
 - Created: 2026-06-07T20:45:22.373Z
@@ -294,3 +294,12 @@ Castor Check Output SHA256: 09bcfdc7f71518811cd6f5a5a4ab8f36744d140a4e9e94fd6d83
 - PR already exists: https://github.com/ineersa/agent-core/pull/109
 - Validation: Final reviewer: APPROVED at HEAD `94e849ae`.; Fork validation before move: `castor test` PASS (2195 tests, 6405 assertions), `castor deptrac` PASS (0 violations), `castor phpstan` PASS (0 errors), `castor cs-check` PASS (clean), `castor test:tui` PASS (5 tests), `castor test:llm-real` PASS (5 tests), `castor test:controller` PASS (1 test).; Docblock cleanup validation: `castor phpstan` PASS, `castor cs-check` PASS, `castor test --filter=SessionLifecycle` PASS (8 tests).
 - Summary: PR #109 review iteration complete. Addressed inline feedback by documenting that the `InteractiveMode` switch loop blocks in `Tui::run()`/Revolt suspension and does not spin CPU, and by adding a privacy-safe internal TUI session lifecycle event seam exposed through `TuiRuntimeContext` for future extension bridging. Lifecycle event refinements include `TuiSessionLifecycleDispatcher`, `TuiSessionLifecycleEventDTO`, `TuiSessionLifecycleEventTypeEnum`, `TuiSessionLifecycleEndReasonEnum`, previous-session correlation on start/resume/draft-start after switches, docs updates, and focused tests. Final reviewer approved HEAD `94e849ae`; no actionable issues remain.
+
+## Task workflow update - 2026-06-09T01:19:02.477Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/session-02-tui-session-switch-lifecycle into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/session-02-tui-session-switch-lifecycle.
+- Pulled integration checkout: Already up to date..
+- Validation: Pre-DONE check: `gh pr view 109 --json state,mergedAt,headRefName,baseRefName` reported state=MERGED, mergedAt=2026-06-09T01:17:53Z, headRefName=task/session-02-tui-session-switch-lifecycle, baseRefName=main.; Pre-DONE sync: `git pull --ff-only` on main fast-forwarded from `bc737f58` to `15e77231` with SESSION-02 files applied.
+- Summary: PR #109 was already merged on GitHub (`mergedAt=2026-06-09T01:17:53Z`). Integration checkout pulled `origin/main` fast-forward to merge commit `15e77231`, bringing in SESSION-02 implementation and PR review-iteration commits. Moving task to DONE and cleaning up worktree.
