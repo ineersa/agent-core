@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Listener;
 
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
+use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Picker\FavoritePickerController;
@@ -104,6 +105,31 @@ final class ModelControlListener implements TuiListenerRegistrar
             $state->footerModel = FooterStateInitializer::shortModelName($nextRef->toString());
             $state->footerReasoning = $modelService->getDisplayReasoning($state->sessionId);
             $state->contextWindow = FooterStateInitializer::resolveContextWindowForRef($appConfig, $nextRef);
+
+            // For draft sessions, carry the model into the request so it is
+            // used when the draft is promoted on first submit.  Without this,
+            // SubmitListener reads $state->request?->model (null) and the
+            // StartRunRequest carries no model, leaving the runtime to resolve
+            // from stale AppConfig.
+            if ('' === $state->sessionId) {
+                if (null === $state->request) {
+                    $state->request = new StartRunRequest(
+                        prompt: '',
+                        runId: '',
+                        cwd: '',
+                        model: $nextRef->toString(),
+                    );
+                } else {
+                    $state->request = new StartRunRequest(
+                        prompt: $state->request->prompt,
+                        runId: $state->request->runId,
+                        cwd: $state->request->cwd,
+                        options: $state->request->options,
+                        model: $nextRef->toString(),
+                        reasoning: $state->request->reasoning,
+                    );
+                }
+            }
         }, priority: 95);
 
         // ── Register Shift+Tab — cycle reasoning levels ──

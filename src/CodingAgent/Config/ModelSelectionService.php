@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
+use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
+use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 
 /**
  * Central model/reasoning selection with four-tier priority and persistence.
@@ -97,6 +99,14 @@ final class ModelSelectionService
         }
 
         $this->persister->persistModel($model->toString(), $model->providerId, $model->modelName, $sessionId);
+
+        // Sync in-memory AppConfig (and its catalog) so current-process
+        // consumers — footer state initializer, model resolver, Ctrl+P
+        // cycling — see the updated default immediately. Without this,
+        // AppConfig holds the value from process start while
+        // HomeSettingsWriter has already mutated the YAML on disk, causing
+        // a visibility gap on /new session switches.
+        $this->syncAppConfigAi(defaultModel: $model->toString());
     }
 
     // ──────────────────────────────────────────────
@@ -111,6 +121,10 @@ final class ModelSelectionService
     public function changeReasoning(string $level, string $sessionId): void
     {
         $this->persister->persistReasoning($level, $sessionId);
+
+        // Sync in-memory AppConfig (and its catalog) so current-process
+        // consumers see the updated reasoning default immediately.
+        $this->syncAppConfigAi(defaultReasoning: $level);
     }
 
     // ──────────────────────────────────────────────
@@ -223,6 +237,10 @@ final class ModelSelectionService
         $this->favRaw = $current;
 
         $this->persister->persistFavoriteModels($current);
+
+        // Sync in-memory AppConfig (and its catalog) so current-process
+        // consumers see the updated favorites list immediately.
+        $this->syncAppConfigAi(favoriteModels: $current);
     }
 
     // ──────────────────────────────────────────────
@@ -334,6 +352,46 @@ final class ModelSelectionService
     public function getSupportedReasoningLevels(string $sessionId): array
     {
         return $this->resolver->getSupportedReasoningLevels($sessionId);
+    }
+
+    // ──────────────────────────────────────────────
+    //  In-memory sync
+    // ──────────────────────────────────────────────
+
+    /**
+     * Sync in-memory AppConfig (and rebuild its catalog) after a mutation.
+     *
+     * AppConfig is built once at process start. When changeModel / changeReasoning /
+     * toggleFavorite persist mutations to the home YAML via HomeSettingsWriter,
+     * the in-memory AppConfig (and its HatfieldModelCatalog) still hold the
+     * pre-mutation values. This causes a visibility gap: Ctrl+P changes the
+     * default, but /new (which reads AppConfig) still sees the old default.
+     *
+     * This helper replaces AppConfig::$ai with a new AiConfig carrying the
+     * updated fields and rebuilds AppConfig::$catalog so that
+     * defaultModelReference() and provider/favorites lookups return fresh data.
+     *
+     * @param string|null       $defaultModel     Set to override the default model
+     * @param string|null       $defaultReasoning Set to override the default reasoning
+     * @param list<string>|null $favoriteModels   Set to override the favorites list
+     */
+    private function syncAppConfigAi(
+        ?string $defaultModel = null,
+        ?string $defaultReasoning = null,
+        ?array $favoriteModels = null,
+    ): void {
+        $ai = $this->appConfig->ai;
+        if (null === $ai) {
+            return;
+        }
+
+        $this->appConfig->ai = new AiConfig(
+            defaultModel: $defaultModel ?? $ai->defaultModel,
+            defaultReasoning: $defaultReasoning ?? $ai->defaultReasoning,
+            providers: $ai->providers,
+            favoriteModels: $favoriteModels ?? $ai->favoriteModels,
+        );
+        $this->appConfig->catalog = new HatfieldModelCatalog($this->appConfig->ai);
     }
 
     // ──────────────────────────────────────────────
