@@ -30,7 +30,7 @@ Parallelizable with: EDITOR-10.
 Status: IN-PROGRESS
 Branch: task/editor-09-file-mention-completion
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-09-file-mention-completion
-Fork run: 903qx6gtqfeh
+Fork run: swo88scbq93c
 PR URL: https://github.com/ineersa/agent-core/pull/110
 PR Status: open
 Started: 2026-06-08T23:47:05.979Z
@@ -309,3 +309,8 @@ Castor Check Output SHA256: 1b1c06f5e40ab95a95ca2112e4bcf86577ad98ddc83947ba9000
 - Recorded fork run: 903qx6gtqfeh
 - Validation: fork-reported: castor test --filter=FileMentionIndexBuilder OK; fork-reported: castor test --filter=FileMention OK; fork-reported: castor test --filter=Completion OK; fork-reported: castor test --filter=PromptHistory OK; fork-reported: castor phpstan OK; fork-reported: castor cs-check OK; fork-reported: castor deptrac OK; orchestrator inspection: HEAD 8067c917 clean but target classes still have nullable logger/lock constructor params/properties; follow-up launched
 - Summary: Review-iterate fork 903qx6gtqfeh completed at commit 8067c917 (`fix(editor-09): remove NullLogger and NullLock fallbacks from file mention index services`). It removed NullLogger/NullLock fallback logic and preserved `$lock->acquire(false)` non-blocking behavior with documentation. However, orchestrator inspection found nullable constructor signatures/properties remained (`?LoggerInterface = null`, `?LockFactory = null`) due to parameter ordering, which does not fully satisfy PR comments that these services should be required/autowired. Launched follow-up fork swo88scbq93c to reorder constructor parameters and make LoggerInterface/LockFactory truly non-null required dependencies.
+
+## Task workflow update - 2026-06-09T16:20:52.061Z
+- Recorded fork run: swo88scbq93c
+- Validation: fork-reported: castor test --filter=FileMentionIndexBuilder OK (9 tests, 66 assertions); fork-reported: castor test --filter=FileMention OK (50 tests, 153 assertions); fork-reported: castor test --filter=Completion OK (130 tests, 277 assertions); fork-reported: castor test full OK (2221 tests, 6464 assertions); fork-reported: castor deptrac OK (0 violations); fork-reported: castor phpstan OK (0 errors); fork-reported: castor cs-check OK; orchestrator verification: git status clean; HEAD 752425cf; no nullable/fallback logger/lock patterns in target classes; acquire(false) unchanged; git diff --check clean
+- Summary: Follow-up review-iterate fork swo88scbq93c completed at commit 752425cf (`fix(editor-09): require non-null LoggerInterface and LockFactory`). It reordered FileMentionIndexBuilder constructor to make LoggerInterface and LockFactory required non-null autowired dependencies, converted logger dependencies in CompletionFileIndexRefreshCommand and FileMentionIndexStartupListener to non-null promoted readonly properties, and left `$lock->acquire(false)` unchanged for non-blocking scheduler-safe lock acquisition. Orchestrator verified worktree clean, no nullable LoggerInterface/LockFactory/NullLogger/NullLock patterns remain in the three target classes, and `acquire(false)` remains present.
