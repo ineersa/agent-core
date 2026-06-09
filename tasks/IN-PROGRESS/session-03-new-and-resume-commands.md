@@ -132,7 +132,7 @@ $registry->register(
 Status: IN-PROGRESS
 Branch: task/session-03-new-and-resume-commands
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-03-new-and-resume-commands
-Fork run: ft7c25fezpyf
+Fork run: yh7poaiaod4u
 PR URL: https://github.com/ineersa/agent-core/pull/111
 PR Status: open
 Started: 2026-06-09T01:24:48.923Z
@@ -196,3 +196,8 @@ Castor Check Output SHA256: 507c25ed333065ce5e4d285e4a3ed0e961e812feefd1fd2aa0cc
 ## Task workflow update - 2026-06-09T15:34:31.179Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: Review iteration requested by user after PR #111/manual TUI inspection. Issues to address: session picker rows use SelectListWidget descriptions causing label column clamp to 30 chars; combine `#id - name` into a single label with no description key for full-width rendering. TUI switch via `/new` and `/resume` leaves old TUI rendering above new TUI in snapshot, so session switches must properly clear/re-render the whole screen. Also align session picker selected-row styling with common widgets/completions theme colors such as accent selection.
+
+## Task workflow update - 2026-06-09T15:35:20.948Z
+- Recorded fork run: yh7poaiaod4u
+- Summary: Launched review-iteration fork `yh7poaiaod4u` to address user/manual TUI feedback after PR #111: (1) change session picker rows to full-width single-column labels like `#id - name` with no `description` key because Symfony `SelectListWidget` clamps label column when description is present, (2) fix `/new` and `/resume` session switch rendering so old TUI content is cleared/re-rendered instead of leaving stacked screens, (3) align session picker selected-row styling with common completion/picker/theme accent behavior, with focused tests and `castor test:tui` validation required.
+- task-review-iterate: implementation fork yh7poaiaod4u launched in worktree `/home/ineersa/projects/agent-core-worktrees/session-03-new-and-resume-commands` for SelectListWidget single-column rows, full-screen switch rerender, and picker styling polish.
