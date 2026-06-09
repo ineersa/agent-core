@@ -27,14 +27,14 @@ Parallelizable with: EDITOR-10.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/editor-09-file-mention-completion
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-09-file-mention-completion
 Fork run: ymhdr2pc8fen
 PR URL: https://github.com/ineersa/agent-core/pull/110
-PR Status: open
+PR Status: merged
 Started: 2026-06-08T23:47:05.979Z
-Completed:
+Completed: 2026-06-09T17:05:28.259Z
 
 ## Work log
 - Created: 2026-05-18T00:16:03.500Z
@@ -346,3 +346,52 @@ Castor Check Output SHA256: f1112040ed5d4cf053d853cd4f7e8c7b4f2595c11494d7c04ad2
 - PR already exists: https://github.com/ineersa/agent-core/pull/110
 - Validation: fork-reported: castor test --filter=CompletionFileIndexRefreshCommand OK (3 tests); fork-reported: castor test --filter=FileMentionIndexBuilder OK; fork-reported: castor test --filter=FileMention OK; fork-reported: castor test --filter=Completion OK; fork-reported: castor deptrac OK; fork-reported: castor phpstan OK; fork-reported: castor cs-check OK; orchestrator: no OutputInterface writeln calls remain in CompletionFileIndexRefreshCommand; exit codes unchanged; worktree clean
 - Summary: Final PR #110 cleanup complete. Latest HEAD 118d172e (`fix(editor-09): route completion index refresh output through logger instead of stdout`) removes scheduler command stdout writes, routes success/lock-held/failure through structured logging, preserves exit codes, and adds CommandTester coverage asserting empty stdout for success/lock-held/failure. User requested this final fix before merge; moving to CODE-REVIEW to run full Castor gate and push PR update.
+
+## Task workflow update - 2026-06-09T17:05:28.259Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/editor-09-file-mention-completion into integration checkout.
+- Auto-merging depfile.yaml
+Auto-merging tests/Tui/Listener/CompletionListenerTest.php
+Merge made by the 'ort' strategy.
+ composer.json                                      |   3 +-
+ composer.lock                                      |  87 ++-
+ config/packages/framework.yaml                     |   2 +
+ config/services.yaml                               |  51 ++
+ depfile.yaml                                       |  18 +
+ .../CLI/CompletionFileIndexRefreshCommand.php      |  85 +++
+ src/CodingAgent/CLI/FileMentionIndexBuilder.php    | 283 +++++++++
+ .../CLI/FileMentionIndexLockHeldException.php      |  22 +
+ .../CLI/FileMentionIndexStartupListener.php        |  67 +++
+ .../Runtime/Controller/HeadlessController.php      |   5 +
+ src/Tui/Completion/AtTokenContext.php              |  27 +
+ src/Tui/Completion/CompletionProviderRegistry.php  |  42 ++
+ .../Completion/FileMentionCompletionProvider.php   | 237 ++++++++
+ src/Tui/Completion/FileMentionIndexEntryDTO.php    |  20 +
+ src/Tui/Completion/FileMentionIndexReader.php      | 207 +++++++
+ src/Tui/Listener/CompletionListener.php            |  17 +-
+ src/Tui/Listener/CompletionMenu.php                |  19 +-
+ .../CLI/CompletionFileIndexRefreshCommandTest.php  | 140 +++++
+ .../CLI/FileMentionIndexBuilderTest.php            | 396 +++++++++++++
+ .../Completion/CompletionProviderRegistryTest.php  | 107 ++++
+ .../FileMentionCompletionProviderTest.php          | 644 +++++++++++++++++++++
+ .../Tui/Completion/FileMentionIndexReaderTest.php  | 184 ++++++
+ tests/Tui/Listener/CompletionListenerTest.php      | 176 ++++++
+ 23 files changed, 2827 insertions(+), 12 deletions(-)
+ create mode 100644 src/CodingAgent/CLI/CompletionFileIndexRefreshCommand.php
+ create mode 100644 src/CodingAgent/CLI/FileMentionIndexBuilder.php
+ create mode 100644 src/CodingAgent/CLI/FileMentionIndexLockHeldException.php
+ create mode 100644 src/CodingAgent/CLI/FileMentionIndexStartupListener.php
+ create mode 100644 src/Tui/Completion/AtTokenContext.php
+ create mode 100644 src/Tui/Completion/CompletionProviderRegistry.php
+ create mode 100644 src/Tui/Completion/FileMentionCompletionProvider.php
+ create mode 100644 src/Tui/Completion/FileMentionIndexEntryDTO.php
+ create mode 100644 src/Tui/Completion/FileMentionIndexReader.php
+ create mode 100644 tests/CodingAgent/CLI/CompletionFileIndexRefreshCommandTest.php
+ create mode 100644 tests/CodingAgent/CLI/FileMentionIndexBuilderTest.php
+ create mode 100644 tests/Tui/Completion/CompletionProviderRegistryTest.php
+ create mode 100644 tests/Tui/Completion/FileMentionCompletionProviderTest.php
+ create mode 100644 tests/Tui/Completion/FileMentionIndexReaderTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/editor-09-file-mention-completion.
+- Pulled integration checkout: Already up to date..
+- Validation: PR #110 updated to 118d172e; move_task CODE-REVIEW quality gate passed at 118d172e; user approval: final stdout/logging cleanup accepted; proceed to merge and move DONE
+- Summary: User approved final EDITOR-09 PR #110 cleanup and said we can merge and move to DONE. PR #110 is open at head 118d172e; full Castor quality gate passed during CODE-REVIEW transition. Merging task branch into integration checkout and completing task.
