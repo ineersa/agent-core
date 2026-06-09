@@ -20,8 +20,8 @@ use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
  * user can browse recent sessions and resume one.
  *
  * With a session ID: validates that the session exists and
- * requests a switch via the switch service.  Returns a muted
- * error message when the session is not found.
+ * requests a switch via the switch service.  Returns an error
+ * message when the session is not found or the ID is malformed.
  */
 final class ResumeSessionCommandHandler implements SlashCommandHandler
 {
@@ -42,10 +42,19 @@ final class ResumeSessionCommandHandler implements SlashCommandHandler
             return new NoOp();
         }
 
+        // Session IDs are numeric strings; reject malformed input before
+        // hitting the store to produce a clear error regardless of store
+        // behaviour.
+        if (!ctype_digit($sessionId)) {
+            return new TranscriptMessage(
+                \sprintf('Invalid session id: %s', $sessionId),
+                'error',
+            );
+        }
+
         if (!$this->sessionStore->exists($sessionId)) {
             return new TranscriptMessage(
                 \sprintf('Session not found: %s', $sessionId),
-                'system',
                 'error',
             );
         }

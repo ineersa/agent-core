@@ -47,6 +47,12 @@ final class SessionPickerController
     /**
      * Set the per-run TUI references that are only available at
      * listener registration time (called by SessionCommandRegistrar).
+     *
+     * The {@see TuiSessionState} reference is accepted to mirror the
+     * pattern followed by other picker controllers and to guarantee
+     * per-iteration runtime refs are all wired together.  It is not
+     * currently read inside this picker but is reserved for future
+     * use (e.g. highlighting the current session in the resume list).
      */
     public function setRuntimeRefs(Tui $tui, ChatScreen $screen, TuiSessionState $state): void
     {
@@ -173,22 +179,6 @@ final class SessionPickerController
         }
 
         return $items;
-    }
-
-    /**
-     * Find the index of a value in the items array.
-     *
-     * @param list<array{value: string, label?: string}> $items
-     */
-    public static function findItemIndex(array $items, string $value): ?int
-    {
-        foreach ($items as $i => $item) {
-            if ($item['value'] === $value) {
-                return $i;
-            }
-        }
-
-        return null;
     }
 
     /**

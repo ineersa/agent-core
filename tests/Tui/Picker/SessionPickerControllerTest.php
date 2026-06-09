@@ -76,27 +76,6 @@ final class SessionPickerControllerTest extends TestCase
     }
 
     #[Test]
-    public function testFindItemIndex(): void
-    {
-        $items = [
-            ['value' => '10', 'label' => 'A'],
-            ['value' => '20', 'label' => 'B'],
-            ['value' => '30', 'label' => 'C'],
-        ];
-
-        self::assertSame(0, SessionPickerController::findItemIndex($items, '10'));
-        self::assertSame(1, SessionPickerController::findItemIndex($items, '20'));
-        self::assertSame(2, SessionPickerController::findItemIndex($items, '30'));
-        self::assertNull(SessionPickerController::findItemIndex($items, '999'));
-    }
-
-    #[Test]
-    public function testFindItemIndexReturnsNullForEmptyList(): void
-    {
-        self::assertNull(SessionPickerController::findItemIndex([], '1'));
-    }
-
-    #[Test]
     public function testApplySelectEffectCallsSwitchResume(): void
     {
         $switch = new class implements TuiSessionSwitchServiceInterface {
