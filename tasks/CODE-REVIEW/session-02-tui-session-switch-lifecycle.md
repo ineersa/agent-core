@@ -137,7 +137,7 @@ class SessionSwitchService {
 - Validation uses Castor per project rules; runtime/TUI changes require full `castor check` before CODE-REVIEW.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/session-02-tui-session-switch-lifecycle
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-02-tui-session-switch-lifecycle
 Fork run: wnh6pcfbbcp8
@@ -225,11 +225,11 @@ Completed:
 - Summary: Third move to CODE-REVIEW also failed during full Castor gate at the same unrelated `ViewImageToolE2eTest` llm-real test (line 93 `Failed asserting that false is true`). Immediate standalone rerun of `castor test:llm-real` passed again. This continues to indicate transient real-LLM E2E flakiness, not a SESSION-02 code failure. Retrying CODE-REVIEW gate once more without code changes.
 - task-to-pr: repeated unrelated ViewImageToolE2eTest llm-real flake in full gate; standalone llm-real rerun passed; retrying move_task again without code changes.
 Castor Check Status: passed
-Castor Check Commit: c43badb4abff74faafa773368e6320f067d7aed3
+Castor Check Commit: 94e849ae5890dfb699e9ba60848b100a981ecff5
 Castor Check Command: LLM_MODE=true castor check
 Castor Check Timeout: 900s
-Castor Check Completed: 2026-06-09T00:02:51.106Z
-Castor Check Output SHA256: f8c752cb15b10d9961afd4a1f617f94ed8ca964bf1c85cdd409784bb9379d241
+Castor Check Completed: 2026-06-09T01:09:45.026Z
+Castor Check Output SHA256: 09bcfdc7f71518811cd6f5a5a4ab8f36744d140a4e9e94fd6d83d3e387c4e941
 
 ## Task workflow update - 2026-06-09T00:02:54.803Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -285,3 +285,12 @@ Castor Check Output SHA256: f8c752cb15b10d9961afd4a1f617f94ed8ca964bf1c85cdd4097
 - Validation: Reviewer verdict for HEAD `94e849ae`: APPROVED.; Previous fork validation after lifecycle changes: `castor test` PASS (2195 tests), `castor deptrac` PASS, `castor phpstan` PASS, `castor cs-check` PASS, `castor test:tui` PASS, `castor test:llm-real` PASS, `castor test:controller` PASS.; Docblock cleanup fork validation: `castor phpstan` PASS, `castor cs-check` PASS, `castor test --filter=SessionLifecycle` PASS.
 - Summary: Final reviewer sign-off at HEAD `94e849ae`: APPROVED. No critical, actionable, or required issues remain. Reviewer verified the docblock cleanup, full session switch lifecycle seam, lifecycle event DTO/dispatcher/end-reason enum, lazy draft sessions, reset behavior, docs, and tests. Security notes OK: lifecycle DTO intentionally omits raw prompt text/tool output/session file content; cancel failure logging is structured diagnostic logging; draft promotion uses generated session IDs from `HatfieldSessionStore`. Reviewer NTH items only: possible future move of `TuiSessionSwitchTargetDTO` if interface grows, and possible future exposure of `consumePendingSwitch()` if needed.
 - task-review-iterate: final reviewer approved SESSION-02 at 94e849ae; moving back to CODE-REVIEW for full Castor gate and PR update.
+
+## Task workflow update - 2026-06-09T01:09:46.775Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: 94e849ae5890.
+- Pushed task/session-02-tui-session-switch-lifecycle to origin.
+- branch 'task/session-02-tui-session-switch-lifecycle' set up to track 'origin/task/session-02-tui-session-switch-lifecycle'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/109
+- Validation: Final reviewer: APPROVED at HEAD `94e849ae`.; Fork validation before move: `castor test` PASS (2195 tests, 6405 assertions), `castor deptrac` PASS (0 violations), `castor phpstan` PASS (0 errors), `castor cs-check` PASS (clean), `castor test:tui` PASS (5 tests), `castor test:llm-real` PASS (5 tests), `castor test:controller` PASS (1 test).; Docblock cleanup validation: `castor phpstan` PASS, `castor cs-check` PASS, `castor test --filter=SessionLifecycle` PASS (8 tests).
+- Summary: PR #109 review iteration complete. Addressed inline feedback by documenting that the `InteractiveMode` switch loop blocks in `Tui::run()`/Revolt suspension and does not spin CPU, and by adding a privacy-safe internal TUI session lifecycle event seam exposed through `TuiRuntimeContext` for future extension bridging. Lifecycle event refinements include `TuiSessionLifecycleDispatcher`, `TuiSessionLifecycleEventDTO`, `TuiSessionLifecycleEventTypeEnum`, `TuiSessionLifecycleEndReasonEnum`, previous-session correlation on start/resume/draft-start after switches, docs updates, and focused tests. Final reviewer approved HEAD `94e849ae`; no actionable issues remain.
