@@ -181,23 +181,16 @@ final readonly class FileMentionCompletionProvider implements CompletionProvider
         }
 
         $afterAt = substr($text, $lastAt + 1);
-        $isQuoted = false;
-        $query = '';
 
-        if (str_starts_with($afterAt, '"')) {
-            // Quoted token: @"query"
-            $isQuoted = true;
-            $query = substr($afterAt, 1);
-        } else {
-            $query = $afterAt;
-        }
+        // Strip the opening quote so the query is the raw path text
+        // (e.g. @"src/foo → query = "src/foo").  The replacement
+        // range already covers the @ and opening quote.
+        $query = str_starts_with($afterAt, '"') ? substr($afterAt, 1) : $afterAt;
 
         return new AtTokenContext(
             query: $query,
             replacementStart: $lastAt,
             replacementLength: \strlen($text) - $lastAt,
-            isQuoted: $isQuoted,
-            rawText: $text,
         );
     }
 

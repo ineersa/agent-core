@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\CLI;
 
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -21,8 +23,11 @@ use Symfony\Component\Console\Output\OutputInterface;
  * explicit excludes and a hard entry cap.
  *
  * Atomic: writes to a temp file first, then renames into place.
- * If the lock is held by another instance, exits successfully
- * with a diagnostic message.
+ *
+ * Exit behaviour:
+ *   - SUCCESS when lock is held (another build in progress).
+ *   - FAILURE when scan/write/rename fails — the caller (listener)
+ *     sees a non-zero exit code and can log a diagnostic.
  */
 #[AsCommand(
     name: 'completion:file-index:refresh',
@@ -30,11 +35,15 @@ use Symfony\Component\Console\Output\OutputInterface;
 )]
 final class CompletionFileIndexRefreshCommand extends Command
 {
+    private readonly LoggerInterface $logger;
+
     public function __construct(
         private readonly string $cwd,
         private readonly string $indexPath,
+        ?LoggerInterface $logger = null,
     ) {
         parent::__construct();
+        $this->logger = $logger ?? new NullLogger();
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -42,6 +51,7 @@ final class CompletionFileIndexRefreshCommand extends Command
         $builder = new FileMentionIndexBuilder(
             cwd: $this->cwd,
             indexPath: $this->indexPath,
+            logger: $this->logger,
         );
 
         try {
@@ -49,12 +59,27 @@ final class CompletionFileIndexRefreshCommand extends Command
             $output->writeln("File mention index refreshed: {$count} entries written to {$this->indexPath}");
 
             return Command::SUCCESS;
-        } catch (\RuntimeException $e) {
-            // Lock held or build failure — not fatal; the index
-            // will be refreshed on the next cycle.
+        } catch (FileMentionIndexLockHeldException $e) {
+            // Lock held by another instance — no-op, not an error.
             $output->writeln("File mention index refresh skipped: {$e->getMessage()}");
 
             return Command::SUCCESS;
+        } catch (\RuntimeException $e) {
+            // Build failure — surface to caller via non-zero exit.
+            $this->logger->error(
+                'File mention index refresh failed: {message}',
+                [
+                    'component' => 'file_mention_index',
+                    'event_type' => 'file_mention_index.refresh_failed',
+                    'message' => $e->getMessage(),
+                    'cwd' => $this->cwd,
+                    'index_path' => $this->indexPath,
+                ],
+            );
+
+            $output->writeln("Error: file mention index refresh failed: {$e->getMessage()}");
+
+            return Command::FAILURE;
         }
     }
 }

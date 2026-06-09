@@ -8,10 +8,10 @@ namespace Ineersa\Tui\Completion;
  * Composite completion provider that delegates to a prioritised
  * collection of registered providers.
  *
- * Providers are invoked in priority order (lowest first); the first
- * non-empty suggestion list wins.  This lets slash commands take
- * precedence over file mentions while keeping each provider
- * independent and testable.
+ * Providers are invoked in priority order (highest first); the first
+ * non-empty suggestion list wins.  This lets slash commands
+ * (priority 100) take precedence over file mentions (priority 90)
+ * while keeping each provider independent and testable.
  *
  * Registered as the default {@see CompletionProvider} service so
  * {@see \Ineersa\Tui\Listener\CompletionListener} can depend on a

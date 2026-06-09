@@ -67,7 +67,11 @@ final class FileMentionIndexRefreshListener implements TuiListenerRegistrar
                     if (0 !== $exitCode) {
                         $logger->debug(
                             'File mention index refresh process exited with code {code}',
-                            ['code' => $exitCode],
+                            [
+                                'component' => 'file_mention_index',
+                                'event_type' => 'file_mention_index.refresh_process_exit',
+                                'code' => $exitCode,
+                            ],
                         );
                     }
                     $self->runningProcess = null;
@@ -106,7 +110,11 @@ final class FileMentionIndexRefreshListener implements TuiListenerRegistrar
                 // the previous index (or empty).
                 $logger->debug(
                     'Failed to spawn file mention index refresh: {message}',
-                    ['message' => $e->getMessage()],
+                    [
+                        'component' => 'file_mention_index',
+                        'event_type' => 'file_mention_index.spawn_failed',
+                        'message' => $e->getMessage(),
+                    ],
                 );
             }
 

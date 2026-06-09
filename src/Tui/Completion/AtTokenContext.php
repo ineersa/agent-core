@@ -13,18 +13,15 @@ namespace Ineersa\Tui\Completion;
 final readonly class AtTokenContext
 {
     /**
-     * @param string $query             Raw query text after @ and optional opening quote
+     * @param string $query             Raw query text after @ (and after the opening
+     *                                  quote when quoted, e.g. @"query → query)
      * @param int    $replacementStart  Byte offset of @ in the editor text
      * @param int    $replacementLength Number of bytes from @ to end of text
-     * @param bool   $isQuoted          Whether the token is quoted (@"...")
-     * @param string $rawText           Full editor text at time of extraction
      */
     public function __construct(
         public string $query,
         public int $replacementStart,
         public int $replacementLength,
-        public bool $isQuoted,
-        public string $rawText,
     ) {
     }
 }

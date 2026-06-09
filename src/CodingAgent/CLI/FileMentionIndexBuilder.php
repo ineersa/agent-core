@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\CLI;
 
 use Ineersa\Tui\Completion\FileMentionIndexEntryDTO;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\Finder\Finder;
 
 /**
@@ -29,25 +31,34 @@ use Symfony\Component\Finder\Finder;
  * Caps the output to prevent pathological repos from producing
  * unusably large index files.
  */
-final readonly class FileMentionIndexBuilder
+final class FileMentionIndexBuilder
 {
     private const int MAX_ENTRIES = 50_000;
     private const string LOCK_FILE_EXT = '.lock';
 
     /** @var list<string>|null */
-    private ?array $excludeDirs;
+    private readonly ?array $excludeDirs;
+
+    /** Cleanup-tracked temp path for atomic-write safety. */
+    private ?string $tmpPath = null;
+
+    private readonly LoggerInterface $logger;
 
     /**
-     * @param string            $cwd         Project root to scan
-     * @param string            $indexPath   Target JSONL path
-     * @param list<string>|null $excludeDirs Directories to exclude (replaces built-in defaults when provided)
+     * @param string               $cwd         Project root to scan
+     * @param string               $indexPath   Target JSONL path
+     * @param list<string>|null    $excludeDirs Directories to exclude (replaces built-in defaults when provided)
+     * @param LoggerInterface|null $logger      Optional logger for diagnostic events;
+     *                                          fallback NullLogger when null
      */
     public function __construct(
-        private string $cwd,
-        private string $indexPath,
+        private readonly string $cwd,
+        private readonly string $indexPath,
         ?array $excludeDirs = null,
+        ?LoggerInterface $logger = null,
     ) {
         $this->excludeDirs = $excludeDirs;
+        $this->logger = $logger ?? new NullLogger();
     }
 
     /**
@@ -65,23 +76,37 @@ final readonly class FileMentionIndexBuilder
         $lockHandle = $this->acquireLock($lockPath);
 
         try {
-            $tmpPath = $this->indexPath.'.tmp.'.getmypid().'.'.hrtime(true);
-            $count = $this->scanAndWrite($tmpPath);
+            $this->tmpPath = $this->indexPath.'.tmp.'.getmypid().'.'.hrtime(true);
+            $count = $this->scanAndWrite($this->tmpPath);
 
             // Atomically replace the existing index.
-            if (!@rename($tmpPath, $this->indexPath)) {
+            if (!@rename($this->tmpPath, $this->indexPath)) {
                 // Clean up tmp file on rename failure.
-                @unlink($tmpPath);
+                @unlink($this->tmpPath);
 
-                throw new \RuntimeException("Failed to atomically move file mention index from '{$tmpPath}' to '{$this->indexPath}'.");
+                throw new \RuntimeException("Failed to atomically move file mention index from '{$this->tmpPath}' to '{$this->indexPath}'.");
             }
+
+            $this->tmpPath = null;
 
             return $count;
         } catch (\RuntimeException $re) {
+            // Clean up tmp file on scan/write failure as well — the
+            // exception path through scanAndWrite doesn't close the
+            // tmp handle (finally does it), but the partial file is
+            // left on disk unless cleaned here.
+            if (null !== $this->tmpPath) {
+                @unlink($this->tmpPath);
+            }
+
             throw $re;
         } catch (\Throwable $e) {
-            // Wrap Finder or filesystem errors so callers always get
-            // a consistent RuntimeException interface.
+            // Clean up tmp file before wrapping Finder/filesystem
+            // errors into a consistent RuntimeException interface.
+            if (null !== $this->tmpPath) {
+                @unlink($this->tmpPath);
+            }
+
             throw new \RuntimeException("File mention index build failed: {$e->getMessage()}", previous: $e);
         } finally {
             $this->releaseLock($lockHandle);
@@ -156,9 +181,19 @@ final readonly class FileMentionIndexBuilder
         // find the actual repo root, so explicit excludes are mandatory.
         try {
             $finder->ignoreVCSIgnored(true);
-        } catch (\Throwable) {
-            // Degrade gracefully if ignoreVCSIgnored triggers errors
-            // (e.g. unreadable .gitignore deep in excluded dirs).
+        } catch (\Throwable $e) {
+            // Intentional local degradation: .gitignore-aware filtering
+            // failed — fall back to explicit excludes only.  The
+            // completed index may include more entries than desired,
+            // but completion remains functional.
+            $this->logger->debug(
+                'File mention index: ignoreVCSIgnored unavailable, falling back to explicit excludes.',
+                [
+                    'component' => 'file_mention_index',
+                    'event_type' => 'file_mention_index.vcs_ignored_unavailable',
+                    'message' => $e->getMessage(),
+                ],
+            );
         }
 
         foreach ($finder as $splFileInfo) {
@@ -230,7 +265,7 @@ final readonly class FileMentionIndexBuilder
         if (!flock($handle, \LOCK_EX | \LOCK_NB)) {
             fclose($handle);
 
-            throw new \RuntimeException('File mention index build already in progress (lock held).');
+            throw new FileMentionIndexLockHeldException();
         }
 
         return $handle;

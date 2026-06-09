@@ -170,19 +170,178 @@ final class FileMentionIndexBuilderTest extends TestCase
         $this->assertStringContainsString('old.php', $content);
     }
 
+    /**
+     * Round-trip: builder writes index → reader reloads → provider
+     * creates suggestion → applying replacement produces expected
+     * @ path text.  Exercises the full index → completion chain.
+     */
+    #[Test]
+    public function roundTripBuilderToCompletion(): void
+    {
+        // ── Build filesystem fixtures ──
+        mkdir($this->tmpDir.'/src', 0755, true);
+        touch($this->tmpDir.'/src/foo.php');
+        mkdir($this->tmpDir.'/src/nested', 0755, true);
+        touch($this->tmpDir.'/src/nested/bar.php');
+        mkdir($this->tmpDir.'/dir with spaces', 0755, true);
+        touch($this->tmpDir.'/dir with spaces/file.php');
+
+        // ── Builder writes index ──
+        $indexPath = $this->tmpDir.'/index.jsonl';
+        $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath);
+        $count = $builder->build();
+        $this->assertGreaterThan(0, $count);
+
+        // ── Reader loads the index ──
+        $reader = new \Ineersa\Tui\Completion\FileMentionIndexReader($indexPath);
+
+        // ── Provider creates suggestions ──
+        $provider = new \Ineersa\Tui\Completion\FileMentionCompletionProvider($reader);
+
+        // ── @ matching: verify suggestions are correct ──
+        $suggestions = $provider->getSuggestions(
+            \Ineersa\Tui\Completion\CompletionContext::forCursorAtEnd('@src/'),
+        );
+        $this->assertGreaterThan(0, \count($suggestions));
+
+        // Find the src/foo.php suggestion
+        $foo = null;
+        foreach ($suggestions as $s) {
+            if (str_ends_with($s->display, 'src/foo.php')) {
+                $foo = $s;
+                break;
+            }
+        }
+        $this->assertNotNull($foo);
+        $this->assertStringStartsWith('@', $foo->insertText);
+        $this->assertStringEndsWith(' ', $foo->insertText);
+
+        // ── Simulate acceptance via CompletionListener ──
+        $currentText = '@src/';
+        $applied = substr_replace(
+            $currentText,
+            $foo->insertText,
+            $foo->replacementStart,
+            $foo->replacementLength,
+        );
+        $this->assertStringStartsWith('@', $applied);
+
+        // ── @ directory suggestion ──
+        $dirSuggs = $provider->getSuggestions(
+            \Ineersa\Tui\Completion\CompletionContext::forCursorAtEnd('@src'),
+        );
+        $nestedDir = null;
+        foreach ($dirSuggs as $s) {
+            // Display includes @ prefix and trailing / for dirs,
+            // e.g. "@src/nested/".
+            $displayWithoutAt = substr($s->display, 1);
+            if ('src/nested/' === $displayWithoutAt) {
+                $nestedDir = $s;
+                break;
+            }
+        }
+        $this->assertNotNull($nestedDir);
+        $this->assertStringEndsWith('/', $nestedDir->insertText);
+
+        // ── Quoted path suggestion ──
+        $quotedSuggs = $provider->getSuggestions(
+            \Ineersa\Tui\Completion\CompletionContext::forCursorAtEnd('@"dir'),
+        );
+        $this->assertGreaterThan(0, \count($quotedSuggs));
+
+        $quoted = null;
+        foreach ($quotedSuggs as $s) {
+            if (str_contains($s->insertText, 'dir with spaces')) {
+                $quoted = $s;
+                break;
+            }
+        }
+        $this->assertNotNull($quoted);
+        $this->assertStringStartsWith('@"', $quoted->insertText);
+
+        // Simulate acceptance of quoted suggestion.
+        $quotedText = '@"dir';
+        $quotedApplied = substr_replace(
+            $quotedText,
+            $quoted->insertText,
+            $quoted->replacementStart,
+            $quoted->replacementLength,
+        );
+        $this->assertStringStartsWith('@', $quotedApplied);
+        $this->assertStringContainsString('dir with spaces', $quotedApplied);
+    }
+
+    #[Test]
+    public function releaseCleansUpTempFileOnScanException(): void
+    {
+        // Create a regular file to use as the CWD so Finder->in()
+        // throws DirectoryNotFoundException AFTER the lock is acquired
+        // and the temp file is opened by scanAndWrite.  This exercises
+        // the tmp-unlink code path in the catch(RuntimeException) block.
+        $fakeCwd = $this->tmpDir.'/not-a-dir';
+        file_put_contents($fakeCwd, 'block');
+
+        $indexPath = $this->tmpDir.'/index.jsonl';
+
+        try {
+            $builder = new FileMentionIndexBuilder($fakeCwd, $indexPath);
+            $builder->build();
+            $this->fail('Expected RuntimeException when CWD is a file.');
+        } catch (\RuntimeException $e) {
+            // Expected — Finder fails because CWD is not a directory.
+            $this->assertStringContainsString(
+                'File mention index build failed',
+                $e->getMessage(),
+            );
+        }
+
+        // Remove the fake cwd file for cleanup.
+        unlink($fakeCwd);
+
+        // Verify no temp file was left behind (glob on *.tmp.* patterns).
+        $tmpFiles = glob($this->tmpDir.'/index.jsonl.tmp.*');
+        $this->assertEmpty(
+            $tmpFiles,
+            'Temp files should be cleaned up after scan exception.',
+        );
+
+        // Old index preserved (none existed, but no new one was written).
+        $this->assertFileDoesNotExist($indexPath);
+
+        // Lock file exists but is released (the handle was closed).
+        // Verifying it's not held by trying another build — no lock
+        // contention exception means the lock was properly released.
+        touch($this->tmpDir.'/another-file.php');
+        $builder2 = new FileMentionIndexBuilder($this->tmpDir, $this->tmpDir.'/index2.jsonl');
+        $count = $builder2->build();
+        $this->assertGreaterThan(0, $count, 'Lock should be released so subsequent builds succeed.');
+    }
+
     private function removeDir(string $dir): void
     {
         if (!is_dir($dir)) {
             return;
         }
-        $files = new \RecursiveIteratorIterator(
+        // Restore any permissions that might block cleanup
+        // (e.g. from the unreadable-directory test).
+        $iterator = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS),
             \RecursiveIteratorIterator::CHILD_FIRST,
         );
-        foreach ($files as $fileinfo) {
-            $op = $fileinfo->isDir() ? 'rmdir' : 'unlink';
-            $op($fileinfo->getRealPath());
+        foreach ($iterator as $fileinfo) {
+            $path = $fileinfo->getRealPath();
+            if (false === $path) {
+                continue;
+            }
+            if ($fileinfo->isDir()) {
+                @chmod($path, 0700);
+                @rmdir($path);
+            } else {
+                @chmod($path, 0600);
+                @unlink($path);
+            }
         }
-        rmdir($dir);
+        @chmod($dir, 0700);
+        @rmdir($dir);
     }
 }

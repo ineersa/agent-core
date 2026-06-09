@@ -7,20 +7,23 @@ namespace Ineersa\Tui\Completion;
 /**
  * In-memory reader for the file mention completion index.
  *
- * Loads a JSONL index file produced by {@see FileMentionIndexBuilder},
+ * Loads a JSONL index file produced by
+ * {@see \Ineersa\CodingAgent\CLI\FileMentionIndexBuilder},
  * caches the parsed entries in memory, and reloads automatically when
  * the index file's mtime changes.
  *
  * Missing or unreadable index files are treated as empty — the caller
  * never receives an exception from index access.  This is intentional
  * local degradation: completion silently returns no suggestions until
- * the index is available.
+ * the index is available.  When the index file exists and can be read
+ * but every line within it is invalid JSON, the loaded index becomes
+ * empty (no previous cache is retained).  The previous in-memory
+ * entries are preserved only when the file cannot be read at all
+ * (missing, unreadable, or file() returns false).
  *
  * Invalid JSON lines within a valid index file are skipped with
  * a best-effort approach — the line is dropped and the remaining
- * entries are preserved.  If the file is entirely corrupt (e.g.
- * truncated during atomic rename failure), the previous in-memory
- * cache is retained.
+ * entries are preserved.
  */
 final class FileMentionIndexReader
 {
