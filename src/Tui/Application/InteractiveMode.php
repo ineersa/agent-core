@@ -118,8 +118,8 @@ final readonly class InteractiveMode
         // iteration (no prior session).
         $previousSessionIdForLifecycle = null;
 
-        // Emitted once per session switch; intentionally never reset to
-        // false because every later switch iteration also needs a fresh
+        // Set true once per session switch and intentionally never reset
+        // to false — every later switch iteration also needs a fresh
         // screen before the new TUI paints.  Normal quit exits the loop
         // without consuming a switch target, so the flag never fires on
         // shutdown.

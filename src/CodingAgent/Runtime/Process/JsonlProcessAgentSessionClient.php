@@ -176,6 +176,14 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->activeRunId = $runId;
         $this->ensureProcessRunning();
 
+        // Symmetric with start(): wait for runtime.ready before sending
+        // commands, so the controller and its consumer subprocesses have
+        // booted and the event loop is accepting input.  If the process
+        // was already running (no restart), runtimeReadyReceived is still
+        // true from the prior start() / crash-recovery resume, so this is
+        // a near-instant no-op.
+        $this->waitForRuntimeReady();
+
         // If ensureProcessRunning() auto-resumed the run after a restart,
         // skip the explicit resume write to avoid sending a duplicate command.
         if ($this->autoResumed) {
@@ -290,7 +298,14 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         // Force a restart when the session has changed so the controller
         // and its consumer subprocesses are launched with the new session's
         // env vars (queue DSNs, HATFIELD_SESSION_ID).
-        if (null !== $this->sessionId && $this->sessionId !== $this->processSessionId) {
+        //
+        // The `null !== $processSessionId` guard avoids a harmless but
+        // wasteful stopProcess() / SIGTERM wait on the very first start()
+        // call, when processSessionId is still null.
+        if (null !== $this->sessionId
+            && null !== $this->processSessionId
+            && $this->sessionId !== $this->processSessionId
+        ) {
             $this->stopProcess();
         }
 
