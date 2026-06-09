@@ -30,7 +30,7 @@ Parallelizable with: EDITOR-10.
 Status: IN-PROGRESS
 Branch: task/editor-09-file-mention-completion
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-09-file-mention-completion
-Fork run: cci724tc31fm
+Fork run: 903qx6gtqfeh
 PR URL: https://github.com/ineersa/agent-core/pull/110
 PR Status: open
 Started: 2026-06-08T23:47:05.979Z
@@ -300,3 +300,7 @@ Castor Check Output SHA256: 1b1c06f5e40ab95a95ca2112e4bcf86577ad98ddc83947ba9000
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Validation: PR comments read via gh api; Decision: keep `$lock->acquire(false)` non-blocking; it skips refresh when another index build is running instead of blocking scheduled task/worker
 - Summary: Review-iterate requested after PR #110 inline comments. User confirmed `acquire(false)` should remain because non-blocking lock acquisition avoids scheduler pileups. Remaining comments to address: remove production NullLogger/logger-null fallbacks and require LoggerInterface via DI; remove optional LockFactory/NullLock fallback and require LockFactory via DI; update tests and constructor docs accordingly; clarify non-blocking acquire(false) if useful.
+
+## Task workflow update - 2026-06-09T16:07:05.075Z
+- Recorded fork run: 903qx6gtqfeh
+- Summary: Launched review-iterate fork 903qx6gtqfeh to address PR #110 comments: require LoggerInterface in CompletionFileIndexRefreshCommand, FileMentionIndexBuilder, and FileMentionIndexStartupListener (remove NullLogger production fallbacks); require LockFactory in FileMentionIndexBuilder and remove anonymous NullLock fallback; keep `$lock->acquire(false)` non-blocking per user decision and optionally clarify comment; update tests/docs and run focused Castor validation. No reviewer launch.
