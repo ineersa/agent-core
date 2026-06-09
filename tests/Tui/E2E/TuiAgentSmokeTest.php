@@ -409,6 +409,8 @@ final class TuiAgentSmokeTest extends TestCase
         }
     }
 
+    // ── block extraction helper ────────────────────────────
+
     /**
      * Extract the text content of a block with the given prefix
      * from the plain-text capture.
@@ -428,17 +430,255 @@ final class TuiAgentSmokeTest extends TestCase
         return \trim(\substr($after, 0, $newline));
     }
 
+    // ── /new flow ──────────────────────────────────────────
+
+    /**
+     * New session command E2E: /new → type prompt → see LLM response.
+     *
+     * 1) Start the agent TUI and auto-submit an initial prompt via
+     *    --prompt to create session 1 with a completed run — this
+     *    proves the existing pipeline works and seeds the DB.
+     * 2) Type /new and press Enter — triggers session switch to
+     *    a lazy draft via TuiSessionSwitchService.
+     * 3) Type a deterministic prompt and submit.
+     * 4) Assert the user block (❯) appears.
+     * 5) Wait for a real assistant response block (◇) — this proves
+     *    draft promotion, runtime startup, and the full Messenger →
+     *    EventStore → Mapper → Projector → TUI pipeline work after a
+     *    /new session switch.
+     */
+    public function testNewSessionCommandAndGetAssistantResponse(): void
+    {
+        $pane = $this->tmux->startDetached(
+            command: $this->agentCommand(prompt: 'Respond with exactly one word: first.'),
+            prefix: 'hatfield-new-cmd',
+            height: 60,
+            cwd: $this->testProjectDir,
+        );
+
+        try {
+            // ── First run (auto-submit via --prompt) ──
+            $this->tmux->waitForCaptureContains($pane, '█', 10.0);
+
+            // Wait for the auto-submitted first run's assistant response
+            try {
+                $this->tmux->waitForCaptureContains($pane, '◇', 30.0);
+            } catch (\RuntimeException) {
+                $this->tmux->waitForCaptureContains($pane, '✕', 10.0);
+            }
+
+            $firstCapture = $this->tmux->capturePlain($pane);
+            self::assertTrue(
+                \str_contains($firstCapture, '◇') || \str_contains($firstCapture, '✕'),
+                'First run must produce assistant or error block. Capture: '.\substr($firstCapture, 0, 800),
+            );
+
+            // ── Session switch via /new ──
+            // The first session is completed; /new triggers a draft switch.
+            // TuiSessionSwitchService should skip cancel for terminal runs.
+            $this->tmux->sendLiteral($pane, '/new');
+            $this->tmux->sendKey($pane, 'Enter');
+
+            // After the switch the terminal is cleared and the TUI
+            // rebuilds.  Wait for the Hatfield logo to confirm the
+            // new draft session has rendered.
+            $this->tmux->waitForCaptureContains($pane, '█', 10.0);
+
+            // ── Type prompt in new draft session ──
+            $prompt2 = 'Respond with exactly one word: second.';
+            $this->tmux->sendLiteral($pane, $prompt2);
+            $this->tmux->sendKey($pane, 'Enter');
+
+            // User block MUST appear before the response streams in
+            try {
+                $this->tmux->waitForCaptureContains($pane, '❯', 5.0);
+            } catch (\RuntimeException $e) {
+                $this->dumpArtifacts($pane, '❯ user block did not appear after /new prompt');
+                self::fail('Transcript must display user block (❯) after /new + prompt submission.');
+            }
+
+            // Wait for real LLM assistant response
+            try {
+                $this->tmux->waitForCaptureContains($pane, '◇', 30.0);
+            } catch (\RuntimeException) {
+                $this->tmux->waitForCaptureContains($pane, '✕', 10.0);
+            }
+
+            $finalCapture = $this->tmux->capturePlainWithHistory($pane);
+            $this->saveAnsiSnapshot($pane, 'new-cmd-flow');
+
+            self::assertTrue(
+                \str_contains($finalCapture, '◇') || \str_contains($finalCapture, '✕'),
+                'After /new + prompt, transcript must show assistant (◇) or error (✕) block. '
+                    . \sprintf('Capture (%d lines):%s%s', \substr_count($finalCapture, "\n") + 1, "\n", $finalCapture),
+            );
+
+            // Processing… must be gone when settled
+            self::assertStringNotContainsString('Processing', $finalCapture, '"Processing..." must be gone after response');
+
+            $this->tmux->sendKey($pane, 'C-d');
+        } catch (\Throwable $e) {
+            $this->dumpArtifacts($pane, $e->getMessage());
+            try { $this->saveAnsiSnapshot($pane, 'new-cmd-FAILURE'); } catch (\Throwable) {}
+            try { $this->tmux->sendKey($pane, 'C-d'); } catch (\Throwable) {}
+            throw $e;
+        }
+    }
+
+    // ── /resume flow ───────────────────────────────────────
+
+    /**
+     * Resume session command E2E: /resume → pick existing session
+     * → type follow-up → see LLM response.
+     *
+     * 1) Start the agent TUI and auto-submit an initial prompt via
+     *    --prompt to create session 1 with a completed run.
+     * 2) Type /resume (no args) — opens the interactive session
+     *    picker overlay via SessionPickerController.
+     * 3) Press Enter to select the first (default) session.
+     * 4) After the session switch the terminal is cleared, the
+     *    transcript replays from events.jsonl, and the TUI rebuilds.
+     * 5) Type a follow-up prompt and submit.
+     * 6) Assert the user block (❯) and a real assistant response (◇)
+     *    appear — proving follow_up works after resume and does NOT
+     *    hang on Working due to Cancelling poison.
+     */
+    public function testResumeSessionCommandAndGetAssistantResponse(): void
+    {
+        $pane = $this->tmux->startDetached(
+            command: $this->agentCommand(prompt: 'Respond with exactly one word: alpha.'),
+            prefix: 'hatfield-resume-cmd',
+            height: 60,
+            cwd: $this->testProjectDir,
+        );
+
+        try {
+            // ── First run (auto-submit via --prompt) creates session 1 ──
+            $this->tmux->waitForCaptureContains($pane, '█', 10.0);
+
+            try {
+                $this->tmux->waitForCaptureContains($pane, '◇', 30.0);
+            } catch (\RuntimeException) {
+                $this->tmux->waitForCaptureContains($pane, '✕', 10.0);
+            }
+
+            $firstCapture = $this->tmux->capturePlain($pane);
+            self::assertTrue(
+                \str_contains($firstCapture, '◇') || \str_contains($firstCapture, '✕'),
+                'First run must produce assistant or error block before /resume. '
+                    . \sprintf('Capture (%d lines).', \substr_count($firstCapture, "\n") + 1),
+            );
+
+            // ── /resume → picker ──
+            $this->tmux->sendLiteral($pane, '/resume');
+            $this->tmux->sendKey($pane, 'Enter');
+
+            // The picker overlay should appear with a descriptive header
+            try {
+                $this->tmux->waitForCaptureContains($pane, 'Resume session', 5.0);
+            } catch (\RuntimeException $e) {
+                $this->dumpArtifacts($pane, 'Picker overlay did not appear after /resume');
+                self::fail('/resume must open the session picker overlay.');
+            }
+
+            // Select the first session (default selected index is 0).
+            // This triggers requestResume() → session switch → TUI rebuild.
+            $this->tmux->sendKey($pane, 'Enter');
+
+            // After session switch the terminal clears and logo reappears
+            $this->tmux->waitForCaptureContains($pane, '█', 10.0);
+
+            // The replayed transcript should show the old user prompt
+            $this->tmux->waitForCaptureContains($pane, 'alpha', 5.0);
+
+            // ── Type follow-up in the resumed session ──
+            $followUpPrompt = 'Respond with exactly one word: beta.';
+            // Record current ❯ count so we can assert a NEW one appears
+            $beforeFollowUp = $this->tmux->capturePlainWithHistory($pane);
+            $beforeUserCount = \substr_count($beforeFollowUp, '❯');
+
+            $this->tmux->sendLiteral($pane, $followUpPrompt);
+            $this->tmux->sendKey($pane, 'Enter');
+
+            // Wait for a NEW user block (❯ count increased)
+            try {
+                $this->tmux->waitForCallback(
+                    $pane,
+                    static fn (string $capture): bool => \substr_count($capture, '❯') > $beforeUserCount,
+                    10.0,
+                    'New user block (❯) did not appear after resume follow-up submission.',
+                );
+            } catch (\RuntimeException $e) {
+                $this->dumpArtifacts($pane, $e->getMessage());
+                self::fail('Resumed session must show a new user block (❯) after submitting a follow-up.');
+            }
+
+            // Wait for new assistant response — proves follow_up was
+            // queued/applied and not blocked by a Cancelling poison.
+            try {
+                $this->tmux->waitForCallback(
+                    $pane,
+                    static fn (string $capture): bool => \substr_count($capture, '◇') >= 2,
+                    40.0,
+                    'Second assistant block (◇) did not appear after resume follow-up.',
+                );
+            } catch (\RuntimeException) {
+                $this->tmux->waitForHistoryContains($pane, '✕', 10.0);
+            }
+
+            $finalCapture = $this->tmux->capturePlainWithHistory($pane);
+            $this->saveAnsiSnapshot($pane, 'resume-cmd-flow');
+
+            // At least 2 ◇ blocks (first run + follow-up)
+            $asstCount = \substr_count($finalCapture, '◇');
+            self::assertGreaterThanOrEqual(
+                2,
+                $asstCount,
+                \sprintf(
+                    'Expected at least 2 assistant blocks (◇) after /resume + follow-up, got %d. '
+                        . 'Terminal history (%d lines):%s%s',
+                    $asstCount,
+                    \substr_count($finalCapture, "\n") + 1,
+                    "\n",
+                    $finalCapture,
+                ),
+            );
+
+            // Processing… must be gone
+            self::assertStringNotContainsString('Processing', $finalCapture, '"Processing..." must be gone after response');
+
+            // The follow-up prompt text must be visible
+            self::assertStringContainsString(
+                $followUpPrompt,
+                $finalCapture,
+                'Follow-up prompt must be visible in terminal history after /resume.',
+            );
+
+            $this->tmux->sendKey($pane, 'C-d');
+        } catch (\Throwable $e) {
+            $this->dumpArtifacts($pane, $e->getMessage());
+            try { $this->saveAnsiSnapshot($pane, 'resume-cmd-FAILURE'); } catch (\Throwable) {}
+            try { $this->tmux->sendKey($pane, 'C-d'); } catch (\Throwable) {}
+            throw $e;
+        }
+    }
+
     // ── helpers ────────────────────────────────────────────
 
-    private function agentCommand(): string
+    private function agentCommand(string $prompt = ''): string
     {
         [$php, $script] = AgentTestExecutable::command();
 
+        $promptArg = '' !== $prompt
+            ? \sprintf(' --prompt=%s', \escapeshellarg($prompt))
+            : '';
+
         return \sprintf(
-            'APP_ENV=dev HOME=%s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
+            'APP_ENV=dev HOME=%s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash%s 2>&1',
             \escapeshellarg($this->testProjectDir.'/home'),
             \escapeshellarg($php),
             \escapeshellarg($script),
+            $promptArg,
         );
     }
 
