@@ -27,7 +27,7 @@ Parallelizable with: EDITOR-10.
 - castor deptrac passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/editor-09-file-mention-completion
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-09-file-mention-completion
 Fork run: km3v1irhhahm
@@ -247,3 +247,7 @@ Castor Check Output SHA256: 15eee4021a8efac1349c9f570c4a9e6217e2cc56cc309f3aeeed
 - Pushed task/editor-09-file-mention-completion to origin.
 - branch 'task/editor-09-file-mention-completion' set up to track 'origin/task/editor-09-file-mention-completion'.
 - Created PR: https://github.com/ineersa/agent-core/pull/110
+
+## Task workflow update - 2026-06-09T01:17:18.460Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: Review-iterate requested after user smoke test: typing `@` in real TUI shows no completion. Additional required design changes: replace ad-hoc background refresh command/process flow with Symfony Scheduler recurrent task infrastructure (command may remain but should be run via schedule), and replace manual flock lock handling with Symfony Lock. Task moved back to IN-PROGRESS for forked investigation/fix.
