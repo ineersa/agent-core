@@ -34,7 +34,7 @@ final class ResumeSessionCommandHandler implements SlashCommandHandler
 
     public function handle(SlashCommand $command): CommandResult
     {
-        $sessionId = trim($command->args);
+        $sessionId = $command->args;
 
         if ('' === $sessionId) {
             $this->pickerController->open();

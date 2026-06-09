@@ -112,23 +112,16 @@ final class ModelControlListener implements TuiListenerRegistrar
             // StartRunRequest carries no model, leaving the runtime to resolve
             // from stale AppConfig.
             if ('' === $state->sessionId) {
-                if (null === $state->request) {
-                    $state->request = new StartRunRequest(
-                        prompt: '',
-                        runId: '',
-                        cwd: '',
-                        model: $nextRef->toString(),
-                    );
-                } else {
-                    $state->request = new StartRunRequest(
-                        prompt: $state->request->prompt,
-                        runId: $state->request->runId,
-                        cwd: $state->request->cwd,
-                        options: $state->request->options,
-                        model: $nextRef->toString(),
-                        reasoning: $state->request->reasoning,
-                    );
-                }
+                // When $state->request is null (plain /new with no prior
+                // --model), the empty-string prompt is just a carrier —
+                // SubmitListener merges the real prompt from editor text
+                // during draft promotion.
+                $carrier = $state->request ?? new StartRunRequest(
+                    prompt: '',
+                    runId: '',
+                    cwd: '',
+                );
+                $state->request = $carrier->withModel($nextRef->toString());
             }
         }, priority: 95);
 

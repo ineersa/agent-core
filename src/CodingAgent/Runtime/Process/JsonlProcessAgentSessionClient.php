@@ -309,6 +309,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         // The `null !== $processSessionId` guard avoids a harmless but
         // wasteful stopProcess() / SIGTERM wait on the very first start()
         // call, when processSessionId is still null.
+        //
         // Session-change guard: the old controller process uses stale
         // queue DSNs from the previous session.  Since cancelCurrentRun()
         // already dispatched the cancel command through the old controller

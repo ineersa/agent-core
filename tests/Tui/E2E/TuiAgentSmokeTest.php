@@ -654,6 +654,9 @@ final class TuiAgentSmokeTest extends TestCase
             // ── Verify events.jsonl contents ──
             // The resumed session is session 1; check its events for
             // follow_up queued, applied, and absence of Cancelling poison.
+            // Hardcoded 1 is deterministic: this test creates an isolated
+            // project dir with a fresh SQLite DB, so the first INSERT
+            // into hatfield_session always produces auto-increment ID 1.
             $this->assertResumedFollowUpEvents(1);
         } catch (\Throwable $e) {
             $this->dumpArtifacts($pane, $e->getMessage());
