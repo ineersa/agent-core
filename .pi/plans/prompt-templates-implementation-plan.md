@@ -31,7 +31,7 @@ Corrections this plan intentionally makes from the first generated draft:
 
 1. **Use Pi's settings shape:** the Hatfield settings key is top-level `prompts: []`, not `prompts.paths` and not `prompts.enabled`.
 2. **Do not invent built-in templates for MVP:** no `config/prompts/review.md`, `plan.md`, or `summarize.md` should be added unless the user explicitly requests built-in templates later.
-3. **Do not claim command names are lowercase-only:** Pi uses filename without `.md` as-is. Hatfield's current TUI parser lowercases parsed slash command names, so case handling is an explicit implementation decision below.
+3. **Command names are canonicalized to lowercase:** Pi preserves filename case; Hatfield intentionally canonicalizes prompt-template command names to lowercase with `strtolower()` (or equivalent ASCII lowercase) from the filename stem. Lowercase filenames are required/recommended; `Review.md` and `review.md` collide as `review` because the loader derives the same lowercase name from both.
 4. **Use Symfony Console attribute style in `AgentCommand`:** this app uses invokable command parameters with `#[Option(...)]`, not `configure()->addOption()`.
 5. **Process transport pass-through must be explicit:** parent CLI-only prompt-template options must reach the controller child spawned by `JsonlProcessAgentSessionClient`.
 6. **Caught read/YAML errors must be diagnostic local degradation:** Pi silently catches some failures; Hatfield project rules require diagnostics/logging or explicit propagation.
@@ -68,7 +68,6 @@ A prompt template is a Markdown file with optional YAML frontmatter:
 ```markdown
 ---
 description: Review staged git changes
-argument-hint: "[instructions]"
 ---
 Review the staged changes (`git diff --cached`). $ARGUMENTS
 
@@ -82,8 +81,7 @@ Fields:
 
 | Field | Required | Behavior |
 |---|---:|---|
-| `description` | No | Used in autocomplete and `/help`; if absent or empty, use first non-empty body line truncated to 60 characters with `...` if longer. |
-| `argument-hint` | No | Optional text shown in autocomplete before the description. Empty string is treated as absent. `<angle>` convention means required; `[square]` convention means optional. |
+| `description` | No | Used in autocomplete and `/help`; if absent or empty, use first non-empty body line truncated to 60 characters with `...` if longer. Unknown frontmatter keys (e.g. `argument-hint`) are ignored in MVP. |
 | Body/content | Yes in practice | Text after frontmatter. It is the template body expanded and sent to the model. Empty body is allowed but not useful. |
 
 Pi frontmatter parsing behavior to replicate:
@@ -96,23 +94,25 @@ Pi frontmatter parsing behavior to replicate:
 
 ### 1.3 Command names
 
-Pi uses:
+Hatfield intentionally canonicalizes prompt-template command names to lowercase.
 
-```ts
-basename(filePath).replace(/\.md$/, "")
+The loader derives the command name as:
+
+```php
+$name = strtolower(basename($filePath, '.md'));
 ```
 
-So `review.md` becomes command `/review`; `my-template.md` becomes `/my-template`; case is preserved in Pi's core loader and matching.
+This means:
 
-Hatfield's current `CommandParser` lowercases slash command names and only checks the first character after `/` is alphanumeric or underscore. It then treats the rest of the command name as the first non-whitespace token. That means hyphenated names like `/model-favourites` already work, but mixed-case names become lowercase in TUI command routing.
+- `review.md` → `/review`
+- `my-template.md` → `/my-template`
+- `Review.md` and `review.md` collide as `review` (first-wins dedup).
 
-MVP recommendation:
+Hatfield's existing `CommandParser` already lowercases slash command names, so this matches the TUI routing behavior without changing `CommandParser`. Hyphenated names like `/model-favourites` work.
 
-- Preserve the exact filename-derived name in the prompt-template loader and runtime expander.
-- Document that lower-case filenames are recommended for TUI discoverability.
-- Register a TUI virtual command only when the name can be routed by existing `CommandParser` semantics. For the common and documented case (`[A-Za-z0-9_][^\s]*` names, preferably lowercase), no parser change is needed.
-- Add tests for hyphenated names because existing Hatfield commands use hyphenated names.
-- Treat full Pi-compatible mixed-case matching as an open decision: either stop lowercasing in `CommandParser` or normalize template names to lowercase. Do not silently normalize without a test and doc update.
+Users should use lowercase template filenames (`review.md`, not `Review.md`). Tests must cover hyphenated names because existing Hatfield commands use them.
+
+The runtime expander matches template names against the expansion regex match group 1, which is already lowercase from `CommandParser`/TUI routing, so no additional lowercasing is needed at the expander. For non-TUI invocations (headless, controller, `--prompt`), arguments come from `AgentCommand` which also lowercases via Symfony Console input normalization.
 
 ### 1.4 Placeholder syntax
 
@@ -182,6 +182,8 @@ Important:
 - Expansion is single-pass. If a template expands to text that starts with `/other`, it is not expanded again.
 - If no template matches, the original slash text is passed through unchanged at the runtime boundary. In TUI mode, this only happens for text that reaches runtime; unknown real slash commands are handled locally by `SlashCommandRegistry` before runtime.
 
+**Transcript display:** The runtime/model sees the expanded prompt. The transcript follows normal runtime event projection, so it also shows the expanded prompt. There is no special "show raw `/template args` but send expanded prompt" behavior. This is consistent with Pi's runtime event flow where expanded text is what the model receives and what appears in the transcript.
+
 ### 1.7 Loading and collision behavior
 
 MVP load order:
@@ -195,12 +197,14 @@ This mirrors Pi's core loader order (`global`, `project`, explicit paths) while 
 
 Collision behavior:
 
-- Deduplicate by template name.
+- Deduplicate by lowercase template name.
 - First loaded template wins.
 - Later duplicate names are ignored.
 - Add a structured diagnostic containing resource type `prompt`, name, winner path, and loser path.
 - Log a structured event-style diagnostic without raw template content.
 - Collision is not a fatal error.
+
+**Loading is once per process.** Templates are loaded on first access (lazy) and cached for the process lifetime. No reload, file-watch, or cache invalidation mechanism. Restart the process to pick up template changes.
 
 ### 1.8 CLI flags
 
@@ -209,9 +213,11 @@ Add these to `bin/console agent` via `AgentCommand`'s invokable `#[Option]` para
 | Flag | Type | Behavior |
 |---|---|---|
 | `--prompt-template <path>` | repeatable | Add an explicit template file or directory for this invocation. |
-| `--no-prompt-templates` / `-np` | boolean | Disable auto-discovery and settings `prompts: []`; CLI `--prompt-template` paths still load. |
+| `--no-prompt-templates` | boolean | Disable auto-discovery and settings `prompts: []`; CLI `--prompt-template` paths still load. |
 
-The exact Symfony Console attribute syntax should follow existing `AgentCommand` style. If the `#[Option]` attribute does not support the multi-character shortcut `np`, implement the long flag first and add/verify `-np` with a targeted console test.
+Only the long flag `--no-prompt-templates` is implemented. No `-np` shortcut.
+
+The exact Symfony Console attribute syntax should follow existing `AgentCommand` style.
 
 ## 2. Current Hatfield architecture facts
 
@@ -285,7 +291,7 @@ public function __construct(
 ) {}
 ```
 
-To show Pi's `argument-hint` in autocomplete, add an optional nullable `argumentHint` parameter with default `null`, and update completion display while keeping `insertText` as only `/$name `.
+`CommandMetadata` is **not modified** in MVP. The `argument-hint` frontmatter field is **not parsed or stored** in MVP — it is ignored. Autocomplete and `/help` display use the `description` field only.
 
 ### 2.4 Runtime flow
 
@@ -328,7 +334,7 @@ src/CodingAgent/Config/
   PromptsConfig.php                         # typed config for top-level prompts: []
 
 src/CodingAgent/PromptTemplate/
-  LoadedPromptTemplate.php                  # internal value object: name, description, argumentHint, content, filePath
+  LoadedPromptTemplate.php                  # internal value object: name, description, content, filePath
   PromptTemplateDiagnostic.php              # collision/read/yaml diagnostics, no raw content
   PromptTemplateLoadResult.php              # templates + diagnostics
   PromptTemplateArgumentParser.php          # parseCommandArgs()
@@ -339,9 +345,8 @@ src/CodingAgent/PromptTemplate/
   PromptTemplatesRuntimeConfig.php          # mutable per-invocation CLI overrides
 
 src/CodingAgent/Runtime/Contract/
-  PromptTemplateCommand.php                 # TUI-safe DTO: name, description, argumentHint
+  PromptTemplateCommand.php                 # TUI-safe DTO: name, description
   PromptTemplateCatalogInterface.php        # all template commands for TUI registration
-  PromptTemplateExpanderInterface.php       # expand user text at runtime boundary
 
 src/Tui/Listener/
   PromptTemplateCommandRegistrar.php        # low-priority registrar for virtual template slash commands
@@ -383,8 +388,6 @@ src/CodingAgent/Config/AppConfigLoader.php  # add '[prompts]' => 'list'
 src/CodingAgent/CLI/AgentCommand.php        # add options and populate PromptTemplatesRuntimeConfig
 src/CodingAgent/Runtime/InProcess/InProcessAgentSessionClient.php
 src/CodingAgent/Runtime/Process/JsonlProcessAgentSessionClient.php
-src/Tui/Command/CommandMetadata.php         # optional argumentHint field
-src/Tui/Completion/SlashCommandCompletionProvider.php
 src/Tui/Listener/SubmitListener.php         # DispatchRuntime forwarding
 ```
 
@@ -507,7 +510,7 @@ array $promptTemplate = [],
 bool $noPromptTemplates = false,
 ```
 
-If Symfony's attribute supports shortcuts, add `-np` for `--no-prompt-templates`. If not, add a console-level test and use the supported syntax for a multi-character shortcut.
+Only the long flag `--no-prompt-templates` is implemented. No `-np` shortcut.
 
 Before controller/headless/TUI branching:
 
@@ -542,7 +545,6 @@ final readonly class LoadedPromptTemplate
     public function __construct(
         public string $name,
         public string $description,
-        public ?string $argumentHint,
         public string $content,
         public string $filePath,
     ) {
@@ -633,7 +635,7 @@ public function load(): PromptTemplateLoadResult
 - Parse frontmatter.
 - Name is `basename($path, '.md')` for exact `.md` suffix.
 - Description from frontmatter `description` or first non-empty body line truncated to 60 chars.
-- `argument-hint` only set if truthy/non-empty after string cast.
+- Unknown frontmatter keys are ignored.
 - First-wins dedupe by name.
 - Never log raw body/content.
 
@@ -742,13 +744,11 @@ final readonly class PromptTemplateCommand
     public function __construct(
         public string $name,
         public string $description,
-        public ?string $argumentHint = null,
-    ) {
-    }
+    ) {}
 }
 ```
 
-Contracts:
+Only one contract interface goes in `Runtime/Contract` — the catalog interface needed by TUI for deptrac-safe registration:
 
 ```php
 interface PromptTemplateCatalogInterface
@@ -756,17 +756,14 @@ interface PromptTemplateCatalogInterface
     /** @return list<PromptTemplateCommand> */
     public function allPromptTemplateCommands(): array;
 }
-
-interface PromptTemplateExpanderInterface
-{
-    public function expandPromptTemplate(string $text): string;
-}
 ```
 
-`PromptTemplateService` implements both:
+There is **no** `PromptTemplateExpanderInterface`. The TUI never needs to expand templates. The runtime layer (`InProcessAgentSessionClient`) depends on the concrete `PromptTemplateService` directly. This is deptrac-safe because `AppRuntimeInternals` is allowed to depend on the `AppPromptTemplate` layer.
+
+`PromptTemplateService` implements the catalog interface and also exposes expansion directly:
 
 ```php
-final class PromptTemplateService implements PromptTemplateCatalogInterface, PromptTemplateExpanderInterface
+final class PromptTemplateService implements PromptTemplateCatalogInterface
 {
     private ?PromptTemplateLoadResult $cached = null;
 
@@ -783,7 +780,6 @@ final class PromptTemplateService implements PromptTemplateCatalogInterface, Pro
             static fn (LoadedPromptTemplate $t) => new PromptTemplateCommand(
                 name: $t->name,
                 description: $t->description,
-                argumentHint: $t->argumentHint,
             ),
             $this->result()->templates,
         );
@@ -820,7 +816,11 @@ final class PromptTemplateService implements PromptTemplateCatalogInterface, Pro
 }
 ```
 
-Do not expand `answer_human` or `answer_tool_question` values; those are structured responses, not user prompts.
+Runtime expansion notes:
+
+- Do not expand `answer_human` or `answer_tool_question` values; those are structured responses, not user prompts.
+- Templates are loaded once per process (lazy on first `allPromptTemplateCommands()` or `expandPromptTemplate()` call).
+- The `$template->name` in the expander is lowercase (canonicalized at load time), so the expansion regex group-1 match — which is already lowercase from TUI/CLI routing — matches directly.
 
 ### 4.6 TUI virtual commands
 
@@ -836,7 +836,8 @@ Behavior:
 - Run after real slash-command registrars.
 - For each template command:
   - If `$registry->has($template->name)`, skip it. Real commands win.
-  - Register `CommandMetadata` with `name`, `description`, `usage`, `acceptsArguments: true`, and `argumentHint` if that field is added.
+  - Register `CommandMetadata` with `name`, `description`, `usage` (`'/name <args>'` for templates that accept arguments), and `acceptsArguments: true`.
+  - `CommandMetadata` is **not modified**. No argument-hint from frontmatter is used.
   - Handler returns `new DispatchRuntime($command->originalText)`.
 
 Pseudocode:
@@ -867,9 +868,8 @@ final class PromptTemplateCommandRegistrar implements TuiListenerRegistrar
                     name: $template->name,
                     aliases: [],
                     description: $template->description,
-                    usage: '/'.$template->name.(null !== $template->argumentHint ? ' '.$template->argumentHint : ''),
+                    usage: '/'.$template->name.' <args>',
                     acceptsArguments: true,
-                    argumentHint: $template->argumentHint,
                 ),
                 new class implements SlashCommandHandler {
                     public function handle(SlashCommand $command): CommandResult
@@ -882,6 +882,10 @@ final class PromptTemplateCommandRegistrar implements TuiListenerRegistrar
     }
 }
 ```
+
+`/help <template>` displays `Usage: /template-name <args>` because `usage` is set generically.
+
+Autocomplete shows the `description` field. `SlashCommandCompletionProvider` is **not modified**.
 
 Priority wiring options:
 
@@ -972,12 +976,12 @@ This ensures template slash commands use the same start/steer/follow-up routing 
 
 ### 4.8 Runtime expansion in `InProcessAgentSessionClient`
 
-Inject `PromptTemplateExpanderInterface` into `InProcessAgentSessionClient`.
+Inject the concrete `PromptTemplateService` into `InProcessAgentSessionClient`. This is deptrac-safe: `AppRuntimeInternals` is allowed to depend on `AppPromptTemplate`.
 
 In `start()`:
 
 ```php
-$prompt = $this->promptTemplateExpander->expandPromptTemplate($request->prompt);
+$prompt = $this->promptTemplateService->expandPromptTemplate($request->prompt);
 
 if ('' !== $prompt) {
     $messages[] = new AgentMessage(
@@ -987,17 +991,14 @@ if ('' !== $prompt) {
 }
 ```
 
-Also decide what to store in session metadata from TUI:
-
-- Existing `SubmitListener` stores the raw submitted text in metadata before runtime expansion.
-- Pi's transcript displays the user-entered slash command or expanded prompt? Verify during implementation. For Hatfield MVP, keep current canonical runtime event behavior: the event store will record whatever `AgentRunner` receives, i.e. expanded text, while session metadata may retain raw prompt. If this mismatch is undesirable, add a follow-up decision.
+**Transcript display:** The runtime/model sees the expanded prompt. Transcript follows normal runtime event projection, so it also shows the expanded prompt. There is no special "show raw `/template args` but send expanded" behavior. Session metadata stores the expanded prompt as submitted to the model; the raw `/template args` text is not separately preserved unless added in a follow-up.
 
 In `send()`:
 
 ```php
 $text = $command->text ?? '';
 if (\in_array($command->type, ['message', 'steer', 'follow_up'], true)) {
-    $text = $this->promptTemplateExpander->expandPromptTemplate($text);
+    $text = $this->promptTemplateService->expandPromptTemplate($text);
 }
 
 match ($command->type) {
@@ -1012,39 +1013,13 @@ Expansion happens once at this final in-process boundary. Do not also expand in 
 
 ### 4.9 Completion and help
 
-Update `CommandMetadata`:
+`CommandMetadata` and `SlashCommandCompletionProvider` are **not modified** in MVP.
 
-```php
-public function __construct(
-    public string $name,
-    public array $aliases = [],
-    public string $description = '',
-    public string $usage = '',
-    public bool $acceptsArguments = false,
-    public ?string $argumentHint = null,
-) {}
-```
-
-Update `SlashCommandCompletionProvider` suggestion creation:
-
-```php
-$display = '/'.$meta->name;
-if (null !== $meta->argumentHint && '' !== $meta->argumentHint) {
-    $display .= ' '.$meta->argumentHint;
-}
-
-$suggestions[] = new CompletionSuggestion(
-    display: $display,
-    insertText: '/'.$meta->name.' ',
-    description: $meta->description,
-    replacementStart: $replacementStart,
-    replacementLength: \strlen($prefix) + 1,
-);
-```
-
-Matching should continue to use `$meta->name` and aliases, not the display string containing the hint.
-
-`/help <template>` should show `Usage: /name <hint>` because `usage` is set that way.
+- `argument-hint` is not parsed or stored from frontmatter.
+- The TUI registrar sets `usage` to `'/$name <args>'` generically for templates that accept arguments.
+- `/help <template>` shows this generic usage.
+- Autocomplete display uses the `description` field.
+- `insertText` is `/$name ` as usual.
 
 ### 4.10 Services
 
@@ -1066,10 +1041,9 @@ Ineersa\CodingAgent\PromptTemplate\PromptTemplateLoader:
 
 Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCatalogInterface:
   alias: Ineersa\CodingAgent\PromptTemplate\PromptTemplateService
-
-Ineersa\CodingAgent\Runtime\Contract\PromptTemplateExpanderInterface:
-  alias: Ineersa\CodingAgent\PromptTemplate\PromptTemplateService
 ```
+
+The expander has no separate interface. `InProcessAgentSessionClient` injects the concrete `PromptTemplateService` directly.
 
 Most `src/CodingAgent/PromptTemplate/**/*.php` services can be autowired by the existing `Ineersa\CodingAgent\` resource. Only scalar args and aliases need explicit config.
 
@@ -1098,11 +1072,11 @@ Use the actual existing deptrac layer names for logger/Symfony if they differ. I
 
 Add `AppPromptTemplate` to:
 
-- `AppRuntimeInternals` (for `InProcessAgentSessionClient` dependency through interface/implementation wiring if needed)
+- `AppRuntimeInternals` — `InProcessAgentSessionClient` injects the concrete `PromptTemplateService` directly.
 - `AppRuntimeProcess` if `JsonlProcessAgentSessionClient` directly injects `PromptTemplatesRuntimeConfig`
 - `AppCli` if `AgentCommand` directly injects `PromptTemplatesRuntimeConfig`
 
-`TuiListener` should not need `AppPromptTemplate` because it depends on `PromptTemplateCatalogInterface` from `AppRuntimeContract`.
+`TuiListener` must not depend on `AppPromptTemplate`. It depends on `PromptTemplateCatalogInterface` from `AppRuntimeContract` (already an allowed dependency for `TuiListener`).
 
 ## 5. Tests to write
 
@@ -1171,7 +1145,7 @@ Port Pi's `prompt-templates.test.ts` cases.
 - missing auto dirs are quiet
 - missing explicit paths create diagnostics
 - description fallback first non-empty line truncated to 60 chars
-- `argument-hint` present/absent/empty
+- unknown frontmatter keys ignored
 - first-wins collisions with diagnostics
 - no raw content in logs/diagnostics
 
@@ -1189,7 +1163,6 @@ Port Pi's `prompt-templates.test.ts` cases.
 - `--prompt-template path` populates runtime config
 - repeated `--prompt-template` preserves order
 - `--no-prompt-templates` populates runtime config
-- `-np` works if implemented
 
 `JsonlProcessPromptTemplateOptionsTest`:
 
@@ -1201,19 +1174,16 @@ Port Pi's `prompt-templates.test.ts` cases.
 
 `PromptTemplateCommandRegistrarTest`:
 
-- registers one command per template
-- skips name that already exists in `SlashCommandRegistry`
+- registers one command per template with lowercase names
+- skips name that already exists in `SlashCommandRegistry` (real commands win)
 - returns `DispatchRuntime` with original slash text
 - metadata has `acceptsArguments: true`
-- metadata usage includes `argument-hint`
+- metadata usage is generic `'/<name> <args>'`
 - command appears in `allMetadata()` and `/help`
-- hyphenated names work
+- hyphenated names work (lowercase)
+- mixed-case template filenames canonicalize to lowercase and collide as same name
 
-`SlashCommandCompletionProviderTest` updates:
-
-- prompt template command with `argumentHint` displays `/name <hint>`
-- `insertText` remains `/name `
-- matching ignores the hint and uses name/aliases only
+No `SlashCommandCompletionProvider` changes or tests needed — `CommandMetadata` is not modified.
 
 `SubmitListenerDispatchRuntimeTest`:
 
@@ -1241,10 +1211,10 @@ Because this touches runtime/TUI-visible flow, full validation must include `cas
 
 A focused TUI E2E can be added if stable:
 
-- Create a temp cwd with `.hatfield/prompts/review.md`.
+- Create a temp cwd with `.hatfield/prompts/review.md` (lowercase filename).
 - Launch TUI with test isolation.
 - Type `/review foo`.
-- Assert transcript/runtime receives expanded prompt text.
+- Assert transcript shows the expanded prompt text (runtime event projection is consistent — no special raw display).
 
 ## 6. Documentation
 
@@ -1253,7 +1223,6 @@ Add `docs/prompt-templates.md` adapted from Pi docs:
 - What prompt templates are.
 - Locations in Hatfield.
 - Markdown/frontmatter format.
-- `argument-hint` examples.
 - Placeholder syntax and examples.
 - Loading rules: non-recursive, first-wins collision, CLI disable flag.
 - TUI autocomplete and `/help` behavior.
@@ -1266,33 +1235,61 @@ Update `docs/settings.md`:
 - Explain auto-discovery dirs are separate from `prompts: []`.
 - Explain `--no-prompt-templates` disables auto/settings for that invocation.
 
-## 7. Rollout phases
+## 7. Task breakdown and execution order
 
-1. **Pure behavior**
-   - Add parser, substitutor, frontmatter parser, internal DTOs.
-   - Port Pi unit tests.
+Implementation is split into four tracked tasks. The task files in `tasks/TODO/` are the executable breakdown. The phases listed below are the internal ordering within each task.
 
-2. **Config and loader**
-   - Add `prompts: []` config, `PromptsConfig`, runtime config, loader, diagnostics.
-   - Tests for settings/path loading and collisions.
+### Dependency graph
 
-3. **Runtime expansion**
-   - Add runtime contract interfaces.
-   - Implement `PromptTemplateService`.
-   - Expand in `InProcessAgentSessionClient::start()` and `send()`.
+```
+PT-01 (core config/parser/loader/catalog)
+  │
+  ├──▶ PT-02 (runtime, CLI, process transport expansion) ──┐
+  │                                                        │
+  └──▶ PT-03 (TUI slash commands, SubmitListener dispatch) ─┤
+           │                                                │
+           └────────▶ PT-04 (docs, E2E smoke, final) ◀─────┘
+```
 
-4. **CLI/process wiring**
-   - Add `AgentCommand` options.
-   - Pass options to controller child in `JsonlProcessAgentSessionClient`.
+**PT-01 must land first.** It is the shared foundation — parser, substitutor, loader, catalog interface, config, and `PromptTemplateService`. PT-02 and PT-03 both depend on the catalog/service contract from PT-01.
 
-5. **TUI integration**
-   - Add virtual prompt-template command registrar.
-   - Add `DispatchRuntime` forwarding in `SubmitListener`.
-   - Add `argumentHint` to metadata/completion.
+**PT-02 and PT-03 can run in parallel** after PT-01 lands. They touch different integration surfaces:
 
-6. **Docs and full validation**
-   - Add docs.
-   - Run full Castor validation.
+| Task | Integration surface | Key files |
+|---|---|---|
+| PT-02 | Runtime/CLI/process transport | `InProcessAgentSessionClient`, `AgentCommand`, `JsonlProcessAgentSessionClient` |
+| PT-03 | TUI registrar / SubmitListener | `PromptTemplateCommandRegistrar`, `SubmitListener` |
+
+They share no implementation files and can be forked, tested, and reviewed independently.
+
+**PT-04 depends on both PT-02 and PT-03.** Docs can be drafted in parallel with implementation, but final E2E smoke and full `LLM_MODE=true castor check` require both PT-02 and PT-03 because they jointly exercise the full runtime + TUI integration path.
+
+### Task reference
+
+| Task ID | File | Summary |
+|---|---|---|
+| PT-01 | `tasks/TODO/prompt-templates-01-core-config-loader.md` | `PromptsConfig`, `PromptTemplatesRuntimeConfig`, `PromptTemplateArgumentParser`, `PromptTemplateSubstitutor`, `PromptTemplateFrontmatterParser`, `PromptTemplateLoader`, `PromptTemplateService`, `PromptTemplateCatalogInterface`, internal DTOs, deptrac `AppPromptTemplate` layer |
+| PT-02 | `tasks/TODO/prompt-templates-02-runtime-cli-process-expansion.md` | Expansion in `InProcessAgentSessionClient::start()`/`send()`, `AgentCommand` options, process transport pass-through in `JsonlProcessAgentSessionClient` |
+| PT-03 | `tasks/TODO/prompt-templates-03-tui-slash-command-dispatch.md` | `PromptTemplateCommandRegistrar`, `DispatchRuntime` forwarding in `SubmitListener` |
+| PT-04 | `tasks/TODO/prompt-templates-04-docs-e2e-validation.md` | `docs/prompt-templates.md`, `docs/settings.md` update, E2E smoke, full `castor check` |
+
+### Internal phase ordering per task
+
+Each task's `tasks/TODO/` file contains its own acceptance criteria and phase list. In summary:
+
+- **PT-01** (4 phases): parser/substitutor → frontmatter/primitive DTOs → config/path resolution → loader + catalog service + deptrac.
+- **PT-02** (3 phases): runtime expansion in `InProcessAgentSessionClient` → CLI `AgentCommand` options → process transport pass-through.
+- **PT-03** (3 phases): `PromptTemplateCommandRegistrar` → `DispatchRuntime` forwarding in `SubmitListener` → TUI tests.
+- **PT-04** (2 phases): docs → E2E smoke + full Castor validation.
+
+### Validation per task boundary
+
+Each task must pass before moving to CODE-REVIEW:
+
+- **PT-01:** `castor test` (parser, substitutor, frontmatter, loader tests), `castor deptrac`, `castor phpstan`, `castor cs-check`.
+- **PT-02:** `castor test` (runtime expansion + CLI/process tests), `castor deptrac`, `castor phpstan`, `castor cs-check`. **Because PT-02 touches runtime/LLM-visible flow, `LLM_MODE=true castor check` is mandatory before CODE-REVIEW.** (The workflow gate runs it via `move_task(to="CODE-REVIEW")`.)
+- **PT-03:** `castor test` (registrar + SubmitListener dispatch tests), `castor deptrac`, `castor phpstan`, `castor cs-check`. **Because PT-03 touches TUI submission/LLM-visible flow, `LLM_MODE=true castor check` is mandatory before CODE-REVIEW.** (The workflow gate runs it via `move_task(to="CODE-REVIEW")`.)
+- **PT-04:** `LLM_MODE=true castor check` (requires tmux + llama.cpp:9052). If prerequisites unavailable, PT-04 must stay IN-PROGRESS.
 
 ## 8. Validation commands
 
@@ -1318,14 +1315,28 @@ LLM_MODE=true castor check
 
 If tmux or llama.cpp on port 9052 is unavailable, do not mark the task CODE-REVIEW. Record the blocker and keep the task IN-PROGRESS.
 
-## 9. Open decisions
+## 9. Resolved decisions / Deferred follow-ups
 
-1. **Case sensitivity in TUI.** Pi preserves filename case; Hatfield's `CommandParser` lowercases slash names. MVP can recommend lower-case filenames and preserve exact runtime matching, but exact Pi mixed-case TUI behavior requires a parser/registry decision.
-2. **Settings list combination.** Pi can combine global/project settings resources. Hatfield list settings replace by precedence. This plan keeps Hatfield semantics for `prompts: []`; implement layer-aware additive settings only if the user explicitly wants exact Pi settings aggregation.
-3. **`-np` shortcut support.** Verify Symfony Console attribute support for multi-character shortcuts. Long flag is mandatory; short alias should be added with tests if supported.
-4. **Diagnostics UI.** MVP records/logs diagnostics. A future `/templates` or config screen could display collisions/read failures, but Pi does not require a separate template-list command.
-5. **Package/extension resources.** Future ExtensionApi/resource-loader work could add extension-provided prompt templates and package manifests. Do not build speculative package support in this task.
-6. **Transcript display raw vs expanded.** Runtime expansion means the model sees expanded text. Decide via tests/docs whether transcript should show raw `/name args` or expanded content; current runtime event projection likely shows expanded content.
+These items were considered during planning and are now resolved or deferred:
+
+**Resolved:**
+
+1. **Command name case:** Hatfield canonicalizes template names to lowercase (`strtolower(basename($path, '.md'))`). Lowercase filenames are required; mixed-case filenames collide. No `CommandParser` change needed — it already lowercases slash names.
+2. **CLI disable flag:** Only `--no-prompt-templates` (long flag). No `-np` shortcut.
+3. **Transcript display:** Runtime/model sees expanded prompt; transcript follows normal runtime event projection showing expanded text. No special raw-display behavior.
+4. **Expander interface:** No `PromptTemplateExpanderInterface`. TUI uses catalog interface only; runtime injects concrete `PromptTemplateService`.
+5. **CommandMetadata API / argument-hint:** Not modified in MVP. `argument-hint` is not parsed or stored; only `description` and `content` are extracted from frontmatter. `usage` is generic `'/<name> <args>'`. `SlashCommandCompletionProvider` unchanged.
+6. **Settings shape:** Only top-level `prompts: []`. No `prompts.paths`, `prompts.enabled`, or compatibility shims.
+7. **Diagnostics:** Internal only — diagnostics array + structured logs. No `/templates` command or UI.
+8. **Loading:** Once per process, lazy on first access. No reload/watch/cache invalidation.
+
+**Deferred to follow-up (not in MVP scope):**
+
+1. **Package/extension-provided templates.** Requires ExtensionApi resource-loader or package manifest work. No speculative support built now.
+2. **Diagnostics UI.** A future `/templates` or config screen could surface collision/read-failure diagnostics.
+3. **Pi `argument-hint` field.** Future work can parse `argument-hint` from frontmatter and display it in autocomplete/help, adding `argumentHint` to `CommandMetadata` and updating `SlashCommandCompletionProvider`.
+4. **Settings layer-aware additive paths.** If exact Pi-style global+project settings aggregation is needed, implement a layer-aware reader in a follow-up; do not special-case list merge in `overlayConfig()` for one key.
+5. **Raw transcript preservation.** If users want the raw `/template args` preserved separately from expanded prompt in session metadata or events, add as a follow-up.
 
 ## 10. Non-goals for MVP
 
@@ -1335,5 +1346,5 @@ If tmux or llama.cpp on port 9052 is unavailable, do not mark the task CODE-REVI
 - Recursive template expansion.
 - Conditional/template logic beyond Pi placeholders.
 - Template-specific model/reasoning selection.
-- Argument validation based on `argument-hint`.
+- `argument-hint` frontmatter field (parsing, storage, display, validation).
 - Argument-level autocomplete after the template name.
