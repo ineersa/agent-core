@@ -132,7 +132,7 @@ $registry->register(
 Status: IN-PROGRESS
 Branch: task/session-03-new-and-resume-commands
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-03-new-and-resume-commands
-Fork run:
+Fork run: ru72g2pgqzp6
 PR URL:
 PR Status:
 Started: 2026-06-09T01:24:48.923Z
@@ -152,3 +152,8 @@ Completed:
 ## Task workflow update - 2026-06-09T01:29:10.446Z
 - Summary: SESSION-03 scout context gathered. Scout A found slash command/picker implementation pattern: add a `TuiListenerRegistrar` similar to `ModelControlListener`, register `/new` and `/resume`, use `NoOp` because `TuiSessionSwitchService::request*()` calls `Tui::stop()` and `DispatchRuntime` is not wired. Picker should follow `ModelPickerController` + `PickerOverlay` + `SelectListWidget`, with runtime refs set during registrar `register()`. Scout B confirmed SESSION-01/02 APIs: `HatfieldSessionStore::listSessions()/exists()`, `TuiSessionSwitchServiceInterface::requestResume()/requestNewDraft()`, `SessionInitializer::initializeDraft()`, SubmitListener lazy draft promotion, replay/dedup on resume, footer update on draft promotion. Scout C mapped tests/docs: new command handler tests, session picker tests, command registration/help/completion tests as practical, docs updates in `docs/tui-architecture.md` and `docs/session-storage.md`; no settings changes. Key boundary: handlers that need `HatfieldSessionStore` should live under `src/Tui/Listener/` or similar, not `src/Tui/Command/`, to satisfy Deptrac.
 - task-start: launched 3 scout subagents for SESSION-03 command/picker patterns, session switch/lazy draft APIs, and tests/docs impact. Full scout output saved at `/home/ineersa/.pi/agent/tmp/2026-06--050c84a3.txt`. Preparing implementation fork.
+
+## Task workflow update - 2026-06-09T01:30:22.944Z
+- Recorded fork run: ru72g2pgqzp6
+- Summary: Launched SESSION-03 implementation fork `ru72g2pgqzp6` in worktree `/home/ineersa/projects/agent-core-worktrees/session-03-new-and-resume-commands`. Scope: add `/new` and `/resume` slash commands via a `TuiListenerRegistrar`, implement command handlers under `src/Tui/Listener/`, implement `SessionPickerController` using `PickerOverlay`/`SelectListWidget`, wire lazy `/new` through `TuiSessionSwitchServiceInterface::requestNewDraft()`, direct/picker resume through `requestResume()`, update docs/help/tests, and run Castor validation subset. Fork instructed not to push/create PR/move task.
+- task-start: implementation fork ru72g2pgqzp6 launched with exact command/picker/session-switch instructions and validation requirements. Awaiting fork report; main agent will not proceed to review/PR in this phase.
