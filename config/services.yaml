@@ -476,7 +476,16 @@ services:
   # Recurrently invoked by Symfony Scheduler via #[AsPeriodicTask].
   # Its non-autowire-able string parameters are resolved from
   # container parameters — no path duplication across config/code.
-  Ineersa\CodingAgent\CLI\CompletionFileIndexRefreshCommand:
+  Ineersa\CodingAgent\CLI\CompletionFileIndexRefreshCommand: ~
+
+  # File mention index builder — shared by the console command and
+  # the startup listener.  Not autowireable (string constructor args
+  # for cwd and index path).
+  Ineersa\CodingAgent\CLI\FileMentionIndexBuilder:
     arguments:
       $cwd: '%app.cwd%'
       $indexPath: '%app.file_mention_index_path%'
+
+  # Synchronous startup index build so @ completion works before the
+  # first Scheduler cycle (periodic tasks fire at now + period).
+  Ineersa\CodingAgent\CLI\FileMentionIndexStartupListener:

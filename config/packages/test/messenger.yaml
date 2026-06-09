@@ -21,4 +21,3 @@ framework:
                 serializer: 'messenger.transport.native_php_serializer'
             llm: 'in-memory://'
             tool: 'in-memory://'
-            scheduler: 'schedule://default'

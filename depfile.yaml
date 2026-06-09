@@ -445,6 +445,7 @@ parameters:
       - AppConfig
       - TuiApplication
       - TuiListener
+      - TuiRuntime
       - TuiCompletion
       - TuiHeader
       - TuiTranscript
