@@ -89,6 +89,47 @@ additive listener API. TUI code must register tick work through
 `TuiTickDispatcher` (`$context->ticks->add(...)`) so runtime polling,
 footer refresh, and future tick handlers do not overwrite one another.
 
+### Session lifecycle hooks
+
+InteractiveMode creates a fresh `TuiSessionLifecycleDispatcher` each
+loop iteration and passes it into `TuiRuntimeContext::$lifecycle`.
+Listener registrars and future slash-command handlers can subscribe to
+session lifecycle events without coupling to the switch loop internals:
+
+```php
+$context->lifecycle->subscribe(function (TuiSessionLifecycleEventDTO $e): void {
+    if ($e->type === TuiSessionLifecycleEventTypeEnum::SessionStarted) {
+        // initialise per-session extension state
+    }
+});
+```
+
+Lifecycle events dispatched:
+
+| Event | When | sessionId | isDraft | resuming |
+|---|---|---|---|---|
+| `SessionStarted` | Fresh session with a prompt | real | false | false |
+| `SessionResumed` | Existing session reloaded | real | false | true |
+| `SessionDraftStarted` | Lazy draft (no DB row yet) | '' | true | false |
+| `SessionEnded` | Session left (quit or switch) | real or '' | current | current |
+
+`SessionEnded` includes an `endReason` field (`'switch'` or `'quit'`)
+and an optional `previousSessionId` for cross-session tracking.
+
+Because the dispatcher is created fresh each iteration, stale
+subscriptions from a prior session never leak into the next one.
+The dispatcher deliberately does **not** guard subscriber exceptions;
+throwing subscribers propagate as TUI errors.
+
+### Revolt suspension (not CPU spin)
+
+The `while (true)` session-switch loop in `InteractiveMode::run()`
+does **not** busy-wait.  `$tui->run()` blocks via Revolt fiber
+suspension (`EventLoop::getSuspension(); $suspension->suspend()`)
+and resumes only when `$tui->stop()` is called or the user quits.
+The loop body executes once per session, then blocks until the
+next switch or quit.
+
 ### Keybindings
 
 | Key | Action |

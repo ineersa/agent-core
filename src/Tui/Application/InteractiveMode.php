@@ -10,6 +10,9 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\TuiListenerRegistrar;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
+use Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher;
+use Ineersa\Tui\Runtime\TuiSessionLifecycleEventDTO;
+use Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Runtime\TuiTickDispatcher;
 use Ineersa\Tui\Screen\ChatScreen;
@@ -97,8 +100,13 @@ final readonly class InteractiveMode
 
         // ── Session switch loop ──
         // Each iteration builds fresh TUI/session objects for the
-        // current target.  A session switch (via SessionSwitchService)
+        // current target.  A session switch (via TuiSessionSwitchService)
         // stops the event loop; we consume the pending target and loop.
+        //
+        // $tui->run() blocks via Revolt fiber suspension (not a CPU
+        // spin): it suspends the current fiber and resumes only when
+        // $tui->stop() is called or the user quits.  The while(true)
+        // therefore iterates once per session, not infinitely.
         $targetSessionId = $sessionId;
         $targetRequest = $request;
         $isDraft = ('' === $sessionId && null === $request);
@@ -129,6 +137,7 @@ final readonly class InteractiveMode
 
             // ── Register listeners (DI-driven, stateless registrars) ──
             $ticks = new TuiTickDispatcher();
+            $lifecycle = new TuiSessionLifecycleDispatcher();
 
             // Bind switch service to this iteration's objects
             $this->switchService->bindForIteration($tui, $client, $state);
@@ -141,6 +150,7 @@ final readonly class InteractiveMode
                 sessionStore: $this->sessionStore,
                 ticks: $ticks,
                 switch: $this->switchService,
+                lifecycle: $lifecycle,
             );
 
             foreach ($this->listenerRegistrars as $registrar) {
@@ -153,11 +163,26 @@ final readonly class InteractiveMode
             // Also register input handlers from the slot registry
             $this->registerSlotInputHandlers($tui, $screen);
 
+            // ── Dispatch session lifecycle start event ──
+            // Must happen AFTER listener registrars have run so that
+            // subscribers to $context->lifecycle are already wired.
+            $this->dispatchSessionLifecycleStart($lifecycle, $state, $isDraft, $targetSessionId);
+
             $tui->setFocus($screen->editorWidget());
             $tui->run();
 
-            // ── After event loop exits: check for pending switch ──
+            // ── Determine exit reason and dispatch session ended ──
             $switchTarget = $this->switchService->consumePendingSwitch();
+            $endReason = (null !== $switchTarget) ? 'switch' : 'quit';
+            $lifecycle->dispatch(new TuiSessionLifecycleEventDTO(
+                type: TuiSessionLifecycleEventTypeEnum::SessionEnded,
+                sessionId: $state->sessionId,
+                isDraft: $isDraft,
+                resuming: $state->resuming,
+                endReason: $endReason,
+            ));
+
+            // ── After event loop exits: check for pending switch ──
             if (null !== $switchTarget) {
                 if ($switchTarget->isDraft) {
                     $isDraft = true;
@@ -174,6 +199,43 @@ final readonly class InteractiveMode
         }
 
         return Command::SUCCESS;
+    }
+
+    /**
+     * Dispatch the session lifecycle startup event.
+     *
+     * Must be called AFTER listener registrars have wired their
+     * subscriptions to $lifecycle, but BEFORE the TUI event loop
+     * starts so subscribers can initialise state synchronously.
+     */
+    private function dispatchSessionLifecycleStart(
+        TuiSessionLifecycleDispatcher $lifecycle,
+        TuiSessionState $state,
+        bool $isDraft,
+        string $targetSessionId,
+    ): void {
+        if ($isDraft) {
+            $lifecycle->dispatch(new TuiSessionLifecycleEventDTO(
+                type: TuiSessionLifecycleEventTypeEnum::SessionDraftStarted,
+                sessionId: '',
+                isDraft: true,
+                resuming: false,
+            ));
+        } elseif ('' !== $targetSessionId) {
+            $lifecycle->dispatch(new TuiSessionLifecycleEventDTO(
+                type: TuiSessionLifecycleEventTypeEnum::SessionResumed,
+                sessionId: $state->sessionId,
+                isDraft: false,
+                resuming: true,
+            ));
+        } else {
+            $lifecycle->dispatch(new TuiSessionLifecycleEventDTO(
+                type: TuiSessionLifecycleEventTypeEnum::SessionStarted,
+                sessionId: $state->sessionId,
+                isDraft: false,
+                resuming: false,
+            ));
+        }
     }
 
     /**

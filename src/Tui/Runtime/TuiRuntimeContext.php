@@ -18,6 +18,11 @@ use Symfony\Component\Tui\Tui;
  *
  * The {@see TuiSessionSwitchServiceInterface} is bound per-iteration
  * and enables slash commands to request session switches.
+ *
+ * The {@see TuiSessionLifecycleDispatcher} is created fresh each
+ * iteration so subscriptions never leak across sessions.  Future
+ * slash-command handlers and extensions subscribe to lifecycle
+ * events (session start, resume, draft, end) through this dispatcher.
  */
 final readonly class TuiRuntimeContext
 {
@@ -29,6 +34,7 @@ final readonly class TuiRuntimeContext
         public HatfieldSessionStore $sessionStore,
         public TuiTickDispatcher $ticks,
         public TuiSessionSwitchServiceInterface $switch,
+        public TuiSessionLifecycleDispatcher $lifecycle,
     ) {
     }
 }
