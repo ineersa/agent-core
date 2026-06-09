@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\CLI;
 
 use Ineersa\CodingAgent\CLI\FileMentionIndexBuilder;
+use Ineersa\CodingAgent\CLI\FileMentionIndexLockHeldException;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 #[CoversClass(FileMentionIndexBuilder::class)]
 final class FileMentionIndexBuilderTest extends TestCase
@@ -25,6 +28,12 @@ final class FileMentionIndexBuilderTest extends TestCase
         $this->removeDir($this->tmpDir);
     }
 
+    private function createLockFactory(): LockFactory
+    {
+        // FlockStore in the test tmp dir so locks are isolated to this test.
+        return new LockFactory(new FlockStore($this->tmpDir));
+    }
+
     #[Test]
     public function includesFilesAndDirectories(): void
     {
@@ -34,7 +43,7 @@ final class FileMentionIndexBuilderTest extends TestCase
         touch($this->tmpDir.'/src/nested/bar.php');
 
         $indexPath = $this->tmpDir.'/index.jsonl';
-        $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath);
+        $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath, lockFactory: $this->createLockFactory());
         $count = $builder->build();
 
         $this->assertGreaterThanOrEqual(3, $count);
@@ -74,7 +83,7 @@ final class FileMentionIndexBuilderTest extends TestCase
         touch($this->tmpDir.'/included.php');
 
         $indexPath = $this->tmpDir.'/index.jsonl';
-        $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath);
+        $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath, lockFactory: $this->createLockFactory());
         $count = $builder->build();
 
         $lines = file($indexPath, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES);
@@ -103,7 +112,7 @@ final class FileMentionIndexBuilderTest extends TestCase
         touch($this->tmpDir.'/existing.php');
 
         $indexPath = $this->tmpDir.'/index.jsonl';
-        $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath);
+        $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath, lockFactory: $this->createLockFactory());
         $builder->build();
 
         $this->assertFileExists($indexPath);
@@ -122,7 +131,7 @@ final class FileMentionIndexBuilderTest extends TestCase
         }
 
         $indexPath = $this->tmpDir.'/index.jsonl';
-        $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath);
+        $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath, lockFactory: $this->createLockFactory());
         $count = $builder->build();
 
         $this->assertLessThanOrEqual(50_000, $count);
@@ -130,20 +139,41 @@ final class FileMentionIndexBuilderTest extends TestCase
     }
 
     #[Test]
-    public function lockPreventsConcurrentBuild(): void
+    public function nonBlockingLockPreventsConcurrentBuild(): void
     {
         touch($this->tmpDir.'/a.php');
 
         $indexPath = $this->tmpDir.'/index.jsonl';
-        $builder1 = new FileMentionIndexBuilder($this->tmpDir, $indexPath);
-        $builder2 = new FileMentionIndexBuilder($this->tmpDir, $indexPath);
+        // Both builders share the same LockFactory → same lock resource.
+        $lockFactory = $this->createLockFactory();
 
-        $builder1->build();
+        // Manually hold the lock to simulate concurrent build.
+        $lock = $lockFactory->createLock('file_mention_index.'.hash('xxh32', $indexPath), ttl: 300.0);
+        $this->assertTrue($lock->acquire(false), 'Should acquire lock when no one holds it.');
 
-        // Second build should succeed — the lock is released after build.
-        // This just verifies that the lock is released properly.
-        $count = $builder2->build();
+        $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath, lockFactory: $lockFactory);
+
+        // Builder should throw because lock is held.
+        $this->expectException(FileMentionIndexLockHeldException::class);
+        $builder->build();
+    }
+
+    #[Test]
+    public function lockReleasedAfterBuild(): void
+    {
+        touch($this->tmpDir.'/a.php');
+
+        $indexPath = $this->tmpDir.'/index.jsonl';
+        $lockFactory = $this->createLockFactory();
+
+        $builder1 = new FileMentionIndexBuilder($this->tmpDir, $indexPath, lockFactory: $lockFactory);
+        $count = $builder1->build();
         $this->assertGreaterThan(0, $count);
+
+        // Lock should be released — second build with same lock factory succeeds.
+        $builder2 = new FileMentionIndexBuilder($this->tmpDir, $indexPath, lockFactory: $lockFactory);
+        $count2 = $builder2->build();
+        $this->assertGreaterThan(0, $count2);
     }
 
     #[Test]
@@ -154,7 +184,11 @@ final class FileMentionIndexBuilderTest extends TestCase
         file_put_contents($indexPath, '{"path":"old.php","dir":false}');
 
         // Try to build with a non-existent cwd — should fail.
-        $builder = new FileMentionIndexBuilder($this->tmpDir.'/nonexistent', $indexPath);
+        $builder = new FileMentionIndexBuilder(
+            $this->tmpDir.'/nonexistent',
+            $indexPath,
+            lockFactory: $this->createLockFactory(),
+        );
 
         try {
             $builder->build();
@@ -188,7 +222,7 @@ final class FileMentionIndexBuilderTest extends TestCase
 
         // ── Builder writes index ──
         $indexPath = $this->tmpDir.'/index.jsonl';
-        $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath);
+        $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath, lockFactory: $this->createLockFactory());
         $count = $builder->build();
         $this->assertGreaterThan(0, $count);
 
@@ -277,14 +311,18 @@ final class FileMentionIndexBuilderTest extends TestCase
         // Create a regular file to use as the CWD so Finder->in()
         // throws DirectoryNotFoundException AFTER the lock is acquired
         // and the temp file is opened by scanAndWrite.  This exercises
-        // the tmp-unlink code path in the catch(RuntimeException) block.
+        // the tmp-unlink code path in the catch blocks.
         $fakeCwd = $this->tmpDir.'/not-a-dir';
         file_put_contents($fakeCwd, 'block');
 
         $indexPath = $this->tmpDir.'/index.jsonl';
 
         try {
-            $builder = new FileMentionIndexBuilder($fakeCwd, $indexPath);
+            $builder = new FileMentionIndexBuilder(
+                $fakeCwd,
+                $indexPath,
+                lockFactory: $this->createLockFactory(),
+            );
             $builder->build();
             $this->fail('Expected RuntimeException when CWD is a file.');
         } catch (\RuntimeException $e) {
@@ -308,11 +346,13 @@ final class FileMentionIndexBuilderTest extends TestCase
         // Old index preserved (none existed, but no new one was written).
         $this->assertFileDoesNotExist($indexPath);
 
-        // Lock file exists but is released (the handle was closed).
-        // Verifying it's not held by trying another build — no lock
-        // contention exception means the lock was properly released.
+        // Lock released — subsequent build succeeds.
         touch($this->tmpDir.'/another-file.php');
-        $builder2 = new FileMentionIndexBuilder($this->tmpDir, $this->tmpDir.'/index2.jsonl');
+        $builder2 = new FileMentionIndexBuilder(
+            $this->tmpDir,
+            $this->tmpDir.'/index2.jsonl',
+            lockFactory: $this->createLockFactory(),
+        );
         $count = $builder2->build();
         $this->assertGreaterThan(0, $count, 'Lock should be released so subsequent builds succeed.');
     }

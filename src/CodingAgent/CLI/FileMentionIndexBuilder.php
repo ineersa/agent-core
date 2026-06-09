@@ -8,18 +8,24 @@ use Ineersa\Tui\Completion\FileMentionIndexEntryDTO;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Finder\Finder;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\LockInterface;
 
 /**
  * Scans a project directory with Symfony Finder and produces a
  * JSONL index file for file mention completion.
  *
  * This is intentionally NOT run in the TUI input hot path.
- * Callers (e.g. a CLI command or a periodic tick listener) invoke
+ * Callers (e.g. a CLI command invoked by Symfony Scheduler) invoke
  * {@see build()} offline.  The result is read by
- * {@see FileMentionIndexReader}.
+ * {@see \Ineersa\Tui\Completion\FileMentionIndexReader}.
+ *
+ * Locking uses Symfony Lock (injected {@see LockFactory}) with a
+ * named lock keyed by the index path hash.  Non-blocking acquire
+ * prevents concurrent builds without hand-rolled lock files.
  *
  * Atomic-write strategy:
- *   1. Acquire an exclusive lock (flock + lock file).
+ *   1. Acquire a non-blocking named lock via LockFactory.
  *   2. Scan with Finder into an in-memory buffer.
  *   3. Write to a temp file, flush (fflush), and close.
  *   4. rename(tmp, target) — atomic on the same filesystem.
@@ -34,7 +40,6 @@ use Symfony\Component\Finder\Finder;
 final class FileMentionIndexBuilder
 {
     private const int MAX_ENTRIES = 50_000;
-    private const string LOCK_FILE_EXT = '.lock';
 
     /** @var list<string>|null */
     private readonly ?array $excludeDirs;
@@ -50,12 +55,15 @@ final class FileMentionIndexBuilder
      * @param list<string>|null    $excludeDirs Directories to exclude (replaces built-in defaults when provided)
      * @param LoggerInterface|null $logger      Optional logger for diagnostic events;
      *                                          fallback NullLogger when null
+     * @param LockFactory|null     $lockFactory Optional lock factory for build
+     *                                          exclusion; fallback NullLock when null
      */
     public function __construct(
         private readonly string $cwd,
         private readonly string $indexPath,
         ?array $excludeDirs = null,
         ?LoggerInterface $logger = null,
+        private readonly ?LockFactory $lockFactory = null,
     ) {
         $this->excludeDirs = $excludeDirs;
         $this->logger = $logger ?? new NullLogger();
@@ -72,8 +80,11 @@ final class FileMentionIndexBuilder
      */
     public function build(): int
     {
-        $lockPath = $this->indexPath.self::LOCK_FILE_EXT;
-        $lockHandle = $this->acquireLock($lockPath);
+        $lock = $this->acquireLock();
+
+        if (null === $lock) {
+            throw new FileMentionIndexLockHeldException();
+        }
 
         try {
             $this->tmpPath = $this->indexPath.'.tmp.'.getmypid().'.'.hrtime(true);
@@ -109,7 +120,7 @@ final class FileMentionIndexBuilder
 
             throw new \RuntimeException("File mention index build failed: {$e->getMessage()}", previous: $e);
         } finally {
-            $this->releaseLock($lockHandle);
+            $lock->release();
         }
     }
 
@@ -253,30 +264,58 @@ final class FileMentionIndexBuilder
     }
 
     /**
-     * @return resource
+     * Acquire a named lock keyed by the index path.
+     *
+     * Returns the acquired LockInterface on success, null when the lock
+     * is already held (non-blocking attempt).
      */
-    private function acquireLock(string $lockPath)
+    private function acquireLock(): ?LockInterface
     {
-        $handle = @fopen($lockPath, 'w');
-        if (false === $handle) {
-            throw new \RuntimeException("Cannot open lock file: {$lockPath}");
+        if (null === $this->lockFactory) {
+            // No lock factory configured — proceed without locking.
+            // This path is used in tests and environments where lock
+            // infrastructure is unavailable.
+            return new class implements LockInterface {
+                public function acquire(?bool $blocking = null): bool
+                {
+                    return true;
+                }
+
+                public function refresh(?float $ttl = null): void
+                {
+                }
+
+                public function isAcquired(): bool
+                {
+                    return true;
+                }
+
+                public function release(): void
+                {
+                }
+
+                public function isExpired(): bool
+                {
+                    return false;
+                }
+
+                public function getRemainingLifetime(): ?float
+                {
+                    return null;
+                }
+            };
         }
 
-        if (!flock($handle, \LOCK_EX | \LOCK_NB)) {
-            fclose($handle);
+        // Hash the index path to create a stable, short resource name
+        // that is safe for lock backends without character restrictions.
+        $resourceKey = 'file_mention_index.'.hash('xxh32', $this->indexPath);
 
-            throw new FileMentionIndexLockHeldException();
+        $lock = $this->lockFactory->createLock($resourceKey, ttl: 300.0);
+
+        if (!$lock->acquire(false)) {
+            return null;
         }
 
-        return $handle;
-    }
-
-    /**
-     * @param resource $handle
-     */
-    private function releaseLock($handle): void
-    {
-        flock($handle, \LOCK_UN);
-        fclose($handle);
+        return $lock;
     }
 }

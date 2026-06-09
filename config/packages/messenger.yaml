@@ -56,6 +56,7 @@ framework:
                 serializer: 'messenger.transport.native_php_serializer'
             llm:         '%env(HATFIELD_LLM_TRANSPORT_DSN)%'
             tool:        '%env(HATFIELD_TOOL_TRANSPORT_DSN)%'
+            scheduler: 'schedule://default'
 
         routing:
             Ineersa\AgentCore\Domain\Message\StartRun: run_control

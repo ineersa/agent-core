@@ -205,6 +205,11 @@ parameters:
         - type: classNameRegex
           value: '#^Symfony\\\\Component\\\\Finder\\\\#i'
 
+    - name: SymfonyScheduler
+      collectors:
+        - type: classNameRegex
+          value: '#^Symfony\\\\Component\\\\Scheduler\\\\#i'
+
     - name: SymfonySerializer
       collectors:
         - type: classNameRegex
@@ -440,7 +445,6 @@ parameters:
       - AppConfig
       - TuiApplication
       - TuiListener
-      - TuiRuntime
       - TuiCompletion
       - TuiHeader
       - TuiTranscript
@@ -451,8 +455,9 @@ parameters:
       - TuiWidget
       - TuiTheme
       - SymfonyConsole
-      - SymfonyProcess
+      - SymfonyLock
       - SymfonyFinder
+      - SymfonyScheduler
 
     AppRuntimeProjectionPipeline:
       - AppRuntimeProjection
@@ -505,6 +510,7 @@ parameters:
     SymfonyLock: ~
     SymfonyProcess: ~
     SymfonyFinder: ~
+    SymfonyScheduler: ~
     SymfonySerializer: ~
     SymfonyYaml: ~
     ForbiddenHttp: ~

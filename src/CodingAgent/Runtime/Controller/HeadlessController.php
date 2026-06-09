@@ -123,6 +123,11 @@ final class HeadlessController
         // - run_control consumes StartRun, ApplyCommand, AdvanceRun (ASYNC-05)
         // - llm consumes ExecuteLlmStep (ASYNC-04)
         // - tool consumes ExecuteToolCall (ASYNC-04)
+        // Scheduler consumer: dispatches recurring background tasks such as
+        // file mention index refresh.  All future periodic background work
+        // should use Scheduler scheduled tasks, not ad-hoc TUI tick process
+        // spawning.
+        $this->consumerSupervisor->launch('scheduler_default');
 
         // Non-blocking stdin: read JSONL commands from TUI.
         EventLoop::onReadable(\STDIN, function (string $watcherId, $stream): void {

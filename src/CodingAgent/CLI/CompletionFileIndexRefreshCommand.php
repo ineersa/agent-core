@@ -10,6 +10,8 @@ use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Scheduler\Attribute\AsPeriodicTask;
 
 /**
  * Rebuild the file mention completion index from the project CWD.
@@ -18,9 +20,14 @@ use Symfony\Component\Console\Output\OutputInterface;
  * arguments (resolved from container parameters) so callers do not
  * need to derive or duplicate the path.
  *
- * Intended to be called offline (via a periodic tick or manually),
- * never from the TUI input handler.  Uses Symfony Finder with
- * explicit excludes and a hard entry cap.
+ * Intended to be called offline (via Scheduler, a periodic task,
+ * or manually), never from the TUI input handler.  Uses Symfony
+ * Finder with explicit excludes and a hard entry cap.
+ *
+ * Recurrently invoked by the Scheduler consumer every 30 seconds.
+ * The from: '-30 seconds' ensures the first run fires near-immediately
+ * when the scheduler consumer starts (barring a short Messsenger
+ * warm-up window), so the index is available promptly for @ completion.
  *
  * Atomic: writes to a temp file first, then renames into place.
  *
@@ -33,6 +40,7 @@ use Symfony\Component\Console\Output\OutputInterface;
     name: 'completion:file-index:refresh',
     description: 'Rebuild the file mention completion index for the current project.',
 )]
+#[AsPeriodicTask(frequency: 30, from: '-30 seconds', schedule: 'default')]
 final class CompletionFileIndexRefreshCommand extends Command
 {
     private readonly LoggerInterface $logger;
@@ -40,6 +48,7 @@ final class CompletionFileIndexRefreshCommand extends Command
     public function __construct(
         private readonly string $cwd,
         private readonly string $indexPath,
+        private readonly ?LockFactory $lockFactory = null,
         ?LoggerInterface $logger = null,
     ) {
         parent::__construct();
@@ -52,6 +61,7 @@ final class CompletionFileIndexRefreshCommand extends Command
             cwd: $this->cwd,
             indexPath: $this->indexPath,
             logger: $this->logger,
+            lockFactory: $this->lockFactory,
         );
 
         try {
