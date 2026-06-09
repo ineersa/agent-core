@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Command\ClearTranscript;
 use Ineersa\Tui\Command\CommandResult;
+use Ineersa\Tui\Command\DispatchShellCommand;
 use Ineersa\Tui\Command\ExitApplication;
 use Ineersa\Tui\Command\StatusUpdate;
 use Ineersa\Tui\Command\SubmissionRouter;
@@ -87,6 +88,16 @@ final class SubmitListener implements TuiListenerRegistrar
             $commandResult = $router->route($text);
 
             if (null !== $commandResult) {
+                // ── Shell command — dispatch to runtime for execution ──
+                if ($commandResult instanceof DispatchShellCommand) {
+                    self::handleShellCommand(
+                        $commandResult, $state, $screen, $sessionStore,
+                        $blockFactory, $client, $logger,
+                    );
+
+                    return;
+                }
+
                 // ── Local command — apply typed effect ──
                 self::applyCommandResult($commandResult, $state, $screen, $sessionStore, $tui, $blockFactory);
 
@@ -232,6 +243,71 @@ final class SubmitListener implements TuiListenerRegistrar
 
         // NoOp, DispatchRuntime, and unknown future variants are silently ignored.
         // DispatchRuntime will be wired by future tasks that add runtime execution.
+    }
+
+    /**
+     * Handle shell command dispatch by sending it to the runtime for
+     * execution. Creates a session when this is the first submitted
+     * input. Shell commands do not invoke the LLM — output is projected
+     * through tool_execution events in the transcript.
+     */
+    private static function handleShellCommand(
+        DispatchShellCommand $shellCommand,
+        TuiSessionState $state,
+        ChatScreen $screen,
+        HatfieldSessionStore $sessionStore,
+        TranscriptBlockFactory $blockFactory,
+        \Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient $client,
+        LoggerInterface $logger,
+    ): void {
+        try {
+            // Create a session if this is the first input.
+            if ('' === $state->sessionId) {
+                $state->sessionId = $sessionStore->createSession('!'.$shellCommand->command);
+                $screen->updateSessionId($state->sessionId);
+                $logger->info('Draft session promoted for shell command', [
+                    'component' => 'SubmitListener',
+                    'event_type' => 'draft_promoted_shell',
+                    'session_id' => $state->sessionId,
+                ]);
+            }
+
+            if (null === $state->handle) {
+                // First input — execute shell without starting an LLM run.
+                $state->handle = $client->shellExecute(
+                    $shellCommand->command,
+                    $state->sessionId,
+                    $state->request->cwd ?? '',
+                );
+                $state->activity = RunActivityStateEnum::Starting;
+                $sessionStore->updateMetadata(
+                    $state->sessionId,
+                    [
+                        'run_id' => $state->sessionId,
+                        'prompt' => '!'.$shellCommand->command,
+                    ],
+                );
+                $state->lastSeq = 0;
+            } else {
+                // Subsequent input — send shell command to existing run.
+                $client->send(
+                    $state->handle->runId,
+                    new UserCommand(type: 'shell_command', text: $shellCommand->command),
+                );
+            }
+
+            $screen->setWorkingMessage('Running...');
+            $screen->setTranscriptBlocks($state->transcript);
+        } catch (\Throwable $e) {
+            $state->activity = RunActivityStateEnum::Failed;
+            $state->transcript[] = $blockFactory->error(
+                runId: $state->sessionId,
+                text: 'Shell command error: '.$e->getMessage(),
+                seq: \count($state->transcript) + 1,
+            );
+            $screen->setWorkingMessage('');
+            $screen->setTranscriptBlocks($state->transcript);
+        }
     }
 
     private static function blockForTranscriptMessage(

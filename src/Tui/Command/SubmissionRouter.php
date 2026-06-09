@@ -40,13 +40,27 @@ final readonly class SubmissionRouter
             return $this->registry->execute($parseResult);
         }
 
-        // Shell command → friendly message (EDITOR-11 not yet implemented)
+        // Shell command → dispatch to runtime (EDITOR-11)
         if ($parseResult instanceof ShellCommand) {
-            return new TranscriptMessage(
-                'Shell commands (!/!!) are not yet supported. Type /help for available commands.',
-                'system',
-                'muted',
-            );
+            // Reject empty commands
+            if ('' === $parseResult->command) {
+                return new TranscriptMessage(
+                    'Shell command is empty. Usage: !<command>',
+                    'system',
+                    'muted',
+                );
+            }
+
+            // Detect and reject unsupported !! prefix
+            if (str_starts_with($parseResult->originalText, '!!')) {
+                return new TranscriptMessage(
+                    '!! is not supported. Use ! to execute shell commands.',
+                    'system',
+                    'muted',
+                );
+            }
+
+            return new DispatchShellCommand($parseResult->command);
         }
 
         // Normal prompt (including empty) → send to runtime

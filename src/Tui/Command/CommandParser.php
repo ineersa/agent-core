@@ -20,8 +20,8 @@ final readonly class CommandParser
      *  - Starts with "//" → NormalPrompt (escaped slash, not a command)
      *  - Starts with "/" followed by word chars → SlashCommand
      *    (name = first word after "/", lowercased; args = rest, trimmed)
-     *  - Starts with "!!" → ShellCommand(hidden: true)
-     *  - Starts with "!" → ShellCommand(hidden: false)
+     *  - Starts with "!!" → unsupported (EDITOR-11 MVP: only single !)
+     *  - Starts with "!" → ShellCommand
      *  - Everything else → NormalPrompt
      */
     public function parse(string $submittedText): CommandParseResult
@@ -37,18 +37,21 @@ final readonly class CommandParser
             return new NormalPromptCommand($text);
         }
 
-        // Shell hidden: "!!..."
+        // "!!" prefix is intentionally not supported in EDITOR-11 MVP.
+        // The parser still recognizes it as a shell command so the router
+        // can produce a clear unsupported-message rather than silently
+        // treating it as bash.
         if (str_starts_with($text, '!!')) {
             $command = trim(substr($text, 2));
 
-            return new ShellCommand($command, true, $text);
+            return new ShellCommand($command, $text);
         }
 
-        // Shell visible: "!..."
+        // Shell: "!..."
         if (str_starts_with($text, '!')) {
             $command = trim(substr($text, 1));
 
-            return new ShellCommand($command, false, $text);
+            return new ShellCommand($command, $text);
         }
 
         // Slash command: "/<name>[ <args>]"

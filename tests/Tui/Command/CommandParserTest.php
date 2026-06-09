@@ -157,23 +157,23 @@ final class CommandParserTest extends TestCase
 
     // ─── ShellCommand cases ─────────────────────────────────────────────
 
-    public function testShellVisibleCommand(): void
+    public function testShellSingleExclamation(): void
     {
         $result = $this->parser->parse('!ls -la');
 
         self::assertInstanceOf(ShellCommand::class, $result);
         self::assertSame('ls -la', $result->command);
-        self::assertFalse($result->hidden);
         self::assertSame('!ls -la', $result->originalText);
     }
 
-    public function testShellHiddenCommand(): void
+    public function testShellDoubleExclamationStillParsedForRouting(): void
     {
+        // Parser still recognizes !! so the router can produce a clear
+        // unsupported-command message. Must not be silently executed.
         $result = $this->parser->parse('!!secret cmd');
 
         self::assertInstanceOf(ShellCommand::class, $result);
         self::assertSame('secret cmd', $result->command);
-        self::assertTrue($result->hidden);
         self::assertSame('!!secret cmd', $result->originalText);
     }
 
@@ -183,17 +183,15 @@ final class CommandParserTest extends TestCase
 
         self::assertInstanceOf(ShellCommand::class, $result);
         self::assertSame('ls', $result->command);
-        self::assertFalse($result->hidden);
         self::assertSame('!ls', $result->originalText);
     }
 
-    public function testShellHiddenCommandWithWhitespace(): void
+    public function testShellDoubleExclamationWithWhitespace(): void
     {
         $result = $this->parser->parse('  !!hidden  ');
 
         self::assertInstanceOf(ShellCommand::class, $result);
         self::assertSame('hidden', $result->command);
-        self::assertTrue($result->hidden);
         self::assertSame('!!hidden', $result->originalText);
     }
 

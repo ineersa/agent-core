@@ -226,6 +226,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             'follow_up' => 'follow_up',
             'answer_human' => 'answer_human',
             'answer_tool_question' => 'answer_tool_question',
+            'shell_command' => 'shell_command',
             default => throw new \InvalidArgumentException(\sprintf('Unknown command type: "%s"', $command->type)),
         };
 
@@ -298,6 +299,34 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             $this->ensureProcessRunning();
             $this->writeCommand($cmd);
         }
+    }
+
+    public function shellExecute(string $command, string $sessionId, string $cwd): RunHandle
+    {
+        $this->activeRunId = $sessionId;
+        $this->sessionId = $sessionId;
+        $this->ensureProcessRunning();
+        $this->waitForRuntimeReady();
+
+        $cmd = new RuntimeCommand(
+            id: uniqid('cmd_', true),
+            type: 'shell_command',
+            runId: $sessionId,
+            payload: [
+                'text' => $command,
+                'cwd' => $cwd,
+            ],
+        );
+
+        try {
+            $this->writeCommand($cmd);
+        } catch (\RuntimeException) {
+            // Pipe may have broken — restart and retry once.
+            $this->ensureProcessRunning();
+            $this->writeCommand($cmd);
+        }
+
+        return new RunHandle(runId: $sessionId, status: 'running');
     }
 
     private function ensureProcessRunning(): void

@@ -30,4 +30,13 @@ interface AgentSessionClient
     public function events(string $runId): iterable;
 
     public function cancel(string $runId): void;
+
+    /**
+     * Execute a shell command (submitted via ! prefix) without invoking
+     * the LLM. Creates a session if needed. Output is projected into the
+     * transcript as tool execution events.
+     *
+     * @return RunHandle handle for polling events
+     */
+    public function shellExecute(string $command, string $sessionId, string $cwd): RunHandle;
 }

@@ -77,6 +77,11 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             public function cancel(string $runId): void
             {
             }
+
+            public function shellExecute(string $command, string $sessionId, string $cwd): \Ineersa\CodingAgent\Runtime\Contract\RunHandle
+            {
+                throw new \RuntimeException('Not expected in test');
+            }
         };
 
         $this->tmpDir = sys_get_temp_dir().'/hatfield_poller_test_'.bin2hex(random_bytes(8));

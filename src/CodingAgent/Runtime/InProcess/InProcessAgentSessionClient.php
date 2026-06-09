@@ -6,9 +6,13 @@ namespace Ineersa\CodingAgent\Runtime\InProcess;
 
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
+use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
@@ -45,6 +49,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly ?RuntimeEventSinkInterface $transientSink = null,
         private readonly ?ToolQuestionStoreInterface $toolQuestionStore = null,
         private readonly ToolQuestionAnswerResolver $answerResolver = new ToolQuestionAnswerResolver(),
+        private readonly ?ToolExecutorInterface $toolExecutor = null,
     ) {
     }
 
@@ -144,6 +149,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
                 $command->payload['answer'] ?? null,
             ),
             'answer_tool_question' => $this->handleAnswerToolQuestion($runId, $command),
+            'shell_command' => $this->executeShellCommand($runId, $command),
             default => throw new \InvalidArgumentException(\sprintf('Unknown UserCommand type: "%s"', $command->type)),
         };
     }
@@ -180,6 +186,21 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         $this->runner->cancel($runId);
     }
 
+    public function shellExecute(string $command, string $sessionId, string $cwd): RunHandle
+    {
+        $runId = $sessionId;
+
+        // Shell commands write tool_execution events directly to the
+        // event store. Execute bash now so the events are available
+        // when the TUI polls events().
+        $this->executeShellCommand($runId, new UserCommand(
+            type: 'shell_command',
+            text: $command,
+        ));
+
+        return new RunHandle(runId: $runId, status: 'running');
+    }
+
     /**
      * Handle an answer_tool_question command by writing the answer
      * to the ToolQuestionStore. The blocked tool worker polls the store
@@ -199,5 +220,98 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
         $answer = $this->answerResolver->resolve($command->payload['answer'] ?? null);
         $this->toolQuestionStore->answer($requestId, $answer);
+    }
+
+    /**
+     * Execute a shell command submitted via the ! prefix.
+     *
+     * Executes bash through the shared tool executor path, persists
+     * tool_execution_start / tool_execution_end events into the canonical
+     * event store, and does NOT add output to model context or trigger
+     * an LLM turn.
+     *
+     * When no ToolExecutor is configured (null), a diagnostic error
+     * event is emitted instead so the user sees a clear message.
+     */
+    private function executeShellCommand(string $runId, UserCommand $command): void
+    {
+        $commandText = $command->text ?? '';
+
+        if ('' === $commandText) {
+            return;
+        }
+
+        $toolCallId = uniqid('sh_', true);
+
+        // Compute next sequence numbers for this run by inspecting existing
+        // events in the store.
+        $existingEvents = $this->eventStore->allFor($runId);
+        $nextSeq = [] !== $existingEvents
+            ? max(array_map(static fn (RunEvent $e): int => $e->seq, $existingEvents)) + 1
+            : 1;
+
+        // Emit tool_execution_start event.
+        $this->eventStore->append(new RunEvent(
+            runId: $runId,
+            seq: $nextSeq,
+            turnNo: 0,
+            type: RunEventTypeEnum::ToolExecutionStart->value,
+            payload: [
+                'tool_call_id' => $toolCallId,
+                'tool_name' => 'bash',
+                'order_index' => 0,
+            ],
+        ));
+
+        if (null === $this->toolExecutor) {
+            // No ToolExecutor configured — emit a diagnostic error event.
+            $this->eventStore->append(new RunEvent(
+                runId: $runId,
+                seq: $nextSeq + 1,
+                turnNo: 0,
+                type: RunEventTypeEnum::ToolExecutionEnd->value,
+                payload: [
+                    'tool_call_id' => $toolCallId,
+                    'is_error' => true,
+                    'result' => 'Shell command execution unavailable: ToolExecutor not configured.',
+                ],
+            ));
+
+            return;
+        }
+
+        // Execute bash through the shared tool executor.
+        // Uses a synthetic ToolCall so cancellation/timeout/approval hooks
+        // from the existing tool infrastructure apply.
+        $result = $this->toolExecutor->execute(new ToolCall(
+            toolCallId: $toolCallId,
+            toolName: 'bash',
+            arguments: ['command' => $commandText],
+            orderIndex: 0,
+            runId: $runId,
+        ));
+
+        // Extract the result text from the ToolResult's content blocks.
+        $resultText = '';
+        foreach ($result->content as $contentBlock) {
+            if (\is_array($contentBlock) && 'text' === ($contentBlock['type'] ?? '')) {
+                $resultText .= (string) ($contentBlock['text'] ?? '');
+            } elseif (\is_string($contentBlock)) {
+                $resultText .= $contentBlock;
+            }
+        }
+
+        // Emit tool_execution_end event with result text.
+        $this->eventStore->append(new RunEvent(
+            runId: $runId,
+            seq: $nextSeq + 1,
+            turnNo: 0,
+            type: RunEventTypeEnum::ToolExecutionEnd->value,
+            payload: [
+                'tool_call_id' => $toolCallId,
+                'is_error' => $result->isError,
+                'result' => $resultText,
+            ],
+        ));
     }
 }
