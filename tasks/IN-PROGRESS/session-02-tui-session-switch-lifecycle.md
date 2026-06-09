@@ -137,7 +137,7 @@ class SessionSwitchService {
 - Validation uses Castor per project rules; runtime/TUI changes require full `castor check` before CODE-REVIEW.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/session-02-tui-session-switch-lifecycle
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-02-tui-session-switch-lifecycle
 Fork run: wem261x41dp6
@@ -239,3 +239,7 @@ Castor Check Output SHA256: f8c752cb15b10d9961afd4a1f617f94ed8ca964bf1c85cdd4097
 - Created PR: https://github.com/ineersa/agent-core/pull/109
 - Validation: Reviewer: APPROVED at HEAD `2b250adf`.; Focused reviewer after gate-fix: APPROVED for HEAD `c43badb4`.; Pre-gate local validation: `castor test` PASS — 2187 tests, 6386 assertions, 0 errors/failures/skipped.; Pre-gate local validation: `castor deptrac` PASS — 0 violations, 0 errors.; Pre-gate local validation: `castor phpstan` PASS — 0 errors.; Pre-gate local validation: `castor cs-check` PASS — clean.; Gate-fix fork validation: `castor test:tui` PASS — 5 tests, 18 assertions.; Diagnostic reruns after transient gate flakes: `castor test:llm-real` PASS — 5 tests, 37 assertions (twice).
 - Summary: SESSION-02 implementation reviewed and approved. Branch HEAD `c43badb4abff74faafa773368e6320f067d7aed3` adds a reusable TUI session switch lifecycle seam (`TuiSessionSwitchService` + runtime contract), refactors `InteractiveMode` into a same-process rebuild loop, adds lazy draft session support and draft promotion on first prompt, resets question/HITL/projector state on switch, updates `ChatScreen` session footer handling, and updates docs/tests/deptrac. Reviewer iterations fixed initial prompt startup, cancel-failure logging, draft-with-request promotion, interface layering, test/doc cleanup, and the TUI E2E draft-promotion `StartRunRequest` default bug. Prior gate attempts hit transient unrelated `ViewImageToolE2eTest` llm-real flakes; standalone `castor test:llm-real` reruns passed.
+
+## Task workflow update - 2026-06-09T00:26:54.813Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: Moving SESSION-02 back to IN-PROGRESS to address PR #109 inline review feedback. Comments: (1) clarify that the `InteractiveMode` session switch `while (true)` loop does not spin CPU because `Tui::run()` blocks on Revolt suspension until `Tui::stop()` is called; (2) add or expose proper TUI lifecycle hooks/events for session start/end/resume rather than only hard-coded switch internals. Implementation will be done by fork per orchestrator workflow.
