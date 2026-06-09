@@ -37,6 +37,17 @@ For changes touching TUI runtime, `AgentSessionClient`, Messenger, `TranscriptPr
 
 **Load the `testing` skill** when: touching runtime/TUI code, running validation, or unsure what `castor check` covers.
 
+## Mandatory TUI feature E2E proof
+
+**TUI implementation is NOT complete until there is an automated test using the real test LLM and `TmuxHarness` with a snapshot or assertion proving the FEATURE works exactly as expected through real interactive TUI behavior.** This is a hard gate — no exceptions.
+
+- Tests must exercise the real TUI interaction flow, not just mocked services, DTO assembly, or service-only unit tests.
+- Tests must use the project TUI E2E infrastructure (`TmuxHarness`, `#[Group('tui-e2e')]`), the real test LLM endpoint (`llama_cpp_test/test` on port 9052), and isolated `var/tmp/test-{uuid}` directories.
+- The following are NOT acceptable substitutes: custom PHP smoke scripts, mocked `AgentSessionClient` passing through a mock runtime, checking only picker visibility or footer text, or manual-run reports from forks.
+- For the task workflow: do **not** move a TUI task to CODE-REVIEW or DONE unless a real TmuxHarness E2E proof exists and passes `castor test:tui` as well as `LLM_MODE=true castor check`. If prerequisites (tmux, llama.cpp on port 9052) are unavailable, or no such test has been written, the task MUST stay IN-PROGRESS with that blocker recorded.
+
+**Load the `testing` skill** when: writing, running, or debugging TUI E2E proof tests.
+
 ## Development rules
 
 - **Do not delete comments that explain non-obvious logic, invariants, concurrency, lifecycle, or rationale unless the described logic is removed.** When code changes, update those comments instead of deleting them. Remove only stale/noise comments that restate the obvious (e.g., "increment i" or "return the result"). Inline comments explaining why code is shaped a certain way — signal handling, crash resilience, transaction ordering, migration decisions, DB-to-filesystem interaction — are valuable and must be preserved or updated, never silently dropped.
