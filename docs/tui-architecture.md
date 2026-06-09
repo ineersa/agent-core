@@ -106,20 +106,24 @@ $context->lifecycle->subscribe(function (TuiSessionLifecycleEventDTO $e): void {
 
 Lifecycle events dispatched:
 
-| Event | When | sessionId | isDraft | resuming |
-|---|---|---|---|---|
-| `SessionStarted` | Fresh session with a prompt | real | false | false |
-| `SessionResumed` | Existing session reloaded | real | false | true |
-| `SessionDraftStarted` | Lazy draft (no DB row yet) | '' | true | false |
-| `SessionEnded` | Session left (quit or switch) | real or '' | current | current |
+| Event | When | sessionId | isDraft | resuming | previousSessionId |
+|---|---|---|---|---|---|
+| `SessionStarted` | Fresh session with a prompt | real | false | false | null or prior session ID |
+| `SessionResumed` | Existing session reloaded | real | false | true | null or prior session ID |
+| `SessionDraftStarted` | Lazy draft (no DB row yet) | '' | true | false | null or prior session ID |
+| `SessionEnded` | Session left (quit or switch) | real or '' | current | current | not applicable |
 
-`SessionEnded` includes an `endReason` field (`'switch'` or `'quit'`)
-and an optional `previousSessionId` for cross-session tracking.
+`previousSessionId` is set on start/resume/draft-start events that
+follow a session switch, so subscribers can track which session the
+user came from.  It is `null` for the very first session in a process.
 
-Because the dispatcher is created fresh each iteration, stale
-subscriptions from a prior session never leak into the next one.
-The dispatcher deliberately does **not** guard subscriber exceptions;
-throwing subscribers propagate as TUI errors.
+`SessionEnded` carries an `endReason` field typed as
+`TuiSessionLifecycleEndReasonEnum` with values `Switch` or `Quit`.
+
+The dispatcher does **not** guard subscriber exceptions — if a
+subscriber throws, the exception propagates immediately and later
+subscribers are **not** called.  Subscribers that need local
+degradation (e.g. optional telemetry) must catch internally.
 
 ### Revolt suspension (not CPU spin)
 

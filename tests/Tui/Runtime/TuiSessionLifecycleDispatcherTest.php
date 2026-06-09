@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tests\Tui\Runtime;
 
 use Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher;
+use Ineersa\Tui\Runtime\TuiSessionLifecycleEndReasonEnum;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleEventDTO;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -98,7 +99,7 @@ final class TuiSessionLifecycleDispatcherTest extends TestCase
             isDraft: false,
             resuming: false,
             previousSessionId: 'previous-session',
-            endReason: 'switch',
+            endReason: TuiSessionLifecycleEndReasonEnum::Switch,
         );
 
         $dispatcher->dispatch($event);
@@ -109,7 +110,7 @@ final class TuiSessionLifecycleDispatcherTest extends TestCase
         self::assertFalse($captured->isDraft);
         self::assertFalse($captured->resuming);
         self::assertSame('previous-session', $captured->previousSessionId);
-        self::assertSame('switch', $captured->endReason);
+        self::assertSame(TuiSessionLifecycleEndReasonEnum::Switch, $captured->endReason);
     }
 
     #[Test]
@@ -124,27 +125,21 @@ final class TuiSessionLifecycleDispatcherTest extends TestCase
     }
 
     #[Test]
-    public function testDispatchCallsSecondSubscriberAfterFirstThrows(): void
+    public function testDispatchStopsAtFirstSubscriberException(): void
     {
         $dispatcher = new TuiSessionLifecycleDispatcher();
 
-        $secondCalled = false;
         $dispatcher->subscribe(function (TuiSessionLifecycleEventDTO $event): void {
             throw new \RuntimeException('First subscriber error');
         });
-        $dispatcher->subscribe(function (TuiSessionLifecycleEventDTO $event) use (&$secondCalled): void {
-            $secondCalled = true;
+        $dispatcher->subscribe(function (TuiSessionLifecycleEventDTO $event): void {
+            self::fail('Second subscriber must NOT be reached after first throw.');
         });
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('First subscriber error');
 
         $dispatcher->dispatch($this->sessionStartedEvent());
-
-        // The second subscriber was NOT reached because dispatch()
-        // does not guard subscriber errors — the first throw propagates.
-        // This test documents the current behaviour, not a design goal.
-        self::assertFalse($secondCalled, 'Second subscriber NOT reached after first throw (no error guard).');
     }
 
     #[Test]

@@ -36,10 +36,11 @@ final class TuiSessionLifecycleDispatcher
     /**
      * Dispatch a lifecycle event to all registered subscribers.
      *
-     * Does not short-circuit or stop on handler errors; if a
-     * subscriber throws, later subscribers are still called.
-     * It is the subscriber's responsibility to handle exceptions
-     * internally or let them propagate as TUI errors.
+     * Subscriber exceptions propagate immediately — later subscribers
+     * are NOT called after a throw.  It is the subscriber's
+     * responsibility to catch exceptions internally for local
+     * degradation; otherwise the error surfaces as a TUI error and
+     * short-circuits remaining handlers.
      */
     public function dispatch(TuiSessionLifecycleEventDTO $event): void
     {

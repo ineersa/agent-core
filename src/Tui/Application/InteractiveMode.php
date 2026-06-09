@@ -11,6 +11,7 @@ use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\TuiListenerRegistrar;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher;
+use Ineersa\Tui\Runtime\TuiSessionLifecycleEndReasonEnum;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleEventDTO;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -110,6 +111,12 @@ final readonly class InteractiveMode
         $targetSessionId = $sessionId;
         $targetRequest = $request;
         $isDraft = ('' === $sessionId && null === $request);
+        // Track the session id from the previous iteration so the
+        // next start/resume/draft-start lifecycle event can carry it
+        // as previousSessionId — useful for extensions tracking which
+        // session the user switched from.  Null for the very first
+        // iteration (no prior session).
+        $previousSessionIdForLifecycle = null;
 
         while (true) {
             // ── Initialize session state ──
@@ -166,14 +173,22 @@ final readonly class InteractiveMode
             // ── Dispatch session lifecycle start event ──
             // Must happen AFTER listener registrars have run so that
             // subscribers to $context->lifecycle are already wired.
-            $this->dispatchSessionLifecycleStart($lifecycle, $state, $isDraft, $targetSessionId);
+            $this->dispatchSessionLifecycleStart(
+                $lifecycle,
+                $state,
+                $isDraft,
+                $targetSessionId,
+                $previousSessionIdForLifecycle,
+            );
 
             $tui->setFocus($screen->editorWidget());
             $tui->run();
 
             // ── Determine exit reason and dispatch session ended ──
             $switchTarget = $this->switchService->consumePendingSwitch();
-            $endReason = (null !== $switchTarget) ? 'switch' : 'quit';
+            $endReason = (null !== $switchTarget)
+                ? TuiSessionLifecycleEndReasonEnum::Switch
+                : TuiSessionLifecycleEndReasonEnum::Quit;
             $lifecycle->dispatch(new TuiSessionLifecycleEventDTO(
                 type: TuiSessionLifecycleEventTypeEnum::SessionEnded,
                 sessionId: $state->sessionId,
@@ -184,6 +199,10 @@ final readonly class InteractiveMode
 
             // ── After event loop exits: check for pending switch ──
             if (null !== $switchTarget) {
+                // Record the session id we're leaving so the next
+                // iteration's lifecycle start event can reference
+                // it as previousSessionId.
+                $previousSessionIdForLifecycle = ('' !== $state->sessionId) ? $state->sessionId : null;
                 if ($switchTarget->isDraft) {
                     $isDraft = true;
                     $targetSessionId = '';
@@ -208,11 +227,16 @@ final readonly class InteractiveMode
      * subscriptions to $lifecycle, but BEFORE the TUI event loop
      * starts so subscribers can initialise state synchronously.
      */
+    /**
+     * @param string|null $previousSessionId session ID of the iteration just
+     *                                       ended, or null for the first iteration
+     */
     private function dispatchSessionLifecycleStart(
         TuiSessionLifecycleDispatcher $lifecycle,
         TuiSessionState $state,
         bool $isDraft,
         string $targetSessionId,
+        ?string $previousSessionId,
     ): void {
         if ($isDraft) {
             $lifecycle->dispatch(new TuiSessionLifecycleEventDTO(
@@ -220,6 +244,7 @@ final readonly class InteractiveMode
                 sessionId: '',
                 isDraft: true,
                 resuming: false,
+                previousSessionId: $previousSessionId,
             ));
         } elseif ('' !== $targetSessionId) {
             $lifecycle->dispatch(new TuiSessionLifecycleEventDTO(
@@ -227,6 +252,7 @@ final readonly class InteractiveMode
                 sessionId: $state->sessionId,
                 isDraft: false,
                 resuming: true,
+                previousSessionId: $previousSessionId,
             ));
         } else {
             $lifecycle->dispatch(new TuiSessionLifecycleEventDTO(
@@ -234,6 +260,7 @@ final readonly class InteractiveMode
                 sessionId: $state->sessionId,
                 isDraft: false,
                 resuming: false,
+                previousSessionId: $previousSessionId,
             ));
         }
     }
