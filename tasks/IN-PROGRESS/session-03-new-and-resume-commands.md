@@ -132,7 +132,7 @@ $registry->register(
 Status: IN-PROGRESS
 Branch: task/session-03-new-and-resume-commands
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-03-new-and-resume-commands
-Fork run: z7poew0kw610
+Fork run: p8kx4mfhqmug
 PR URL: https://github.com/ineersa/agent-core/pull/111
 PR Status: open
 Started: 2026-06-09T01:24:48.923Z
@@ -211,3 +211,8 @@ Castor Check Output SHA256: 507c25ed333065ce5e4d285e4a3ed0e961e812feefd1fd2aa0cc
 ## Task workflow update - 2026-06-09T16:09:08.277Z
 - Summary: User smoke-tested latest SESSION-03 review iteration and found a runtime startup regression after `/new`: TUI shows fresh draft welcome text, then on first run reports `Runtime error: Controller did not emit runtime.ready within 15s` with empty controller stderr/stdout buffer. Need inspect logs/artifacts, reproduce if feasible, fix root cause via fork, and include sensible reviewer suggestions from the c9d3f5de review: deduplicate SessionPickerController selection label rebuild through buildItemsStatic(), add a comment explaining `$needsTerminalClear` intentionally remains true for later switch iterations, and optionally add selectedIndex=1 coverage.
 - task-review-iterate: user reported post-/new runtime.ready timeout during smoke testing; launching fork to investigate logs and fix.
+
+## Task workflow update - 2026-06-09T16:09:47.714Z
+- Recorded fork run: p8kx4mfhqmug
+- Summary: Launched fork `p8kx4mfhqmug` to investigate and fix the user-reported `/new` runtime startup regression (`Controller did not emit runtime.ready within 15s`, empty stderr/stdout_buffer). Fork instructed to inspect worktree `.hatfield` logs/tmp/snapshots/sessions, validate/falsify hypotheses around `InteractiveMode` ANSI clear, draft promotion request cwd/options/session IDs, and `JsonlProcessAgentSessionClient` process restart state after switch. Also instructed to incorporate sensible reviewer suggestions from `c9d3f5de`: deduplicate session picker selection rebuild through `buildItemsStatic()`, add comment for intentional `$needsTerminalClear` behavior, and add selectedIndex=1 coverage.
+- task-review-iterate: fork p8kx4mfhqmug launched for `/new` runtime.ready startup failure and reviewer polish follow-ups.
