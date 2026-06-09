@@ -30,7 +30,7 @@ Parallelizable with: EDITOR-10.
 Status: IN-PROGRESS
 Branch: task/editor-09-file-mention-completion
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-09-file-mention-completion
-Fork run: km3v1irhhahm
+Fork run: 5fvuqfenrbze
 PR URL: https://github.com/ineersa/agent-core/pull/110
 PR Status: open
 Started: 2026-06-08T23:47:05.979Z
@@ -251,3 +251,7 @@ Castor Check Output SHA256: 15eee4021a8efac1349c9f570c4a9e6217e2cc56cc309f3aeeed
 ## Task workflow update - 2026-06-09T01:17:18.460Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: Review-iterate requested after user smoke test: typing `@` in real TUI shows no completion. Additional required design changes: replace ad-hoc background refresh command/process flow with Symfony Scheduler recurrent task infrastructure (command may remain but should be run via schedule), and replace manual flock lock handling with Symfony Lock. Task moved back to IN-PROGRESS for forked investigation/fix.
+
+## Task workflow update - 2026-06-09T01:20:17.466Z
+- Recorded fork run: 5fvuqfenrbze
+- Summary: Launched review-iterate fork 5fvuqfenrbze to reproduce and fix user smoke-test issue where typing `@` in real TUI shows no completion. Fork scope: use `castor run:agent-test` + tmux to reproduce/verify; replace rejected TUI tick/process refresh with Symfony Scheduler recurrent task infrastructure; replace manual flock/lock-file implementation with Symfony Lock; ensure first scheduled index refresh runs promptly enough for @ completion; update tests/deptrac/composer/config as needed; run focused Castor validation and real TUI smoke; commit and leave worktree clean.
