@@ -132,7 +132,7 @@ $registry->register(
 Status: IN-PROGRESS
 Branch: task/session-03-new-and-resume-commands
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-03-new-and-resume-commands
-Fork run: k65v82rm36bs
+Fork run: 97psp7ibkju0
 PR URL: https://github.com/ineersa/agent-core/pull/111
 PR Status: open
 Started: 2026-06-09T01:24:48.923Z
@@ -274,3 +274,9 @@ Castor Check Output SHA256: 9f406f219ad3e4c0f5803e58d9aa5e5f48f6097c84fe8d0e98c9
 - Recorded fork run: k65v82rm36bs
 - Summary: Fork `k65v82rm36bs` ended with a corrupted/truncated handoff (`Focused tests pass. Let me run the full suite:`) and did not commit. Worktree now has uncommitted changes in `src/CodingAgent/Config/ModelSelectionService.php` and `src/Tui/Listener/ModelControlListener.php`. Diff suggests the fork found likely model root causes: (1) `ModelSelectionService` persists model/reasoning/favorites to settings but does not update in-memory `AppConfig`, so current-process consumers such as `/new` draft initialization and Ctrl+P cycling continue using stale defaults/favorites until app restart; (2) after Ctrl+P on a draft (`sessionId === ''`), `ModelControlListener` updates footer state but does not carry the selected model into `TuiSessionState::$request`, so `SubmitListener` promotes the draft with no model and runtime falls back to stale config. These changes are unvalidated/uncommitted and may need cleanup/tests; launching recovery fork to continue or revert as appropriate, run exact `castor run:agent` tmux smoke, full Castor validation, and commit.
 - task-review-iterate: fork k65v82rm36bs incomplete; uncommitted model-selection changes left in worktree; launching recovery fork to validate/fix/commit or revert.
+
+## Task workflow update - 2026-06-09T19:08:34.991Z
+- Recorded fork run: 97psp7ibkju0
+- Validation: Fork validation: `castor test` PASS — 2226 tests, 6518 assertions.; Fork validation: `castor deptrac` PASS — 0 violations.; Fork validation: `castor phpstan` PASS — 0 errors.; Fork validation: `castor cs-check` PASS — clean.; Fork validation: `castor test:tui` PASS — 5/5, 18 assertions.; Fork validation: `LLM_MODE=true castor check` PASS — quality ok, including deptrac, unit/integration, controller, llm-real, tui, phpstan, cs-check.
+- Summary: Fork `97psp7ibkju0` completed at HEAD `fee73ec4` with two commits beyond prior HEAD: `f571662d` (`SESSION-03: Fix run-agent model switching regressions`) and `fee73ec4` (`SESSION-03: Add AppConfig sync regression tests`). Root causes fixed: Ctrl+P persisted model/favorites/reasoning to YAML but did not update in-memory `AppConfig`/catalog, causing `/new` in the same process to use stale defaults/favorites until restart; draft-session Ctrl+P updated footer state but did not carry selected model into `TuiSessionState::$request`, so SubmitListener draft promotion could start runtime with stale/default model. Fixes: `ModelSelectionService` now syncs in-memory `AppConfig::$ai` and rebuilds catalog after `changeModel()`, `changeReasoning()`, and `toggleFavorite()`; `ModelControlListener` now carries selected Ctrl+P model into draft `StartRunRequest` for lazy `/new` sessions. Added 6 regression tests in `tests/CodingAgent/Config/ModelSelectionServiceTest.php`. Prior fixes preserved: terminal cancel skip/test, process session restart/readiness hardening, session picker rendering polish.
+- task-review-iterate: fork 97psp7ibkju0 completed cleanly at fee73ec4 with model switching fixes and full Castor gate passing; proceeding to final reviewer.
