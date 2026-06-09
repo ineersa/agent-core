@@ -30,7 +30,7 @@ Parallelizable with: EDITOR-10.
 Status: IN-PROGRESS
 Branch: task/editor-09-file-mention-completion
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-09-file-mention-completion
-Fork run: swo88scbq93c
+Fork run: ymhdr2pc8fen
 PR URL: https://github.com/ineersa/agent-core/pull/110
 PR Status: open
 Started: 2026-06-08T23:47:05.979Z
@@ -328,3 +328,7 @@ Castor Check Output SHA256: 4ec6e7fcfd79ec711b3350fbc7b19e01118a6b9a48e8c30baf65
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Validation: PR/user discussion: scheduler consumer stdout is not controller JSONL directly, but output should still be logger-only because scheduler/default background command stdout is not intended user UI and can accumulate in supervisor process buffers
 - Summary: Review-iterate requested before final merge. User noticed CompletionFileIndexRefreshCommand writes scheduler/manual status to OutputInterface. Decision: scheduler-invoked background task should be silent on stdout and use structured logger instead; remove default output writes to avoid non-JSONL/protocol noise and un-drained scheduler consumer stdout growth. Preserve exit codes: build success SUCCESS, lock-held SUCCESS/no-op, failure FAILURE.
+
+## Task workflow update - 2026-06-09T16:58:41.653Z
+- Recorded fork run: ymhdr2pc8fen
+- Summary: Launched final cleanup fork ymhdr2pc8fen to remove `OutputInterface::writeln()` calls from `CompletionFileIndexRefreshCommand` and use structured logger-only reporting for scheduler/background execution. Required behavior: no stdout writes by default, success and lock-held logged at debug, failure logged at error, exit codes unchanged. No reviewer launch.
