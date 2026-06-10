@@ -53,7 +53,7 @@ Important non-goal: Do not delete valuable behavioral tests just to reduce count
 Status: IN-PROGRESS
 Branch: task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates
-Fork run: 59h6xp2tn72u
+Fork run: sez5vrrck2v7
 PR URL:
 PR Status:
 Started: 2026-06-09T22:01:04.785Z
@@ -262,3 +262,10 @@ Exact seams:
    - `castor check` should call the parallelized `test()` as one branch, and top-level check can also run controller/llm-real/tui/static branches in parallel as separately implemented.
 
 Implementation warning: reports and summaries must aggregate all worker results; do not fail-fast. Keep standalone sequential behavior for filtered runs and ensure `LLM_MODE` summaries still show meaningful combined failure output.
+
+## Task workflow update - 2026-06-10T19:53:09.199Z
+- Recorded fork run: sez5vrrck2v7
+- Validation: castor test — PASS (2269/2269, 6660 assertions); castor deptrac — PASS (0 violations); castor phpstan — PASS (0 errors); castor cs-check — PASS (clean after fix); php -l .castor/tasks.php — PASS (reported by fork; raw PHP syntax check only); LLM_MODE=true castor check — not run by fork; requires tmux + llama.cpp:9052 and will be exercised by gate after internal test parallelism is complete
+- Summary: Performance fork completed at HEAD 083bda0e and pushed. It rewrote `.castor/tasks.php::check()` so all 7 top-level quality steps run concurrently after a single PHAR ensure/build: deptrac, test, test:controller, test:llm-real, test:tui, phpstan, cs-check. Added per-step timing, visible parallel/sequential mode output, child stdout capture to `var/reports/check-<step>.log`, total wall-time summary, and no fail-fast/skip behavior. Sequential fallback remains for environments without pcntl_fork. Docs updated in tests/AGENTS.md and testing skill. Branch is clean/pushed at 083bda0e.
+
+Important limitation: this fork did not implement the newly requested internal `castor test` suite split with per-worker DB. `castor test` remains one branch inside `castor check`; follow-up implementation fork is needed to reduce the standalone ~1m40 `castor test` wall time.
