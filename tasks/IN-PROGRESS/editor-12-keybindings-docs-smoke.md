@@ -35,7 +35,7 @@ Parallelizable with: none after dependencies.
 Status: IN-PROGRESS
 Branch: task/editor-12-keybindings-docs-smoke
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke
-Fork run: vb78x9cy1wdm
+Fork run: d6zy70so8y9o
 PR URL:
 PR Status:
 Started: 2026-06-10T19:50:55.944Z
@@ -73,3 +73,7 @@ Completed:
 - Recorded fork run: vb78x9cy1wdm
 - Validation: Fork vb78x9cy1wdm validation: `castor deptrac` passed (0 violations, 0 errors); Fork vb78x9cy1wdm validation: `castor phpstan` passed (0 errors); Fork vb78x9cy1wdm validation: `castor cs-check` clean; Fork vb78x9cy1wdm validation: focused `castor test --filter='HotkeyRegistry|SlashCommandRegistry|SlashCommandCompletion|CompletionListener|PromptEditor'` passed (127 tests, 235 assertions); Fork vb78x9cy1wdm validation: `castor test:tui --filter=HotkeySmoke` passed (2 tests, 6 assertions); Fork vb78x9cy1wdm validation: full `castor test` passed (2303 tests, 6727 assertions); Fork vb78x9cy1wdm validation: full `castor test:tui` passed (13 tests, 36 assertions); E2E proof: Ctrl+J test uses multiline shell-prefix command where marker only appears if Ctrl+J inserted a newline and entire multiline shell command executed; verifies pane output and `tool_execution_end.payload.result` in events.jsonl; E2E proof: `/hotkeys` test asserts table renders with Ctrl+J, Submit prompt, Clear editor, and Insert newline
 - Summary: Implementation complete at commit 4dc9b352. Revised EDITOR-12 scope delivered: Ctrl+J newline support (with Shift+Enter preserved), display-only HotkeyRegistry/HotkeyBindingDTO/HotkeyProviderInterface catalog, app/editor hotkey registrars, `/hotkeys` slash command table, docs updates, and real TmuxHarness E2E proof. Original YAML keybinding loader/conflict-detection/footer-hints/full-router scope remains excluded. Extension hotkey support is non-breaking display-only via provider seam; no ExtensionApi interface changes. Task-file and ChatScreen accidental changes were reverted from the branch. Orchestrator verified worktree clean at 4dc9b352 and integration checkout clean at bfc3d5f6. Diff stat: 17 files changed, 1105 insertions, 16 deletions.
+
+## Task workflow update - 2026-06-10T20:37:27.593Z
+- Recorded fork run: d6zy70so8y9o
+- Summary: Launched follow-up fork d6zy70so8y9o to improve `/hotkeys` rendering. Scope: replace plain grouped list with nicer per-section Unicode box-drawing tables; investigate whether section names can use theme accent color through the current transcript/theme pipeline without hardcoded ANSI or deptrac violations; if not cleanly possible, keep uncolored and document in handoff that accent-colored fragments belong to richer transcript rendering. Fork must update unit/E2E assertions, run Castor validation, commit, and leave worktree clean.
