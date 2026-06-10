@@ -53,7 +53,7 @@ Important non-goal: Do not delete valuable behavioral tests just to reduce count
 Status: IN-PROGRESS
 Branch: task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates
-Fork run: sez5vrrck2v7
+Fork run: glfjh5lgz225
 PR URL:
 PR Status:
 Started: 2026-06-09T22:01:04.785Z
@@ -269,3 +269,10 @@ Implementation warning: reports and summaries must aggregate all worker results;
 - Summary: Performance fork completed at HEAD 083bda0e and pushed. It rewrote `.castor/tasks.php::check()` so all 7 top-level quality steps run concurrently after a single PHAR ensure/build: deptrac, test, test:controller, test:llm-real, test:tui, phpstan, cs-check. Added per-step timing, visible parallel/sequential mode output, child stdout capture to `var/reports/check-<step>.log`, total wall-time summary, and no fail-fast/skip behavior. Sequential fallback remains for environments without pcntl_fork. Docs updated in tests/AGENTS.md and testing skill. Branch is clean/pushed at 083bda0e.
 
 Important limitation: this fork did not implement the newly requested internal `castor test` suite split with per-worker DB. `castor test` remains one branch inside `castor check`; follow-up implementation fork is needed to reduce the standalone ~1m40 `castor test` wall time.
+
+## Task workflow update - 2026-06-10T20:10:01.235Z
+- Recorded fork run: glfjh5lgz225
+- Validation: vendor/bin/phpunit --exclude-group tui-e2e --exclude-group llm-real — PASS (2269/2269, 6648 assertions, 4 skipped); vendor/bin/phpunit --testsuite agent-core with isolated DB — PASS (271/271, 1145 assertions); vendor/bin/phpunit --testsuite coding-agent with isolated DB — PASS (1333/1333, 3777 assertions, 4 skipped); vendor/bin/phpunit --testsuite tui with isolated DB — PASS (611/611, 1505 assertions); vendor/bin/phpunit --testsuite platform with isolated DB — PASS (54/54, 221 assertions); vendor/bin/phpunit --filter RunStateTest — PASS (3/3, 33 assertions); vendor/bin/deptrac --config-file=depfile.yaml — PASS (0 violations); vendor/bin/phpstan analyse — PASS (0 errors); vendor/bin/php-cs-fixer fix --dry-run — PASS (clean); LLM_MODE=true castor check — not run by fork; needs task-to-pr gate
+- Summary: Internal `castor test` parallelization fork completed at HEAD 1a4ecf7a and pushed. It added per-suite parallel `castor test` by existing PHPUnit suites (`agent-core`, `coding-agent`, `tui`, `platform`), with one worker per suite, unique SQLite DB filename via `HATFIELD_TEST_DATABASE_PATH`, unique migrations, unique PHPUnit cache dir, unique JUnit XML/log files, no fail-fast, per-suite timings, and sequential fallback. `castor test --filter=...` remains sequential. `config/packages/test/doctrine.yaml` now uses env-overridable DB path with parameter fallback after discovering Symfony `%env(default:...)%` fallback refers to a container parameter. Docs updated in tests/AGENTS.md and testing skill.
+
+Important: fork validated with raw vendor/bin commands because it reported Castor runtime unavailable in worktree; main/orchestrator still needs to run Castor validation before CODE-REVIEW.
