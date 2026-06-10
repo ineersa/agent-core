@@ -53,7 +53,7 @@ Important non-goal: Do not delete valuable behavioral tests just to reduce count
 Status: IN-PROGRESS
 Branch: task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates
-Fork run: 8ri2bakkcwug
+Fork run: 7ppehxoqqsn4
 PR URL: https://github.com/ineersa/agent-core/pull/113
 PR Status: open
 Started: 2026-06-09T22:01:04.785Z
@@ -335,3 +335,8 @@ Castor Check Output SHA256: 0045f011d2cc5c8fdf5f6e032d337b774519092174524bcb8f24
 ## Task workflow update - 2026-06-10T22:09:23.915Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: User requested conflict-fix iteration before merge. Moving back to IN-PROGRESS so a fork can update branch against main, resolve merge conflicts, rerun validation, then return to CODE-REVIEW/DONE flow.
+
+## Task workflow update - 2026-06-10T22:15:21.439Z
+- Recorded fork run: 7ppehxoqqsn4
+- Validation: php -l tests/CodingAgent/Phar/PharSmokeTest.php — PASS; castor test --filter=RunStateTest — PASS (3/3); castor phpstan — PASS (0 errors); castor deptrac — PASS (0 violations); castor cs-check — PASS (files_fixed=0); castor test — PASS (51.4s, 2279 tests, 6684 assertions); castor test:tui — PASS (11 tests, 30 assertions); castor test:llm-real — PASS (5 tests, 39 assertions); git status --short — clean
+- Summary: Conflict-resolution fork completed at HEAD f84e3bea and pushed. It merged latest origin/main (eccc222d) into MAINT-01, resolved the single conflict in tests/CodingAgent/Phar/PharSmokeTest.php by combining origin/main HOME isolation with MAINT-01 APP_ENV=prod and HATFIELD_CACHE_DIR clearing, preserving PHAR smoke isolation and all MAINT-01 behavior. Branch is clean and PR #113 is conflict-free against main.
