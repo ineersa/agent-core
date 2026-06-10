@@ -35,7 +35,7 @@ Parallelizable with: none after dependencies.
 Status: IN-PROGRESS
 Branch: task/editor-12-keybindings-docs-smoke
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke
-Fork run: uu1qo3b48z9q
+Fork run: b6a2ywizqtru
 PR URL:
 PR Status:
 Started: 2026-06-10T19:50:55.944Z
@@ -115,3 +115,7 @@ Completed:
 - Recorded fork run: uu1qo3b48z9q
 - Validation: Fork uu1qo3b48z9q validation: focused `castor test --filter='HotkeyRegistry|HotkeyTableRenderer|SlashCommandRegistry|SlashCommandCompletion|CompletionListener'` passed (122 tests, 269 assertions); Fork uu1qo3b48z9q validation: full `castor test` passed (2318 tests, 6796 assertions); Fork uu1qo3b48z9q validation: `castor test:tui --filter=HotkeySmoke` passed (2 tests, 18 assertions); Fork uu1qo3b48z9q validation: full `castor test:tui` passed (13 tests, 48 assertions); Fork uu1qo3b48z9q validation: `castor deptrac` passed (0 violations), `castor phpstan` passed (0 errors), `castor cs-check` clean
 - Summary: Review-fix fork uu1qo3b48z9q completed at commit 4e7a02d0. Addressed reviewer findings: HotkeyRegistry now deduplicates repeated registrations and adds clear(); unused HotkeyProviderInterface removed; InteractiveMode keybinding comment corrected; HotkeyTableData empty-message ownership simplified; HotkeyTableRenderer width caps reduced to fit typical 120-col terminals; HotkeyRegistry tests added for dedup/clear behavior. E2E temp-dir cleanup intentionally skipped because project convention retains passing TUI snapshots under var/tmp/tui-e2e-* for inspection. Orchestrator verified task worktree clean at 4e7a02d0 and integration checkout clean at 210e6218.
+
+## Task workflow update - 2026-06-10T21:49:02.565Z
+- Recorded fork run: b6a2ywizqtru
+- Summary: Re-review at HEAD 4e7a02d0 returned APPROVE WITH SUGGESTIONS: no critical issues, no blocking issues, TUI E2E proof accepted. Sensible actionable suggestions: add missing blank line before SubmitListener hotkey adapter section, clarify InteractiveMode Ctrl+J keybinding comment, and enforce HotkeyBindingDTO non-empty keys contract. Explicitly skipped not-worth-changing NTH suggestions: replacing serialize() hash and refactoring HotkeyTableRenderer branch duplication. Launched cleanup fork b6a2ywizqtru to address the actionable suggestions, validate, commit, and leave worktree clean.
