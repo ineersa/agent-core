@@ -50,7 +50,7 @@ Important non-goal: Do not delete valuable behavioral tests just to reduce count
 - `tests/AGENTS.md` or testing skill documents test standards: no structural getter-only tests, use shared fixtures/builders, use Castor, use TUI E2E proof for TUI behavior, and use cleanup/snapshot conventions.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates
 Fork run: l3wxwzvlu2xw
@@ -310,3 +310,7 @@ Castor Check Output SHA256: a53c390ddf2d8e8ccf2d202a38e561cfc0df64a76da1801c8bae
 - Pushed task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates to origin.
 - branch 'task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates' set up to track 'origin/task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates'.
 - Created PR: https://github.com/ineersa/agent-core/pull/113
+
+## Task workflow update - 2026-06-10T21:31:29.245Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: User identified PR #113 only completes the urgent stability/performance slice, not the full MAINT-01 acceptance scope. Moving back to IN-PROGRESS to finish remaining maintenance items before review: broad temp-dir/removeDir cleanup, additional helper builders, remaining assertion-bloat/test-count reductions, easy sleep/wait fixes where feasible, and documentation/cleanup consistency. PR remains open but should not be considered ready until remaining scope is completed and full gate passes again.
