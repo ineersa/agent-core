@@ -15,6 +15,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\Fake\FakePlatform;
 use Ineersa\AgentCore\Tests\Support\Fake\FakeToolExecutor;
 use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
+use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Exception\TransportException;
@@ -62,7 +63,7 @@ final class ExecutionFailureDrillTest extends TestCase
             self::assertSame('Failed to dispatch LLM result to command bus.', $exception->getMessage());
         }
 
-        $collectingBus = new DrillCollectingMessageBus();
+        $collectingBus = new TestMessageBus();
         $retryWorker = new ExecuteLlmStepWorker($platform, $collectingBus, 'test-model');
         $retryWorker($message);
 
@@ -113,7 +114,7 @@ final class ExecutionFailureDrillTest extends TestCase
             self::assertSame('Failed to dispatch tool result to command bus.', $exception->getMessage());
         }
 
-        $collectingBus = new DrillCollectingMessageBus();
+        $collectingBus = new TestMessageBus();
         $retryWorker = new ExecuteToolCallWorker($toolExecutor, $collectingBus);
         $retryWorker($message);
 
@@ -147,15 +148,4 @@ final class FailingOnceMessageBus implements MessageBusInterface
     }
 }
 
-final class DrillCollectingMessageBus implements MessageBusInterface
-{
-    /** @var list<object> */
-    public array $messages = [];
 
-    public function dispatch(object $message, array $stamps = []): Envelope
-    {
-        $this->messages[] = $message;
-
-        return new Envelope($message, $stamps);
-    }
-}

@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use PHPUnit\Framework\TestCase;
@@ -31,7 +32,7 @@ class AppConfigTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->tmpDir = sys_get_temp_dir().'/hatfield_appcfg_'.bin2hex(random_bytes(8));
+        $this->tmpDir = TestDirectoryIsolation::createProjectTempDir('hatfield_appcfg');
         $this->homeDir = $this->tmpDir.'/home';
         $this->defaultsDir = $this->tmpDir.'/config';
 
@@ -78,7 +79,7 @@ class AppConfigTest extends TestCase
 
     protected function tearDown(): void
     {
-        $this->removeDir($this->tmpDir);
+        TestDirectoryIsolation::removeDirectory($this->tmpDir);
         parent::tearDown();
     }
 
@@ -274,23 +275,5 @@ class AppConfigTest extends TestCase
         );
     }
 
-    private function removeDir(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-        foreach ($iterator as $file) {
-            if ($file->isDir()) {
-                rmdir($file->getPathname());
-            } else {
-                chmod($file->getPathname(), 0644);
-                unlink($file->getPathname());
-            }
-        }
-        rmdir($dir);
-    }
+
 }

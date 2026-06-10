@@ -49,24 +49,9 @@ final class WriteFileToolE2eTest extends ControllerE2eTestCase
         ]);
 
         $events = $this->collectEvents(60.0);
-        $byType = [];
-        foreach ($events as $e) {
-            $type = (string) ($e['type'] ?? 'unknown');
-            $byType[$type] = $byType[$type] ?? [];
-            $byType[$type][] = $e;
-        }
+        $byType = $this->indexByType($events);
 
-        $acks = $byType['command.ack'] ?? [];
-        $foundStartAck = false;
-        foreach ($acks as $ack) {
-            $payload = $ack['payload'] ?? [];
-            if (($payload['commandId'] ?? '') === $startCmdId) {
-                $foundStartAck = true;
-                break;
-            }
-        }
-        self::assertTrue($foundStartAck, 'Expected command.ack for start_run. '
-            .$this->collectDiagnostics($events));
+        $this->assertStartRunAcked($events, $startCmdId);
 
         self::assertArrayHasKey('run.started', $byType, 'Expected run.started. '
             .$this->collectDiagnostics($events));

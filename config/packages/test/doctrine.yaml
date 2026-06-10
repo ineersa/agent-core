@@ -1,15 +1,22 @@
-# Test environment: use a fixed SQLite path instead of
-# the production %app.cwd%/.hatfield/messenger.sqlite so
-# DAMA/DoctrineTestBundle can maintain a static connection
-# for transaction-rollback test isolation.
+# Test environment: per-suite SQLite path for parallel test execution.
+# HATFIELD_TEST_DATABASE_PATH overrides the default DB filename.
+# When running through Castor test or Castor check, the env var is
+# always set — parallel suites each get an isolated DB file, and
+# filtered/sequential runs use the default.
 #
-# Schema is created once before tests via migrations.
-# Individual test changes are rolled back by DAMA's
-# PHPUnitExtension between test methods.
+# DAMA/DoctrineTestBundle wraps each test in a transaction for
+# rollback isolation; separate DB files per worker prevent
+# contention when suites run in parallel.
+#
+# Schema is created once per DB via Castor migrations before
+# PHPUnit execution.
+parameters:
+    test.db.filename: 'app_test.sqlite'
+
 doctrine:
     dbal:
         default_connection: default
         connections:
             default:
                 driver: pdo_sqlite
-                path: '%kernel.project_dir%/var/test/app_test.sqlite'
+                path: '%kernel.project_dir%/var/test/%env(default:test.db.filename:string:HATFIELD_TEST_DATABASE_PATH)%'

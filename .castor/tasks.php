@@ -23,30 +23,104 @@ require_once __DIR__.'/helpers.php';
  * Run full QA: deptrac, phpunit, controller E2E, real LLM E2E,
  * TUI snapshot E2E, phpstan, cs-fixer check.
  */
+/**
+ * Run full QA: deptrac, phpunit, controller E2E, real LLM E2E,
+ * TUI snapshot E2E, phpstan, cs-fixer check.
+ *
+ * All steps run concurrently as external subprocesses (via proc_open)
+ * so they do not share memory with the Castor PHAR.  Each step's
+ * output is captured to var/reports/check-<step>.log.
+ */
 #[AsTask(description: 'Run full QA (deptrac, phpunit, controller E2E, real LLM E2E, TUI E2E, phpstan, cs-fixer)')]
 function check(): void
 {
+    $pharStart = hrtime(true);
+    $pharPath = '';
+    try {
+        $pharPath = \CastorTasks\phar_ensure();
+    } catch (Throwable $e) {
+        echo "PHAR ensure skipped: {$e->getMessage()}
+";
+    }
+    if ('' !== $pharPath) {
+        $GLOBALS['CASTOR_PHAR_READY'] = $pharPath;
+    }
+    $pharDuration = (hrtime(true) - $pharStart) / 1e9;
+    echo sprintf('PHAR: ok (%.1fs)
+
+', $pharDuration);
+
+    $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
+    $phpBin = \PHP_BINARY;
+    $strictFlags = phpunit_strict_issue_flags();
+    $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
+
+    // Each step is a shell command that runs the underlying tool
+    // directly — not through a Castor task closure — to stay safe
+    // inside the Castor PHAR (no pcntl_fork shared-memory issues).
+    $allCheckCommands = [
+        'deptrac' => [
+            'cmd' => $phpBin.' vendor/bin/deptrac --config-file=depfile.yaml --no-progress --no-ansi'
+                .(is_llm_mode() ? ' --formatter=json' : ''),
+        ],
+        'test' => [
+            'cmd' => 'APP_ENV=test '.$pharEnv.$phpBin.' vendor/bin/phpunit'
+                .' --exclude-group tui-e2e --exclude-group llm-real'
+                .' '.$strictFlags.$llmFlags
+                .(is_llm_mode() ? ' --log-junit='.report_path('phpunit.junit.xml') : ''),
+        ],
+        'test:controller' => [
+            'cmd' => 'APP_ENV=test '.$pharEnv.'LLAMA_CPP_SMOKE_TEST=1 '.$phpBin.' vendor/bin/phpunit'
+                .' --filter=ControllerSmokeTest'
+                .' '.$strictFlags.$llmFlags
+                .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-controller.junit.xml') : ''),
+        ],
+        'test:llm-real' => [
+            'cmd' => 'APP_ENV=test '.$pharEnv.'LLAMA_CPP_SMOKE_TEST=1 '.$phpBin.' vendor/bin/phpunit'
+                .' --group llm-real'
+                .' '.$strictFlags.$llmFlags
+                .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-llm-real.junit.xml') : ''),
+        ],
+        'test:tui' => [
+            'cmd' => 'APP_ENV=test '.$pharEnv.$phpBin.' vendor/bin/phpunit'
+                .' --group tui-e2e'
+                .' '.$strictFlags.$llmFlags
+                .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-tui.junit.xml') : ''),
+        ],
+        'phpstan' => [
+            'cmd' => $phpBin.' vendor/bin/phpstan analyse -c phpstan.dist.neon --no-progress'
+                .(is_llm_mode() ? ' --error-format=json --no-ansi' : ''),
+        ],
+        'cs-check' => [
+            'cmd' => $phpBin.' vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php --dry-run --no-ansi'
+                .(is_llm_mode() ? ' --format=json --show-progress=none' : ' --diff'),
+        ],
+    ];
+
+    // DB schema must be ready before the test / controller / llm-real
+    // steps start.  Migrate once (fast, idempotent).
+    @mkdir('var/test', 0755, true);
+    $migrate = run_quiet_command(
+        'APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
+    );
+    if (0 !== $migrate->getExitCode()) {
+        fail_quality('test database migration failed: '.$migrate->getErrorOutput());
+    }
+
     $failures = [];
+    $timings = [];
 
     $GLOBALS['CASTOR_CHECK_AGGREGATING'] = true;
     try {
-        foreach ([
-            'deptrac' => static fn () => deptrac(),
-            'test' => static fn () => test(),
-            'test:controller' => static fn () => test_controller(),
-            'test:llm-real' => static fn () => test_llm_real(),
-            'test:tui' => static fn () => test_tui(),
-            'phpstan' => static fn () => phpstan(),
-            'cs-check' => static fn () => cs_check(),
-        ] as $step => $runner) {
-            try {
-                $runner();
-            } catch (Throwable $exception) {
-                $failures[$step] = $exception->getMessage();
-            }
+        $useParallel = \PHP_SAPI === 'cli' && function_exists('proc_open');
+        if ($useParallel) {
+            run_check_commands_parallel($allCheckCommands, $failures, $timings);
+        } else {
+            run_check_commands_sequential($allCheckCommands, $failures, $timings);
         }
     } finally {
         unset($GLOBALS['CASTOR_CHECK_AGGREGATING']);
+        unset($GLOBALS['CASTOR_PHAR_READY']);
     }
 
     if ([] !== $failures) {
@@ -55,11 +129,6 @@ function check(): void
 
     echo 'quality: ok'.\PHP_EOL;
 }
-
-/**
- * Alias for check().
- */
-#[AsTask(description: 'Alias for check')]
 function quality(): void
 {
     check();
@@ -104,41 +173,81 @@ function deptrac(): void
 }
 
 /**
- * Run PHPUnit tests (excludes tmux e2e and real LLM smoke tests).
+ * Internal helper: get the PHAR path for test tasks.
  *
- * TUI e2e and real LLM smoke tests run as separate steps in
- * "castor check" so their failures are reported independently.
+ * When check() pre-built the PHAR via CASTOR_PHAR_READY, returns it
+ * immediately.  Otherwise, builds or locates it for standalone task
+ * invocation (e.g. `castor test:tui` outside of `castor check`).
  */
-#[AsTask(description: 'Run PHPUnit tests (excludes tmux e2e and real LLM smoke tests)')]
+/**
+ * Internal helper: get the PHAR path for test tasks.
+ *
+ * When check() pre-built the PHAR via CASTOR_PHAR_READY, returns it
+ * immediately.  Otherwise, builds or locates it for standalone task
+ * invocation (e.g. `castor test:tui` outside of `castor check`).
+ */
+function phar_path_for_test_task(): string
+{
+    $pharPath = $GLOBALS['CASTOR_PHAR_READY'] ?? '';
+    if ('' !== $pharPath) {
+        return $pharPath;
+    }
+
+    try {
+        return \CastorTasks\phar_ensure();
+    } catch (Throwable $e) {
+        echo 'PHAR ensure skipped: '.$e->getMessage().'
+';
+
+        return '';
+    }
+}
+
+#[AsTask(description: 'Run PHPUnit tests (excludes tmux e2e and real LLM smoke tests); full-suite runs suites in parallel via proc_open subprocesses')]
 function test(string $filter = ''): void
 {
-    // Ensure test database schema is up-to-date before running tests.
-    // DAMA/DoctrineTestBundle wraps each test in a transaction;
-    // this step creates the schema once on fresh checkout.
-    // Create the directory first so SQLite can write the DB file.
+    $pharPath = phar_path_for_test_task();
+    $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
+
+    if ('' !== $filter) {
+        run_test_filtered($filter, $pharEnv);
+
+        return;
+    }
+
+    // Full suite: run phpunit.xml.dist suites in parallel, each with
+    // its own SQLite DB file to avoid contention.  Uses proc_open
+    // subprocesses (not pcntl_fork) to avoid Castor PHAR corruption.
+    //
+    // coding-agent is the largest suite (~100s, ~99 test files) so it
+    // is split into round-robin shards so slow kernel-booting tests
+    // are evenly distributed across workers.
+    $codingAgentShards = array_keys(coding_agent_shard_groups());
+    $suites = array_merge(['agent-core'], $codingAgentShards, ['tui', 'platform']);
+    $useParallel = \PHP_SAPI === 'cli' && function_exists('proc_open');
+    if ($useParallel) {
+        run_test_suites_parallel($suites, $pharEnv);
+    } else {
+        run_test_suites_sequential($suites, $pharEnv);
+    }
+}
+function run_test_filtered(string $filter, string $pharEnv): void
+{
+    $dbFilename = 'app_test.sqlite';
+    $dbPath = 'var/test/'.$dbFilename;
+
     @mkdir('var/test', 0755, true);
+
+    // Migrate the default DB once before the filtered run.
     $migrate = run_quiet_command(
-        'APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
+        'APP_ENV=test HATFIELD_TEST_DATABASE_PATH='.escapeshellarg($dbFilename).' '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
     );
     if (0 !== $migrate->getExitCode()) {
         fail_quality('test database migration failed: '.$migrate->getErrorOutput());
     }
 
-    // Ensure the PHAR is built so subprocess tests can reference it when
-    // HATFIELD_BINARY_PATH is set. Pure in-process tests ignore the env var.
-    $pharPath = '';
-    try {
-        $pharPath = \CastorTasks\phar_ensure();
-    } catch (Throwable $e) {
-        echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
-    }
-
-    $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
-
-    $cmd = $pharEnv.'vendor/bin/phpunit --exclude-group tui-e2e --exclude-group llm-real';
-    if ('' !== $filter) {
-        $cmd .= ' --filter='.escapeshellarg($filter);
-    }
+    $dbEnv = 'HATFIELD_TEST_DATABASE_PATH='.escapeshellarg($dbFilename).' ';
+    $cmd = $pharEnv.$dbEnv.'vendor/bin/phpunit --exclude-group tui-e2e --exclude-group llm-real --filter='.escapeshellarg($filter);
 
     if (!is_llm_mode()) {
         run($cmd.' '.phpunit_strict_issue_flags().' --colors=always');
@@ -147,14 +256,14 @@ function test(string $filter = ''): void
     }
 
     $junitPath = report_path('phpunit.junit.xml');
-    $process = run_quiet_command($cmd.' '.phpunit_strict_issue_flags().' --colors=never --no-progress --log-junit '.$junitPath);
+    $process = run_quiet_command($cmd.' '.phpunit_strict_issue_flags().' --colors=never --no-progress --log-junit='.$junitPath);
     persist_process_output($process, 'phpunit.log');
 
     $summary = summarize_junit_xml($junitPath);
+    $riskyInfo = phpunit_risky_summary(report_path('phpunit.log'));
+    $summaryWithRisky = '' !== $riskyInfo ? $summary.', '.$riskyInfo : $summary;
 
     if (0 !== $process->getExitCode()) {
-        $riskyInfo = phpunit_risky_summary(report_path('phpunit.log'));
-        $summaryWithRisky = '' !== $riskyInfo ? $summary.', '.$riskyInfo : $summary;
         fail_quality(sprintf(
             'test failed (%s); junit=%s; log=%s%s',
             $summaryWithRisky,
@@ -164,13 +273,330 @@ function test(string $filter = ''): void
         ));
     }
 
-    $riskyInfo = phpunit_risky_summary(report_path('phpunit.log'));
-    $summaryWithRisky = '' !== $riskyInfo ? $summary.', '.$riskyInfo : $summary;
     echo sprintf(
         'test: ok (%s); junit=%s',
         $summaryWithRisky,
         relative_report_path('phpunit.junit.xml'),
     ).\PHP_EOL;
+}
+
+/**
+ * Run PHPUnit suites sequentially (fallback).
+ *
+ * Each suite gets its own SQLite DB file (app_test-<suite>.sqlite),
+ * PHPUnit cache directory, JUnit report, and log file.  All children
+ * use run_quiet_command() to avoid STDOUT interleaving; summaries
+ * are printed after every child exits.
+ *
+ * @param list<string> $suites
+ */
+/**
+ * Run PHPUnit suites in parallel via proc_open subprocesses.
+ *
+ * Each suite gets its own SQLite DB file (app_test-<suite>.sqlite),
+ * PHPUnit cache directory, JUnit report, and log file.  Subprocesses
+ * are spawned via proc_open so they run as genuinely independent PHP
+ * processes (no shared memory / Castor PHAR corruption).
+ *
+ * @param list<string> $suites
+ */
+function run_test_suites_parallel(array $suites, string $pharEnv): void
+{
+    $overallStart = hrtime(true);
+
+    @mkdir(\CastorTasks\REPORTS_DIR, 0755, true);
+
+    echo 'Running PHPUnit suites in parallel (proc_open):
+';
+    foreach ($suites as $suite) {
+        echo "  - {$suite}  (DB: app_test-{$suite}.sqlite)
+";
+    }
+    echo '
+';
+
+    $commands = [];
+    $logFiles = [];
+    foreach ($suites as $suite) {
+        $dbFilename = 'app_test-'.$suite.'.sqlite';
+        $logFilename = 'phpunit-'.$suite.'.log';
+        $logFiles[$suite] = report_path($logFilename);
+
+        $commands[$suite] = [
+            'cmd' => build_test_worker_command($suite, $pharEnv, $dbFilename),
+            'log' => $logFiles[$suite],
+        ];
+    }
+
+    // Spawn and collect results.
+    $results = run_commands_parallel($commands);
+
+    $overallDuration = (hrtime(true) - $overallStart) / 1e9;
+
+    $failures = [];
+    $timings = [];
+    $suiteSummaries = [];
+
+    echo 'Summary:
+';
+    foreach ($suites as $suite) {
+        $result = $results[$suite] ?? ['exitCode' => -1, 'output' => 'proc_open failed', 'duration' => 0];
+        $exitCode = $result['exitCode'];
+        $duration = $result['duration'];
+        $timings[$suite] = $duration;
+
+        if (0 !== $exitCode) {
+            $failures[$suite] = $exitCode < 0 ? 'proc_open failed' : 'exit code '.$exitCode;
+        }
+
+        $status = isset($failures[$suite]) ? 'FAIL' : 'OK';
+        echo sprintf('  %-20s %s  (%.1fs)', $suite, $status, $duration);
+
+        if (is_llm_mode()) {
+            $suiteSummaries[$suite] = read_suite_junit_summary($suite);
+            if ('' !== $suiteSummaries[$suite]) {
+                echo "  — {$suiteSummaries[$suite]}";
+            }
+        } elseif (is_file($logFiles[$suite])) {
+            $logContent = file_get_contents($logFiles[$suite]);
+            if (false !== $logContent) {
+                $lines = explode('
+', trim($logContent));
+                $lastLine = end($lines);
+                if ('' !== $lastLine && 'OK' !== $lastLine && 'FAIL' !== $lastLine) {
+                    echo "  — {$lastLine}";
+                }
+            }
+        }
+        echo '
+';
+    }
+
+    echo sprintf('
+Total: %.1fs
+', $overallDuration);
+
+    if ([] !== $failures) {
+        $failureMsg = '';
+        foreach ($failures as $suite => $reason) {
+            $failureMsg .= "- {$suite}: {$reason}";
+            if (isset($suiteSummaries[$suite]) && '' !== $suiteSummaries[$suite]) {
+                $failureMsg .= " ({$suiteSummaries[$suite]})";
+            }
+            $failureMsg .= '
+';
+        }
+        fail_quality("test failed:
+{$failureMsg}");
+    }
+
+    if (is_llm_mode()) {
+        $aggregate = implode(', ', array_filter($suiteSummaries, static fn (string $s): bool => '' !== $s));
+        echo sprintf(
+            'test: ok (%s); junit=%s',
+            '' !== $aggregate ? $aggregate : 'pass',
+            relative_report_path('phpunit-*.junit.xml'),
+        ).\PHP_EOL;
+    } else {
+        echo 'test: ok
+';
+    }
+}
+/**
+ * @param list<string> $suites
+ */
+function run_test_suites_sequential(array $suites, string $pharEnv): void
+{
+    $overallStart = hrtime(true);
+
+    echo "Running PHPUnit suites sequentially (proc_open not available):\n";
+    foreach ($suites as $suite) {
+        echo "  - {$suite}  (DB: app_test-{$suite}.sqlite)\n";
+    }
+    echo "\n";
+
+    $failures = [];
+    $timings = [];
+    $suiteSummaries = [];
+
+    foreach ($suites as $suite) {
+        echo sprintf('  %-20s ... ', $suite);
+        $start = hrtime(true);
+
+        $dbFilename = 'app_test-'.$suite.'.sqlite';
+        $dbEnv = 'HATFIELD_TEST_DATABASE_PATH='.escapeshellarg($dbFilename).' ';
+        $cacheDirEnv = 'HATFIELD_CACHE_DIR=.hatfield/cache-'.$suite.' ';
+
+        @mkdir('var/test', 0755, true);
+
+        // Schema migration for this worker's isolated DB file.
+        $migrate = run_quiet_command(
+            'APP_ENV=test '.$cacheDirEnv.$dbEnv.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
+        );
+        if (0 !== $migrate->getExitCode()) {
+            $failures[$suite] = 'DB migration failed';
+            $timings[$suite] = (hrtime(true) - $start) / 1e9;
+            echo sprintf("FAIL — DB migration (%.1fs)\n", $timings[$suite]);
+            continue;
+        }
+
+        $cmd = build_test_worker_command($suite, $pharEnv, $dbFilename);
+        // Strip the 'migrate && ' prefix — migration already done above.
+        // The prefix includes APP_ENV, HATFIELD_CACHE_DIR, dbEnv, etc.
+        $cmd = preg_replace('/^APP_ENV=test .+? && /', '', $cmd);
+        // Re-add dbEnv + cacheDir since we stripped the full prefix.
+        $cmd = $dbEnv.$cacheDirEnv.$cmd;
+
+        $logFilename = 'phpunit-'.$suite.'.log';
+        $process = run_quiet_command($cmd);
+        persist_process_output($process, $logFilename);
+        $exitCode = $process->getExitCode();
+
+        $timings[$suite] = (hrtime(true) - $start) / 1e9;
+
+        if (0 !== $exitCode) {
+            $failures[$suite] = 'exit code '.$exitCode;
+        }
+
+        if (is_llm_mode()) {
+            $suiteSummaries[$suite] = read_suite_junit_summary($suite);
+            echo $suiteSummaries[$suite];
+        }
+
+        echo sprintf(" (%.1fs)\n", $timings[$suite]);
+    }
+
+    $overallDuration = (hrtime(true) - $overallStart) / 1e9;
+    echo sprintf("\nTotal: %.1fs\n", $overallDuration);
+
+    // ── Failure reporting ────────────────────────────────────
+    if ([] !== $failures) {
+        $failureMsg = '';
+        foreach ($failures as $suite => $reason) {
+            $failureMsg .= "- {$suite}: {$reason}";
+            if (isset($suiteSummaries[$suite]) && '' !== $suiteSummaries[$suite]) {
+                $failureMsg .= " ({$suiteSummaries[$suite]})";
+            }
+            $failureMsg .= "\n";
+        }
+        fail_quality("test failed:\n{$failureMsg}");
+    }
+
+    if (is_llm_mode()) {
+        $aggregate = implode(', ', array_filter($suiteSummaries, static fn (string $s): bool => '' !== $s));
+        echo sprintf(
+            'test: ok (%s); junit=%s',
+            '' !== $aggregate ? $aggregate : 'pass',
+            relative_report_path('phpunit-*.junit.xml'),
+        ).\PHP_EOL;
+    } else {
+        echo "test: ok\n";
+    }
+}
+
+/**
+ * Run migration + PHPUnit for a single suite.
+ *
+ * Always uses run_quiet_command() so output is captured rather
+ * than interleaved when multiple suites run in parallel.
+ * Returns the PHPUnit exit code (0 = success).
+ */
+/**
+ * Discover all CodingAgent test files and split them into balanced
+ * round-robin shards (not subdirectory-based, which can concentrate
+ * slow kernel-booting tests in one worker).
+ *
+ * @param int $numShards number of shards
+ *
+ * @return array<string, list<string>>
+ */
+function coding_agent_shard_groups(int $numShards = 4): array
+{
+    $testDir = 'tests/CodingAgent';
+    $files = [];
+
+    $iter = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($testDir, FilesystemIterator::SKIP_DOTS)
+    );
+    foreach ($iter as $file) {
+        if ($file->isFile() && str_ends_with($file->getFilename(), 'Test.php')) {
+            $files[] = $file->getPathname();
+        }
+    }
+    sort($files);
+
+    $shards = array_fill(1, $numShards, []);
+    foreach ($files as $i => $f) {
+        $shardIdx = ($i % $numShards) + 1;
+        $shards[$shardIdx][] = $f;
+    }
+
+    $result = [];
+    for ($i = 1; $i <= $numShards; ++$i) {
+        $result['coding-agent-'.$i] = $shards[$i];
+    }
+
+    return $result;
+}
+
+/**
+ * Build the PHPUnit invocation for one test worker.
+ *
+ * For phpunit.xml.dist suites (agent-core, tui, platform) uses
+ * --testsuite.  For coding-agent-N shards uses directory paths so
+ * only the shard's portion of the suite is executed.
+ */
+function build_test_worker_command(
+    string $worker,
+    string $pharEnv,
+    string $dbFilename,
+): string {
+    $dbEnv = 'HATFIELD_TEST_DATABASE_PATH='.escapeshellarg($dbFilename);
+    $phpBin = \PHP_BINARY;
+    // Each shard needs its own Symfony cache dir because %env(...)%
+    // resolution in container compilation bakes HATFIELD_TEST_DATABASE_PATH
+    // into the compiled container.  Sharing .hatfield/cache/test/ across
+    // parallel workers causes stale-container reuse with a foreign DB
+    // path → SQLite "database is locked" / wrong-schema errors.
+    $cacheDirEnv = 'HATFIELD_CACHE_DIR=.hatfield/cache-'.$worker;
+    $cacheDir = 'var/cache/.phpunit-'.$worker;
+    $junitFilename = 'phpunit-'.$worker.'.junit.xml';
+    $junitFlag = is_llm_mode() ? ' --log-junit='.report_path($junitFilename) : '';
+    $strictFlags = phpunit_strict_issue_flags();
+    $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
+
+    $phpunitArgs = '';
+    if (str_starts_with($worker, 'coding-agent-')) {
+        // Shard: pass directory paths directly (not --testsuite).
+        $dirs = coding_agent_shard_groups()[$worker] ?? [];
+        if ([] === $dirs) {
+            throw new RuntimeException("Unknown coding-agent shard: {$worker}");
+        }
+        $phpunitArgs = implode(' ', array_map('escapeshellarg', $dirs));
+    } else {
+        $phpunitArgs = '--testsuite '.escapeshellarg($worker);
+    }
+
+    return 'APP_ENV=test '.$cacheDirEnv.' '.$dbEnv.' '.$phpBin.' bin/console'
+        .' doctrine:migrations:migrate --no-interaction --allow-no-migration'
+        .' && APP_ENV=test '.$cacheDirEnv.' '.$dbEnv.' '.$pharEnv.$phpBin.' vendor/bin/phpunit'
+        .' '.$phpunitArgs
+        .' --exclude-group tui-e2e --exclude-group llm-real'
+        .' --cache-directory '.escapeshellarg($cacheDir)
+        .' '.$strictFlags.$llmFlags.$junitFlag;
+}
+
+/**
+ * Read the JUnit summary for a previously-run suite.
+ */
+function read_suite_junit_summary(string $suite): string
+{
+    $junitPath = report_path('phpunit-'.$suite.'.junit.xml');
+    if (!is_file($junitPath)) {
+        return '';
+    }
+
+    return summarize_junit_xml($junitPath);
 }
 
 /**
@@ -350,10 +776,10 @@ function cache_clear(): void
  *
  * Cleans up var/tmp/ (test isolation dirs, PHAR builds, smoke dirs),
  * var/cache/ (Symfony cache), var/logs/ (Monolog logs), and
- * var/qa/ (QA report artifacts).  Safe to run anytime — only removes
+ * var/reports/ (QA report artifacts).  Safe to run anytime — only removes
  * generated/transient files, never tracked sources or .gitkeep.
  */
-#[AsTask(name: 'cleanup', description: 'Remove all temp/test artifacts (var/tmp/*, var/cache/, var/logs/, var/qa/)')]
+#[AsTask(name: 'cleanup', description: 'Remove all temp/test artifacts (var/tmp/*, var/cache/, var/logs/, var/reports/, .hatfield/cache-*, var/test/app_test*.sqlite)')]
 function cleanup(): void
 {
     $root = realpath(__DIR__.'/..');
@@ -368,7 +794,7 @@ function cleanup(): void
         'phar',
         'phar-build',
         'run-agent-test-*',
-        'smoke-*',
+        'hatfield-llamacpp-*',
         'test-*',
     ];
 
@@ -384,11 +810,39 @@ function cleanup(): void
         }
     }
 
+    // ── Parallel worker cache dirs (per-shard Symfony container cache) ──
+    $parallelCachePatterns = glob($root.'/.hatfield/cache-*', \GLOB_ONLYDIR);
+    if (false !== $parallelCachePatterns) {
+        foreach ($parallelCachePatterns as $path) {
+            rmtree($path);
+            ++$removed;
+            echo 'Removed '.str_replace($root.'/', '', $path)."\n";
+        }
+    }
+
+    // ── PHAR build lock file ──
+    $pharLock = $root.'/var/tmp/phar-build.lock';
+    if (is_file($pharLock)) {
+        unlink($pharLock);
+        ++$removed;
+        echo "Removed var/tmp/phar-build.lock\n";
+    }
+
+    // ── var/test DB files (including per-worker shard DBs) ──
+    $testDbFiles = glob($root.'/var/test/app_test*.sqlite');
+    if (false !== $testDbFiles) {
+        foreach ($testDbFiles as $file) {
+            unlink($file);
+            ++$removed;
+            echo 'Removed '.str_replace($root.'/', '', $file)."\n";
+        }
+    }
+
     // ── Top-level generated directories ──
     $topDirs = [
         'var/cache',
         'var/logs',
-        'var/qa',
+        'var/reports',
     ];
 
     foreach ($topDirs as $dir) {
@@ -397,6 +851,37 @@ function cleanup(): void
             rmtree($full);
             ++$removed;
             echo 'Removed '.$dir."\n";
+        }
+    }
+
+    // ── System temp test artifacts (outside var/tmp/, in /tmp) ──
+    $sysTmpPatterns = [
+        'hatfield-auth-test-*',
+        'hatfield-oauth-test-*',
+        'hatfield-phar-smoke-*',
+        'agent-core-soak-*',
+        'agent-core-structured-log-*',
+        'skills_registry_test_*',
+        'skills_builder_test_*',
+        'skills_discovery_test_*',
+        'agents_context_test_*',
+        'hatfield-session-runstore-*',
+        'hatfield-session-eventstore-*',
+        'hatfield-aggregate-resume-*',
+        'phar-cache-hash-test-*',
+        'hatfield-llamacpp-*',
+    ];
+
+    $sysTmp = sys_get_temp_dir();
+    foreach ($sysTmpPatterns as $pattern) {
+        $paths = glob($sysTmp.'/'.$pattern, \GLOB_ONLYDIR);
+        if (false === $paths) {
+            continue;
+        }
+        foreach ($paths as $path) {
+            rmtree($path);
+            ++$removed;
+            echo 'Removed '.$path."\n";
         }
     }
 
@@ -436,7 +921,7 @@ function idea_run_configs(): void
         'cs-fix' => 'Run PHP CS Fixer and modify files in place.',
         'cs-check' => 'Run PHP CS Fixer dry-run check.',
         'cache:clear' => 'Remove generated QA caches and clear Symfony cache.',
-        'cleanup' => 'Remove all temp/test artifacts (var/tmp/*, var/cache/, var/logs/, var/qa/).',
+        'cleanup' => 'Remove all temp/test artifacts (var/tmp/*, var/cache/, var/logs/, var/reports/, .hatfield/cache-*, var/test/app_test*.sqlite).',
         'log:tail' => 'Show recent log entries.',
         'log:search' => 'Search log entries.',
         'log:files' => 'List log files.',
@@ -679,13 +1164,7 @@ function phar_clean(): void
 #[AsTask(name: 'test:tui', description: 'Run TUI e2e snapshot tests (requires tmux), using the built PHAR')]
 function test_tui(string $filter = ''): void
 {
-    try {
-        $pharPath = \CastorTasks\phar_ensure();
-    } catch (Throwable $e) {
-        echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
-        $pharPath = '';
-    }
-
+    $pharPath = phar_path_for_test_task();
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
     $filterFlag = '' !== $filter ? ' --filter='.escapeshellarg($filter) : '';
@@ -714,13 +1193,7 @@ function test_tui(string $filter = ''): void
 #[AsTask(name: 'test:llm-real', description: 'Run opt-in real llama.cpp smoke test against configured llama_cpp provider')]
 function test_llm_real(string $filter = ''): void
 {
-    try {
-        $pharPath = \CastorTasks\phar_ensure();
-    } catch (Throwable $e) {
-        echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
-        $pharPath = '';
-    }
-
+    $pharPath = phar_path_for_test_task();
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
     $filterFlag = '' !== $filter ? ' --filter='.escapeshellarg($filter) : '';
@@ -748,13 +1221,7 @@ function test_llm_real(string $filter = ''): void
 #[AsTask(name: 'test:controller', description: 'Run controller E2E smoke test (spawns --controller, sends JSONL)')]
 function test_controller(string $filter = ''): void
 {
-    try {
-        $pharPath = \CastorTasks\phar_ensure();
-    } catch (Throwable $e) {
-        echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
-        $pharPath = '';
-    }
-
+    $pharPath = phar_path_for_test_task();
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
     $filterFlag = ' --filter='.escapeshellarg('' !== $filter ? $filter : 'ControllerSmokeTest');
@@ -771,13 +1238,7 @@ function test_controller(string $filter = ''): void
 #[AsTask(name: 'test:tui-update', description: 'Run TUI e2e tests and update golden snapshots')]
 function test_tui_update(string $filter = ''): void
 {
-    try {
-        $pharPath = \CastorTasks\phar_ensure();
-    } catch (Throwable $e) {
-        echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
-        $pharPath = '';
-    }
-
+    $pharPath = phar_path_for_test_task();
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
     $filterFlag = '' !== $filter ? ' --filter='.escapeshellarg($filter) : '';
@@ -1716,4 +2177,227 @@ function rmtree(string $dir): void
     }
 
     rmdir($dir);
+}
+
+// ── Shared proc_open parallel runner ──────────────────────────
+
+/**
+ * Run multiple shell commands concurrently via proc_open.
+ *
+ * Each command is spawned as an independent PHP subprocess — no
+ * shared memory, safe inside the Castor PHAR.  stdout and stderr
+ * are captured to the per-command log file.
+ *
+ * @param array<string,array{cmd:string,log:string}> $commands
+ *
+ * @return array<string,array{exitCode:int,output:string,duration:float}>
+ */
+function run_commands_parallel(array $commands): array
+{
+    $processes = [];
+    $results = [];
+    $cwd = (string) getcwd();
+
+    // Start every process immediately.
+    foreach ($commands as $step => $info) {
+        $descriptors = [
+            0 => ['pipe', 'r'],  // stdin
+            1 => ['pipe', 'w'],  // stdout
+            2 => ['pipe', 'w'],  // stderr
+        ];
+
+        $process = @proc_open($info['cmd'], $descriptors, $pipes, $cwd);
+
+        if (!is_resource($process)) {
+            $results[$step] = [
+                'exitCode' => -1,
+                'output' => 'proc_open() failed for: '.$info['cmd'],
+                'duration' => 0,
+            ];
+            continue;
+        }
+
+        fclose($pipes[0]); // close stdin immediately
+
+        $processes[$step] = [
+            'handle' => $process,
+            'pipes' => [$pipes[1], $pipes[2]],
+            'start' => hrtime(true),
+            'log' => $info['log'] ?? null,
+        ];
+    }
+
+    // Poll until every process exits.
+    while (count($processes) > 0) {
+        $finished = [];
+        foreach ($processes as $step => $pInfo) {
+            $status = proc_get_status($pInfo['handle']);
+            if (!$status['running']) {
+                $finished[] = $step;
+            }
+        }
+
+        foreach ($finished as $step) {
+            $pInfo = $processes[$step];
+            $stdout = stream_get_contents($pInfo['pipes'][0]);
+            $stderr = stream_get_contents($pInfo['pipes'][1]);
+            fclose($pInfo['pipes'][0]);
+            fclose($pInfo['pipes'][1]);
+            $exitCode = proc_close($pInfo['handle']);
+            $duration = (hrtime(true) - $pInfo['start']) / 1e9;
+
+            $output = (string) $stdout;
+            if ('' !== (string) $stderr) {
+                $output = '' !== $output ? $output.'
+'.$stderr : $stderr;
+            }
+
+            if (null !== $pInfo['log']) {
+                @mkdir(dirname($pInfo['log']), 0755, true);
+                file_put_contents($pInfo['log'], $output.'
+');
+            }
+
+            $results[$step] = [
+                'exitCode' => $exitCode,
+                'output' => $output,
+                'duration' => $duration,
+            ];
+
+            unset($processes[$step]);
+        }
+
+        if (count($processes) > 0) {
+            usleep(50000); // 50 ms
+        }
+    }
+
+    return $results;
+}
+
+/**
+ * Run check steps in parallel via proc_open subprocesses.
+ *
+ * Each step's stdout+stderr is captured to
+ * var/reports/check-<step>.log.  The parent waits for all
+ * processes, then prints a combined timing summary.
+ *
+ * @param array<string,array{cmd:string}> $steps
+ * @param array<string,string>            $failures out
+ * @param array<string,float|int>         $timings  out
+ */
+function run_check_commands_parallel(array $steps, array &$failures, array &$timings): void
+{
+    $logFiles = [];
+    $commands = [];
+    foreach ($steps as $step => $info) {
+        $logFiles[$step] = report_path("check-{$step}.log");
+        $commands[$step] = [
+            'cmd' => $info['cmd'],
+            'log' => $logFiles[$step],
+        ];
+    }
+    @mkdir(\CastorTasks\REPORTS_DIR, 0755, true);
+
+    echo 'Running steps in parallel (proc_open):
+';
+    foreach (array_keys($steps) as $step) {
+        echo "  - {$step}
+";
+    }
+    echo '
+';
+
+    $results = run_commands_parallel($commands);
+
+    foreach ($steps as $step => $_) {
+        $result = $results[$step] ?? ['exitCode' => -1, 'output' => 'proc_open failed', 'duration' => 0];
+        $timings[$step] = $result['duration'];
+        if (0 !== $result['exitCode']) {
+            $failures[$step] = $result['exitCode'] < 0
+                ? $result['output']
+                : 'exit code '.$result['exitCode'];
+        }
+    }
+
+    echo 'Summary:
+';
+    foreach ($steps as $step => $_) {
+        $status = isset($failures[$step]) ? 'FAIL' : 'OK';
+        $duration = $timings[$step] ?? 0;
+        echo sprintf('  %-20s %s  (%.1fs)', $step, $status, $duration);
+
+        if (isset($failures[$step])) {
+            echo "  — {$failures[$step]}";
+        } elseif (is_file($logFiles[$step])) {
+            $logContent = file_get_contents($logFiles[$step]);
+            if (false !== $logContent) {
+                $lines = explode('
+', trim($logContent));
+                $lastLine = end($lines);
+                if ('' !== $lastLine) {
+                    echo "  — {$lastLine}";
+                }
+            }
+        }
+        echo '
+';
+    }
+}
+
+/**
+ * Fallback sequential runner (proc_open not available).
+ *
+ * Runs every step in order with per-step timing.
+ *
+ * @param array<string,array{cmd:string}> $steps
+ * @param array<string,string>            $failures out
+ * @param array<string,float>             $timings  out
+ */
+function run_check_commands_sequential(array $steps, array &$failures, array &$timings): void
+{
+    echo 'Running steps sequentially (proc_open not available):
+
+';
+
+    $overallStart = hrtime(true);
+
+    foreach ($steps as $step => $info) {
+        echo sprintf('  %-20s ... ', $step);
+        $start = hrtime(true);
+
+        $descriptors = [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+        $process = @proc_open($info['cmd'], $descriptors, $pipes);
+
+        if (!is_resource($process)) {
+            $duration = (hrtime(true) - $start) / 1e9;
+            $timings[$step] = $duration;
+            $failures[$step] = 'proc_open failed';
+            echo sprintf('FAIL (%.1fs): proc_open failed
+', $duration);
+            continue;
+        }
+
+        fclose($pipes[0]);
+        $stdout = stream_get_contents($pipes[1]);
+        $stderr = stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        $exitCode = proc_close($process);
+        $duration = (hrtime(true) - $start) / 1e9;
+        $timings[$step] = $duration;
+
+        if (0 !== $exitCode) {
+            $failures[$step] = 'exit code '.$exitCode;
+            echo sprintf('FAIL (%.1fs): exit code %d
+', $duration, $exitCode);
+        } else {
+            echo sprintf('ok (%.1fs)
+', $duration);
+        }
+    }
+
+    echo sprintf('
+Total: %.1fs
+', (hrtime(true) - $overallStart) / 1e9);
 }

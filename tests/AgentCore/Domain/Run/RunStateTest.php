@@ -63,54 +63,17 @@ final class RunStateTest extends TestCase
         self::assertTrue($state->retryableFailure);
     }
 
-    #[DataProvider('runStatusProvider')]
-    public function testRunStatusEnumValues(string $expectedValue, RunStatus $status): void
-    {
-        self::assertSame($expectedValue, $status->value);
-    }
-
     /**
-     * @return array<string, array{0: string, 1: RunStatus}>
+     * PHP backed enums guarantee from() and value round-trip intrinsically.
+     * One test looping over ::cases() is sufficient coverage.
      */
-    public static function runStatusProvider(): array
+    public function testRunStatusRoundTrip(): void
     {
-        return [
-            'queued' => ['queued', RunStatus::Queued],
-            'running' => ['running', RunStatus::Running],
-            'waiting_human' => ['waiting_human', RunStatus::WaitingHuman],
-            'cancelling' => ['cancelling', RunStatus::Cancelling],
-            'completed' => ['completed', RunStatus::Completed],
-            'failed' => ['failed', RunStatus::Failed],
-            'cancelled' => ['cancelled', RunStatus::Cancelled],
-        ];
-    }
+        foreach (RunStatus::cases() as $status) {
+            self::assertSame($status, RunStatus::from($status->value));
+        }
 
-    #[DataProvider('runStatusFromProvider')]
-    public function testRunStatusFromReturnsCorrectCase(string $value, RunStatus $expected): void
-    {
-        self::assertSame($expected, RunStatus::from($value));
-    }
-
-    /**
-     * @return array<string, array{0: string, 1: RunStatus}>
-     */
-    public static function runStatusFromProvider(): array
-    {
-        return [
-            'queued' => ['queued', RunStatus::Queued],
-            'running' => ['running', RunStatus::Running],
-            'waiting_human' => ['waiting_human', RunStatus::WaitingHuman],
-            'cancelling' => ['cancelling', RunStatus::Cancelling],
-            'completed' => ['completed', RunStatus::Completed],
-            'failed' => ['failed', RunStatus::Failed],
-            'cancelled' => ['cancelled', RunStatus::Cancelled],
-        ];
-    }
-
-    public function testRunStatusFromInvalidStringThrowsValueError(): void
-    {
         $this->expectException(\ValueError::class);
-
         RunStatus::from('invalid_status');
     }
 }

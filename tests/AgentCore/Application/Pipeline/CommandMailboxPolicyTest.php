@@ -33,13 +33,12 @@ use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
 use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
+use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\InMemoryStore;
-use Symfony\Component\Messenger\Envelope;
-use Symfony\Component\Messenger\MessageBusInterface;
 
 final class CommandMailboxPolicyTest extends TestCase
 {
@@ -410,8 +409,8 @@ final class CommandMailboxPolicyTest extends TestCase
 
         $replayService = new ReplayService($eventStore, new HotPromptStateStore());
 
-        $commandBus = new MailboxRecordingMessageBus();
-        $executionBus = new MailboxRecordingMessageBus();
+        $commandBus = new TestMessageBus();
+        $executionBus = new TestMessageBus();
 
         $stepDispatcher = new StepDispatcher($executionBus);
         $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
@@ -553,20 +552,8 @@ final readonly class CommandMailboxFixture
         public InMemoryRunStore $runStore,
         public RunEventStore $eventStore,
         public InMemoryCommandStore $commandStore,
-        public MailboxRecordingMessageBus $commandBus,
+        public TestMessageBus $commandBus,
     ) {
     }
 }
 
-final class MailboxRecordingMessageBus implements MessageBusInterface
-{
-    /** @var list<object> */
-    public array $messages = [];
-
-    public function dispatch(object $message, array $stamps = []): Envelope
-    {
-        $this->messages[] = $message;
-
-        return new Envelope($message, $stamps);
-    }
-}

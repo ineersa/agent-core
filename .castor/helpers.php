@@ -429,25 +429,45 @@ function summarize_deptrac_json(string $jsonOutput): string
  *
  * @return string absolute path to the existing or freshly built PHAR
  */
+/**
+ * PHAR build lock file path (relative to project root).
+ *
+ * Used by phar_ensure() to serialize parallel workers that all try
+ * to build the same PHAR simultaneously.  Without this lock,
+ * concurrent shell_exec('rm -rf staging/') calls race with
+ * concurrent cp/composer/box steps → "Directory not empty" / stale
+ * file errors.
+ */
+const PHAR_BUILD_LOCK = 'var/tmp/phar-build.lock';
+
+/**
+ * Maximum seconds to wait for the PHAR build lock before giving up.
+ *
+ * In practice a PHAR build takes 8–15 s (composer install + box compile).
+ * A 60 s timeout is generous enough for all real workloads while
+ * preventing indefinite deadlock if a previous worker crashed.
+ */
+const PHAR_BUILD_LOCK_TIMEOUT_S = 60;
+
 function phar_ensure(): string
 {
     $pharPath = hatfield_phar_path();
+    $root = realpath(__DIR__.'/..');
+    if (false === $root) {
+        throw new \RuntimeException('Unable to resolve project root for PHAR ensure.');
+    }
 
     if (is_file($pharPath) && is_readable($pharPath)) {
         // Quick stale detection: compare mtime against key meta-files
         // and latest source/config file.
         $pharMtime = filemtime($pharPath);
-        $root = realpath(__DIR__.'/..');
-        if (false === $root) {
-            throw new \RuntimeException('Unable to resolve project root for PHAR ensure.');
-        }
 
         // Check meta-files that directly affect the build output.
         foreach (['box.json', 'composer.lock'] as $file) {
             $path = $root.'/'.$file;
             if (is_file($path) && filemtime($path) > $pharMtime) {
                 echo "PHAR stale: {$file} changed. Rebuilding.\n";
-                phar_build();
+                phar_build_with_lock($root);
 
                 return $pharPath;
             }
@@ -457,7 +477,7 @@ function phar_ensure(): string
         $latestSrc = latest_file_mtime([$root.'/src', $root.'/config']);
         if ($latestSrc > (float) $pharMtime) {
             echo "PHAR stale: source/config files changed. Rebuilding.\n";
-            phar_build();
+            phar_build_with_lock($root);
 
             return $pharPath;
         }
@@ -467,9 +487,65 @@ function phar_ensure(): string
 
     // Build if missing.
     echo "PHAR not found. Building.\n";
-    phar_build();
+    phar_build_with_lock($root);
 
     return $pharPath;
+}
+
+/**
+ * Acquire a per-project lock, then build the PHAR.
+ *
+ * Serialises concurrent phar_build() callers so parallel test workers
+ * do not race on the shared staging directory.
+ */
+function phar_build_with_lock(string $root): void
+{
+    $lockPath = $root.'/'.PHAR_BUILD_LOCK;
+    @mkdir(\dirname($lockPath), 0755, true);
+
+    $lockHandle = fopen($lockPath, 'c+');
+    if (false === $lockHandle) {
+        // Can't lock — build without serialization as best-effort.
+        phar_build();
+
+        return;
+    }
+
+    $deadline = microtime(true) + PHAR_BUILD_LOCK_TIMEOUT_S;
+    $locked = false;
+
+    do {
+        if (flock($lockHandle, \LOCK_EX | \LOCK_NB)) {
+            $locked = true;
+            break;
+        }
+        usleep(100000); // 100 ms
+    } while (microtime(true) < $deadline);
+
+    if (!$locked) {
+        fclose($lockHandle);
+        throw new \RuntimeException('Timed out waiting for PHAR build lock after '.PHAR_BUILD_LOCK_TIMEOUT_S.' s. Remove '.$lockPath.' if a previous build crashed.');
+    }
+
+    try {
+        // Re-read the PHAR path AFTER acquiring the lock — another
+        // worker may have built it while we were waiting.
+        $pharPath = hatfield_phar_path();
+        if (is_file($pharPath) && is_readable($pharPath)) {
+            // Double-check staleness while holding the lock.
+            $pharMtime = filemtime($pharPath);
+            $latestSrc = latest_file_mtime([$root.'/src', $root.'/config']);
+            if ($latestSrc <= (float) $pharMtime) {
+                // Already up-to-date — another worker built it while we waited.
+                return;
+            }
+        }
+
+        phar_build();
+    } finally {
+        flock($lockHandle, \LOCK_UN);
+        fclose($lockHandle);
+    }
 }
 
 /**
@@ -718,90 +794,110 @@ function phar_smoke(string $pharPath): void
         return;
     }
 
-    $smokeEnv = getenv('APP_ENV');
-    $smokeEnv = (false !== $smokeEnv && '' !== $smokeEnv) ? $smokeEnv : 'prod';
-    $failed = [];
-    $phpBin = \PHP_BINARY;
+    // Wrap all smoke logic in try/finally so the temp dir is always
+    // cleaned up, even when a check fails or an exception is thrown.
+    try {
+        // Isolate HOME inside the temp cwd so the PHAR does NOT read
+        // the real user's ~/.hatfield/settings.yaml which may reference
+        // providers/models not available in the packaged PHAR.
+        $homeDir = $tmpCwd.'/home';
+        @mkdir($homeDir.'/.hatfield', 0755, true);
+        $stubWritten = file_put_contents(
+            $homeDir.'/.hatfield/settings.yaml',
+            "ai:\n    default_model: null\n",
+        );
+        if (false === $stubWritten) {
+            echo "PHAR smoke test: SKIP (could not write isolated home settings)\n";
 
-    // 1. `list` — verifies the Symfony Console application boots and
-    //    all commands (including `agent`) are registered.
-    $listOutput = shell_exec(
-        'cd '.escapeshellarg($tmpCwd).' && APP_ENV='.$smokeEnv.' '.$phpBin.' '
-        .escapeshellarg($pharPath).' list 2>&1'
-    );
-    if (null === $listOutput || !str_contains($listOutput, 'agent')) {
-        $failed[] = 'list (agent command not found)';
-        echo "  smoke list: FAIL\n";
-    } else {
-        echo "  smoke list: ok\n";
-    }
-
-    // 2. `about` — verifies the kernel boots, environment is correct,
-    //    and writable directories are resolved.
-    $aboutOutput = shell_exec(
-        'cd '.escapeshellarg($tmpCwd).' && APP_ENV='.$smokeEnv.' '.$phpBin.' '
-        .escapeshellarg($pharPath).' about 2>&1'
-    );
-    if (null === $aboutOutput || !str_contains($aboutOutput, 'Environment')) {
-        $failed[] = 'about (no Environment line)';
-        echo "  smoke about: FAIL\n";
-    } else {
-        echo "  smoke about: ok\n";
-    }
-
-    // 3. `agent --help` — verifies AgentCommand is loadable and its
-    //    options (--cwd, --model, --headless, etc.) are present.
-    $helpOutput = shell_exec(
-        'cd '.escapeshellarg($tmpCwd).' && APP_ENV='.$smokeEnv.' '.$phpBin.' '
-        .escapeshellarg($pharPath).' agent --help 2>&1'
-    );
-    if (null === $helpOutput || !str_contains($helpOutput, 'Usage:')) {
-        $failed[] = 'agent --help (no Usage line)';
-        echo "  smoke agent --help: FAIL\n";
-    } else {
-        echo "  smoke agent --help: ok\n";
-    }
-
-    // 4. Verify .hatfield/cache was created in the isolated cwd —
-    //    proves writable-dir isolation works.
-    if (is_dir($tmpCwd.'/.hatfield/cache')) {
-        echo "  smoke writable-dir isolation: ok (.hatfield/cache created in {$tmpCwd})\n";
-    }
-
-    // 5. Verify PHAR cache isolation: the cache directory suffix must
-    //    be derived from the PHAR archive content hash (SHA-256, 12 hex
-    //    chars), not the old stable md5(__FILE__) fixpoint that allowed
-    //    stale Symfony compiled containers to survive PHAR rebuilds.
-    $cacheDirs = glob($tmpCwd.'/.hatfield/cache/'.$smokeEnv.'-*', \GLOB_ONLYDIR);
-    if ([] !== $cacheDirs) {
-        $cacheSuffix = substr($cacheDirs[0], strrpos($cacheDirs[0], '-') + 1);
-        $expectedHash = hash_file('sha256', $pharPath);
-
-        if (false === $expectedHash) {
-            $failed[] = 'cache-isolation (could not hash PHAR archive)';
-            echo "  smoke cache-isolation: FAIL (hash_file returned false)\n";
-        } elseif ($cacheSuffix !== substr($expectedHash, 0, 12)) {
-            $failed[] = "cache-isolation (cache suffix {$cacheSuffix} does not match expected content hash prefix "
-                .substr($expectedHash, 0, 12).')';
-            echo "  smoke cache-isolation: FAIL\n";
-        } else {
-            echo "  smoke cache-isolation: ok (content-based suffix {$cacheSuffix})\n";
+            return;
         }
-    } else {
-        // The PHAR may not produce a cache dir on every boot (e.g. if
-        // the container was already compiled elsewhere), so this is
-        // a warning, not a hard failure.
-        echo "  smoke cache-isolation: warn (no cache dirs found)\n";
-    }
+        $homeEnv = 'HOME='.escapeshellarg($homeDir);
 
-    // Clean up smoke artifacts.
-    shell_exec('rm -rf '.escapeshellarg($tmpCwd));
+        $smokeEnv = getenv('APP_ENV');
+        $smokeEnv = (false !== $smokeEnv && '' !== $smokeEnv) ? $smokeEnv : 'prod';
+        $failed = [];
+        $phpBin = \PHP_BINARY;
 
-    if ([] !== $failed) {
-        echo 'PHAR smoke test: FAIL ('.\count($failed).' failures: '.implode(', ', $failed).")\n";
-        echo "  The PHAR compiled successfully but one or more boot checks failed.\n";
-    } else {
-        echo "PHAR smoke test: ok\n";
+        // 1. `list` — verifies the Symfony Console application boots and
+        //    all commands (including `agent`) are registered.
+        $listOutput = shell_exec(
+            'cd '.escapeshellarg($tmpCwd).' && '.$homeEnv.' APP_ENV='.$smokeEnv.' '.$phpBin.' '
+            .escapeshellarg($pharPath).' list 2>&1'
+        );
+        if (null === $listOutput || !str_contains($listOutput, 'agent')) {
+            $failed[] = 'list (agent command not found)';
+            echo "  smoke list: FAIL\n";
+        } else {
+            echo "  smoke list: ok\n";
+        }
+
+        // 2. `about` — verifies the kernel boots, environment is correct,
+        //    and writable directories are resolved.
+        $aboutOutput = shell_exec(
+            'cd '.escapeshellarg($tmpCwd).' && '.$homeEnv.' APP_ENV='.$smokeEnv.' '.$phpBin.' '
+            .escapeshellarg($pharPath).' about 2>&1'
+        );
+        if (null === $aboutOutput || !str_contains($aboutOutput, 'Environment')) {
+            $failed[] = 'about (no Environment line)';
+            echo "  smoke about: FAIL\n";
+        } else {
+            echo "  smoke about: ok\n";
+        }
+
+        // 3. `agent --help` — verifies AgentCommand is loadable and its
+        //    options (--cwd, --model, --headless, etc.) are present.
+        $helpOutput = shell_exec(
+            'cd '.escapeshellarg($tmpCwd).' && '.$homeEnv.' APP_ENV='.$smokeEnv.' '.$phpBin.' '
+            .escapeshellarg($pharPath).' agent --help 2>&1'
+        );
+        if (null === $helpOutput || !str_contains($helpOutput, 'Usage:')) {
+            $failed[] = 'agent --help (no Usage line)';
+            echo "  smoke agent --help: FAIL\n";
+        } else {
+            echo "  smoke agent --help: ok\n";
+        }
+
+        // 4. Verify .hatfield/cache was created in the isolated cwd —
+        //    proves writable-dir isolation works.
+        if (is_dir($tmpCwd.'/.hatfield/cache')) {
+            echo "  smoke writable-dir isolation: ok (.hatfield/cache created in {$tmpCwd})\n";
+        }
+
+        // 5. Verify PHAR cache isolation: the cache directory suffix must
+        //    be derived from the PHAR archive content hash (SHA-256, 12 hex
+        //    chars), not the old stable md5(__FILE__) fixpoint that allowed
+        //    stale Symfony compiled containers to survive PHAR rebuilds.
+        $cacheDirs = glob($tmpCwd.'/.hatfield/cache/'.$smokeEnv.'-*', \GLOB_ONLYDIR);
+        if ([] !== $cacheDirs) {
+            $cacheSuffix = substr($cacheDirs[0], strrpos($cacheDirs[0], '-') + 1);
+            $expectedHash = hash_file('sha256', $pharPath);
+
+            if (false === $expectedHash) {
+                $failed[] = 'cache-isolation (could not hash PHAR archive)';
+                echo "  smoke cache-isolation: FAIL (hash_file returned false)\n";
+            } elseif ($cacheSuffix !== substr($expectedHash, 0, 12)) {
+                $failed[] = "cache-isolation (cache suffix {$cacheSuffix} does not match expected content hash prefix "
+                    .substr($expectedHash, 0, 12).')';
+                echo "  smoke cache-isolation: FAIL\n";
+            } else {
+                echo "  smoke cache-isolation: ok (content-based suffix {$cacheSuffix})\n";
+            }
+        } else {
+            // The PHAR may not produce a cache dir on every boot (e.g. if
+            // the container was already compiled elsewhere), so this is
+            // a warning, not a hard failure.
+            echo "  smoke cache-isolation: warn (no cache dirs found)\n";
+        }
+
+        if ([] !== $failed) {
+            echo 'PHAR smoke test: FAIL ('.\count($failed).' failures: '.implode(', ', $failed).")\n";
+            echo "  The PHAR compiled successfully but one or more boot checks failed.\n";
+        } else {
+            echo "PHAR smoke test: ok\n";
+        }
+    } finally {
+        // Clean up smoke artifacts — always runs, even on failure.
+        shell_exec('rm -rf '.escapeshellarg($tmpCwd));
     }
 }
 
