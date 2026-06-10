@@ -252,6 +252,85 @@ final class SlashCommandRegistryTest extends TestCase
         self::assertSame('replaced', $result->text);
     }
 
+    // ─── Built-in: /hotkeys table ────────────────────────────────────
+
+    #[Test]
+    public function executeHotkeysReturnsSystemTranscriptMessage(): void
+    {
+        // Default registry has an empty HotkeyRegistry → empty message
+        $result = $this->registry->execute(new SlashCommand('hotkeys', '', '/hotkeys'));
+
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertStringContainsString('No hotkey hints registered', $result->text);
+    }
+
+    #[Test]
+    public function executeHotkeysRendersBoxDrawingTable(): void
+    {
+        $hotkeyReg = new \Ineersa\Tui\Command\Hotkey\HotkeyRegistry();
+        $hotkeyReg->add(new \Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO(
+            context: 'Global',
+            keys: ['ctrl+c'],
+            action: 'Clear editor / cancel',
+            description: 'Clear or double-exit',
+            priority: 10,
+        ));
+        $hotkeyReg->add(new \Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO(
+            context: 'Editor',
+            keys: ['enter'],
+            action: 'Submit prompt',
+            description: 'Send editor content',
+            priority: 10,
+        ));
+        $hotkeyReg->add(new \Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO(
+            context: 'Editor',
+            keys: ['ctrl+j', 'shift+enter'],
+            action: 'Insert newline',
+            description: 'Start a new line',
+            priority: 20,
+        ));
+
+        $reg = new SlashCommandRegistry($hotkeyReg);
+        $result = $reg->execute(new SlashCommand('hotkeys', '', '/hotkeys'));
+
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+
+        // Box-drawing chars must be present
+        self::assertStringContainsString('┌', $result->text, 'Should contain top-left corner');
+        self::assertStringContainsString('├', $result->text, 'Should contain header-body separator');
+        self::assertStringContainsString('└', $result->text, 'Should contain bottom-left corner');
+        self::assertStringContainsString('│', $result->text, 'Should contain vertical border');
+
+        // Header
+        self::assertStringContainsString('Keyboard shortcuts', $result->text);
+        self::assertStringContainsString('Keys', $result->text);
+        self::assertStringContainsString('Action', $result->text);
+        self::assertStringContainsString('Description', $result->text);
+
+        // Section headings
+        self::assertStringContainsString('Global', $result->text);
+        self::assertStringContainsString('Editor', $result->text);
+
+        // Representative hotkeys
+        self::assertStringContainsString('Ctrl+C', $result->text);
+        self::assertStringContainsString('Ctrl+J', $result->text);
+        self::assertStringContainsString('Shift+Enter', $result->text);
+        self::assertStringContainsString('Submit prompt', $result->text);
+        self::assertStringContainsString('Insert newline', $result->text);
+        self::assertStringContainsString('Clear editor / cancel', $result->text);
+    }
+
+    #[Test]
+    public function executeHotkeysViaAlias(): void
+    {
+        // 'hk' is an alias for 'hotkeys'
+        $result = $this->registry->execute(new SlashCommand('hk', '', '/hk'));
+
+        self::assertInstanceOf(TranscriptMessage::class, $result);
+        // Empty registry → the "no hints" message
+        self::assertStringContainsString('No hotkey hints registered', $result->text);
+    }
+
     // ─── Built-in: /clear ────────────────────────────────────────────
 
     #[Test]
