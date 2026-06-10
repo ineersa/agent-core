@@ -3,6 +3,9 @@
 /.idea/
 /var/
 
+# Per-suite test cache dirs (generated during castor test)
+/.hatfield/cache-*/
+
 # Generated artifacts
 callgraph.json
 callgraph.html

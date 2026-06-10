@@ -354,7 +354,7 @@ function run_test_suites_parallel(array $suites, string $pharEnv): void
 
         if (is_llm_mode()) {
             $suiteSummaries[$suite] = read_suite_junit_summary($suite);
-            if (isset($suiteSummaries[$suite]) && '' !== $suiteSummaries[$suite]) {
+            if ('' !== $suiteSummaries[$suite]) {
                 echo "  — {$suiteSummaries[$suite]}";
             }
         } elseif (is_file($logFiles[$suite])) {
@@ -402,6 +402,9 @@ Total: %.1fs
 ';
     }
 }
+/**
+ * @param list<string> $suites
+ */
 function run_test_suites_sequential(array $suites, string $pharEnv): void
 {
     $overallStart = hrtime(true);
@@ -2193,7 +2196,7 @@ function run_commands_parallel(array $commands): array
 {
     $processes = [];
     $results = [];
-    $cwd = getcwd() ?: '';
+    $cwd = (string) getcwd();
 
     // Start every process immediately.
     foreach ($commands as $step => $info) {
@@ -2281,7 +2284,7 @@ function run_commands_parallel(array $commands): array
  *
  * @param array<string,array{cmd:string}> $steps
  * @param array<string,string>            $failures out
- * @param array<string,float>             $timings  out
+ * @param array<string,float|int>         $timings  out
  */
 function run_check_commands_parallel(array $steps, array &$failures, array &$timings): void
 {
