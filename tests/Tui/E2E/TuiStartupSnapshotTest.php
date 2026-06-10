@@ -71,17 +71,20 @@ final class TuiStartupSnapshotTest extends TestCase
         );
 
         // Wait for the TUI to render — looking for the Hatfield logo
-        $capture = $this->tmux->waitForCaptureContains(
+        $this->tmux->waitForCaptureContains(
             pane: $pane,
             needle: '█',
             timeout: 10.0,
         );
 
-        // Wait for the full layout to render (idle status indicates TUI is ready)
+        // Wait for the auto-submitted prompt to appear in the transcript.
+        // This ensures the snapshot captures the TUI *after* the prompt
+        // was submitted (showing the prompt + ◐ Working...) rather than
+        // at the pre-submission idle state (which lacks the prompt line).
         $this->tmux->waitForCaptureContains(
             pane: $pane,
-            needle: '●',
-            timeout: 5.0,
+            needle: 'hello from tmux e2e',
+            timeout: 20.0,
         );
 
         $capture = $this->tmux->capturePlain($pane);
@@ -135,17 +138,19 @@ final class TuiStartupSnapshotTest extends TestCase
             cwd: $this->testProjectDir,
         );
 
-        $capture = $this->tmux->waitForCaptureContains(
+        $this->tmux->waitForCaptureContains(
             pane: $pane,
             needle: '█',
             timeout: 10.0,
         );
 
-        // Wait for the full layout to render (idle status indicates TUI is ready)
+        // Wait for the auto-submitted prompt to appear in the transcript.
+        // This ensures the capture reflects the post-submission state
+        // (showing the prompt + ◐ Working...) rather than idle startup.
         $this->tmux->waitForCaptureContains(
             pane: $pane,
-            needle: '●',
-            timeout: 5.0,
+            needle: 'hello from tmux e2e',
+            timeout: 20.0,
         );
 
         $capture = $this->tmux->capturePlain($pane);
