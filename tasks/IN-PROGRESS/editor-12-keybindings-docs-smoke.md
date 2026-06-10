@@ -35,7 +35,7 @@ Parallelizable with: none after dependencies.
 Status: IN-PROGRESS
 Branch: task/editor-12-keybindings-docs-smoke
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke
-Fork run: b6a2ywizqtru
+Fork run: 021vafrvt41l
 PR URL: https://github.com/ineersa/agent-core/pull/114
 PR Status: open
 Started: 2026-06-10T19:50:55.944Z
@@ -141,3 +141,7 @@ Castor Check Output SHA256: c8b1cd3ef2c18cd267365d1d7b99e3b19c1b45b39931955b6777
 ## Task workflow update - 2026-06-10T22:19:57.305Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: PR #114 review-iterate: user left one inline comment at config/services.yaml:223 asking whether explicit HotkeyRegistry service registration is needed or whether autowiring already handles it. User also noted maintenance task landed, so branch must sync with latest main and tests may need updates. Moving back to IN-PROGRESS to address PR comment, merge/rebase latest main, and validate.
+
+## Task workflow update - 2026-06-10T22:20:19.597Z
+- Recorded fork run: 021vafrvt41l
+- Summary: Launched PR review-iterate fork 021vafrvt41l for PR #114. Scope: fetch/rebase onto latest origin/main after maintenance task landed; address inline comment at config/services.yaml:223 asking whether explicit HotkeyRegistry service registration is needed or autowiring already handles it; remove redundant explicit service config if Symfony auto-registration provides a shared singleton, or keep with concise rationale only if necessary; update tests if maintenance changes require; preserve theme-aware `/hotkeys` and pure visual TmuxHarness HotkeySmoke; run Castor validation; commit and leave worktree clean.
