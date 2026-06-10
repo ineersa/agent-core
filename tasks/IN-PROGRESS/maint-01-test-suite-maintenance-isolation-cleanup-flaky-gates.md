@@ -53,7 +53,7 @@ Important non-goal: Do not delete valuable behavioral tests just to reduce count
 Status: IN-PROGRESS
 Branch: task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates
-Fork run: 8fvwlep2y2kf
+Fork run: l2st7p7o2st9
 PR URL:
 PR Status:
 Started: 2026-06-09T22:01:04.785Z
@@ -287,3 +287,8 @@ Remaining blocker found by orchestrator validation: `castor phpstan` fails on 4 
 ## Task workflow update - 2026-06-10T21:02:29.912Z
 - Validation: Policy correction: no 'pre-existing' blocker excuse for MAINT-01; fix all current quality-gate blockers before PR.
 - Summary: User clarified MAINT-01 must fix all validation blockers and stability issues encountered during this work; do not dismiss failures as pre-existing. Scope now explicitly includes making `castor test`, `castor phpstan`, `castor cs-check`, `castor deptrac`, and full `castor check` green/stable with clean working tree after tests. Any gate failure observed in branch validation is in scope unless user explicitly defers it.
+
+## Task workflow update - 2026-06-10T21:11:04.610Z
+- Recorded fork run: l2st7p7o2st9
+- Validation: castor phpstan — PASS (errors=0,file_errors=0); castor cs-check — PASS (files_fixed=0); castor deptrac — PASS (violations=0,errors=0,uncovered=776,allowed=1021); castor test --filter=RunStateTest — PASS (tests=3,assertions=33,errors=0,failures=0,skipped=0); castor test — PASS in 47.0s wall time; shards: agent-core 0.9s, coding-agent-1 47.0s, coding-agent-2 23.5s, coding-agent-3 8.8s, coding-agent-4 23.2s, tui 1.0s, platform 0.4s; 2269 tests total; LLM_MODE=true castor check — PASS: PHAR ok; deptrac OK 0.9s; test OK 109.3s; test:controller OK 5.2s; test:llm-real OK 31.0s; test:tui OK 40.3s; phpstan OK 1.0s; cs-check OK 0.8s; quality ok; git status --short --branch — clean at HEAD 463dd494
+- Summary: Final stabilization fork completed at HEAD 463dd494 and pushed. It fixed all phpstan errors in `.castor/tasks.php`, added `.hatfield/cache-*` gitignore coverage for generated per-worker Symfony cache dirs, and preserved the balanced `castor test` sharding. Orchestrator validation confirmed real Castor commands are green and the worktree remains clean after `castor test`. Full `LLM_MODE=true castor check` passed with proc_open top-level parallelism and internally sharded `castor test`.
