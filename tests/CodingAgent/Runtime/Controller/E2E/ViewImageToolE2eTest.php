@@ -62,25 +62,10 @@ final class ViewImageToolE2eTest extends ControllerE2eTestCase
         ]);
 
         $events = $this->collectEvents(60.0);
-        $byType = [];
-        foreach ($events as $e) {
-            $type = (string) ($e['type'] ?? 'unknown');
-            $byType[$type] = $byType[$type] ?? [];
-            $byType[$type][] = $e;
-        }
+        $byType = $this->indexByType($events);
 
         // Verify command acknowledged
-        $acks = $byType['command.ack'] ?? [];
-        $foundStartAck = false;
-        foreach ($acks as $ack) {
-            $payload = $ack['payload'] ?? [];
-            if (($payload['commandId'] ?? '') === $startCmdId) {
-                $foundStartAck = true;
-                break;
-            }
-        }
-        self::assertTrue($foundStartAck, 'Expected command.ack for start_run. '
-            .$this->collectDiagnostics($events));
+        $this->assertStartRunAcked($events, $startCmdId);
 
         self::assertArrayHasKey('run.started', $byType, 'Expected run.started. '
             .$this->collectDiagnostics($events));
@@ -96,25 +81,69 @@ final class ViewImageToolE2eTest extends ControllerE2eTestCase
             .$this->collectDiagnostics($events),
         );
 
-        // Critical: gating must NOT produce the failure placeholder
-        $allText = '';
-        foreach ($events as $event) {
-            $text = $event['payload']['text'] ?? '';
-            if (\is_string($text)) {
-                $allText .= $text;
-            }
-        }
-        self::assertStringNotContainsString(
-            'does not support images',
-            strtolower($allText),
-            'Image gating must not report unsupported model. '
-            .'Text collected: '.substr($allText, 0, 500)."\n"
+        // Verify the view_image tool was actually invoked.
+        // tool_execution.started / tool_execution.completed are streamed
+        // to stdout by the controller (unlike tool_batch_committed which is
+        // internal bookkeeping dropped from the runtime stream per
+        // RuntimeEventTranslator::drop()).
+        self::assertArrayHasKey('tool_execution.started', $byType,
+            'view_image tool must be invoked. '
+            .'Event types: '.implode(', ', array_keys($byType))."\n"
+            .$this->collectDiagnostics($events),
+        );
+        self::assertArrayHasKey('tool_execution.completed', $byType,
+            'view_image tool must complete. '
+            .'Event types: '.implode(', ', array_keys($byType))."\n"
             .$this->collectDiagnostics($events),
         );
 
-        if (isset($byType['tool_batch_committed'])) {
-            fwrite(\STDERR, "[INFO] view_image tool executed and batch committed.\n");
+        // Verify the tool batch was committed in the persistence layer.
+        // tool_batch_committed is internal bookkeeping, not streamed to
+        // stdout, so we read events.jsonl directly.
+        $eventsJsonl = $this->tempDir.'/.hatfield/sessions/'.$this->runId.'/events.jsonl';
+        $persistedTypes = [];
+        if (is_file($eventsJsonl)) {
+            $lines = file($eventsJsonl, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES) ?: [];
+            foreach ($lines as $line) {
+                try {
+                    $e = json_decode($line, true, 512, \JSON_THROW_ON_ERROR);
+                    $persistedTypes[] = $e['type'] ?? 'unknown';
+                } catch (\JsonException) {
+                    // skip unparseable lines
+                }
+            }
         }
+        self::assertContains('tool_batch_committed', $persistedTypes,
+            'tool_batch_committed must exist in events.jsonl. '
+            .'Persisted types: '.implode(', ', array_unique($persistedTypes))."\n"
+            .$this->collectDiagnostics($events),
+        );
+
+        // Check for the gating placeholder in streamed events. The gating
+        // hook output is `[Tool result image: ...]` — a project-specific
+        // bracket-enclosed format that the LLM will NOT naturally produce.
+        // Only check tool_execution events and tool result messages where
+        // gating output would actually appear.
+        $gatingPlaceholderFound = false;
+        $toolEvents = array_merge(
+            $byType['tool_execution.completed'] ?? [],
+            $byType['tool_execution.failed'] ?? [],
+        );
+        foreach ($toolEvents as $event) {
+            $text = $event['payload']['text'] ?? '';
+            if (\is_string($text)
+                && str_contains($text, '[Tool result image:')
+                && stripos($text, 'does not support images') !== false
+            ) {
+                $gatingPlaceholderFound = true;
+                break;
+            }
+        }
+        self::assertFalse($gatingPlaceholderFound,
+            'Gating placeholder must not appear in tool execution events — '
+            .'tool_batch_committed in events.jsonl proves the image was sent to the LLM. '
+            .$this->collectDiagnostics($events),
+        );
 
         $sessionDir = $this->tempDir.'/.hatfield/sessions/'.$this->runId;
         $this->assertSessionArtifactsExist($sessionDir, $events);

@@ -6,8 +6,10 @@ namespace Ineersa\CodingAgent\Tests\Config;
 
 use Ineersa\CodingAgent\Config\HomeSettingsWriter;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
+
 
 class HomeSettingsWriterTest extends TestCase
 {
@@ -17,7 +19,7 @@ class HomeSettingsWriterTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->tmpDir = \sys_get_temp_dir() . '/hatfield_writer_' . \bin2hex(\random_bytes(8));
+        $this->tmpDir = TestDirectoryIsolation::createProjectTempDir('hatfield_writer');
         \mkdir($this->tmpDir . '/.hatfield', 0o755, true);
         $this->file = $this->tmpDir . '/.hatfield/settings.yaml';
         $pathResolver = new SettingsPathResolver('/app', $this->tmpDir);
@@ -26,7 +28,7 @@ class HomeSettingsWriterTest extends TestCase
 
     protected function tearDown(): void
     {
-        $this->rmdir($this->tmpDir);
+        TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
     private function write(string $content): void
@@ -237,29 +239,5 @@ class HomeSettingsWriterTest extends TestCase
         $writer->writeDefaultModel('x');
     }
 
-    // ── Helper ─────────────────────────────────────────────────────────
 
-    private function rmdir(string $dir): void
-    {
-        if (!\is_dir($dir)) {
-            return;
-        }
-
-        foreach (\scandir($dir) as $item) {
-            if ('.' === $item || '..' === $item) {
-                continue;
-            }
-
-            $path = $dir . '/' . $item;
-
-            if (\is_dir($path)) {
-                $this->rmdir($path);
-            } else {
-                \chmod($path, 0o644);
-                \unlink($path);
-            }
-        }
-
-        \rmdir($dir);
-    }
 }

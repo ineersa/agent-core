@@ -16,6 +16,7 @@ use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\CopyCommandRegistrar;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
@@ -25,6 +26,7 @@ use Symfony\Component\Tui\Tui;
 
 final class CopyCommandRegistrarTest extends TestCase
 {
+    use TuiRuntimeContextBuilderTrait;
     private string $tmpDir;
 
     protected function setUp(): void
@@ -127,26 +129,11 @@ final class CopyCommandRegistrarTest extends TestCase
         $promptEditor = new PromptEditor();
         $screen = new ChatScreen($theme, $state->sessionId, $promptEditor);
 
-        $appConfig = new AppConfig(
-            tui: new TuiConfig(theme: 'default'),
-            logging: new LoggingConfig(),
-            cwd: $this->tmpDir,
-        );
-        $sessionStore = new HatfieldSessionStore(
-            appConfig: $appConfig,
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-        );
-
-        return new TuiRuntimeContext(
-            tui: $tui,
-            client: $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient::class),
-            state: $state,
-            screen: $screen,
-            sessionStore: $sessionStore,
-            ticks: new \Ineersa\Tui\Runtime\TuiTickDispatcher(),
-            switch: $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
-            lifecycle: new \Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher(),
-        );
+        return $this->buildTuiContext()
+            ->withTui($tui)
+            ->withState($state)
+            ->withScreen($screen)
+            ->build();
     }
 
     private function removeDir(string $dir): void

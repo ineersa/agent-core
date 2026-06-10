@@ -6,6 +6,8 @@ namespace Ineersa\CodingAgent\Tests\Session;
 
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Symfony\Component\Clock\Clock;
+use Symfony\Component\Clock\MockClock;
 
 final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
 {
@@ -277,22 +279,23 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
 
     public function testListSessionsReturnsAllSessionsDefaultOrder(): void
     {
-        $id1 = $this->store->createSession('first session');
-        // SQLite DATETIME has second granularity and TimestampableLifecycleTrait
-        // sets updated_at via Clock::get()->now() at PrePersist time.
-        // Two sessions created in the same second get identical timestamps,
-        // making DESC ordering non-deterministic. Sleeping one second guarantees
-        // distinct timestamps without requiring FrozenClock (unavailable in this
-        // Symfony Clock component version) or production test-only APIs.
-        sleep(1);
-        $id2 = $this->store->createSession('second session');
+        $originalClock = Clock::get();
+        try {
+            Clock::set(new MockClock(new \DateTimeImmutable('2026-06-10 12:00:00')));
+            $id1 = $this->store->createSession('first session');
 
-        $list = $this->store->listSessions();
-        self::assertCount(2, $list);
+            Clock::set(new MockClock(new \DateTimeImmutable('2026-06-10 12:00:05')));
+            $id2 = $this->store->createSession('second session');
 
-        // All sessions returned, sorted by updated_at DESC — most recent first.
-        self::assertSame($id2, $list[0]['sessionId']);
-        self::assertSame($id1, $list[1]['sessionId']);
+            $list = $this->store->listSessions();
+            self::assertCount(2, $list);
+
+            // All sessions returned, sorted by updated_at DESC — most recent first.
+            self::assertSame($id2, $list[0]['sessionId']);
+            self::assertSame($id1, $list[1]['sessionId']);
+        } finally {
+            Clock::set($originalClock);
+        }
     }
 
     public function testListSessionsReturnsAllSessionsNoLimit(): void

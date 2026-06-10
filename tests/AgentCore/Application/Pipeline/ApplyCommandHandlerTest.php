@@ -17,9 +17,8 @@ use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
+use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Messenger\Envelope;
-use Symfony\Component\Messenger\MessageBusInterface;
 
 final class ApplyCommandHandlerTest extends TestCase
 {
@@ -32,7 +31,7 @@ final class ApplyCommandHandlerTest extends TestCase
             commandRouter: $commandRouter,
         );
 
-        $commandBus = new ApplyCommandRecordingBus();
+        $commandBus = new TestMessageBus();
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
@@ -98,7 +97,7 @@ final class ApplyCommandHandlerTest extends TestCase
             commandRouter: $commandRouter,
         );
 
-        $commandBus = new ApplyCommandRecordingBus();
+        $commandBus = new TestMessageBus();
 
         $handler = new ApplyCommandHandler(
             commandStore: $commandStore,
@@ -339,15 +338,3 @@ final class ApplyCommandHandlerTest extends TestCase
     }
 }
 
-final class ApplyCommandRecordingBus implements MessageBusInterface
-{
-    /** @var list<object> */
-    public array $messages = [];
-
-    public function dispatch(object $message, array $stamps = []): Envelope
-    {
-        $this->messages[] = $message;
-
-        return new Envelope($message, $stamps);
-    }
-}

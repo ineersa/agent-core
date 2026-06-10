@@ -18,6 +18,7 @@ use Ineersa\Tui\Listener\CompletionListener;
 use Ineersa\Tui\Listener\CompletionMenu;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
@@ -30,6 +31,7 @@ use Symfony\Component\Tui\Tui;
 #[CoversClass(CompletionMenu::class)]
 final class CompletionListenerTest extends TestCase
 {
+    use TuiRuntimeContextBuilderTrait;
     private PromptEditor $editor;
     private TuiSessionState $state;
     private ChatScreen $screen;
@@ -990,28 +992,10 @@ final class CompletionListenerTest extends TestCase
 
     private function createContext(): TuiRuntimeContext
     {
-        $client = $this->createStub(AgentSessionClient::class);
-
-        $appConfig = new AppConfig(
-            tui: new TuiConfig(theme: 'default'),
-            logging: new LoggingConfig(),
-            cwd: sys_get_temp_dir(),
-        );
-
-        $sessionStore = new HatfieldSessionStore(
-            appConfig: $appConfig,
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-        );
-
-        return new TuiRuntimeContext(
-            tui: $this->tui,
-            client: $client,
-            state: $this->state,
-            screen: $this->screen,
-            sessionStore: $sessionStore,
-            ticks: new \Ineersa\Tui\Runtime\TuiTickDispatcher(),
-            switch: $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
-            lifecycle: new \Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher(),
-        );
+        return $this->buildTuiContext()
+            ->withTui($this->tui)
+            ->withState($this->state)
+            ->withScreen($this->screen)
+            ->build();
     }
 }

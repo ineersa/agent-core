@@ -16,6 +16,7 @@ use Ineersa\Tui\Listener\PromptHistoryListener;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -26,6 +27,7 @@ use Symfony\Component\Tui\Tui;
 #[CoversClass(PromptHistoryListener::class)]
 final class PromptHistoryListenerTest extends TestCase
 {
+    use TuiRuntimeContextBuilderTrait;
     private PromptEditor $editor;
     private TuiSessionState $state;
     private ChatScreen $screen;
@@ -349,28 +351,12 @@ final class PromptHistoryListenerTest extends TestCase
     private function registerListener(): void
     {
         $tui = new Tui();
-        $client = $this->createStub(AgentSessionClient::class);
 
-        $appConfig = new AppConfig(
-            tui: new TuiConfig(theme: 'default'),
-            logging: new LoggingConfig(),
-            cwd: sys_get_temp_dir(),
-        );
-        $sessionStore = new HatfieldSessionStore(
-            appConfig: $appConfig,
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-        );
-
-        $context = new TuiRuntimeContext(
-            tui: $tui,
-            client: $client,
-            state: $this->state,
-            screen: $this->screen,
-            sessionStore: $sessionStore,
-            ticks: new \Ineersa\Tui\Runtime\TuiTickDispatcher(),
-            switch: $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
-            lifecycle: new \Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher(),
-        );
+        $context = $this->buildTuiContext()
+            ->withTui($tui)
+            ->withState($this->state)
+            ->withScreen($this->screen)
+            ->build();
 
         $listener = new PromptHistoryListener();
         $listener->register($context);

@@ -29,6 +29,8 @@ Key commands: `castor check` (full validation), `castor test`, `castor deptrac`,
 
 All E2E tests use `llama_cpp_test/test` (port 9052). Test groups: `#[Group('llm-real')]`, `#[Group('tui-e2e')]`. Tests use `var/tmp/test-{uuid}` isolation, never real `.hatfield/sessions/`.
 
+See `tests/AGENTS.md` for full test standards: shared helpers, isolation, test doubles, what not to test, and cleanup conventions.
+
 **Load the `testing` skill** when: writing E2E tests, debugging controller/TUI test failures, or needing controller E2E internals, failure diagnostics, or the full testing matrix.
 
 ### TUI E2E snapshot artifacts
