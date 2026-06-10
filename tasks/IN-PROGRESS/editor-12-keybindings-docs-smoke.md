@@ -35,7 +35,7 @@ Parallelizable with: none after dependencies.
 Status: IN-PROGRESS
 Branch: task/editor-12-keybindings-docs-smoke
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke
-Fork run: 1o9mdpeq3zm1
+Fork run: g945ykure7l1
 PR URL: https://github.com/ineersa/agent-core/pull/114
 PR Status: open
 Started: 2026-06-10T19:50:55.944Z
@@ -171,3 +171,7 @@ Castor Check Output SHA256: c8b1cd3ef2c18cd267365d1d7b99e3b19c1b45b39931955b6777
 - Recorded fork run: 1o9mdpeq3zm1
 - Validation: Fork 1o9mdpeq3zm1 validation: `castor test:tui --filter=HotkeySmoke|testNewSessionCommand` passed (3 tests, 20 assertions); Fork 1o9mdpeq3zm1 validation: full `castor test:tui` passed (13 tests, 48 assertions); Fork 1o9mdpeq3zm1 validation: focused Hotkey/Slash/Completion tests passed (99 tests, 229 assertions); Fork 1o9mdpeq3zm1 validation: `castor deptrac` passed (0 violations), `castor phpstan` passed (0 errors), `castor cs-check` clean
 - Summary: TUI gate failure diagnostic/fix fork 1o9mdpeq3zm1 completed at commit d28e507c. Root cause: maintenance merge parallelized all `castor check` steps, causing `test:controller`, `test:llm-real`, and `test:tui` to hit the same llama_cpp_test/test server on port 9052 concurrently. This created LLM resource contention; `TuiAgentSmokeTest::testNewSessionCommandAndGetAssistantResponse` timed out waiting for a user block after `/new` despite passing reliably in isolation. Fix: `.castor/tasks.php` now runs non-LLM/static steps in parallel (`deptrac`, `test`, `phpstan`, `cs-check`) and LLM-dependent steps sequentially (`test:controller`, `test:llm-real`, `test:tui`) while retaining the 300s per-process timeout from 4dc63017. No EDITOR-12 production code changed. Orchestrator verified task worktree clean at d28e507c, ahead of origin branch by 2; integration checkout clean at 17fe8e5c.
+
+## Task workflow update - 2026-06-10T22:57:49.661Z
+- Recorded fork run: g945ykure7l1
+- Summary: User explicitly rejected the Castor/test-execution changes and instructed not to touch test execution. Launched revert-only fork g945ykure7l1 to revert the two Castor commits (`4dc63017` and `d28e507c`) from the task branch, preserve EDITOR-12 changes and the HotkeyRegistry service-registration cleanup, not run any tests/Castor commands, commit the revert, and leave the worktree clean.
