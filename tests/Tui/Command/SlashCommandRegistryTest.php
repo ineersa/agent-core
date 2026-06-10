@@ -255,17 +255,21 @@ final class SlashCommandRegistryTest extends TestCase
     // ─── Built-in: /hotkeys table ────────────────────────────────────
 
     #[Test]
-    public function executeHotkeysReturnsSystemTranscriptMessage(): void
+    public function executeHotkeysReturnsHotkeyTableDataForEmptyRegistry(): void
     {
-        // Default registry has an empty HotkeyRegistry → empty message
+        // Default registry has an empty HotkeyRegistry → HotkeyTableData with isEmpty=true
         $result = $this->registry->execute(new SlashCommand('hotkeys', '', '/hotkeys'));
 
-        self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertStringContainsString('No hotkey hints registered', $result->text);
+        self::assertInstanceOf(
+            \Ineersa\Tui\Command\Hotkey\HotkeyTableData::class,
+            $result,
+        );
+        // @phpstan-ignore-next-line
+        self::assertTrue($result->isEmpty());
     }
 
     #[Test]
-    public function executeHotkeysRendersBoxDrawingTable(): void
+    public function executeHotkeysReturnsHotkeyTableDataWithGroupedBindings(): void
     {
         $hotkeyReg = new \Ineersa\Tui\Command\Hotkey\HotkeyRegistry();
         $hotkeyReg->add(new \Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO(
@@ -293,31 +297,32 @@ final class SlashCommandRegistryTest extends TestCase
         $reg = new SlashCommandRegistry($hotkeyReg);
         $result = $reg->execute(new SlashCommand('hotkeys', '', '/hotkeys'));
 
-        self::assertInstanceOf(TranscriptMessage::class, $result);
+        self::assertInstanceOf(
+            \Ineersa\Tui\Command\Hotkey\HotkeyTableData::class,
+            $result,
+        );
 
-        // Box-drawing chars must be present
-        self::assertStringContainsString('┌', $result->text, 'Should contain top-left corner');
-        self::assertStringContainsString('├', $result->text, 'Should contain header-body separator');
-        self::assertStringContainsString('└', $result->text, 'Should contain bottom-left corner');
-        self::assertStringContainsString('│', $result->text, 'Should contain vertical border');
+        // @phpstan-ignore-next-line
+        self::assertFalse($result->isEmpty());
 
-        // Header
-        self::assertStringContainsString('Keyboard shortcuts', $result->text);
-        self::assertStringContainsString('Keys', $result->text);
-        self::assertStringContainsString('Action', $result->text);
-        self::assertStringContainsString('Description', $result->text);
+        // @phpstan-ignore-next-line
+        $groups = $result->groups;
+        self::assertArrayHasKey('Global', $groups);
+        self::assertArrayHasKey('Editor', $groups);
 
-        // Section headings
-        self::assertStringContainsString('Global', $result->text);
-        self::assertStringContainsString('Editor', $result->text);
+        // Check representative hotkey data is present in the groups
+        $globalBindings = $groups['Global'];
+        self::assertCount(1, $globalBindings);
+        self::assertSame('Clear editor / cancel', $globalBindings[0]->action);
 
-        // Representative hotkeys
-        self::assertStringContainsString('Ctrl+C', $result->text);
-        self::assertStringContainsString('Ctrl+J', $result->text);
-        self::assertStringContainsString('Shift+Enter', $result->text);
-        self::assertStringContainsString('Submit prompt', $result->text);
-        self::assertStringContainsString('Insert newline', $result->text);
-        self::assertStringContainsString('Clear editor / cancel', $result->text);
+        $editorBindings = $groups['Editor'];
+        self::assertCount(2, $editorBindings);
+        $actions = array_map(
+            static fn (\Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO $b): string => $b->action,
+            $editorBindings,
+        );
+        self::assertContains('Submit prompt', $actions);
+        self::assertContains('Insert newline', $actions);
     }
 
     #[Test]
@@ -326,9 +331,12 @@ final class SlashCommandRegistryTest extends TestCase
         // 'hk' is an alias for 'hotkeys'
         $result = $this->registry->execute(new SlashCommand('hk', '', '/hk'));
 
-        self::assertInstanceOf(TranscriptMessage::class, $result);
-        // Empty registry → the "no hints" message
-        self::assertStringContainsString('No hotkey hints registered', $result->text);
+        self::assertInstanceOf(
+            \Ineersa\Tui\Command\Hotkey\HotkeyTableData::class,
+            $result,
+        );
+        // @phpstan-ignore-next-line
+        self::assertTrue($result->isEmpty());
     }
 
     // ─── Built-in: /clear ────────────────────────────────────────────

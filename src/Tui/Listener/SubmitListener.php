@@ -12,6 +12,8 @@ use Ineersa\Tui\Command\ClearTranscript;
 use Ineersa\Tui\Command\CommandResult;
 use Ineersa\Tui\Command\DispatchShellCommand;
 use Ineersa\Tui\Command\ExitApplication;
+use Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO;
+use Ineersa\Tui\Command\Hotkey\HotkeyTableData;
 use Ineersa\Tui\Command\StatusUpdate;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
@@ -21,6 +23,7 @@ use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Transcript\HotkeyTableRenderer;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Tui\Event\SubmitEvent;
@@ -265,6 +268,26 @@ final class SubmitListener implements TuiListenerRegistrar
             return;
         }
 
+        if ($result instanceof HotkeyTableData) {
+            // Render a theme-colored hotkeys table via TuiTranscript renderer.
+            $renderer = new HotkeyTableRenderer();
+            $styledText = $renderer->render(
+                self::hotkeyGroupsToArrays($result->groups),
+                $screen->theme(),
+                $result->emptyMessage,
+            );
+            $seq = \count($state->transcript) + 1;
+            $state->transcript[] = $blockFactory->system(
+                runId: $state->sessionId,
+                text: $styledText,
+                seq: $seq,
+                style: 'hotkey-table',
+            );
+            $screen->setTranscriptBlocks($state->transcript);
+
+            return;
+        }
+
         // NoOp, DispatchRuntime, and unknown future variants are silently ignored.
         // DispatchRuntime will be wired by future tasks that add runtime execution.
     }
@@ -389,5 +412,31 @@ final class SubmitListener implements TuiListenerRegistrar
             'error' => $blockFactory->error($state->sessionId, $result->text, $seq),
             default => $blockFactory->system($state->sessionId, $result->text, $seq, $result->style),
         };
+    }
+    // ─── Hotkey table data adapter ────────────────────────────────────
+
+    /**
+     * Convert HotkeyTableData's grouped HotkeyBindingDTOs to plain arrays
+     * suitable for the theme-aware {@see HotkeyTableRenderer}.
+     *
+     * @param array<string, list<HotkeyBindingDTO>> $groups
+     *
+     * @return array<string, list<array{keys: list<string>, action: string, description: string}>>
+     */
+    private static function hotkeyGroupsToArrays(array $groups): array
+    {
+        $result = [];
+        foreach ($groups as $context => $bindings) {
+            $result[$context] = array_map(
+                static fn (HotkeyBindingDTO $b): array => [
+                    'keys' => $b->keys,
+                    'action' => $b->action,
+                    'description' => $b->description,
+                ],
+                $bindings,
+            );
+        }
+
+        return $result;
     }
 }

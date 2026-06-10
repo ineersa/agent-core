@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Command;
 
 use Ineersa\Tui\Command\Hotkey\HotkeyRegistry;
+use Ineersa\Tui\Command\Hotkey\HotkeyTableData;
 
 /**
  * Registry of slash commands with built-in help, lookup, and dispatch.
@@ -23,10 +24,6 @@ use Ineersa\Tui\Command\Hotkey\HotkeyRegistry;
  */
 final class SlashCommandRegistry
 {
-    // ─── Column width caps (display columns) for /hotkeys table ───
-    private const HOTKEYS_MAX_KEY_WIDTH = 30;
-    private const HOTKEYS_MAX_ACTION_WIDTH = 35;
-    private const HOTKEYS_MAX_DESC_WIDTH = 45;
     /** @var array<string, SlashCommandHandler> canonical name → handler */
     private array $handlers = [];
 
@@ -154,7 +151,7 @@ final class SlashCommandRegistry
 
         // Built-in hotkeys (reads from live HotkeyRegistry)
         if ('hotkeys' === $canonical) {
-            return $this->buildHotkeysMessage();
+            return new HotkeyTableData($this->hotkeyRegistry->grouped());
         }
 
         // Unknown command → friendly typed result
@@ -347,254 +344,5 @@ final class SlashCommandRegistry
             implode("\n", $lines),
             'system',
         );
-    }
-
-    /**
-     * Build a TranscriptMessage with a box-drawing hotkeys table.
-     *
-     * Reads the live {@see HotkeyRegistry} and renders one grouped
-     * table per context (Global, Editor, Completion, History, Model)
-     * with three columns: Keys, Action, Description.
-     *
-     * Uses Unicode box-drawing characters (┌┬┐├┼┤└┴┘│─) and display-
-     * width-aware padding so ↑/↓ and CJK characters align correctly.
-     *
-     * Section names are plain text — colored section headers would
-     * require per-fragment styling in the transcript renderer
-     * (planned for RENDER-02 / rich transcript blocks).
-     *
-     * Editor bindings reflect the active EditorWidget keybindings
-     * rather than stale defaults.
-     */
-    private function buildHotkeysMessage(): TranscriptMessage
-    {
-        $groups = $this->hotkeyRegistry->grouped();
-
-        if ([] === $groups) {
-            return new TranscriptMessage(
-                'No hotkey hints registered. This is a bug — hotkeys should be populated during TUI startup.',
-                'system',
-            );
-        }
-
-        $lines = ['Keyboard shortcuts', ''];
-
-        foreach ($groups as $context => $bindings) {
-            $lines[] = '  '.$context;
-            $lines[] = '';
-
-            foreach ($this->buildContextTable($bindings) as $row) {
-                $lines[] = $row;
-            }
-            $lines[] = '';
-        }
-
-        $lines[] = 'App shortcuts (Ctrl+C, Ctrl+D) are global and cannot be remapped.';
-        $lines[] = 'Editor bindings reflect the current keymap and may differ from defaults.';
-
-        return new TranscriptMessage(
-            implode("\n", $lines),
-            'system',
-        );
-    }
-
-    /**
-     * Build a box-drawing table for one context's hotkey bindings.
-     *
-     * Returns an array of lines (without trailing newlines).
-     *
-     * @param list<Hotkey\HotkeyBindingDTO> $bindings
-     *
-     * @return list<string>
-     */
-    private function buildContextTable(array $bindings): array
-    {
-        // Build rows: [keysStr, action, description]
-        $rows = [];
-        $hasDesc = false;
-
-        foreach ($bindings as $b) {
-            $keysStr = implode(', ', array_map(
-                static fn (string $k): string => self::formatKeyDisplay($k),
-                $b->keys,
-            ));
-            $desc = $b->description;
-            if ('' !== $desc) {
-                $hasDesc = true;
-            }
-            $rows[] = [$keysStr, $b->action, $desc];
-        }
-
-        // Compute display widths from content (capped)
-        $keyW = 0;
-        $actW = 0;
-        $descW = 0;
-
-        foreach ($rows as [$k, $a, $d]) {
-            $keyW = max($keyW, mb_strwidth($k));
-            $actW = max($actW, mb_strwidth($a));
-            if ($hasDesc) {
-                $descW = max($descW, mb_strwidth($d));
-            }
-        }
-
-        $keyW = min($keyW, self::HOTKEYS_MAX_KEY_WIDTH);
-        $actW = min($actW, self::HOTKEYS_MAX_ACTION_WIDTH);
-        if ($hasDesc) {
-            $descW = min($descW, self::HOTKEYS_MAX_DESC_WIDTH);
-        }
-
-        // Headers must fit within the computed or capped widths
-        $keyHeader = 'Keys';
-        $actHeader = 'Action';
-        $descHeader = 'Description';
-        $keyW = max($keyW, mb_strwidth($keyHeader));
-        $actW = max($actW, mb_strwidth($actHeader));
-        if ($hasDesc) {
-            $descW = max($descW, mb_strwidth($descHeader));
-        }
-
-        $result = [];
-        $h = '─';
-
-        if ($hasDesc) {
-            // Three-column table
-            $result[] = \sprintf('  ┌%s┬%s┬%s┐',
-                str_repeat($h, $keyW + 2),
-                str_repeat($h, $actW + 2),
-                str_repeat($h, $descW + 2));
-            $result[] = \sprintf('  │ %s │ %s │ %s │',
-                self::padDisplayWidth($keyHeader, $keyW),
-                self::padDisplayWidth($actHeader, $actW),
-                self::padDisplayWidth($descHeader, $descW));
-            $result[] = \sprintf('  ├%s┼%s┼%s┤',
-                str_repeat($h, $keyW + 2),
-                str_repeat($h, $actW + 2),
-                str_repeat($h, $descW + 2));
-
-            foreach ($rows as [$k, $a, $d]) {
-                $result[] = \sprintf('  │ %s │ %s │ %s │',
-                    self::truncPadDisplayWidth($k, $keyW),
-                    self::truncPadDisplayWidth($a, $actW),
-                    self::truncPadDisplayWidth($d, $descW));
-            }
-
-            $result[] = \sprintf('  └%s┴%s┴%s┘',
-                str_repeat($h, $keyW + 2),
-                str_repeat($h, $actW + 2),
-                str_repeat($h, $descW + 2));
-        } else {
-            // Two-column table (no descriptions at all)
-            $result[] = \sprintf('  ┌%s┬%s┐',
-                str_repeat($h, $keyW + 2),
-                str_repeat($h, $actW + 2));
-            $result[] = \sprintf('  │ %s │ %s │',
-                self::padDisplayWidth($keyHeader, $keyW),
-                self::padDisplayWidth($actHeader, $actW));
-            $result[] = \sprintf('  ├%s┼%s┤',
-                str_repeat($h, $keyW + 2),
-                str_repeat($h, $actW + 2));
-
-            foreach ($rows as [$k, $a]) {
-                $result[] = \sprintf('  │ %s │ %s │',
-                    self::truncPadDisplayWidth($k, $keyW),
-                    self::truncPadDisplayWidth($a, $actW));
-            }
-
-            $result[] = \sprintf('  └%s┴%s┘',
-                str_repeat($h, $keyW + 2),
-                str_repeat($h, $actW + 2));
-        }
-
-        return $result;
-    }
-
-    /**
-     * Pad a string to the given display-column width using spaces.
-     *
-     * Uses mb_strwidth so multi-byte Unicode characters (e.g. ↑, ↓)
-     * are correctly measured in terminal columns rather than bytes.
-     */
-    private static function padDisplayWidth(string $text, int $targetWidth): string
-    {
-        $current = mb_strwidth($text);
-        if ($current >= $targetWidth) {
-            return $text;
-        }
-
-        return $text.str_repeat(' ', $targetWidth - $current);
-    }
-
-    /**
-     * Truncate a string to fit within target display width, then pad.
-     *
-     * Strings longer than the target are truncated with a single
-     * '…' (U+2026, one display column) appended.
-     */
-    private static function truncPadDisplayWidth(string $text, int $targetWidth): string
-    {
-        $current = mb_strwidth($text);
-        if ($current <= $targetWidth) {
-            return self::padDisplayWidth($text, $targetWidth);
-        }
-
-        // Walk backward to find a cut point that fits with '…' appended.
-        $maxLen = mb_strlen($text);
-        for ($i = $maxLen; $i > 0; --$i) {
-            $prefix = mb_substr($text, 0, $i);
-            if (mb_strwidth($prefix) + 1 <= $targetWidth) {
-                return self::padDisplayWidth($prefix.'…', $targetWidth);
-            }
-        }
-
-        // Extremely narrow column: just ellipsis
-        return self::padDisplayWidth('…', $targetWidth);
-    }
-
-    /**
-     * Format a key identifier string for display.
-     *
-     * Converts lowercase identifiers like 'ctrl+j' to 'Ctrl+J',
-     * 'shift+enter' to 'Shift+Enter', 'up' to '↑', etc.
-     */
-    private static function formatKeyDisplay(string $keyId): string
-    {
-        $normalized = strtolower(trim($keyId));
-        $parts = explode('+', $normalized);
-        $baseKey = array_pop($parts);
-
-        $modifiers = array_map(
-            static fn (string $m): string => match ($m) {
-                'ctrl' => 'Ctrl',
-                'shift' => 'Shift',
-                'alt' => 'Alt',
-                default => ucfirst($m),
-            },
-            $parts,
-        );
-
-        $formattedKey = match ($baseKey) {
-            'up' => '↑',
-            'down' => '↓',
-            'left' => '←',
-            'right' => '→',
-            'enter' => 'Enter',
-            'escape' => 'Esc',
-            'tab' => 'Tab',
-            'space' => 'Space',
-            'backspace' => 'Bksp',
-            'delete' => 'Del',
-            'home' => 'Home',
-            'end' => 'End',
-            'page_up' => 'PgUp',
-            'page_down' => 'PgDn',
-            default => ucfirst($baseKey),
-        };
-
-        if ([] === $modifiers) {
-            return $formattedKey;
-        }
-
-        return implode('+', array_merge($modifiers, [$formattedKey]));
     }
 }
