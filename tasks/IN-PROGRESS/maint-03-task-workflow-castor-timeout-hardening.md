@@ -12,14 +12,22 @@ The repo-local `.pi/extensions/task-workflow.ts` implements `move_task`. Its COD
 - Typecheck/lint or available validation for the extension passes, or a documented repo-valid substitute is run.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/maint-03-task-workflow-castor-timeout-hardening
+Worktree: /home/ineersa/projects/agent-core-worktrees/maint-03-task-workflow-castor-timeout-hardening
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-10T23:11:35.698Z
 Completed:
 
 ## Work log
 - Created: 2026-06-10T23:11:29.848Z
+
+## Task workflow update - 2026-06-10T23:11:35.698Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/maint-03-task-workflow-castor-timeout-hardening.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/maint-03-task-workflow-castor-timeout-hardening.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/maint-03-task-workflow-castor-timeout-hardening.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/maint-03-task-workflow-castor-timeout-hardening.
+- Summary: Starting immediately because the task-workflow extension controls move_task CODE-REVIEW gates and must not hang indefinitely on castor check.
