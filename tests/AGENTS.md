@@ -69,15 +69,15 @@ One representative test covering behavior is sufficient.
 All QA commands MUST go through Castor. Never run raw `vendor/bin/*` directly.
 
 Key commands:
-- `castor test` — full test suite
-- `castor test --filter=XxxTest` — filter to specific tests
+- `castor test` — full test suite (runs `agent-core`, `coding-agent`, `tui`, `platform` PHPUnit suites in parallel via pcntl_fork, each with its own isolated SQLite DB; sequential fallback when pcntl_fork unavailable; per-suite reports logged to `var/reports/phpunit-<suite>.*`)
+- `castor test --filter=XxxTest` — filter to specific tests (sequential; single DB)
 - `castor test:tui` — TUI E2E tests (`#[Group('tui-e2e')]`)
 - `castor test:llm-real` — real-LLM controller E2E tests (`#[Group('llm-real')]`)
 - `castor test:controller` — controller smoke test
 - `castor deptrac` — layer dependency validation
 - `castor phpstan` — static analysis
 - `castor cs-check` / `castor cs-fix` — code style
-- `LLM_MODE=true castor check` — full quality gate (runs all steps in parallel via pcntl_fork with per-step timing; output captured to `var/reports/check-<step>.log`; sequential fallback when pcntl_fork unavailable)
+- `LLM_MODE=true castor check` — full quality gate (runs all 7 steps in parallel via pcntl_fork with per-step timing; each `castor test` suite runs its own parallel PHPUnit suites internally; sequential fallback when pcntl_fork unavailable)
 - `castor cleanup` — remove all temp/test artifacts
 
 ## Snapshots and cleanup
@@ -94,6 +94,15 @@ TUI implementation is NOT complete without an automated test using the real test
 ## DB-touching tests
 
 DB-touching tests must boot the Symfony kernel via `IsolatedKernelTestCase` (or equivalent) and use the test container. Each test method gets a transaction rollback via DAMA DoctrineTestBundle, so no manual cleanup is needed.
+
+### Parallel suite DB isolation
+
+`castor test` runs PHPUnit suites in parallel, each with its own SQLite DB file to prevent contention:
+- DB path is driven by `HATFIELD_TEST_DATABASE_PATH` env var (defaults to `app_test.sqlite`).
+- Castor sets `HATFIELD_TEST_DATABASE_PATH=app_test-<suite>.sqlite` per suite worker.
+- Castor runs `doctrine:migrations:migrate` once per suite on its own DB before PHPUnit.
+- For standalone `vendor/bin/phpunit` runs without Castor, export `HATFIELD_TEST_DATABASE_PATH=app_test.sqlite` to pick up the default DB.
+- Filtered runs (`castor test --filter=...`) use a single sequential PHPUnit invocation with the default DB.
 
 ## One test class per production class
 

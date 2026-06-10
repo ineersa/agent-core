@@ -147,25 +147,56 @@ function phar_path_for_test_task(): string
 #[AsTask(description: 'Run PHPUnit tests (excludes tmux e2e and real LLM smoke tests)')]
 function test(string $filter = ''): void
 {
-    // Ensure test database schema is up-to-date before running tests.
-    // DAMA/DoctrineTestBundle wraps each test in a transaction;
-    // this step creates the schema once on fresh checkout.
-    // Create the directory first so SQLite can write the DB file.
+    $pharPath = phar_path_for_test_task();
+    $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
+
+    // Filtered runs stay sequential — a single --filter narrows to a
+    // specific test class/method where parallelism adds overhead
+    // without meaningful speedup.
+    if ('' !== $filter) {
+        run_test_filtered($filter, $pharEnv);
+
+        return;
+    }
+
+    // Full suite: run phpunit.xml.dist suites in parallel, each with
+    // its own SQLite DB file to avoid contention.  Fall back to
+    // sequential when pcntl_fork is unavailable.
+    $suites = ['agent-core', 'coding-agent', 'tui', 'platform'];
+
+    $useParallel = \PHP_SAPI === 'cli' && function_exists('pcntl_fork');
+
+    if ($useParallel) {
+        run_test_suites_parallel($suites, $pharEnv);
+    } else {
+        run_test_suites_sequential($suites, $pharEnv);
+    }
+}
+
+/**
+ * Sequential test run with a --filter flag applied.
+ *
+ * Uses the default DB file (app_test.sqlite) because the filter
+ * targets a single test or small group and the existing DB schema
+ * is sufficient.
+ */
+function run_test_filtered(string $filter, string $pharEnv): void
+{
+    $dbFilename = 'app_test.sqlite';
+    $dbPath = 'var/test/'.$dbFilename;
+
     @mkdir('var/test', 0755, true);
+
+    // Migrate the default DB once before the filtered run.
     $migrate = run_quiet_command(
-        'APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
+        'APP_ENV=test HATFIELD_TEST_DATABASE_PATH='.escapeshellarg($dbFilename).' '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
     );
     if (0 !== $migrate->getExitCode()) {
         fail_quality('test database migration failed: '.$migrate->getErrorOutput());
     }
 
-    $pharPath = phar_path_for_test_task();
-    $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
-
-    $cmd = $pharEnv.'vendor/bin/phpunit --exclude-group tui-e2e --exclude-group llm-real';
-    if ('' !== $filter) {
-        $cmd .= ' --filter='.escapeshellarg($filter);
-    }
+    $dbEnv = 'HATFIELD_TEST_DATABASE_PATH='.escapeshellarg($dbFilename).' ';
+    $cmd = $pharEnv.$dbEnv.'vendor/bin/phpunit --exclude-group tui-e2e --exclude-group llm-real --filter='.escapeshellarg($filter);
 
     if (!is_llm_mode()) {
         run($cmd.' '.phpunit_strict_issue_flags().' --colors=always');
@@ -174,14 +205,14 @@ function test(string $filter = ''): void
     }
 
     $junitPath = report_path('phpunit.junit.xml');
-    $process = run_quiet_command($cmd.' '.phpunit_strict_issue_flags().' --colors=never --no-progress --log-junit '.$junitPath);
+    $process = run_quiet_command($cmd.' '.phpunit_strict_issue_flags().' --colors=never --no-progress --log-junit='.$junitPath);
     persist_process_output($process, 'phpunit.log');
 
     $summary = summarize_junit_xml($junitPath);
+    $riskyInfo = phpunit_risky_summary(report_path('phpunit.log'));
+    $summaryWithRisky = '' !== $riskyInfo ? $summary.', '.$riskyInfo : $summary;
 
     if (0 !== $process->getExitCode()) {
-        $riskyInfo = phpunit_risky_summary(report_path('phpunit.log'));
-        $summaryWithRisky = '' !== $riskyInfo ? $summary.', '.$riskyInfo : $summary;
         fail_quality(sprintf(
             'test failed (%s); junit=%s; log=%s%s',
             $summaryWithRisky,
@@ -191,13 +222,273 @@ function test(string $filter = ''): void
         ));
     }
 
-    $riskyInfo = phpunit_risky_summary(report_path('phpunit.log'));
-    $summaryWithRisky = '' !== $riskyInfo ? $summary.', '.$riskyInfo : $summary;
     echo sprintf(
         'test: ok (%s); junit=%s',
         $summaryWithRisky,
         relative_report_path('phpunit.junit.xml'),
     ).\PHP_EOL;
+}
+
+/**
+ * Run PHPUnit suites in parallel via pcntl_fork.
+ *
+ * Each suite gets its own SQLite DB file (app_test-<suite>.sqlite),
+ * PHPUnit cache directory, JUnit report, and log file.  All children
+ * use run_quiet_command() to avoid STDOUT interleaving; summaries
+ * are printed after every child exits.
+ *
+ * @param list<string> $suites
+ */
+function run_test_suites_parallel(array $suites, string $pharEnv): void
+{
+    $overallStart = hrtime(true);
+
+    $stepLogs = [];
+    foreach ($suites as $suite) {
+        $stepLogs[$suite] = report_path('phpunit-'.$suite.'.log');
+    }
+    @mkdir(\CastorTasks\REPORTS_DIR, 0755, true);
+
+    echo "Running PHPUnit suites in parallel (pcntl_fork):\n";
+    foreach ($suites as $suite) {
+        echo "  - {$suite}  (DB: app_test-{$suite}.sqlite)\n";
+    }
+    echo "\n";
+
+    $forked = [];
+    $failures = [];
+    $timings = [];
+    $suiteSummaries = [];
+
+    foreach ($suites as $suite) {
+        $pid = pcntl_fork();
+        if (-1 === $pid) {
+            // Fork failed — run inline
+            $start = hrtime(true);
+            ob_start();
+            $exitCode = run_one_test_suite($suite, $pharEnv, 'app_test-'.$suite.'.sqlite');
+            $output = ob_get_clean();
+            file_put_contents($stepLogs[$suite], $output);
+            $timings[$suite] = (hrtime(true) - $start) / 1e9;
+            if (0 !== $exitCode) {
+                $failures[$suite] = 'exit code '.$exitCode;
+            }
+            if (is_llm_mode()) {
+                $suiteSummaries[$suite] = read_suite_junit_summary($suite);
+            }
+        } elseif (0 === $pid) {
+            // Child: capture all output to per-suite log file so
+            // concurrent children do not interleave on STDOUT.
+            ob_start();
+            try {
+                $exitCode = run_one_test_suite($suite, $pharEnv, 'app_test-'.$suite.'.sqlite');
+                $output = ob_get_clean();
+                file_put_contents($stepLogs[$suite], $output);
+                exit($exitCode);
+            } catch (Throwable $e) {
+                $output = ob_get_clean();
+                file_put_contents($stepLogs[$suite], $output."\nERROR: ".$e->getMessage()."\n");
+                exit(1);
+            }
+        } else {
+            $forked[$suite] = ['pid' => $pid, 'start' => hrtime(true)];
+        }
+    }
+
+    // Wait for every child before printing results.
+    foreach ($forked as $suite => $info) {
+        $status = 0;
+        pcntl_waitpid($info['pid'], $status);
+        $timings[$suite] = (hrtime(true) - $info['start']) / 1e9;
+
+        if (pcntl_wifsignaled($status)) {
+            $signal = pcntl_wtermsig($status);
+            $failures[$suite] = "killed by signal {$signal}";
+        } elseif (pcntl_wifexited($status) && 0 !== pcntl_wexitstatus($status)) {
+            $failures[$suite] = 'exit code '.pcntl_wexitstatus($status);
+        }
+
+        if (is_llm_mode()) {
+            $suiteSummaries[$suite] = read_suite_junit_summary($suite);
+        }
+    }
+
+    $overallDuration = (hrtime(true) - $overallStart) / 1e9;
+
+    // ── Per-suite summary ────────────────────────────────────
+    echo "Summary:\n";
+    foreach ($suites as $suite) {
+        $status = isset($failures[$suite]) ? 'FAIL' : 'OK';
+        $duration = $timings[$suite] ?? 0;
+        echo sprintf('  %-20s %s  (%.1fs)', $suite, $status, $duration);
+
+        if (is_llm_mode() && isset($suiteSummaries[$suite]) && '' !== $suiteSummaries[$suite]) {
+            echo "  — {$suiteSummaries[$suite]}";
+        } elseif (is_file($stepLogs[$suite])) {
+            $logContent = file_get_contents($stepLogs[$suite]);
+            if (false !== $logContent) {
+                $lines = explode("\n", trim($logContent));
+                $lastLine = end($lines);
+                if ('' !== $lastLine && 'OK' !== $lastLine && 'FAIL' !== $lastLine) {
+                    echo "  — {$lastLine}";
+                }
+            }
+        }
+        echo "\n";
+    }
+
+    echo sprintf("\nTotal: %.1fs\n", $overallDuration);
+
+    // ── Failure reporting ────────────────────────────────────
+    if ([] !== $failures) {
+        $failureMsg = '';
+        foreach ($failures as $suite => $reason) {
+            $failureMsg .= "- {$suite}: {$reason}";
+            if (isset($suiteSummaries[$suite]) && '' !== $suiteSummaries[$suite]) {
+                $failureMsg .= " ({$suiteSummaries[$suite]})";
+            }
+            $failureMsg .= "\n";
+        }
+        fail_quality("test failed:\n{$failureMsg}");
+    }
+
+    if (is_llm_mode()) {
+        $aggregate = implode(', ', array_filter($suiteSummaries, static fn (string $s): bool => '' !== $s));
+        echo sprintf(
+            'test: ok (%s); junit=%s',
+            '' !== $aggregate ? $aggregate : 'pass',
+            relative_report_path('phpunit-*.junit.xml'),
+        ).\PHP_EOL;
+    } else {
+        echo "test: ok\n";
+    }
+}
+
+/**
+ * Sequential fallback for environments without pcntl_fork.
+ *
+ * Runs each suite in order with per-suite timing and DB isolation,
+ * matching the parallel output format.
+ *
+ * @param list<string> $suites
+ */
+function run_test_suites_sequential(array $suites, string $pharEnv): void
+{
+    $overallStart = hrtime(true);
+
+    echo "Running PHPUnit suites sequentially (pcntl_fork not available):\n";
+    foreach ($suites as $suite) {
+        echo "  - {$suite}  (DB: app_test-{$suite}.sqlite)\n";
+    }
+    echo "\n";
+
+    $failures = [];
+    $timings = [];
+    $suiteSummaries = [];
+
+    foreach ($suites as $suite) {
+        echo sprintf('  %-20s ... ', $suite);
+        $start = hrtime(true);
+
+        $exitCode = run_one_test_suite($suite, $pharEnv, 'app_test-'.$suite.'.sqlite');
+
+        $timings[$suite] = (hrtime(true) - $start) / 1e9;
+
+        if (0 !== $exitCode) {
+            $failures[$suite] = 'exit code '.$exitCode;
+        }
+
+        if (is_llm_mode()) {
+            $suiteSummaries[$suite] = read_suite_junit_summary($suite);
+            echo $suiteSummaries[$suite];
+        }
+
+        echo sprintf(" (%.1fs)\n", $timings[$suite]);
+    }
+
+    $overallDuration = (hrtime(true) - $overallStart) / 1e9;
+    echo sprintf("\nTotal: %.1fs\n", $overallDuration);
+
+    // ── Failure reporting ────────────────────────────────────
+    if ([] !== $failures) {
+        $failureMsg = '';
+        foreach ($failures as $suite => $reason) {
+            $failureMsg .= "- {$suite}: {$reason}";
+            if (isset($suiteSummaries[$suite]) && '' !== $suiteSummaries[$suite]) {
+                $failureMsg .= " ({$suiteSummaries[$suite]})";
+            }
+            $failureMsg .= "\n";
+        }
+        fail_quality("test failed:\n{$failureMsg}");
+    }
+
+    if (is_llm_mode()) {
+        $aggregate = implode(', ', array_filter($suiteSummaries, static fn (string $s): bool => '' !== $s));
+        echo sprintf(
+            'test: ok (%s); junit=%s',
+            '' !== $aggregate ? $aggregate : 'pass',
+            relative_report_path('phpunit-*.junit.xml'),
+        ).\PHP_EOL;
+    } else {
+        echo "test: ok\n";
+    }
+}
+
+/**
+ * Run migration + PHPUnit for a single suite.
+ *
+ * Always uses run_quiet_command() so output is captured rather
+ * than interleaved when multiple suites run in parallel.
+ * Returns the PHPUnit exit code (0 = success).
+ */
+function run_one_test_suite(string $suite, string $pharEnv, string $dbFilename): int
+{
+    $dbEnv = 'HATFIELD_TEST_DATABASE_PATH='.escapeshellarg($dbFilename).' ';
+
+    @mkdir('var/test', 0755, true);
+
+    // Schema migration for this suite's isolated DB file.
+    $migrate = run_quiet_command(
+        'APP_ENV=test '.$dbEnv.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
+    );
+    if (0 !== $migrate->getExitCode()) {
+        echo "{$suite}: DB migration FAILED\n";
+
+        return 1;
+    }
+
+    $cacheDir = 'var/cache/.phpunit-'.$suite;
+    $junitFilename = 'phpunit-'.$suite.'.junit.xml';
+    $logFilename = 'phpunit-'.$suite.'.log';
+
+    $cmd = $pharEnv.$dbEnv.'vendor/bin/phpunit'
+        .' --testsuite '.escapeshellarg($suite)
+        .' --exclude-group tui-e2e --exclude-group llm-real'
+        .' --cache-directory '.escapeshellarg($cacheDir)
+        .' '.phpunit_strict_issue_flags()
+        .' --colors=never --no-progress';
+
+    if (is_llm_mode()) {
+        $cmd .= ' --log-junit='.report_path($junitFilename);
+    }
+
+    $process = run_quiet_command($cmd);
+    persist_process_output($process, $logFilename);
+
+    return $process->getExitCode();
+}
+
+/**
+ * Read the JUnit summary for a previously-run suite.
+ */
+function read_suite_junit_summary(string $suite): string
+{
+    $junitPath = report_path('phpunit-'.$suite.'.junit.xml');
+    if (!is_file($junitPath)) {
+        return '';
+    }
+
+    return summarize_junit_xml($junitPath);
 }
 
 /**

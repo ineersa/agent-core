@@ -9,8 +9,8 @@ description: "E2E and validation testing strategy. Load this skill when: writing
 
 ```bash
 castor check                # Full validation: all 7 steps in parallel via pcntl_fork (sequential fallback); per-step timing + log files at var/reports/check-*.log
-castor test                 # unit/integration only; excludes tui-e2e and llm-real
-castor test --filter=X      # filter tests by name
+castor test                 # unit/integration only; excludes tui-e2e and llm-real; runs agent-core/coding-agent/tui/platform suites in parallel (each with isolated DB)
+castor test --filter=X      # filter tests by name (sequential, single DB)
 castor test:tui [--filter=X]    # tmux TUI e2e snapshots (filter optional)
 castor test:tui-update [--filter=X]  # update TUI snapshot baselines (filter optional)
 castor test:llm-real [--filter=X]   # real llama.cpp smoke (filter optional)
@@ -57,12 +57,22 @@ HATFIELD_BINARY_PATH=var/tmp/phar/hatfield.phar vendor/bin/phpunit --group phar
 
 All E2E tests must use `var/tmp/test-{uuid}` isolation. They must NOT read or write to the real `.hatfield/sessions/` directory. On failure, tests dump session artifacts to stderr.
 
+### Per-suite DB isolation
+
+`castor test` runs PHPUnit suites in parallel, each with its own SQLite DB:
+- `HATFIELD_TEST_DATABASE_PATH` env var controls the DB filename (defaults to `app_test.sqlite`).
+- Parallel workers get `HATFIELD_TEST_DATABASE_PATH=app_test-<suite>.sqlite`.
+- `doctrine:migrations:migrate` runs once per worker on its isolated DB.
+- `--cache-directory var/cache/.phpunit-<suite>` prevents PHPUnit cache collisions.
+- Standalone `vendor/bin/phpunit` runs without Castor must export `HATFIELD_TEST_DATABASE_PATH=app_test.sqlite`.
+- Filtered runs (`castor test --filter=...`) use a single shared DB sequentially.
+
 ## What each command tests
 
 | Command | What it tests | Requires |
 |---|---|---|
 | `castor check` | Full validation: all 7 steps in parallel via pcntl_fork (sequential fallback); per-step timing + log files | tmux, llama.cpp on port 9052 |
-| `castor test` | Unit/integration tests | Nothing (pure PHP) |
+| `castor test` | Unit/integration tests (runs 4 PHPUnit suites in parallel, each with isolated DB; sequential fallback) | Nothing (pure PHP) |
 | `castor test:llm-real` | Real LLM smoke: `ControllerSmokeTest`, `LlamaCppSmokeTest` | llama.cpp on port 9052 |
 | `castor test:controller` | Controller E2E: spawns `--controller`, JSONL protocol | llama.cpp on port 9052 |
 | `castor test:tui` | Tmux TUI E2E snapshot tests | tmux, llama.cpp on port 9052 |
