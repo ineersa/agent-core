@@ -19,12 +19,20 @@ Do NOT:
 ### Test doubles
 
 - `TestMessageBus` (`tests/AgentCore/Support/TestMessageBus.php`) — collecting `MessageBusInterface` for asserting dispatched messages. Do not define per-file collecting bus classes.
-- `TestLogger` (`tests/CodingAgent/Support/TestLogger.php`) — collecting PSR-3 logger for tracing/log assertions. Do not define per-file `WorkerTraceLogger` variants.
+- `TestLogger` (`tests/AgentCore/Support/TestLogger.php`) — collecting PSR-3 logger for tracing/log assertions. Do not define per-file `WorkerTraceLogger` variants.
+
+Both are available under the `Ineersa\AgentCore\Tests\Support` namespace. See:
+- `tests/AgentCore/Support/TestMessageBus.php` for `@see TestMessageBus`
+- `tests/AgentCore/Support/TestLogger.php` for `@see TestLogger`
 - Keep specialized fakes (e.g. `FailingOnceMessageBus` with conditional throw behavior) local to the test that needs them.
 
 ### E2E controller tests
 
-Extend `ControllerE2eTestCase` for headless controller E2E. Inherited helpers:
+Extend `ControllerE2eTestCase` for headless controller E2E.
+
+@see `tests/CodingAgent/Runtime/Controller/E2E/ControllerE2eTestCase.php`
+
+Inherited helpers:
 - `indexByType(array $events): array` — index events by type
 - `foundAck(array $events, string $cmdId): bool` — check command.ack presence
 - `assertStartRunAcked(array $events, string $cmdId): void` — assert start_run acknowledged

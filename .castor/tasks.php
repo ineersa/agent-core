@@ -84,7 +84,10 @@ function check(): void
             foreach ($forked as $step => $pid) {
                 $status = 0;
                 pcntl_waitpid($pid, $status);
-                if (0 !== pcntl_wexitstatus($status)) {
+                if (pcntl_wifsignaled($status)) {
+                    $signal = pcntl_wtermsig($status);
+                    $failures[$step] = "{$step}: killed by signal {$signal}";
+                } elseif (pcntl_wifexited($status) && 0 !== pcntl_wexitstatus($status)) {
                     $failures[$step] = "{$step}: exit code ".pcntl_wexitstatus($status);
                 }
             }
@@ -170,11 +173,30 @@ function deptrac(): void
 }
 
 /**
- * Run PHPUnit tests (excludes tmux e2e and real LLM smoke tests).
+ * Internal helper: get the PHAR path for test tasks.
  *
- * TUI e2e and real LLM smoke tests run as separate steps in
- * "castor check" so their failures are reported independently.
+ * When check() pre-built the PHAR via CASTOR_PHAR_READY, returns it
+ * immediately.  Otherwise, builds or locates it for standalone task
+ * invocation (e.g. `castor test:tui` outside of `castor check`).
  */
+function phar_path_for_test_task(): string
+{
+    // When check() pre-built the PHAR, return its path directly.
+    // Otherwise, build or locate it for standalone task invocation.
+    $pharPath = $GLOBALS['CASTOR_PHAR_READY'] ?? '';
+    if ('' !== $pharPath) {
+        return $pharPath;
+    }
+
+    try {
+        return \CastorTasks\phar_ensure();
+    } catch (Throwable $e) {
+        echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
+
+        return '';
+    }
+}
+
 #[AsTask(description: 'Run PHPUnit tests (excludes tmux e2e and real LLM smoke tests)')]
 function test(string $filter = ''): void
 {
@@ -190,16 +212,7 @@ function test(string $filter = ''): void
         fail_quality('test database migration failed: '.$migrate->getErrorOutput());
     }
 
-    // When check() pre-built the PHAR, skip the stale check + rebuild.
-    $pharPath = $GLOBALS['CASTOR_PHAR_READY'] ?? '';
-    if ('' === $pharPath) {
-        try {
-            $pharPath = \CastorTasks\phar_ensure();
-        } catch (Throwable $e) {
-            echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
-        }
-    }
-
+    $pharPath = phar_path_for_test_task();
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
     $cmd = $pharEnv.'vendor/bin/phpunit --exclude-group tui-e2e --exclude-group llm-real';
@@ -417,10 +430,10 @@ function cache_clear(): void
  *
  * Cleans up var/tmp/ (test isolation dirs, PHAR builds, smoke dirs),
  * var/cache/ (Symfony cache), var/logs/ (Monolog logs), and
- * var/qa/ (QA report artifacts).  Safe to run anytime — only removes
+ * var/reports/ (QA report artifacts).  Safe to run anytime — only removes
  * generated/transient files, never tracked sources or .gitkeep.
  */
-#[AsTask(name: 'cleanup', description: 'Remove all temp/test artifacts (var/tmp/*, var/cache/, var/logs/, var/qa/)')]
+#[AsTask(name: 'cleanup', description: 'Remove all temp/test artifacts (var/tmp/*, var/cache/, var/logs/, var/reports/)')]
 function cleanup(): void
 {
     $root = realpath(__DIR__.'/..');
@@ -463,7 +476,7 @@ function cleanup(): void
     $topDirs = [
         'var/cache',
         'var/logs',
-        'var/qa',
+        'var/reports',
     ];
 
     foreach ($topDirs as $dir) {
@@ -542,7 +555,7 @@ function idea_run_configs(): void
         'cs-fix' => 'Run PHP CS Fixer and modify files in place.',
         'cs-check' => 'Run PHP CS Fixer dry-run check.',
         'cache:clear' => 'Remove generated QA caches and clear Symfony cache.',
-        'cleanup' => 'Remove all temp/test artifacts (var/tmp/*, var/cache/, var/logs/, var/qa/).',
+        'cleanup' => 'Remove all temp/test artifacts (var/tmp/*, var/cache/, var/logs/, var/reports/).',
         'log:tail' => 'Show recent log entries.',
         'log:search' => 'Search log entries.',
         'log:files' => 'List log files.',
@@ -785,16 +798,7 @@ function phar_clean(): void
 #[AsTask(name: 'test:tui', description: 'Run TUI e2e snapshot tests (requires tmux), using the built PHAR')]
 function test_tui(string $filter = ''): void
 {
-    $pharPath = $GLOBALS['CASTOR_PHAR_READY'] ?? '';
-    if ('' === $pharPath) {
-        try {
-            $pharPath = \CastorTasks\phar_ensure();
-        } catch (Throwable $e) {
-            echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
-            $pharPath = '';
-        }
-    }
-
+    $pharPath = phar_path_for_test_task();
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
     $filterFlag = '' !== $filter ? ' --filter='.escapeshellarg($filter) : '';
@@ -823,16 +827,7 @@ function test_tui(string $filter = ''): void
 #[AsTask(name: 'test:llm-real', description: 'Run opt-in real llama.cpp smoke test against configured llama_cpp provider')]
 function test_llm_real(string $filter = ''): void
 {
-    $pharPath = $GLOBALS['CASTOR_PHAR_READY'] ?? '';
-    if ('' === $pharPath) {
-        try {
-            $pharPath = \CastorTasks\phar_ensure();
-        } catch (Throwable $e) {
-            echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
-            $pharPath = '';
-        }
-    }
-
+    $pharPath = phar_path_for_test_task();
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
     $filterFlag = '' !== $filter ? ' --filter='.escapeshellarg($filter) : '';
@@ -860,16 +855,7 @@ function test_llm_real(string $filter = ''): void
 #[AsTask(name: 'test:controller', description: 'Run controller E2E smoke test (spawns --controller, sends JSONL)')]
 function test_controller(string $filter = ''): void
 {
-    $pharPath = $GLOBALS['CASTOR_PHAR_READY'] ?? '';
-    if ('' === $pharPath) {
-        try {
-            $pharPath = \CastorTasks\phar_ensure();
-        } catch (Throwable $e) {
-            echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
-            $pharPath = '';
-        }
-    }
-
+    $pharPath = phar_path_for_test_task();
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
     $filterFlag = ' --filter='.escapeshellarg('' !== $filter ? $filter : 'ControllerSmokeTest');
@@ -886,16 +872,7 @@ function test_controller(string $filter = ''): void
 #[AsTask(name: 'test:tui-update', description: 'Run TUI e2e tests and update golden snapshots')]
 function test_tui_update(string $filter = ''): void
 {
-    $pharPath = $GLOBALS['CASTOR_PHAR_READY'] ?? '';
-    if ('' === $pharPath) {
-        try {
-            $pharPath = \CastorTasks\phar_ensure();
-        } catch (Throwable $e) {
-            echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
-            $pharPath = '';
-        }
-    }
-
+    $pharPath = phar_path_for_test_task();
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
     $filterFlag = '' !== $filter ? ' --filter='.escapeshellarg($filter) : '';

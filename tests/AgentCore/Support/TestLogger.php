@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Tests\Support;
+namespace Ineersa\AgentCore\Tests\Support;
 
 use Psr\Log\AbstractLogger;
 use Stringable;

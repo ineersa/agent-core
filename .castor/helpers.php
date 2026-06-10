@@ -726,10 +726,15 @@ function phar_smoke(string $pharPath): void
         // providers/models not available in the packaged PHAR.
         $homeDir = $tmpCwd.'/home';
         @mkdir($homeDir.'/.hatfield', 0755, true);
-        file_put_contents(
+        $stubWritten = file_put_contents(
             $homeDir.'/.hatfield/settings.yaml',
             "ai:\n    default_model: null\n",
         );
+        if (false === $stubWritten) {
+            echo "PHAR smoke test: SKIP (could not write isolated home settings)\n";
+
+            return;
+        }
         $homeEnv = 'HOME='.escapeshellarg($homeDir);
 
         $smokeEnv = getenv('APP_ENV');

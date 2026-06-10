@@ -103,7 +103,8 @@ final class ViewImageToolE2eTest extends ControllerE2eTestCase
         $eventsJsonl = $this->tempDir.'/.hatfield/sessions/'.$this->runId.'/events.jsonl';
         $persistedTypes = [];
         if (is_file($eventsJsonl)) {
-            foreach (file($eventsJsonl, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES) as $line) {
+            $lines = file($eventsJsonl, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES) ?: [];
+            foreach ($lines as $line) {
                 try {
                     $e = json_decode($line, true, 512, \JSON_THROW_ON_ERROR);
                     $persistedTypes[] = $e['type'] ?? 'unknown';
