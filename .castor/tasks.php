@@ -64,10 +64,11 @@ function check(): void
                 .(is_llm_mode() ? ' --formatter=json' : ''),
         ],
         'test' => [
-            'cmd' => 'APP_ENV=test '.$pharEnv.$phpBin.' vendor/bin/phpunit'
-                .' --exclude-group tui-e2e --exclude-group llm-real'
-                .' '.$strictFlags.$llmFlags
-                .(is_llm_mode() ? ' --log-junit='.report_path('phpunit.junit.xml') : ''),
+            // Delegate to castor test so the full sharded suite runner
+            // (proc_open-based parallel workers with per-worker DB/cache/
+            // report isolation) is used instead of a monolithic phpunit.
+            // Output captured to var/reports/check-test.log.
+            'cmd' => 'APP_ENV=test '.$pharEnv.'castor test',
         ],
         'test:controller' => [
             'cmd' => 'APP_ENV=test '.$pharEnv.'LLAMA_CPP_SMOKE_TEST=1 '.$phpBin.' vendor/bin/phpunit'

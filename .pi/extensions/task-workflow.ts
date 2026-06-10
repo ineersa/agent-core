@@ -187,7 +187,19 @@ async function runCastorCheckGate(
 		}
 	}
 
-	const result = await run(pi, "timeout", [`--kill-after=${killAfter}s`, `${timeout}s`, "env", "LLM_MODE=true", "castor", "check"], gateDir, signal, execTimeoutMs);
+	// Hard deadline: worst-case bound.  Even if pi.exec's internal timeout
+	// layer fails (e.g. the Node proc.killed escalation bug in exec.js), this
+	// Promise.race guarantees the gate cannot stall the caller indefinitely.
+	const hardDeadlineMs = (timeout + killAfter + 60) * 1000;
+	const result = await Promise.race([
+		run(pi, "timeout", [`--kill-after=${killAfter}s`, `${timeout}s`, "env", "LLM_MODE=true", "castor", "check"], gateDir, signal, execTimeoutMs),
+		new Promise<ExecResult>((_, reject) =>
+			setTimeout(() => reject(new Error(
+				`Castor gate hard deadline reached after ${timeout + killAfter + 60}s ` +
+				`(timeout=${timeout}s, kill-after=${killAfter}s, extra=60s)`
+			)), hardDeadlineMs)
+		),
+	]);
 
 	const isTimeout = result.code === 124 || result.code === 137;
 	const killed = result.killed ?? false;
