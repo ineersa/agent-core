@@ -69,7 +69,7 @@ One representative test covering behavior is sufficient.
 All QA commands MUST go through Castor. Never run raw `vendor/bin/*` directly.
 
 Key commands:
-- `castor test` — full test suite (runs `agent-core`, `coding-agent`, `tui`, `platform` PHPUnit suites in parallel via pcntl_fork, each with its own isolated SQLite DB; sequential fallback when pcntl_fork unavailable; per-suite reports logged to `var/reports/phpunit-<suite>.*`)
+- `castor test` — full test suite (runs `agent-core`, `coding-agent`, `tui`, `platform` PHPUnit suites in parallel via proc_open, each with its own isolated SQLite DB; sequential fallback when proc_open unavailable; per-suite reports logged to `var/reports/phpunit-<suite>.*`)
 - `castor test --filter=XxxTest` — filter to specific tests (sequential; single DB)
 - `castor test:tui` — TUI E2E tests (`#[Group('tui-e2e')]`)
 - `castor test:llm-real` — real-LLM controller E2E tests (`#[Group('llm-real')]`)
@@ -77,7 +77,7 @@ Key commands:
 - `castor deptrac` — layer dependency validation
 - `castor phpstan` — static analysis
 - `castor cs-check` / `castor cs-fix` — code style
-- `LLM_MODE=true castor check` — full quality gate (runs all 7 steps in parallel via pcntl_fork with per-step timing; each `castor test` suite runs its own parallel PHPUnit suites internally; sequential fallback when pcntl_fork unavailable)
+- `LLM_MODE=true castor check` — full quality gate (runs all 7 steps in parallel via proc_open with per-step timing; each `castor test` suite runs its own parallel PHPUnit suites internally; sequential fallback when proc_open unavailable)
 - `castor cleanup` — remove all temp/test artifacts
 
 ## Snapshots and cleanup

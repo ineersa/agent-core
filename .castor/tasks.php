@@ -23,59 +23,112 @@ require_once __DIR__.'/helpers.php';
  * Run full QA: deptrac, phpunit, controller E2E, real LLM E2E,
  * TUI snapshot E2E, phpstan, cs-fixer check.
  */
+/**
+ * Run full QA: deptrac, phpunit, controller E2E, real LLM E2E,
+ * TUI snapshot E2E, phpstan, cs-fixer check.
+ *
+ * All steps run concurrently as external subprocesses (via proc_open)
+ * so they do not share memory with the Castor PHAR.  Each step's
+ * output is captured to var/reports/check-<step>.log.
+ */
 #[AsTask(description: 'Run full QA (deptrac, phpunit, controller E2E, real LLM E2E, TUI E2E, phpstan, cs-fixer)')]
 function check(): void
 {
-    // ── PHAR build ────────────────────────────────────────────
     $pharStart = hrtime(true);
     $pharPath = '';
     try {
         $pharPath = \CastorTasks\phar_ensure();
     } catch (Throwable $e) {
-        echo "PHAR ensure skipped: {$e->getMessage()}\n";
+        echo "PHAR ensure skipped: {$e->getMessage()}
+";
     }
     if ('' !== $pharPath) {
         $GLOBALS['CASTOR_PHAR_READY'] = $pharPath;
     }
     $pharDuration = (hrtime(true) - $pharStart) / 1e9;
-    echo sprintf("PHAR: ok (%.1fs)\n\n", $pharDuration);
+    echo sprintf('PHAR: ok (%.1fs)
 
-    // ── All steps (run in parallel or fall back to sequential) ─
-    $allSteps = [
-        'deptrac' => static fn () => deptrac(),
-        'test' => static fn () => test(),
-        'test:controller' => static fn () => test_controller(),
-        'test:llm-real' => static fn () => test_llm_real(),
-        'test:tui' => static fn () => test_tui(),
-        'phpstan' => static fn () => phpstan(),
-        'cs-check' => static fn () => cs_check(),
+', $pharDuration);
+
+    $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
+    $phpBin = \PHP_BINARY;
+    $strictFlags = phpunit_strict_issue_flags();
+    $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
+
+    // Each step is a shell command that runs the underlying tool
+    // directly — not through a Castor task closure — to stay safe
+    // inside the Castor PHAR (no pcntl_fork shared-memory issues).
+    $allCheckCommands = [
+        'deptrac' => [
+            'cmd' => $phpBin.' vendor/bin/deptrac --config-file=depfile.yaml --no-progress --no-ansi'
+                .(is_llm_mode() ? ' --formatter=json' : ''),
+        ],
+        'test' => [
+            'cmd' => 'APP_ENV=test '.$pharEnv.$phpBin.' vendor/bin/phpunit'
+                .' --exclude-group tui-e2e --exclude-group llm-real'
+                .' '.$strictFlags.$llmFlags
+                .(is_llm_mode() ? ' --log-junit='.report_path('phpunit.junit.xml') : ''),
+        ],
+        'test:controller' => [
+            'cmd' => 'APP_ENV=test '.$pharEnv.'LLAMA_CPP_SMOKE_TEST=1 '.$phpBin.' vendor/bin/phpunit'
+                .' --filter=ControllerSmokeTest'
+                .' '.$strictFlags.$llmFlags
+                .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-controller.junit.xml') : ''),
+        ],
+        'test:llm-real' => [
+            'cmd' => 'APP_ENV=test '.$pharEnv.'LLAMA_CPP_SMOKE_TEST=1 '.$phpBin.' vendor/bin/phpunit'
+                .' --group llm-real'
+                .' '.$strictFlags.$llmFlags
+                .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-llm-real.junit.xml') : ''),
+        ],
+        'test:tui' => [
+            'cmd' => 'APP_ENV=test '.$pharEnv.$phpBin.' vendor/bin/phpunit'
+                .' --group tui-e2e'
+                .' '.$strictFlags.$llmFlags
+                .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-tui.junit.xml') : ''),
+        ],
+        'phpstan' => [
+            'cmd' => $phpBin.' vendor/bin/phpstan analyse -c phpstan.dist.neon --no-progress'
+                .(is_llm_mode() ? ' --error-format=json --no-ansi' : ''),
+        ],
+        'cs-check' => [
+            'cmd' => $phpBin.' vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php --dry-run --no-ansi'
+                .(is_llm_mode() ? ' --format=json --show-progress=none' : ' --diff'),
+        ],
     ];
+
+    // DB schema must be ready before the test / controller / llm-real
+    // steps start.  Migrate once (fast, idempotent).
+    @mkdir('var/test', 0755, true);
+    $migrate = run_quiet_command(
+        'APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
+    );
+    if (0 !== $migrate->getExitCode()) {
+        fail_quality('test database migration failed: '.$migrate->getErrorOutput());
+    }
 
     $failures = [];
     $timings = [];
+
     $GLOBALS['CASTOR_CHECK_AGGREGATING'] = true;
-
     try {
-        $useParallel = \PHP_SAPI === 'cli' && function_exists('pcntl_fork');
-
+        $useParallel = \PHP_SAPI === 'cli' && function_exists('proc_open');
         if ($useParallel) {
-            run_check_parallel($allSteps, $failures, $timings);
+            run_check_commands_parallel($allCheckCommands, $failures, $timings);
         } else {
-            run_check_sequential($allSteps, $failures, $timings);
+            run_check_commands_sequential($allCheckCommands, $failures, $timings);
         }
     } finally {
         unset($GLOBALS['CASTOR_CHECK_AGGREGATING']);
         unset($GLOBALS['CASTOR_PHAR_READY']);
     }
 
-    // ── Final verdict ─────────────────────────────────────────
     if ([] !== $failures) {
         fail_quality('quality failed:'.\PHP_EOL.format_step_failures($failures));
     }
 
     echo 'quality: ok'.\PHP_EOL;
 }
-
 function quality(): void
 {
     check();
@@ -126,10 +179,15 @@ function deptrac(): void
  * immediately.  Otherwise, builds or locates it for standalone task
  * invocation (e.g. `castor test:tui` outside of `castor check`).
  */
+/**
+ * Internal helper: get the PHAR path for test tasks.
+ *
+ * When check() pre-built the PHAR via CASTOR_PHAR_READY, returns it
+ * immediately.  Otherwise, builds or locates it for standalone task
+ * invocation (e.g. `castor test:tui` outside of `castor check`).
+ */
 function phar_path_for_test_task(): string
 {
-    // When check() pre-built the PHAR, return its path directly.
-    // Otherwise, build or locate it for standalone task invocation.
     $pharPath = $GLOBALS['CASTOR_PHAR_READY'] ?? '';
     if ('' !== $pharPath) {
         return $pharPath;
@@ -138,21 +196,19 @@ function phar_path_for_test_task(): string
     try {
         return \CastorTasks\phar_ensure();
     } catch (Throwable $e) {
-        echo 'PHAR ensure skipped: '.$e->getMessage()."\n";
+        echo 'PHAR ensure skipped: '.$e->getMessage().'
+';
 
         return '';
     }
 }
 
-#[AsTask(description: 'Run PHPUnit tests (excludes tmux e2e and real LLM smoke tests)')]
+#[AsTask(description: 'Run PHPUnit tests (excludes tmux e2e and real LLM smoke tests); full-suite runs suites in parallel via proc_open subprocesses')]
 function test(string $filter = ''): void
 {
     $pharPath = phar_path_for_test_task();
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
-    // Filtered runs stay sequential — a single --filter narrows to a
-    // specific test class/method where parallelism adds overhead
-    // without meaningful speedup.
     if ('' !== $filter) {
         run_test_filtered($filter, $pharEnv);
 
@@ -160,26 +216,16 @@ function test(string $filter = ''): void
     }
 
     // Full suite: run phpunit.xml.dist suites in parallel, each with
-    // its own SQLite DB file to avoid contention.  Fall back to
-    // sequential when pcntl_fork is unavailable.
+    // its own SQLite DB file to avoid contention.  Uses proc_open
+    // subprocesses (not pcntl_fork) to avoid Castor PHAR corruption.
     $suites = ['agent-core', 'coding-agent', 'tui', 'platform'];
-
-    $useParallel = \PHP_SAPI === 'cli' && function_exists('pcntl_fork');
-
+    $useParallel = \PHP_SAPI === 'cli' && function_exists('proc_open');
     if ($useParallel) {
         run_test_suites_parallel($suites, $pharEnv);
     } else {
         run_test_suites_sequential($suites, $pharEnv);
     }
 }
-
-/**
- * Sequential test run with a --filter flag applied.
- *
- * Uses the default DB file (app_test.sqlite) because the filter
- * targets a single test or small group and the existing DB schema
- * is sufficient.
- */
 function run_test_filtered(string $filter, string $pharEnv): void
 {
     $dbFilename = 'app_test.sqlite';
@@ -230,7 +276,7 @@ function run_test_filtered(string $filter, string $pharEnv): void
 }
 
 /**
- * Run PHPUnit suites in parallel via pcntl_fork.
+ * Run PHPUnit suites sequentially (fallback).
  *
  * Each suite gets its own SQLite DB file (app_test-<suite>.sqlite),
  * PHPUnit cache directory, JUnit report, and log file.  All children
@@ -239,107 +285,108 @@ function run_test_filtered(string $filter, string $pharEnv): void
  *
  * @param list<string> $suites
  */
+/**
+ * Run PHPUnit suites in parallel via proc_open subprocesses.
+ *
+ * Each suite gets its own SQLite DB file (app_test-<suite>.sqlite),
+ * PHPUnit cache directory, JUnit report, and log file.  Subprocesses
+ * are spawned via proc_open so they run as genuinely independent PHP
+ * processes (no shared memory / Castor PHAR corruption).
+ *
+ * @param list<string> $suites
+ */
 function run_test_suites_parallel(array $suites, string $pharEnv): void
 {
     $overallStart = hrtime(true);
 
-    $stepLogs = [];
-    foreach ($suites as $suite) {
-        $stepLogs[$suite] = report_path('phpunit-'.$suite.'.log');
-    }
     @mkdir(\CastorTasks\REPORTS_DIR, 0755, true);
 
-    echo "Running PHPUnit suites in parallel (pcntl_fork):\n";
+    echo 'Running PHPUnit suites in parallel (proc_open):
+';
     foreach ($suites as $suite) {
-        echo "  - {$suite}  (DB: app_test-{$suite}.sqlite)\n";
+        echo "  - {$suite}  (DB: app_test-{$suite}.sqlite)
+";
     }
-    echo "\n";
+    echo '
+';
 
-    $forked = [];
+    $phpBin = \PHP_BINARY;
+    $strictFlags = phpunit_strict_issue_flags();
+    $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
+
+    $commands = [];
+    $logFiles = [];
+    foreach ($suites as $suite) {
+        $dbFilename = 'app_test-'.$suite.'.sqlite';
+        $dbEnv = 'HATFIELD_TEST_DATABASE_PATH='.escapeshellarg($dbFilename);
+        $cacheDir = 'var/cache/.phpunit-'.$suite;
+        $junitFilename = 'phpunit-'.$suite.'.junit.xml';
+        $logFilename = 'phpunit-'.$suite.'.log';
+        $logFiles[$suite] = report_path($logFilename);
+
+        $junitFlag = is_llm_mode() ? ' --log-junit='.report_path($junitFilename) : '';
+
+        // Chain: migrate (idempotent) then PHPUnit.
+        $commands[$suite] = [
+            'cmd' => 'APP_ENV=test '.$dbEnv.' '.$phpBin.' bin/console'
+                .' doctrine:migrations:migrate --no-interaction --allow-no-migration'
+                .' && APP_ENV=test '.$dbEnv.' '.$pharEnv.$phpBin.' vendor/bin/phpunit'
+                .' --testsuite '.escapeshellarg($suite)
+                .' --exclude-group tui-e2e --exclude-group llm-real'
+                .' --cache-directory '.escapeshellarg($cacheDir)
+                .' '.$strictFlags.$llmFlags.$junitFlag,
+            'log' => $logFiles[$suite],
+        ];
+    }
+
+    // Spawn and collect results.
+    $results = run_commands_parallel($commands);
+
+    $overallDuration = (hrtime(true) - $overallStart) / 1e9;
+
     $failures = [];
     $timings = [];
     $suiteSummaries = [];
 
+    echo 'Summary:
+';
     foreach ($suites as $suite) {
-        $pid = pcntl_fork();
-        if (-1 === $pid) {
-            // Fork failed — run inline
-            $start = hrtime(true);
-            ob_start();
-            $exitCode = run_one_test_suite($suite, $pharEnv, 'app_test-'.$suite.'.sqlite');
-            $output = ob_get_clean();
-            file_put_contents($stepLogs[$suite], $output);
-            $timings[$suite] = (hrtime(true) - $start) / 1e9;
-            if (0 !== $exitCode) {
-                $failures[$suite] = 'exit code '.$exitCode;
-            }
-            if (is_llm_mode()) {
-                $suiteSummaries[$suite] = read_suite_junit_summary($suite);
-            }
-        } elseif (0 === $pid) {
-            // Child: capture all output to per-suite log file so
-            // concurrent children do not interleave on STDOUT.
-            ob_start();
-            try {
-                $exitCode = run_one_test_suite($suite, $pharEnv, 'app_test-'.$suite.'.sqlite');
-                $output = ob_get_clean();
-                file_put_contents($stepLogs[$suite], $output);
-                exit($exitCode);
-            } catch (Throwable $e) {
-                $output = ob_get_clean();
-                file_put_contents($stepLogs[$suite], $output."\nERROR: ".$e->getMessage()."\n");
-                exit(1);
-            }
-        } else {
-            $forked[$suite] = ['pid' => $pid, 'start' => hrtime(true)];
-        }
-    }
+        $result = $results[$suite] ?? ['exitCode' => -1, 'output' => 'proc_open failed', 'duration' => 0];
+        $exitCode = $result['exitCode'];
+        $duration = $result['duration'];
+        $timings[$suite] = $duration;
 
-    // Wait for every child before printing results.
-    foreach ($forked as $suite => $info) {
-        $status = 0;
-        pcntl_waitpid($info['pid'], $status);
-        $timings[$suite] = (hrtime(true) - $info['start']) / 1e9;
-
-        if (pcntl_wifsignaled($status)) {
-            $signal = pcntl_wtermsig($status);
-            $failures[$suite] = "killed by signal {$signal}";
-        } elseif (pcntl_wifexited($status) && 0 !== pcntl_wexitstatus($status)) {
-            $failures[$suite] = 'exit code '.pcntl_wexitstatus($status);
+        if (0 !== $exitCode) {
+            $failures[$suite] = $exitCode < 0 ? 'proc_open failed' : 'exit code '.$exitCode;
         }
+
+        $status = isset($failures[$suite]) ? 'FAIL' : 'OK';
+        echo sprintf('  %-20s %s  (%.1fs)', $suite, $status, $duration);
 
         if (is_llm_mode()) {
             $suiteSummaries[$suite] = read_suite_junit_summary($suite);
-        }
-    }
-
-    $overallDuration = (hrtime(true) - $overallStart) / 1e9;
-
-    // ── Per-suite summary ────────────────────────────────────
-    echo "Summary:\n";
-    foreach ($suites as $suite) {
-        $status = isset($failures[$suite]) ? 'FAIL' : 'OK';
-        $duration = $timings[$suite] ?? 0;
-        echo sprintf('  %-20s %s  (%.1fs)', $suite, $status, $duration);
-
-        if (is_llm_mode() && isset($suiteSummaries[$suite]) && '' !== $suiteSummaries[$suite]) {
-            echo "  — {$suiteSummaries[$suite]}";
-        } elseif (is_file($stepLogs[$suite])) {
-            $logContent = file_get_contents($stepLogs[$suite]);
+            if (isset($suiteSummaries[$suite]) && '' !== $suiteSummaries[$suite]) {
+                echo "  — {$suiteSummaries[$suite]}";
+            }
+        } elseif (is_file($logFiles[$suite])) {
+            $logContent = file_get_contents($logFiles[$suite]);
             if (false !== $logContent) {
-                $lines = explode("\n", trim($logContent));
+                $lines = explode('
+', trim($logContent));
                 $lastLine = end($lines);
                 if ('' !== $lastLine && 'OK' !== $lastLine && 'FAIL' !== $lastLine) {
                     echo "  — {$lastLine}";
                 }
             }
         }
-        echo "\n";
+        echo '
+';
     }
 
-    echo sprintf("\nTotal: %.1fs\n", $overallDuration);
+    echo sprintf('
+Total: %.1fs
+', $overallDuration);
 
-    // ── Failure reporting ────────────────────────────────────
     if ([] !== $failures) {
         $failureMsg = '';
         foreach ($failures as $suite => $reason) {
@@ -347,9 +394,11 @@ function run_test_suites_parallel(array $suites, string $pharEnv): void
             if (isset($suiteSummaries[$suite]) && '' !== $suiteSummaries[$suite]) {
                 $failureMsg .= " ({$suiteSummaries[$suite]})";
             }
-            $failureMsg .= "\n";
+            $failureMsg .= '
+';
         }
-        fail_quality("test failed:\n{$failureMsg}");
+        fail_quality("test failed:
+{$failureMsg}");
     }
 
     if (is_llm_mode()) {
@@ -360,23 +409,15 @@ function run_test_suites_parallel(array $suites, string $pharEnv): void
             relative_report_path('phpunit-*.junit.xml'),
         ).\PHP_EOL;
     } else {
-        echo "test: ok\n";
+        echo 'test: ok
+';
     }
 }
-
-/**
- * Sequential fallback for environments without pcntl_fork.
- *
- * Runs each suite in order with per-suite timing and DB isolation,
- * matching the parallel output format.
- *
- * @param list<string> $suites
- */
 function run_test_suites_sequential(array $suites, string $pharEnv): void
 {
     $overallStart = hrtime(true);
 
-    echo "Running PHPUnit suites sequentially (pcntl_fork not available):\n";
+    echo "Running PHPUnit suites sequentially (proc_open not available):\n";
     foreach ($suites as $suite) {
         echo "  - {$suite}  (DB: app_test-{$suite}.sqlite)\n";
     }
@@ -2033,108 +2074,149 @@ function log_clear(string $olderThan = '7 days ago'): void
  * Recursively remove a directory tree.  Used by the cleanup task
  * to remove generated temp/test artifacts (not a Castor task itself).
  */
-function rmtree(string $dir): void
-{
-    if (!is_dir($dir)) {
-        return;
-    }
-
-    $iterator = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
-        RecursiveIteratorIterator::CHILD_FIRST,
-    );
-
-    foreach ($iterator as $entry) {
-        $entry->isDir() ? rmdir((string) $entry) : unlink((string) $entry);
-    }
-
-    rmdir($dir);
-}
-
-// ─── check() helpers ───────────────────────────────────────
+// ── Shared proc_open parallel runner ──────────────────────────
 
 /**
- * Run every check step in its own forked child process so they
- * execute concurrently.
+ * Run multiple shell commands concurrently via proc_open.
  *
- * Each child redirects its stdout to a per-step log file under
- * var/reports/check-<step>.log to prevent output interleaving.
- * The parent waits for all children, then reads the logs and
- * prints a combined timing summary.
+ * Each command is spawned as an independent PHP subprocess — no
+ * shared memory, safe inside the Castor PHAR.  stdout and stderr
+ * are captured to the per-command log file.
  *
- * @param array<string,Closure> $steps
- * @param array<string,string>  $failures out — populated with failure reasons
- * @param array<string,float>   $timings  out — populated with per-step durations (seconds)
+ * @param array<string,array{cmd:string,log:string}> $commands
+ *
+ * @return array<string,array{exitCode:int,output:string,duration:float}>
  */
-function run_check_parallel(array $steps, array &$failures, array &$timings): void
+function run_commands_parallel(array $commands): array
 {
-    $stepLogs = [];
-    foreach ($steps as $step => $_) {
-        $stepLogs[$step] = report_path("check-{$step}.log");
+    $processes = [];
+    $results = [];
+    $cwd = getcwd() ?: '';
+
+    // Start every process immediately.
+    foreach ($commands as $step => $info) {
+        $descriptors = [
+            0 => ['pipe', 'r'],  // stdin
+            1 => ['pipe', 'w'],  // stdout
+            2 => ['pipe', 'w'],  // stderr
+        ];
+
+        $process = @proc_open($info['cmd'], $descriptors, $pipes, $cwd);
+
+        if (!is_resource($process)) {
+            $results[$step] = [
+                'exitCode' => -1,
+                'output' => 'proc_open() failed for: '.$info['cmd'],
+                'duration' => 0,
+            ];
+            continue;
+        }
+
+        fclose($pipes[0]); // close stdin immediately
+
+        $processes[$step] = [
+            'handle' => $process,
+            'pipes' => [$pipes[1], $pipes[2]],
+            'start' => hrtime(true),
+            'log' => $info['log'] ?? null,
+        ];
+    }
+
+    // Poll until every process exits.
+    while (count($processes) > 0) {
+        $finished = [];
+        foreach ($processes as $step => $pInfo) {
+            $status = proc_get_status($pInfo['handle']);
+            if (!$status['running']) {
+                $finished[] = $step;
+            }
+        }
+
+        foreach ($finished as $step) {
+            $pInfo = $processes[$step];
+            $stdout = stream_get_contents($pInfo['pipes'][0]);
+            $stderr = stream_get_contents($pInfo['pipes'][1]);
+            fclose($pInfo['pipes'][0]);
+            fclose($pInfo['pipes'][1]);
+            $exitCode = proc_close($pInfo['handle']);
+            $duration = (hrtime(true) - $pInfo['start']) / 1e9;
+
+            $output = (string) $stdout;
+            if ('' !== (string) $stderr) {
+                $output = '' !== $output ? $output.'
+'.$stderr : $stderr;
+            }
+
+            if (null !== $pInfo['log']) {
+                @mkdir(dirname($pInfo['log']), 0755, true);
+                file_put_contents($pInfo['log'], $output.'
+');
+            }
+
+            $results[$step] = [
+                'exitCode' => $exitCode,
+                'output' => $output,
+                'duration' => $duration,
+            ];
+
+            unset($processes[$step]);
+        }
+
+        if (count($processes) > 0) {
+            usleep(50000); // 50 ms
+        }
+    }
+
+    return $results;
+}
+
+/**
+ * Run check steps in parallel via proc_open subprocesses.
+ *
+ * Each step's stdout+stderr is captured to
+ * var/reports/check-<step>.log.  The parent waits for all
+ * processes, then prints a combined timing summary.
+ *
+ * @param array<string,array{cmd:string}> $steps
+ * @param array<string,string>            $failures out
+ * @param array<string,float>             $timings  out
+ */
+function run_check_commands_parallel(array $steps, array &$failures, array &$timings): void
+{
+    $logFiles = [];
+    $commands = [];
+    foreach ($steps as $step => $info) {
+        $logFiles[$step] = report_path("check-{$step}.log");
+        $commands[$step] = [
+            'cmd' => $info['cmd'],
+            'log' => $logFiles[$step],
+        ];
     }
     @mkdir(\CastorTasks\REPORTS_DIR, 0755, true);
 
-    echo "Running steps in parallel (pcntl_fork):\n";
+    echo 'Running steps in parallel (proc_open):
+';
     foreach (array_keys($steps) as $step) {
-        echo "  - {$step}\n";
+        echo "  - {$step}
+";
     }
-    echo "\n";
+    echo '
+';
 
-    $forked = [];
-    $overallStart = hrtime(true);
+    $results = run_commands_parallel($commands);
 
-    foreach ($steps as $step => $runner) {
-        $pid = pcntl_fork();
-        if (-1 === $pid) {
-            // Fork failed — run inline
-            $start = hrtime(true);
-            ob_start();
-            try {
-                $runner();
-                $output = ob_get_clean();
-                file_put_contents($stepLogs[$step], $output);
-            } catch (Throwable $e) {
-                $output = ob_get_clean();
-                file_put_contents($stepLogs[$step], $output."\nERROR: ".$e->getMessage()."\n");
-                $failures[$step] = $e->getMessage();
-            }
-            $timings[$step] = (hrtime(true) - $start) / 1e9;
-        } elseif (0 === $pid) {
-            // Child: capture all stdout to per-step log file
-            ob_start();
-            try {
-                $runner();
-                $output = ob_get_clean();
-                file_put_contents($stepLogs[$step], $output);
-                exit(0);
-            } catch (Throwable $e) {
-                $output = ob_get_clean();
-                file_put_contents($stepLogs[$step], $output."\nERROR: ".$e->getMessage()."\n");
-                exit(1);
-            }
-        } else {
-            $forked[$step] = ['pid' => $pid, 'start' => hrtime(true)];
+    foreach ($steps as $step => $_) {
+        $result = $results[$step] ?? ['exitCode' => -1, 'output' => 'proc_open failed', 'duration' => 0];
+        $timings[$step] = $result['duration'];
+        if (0 !== $result['exitCode']) {
+            $failures[$step] = $result['exitCode'] < 0
+                ? $result['output']
+                : 'exit code '.$result['exitCode'];
         }
     }
 
-    // Wait for every child before printing any results.
-    foreach ($forked as $step => $info) {
-        $status = 0;
-        pcntl_waitpid($info['pid'], $status);
-        $timings[$step] = (hrtime(true) - $info['start']) / 1e9;
-
-        if (pcntl_wifsignaled($status)) {
-            $signal = pcntl_wtermsig($status);
-            $failures[$step] = "killed by signal {$signal}";
-        } elseif (pcntl_wifexited($status) && 0 !== pcntl_wexitstatus($status)) {
-            $failures[$step] = 'exit code '.pcntl_wexitstatus($status);
-        }
-    }
-
-    $overallDuration = (hrtime(true) - $overallStart) / 1e9;
-
-    // Print per-step summary
-    echo "Summary:\n";
+    echo 'Summary:
+';
     foreach ($steps as $step => $_) {
         $status = isset($failures[$step]) ? 'FAIL' : 'OK';
         $duration = $timings[$step] ?? 0;
@@ -2142,54 +2224,75 @@ function run_check_parallel(array $steps, array &$failures, array &$timings): vo
 
         if (isset($failures[$step])) {
             echo "  — {$failures[$step]}";
-        } elseif (is_file($stepLogs[$step])) {
-            $logContent = file_get_contents($stepLogs[$step]);
+        } elseif (is_file($logFiles[$step])) {
+            $logContent = file_get_contents($logFiles[$step]);
             if (false !== $logContent) {
-                $lines = explode("\n", trim($logContent));
+                $lines = explode('
+', trim($logContent));
                 $lastLine = end($lines);
                 if ('' !== $lastLine) {
                     echo "  — {$lastLine}";
                 }
             }
         }
-        echo "\n";
+        echo '
+';
     }
-
-    echo sprintf("\nTotal: %.1fs\n", $overallDuration);
 }
 
 /**
- * Fallback sequential runner for environments without pcntl_fork.
+ * Fallback sequential runner (proc_open not available).
  *
- * Runs every step in order with per-step timing, then prints a
- * summary matching the same format as run_check_parallel().
+ * Runs every step in order with per-step timing.
  *
- * @param array<string,Closure> $steps
- * @param array<string,string>  $failures out
- * @param array<string,float>   $timings  out
+ * @param array<string,array{cmd:string}> $steps
+ * @param array<string,string>            $failures out
+ * @param array<string,float>             $timings  out
  */
-function run_check_sequential(array $steps, array &$failures, array &$timings): void
+function run_check_commands_sequential(array $steps, array &$failures, array &$timings): void
 {
-    echo "Running steps sequentially (pcntl_fork not available):\n\n";
+    echo 'Running steps sequentially (proc_open not available):
+
+';
 
     $overallStart = hrtime(true);
 
-    foreach ($steps as $step => $runner) {
+    foreach ($steps as $step => $info) {
         echo sprintf('  %-20s ... ', $step);
         $start = hrtime(true);
-        try {
-            $runner();
+
+        $descriptors = [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+        $process = @proc_open($info['cmd'], $descriptors, $pipes);
+
+        if (!is_resource($process)) {
             $duration = (hrtime(true) - $start) / 1e9;
             $timings[$step] = $duration;
-            echo sprintf("ok (%.1fs)\n", $duration);
-        } catch (Throwable $e) {
-            $duration = (hrtime(true) - $start) / 1e9;
-            $timings[$step] = $duration;
-            $failures[$step] = $e->getMessage();
-            echo sprintf("FAIL (%.1fs): %s\n", $duration, $e->getMessage());
+            $failures[$step] = 'proc_open failed';
+            echo sprintf('FAIL (%.1fs): proc_open failed
+', $duration);
+            continue;
+        }
+
+        fclose($pipes[0]);
+        $stdout = stream_get_contents($pipes[1]);
+        $stderr = stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        $exitCode = proc_close($process);
+        $duration = (hrtime(true) - $start) / 1e9;
+        $timings[$step] = $duration;
+
+        if (0 !== $exitCode) {
+            $failures[$step] = 'exit code '.$exitCode;
+            echo sprintf('FAIL (%.1fs): exit code %d
+', $duration, $exitCode);
+        } else {
+            echo sprintf('ok (%.1fs)
+', $duration);
         }
     }
 
-    $overallDuration = (hrtime(true) - $overallStart) / 1e9;
-    echo sprintf("\nTotal: %.1fs\n", $overallDuration);
+    echo sprintf('
+Total: %.1fs
+', (hrtime(true) - $overallStart) / 1e9);
 }
