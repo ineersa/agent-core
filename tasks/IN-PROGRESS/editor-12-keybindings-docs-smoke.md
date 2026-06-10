@@ -35,7 +35,7 @@ Parallelizable with: none after dependencies.
 Status: IN-PROGRESS
 Branch: task/editor-12-keybindings-docs-smoke
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke
-Fork run: old6yg7vwzl2
+Fork run: uu1qo3b48z9q
 PR URL:
 PR Status:
 Started: 2026-06-10T19:50:55.944Z
@@ -106,3 +106,7 @@ Completed:
 - Recorded fork run: old6yg7vwzl2
 - Validation: Fork old6yg7vwzl2 validation: `castor test:tui --filter=HotkeySmoke` passed three consecutive times (2 tests, 18 assertions each run); Fork old6yg7vwzl2 validation: full `castor test:tui` passed (13 tests, 48 assertions); Fork old6yg7vwzl2 validation: focused hotkey/slash/completion tests passed (117 tests, 261 assertions); Fork old6yg7vwzl2 validation: full `castor test` passed (2313 tests, 6788 assertions); Fork old6yg7vwzl2 validation: `castor deptrac` passed (0 violations), `castor phpstan` passed (0 errors), `castor cs-check` clean; Orchestrator verification: `git show --stat HEAD` shows 2 files changed (+109/-140): HotkeyTableRenderer.php and HotkeySmokeTest.php; task worktree status clean
 - Summary: Stability-fix fork old6yg7vwzl2 completed at commit 664e809b. HotkeySmoke E2E tests were rewritten to be deterministic and purely visual. Ctrl+J proof now types two unique markers, sends C-j, stays in the editor without submitting, polls tmux capture via waitForCallback, and asserts the markers appear on separate visible editor lines. `/hotkeys` proof types `/hotkeys`, presses Enter, and asserts visible themed box table content/box drawing chars in tmux capture. Removed events.jsonl assertions, fixed sleeps, glob/session artifact dependency, shell-prefix command workaround, SafeGuard config, and LLM response waiting from these tests. HotkeyTableRenderer also had a border alignment fix. Orchestrator verified task worktree clean at 664e809b. Integration checkout currently has an unrelated `.pi/settings.json` modification, so it is not clean and was not touched.
+
+## Task workflow update - 2026-06-10T21:30:32.261Z
+- Recorded fork run: uu1qo3b48z9q
+- Summary: Reviewer subagent returned REQUEST CHANGES for EDITOR-12 at HEAD 664e809b/f1fe4ac2 lineage. Blocking issue: HotkeyRegistry is a shared singleton populated by TuiListenerRegistrars on every session loop/session switch, so `/hotkeys` can accumulate duplicate bindings. Additional actionable findings: remove unused HotkeyProviderInterface dead abstraction, fix misleading InteractiveMode keybinding comment, document or type the SubmitListener array-shape adapter, de-duplicate empty-message ownership, consider table-width caps, and preserve/justify TUI E2E artifact retention. Launched review-fix fork uu1qo3b48z9q with exact instructions to address findings, keep theme-aware `/hotkeys`, preserve pure visual HotkeySmoke E2E, run Castor validation, commit, and leave worktree clean.
