@@ -50,14 +50,14 @@ Important non-goal: Do not delete valuable behavioral tests just to reduce count
 - `tests/AGENTS.md` or testing skill documents test standards: no structural getter-only tests, use shared fixtures/builders, use Castor, use TUI E2E proof for TUI behavior, and use cleanup/snapshot conventions.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates
 Fork run: 7ppehxoqqsn4
 PR URL: https://github.com/ineersa/agent-core/pull/113
-PR Status: open
+PR Status: merged
 Started: 2026-06-09T22:01:04.785Z
-Completed:
+Completed: 2026-06-10T22:17:28.684Z
 
 ## Work log
 - Created: 2026-06-09T21:53:09.939Z
@@ -347,3 +347,50 @@ Castor Check Output SHA256: 90139cd211ec9ec9f4733d9b921f9f41ae2c50907c24b3cea13a
 - Pushed task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates to origin.
 - branch 'task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates' set up to track 'origin/task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates'.
 - PR already exists: https://github.com/ineersa/agent-core/pull/113
+
+## Task workflow update - 2026-06-10T22:17:28.684Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates into integration checkout.
+- Merge made by the 'ort' strategy.
+ .agents/skills/testing/SKILL.md                    |  22 +-
+ .castor/helpers.php                                | 268 ++++---
+ .castor/tasks.php                                  | 842 +++++++++++++++++++--
+ .gitignore                                         |   3 +
+ AGENTS.md                                          |   2 +
+ config/packages/test/doctrine.yaml                 |  23 +-
+ tests/AGENTS.md                                    | 109 +++
+ .../Handler/ExecutionFailureDrillTest.php          |  16 +-
+ .../Application/Handler/ExecutionWorkerTest.php    |  43 +-
+ .../Pipeline/ApplyCommandHandlerTest.php           |  19 +-
+ .../Pipeline/CommandMailboxPolicyTest.php          |  21 +-
+ .../Pipeline/LlmStepResultHandlerTest.php          |  16 +-
+ .../Application/Pipeline/StartRunHandlerTest.php   |  16 +-
+ tests/AgentCore/Domain/Run/RunStateTest.php        |  49 +-
+ tests/AgentCore/Support/TestLogger.php             |  35 +
+ tests/AgentCore/Support/TestMessageBus.php         |  34 +
+ tests/CodingAgent/Config/AppConfigTest.php         |  25 +-
+ .../CodingAgent/Config/HomeSettingsWriterTest.php  |  30 +-
+ tests/CodingAgent/Phar/PharSmokeTest.php           |  20 +-
+ .../Controller/E2E/ControllerE2eTestCase.php       |  52 ++
+ .../Runtime/Controller/E2E/ControllerSmokeTest.php |  23 +-
+ .../E2E/OutputCapReadFileControllerTest.php        |  58 +-
+ .../Controller/E2E/ViewImageToolE2eTest.php        |  89 ++-
+ .../Controller/E2E/WriteFileToolE2eTest.php        |  19 +-
+ .../Session/HatfieldSessionStoreTest.php           |  35 +-
+ tests/Tui/E2E/TuiStartupSnapshotTest.php           |  26 +-
+ tests/Tui/Listener/CancelListenerTest.php          |  18 +-
+ tests/Tui/Listener/CompletionListenerTest.php      |  30 +-
+ tests/Tui/Listener/CopyCommandRegistrarTest.php    |  27 +-
+ tests/Tui/Listener/PromptHistoryListenerTest.php   |  28 +-
+ tests/Tui/Listener/SessionCommandRegistrarTest.php |  27 +-
+ tests/Tui/Question/QuestionRequestTest.php         |  24 -
+ .../Tui/Support/TuiRuntimeContextBuilderTrait.php  | 171 +++++
+ tests/Tui/Utility/ClipboardTest.php                |  36 -
+ 34 files changed, 1586 insertions(+), 670 deletions(-)
+ create mode 100644 tests/AGENTS.md
+ create mode 100644 tests/AgentCore/Support/TestLogger.php
+ create mode 100644 tests/AgentCore/Support/TestMessageBus.php
+ create mode 100644 tests/Tui/Support/TuiRuntimeContextBuilderTrait.php
+ delete mode 100644 tests/Tui/Utility/ClipboardTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates.
+- Pulled integration checkout: Already up to date..
