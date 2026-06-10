@@ -32,13 +32,13 @@ Parallelizable with: none after dependencies.
 - `castor check` passes.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/editor-12-keybindings-docs-smoke
+Worktree: /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-10T19:50:55.944Z
 Completed:
 
 ## Work log
@@ -47,3 +47,11 @@ Completed:
 
 ## Task workflow update - 2026-06-10T19:50:47.082Z
 - Summary: Scope revised after planning discussion. Drop the original configurable YAML keybinding loader/conflict-detection scope as premature overhead. New scope: implement reliable multiline prompt newline with Ctrl+J (keep Shift+Enter only if Symfony already supports it), add an internal display/catalog HotkeyRegistry for core app/editor/completion/history/model hotkeys, add a `/hotkeys` slash command rendering a nice table of registered hotkeys, and optionally expose display-only extension hotkey hint registration if it fits current extension/TUI context. Do not build a full input router or user-configurable keymap. Execution remains in existing Symfony TUI widgets/listeners; registry is metadata/documentation/display only. Must include real TmuxHarness + test LLM E2E proof for Ctrl+J multiline input and `/hotkeys` visibility, plus docs updates.
+
+## Task workflow update - 2026-06-10T19:50:55.945Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/editor-12-keybindings-docs-smoke.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke.
+- Summary: Starting revised EDITOR-12 scope: Ctrl+J multiline prompt newline, internal metadata HotkeyRegistry, `/hotkeys` command table, docs, and real TmuxHarness E2E proof. Original YAML keybinding loader/conflict detection is explicitly dropped as premature overhead. Main agent remains orchestrator; implementation will be delegated to a fork.
