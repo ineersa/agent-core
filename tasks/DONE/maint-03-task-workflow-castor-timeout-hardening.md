@@ -12,14 +12,14 @@ The repo-local `.pi/extensions/task-workflow.ts` implements `move_task`. Its COD
 - Typecheck/lint or available validation for the extension passes, or a documented repo-valid substitute is run.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: DONE
 Branch: task/maint-03-task-workflow-castor-timeout-hardening
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-03-task-workflow-castor-timeout-hardening
 Fork run:
 PR URL:
-PR Status:
+PR Status: merged
 Started: 2026-06-10T23:11:35.698Z
-Completed:
+Completed: 2026-06-10T23:18:09.694Z
 
 ## Work log
 - Created: 2026-06-10T23:11:29.848Z
@@ -31,3 +31,11 @@ Completed:
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/maint-03-task-workflow-castor-timeout-hardening.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/maint-03-task-workflow-castor-timeout-hardening.
 - Summary: Starting immediately because the task-workflow extension controls move_task CODE-REVIEW gates and must not hang indefinitely on castor check.
+
+## Task workflow update - 2026-06-10T23:18:09.694Z
+- Moved IN-PROGRESS → DONE.
+- Merged task/maint-03-task-workflow-castor-timeout-hardening into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/maint-03-task-workflow-castor-timeout-hardening.
+- Pulled integration checkout: Already up to date..
+- Summary: Consolidated into MAINT-02. The .pi/extensions/task-workflow.ts Promise.race hard-deadline hardening is implemented in MAINT-02 commit ae7b449c.
