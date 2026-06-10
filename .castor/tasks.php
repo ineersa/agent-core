@@ -2192,7 +2192,7 @@ function rmtree(string $dir): void
  *
  * @return array<string,array{exitCode:int,output:string,duration:float}>
  */
-function run_commands_parallel(array $commands): array
+function run_commands_parallel(array $commands, ?float $timeout = null): array
 {
     $processes = [];
     $results = [];
@@ -2224,6 +2224,7 @@ function run_commands_parallel(array $commands): array
             'pipes' => [$pipes[1], $pipes[2]],
             'start' => hrtime(true),
             'log' => $info['log'] ?? null,
+            'timedOut' => false,
         ];
     }
 
@@ -2234,6 +2235,15 @@ function run_commands_parallel(array $commands): array
             $status = proc_get_status($pInfo['handle']);
             if (!$status['running']) {
                 $finished[] = $step;
+            } elseif (null !== $timeout) {
+                $elapsed = (hrtime(true) - $pInfo['start']) / 1e9;
+                if ($elapsed > $timeout) {
+                    proc_terminate($pInfo['handle']);
+                    usleep(100000); // brief grace for SIGTERM
+                    @proc_terminate($pInfo['handle'], 9); // SIGKILL
+                    $processes[$step]['timedOut'] = true;
+                    $finished[] = $step;
+                }
             }
         }
 
@@ -2252,10 +2262,16 @@ function run_commands_parallel(array $commands): array
 '.$stderr : $stderr;
             }
 
+            if ($pInfo['timedOut']) {
+                $output = "TIMEOUT after {$timeout}s\n".$output;
+                if (0 === $exitCode) {
+                    $exitCode = -1;
+                }
+            }
+
             if (null !== $pInfo['log']) {
                 @mkdir(dirname($pInfo['log']), 0755, true);
-                file_put_contents($pInfo['log'], $output.'
-');
+                file_put_contents($pInfo['log'], $output."\n");
             }
 
             $results[$step] = [
@@ -2308,7 +2324,7 @@ function run_check_commands_parallel(array $steps, array &$failures, array &$tim
     echo '
 ';
 
-    $results = run_commands_parallel($commands);
+    $results = run_commands_parallel($commands, timeout: 300);
 
     foreach ($steps as $step => $_) {
         $result = $results[$step] ?? ['exitCode' => -1, 'output' => 'proc_open failed', 'duration' => 0];
