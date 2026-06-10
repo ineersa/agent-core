@@ -35,7 +35,7 @@ Parallelizable with: none after dependencies.
 Status: IN-PROGRESS
 Branch: task/editor-12-keybindings-docs-smoke
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke
-Fork run:
+Fork run: x76yjmx0yw0f
 PR URL:
 PR Status:
 Started: 2026-06-10T19:50:55.944Z
@@ -55,3 +55,7 @@ Completed:
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke.
 - Summary: Starting revised EDITOR-12 scope: Ctrl+J multiline prompt newline, internal metadata HotkeyRegistry, `/hotkeys` command table, docs, and real TmuxHarness E2E proof. Original YAML keybinding loader/conflict detection is explicitly dropped as premature overhead. Main agent remains orchestrator; implementation will be delegated to a fork.
+
+## Task workflow update - 2026-06-10T19:52:22.922Z
+- Recorded fork run: x76yjmx0yw0f
+- Summary: Started implementation fork x76yjmx0yw0f in worktree /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke. Fork scope: revise task body to new scope, add Ctrl+J multiline newline support, add display-only HotkeyRegistry/catalog, add `/hotkeys` slash command table, optionally expose non-breaking display-only extension hotkey hints, update docs, add mandatory real TmuxHarness E2E proof for Ctrl+J multiline and `/hotkeys`, run Castor validation, commit changes, leave worktree clean. Explicitly excluded: YAML keybinding loader, conflict detection config system, full input router, consumable extension hotkeys.
