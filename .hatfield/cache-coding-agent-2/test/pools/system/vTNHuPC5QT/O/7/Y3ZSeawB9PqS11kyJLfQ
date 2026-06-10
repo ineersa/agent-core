@@ -1,0 +1,48 @@
+<?php //Ineersa_CodingAgent_Config_BackgroundProcessConfig
+
+return [PHP_INT_MAX, new class() implements \Symfony\Component\Cache\Traits\CachedValueInterface { public function getValue(): mixed { return \deepclone_from_array([
+    'classes' => ['Symfony\\Component\\Serializer\\Mapping\\ClassMetadata', 'Symfony\\Component\\Serializer\\Mapping\\AttributeMetadata'],
+    'objectMeta' => [0, 1, 1, 1, 1],
+    'prepared' => 0,
+    'properties' => [
+        'Symfony\\Component\\Serializer\\Mapping\\ClassMetadata' => [
+            'name' => ['Ineersa\\CodingAgent\\Config\\BackgroundProcessConfig'],
+            'attributesMetadata' => [
+                ['storageDir' => 1, 'retentionSeconds' => 2, 'stopGraceSeconds' => 3, 'logTailChars' => 4],
+            ],
+            'classDiscriminatorMapping' => [null],
+        ],
+        'Symfony\\Component\\Serializer\\Mapping\\AttributeMetadata' => [
+            'name' => [1 => 'storageDir', 'retentionSeconds', 'stopGraceSeconds', 'logTailChars'],
+            'groups' => [
+                1 => [],
+                [],
+                [],
+                [],
+            ],
+            'maxDepth' => [1 => null, null, null, null],
+            'serializedName' => [1 => 'path', 'retention', 'stop_grace_seconds', 'log_tail_chars'],
+            'serializedPath' => [1 => null, null, null, null],
+            'ignore' => [1 => false, false, false, false],
+            'normalizationContexts' => [
+                1 => [],
+                [],
+                [],
+                [],
+            ],
+            'denormalizationContexts' => [
+                1 => [],
+                [],
+                [],
+                [],
+            ],
+        ],
+    ],
+    'resolve' => [
+        'Symfony\\Component\\Serializer\\Mapping\\ClassMetadata' => [
+            'attributesMetadata' => [
+                ['storageDir' => true, 'retentionSeconds' => true, 'stopGraceSeconds' => true, 'logTailChars' => true],
+            ],
+        ],
+    ],
+]); } }];

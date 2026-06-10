@@ -1,0 +1,12 @@
+<?php //getType.a%253A3%253A%257Bi%253A0%253Bs%253A50%253A%2522Ineersa%255CCodingAgent%255CConfig%255CBackgroundProcessConfig%2522%253Bi%253A1%253Bs%253A10%253A%2522storageDir%2522%253Bi%253A2%253Ba%253A0%253A%257B%257D%257D
+
+return [PHP_INT_MAX, new class() implements \Symfony\Component\Cache\Traits\CachedValueInterface { public function getValue(): mixed { return \deepclone_from_array([
+    'classes' => 'Symfony\\Component\\TypeInfo\\Type\\BuiltinType',
+    'objectMeta' => 1,
+    'prepared' => 0,
+    'properties' => [
+        'Symfony\\Component\\TypeInfo\\Type\\BuiltinType' => [
+            'typeIdentifier' => [\Symfony\Component\TypeInfo\TypeIdentifier::STRING],
+        ],
+    ],
+]); } }];

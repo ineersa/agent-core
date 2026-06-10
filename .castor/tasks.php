@@ -218,7 +218,12 @@ function test(string $filter = ''): void
     // Full suite: run phpunit.xml.dist suites in parallel, each with
     // its own SQLite DB file to avoid contention.  Uses proc_open
     // subprocesses (not pcntl_fork) to avoid Castor PHAR corruption.
-    $suites = ['agent-core', 'coding-agent', 'tui', 'platform'];
+    //
+    // coding-agent is the largest suite (~100s, ~99 test files) so it
+    // is split into round-robin shards so slow kernel-booting tests
+    // are evenly distributed across workers.
+    $codingAgentShards = array_keys(coding_agent_shard_groups());
+    $suites = array_merge(['agent-core'], $codingAgentShards, ['tui', 'platform']);
     $useParallel = \PHP_SAPI === 'cli' && function_exists('proc_open');
     if ($useParallel) {
         run_test_suites_parallel($suites, $pharEnv);
@@ -310,31 +315,15 @@ function run_test_suites_parallel(array $suites, string $pharEnv): void
     echo '
 ';
 
-    $phpBin = \PHP_BINARY;
-    $strictFlags = phpunit_strict_issue_flags();
-    $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
-
     $commands = [];
     $logFiles = [];
     foreach ($suites as $suite) {
         $dbFilename = 'app_test-'.$suite.'.sqlite';
-        $dbEnv = 'HATFIELD_TEST_DATABASE_PATH='.escapeshellarg($dbFilename);
-        $cacheDir = 'var/cache/.phpunit-'.$suite;
-        $junitFilename = 'phpunit-'.$suite.'.junit.xml';
         $logFilename = 'phpunit-'.$suite.'.log';
         $logFiles[$suite] = report_path($logFilename);
 
-        $junitFlag = is_llm_mode() ? ' --log-junit='.report_path($junitFilename) : '';
-
-        // Chain: migrate (idempotent) then PHPUnit.
         $commands[$suite] = [
-            'cmd' => 'APP_ENV=test '.$dbEnv.' '.$phpBin.' bin/console'
-                .' doctrine:migrations:migrate --no-interaction --allow-no-migration'
-                .' && APP_ENV=test '.$dbEnv.' '.$pharEnv.$phpBin.' vendor/bin/phpunit'
-                .' --testsuite '.escapeshellarg($suite)
-                .' --exclude-group tui-e2e --exclude-group llm-real'
-                .' --cache-directory '.escapeshellarg($cacheDir)
-                .' '.$strictFlags.$llmFlags.$junitFlag,
+            'cmd' => build_test_worker_command($suite, $pharEnv, $dbFilename),
             'log' => $logFiles[$suite],
         ];
     }
@@ -431,7 +420,34 @@ function run_test_suites_sequential(array $suites, string $pharEnv): void
         echo sprintf('  %-20s ... ', $suite);
         $start = hrtime(true);
 
-        $exitCode = run_one_test_suite($suite, $pharEnv, 'app_test-'.$suite.'.sqlite');
+        $dbFilename = 'app_test-'.$suite.'.sqlite';
+        $dbEnv = 'HATFIELD_TEST_DATABASE_PATH='.escapeshellarg($dbFilename).' ';
+        $cacheDirEnv = 'HATFIELD_CACHE_DIR=.hatfield/cache-'.$suite.' ';
+
+        @mkdir('var/test', 0755, true);
+
+        // Schema migration for this worker's isolated DB file.
+        $migrate = run_quiet_command(
+            'APP_ENV=test '.$cacheDirEnv.$dbEnv.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
+        );
+        if (0 !== $migrate->getExitCode()) {
+            $failures[$suite] = 'DB migration failed';
+            $timings[$suite] = (hrtime(true) - $start) / 1e9;
+            echo sprintf("FAIL — DB migration (%.1fs)\n", $timings[$suite]);
+            continue;
+        }
+
+        $cmd = build_test_worker_command($suite, $pharEnv, $dbFilename);
+        // Strip the 'migrate && ' prefix — migration already done above.
+        // The prefix includes APP_ENV, HATFIELD_CACHE_DIR, dbEnv, etc.
+        $cmd = preg_replace('/^APP_ENV=test .+? && /', '', $cmd);
+        // Re-add dbEnv + cacheDir since we stripped the full prefix.
+        $cmd = $dbEnv.$cacheDirEnv.$cmd;
+
+        $logFilename = 'phpunit-'.$suite.'.log';
+        $process = run_quiet_command($cmd);
+        persist_process_output($process, $logFilename);
+        $exitCode = $process->getExitCode();
 
         $timings[$suite] = (hrtime(true) - $start) / 1e9;
 
@@ -482,41 +498,89 @@ function run_test_suites_sequential(array $suites, string $pharEnv): void
  * than interleaved when multiple suites run in parallel.
  * Returns the PHPUnit exit code (0 = success).
  */
-function run_one_test_suite(string $suite, string $pharEnv, string $dbFilename): int
+/**
+ * Discover all CodingAgent test files and split them into balanced
+ * round-robin shards (not subdirectory-based, which can concentrate
+ * slow kernel-booting tests in one worker).
+ *
+ * @param int $numShards number of shards
+ *
+ * @return array<string, list<string>>
+ */
+function coding_agent_shard_groups(int $numShards = 4): array
 {
-    $dbEnv = 'HATFIELD_TEST_DATABASE_PATH='.escapeshellarg($dbFilename).' ';
+    $testDir = 'tests/CodingAgent';
+    $files = [];
 
-    @mkdir('var/test', 0755, true);
-
-    // Schema migration for this suite's isolated DB file.
-    $migrate = run_quiet_command(
-        'APP_ENV=test '.$dbEnv.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
+    $iter = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($testDir, FilesystemIterator::SKIP_DOTS)
     );
-    if (0 !== $migrate->getExitCode()) {
-        echo "{$suite}: DB migration FAILED\n";
+    foreach ($iter as $file) {
+        if ($file->isFile() && str_ends_with($file->getFilename(), 'Test.php')) {
+            $files[] = $file->getPathname();
+        }
+    }
+    sort($files);
 
-        return 1;
+    $shards = array_fill(1, $numShards, []);
+    foreach ($files as $i => $f) {
+        $shardIdx = ($i % $numShards) + 1;
+        $shards[$shardIdx][] = $f;
     }
 
-    $cacheDir = 'var/cache/.phpunit-'.$suite;
-    $junitFilename = 'phpunit-'.$suite.'.junit.xml';
-    $logFilename = 'phpunit-'.$suite.'.log';
+    $result = [];
+    for ($i = 1; $i <= $numShards; ++$i) {
+        $result['coding-agent-'.$i] = $shards[$i];
+    }
 
-    $cmd = $pharEnv.$dbEnv.'vendor/bin/phpunit'
-        .' --testsuite '.escapeshellarg($suite)
+    return $result;
+}
+
+/**
+ * Build the PHPUnit invocation for one test worker.
+ *
+ * For phpunit.xml.dist suites (agent-core, tui, platform) uses
+ * --testsuite.  For coding-agent-N shards uses directory paths so
+ * only the shard's portion of the suite is executed.
+ */
+function build_test_worker_command(
+    string $worker,
+    string $pharEnv,
+    string $dbFilename,
+): string {
+    $dbEnv = 'HATFIELD_TEST_DATABASE_PATH='.escapeshellarg($dbFilename);
+    $phpBin = \PHP_BINARY;
+    // Each shard needs its own Symfony cache dir because %env(...)%
+    // resolution in container compilation bakes HATFIELD_TEST_DATABASE_PATH
+    // into the compiled container.  Sharing .hatfield/cache/test/ across
+    // parallel workers causes stale-container reuse with a foreign DB
+    // path → SQLite "database is locked" / wrong-schema errors.
+    $cacheDirEnv = 'HATFIELD_CACHE_DIR=.hatfield/cache-'.$worker;
+    $cacheDir = 'var/cache/.phpunit-'.$worker;
+    $junitFilename = 'phpunit-'.$worker.'.junit.xml';
+    $junitFlag = is_llm_mode() ? ' --log-junit='.report_path($junitFilename) : '';
+    $strictFlags = phpunit_strict_issue_flags();
+    $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
+
+    $phpunitArgs = '';
+    if (str_starts_with($worker, 'coding-agent-')) {
+        // Shard: pass directory paths directly (not --testsuite).
+        $dirs = coding_agent_shard_groups()[$worker] ?? [];
+        if ([] === $dirs) {
+            throw new RuntimeException("Unknown coding-agent shard: {$worker}");
+        }
+        $phpunitArgs = implode(' ', array_map('escapeshellarg', $dirs));
+    } else {
+        $phpunitArgs = '--testsuite '.escapeshellarg($worker);
+    }
+
+    return 'APP_ENV=test '.$cacheDirEnv.' '.$dbEnv.' '.$phpBin.' bin/console'
+        .' doctrine:migrations:migrate --no-interaction --allow-no-migration'
+        .' && APP_ENV=test '.$cacheDirEnv.' '.$dbEnv.' '.$pharEnv.$phpBin.' vendor/bin/phpunit'
+        .' '.$phpunitArgs
         .' --exclude-group tui-e2e --exclude-group llm-real'
         .' --cache-directory '.escapeshellarg($cacheDir)
-        .' '.phpunit_strict_issue_flags()
-        .' --colors=never --no-progress';
-
-    if (is_llm_mode()) {
-        $cmd .= ' --log-junit='.report_path($junitFilename);
-    }
-
-    $process = run_quiet_command($cmd);
-    persist_process_output($process, $logFilename);
-
-    return $process->getExitCode();
+        .' '.$strictFlags.$llmFlags.$junitFlag;
 }
 
 /**
@@ -712,7 +776,7 @@ function cache_clear(): void
  * var/reports/ (QA report artifacts).  Safe to run anytime — only removes
  * generated/transient files, never tracked sources or .gitkeep.
  */
-#[AsTask(name: 'cleanup', description: 'Remove all temp/test artifacts (var/tmp/*, var/cache/, var/logs/, var/reports/)')]
+#[AsTask(name: 'cleanup', description: 'Remove all temp/test artifacts (var/tmp/*, var/cache/, var/logs/, var/reports/, .hatfield/cache-*, var/test/app_test*.sqlite)')]
 function cleanup(): void
 {
     $root = realpath(__DIR__.'/..');
@@ -743,12 +807,24 @@ function cleanup(): void
         }
     }
 
-    // ── var/test DB file ──
-    $testDb = $root.'/var/test/app_test.sqlite';
-    if (is_file($testDb)) {
-        unlink($testDb);
-        ++$removed;
-        echo "Removed var/test/app_test.sqlite\n";
+    // ── Parallel worker cache dirs (per-shard Symfony container cache) ──
+    $parallelCachePatterns = glob($root.'/.hatfield/cache-*', \GLOB_ONLYDIR);
+    if (false !== $parallelCachePatterns) {
+        foreach ($parallelCachePatterns as $path) {
+            rmtree($path);
+            ++$removed;
+            echo 'Removed '.str_replace($root.'/', '', $path)."\n";
+        }
+    }
+
+    // ── var/test DB files (including per-worker shard DBs) ──
+    $testDbFiles = glob($root.'/var/test/app_test*.sqlite');
+    if (false !== $testDbFiles) {
+        foreach ($testDbFiles as $file) {
+            unlink($file);
+            ++$removed;
+            echo 'Removed '.str_replace($root.'/', '', $file)."\n";
+        }
     }
 
     // ── Top-level generated directories ──
@@ -834,7 +910,7 @@ function idea_run_configs(): void
         'cs-fix' => 'Run PHP CS Fixer and modify files in place.',
         'cs-check' => 'Run PHP CS Fixer dry-run check.',
         'cache:clear' => 'Remove generated QA caches and clear Symfony cache.',
-        'cleanup' => 'Remove all temp/test artifacts (var/tmp/*, var/cache/, var/logs/, var/reports/).',
+        'cleanup' => 'Remove all temp/test artifacts (var/tmp/*, var/cache/, var/logs/, var/reports/, .hatfield/cache-*, var/test/app_test*.sqlite).',
         'log:tail' => 'Show recent log entries.',
         'log:search' => 'Search log entries.',
         'log:files' => 'List log files.',
@@ -2074,6 +2150,24 @@ function log_clear(string $olderThan = '7 days ago'): void
  * Recursively remove a directory tree.  Used by the cleanup task
  * to remove generated temp/test artifacts (not a Castor task itself).
  */
+function rmtree(string $dir): void
+{
+    if (!is_dir($dir)) {
+        return;
+    }
+
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST,
+    );
+
+    foreach ($iterator as $entry) {
+        $entry->isDir() ? rmdir((string) $entry) : unlink((string) $entry);
+    }
+
+    rmdir($dir);
+}
+
 // ── Shared proc_open parallel runner ──────────────────────────
 
 /**

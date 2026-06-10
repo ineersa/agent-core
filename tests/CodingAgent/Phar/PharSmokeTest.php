@@ -56,7 +56,10 @@ final class PharSmokeTest extends TestCase
         self::assertFileExists($pharPath, 'PHAR not found at '.$pharPath);
         self::assertFileIsReadable($pharPath);
 
-        $output = shell_exec($php.' '.escapeshellarg($pharPath).' list 2>&1');
+        // PHAR is a production artifact — never inherit APP_ENV=test from
+        // the PHPUnit parent process (which would trigger
+        // Class-not-found for test-only bundles like DAMADoctrineTestBundle).
+        $output = shell_exec('APP_ENV=prod '.$php.' '.escapeshellarg($pharPath).' list 2>&1');
         self::assertNotNull($output, 'PHAR list command produced no output');
         self::assertStringContainsString('agent', $output, 'PHAR list output should contain the agent command');
 
@@ -83,8 +86,10 @@ final class PharSmokeTest extends TestCase
             ));
         }
 
-        // Also verify that --help works on the agent command
-        $output = shell_exec($php.' '.escapeshellarg($pharPath).' agent --help 2>&1');
+        // Also verify that --help works on the agent command.
+        // APP_ENV=prod prevents the PHAR from trying to load test-only
+        // bundles (DAMADoctrineTestBundle) inherited from the PHPUnit env.
+        $output = shell_exec('APP_ENV=prod '.$php.' '.escapeshellarg($pharPath).' agent --help 2>&1');
         self::assertNotNull($output, 'PHAR agent --help produced no output');
         self::assertStringContainsString('Usage:', $output);
     }
@@ -119,7 +124,7 @@ final class PharSmokeTest extends TestCase
         // Class-not-found errors for test-only bundles like DAMADoctrineTestBundle.
         $repoRoot = dirname(__DIR__, 3);
         $process = Process::fromShellCommandline(
-            \sprintf('APP_ENV=prod %s %s list', escapeshellarg($php), escapeshellarg($pharPath)),
+            \sprintf('APP_ENV=prod HATFIELD_CACHE_DIR= %s %s list', escapeshellarg($php), escapeshellarg($pharPath)),
             cwd: $repoRoot,
         );
         $process->mustRun();
@@ -199,7 +204,7 @@ final class PharSmokeTest extends TestCase
         try {
             $process = Process::fromShellCommandline(
                 \sprintf(
-                    'APP_ENV=prod HOME=%s %s %s list',
+                    'APP_ENV=prod HATFIELD_CACHE_DIR= HOME=%s %s %s list',
                     \escapeshellarg($homeDir),
                     \escapeshellarg($php),
                     \escapeshellarg($pharPath),

@@ -1,0 +1,51 @@
+<?php //Ineersa_CodingAgent_Config_OutputCapConfig
+
+return [PHP_INT_MAX, new class() implements \Symfony\Component\Cache\Traits\CachedValueInterface { public function getValue(): mixed { return \deepclone_from_array([
+    'classes' => ['Symfony\\Component\\Serializer\\Mapping\\ClassMetadata', 'Symfony\\Component\\Serializer\\Mapping\\AttributeMetadata'],
+    'objectMeta' => [0, 1, 1, 1, 1, 1],
+    'prepared' => 0,
+    'properties' => [
+        'Symfony\\Component\\Serializer\\Mapping\\ClassMetadata' => [
+            'name' => ['Ineersa\\CodingAgent\\Config\\OutputCapConfig'],
+            'attributesMetadata' => [
+                ['storageDir' => 1, 'defaultCap' => 2, 'docCap' => 3, 'retentionSeconds' => 4, 'sessionPrefix' => 5],
+            ],
+            'classDiscriminatorMapping' => [null],
+        ],
+        'Symfony\\Component\\Serializer\\Mapping\\AttributeMetadata' => [
+            'name' => [1 => 'storageDir', 'defaultCap', 'docCap', 'retentionSeconds', 'sessionPrefix'],
+            'groups' => [
+                1 => [],
+                [],
+                [],
+                [],
+                [],
+            ],
+            'maxDepth' => [1 => null, null, null, null, null],
+            'serializedName' => [1 => 'path', 'default_cap', 'doc_cap', 'retention', 'session_prefix'],
+            'serializedPath' => [1 => null, null, null, null, null],
+            'ignore' => [1 => false, false, false, false, false],
+            'normalizationContexts' => [
+                1 => [],
+                [],
+                [],
+                [],
+                [],
+            ],
+            'denormalizationContexts' => [
+                1 => [],
+                [],
+                [],
+                [],
+                [],
+            ],
+        ],
+    ],
+    'resolve' => [
+        'Symfony\\Component\\Serializer\\Mapping\\ClassMetadata' => [
+            'attributesMetadata' => [
+                ['storageDir' => true, 'defaultCap' => true, 'docCap' => true, 'retentionSeconds' => true, 'sessionPrefix' => true],
+            ],
+        ],
+    ],
+]); } }];

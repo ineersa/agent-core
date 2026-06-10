@@ -1,0 +1,42 @@
+<?php //Ineersa_CodingAgent_Config_TuiConfig
+
+return [PHP_INT_MAX, new class() implements \Symfony\Component\Cache\Traits\CachedValueInterface { public function getValue(): mixed { return \deepclone_from_array([
+    'classes' => ['Symfony\\Component\\Serializer\\Mapping\\ClassMetadata', 'Symfony\\Component\\Serializer\\Mapping\\AttributeMetadata'],
+    'objectMeta' => [0, 1, 1],
+    'prepared' => 0,
+    'properties' => [
+        'Symfony\\Component\\Serializer\\Mapping\\ClassMetadata' => [
+            'name' => ['Ineersa\\CodingAgent\\Config\\TuiConfig'],
+            'attributesMetadata' => [
+                ['theme' => 1, 'themePaths' => 2],
+            ],
+            'classDiscriminatorMapping' => [null],
+        ],
+        'Symfony\\Component\\Serializer\\Mapping\\AttributeMetadata' => [
+            'name' => [1 => 'theme', 'themePaths'],
+            'groups' => [
+                1 => [],
+                [],
+            ],
+            'maxDepth' => [1 => null, null],
+            'serializedName' => [1 => null, 'theme_paths'],
+            'serializedPath' => [1 => null, null],
+            'ignore' => [1 => false, false],
+            'normalizationContexts' => [
+                1 => [],
+                [],
+            ],
+            'denormalizationContexts' => [
+                1 => [],
+                [],
+            ],
+        ],
+    ],
+    'resolve' => [
+        'Symfony\\Component\\Serializer\\Mapping\\ClassMetadata' => [
+            'attributesMetadata' => [
+                ['theme' => true, 'themePaths' => true],
+            ],
+        ],
+    ],
+]); } }];
