@@ -44,3 +44,6 @@ Completed:
 ## Work log
 - Created: 2026-05-18T00:16:39.944Z
 - Updated: 2026-05-18 — Scope simplified: reuse Symfony TUI Keybindings class, build only YAML loader + conflict detection. Removed EditorKeymap/EditorAction/EditorInputRouter from scope.
+
+## Task workflow update - 2026-06-10T19:50:47.082Z
+- Summary: Scope revised after planning discussion. Drop the original configurable YAML keybinding loader/conflict-detection scope as premature overhead. New scope: implement reliable multiline prompt newline with Ctrl+J (keep Shift+Enter only if Symfony already supports it), add an internal display/catalog HotkeyRegistry for core app/editor/completion/history/model hotkeys, add a `/hotkeys` slash command rendering a nice table of registered hotkeys, and optionally expose display-only extension hotkey hint registration if it fits current extension/TUI context. Do not build a full input router or user-configurable keymap. Execution remains in existing Symfony TUI widgets/listeners; registry is metadata/documentation/display only. Must include real TmuxHarness + test LLM E2E proof for Ctrl+J multiline input and `/hotkeys` visibility, plus docs updates.
