@@ -16,7 +16,7 @@ if (!\class_exists(Ineersa_CodingAgent_KernelProdContainer::class, false)) {
 
 return new \ContainerLwFcCHH\Ineersa_CodingAgent_KernelProdContainer([
     'container.build_hash' => 'LwFcCHH',
-    'container.build_id' => '09bc6ee8',
-    'container.build_time' => 1781124560,
+    'container.build_id' => 'cc5891a3',
+    'container.build_time' => 1781124688,
     'container.runtime_mode' => \in_array(\PHP_SAPI, ['cli', 'phpdbg', 'embed'], true) ? 'web=0' : 'web=1',
 ], __DIR__.\DIRECTORY_SEPARATOR.'ContainerLwFcCHH');
