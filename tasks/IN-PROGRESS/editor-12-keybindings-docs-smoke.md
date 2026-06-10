@@ -35,7 +35,7 @@ Parallelizable with: none after dependencies.
 Status: IN-PROGRESS
 Branch: task/editor-12-keybindings-docs-smoke
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke
-Fork run: 8pvicrpkkgcc
+Fork run: old6yg7vwzl2
 PR URL:
 PR Status:
 Started: 2026-06-10T19:50:55.944Z
@@ -97,3 +97,7 @@ Completed:
 - Recorded fork run: 8pvicrpkkgcc
 - Validation: Fork 8pvicrpkkgcc validation: `castor deptrac` passed (0 violations, 0 errors); Fork 8pvicrpkkgcc validation: `castor phpstan` passed (0 errors); Fork 8pvicrpkkgcc validation: `castor cs-check` clean; Fork 8pvicrpkkgcc validation: `castor test --filter='HotkeyTableRenderer'` passed (7 tests, 48 assertions); Fork 8pvicrpkkgcc validation: focused Hotkey/Slash/Completion tests passed (110 tests, 213 assertions); Fork 8pvicrpkkgcc validation: full `castor test` passed (2313 tests, 6788 assertions); Fork 8pvicrpkkgcc validation: full `castor test:tui` passed (13 tests, 35 assertions); Blocking gap remains: Ctrl+J E2E must be rewritten to pure visual tmux snapshot/capture with `Hello` Ctrl+J `World`; no events.jsonl, no fixed sleeps, no shell-prefix output, no LLM/session artifacts
 - Summary: Theme-aware `/hotkeys` renderer fork 8pvicrpkkgcc completed at commit f1fe4ac2. Implemented deptrac-safe architecture: SlashCommandRegistry now returns data-only HotkeyTableData, SubmitListener adapts it to TuiTranscript HotkeyTableRenderer, and HotkeyTableRenderer applies theme-derived ANSI styling for heading/sections/headers/keys/borders/descriptions. Colors reported: Accent for heading/sections/header row, Muted for borders/descriptions/footer, Success for key names, default Text for actions. No hardcoded ANSI colors; no MarkdownWidget; no YAML keybindings. Orchestrator verified worktree clean at f1fe4ac2 and integration checkout clean at bcf46976. However this is NOT ready for CODE-REVIEW because the fork explicitly left the existing Ctrl+J HotkeySmoke timing/artifact issue in place; user has rejected events.jsonl/sleep/shell-prefix proof. A follow-up must rewrite HotkeySmoke to pure tmux visual assertions before review.
+
+## Task workflow update - 2026-06-10T21:02:40.902Z
+- Recorded fork run: old6yg7vwzl2
+- Summary: Launched narrow stability-fix fork old6yg7vwzl2. Scope: rewrite HotkeySmoke Ctrl+J E2E to pure real tmux visual editor-state proof (`Hello <hex>` → Ctrl+J → `World <hex>` visible on separate editor lines while still editing), with no events.jsonl, no sleeps, no shell-prefix, no LLM/session artifacts. Also ensure `/hotkeys` E2E asserts visible themed box table via tmux capture/snapshot only. Fork must remove residual flaky artifact code/comments, run repeated `castor test:tui --filter=HotkeySmoke`, full `castor test:tui`, focused hotkey tests, deptrac/phpstan/cs-check, commit, and leave worktree clean.
