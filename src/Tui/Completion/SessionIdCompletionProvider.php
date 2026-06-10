@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Completion;
 
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-
 /**
  * Completion provider for session IDs in /resume, /r, and /rename commands.
  *
@@ -19,7 +17,7 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
  * (e.g. "/rename 1 "), no completions are returned so the user can
  * type the new name without interference.
  *
- * Suggestions are filtered from HatfieldSessionStore::listSessions()
+ * Suggestions are filtered from the SessionCompletionSource
  * by session ID prefix.  Insert text includes a trailing space so
  * the cursor advances past the completed session ID.
  */
@@ -29,20 +27,22 @@ final readonly class SessionIdCompletionProvider implements CompletionProvider
     private const int MAX_SUGGESTIONS = 30;
 
     public function __construct(
-        private HatfieldSessionStore $sessionStore,
+        private SessionCompletionSourceInterface $sessionSource,
     ) {
     }
 
     public function getSuggestions(CompletionContext $context): array
     {
         // Parse session-id argument context from supported commands.
-        [$command, $prefix] = $this->extractSessionIdContext($context->text);
+        $parsed = $this->extractSessionIdContext($context->text);
 
-        if (null === $command) {
+        if (null === $parsed) {
             return [];
         }
 
-        $sessions = $this->sessionStore->listSessions();
+        [$command, $prefix] = $parsed;
+
+        $sessions = $this->sessionSource->listCompletionSessions();
 
         if ([] === $sessions) {
             return [];
@@ -60,8 +60,8 @@ final readonly class SessionIdCompletionProvider implements CompletionProvider
                 break;
             }
 
-            $sessionId = $session['sessionId'];
-            $displayTitle = $session['displayTitle'];
+            $sessionId = $session->sessionId;
+            $displayTitle = $session->displayTitle;
 
             // Filter by session ID prefix (case-insensitive, but IDs are numeric)
             if ('' !== $prefixLower && !str_starts_with($sessionId, $prefixLower)) {

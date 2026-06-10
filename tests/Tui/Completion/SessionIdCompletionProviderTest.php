@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\Tui\Completion\CompletionContext;
 use Ineersa\Tui\Completion\CompletionSuggestion;
+use Ineersa\Tui\Completion\SessionCompletionSourceInterface;
 use Ineersa\Tui\Completion\SessionIdCompletionProvider;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
@@ -18,7 +19,7 @@ use PHPUnit\Framework\Attributes\Test;
  * Uses IsolatedKernelTestCase because HatfieldSessionStore and
  * HatfieldSessionRepository are final (cannot be mocked/stubbed).
  * Tests that only verify context matching (no listSessions() call)
- * work with a fresh store; tests that need session data create
+ * work with a fresh source; tests that need session data create
  * sessions via the real store.
  *
  * @see IsolatedKernelTestCase for isolation and setup details
@@ -27,6 +28,7 @@ use PHPUnit\Framework\Attributes\Test;
 final class SessionIdCompletionProviderTest extends IsolatedKernelTestCase
 {
     private HatfieldSessionStore $sessionStore;
+    private SessionCompletionSourceInterface $sessionSource;
     private SessionIdCompletionProvider $provider;
 
     protected function setUp(): void
@@ -36,7 +38,10 @@ final class SessionIdCompletionProviderTest extends IsolatedKernelTestCase
         /** @var HatfieldSessionStore $store */
         $store = self::getContainer()->get(HatfieldSessionStore::class);
         $this->sessionStore = $store;
-        $this->provider = new SessionIdCompletionProvider($this->sessionStore);
+        /** @var SessionCompletionSourceInterface $source */
+        $source = self::getContainer()->get(SessionCompletionSourceInterface::class);
+        $this->sessionSource = $source;
+        $this->provider = new SessionIdCompletionProvider($this->sessionSource);
     }
 
     // ── Context detection (no listSessions needed) ─────────────────────
