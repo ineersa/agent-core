@@ -16,7 +16,7 @@ if (!\class_exists(Ineersa_CodingAgent_KernelTestDebugContainer::class, false)) 
 
 return new \ContainerV2CSdrh\Ineersa_CodingAgent_KernelTestDebugContainer([
     'container.build_hash' => 'V2CSdrh',
-    'container.build_id' => '5dad9992',
-    'container.build_time' => 1781124473,
+    'container.build_id' => '10a26a3b',
+    'container.build_time' => 1781124686,
     'container.runtime_mode' => \in_array(\PHP_SAPI, ['cli', 'phpdbg', 'embed'], true) ? 'web=0' : 'web=1',
 ], __DIR__.\DIRECTORY_SEPARATOR.'ContainerV2CSdrh');

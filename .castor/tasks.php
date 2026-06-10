@@ -817,6 +817,14 @@ function cleanup(): void
         }
     }
 
+    // ── PHAR build lock file ──
+    $pharLock = $root.'/var/tmp/phar-build.lock';
+    if (is_file($pharLock)) {
+        unlink($pharLock);
+        ++$removed;
+        echo "Removed var/tmp/phar-build.lock\n";
+    }
+
     // ── var/test DB files (including per-worker shard DBs) ──
     $testDbFiles = glob($root.'/var/test/app_test*.sqlite');
     if (false !== $testDbFiles) {

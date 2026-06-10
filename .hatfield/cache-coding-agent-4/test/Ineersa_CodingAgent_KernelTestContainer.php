@@ -16,7 +16,7 @@ if (!\class_exists(Ineersa_CodingAgent_KernelTestContainer::class, false)) {
 
 return new \ContainerCKKBfsx\Ineersa_CodingAgent_KernelTestContainer([
     'container.build_hash' => 'CKKBfsx',
-    'container.build_id' => '31855893',
-    'container.build_time' => 1781124475,
+    'container.build_id' => '79daec24',
+    'container.build_time' => 1781124687,
     'container.runtime_mode' => \in_array(\PHP_SAPI, ['cli', 'phpdbg', 'embed'], true) ? 'web=0' : 'web=1',
 ], __DIR__.\DIRECTORY_SEPARATOR.'ContainerCKKBfsx');
