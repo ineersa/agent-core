@@ -35,7 +35,7 @@ Parallelizable with: none after dependencies.
 Status: IN-PROGRESS
 Branch: task/editor-12-keybindings-docs-smoke
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke
-Fork run: h37ng9no7c5l
+Fork run: 1o9mdpeq3zm1
 PR URL: https://github.com/ineersa/agent-core/pull/114
 PR Status: open
 Started: 2026-06-10T19:50:55.944Z
@@ -162,3 +162,7 @@ Castor Check Output SHA256: c8b1cd3ef2c18cd267365d1d7b99e3b19c1b45b39931955b6777
 - Recorded fork run: h37ng9no7c5l
 - Validation: Fork h37ng9no7c5l validation: `php -l .castor/tasks.php` passed; Fork h37ng9no7c5l validation: `castor cs-check` passed; Fork h37ng9no7c5l validation: `castor deptrac` passed (0 violations); Fork h37ng9no7c5l validation: `castor test:tui` passed (13 tests, 48 assertions); Fork h37ng9no7c5l validation: focused Hotkey tests passed (99 tests, 229 assertions); Fork h37ng9no7c5l validation: `LLM_MODE=true timeout 360 castor check` passed; all 7 steps passed in ~106.5s total (test longest at 106.5s, test:tui 65.5s, test:llm-real 27.5s)
 - Summary: Diagnostic Castor-check fork h37ng9no7c5l completed at commit 4dc63017. Root cause of apparent gate hang was introduced by the latest maintenance merge: `.castor/tasks.php` parallelized check steps via `run_commands_parallel()` but the helper had no internal timeout, so a stuck child process could spin forever until move_task's outer OS timeout. Fork added an optional per-process timeout to `run_commands_parallel()` and passes 300s from `run_check_commands_parallel()`. No EDITOR-12 production code changed. Orchestrator verified worktree clean at 4dc63017 and branch ahead of origin by 1.
+
+## Task workflow update - 2026-06-10T22:41:46.584Z
+- Recorded fork run: 1o9mdpeq3zm1
+- Summary: Retrying move_task after Castor parallel timeout fix completed the gate but failed only `test:tui` (exit code 2). Failure is not HotkeySmoke; JUnit shows `TuiAgentSmokeTest::testNewSessionCommandAndGetAssistantResponse` timed out waiting 10s for a new user block (`❯`) after `/new` prompt submission. Last capture showed the second prompt visible in the editor/input area with idle status but no new user transcript block. Launched narrow diagnostic/fix fork 1o9mdpeq3zm1 to inspect TuiAgentSmokeTest/TmuxHarness/failure artifacts and maintenance-merge timing changes, fix the smallest deterministic issue without sleeps, preserve HotkeySmoke guarantees, run Castor TUI/full check validation, commit, and leave worktree clean.
