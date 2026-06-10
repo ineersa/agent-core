@@ -50,7 +50,7 @@ Important non-goal: Do not delete valuable behavioral tests just to reduce count
 - `tests/AGENTS.md` or testing skill documents test standards: no structural getter-only tests, use shared fixtures/builders, use Castor, use TUI E2E proof for TUI behavior, and use cleanup/snapshot conventions.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates
 Fork run: 7ppehxoqqsn4
@@ -298,11 +298,11 @@ Remaining blocker found by orchestrator validation: `castor phpstan` fails on 4 
 - Validation: castor test:llm-real --filter=OutputCap — PASS (1 test, 7 assertions); castor test:llm-real — PASS (5 tests, 39 assertions); castor phpstan — PASS (0 errors); castor cs-check — PASS (files_fixed=0); castor deptrac — PASS (0 violations); castor test — PASS (46.1s, 2269 tests, 6660 assertions); LLM_MODE=true castor check — PASS (quality: ok)
 - Summary: Fixed official gate failure in `OutputCapReadFileControllerTest::testReadLargeFileProducesCappedOutput` at HEAD 8c64600c. Root cause: the test prompt used a bare filename; the test LLM sometimes read the temp directory/cap artifact instead of `large-output.txt`, so the sentinel-in-cap-file hard assertion was unstable. Fix uses explicit `./large-output.txt` prompt/path and changes the sentinel-in-cap-file check to diagnostic logging while keeping hard assertions for command/run/session artifacts, output-cap evidence, and no sentinel leakage into state.json. Branch clean and pushed.
 Castor Check Status: passed
-Castor Check Commit: 5bedd07afaf2796370511cfd389378ac2f8b169f
+Castor Check Commit: f84e3bea9ed6e80b0f6a326051489410a3ccb9f8
 Castor Check Command: LLM_MODE=true castor check
 Castor Check Timeout: 900s
-Castor Check Completed: 2026-06-10T21:56:21.413Z
-Castor Check Output SHA256: 0045f011d2cc5c8fdf5f6e032d337b774519092174524bcb8f24de2ab4dd9a39
+Castor Check Completed: 2026-06-10T22:17:21.079Z
+Castor Check Output SHA256: 90139cd211ec9ec9f4733d9b921f9f41ae2c50907c24b3cea13aa2a0bfe636ab
 
 ## Task workflow update - 2026-06-10T21:26:31.813Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -340,3 +340,10 @@ Castor Check Output SHA256: 0045f011d2cc5c8fdf5f6e032d337b774519092174524bcb8f24
 - Recorded fork run: 7ppehxoqqsn4
 - Validation: php -l tests/CodingAgent/Phar/PharSmokeTest.php — PASS; castor test --filter=RunStateTest — PASS (3/3); castor phpstan — PASS (0 errors); castor deptrac — PASS (0 violations); castor cs-check — PASS (files_fixed=0); castor test — PASS (51.4s, 2279 tests, 6684 assertions); castor test:tui — PASS (11 tests, 30 assertions); castor test:llm-real — PASS (5 tests, 39 assertions); git status --short — clean
 - Summary: Conflict-resolution fork completed at HEAD f84e3bea and pushed. It merged latest origin/main (eccc222d) into MAINT-01, resolved the single conflict in tests/CodingAgent/Phar/PharSmokeTest.php by combining origin/main HOME isolation with MAINT-01 APP_ENV=prod and HATFIELD_CACHE_DIR clearing, preserving PHAR smoke isolation and all MAINT-01 behavior. Branch is clean and PR #113 is conflict-free against main.
+
+## Task workflow update - 2026-06-10T22:17:22.354Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: f84e3bea9ed6.
+- Pushed task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates to origin.
+- branch 'task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates' set up to track 'origin/task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/113
