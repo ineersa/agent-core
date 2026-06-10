@@ -228,7 +228,7 @@ final readonly class HotkeyTableRenderer
 
         if ($hasDesc) {
             $result[] = '  '.$border(
-                '┌'.$h.$h.$h.
+                '┌'.$h.$h.
                 str_repeat($h, $keyW).'┬'.
                 str_repeat($h, $actW + 2).'┬'.
                 str_repeat($h, $descW + 2).'┐'
@@ -239,7 +239,7 @@ final readonly class HotkeyTableRenderer
                 $border('│').' '.$accent(self::padDisplayWidth($descHeader, $descW)).' '.
                 $border('│');
             $result[] = '  '.$border(
-                '├'.$h.$h.$h.
+                '├'.$h.$h.
                 str_repeat($h, $keyW).'┼'.
                 str_repeat($h, $actW + 2).'┼'.
                 str_repeat($h, $descW + 2).'┤'
@@ -254,14 +254,14 @@ final readonly class HotkeyTableRenderer
             }
 
             $result[] = '  '.$border(
-                '└'.$h.$h.$h.
+                '└'.$h.$h.
                 str_repeat($h, $keyW).'┴'.
                 str_repeat($h, $actW + 2).'┴'.
                 str_repeat($h, $descW + 2).'┘'
             );
         } else {
             $result[] = '  '.$border(
-                '┌'.$h.$h.$h.
+                '┌'.$h.$h.
                 str_repeat($h, $keyW).'┬'.
                 str_repeat($h, $actW + 2).'┐'
             );
@@ -270,7 +270,7 @@ final readonly class HotkeyTableRenderer
                 $border('│').' '.$accent(self::padDisplayWidth($actHeader, $actW)).' '.
                 $border('│');
             $result[] = '  '.$border(
-                '├'.$h.$h.$h.
+                '├'.$h.$h.
                 str_repeat($h, $keyW).'┼'.
                 str_repeat($h, $actW + 2).'┤'
             );
@@ -283,7 +283,7 @@ final readonly class HotkeyTableRenderer
             }
 
             $result[] = '  '.$border(
-                '└'.$h.$h.$h.
+                '└'.$h.$h.
                 str_repeat($h, $keyW).'┴'.
                 str_repeat($h, $actW + 2).'┘'
             );

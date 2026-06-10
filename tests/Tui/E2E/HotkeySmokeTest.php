@@ -12,21 +12,14 @@ use PHPUnit\Framework\TestCase;
  * End-to-end smoke test for Ctrl+J multiline newline and /hotkeys command.
  *
  * Tests:
- *  A. Ctrl+J inserts newline → shell-prefix proof via multiline bash command.
- *  B. /hotkeys renders a keyboard shortcuts table.
+ *  A. Ctrl+J inserts a newline in the editor (purely visual proof).
+ *  B. /hotkeys renders a themed keyboard shortcuts table.
  *
- * False-positive avoidance for Ctrl+J:
- *  - Uses a shell-prefixed (!) multiline bash command that only produces
- *    output when Ctrl+J actually creates a newline.
- *  - The test types `!MARKER=<uuid>`, presses C-j, types
- *    `printf "%s\n" "$MARKER"`, then presses Enter.
- *  - If C-j DOES insert a newline: bash executes the multiline command as
- *    one shell invocation and the unique marker appears in shell output.
- *  - If C-j submits early or does NOT insert a newline: only the variable
- *    assignment is the shell command (produces no output), and the printf
- *    line is a separate non-shell-prefixed editor line.
- *  - The marker NEVER appears in the literal keystrokes sent — it only
- *    appears if real shell output captures the printf result.
+ * Design principles:
+ *  - No events.jsonl, no fixed sleeps, no session artifacts.
+ *  - No shell-prefix commands, no LLM response waiting.
+ *  - All assertions use tmux pane capture/history polling only.
+ *  - Unique random markers per test avoid matching static help/text.
  *
  * @group tui-e2e
  */
@@ -61,128 +54,106 @@ final class HotkeySmokeTest extends TestCase
      *
      * Ctrl+J (C-j in tmux) inserts a newline in the editor.
      *
-     * Proof strategy:
-     *  - Type `!MARKER=<hex>`, press C-j, type `printf "%s\n" "$MARKER"`,
-     *    press Enter.
-     *  - If C-j inserts a newline: both lines form one shell command that
-     *    sets the variable AND prints it. The marker appears in capture.
-     *  - If C-j submits or fails: only the variable assignment is the
-     *    first shell command (produces no visible output), printf is a
-     *    second regular editor line, and the marker never appears.
+     * Proof strategy (purely visual — no submission, no LLM, no shell):
+     *  1. Type a unique first-line marker.
+     *  2. Send Ctrl+J (C-j).
+     *  3. Type a unique second-line marker.
+     *  4. Capture the pane while still in the editor (no Enter/submit).
+     *  5. Assert the second marker appears on a line BELOW the first marker.
+     *
+     * If C-j does nothing, both markers concatenate on the same line
+     * and the line-order assertion fails.
+     *
+     * If C-j erroneously submits (Enter-like), the first marker disappears
+     * from the editor and the assertion that it's in the capture fails.
      */
-    public function testCtrlJInsertsNewlineViaShellPrefixMultilineCommand(): void
+    public function testCtrlJInsertsNewlineInEditor(): void
     {
-        $marker = 'hk-ml-' . bin2hex(random_bytes(4));
-
-        // The marker is embedded in the command, not in the keys we type.
-        // The pane capture verifies it appears in the OUTPUT, not echo.
-        $shellCmd = \sprintf('!%s=%s', 'MARKER', $marker);
-        $printfCmd = \sprintf('printf "%%s\\n" "$%s"', 'MARKER');
+        $line1Marker = 'cj-1-' . bin2hex(random_bytes(4));
+        $line2Marker = 'cj-2-' . bin2hex(random_bytes(4));
 
         $pane = $this->tmux->startDetached(
             command: $this->agentCommand(),
-            prefix: 'hatfield-hk-ml',
+            prefix: 'hatfield-hk-cj',
             width: 120,
             height: 40,
             cwd: $this->testProjectDir,
         );
 
-        // Wait for agent boot (logo visible).
+        // Wait for agent boot (logo █ visible).
         $this->tmux->waitForCaptureContains($pane, '█', 10.0);
 
-        // Type first line: !MARKER=<hex>
-        $this->tmux->sendLiteral($pane, $shellCmd);
+        // Type first line marker.
+        $this->tmux->sendLiteral($pane, $line1Marker);
 
         // Insert newline with Ctrl+J (tmux name: C-j).
         $this->tmux->sendKey($pane, 'C-j');
 
-        // Type second line: printf "%s\n" "$MARKER"
-        $this->tmux->sendLiteral($pane, $printfCmd);
+        // Type second line marker.
+        $this->tmux->sendLiteral($pane, $line2Marker);
 
-        // Submit the multiline shell command.
-        $this->tmux->sendKey($pane, 'Enter');
-
-        // Wait for the unique marker to appear in the captured output.
-        // The marker appears only if bash executed the multiline command
-        // (both the assignment AND the printf), which only happens if C-j
-        // created a newline rather than submitting or failing.
-        $this->tmux->waitForCallback(
+        // Poll until both markers are visible in the pane.
+        $capture = $this->tmux->waitForCallback(
             $pane,
-            static function (string $capture) use ($marker): bool {
-                return str_contains($capture, $marker);
+            static function (string $capture) use ($line1Marker, $line2Marker): bool {
+                return str_contains($capture, $line1Marker)
+                    && str_contains($capture, $line2Marker);
             },
-            timeout: 10.0,
-            message: \sprintf(
-                'Unique marker "%s" never appeared. C-j may not have inserted a newline, '
-                . 'or the shell command did not execute as a single multiline command.',
-                $marker,
-            ),
-            history: 2000,
+            timeout: 5.0,
+            message: 'Editor did not show both typed lines',
+            history: 500,
         );
 
-        // Brief settle for events flush.
-        usleep(300_000);
+        // Find the line indices of each marker.
+        $lines = explode("\n", $capture);
+        $line1Idx = null;
+        $line2Idx = null;
 
-        // ── Bonus: verify events.jsonl records the shell execution result ──
-        // Shell commands project tool_execution_end events with a "result" field,
-        // not traditional user-message content blocks. The marker appearing in the
-        // capture above already proves C-j worked; this confirms the canonical log.
-        $eventsDir = $this->testProjectDir . '/.hatfield/sessions/';
-        $sessions = glob($eventsDir . '*', GLOB_ONLYDIR);
-
-        if ([] !== $sessions) {
-            $sessionDir = $sessions[0];
-            $eventsPath = $sessionDir . '/events.jsonl';
-
-            if (file_exists($eventsPath)) {
-                $eventsContent = file_get_contents($eventsPath);
-                if (is_string($eventsContent) && '' !== $eventsContent) {
-                    $foundResult = false;
-                    foreach (explode("\n", $eventsContent) as $line) {
-                        if ('' === trim($line)) {
-                            continue;
-                        }
-                        $event = json_decode($line, true);
-                        if (!is_array($event)) {
-                            continue;
-                        }
-                        // Shell commands produce tool_execution_end events with a
-                        // result payload containing stdout output.
-                        if (
-                            ($event['type'] ?? '') === 'tool_execution_end'
-                            && isset($event['payload']['result'])
-                            && is_string($event['payload']['result'])
-                            && str_contains($event['payload']['result'], $marker)
-                        ) {
-                            $foundResult = true;
-                            break;
-                        }
-                    }
-
-                    self::assertTrue(
-                        $foundResult,
-                        \sprintf(
-                            'events.jsonl should contain tool_execution_end with marker "%s" in result. '
-                            . 'events.jsonl: %s',
-                            $marker,
-                            $eventsPath,
-                        ),
-                    );
-                }
+        foreach ($lines as $idx => $line) {
+            if (str_contains($line, $line1Marker)) {
+                $line1Idx = $idx;
+            }
+            if (str_contains($line, $line2Marker)) {
+                $line2Idx = $idx;
             }
         }
 
-        $this->saveAnsiSnapshot($pane, 'multiline-after');
+        self::assertNotNull(
+            $line1Idx,
+            \sprintf('First line marker "%s" should be visible in editor', $line1Marker),
+        );
+        self::assertNotNull(
+            $line2Idx,
+            \sprintf('Second line marker "%s" should be visible in editor', $line2Marker),
+        );
+        self::assertGreaterThan(
+            $line1Idx,
+            $line2Idx,
+            \sprintf(
+                'Second line "%s" should be on a line below first line "%s" (%d vs %d), '
+                . 'proving C-j inserted a newline between them',
+                $line2Marker,
+                $line1Marker,
+                $line2Idx,
+                $line1Idx,
+            ),
+        );
+
+        $this->saveAnsiSnapshot($pane, 'ctrl-j-newline');
     }
 
     /**
      * @test
      *
-     * /hotkeys should render a keyboard shortcuts table showing at least
-     * the basic entries: Ctrl+J, Submit, Clear editor, Insert newline,
-     * and the "Keyboard shortcuts" heading.
+     * /hotkeys renders a themed keyboard shortcuts table.
      *
-     * No LLM involvement — slash command executes locally.
+     * Types /hotkeys, presses Enter, and asserts that the themed table
+     * heading and representative entries are visible in the tmux pane.
+     *
+     * No LLM involvement — /hotkeys is a local slash command.
+     * The box-drawing table and themed text are rendered to the transcript.
+     * On plain-text capture, ANSI is stripped but structural content
+     * (headings, box chars, key names, descriptions) is visible.
      */
     public function testHotkeysCommandRendersKeyboardShortcutTable(): void
     {
@@ -201,7 +172,7 @@ final class HotkeySmokeTest extends TestCase
         $this->tmux->sendLiteral($pane, '/hotkeys');
         $this->tmux->sendKey($pane, 'Enter');
 
-        // Wait for the hotkeys table to appear.
+        // Wait for the themed hotkeys heading to appear.
         $this->tmux->waitForCallback(
             $pane,
             static function (string $capture): bool {
@@ -212,17 +183,33 @@ final class HotkeySmokeTest extends TestCase
             history: 2000,
         );
 
-        usleep(200_000);
-
+        // Capture the full history to check table content.
         $capture = $this->tmux->capturePlainWithHistory($pane, 2000);
 
-        // Assert key entries appear in the capture.
+        // Structural box-drawing characters must be present.
+        $boxChars = ['┌', '├', '└', '│', '┐', '┤', '┘'];
+        foreach ($boxChars as $ch) {
+            self::assertStringContainsString(
+                $ch,
+                $capture,
+                \sprintf('/hotkeys output should contain box-drawing char "%s"', $ch),
+            );
+        }
+
+        // Representative entries from each context.
         $requiredEntries = [
-            'Keyboard shortcuts',
+            // Global
+            'Ctrl+C',
+            'Ctrl+D',
+            // Editor
             'Ctrl+J',
-            'Submit prompt',
-            'Clear editor',
             'Insert newline',
+            'Submit prompt',
+            'Enter',
+            // Completion
+            'Tab',
+            // Local command heading
+            'Keyboard shortcuts',
         ];
 
         foreach ($requiredEntries as $entry) {
@@ -251,8 +238,9 @@ final class HotkeySmokeTest extends TestCase
     }
 
     /**
-     * Create an isolated project directory with SafeGuard configured
-     * to allow shell commands (printf, echo, ls) for E2E testing.
+     * Create an isolated project directory with minimal settings.
+     *
+     * No SafeGuard shell-config is needed — neither test uses shell commands.
      */
     private function createIsolatedProjectDir(): string
     {
@@ -287,25 +275,6 @@ final class HotkeySmokeTest extends TestCase
                                 'cost' => ['input' => 0, 'output' => 0],
                             ],
                         ],
-                    ],
-                ],
-            ],
-            'extensions' => [
-                'enabled' => [
-                    'Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension',
-                ],
-                'settings' => [
-                    'safe_guard' => [
-                        'tool_names' => [
-                            'bash' => 'bash',
-                            'write' => 'write',
-                            'edit' => 'edit',
-                            'read' => 'read',
-                        ],
-                        'allow_command_patterns' => ['^ls\b', '^printf\b', '^echo\b'],
-                        'allow_write_outside_cwd' => [],
-                        'protected_read_patterns' => [],
-                        'dangerous_command_patterns' => [],
                     ],
                 ],
             ],
