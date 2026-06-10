@@ -175,3 +175,8 @@ Castor Check Output SHA256: c8b1cd3ef2c18cd267365d1d7b99e3b19c1b45b39931955b6777
 ## Task workflow update - 2026-06-10T22:57:49.661Z
 - Recorded fork run: g945ykure7l1
 - Summary: User explicitly rejected the Castor/test-execution changes and instructed not to touch test execution. Launched revert-only fork g945ykure7l1 to revert the two Castor commits (`4dc63017` and `d28e507c`) from the task branch, preserve EDITOR-12 changes and the HotkeyRegistry service-registration cleanup, not run any tests/Castor commands, commit the revert, and leave the worktree clean.
+
+## Task workflow update - 2026-06-10T22:58:58.360Z
+- Recorded fork run: g945ykure7l1
+- Validation: No tests/Castor commands run per user instruction; Git verification only: `.castor/tasks.php` diff vs origin/main is empty; Git verification only: worktree clean at be512fcf on task/editor-12-keybindings-docs-smoke; Git verification only: PR diff excluding .castor contains 19 EDITOR-12 files (+1743/-16)
+- Summary: Revert-only fork g945ykure7l1 completed at commit be512fcf. It reverted the two Castor/test-execution commits (`4dc63017` and `d28e507c`) via a single revert commit `be512fcf`, preserving EDITOR-12 changes and the HotkeyRegistry service-registration cleanup. Orchestrator verified only git state/diff: `.castor/tasks.php` has no diff vs origin/main, PR diff excluding .castor still contains only the 19 EDITOR-12 files (+1743/-16), task worktree is clean and ahead of origin/task/editor-12-keybindings-docs-smoke by 3. No tests or Castor commands were run by the fork or orchestrator after the user's explicit instruction not to touch test execution.
