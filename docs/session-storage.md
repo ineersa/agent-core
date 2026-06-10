@@ -439,7 +439,7 @@ embedded IDs.
 | Session pruning/cleanup | Low | No auto-expiry or `session:prune` command. Orphaned sessions accumulate. |
 | Fork command (`session:fork`) | Medium | Planned; storage model is ready. Needs rewrite logic + CLI command. |
 | Attachments storage (`attachments/`) | Low | Directory created in layout docs but not yet used. Will store pasted files, images, diffs. |
-| Session rename / alias | **In progress** | SESSION-01 added `name` column (non-null, initialized from first user message) + listing; SESSION-04 `/rename` is the TUI command. |
+| Session rename / alias | **Done** | SESSION-01 added `name` column (non-null, initialized from first user message) + listing; SESSION-04 `/rename` TUI command with picker insertion and session-id completions for `/resume` + `/rename`. |
 | Runtime event streaming | Medium | Current polling is synchronous full-scan. Incremental delivery would improve large sessions. |
 | Rebuild `state.json` from `events.jsonl` | **Done** | `RunStateReplayService` rebuilds RunState from canonical events when `state.json` is missing or stale. `state.json` is now a disposable cache. |
 ## Related documents

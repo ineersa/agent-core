@@ -22,9 +22,14 @@ use Symfony\Component\Tui\Widget\TextWidget;
 /**
  * Manages the interactive session picker overlay lifecycle.
  *
- * Opens an interactive SelectListWidget when /resume is invoked
- * without arguments.  Arrow keys navigate; Enter resumes the
- * selected session; Escape cancels without switching.
+ * Opens an interactive SelectListWidget when invoked without
+ * arguments.  Supports two modes:
+ *   - Resume mode (open()): Enter resumes the selected session.
+ *   - Rename mode (openForRenameCommand()): Enter inserts
+ *     "/rename <id> " into the prompt editor; the user then
+ *     types a new name and submits.
+ *
+ * Arrow keys navigate; Enter confirms; Escape cancels.
  *
  * Sessions are fetched fresh from HatfieldSessionStore on each
  * open so the picker always reflects the latest DB state.
@@ -64,7 +69,7 @@ final class SessionPickerController
     }
 
     /**
-     * Open the interactive session picker on the TUI.
+     * Open the interactive session picker on the TUI (resume mode).
      *
      * Fetches sessions from HatfieldSessionStore::listSessions(),
      * builds a SelectListWidget with session display titles and IDs,
@@ -72,102 +77,52 @@ final class SessionPickerController
      *
      * When the list is empty a status message is shown instead of
      * a picker, and the method returns without switching.
+     *
+     * Enter resumes the selected session via applySelectEffect().
+     *
+     * @see openForRenameCommand() for the rename-mode variant
      */
     public function open(): void
     {
-        if ($this->overlay?->isOpen() ?? false) {
-            return;
-        }
+        $this->openWithOnSelect(
+            'Resume session — arrows move, Enter resumes, Esc cancels',
+            function (SelectEvent $event): void {
+                $item = $event->getItem();
+                $sessionId = $item['value'];
 
-        if (null === $this->tui || null === $this->screen || null === $this->state) {
-            return;
-        }
-
-        $sessions = $this->sessionStore->listSessions();
-
-        if ([] === $sessions) {
-            $this->screen->setStatus('session', 'No sessions found');
-            $this->screen->refresh();
-
-            return;
-        }
-
-        $tui = $this->tui;
-        $screen = $this->screen;
-
-        // ── Header ──
-        $header = new TextWidget(
-            text: $screen->theme()->muted('Resume session — arrows move, Enter resumes, Esc cancels'),
-            truncate: true,
-        );
-
-        // ── Keybindings ──
-        $kb = new Keybindings([
-            'select_up' => [Key::UP],
-            'select_down' => [Key::DOWN],
-            'select_page_up' => [Key::PAGE_UP],
-            'select_page_down' => [Key::PAGE_DOWN],
-            'select_confirm' => [Key::ENTER],
-            'select_cancel' => [Key::ESCAPE, Key::ctrl('c')],
-        ]);
-
-        // ── Build items ──
-        // Accent-colour the initially selected row (index 0) so the
-        // picker is visually consistent with CompletionMenu and
-        // ModelPickerController, which both use ThemeColorEnum::Accent
-        // for the highlighted entry.  SelectListWidget's native
-        // selected style (bold) layers on top.
-        $theme = $screen->theme();
-        $items = self::buildItemsStatic($sessions, $theme, selectedIndex: 0);
-
-        $listWidget = new SelectListWidget(
-            items: $items,
-            maxVisible: 10,
-            keybindings: $kb,
-        );
-
-        // ── Arrows → rebuild items so the newly selected row gets accent colour ──
-        // onSelectionChange fires only from cursor movement
-        // (moveCursorUp/Down etc.), not from setItems() or
-        // setSelectedIndex(), so there is no re-entrant loop.
-        $listWidget->onSelectionChange(
-            static function (SelectionChangeEvent $event) use ($listWidget, $sessions, $theme): void {
-                $selectedValue = $event->getItem()['value'];
-                $selectedIdx = -1;
-
-                foreach ($sessions as $i => $s) {
-                    if ($s['sessionId'] === $selectedValue) {
-                        $selectedIdx = $i;
-
-                        break;
-                    }
-                }
-
-                $newItems = self::buildItemsStatic($sessions, $theme, selectedIndex: $selectedIdx);
-                $listWidget->setItems($newItems);
-                $listWidget->setSelectedIndex(max(0, $selectedIdx));
+                $this->applySelectEffect($sessionId);
+                $this->closePicker();
             },
         );
+    }
 
-        // ── Enter → resume selected session, close ──
-        $controller = $this;
+    /**
+     * Open the interactive session picker in rename-command-insertion mode.
+     *
+     * Same picker UI as open() but with rename-specific header text.
+     * On select, inserts "/rename <id> " into the prompt editor instead
+     * of switching sessions.  The user can then type a new name.
+     */
+    public function openForRenameCommand(): void
+    {
+        $this->openWithOnSelect(
+            'Rename session — arrows move, Enter inserts command, Esc cancels',
+            function (SelectEvent $event): void {
+                $item = $event->getItem();
+                $sessionId = $item['value'];
 
-        $listWidget->onSelect(static function (SelectEvent $event) use ($controller): void {
-            $item = $event->getItem();
-            $sessionId = $item['value'];
+                // Insert the command text into the prompt editor
+                // before closing so the cursor lands on the space
+                // after the session id, ready for the new name.
+                $screen = $this->screen;
+                if (null !== $screen) {
+                    $screen->promptEditor()->replaceText('/rename '.$sessionId.' ');
+                    $screen->requestRender(true);
+                }
 
-            $controller->applySelectEffect($sessionId);
-            $controller->closePicker();
-        });
-
-        // ── Escape / Ctrl+C → close without change ──
-        $listWidget->onCancel(static function (CancelEvent $event) use ($controller): void {
-            $controller->closePicker();
-        });
-
-        // ── Mount via PickerOverlay ──
-        $this->overlay = new PickerOverlay();
-        $this->overlay->mount($tui, $screen, $listWidget, $header);
+                $this->closePicker();
+            },
+        );
     }
 
     /**
@@ -242,5 +197,107 @@ final class SessionPickerController
     {
         $this->overlay?->close();
         $this->overlay = null;
+    }
+
+    /**
+     * Open the picker with a custom header text and on-select handler.
+     *
+     * Extracts the shared picker-building logic so both resume and
+     * rename modes reuse the same overlay lifecycle, item-building,
+     * navigation accent styling, and cancel handler.
+     *
+     * @param string   $headerText Header widget text (muted style applied)
+     * @param callable $onSelect   Callback receiving SelectEvent; called on Enter
+     */
+    private function openWithOnSelect(string $headerText, callable $onSelect): void
+    {
+        if ($this->overlay?->isOpen() ?? false) {
+            return;
+        }
+
+        if (null === $this->tui || null === $this->screen || null === $this->state) {
+            return;
+        }
+
+        $sessions = $this->sessionStore->listSessions();
+
+        if ([] === $sessions) {
+            $this->screen->setStatus('session', 'No sessions found');
+            $this->screen->refresh();
+
+            return;
+        }
+
+        $tui = $this->tui;
+        $screen = $this->screen;
+
+        // ── Header ──
+        $header = new TextWidget(
+            text: $screen->theme()->muted($headerText),
+            truncate: true,
+        );
+
+        // ── Keybindings ──
+        $kb = new Keybindings([
+            'select_up' => [Key::UP],
+            'select_down' => [Key::DOWN],
+            'select_page_up' => [Key::PAGE_UP],
+            'select_page_down' => [Key::PAGE_DOWN],
+            'select_confirm' => [Key::ENTER],
+            'select_cancel' => [Key::ESCAPE, Key::ctrl('c')],
+        ]);
+
+        // ── Build items ──
+        // Accent-colour the initially selected row (index 0) so the
+        // picker is visually consistent with CompletionMenu and
+        // ModelPickerController, which both use ThemeColorEnum::Accent
+        // for the highlighted entry.  SelectListWidget's native
+        // selected style (bold) layers on top.
+        $theme = $screen->theme();
+        $items = self::buildItemsStatic($sessions, $theme, selectedIndex: 0);
+
+        $listWidget = new SelectListWidget(
+            items: $items,
+            maxVisible: 10,
+            keybindings: $kb,
+        );
+
+        // ── Arrows → rebuild items so the newly selected row gets accent colour ──
+        // onSelectionChange fires only from cursor movement
+        // (moveCursorUp/Down etc.), not from setItems() or
+        // setSelectedIndex(), so there is no re-entrant loop.
+        $listWidget->onSelectionChange(
+            static function (SelectionChangeEvent $event) use ($listWidget, $sessions, $theme): void {
+                $selectedValue = $event->getItem()['value'];
+                $selectedIdx = -1;
+
+                foreach ($sessions as $i => $s) {
+                    if ($s['sessionId'] === $selectedValue) {
+                        $selectedIdx = $i;
+
+                        break;
+                    }
+                }
+
+                $newItems = self::buildItemsStatic($sessions, $theme, selectedIndex: $selectedIdx);
+                $listWidget->setItems($newItems);
+                $listWidget->setSelectedIndex(max(0, $selectedIdx));
+            },
+        );
+
+        // ── Enter → call the on-select callback ──
+        $listWidget->onSelect(static function (SelectEvent $event) use ($onSelect): void {
+            $onSelect($event);
+        });
+
+        // ── Escape / Ctrl+C → close without change ──
+        $picker = $this;
+        $listWidget->onCancel(static function (CancelEvent $event) use ($picker): void {
+            $picker->closePicker();
+        });
+
+        // ── Mount via PickerOverlay ──
+        $this->overlay = new PickerOverlay();
+        $this->overlay->mount($tui, $screen, $listWidget, $header);
     }
 }

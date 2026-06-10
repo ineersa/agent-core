@@ -83,6 +83,25 @@ final class SessionCommandRegistrarTest extends TestCase
     }
 
     #[Test]
+    public function testRegistersRenameCommandWithCorrectMetadata(): void
+    {
+        [$registry, $picker] = $this->buildContextAndPicker(new TuiSessionState('test-session'));
+        $context = $this->buildContext(new TuiSessionState('test-session'), $picker);
+
+        $registrar = new SessionCommandRegistrar($registry, $picker);
+        $registrar->register($context);
+
+        self::assertTrue($registry->has('rename'));
+
+        $meta = $registry->getMetadata('rename');
+        self::assertInstanceOf(CommandMetadata::class, $meta);
+        self::assertSame('rename', $meta->name);
+        self::assertTrue($meta->acceptsArguments);
+        self::assertSame('/rename [session id] [new name]', $meta->usage);
+        self::assertNotEmpty($meta->description);
+    }
+
+    #[Test]
     public function testRegistersResumeCommandWithCorrectMetadata(): void
     {
         [$registry, $picker] = $this->buildContextAndPicker(new TuiSessionState('test-session'));
@@ -117,6 +136,7 @@ final class SessionCommandRegistrarTest extends TestCase
         self::assertInstanceOf(TranscriptMessage::class, $result);
         self::assertStringContainsString('/new', $result->text);
         self::assertStringContainsString('/resume', $result->text);
+        self::assertStringContainsString('/rename', $result->text);
     }
 
     #[Test]
@@ -145,11 +165,13 @@ final class SessionCommandRegistrarTest extends TestCase
         $registrar->register($context);
         self::assertTrue($registry->has('new'));
         self::assertTrue($registry->has('resume'));
+        self::assertTrue($registry->has('rename'));
 
         // Second registration — should replace handlers without throwing
         $registrar->register($context);
         self::assertTrue($registry->has('new'));
         self::assertTrue($registry->has('resume'));
+        self::assertTrue($registry->has('rename'));
 
         // Verify commands still work after re-registration
         $result = $registry->execute(new SlashCommand('new', '', '/new'));

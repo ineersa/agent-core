@@ -454,6 +454,10 @@ services:
     tags:
       - { name: 'app.completion_provider', priority: 100 }
 
+  Ineersa\Tui\Completion\SessionIdCompletionProvider:
+    tags:
+      - { name: 'app.completion_provider', priority: 95 }
+
   Ineersa\Tui\Completion\FileMentionCompletionProvider:
     tags:
       - { name: 'app.completion_provider', priority: 90 }
