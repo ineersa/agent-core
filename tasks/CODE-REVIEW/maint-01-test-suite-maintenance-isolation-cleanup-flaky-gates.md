@@ -50,7 +50,7 @@ Important non-goal: Do not delete valuable behavioral tests just to reduce count
 - `tests/AGENTS.md` or testing skill documents test standards: no structural getter-only tests, use shared fixtures/builders, use Castor, use TUI E2E proof for TUI behavior, and use cleanup/snapshot conventions.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates
 Fork run: 8ri2bakkcwug
@@ -298,11 +298,11 @@ Remaining blocker found by orchestrator validation: `castor phpstan` fails on 4 
 - Validation: castor test:llm-real --filter=OutputCap — PASS (1 test, 7 assertions); castor test:llm-real — PASS (5 tests, 39 assertions); castor phpstan — PASS (0 errors); castor cs-check — PASS (files_fixed=0); castor deptrac — PASS (0 violations); castor test — PASS (46.1s, 2269 tests, 6660 assertions); LLM_MODE=true castor check — PASS (quality: ok)
 - Summary: Fixed official gate failure in `OutputCapReadFileControllerTest::testReadLargeFileProducesCappedOutput` at HEAD 8c64600c. Root cause: the test prompt used a bare filename; the test LLM sometimes read the temp directory/cap artifact instead of `large-output.txt`, so the sentinel-in-cap-file hard assertion was unstable. Fix uses explicit `./large-output.txt` prompt/path and changes the sentinel-in-cap-file check to diagnostic logging while keeping hard assertions for command/run/session artifacts, output-cap evidence, and no sentinel leakage into state.json. Branch clean and pushed.
 Castor Check Status: passed
-Castor Check Commit: 8c64600ce624990c46a17ca6926fd4fd75c800c6
+Castor Check Commit: 5bedd07afaf2796370511cfd389378ac2f8b169f
 Castor Check Command: LLM_MODE=true castor check
 Castor Check Timeout: 900s
-Castor Check Completed: 2026-06-10T21:26:28.724Z
-Castor Check Output SHA256: a53c390ddf2d8e8ccf2d202a38e561cfc0df64a76da1801c8bae79208340e086
+Castor Check Completed: 2026-06-10T21:56:21.413Z
+Castor Check Output SHA256: 0045f011d2cc5c8fdf5f6e032d337b774519092174524bcb8f24de2ab4dd9a39
 
 ## Task workflow update - 2026-06-10T21:26:31.813Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -324,3 +324,10 @@ Castor Check Output SHA256: a53c390ddf2d8e8ccf2d202a38e561cfc0df64a76da1801c8bae
 - Recorded fork run: 8ri2bakkcwug
 - Validation: castor test:tui — PASS (7 tests, 25 assertions); castor phpstan — PASS (errors=0,file_errors=0); castor cs-check — PASS (files_fixed=0); castor deptrac — PASS (violations=0,errors=0,uncovered=776,allowed=1021); castor test — PASS in 45.1s wall time; shards: agent-core 0.9s, coding-agent-1 45.1s, coding-agent-2 22.9s, coding-agent-3 8.5s, coding-agent-4 22.9s, tui 0.9s, platform 0.4s; 2269 tests total; git status --short after castor test — clean
 - Summary: Narrow TUI E2E regression fix completed at HEAD 5bedd07a: previous wait replacement in TuiStartupSnapshotTest waited for startup idle (`●`) and captured the wrong screen; fix now waits for the auto-submitted prompt text `hello from tmux e2e`, preserving the intended post-submission working-state snapshot without blind sleeps. Orchestrator re-validation confirmed TUI E2E, static checks, deptrac, and full sharded `castor test` are green, with clean worktree after tests.
+
+## Task workflow update - 2026-06-10T21:56:22.897Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: 5bedd07afaf2.
+- Pushed task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates to origin.
+- branch 'task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates' set up to track 'origin/task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/113
