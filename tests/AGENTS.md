@@ -77,7 +77,7 @@ Key commands:
 - `castor deptrac` — layer dependency validation
 - `castor phpstan` — static analysis
 - `castor cs-check` / `castor cs-fix` — code style
-- `LLM_MODE=true castor check` — full quality gate
+- `LLM_MODE=true castor check` — full quality gate (runs all steps in parallel via pcntl_fork with per-step timing; output captured to `var/reports/check-<step>.log`; sequential fallback when pcntl_fork unavailable)
 - `castor cleanup` — remove all temp/test artifacts
 
 ## Snapshots and cleanup

@@ -8,7 +8,7 @@ description: "E2E and validation testing strategy. Load this skill when: writing
 ## Castor command reference
 
 ```bash
-castor check                # Full validation: deptrac → phpunit → controller E2E → real LLM E2E → TUI E2E → phpstan → cs-check
+castor check                # Full validation: all 7 steps in parallel via pcntl_fork (sequential fallback); per-step timing + log files at var/reports/check-*.log
 castor test                 # unit/integration only; excludes tui-e2e and llm-real
 castor test --filter=X      # filter tests by name
 castor test:tui [--filter=X]    # tmux TUI e2e snapshots (filter optional)
@@ -61,7 +61,7 @@ All E2E tests must use `var/tmp/test-{uuid}` isolation. They must NOT read or wr
 
 | Command | What it tests | Requires |
 |---|---|---|
-| `castor check` | Full validation: deptrac, unit/integration, controller E2E, real LLM E2E, TUI E2E, phpstan, cs-check | tmux, llama.cpp on port 9052 |
+| `castor check` | Full validation: all 7 steps in parallel via pcntl_fork (sequential fallback); per-step timing + log files | tmux, llama.cpp on port 9052 |
 | `castor test` | Unit/integration tests | Nothing (pure PHP) |
 | `castor test:llm-real` | Real LLM smoke: `ControllerSmokeTest`, `LlamaCppSmokeTest` | llama.cpp on port 9052 |
 | `castor test:controller` | Controller E2E: spawns `--controller`, JSONL protocol | llama.cpp on port 9052 |

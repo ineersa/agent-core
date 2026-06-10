@@ -26,8 +26,8 @@ require_once __DIR__.'/helpers.php';
 #[AsTask(description: 'Run full QA (deptrac, phpunit, controller E2E, real LLM E2E, TUI E2E, phpstan, cs-fixer)')]
 function check(): void
 {
-    // Pre-build PHAR once to avoid race when parallel branches
-    // each call phar_ensure() independently.
+    // ── PHAR build ────────────────────────────────────────────
+    $pharStart = hrtime(true);
     $pharPath = '';
     try {
         $pharPath = \CastorTasks\phar_ensure();
@@ -37,87 +37,38 @@ function check(): void
     if ('' !== $pharPath) {
         $GLOBALS['CASTOR_PHAR_READY'] = $pharPath;
     }
+    $pharDuration = (hrtime(true) - $pharStart) / 1e9;
+    echo sprintf("PHAR: ok (%.1fs)\n\n", $pharDuration);
+
+    // ── All steps (run in parallel or fall back to sequential) ─
+    $allSteps = [
+        'deptrac' => static fn () => deptrac(),
+        'test' => static fn () => test(),
+        'test:controller' => static fn () => test_controller(),
+        'test:llm-real' => static fn () => test_llm_real(),
+        'test:tui' => static fn () => test_tui(),
+        'phpstan' => static fn () => phpstan(),
+        'cs-check' => static fn () => cs_check(),
+    ];
 
     $failures = [];
-
+    $timings = [];
     $GLOBALS['CASTOR_CHECK_AGGREGATING'] = true;
+
     try {
-        // Parallel group: static checks + main suite (no DB/tmux/LLM deps).
-        $parallelSteps = [
-            'deptrac' => static fn () => deptrac(),
-            'test' => static fn () => test(),
-            'phpstan' => static fn () => phpstan(),
-            'cs-check' => static fn () => cs_check(),
-        ];
-
-        // Serial group: tests that share DB file, tmux, or LLM endpoint.
-        $serialSteps = [
-            'test:controller' => static fn () => test_controller(),
-            'test:llm-real' => static fn () => test_llm_real(),
-            'test:tui' => static fn () => test_tui(),
-        ];
-
         $useParallel = \PHP_SAPI === 'cli' && function_exists('pcntl_fork');
 
         if ($useParallel) {
-            $forked = [];
-            foreach ($parallelSteps as $step => $runner) {
-                $pid = pcntl_fork();
-                if (-1 === $pid) {
-                    try {
-                        $runner();
-                    } catch (Throwable $exception) {
-                        $failures[$step] = $exception->getMessage();
-                    }
-                } elseif (0 === $pid) {
-                    try {
-                        $runner();
-                        exit(0);
-                    } catch (Throwable $exception) {
-                        fwrite(\STDERR, "{$step}: {$exception->getMessage()}\n");
-                        exit(1);
-                    }
-                } else {
-                    $forked[$step] = $pid;
-                }
-            }
-            foreach ($forked as $step => $pid) {
-                $status = 0;
-                pcntl_waitpid($pid, $status);
-                if (pcntl_wifsignaled($status)) {
-                    $signal = pcntl_wtermsig($status);
-                    $failures[$step] = "{$step}: killed by signal {$signal}";
-                } elseif (pcntl_wifexited($status) && 0 !== pcntl_wexitstatus($status)) {
-                    $failures[$step] = "{$step}: exit code ".pcntl_wexitstatus($status);
-                }
-            }
+            run_check_parallel($allSteps, $failures, $timings);
         } else {
-            foreach ($parallelSteps as $step => $runner) {
-                try {
-                    $runner();
-                } catch (Throwable $exception) {
-                    $failures[$step] = $exception->getMessage();
-                }
-            }
-        }
-
-        // Serial steps: skip if earlier failures make them meaningless.
-        foreach ($serialSteps as $step => $runner) {
-            if ([] !== $failures) {
-                $failures[$step] = 'skipped (earlier failures)';
-                continue;
-            }
-            try {
-                $runner();
-            } catch (Throwable $exception) {
-                $failures[$step] = $exception->getMessage();
-            }
+            run_check_sequential($allSteps, $failures, $timings);
         }
     } finally {
         unset($GLOBALS['CASTOR_CHECK_AGGREGATING']);
         unset($GLOBALS['CASTOR_PHAR_READY']);
     }
 
+    // ── Final verdict ─────────────────────────────────────────
     if ([] !== $failures) {
         fail_quality('quality failed:'.\PHP_EOL.format_step_failures($failures));
     }
@@ -125,10 +76,6 @@ function check(): void
     echo 'quality: ok'.\PHP_EOL;
 }
 
-/**
- * Alias for check().
- */
-#[AsTask(description: 'Alias for check')]
 function quality(): void
 {
     check();
@@ -1811,4 +1758,147 @@ function rmtree(string $dir): void
     }
 
     rmdir($dir);
+}
+
+// ─── check() helpers ───────────────────────────────────────
+
+/**
+ * Run every check step in its own forked child process so they
+ * execute concurrently.
+ *
+ * Each child redirects its stdout to a per-step log file under
+ * var/reports/check-<step>.log to prevent output interleaving.
+ * The parent waits for all children, then reads the logs and
+ * prints a combined timing summary.
+ *
+ * @param array<string,Closure> $steps
+ * @param array<string,string>  $failures out — populated with failure reasons
+ * @param array<string,float>   $timings  out — populated with per-step durations (seconds)
+ */
+function run_check_parallel(array $steps, array &$failures, array &$timings): void
+{
+    $stepLogs = [];
+    foreach ($steps as $step => $_) {
+        $stepLogs[$step] = report_path("check-{$step}.log");
+    }
+    @mkdir(\CastorTasks\REPORTS_DIR, 0755, true);
+
+    echo "Running steps in parallel (pcntl_fork):\n";
+    foreach (array_keys($steps) as $step) {
+        echo "  - {$step}\n";
+    }
+    echo "\n";
+
+    $forked = [];
+    $overallStart = hrtime(true);
+
+    foreach ($steps as $step => $runner) {
+        $pid = pcntl_fork();
+        if (-1 === $pid) {
+            // Fork failed — run inline
+            $start = hrtime(true);
+            ob_start();
+            try {
+                $runner();
+                $output = ob_get_clean();
+                file_put_contents($stepLogs[$step], $output);
+            } catch (Throwable $e) {
+                $output = ob_get_clean();
+                file_put_contents($stepLogs[$step], $output."\nERROR: ".$e->getMessage()."\n");
+                $failures[$step] = $e->getMessage();
+            }
+            $timings[$step] = (hrtime(true) - $start) / 1e9;
+        } elseif (0 === $pid) {
+            // Child: capture all stdout to per-step log file
+            ob_start();
+            try {
+                $runner();
+                $output = ob_get_clean();
+                file_put_contents($stepLogs[$step], $output);
+                exit(0);
+            } catch (Throwable $e) {
+                $output = ob_get_clean();
+                file_put_contents($stepLogs[$step], $output."\nERROR: ".$e->getMessage()."\n");
+                exit(1);
+            }
+        } else {
+            $forked[$step] = ['pid' => $pid, 'start' => hrtime(true)];
+        }
+    }
+
+    // Wait for every child before printing any results.
+    foreach ($forked as $step => $info) {
+        $status = 0;
+        pcntl_waitpid($info['pid'], $status);
+        $timings[$step] = (hrtime(true) - $info['start']) / 1e9;
+
+        if (pcntl_wifsignaled($status)) {
+            $signal = pcntl_wtermsig($status);
+            $failures[$step] = "killed by signal {$signal}";
+        } elseif (pcntl_wifexited($status) && 0 !== pcntl_wexitstatus($status)) {
+            $failures[$step] = 'exit code '.pcntl_wexitstatus($status);
+        }
+    }
+
+    $overallDuration = (hrtime(true) - $overallStart) / 1e9;
+
+    // Print per-step summary
+    echo "Summary:\n";
+    foreach ($steps as $step => $_) {
+        $status = isset($failures[$step]) ? 'FAIL' : 'OK';
+        $duration = $timings[$step] ?? 0;
+        echo sprintf('  %-20s %s  (%.1fs)', $step, $status, $duration);
+
+        if (isset($failures[$step])) {
+            echo "  — {$failures[$step]}";
+        } elseif (is_file($stepLogs[$step])) {
+            $logContent = file_get_contents($stepLogs[$step]);
+            if (false !== $logContent) {
+                $lines = explode("\n", trim($logContent));
+                $lastLine = end($lines);
+                if ('' !== $lastLine) {
+                    echo "  — {$lastLine}";
+                }
+            }
+        }
+        echo "\n";
+    }
+
+    echo sprintf("\nTotal: %.1fs\n", $overallDuration);
+}
+
+/**
+ * Fallback sequential runner for environments without pcntl_fork.
+ *
+ * Runs every step in order with per-step timing, then prints a
+ * summary matching the same format as run_check_parallel().
+ *
+ * @param array<string,Closure> $steps
+ * @param array<string,string>  $failures out
+ * @param array<string,float>   $timings  out
+ */
+function run_check_sequential(array $steps, array &$failures, array &$timings): void
+{
+    echo "Running steps sequentially (pcntl_fork not available):\n\n";
+
+    $overallStart = hrtime(true);
+
+    foreach ($steps as $step => $runner) {
+        echo sprintf('  %-20s ... ', $step);
+        $start = hrtime(true);
+        try {
+            $runner();
+            $duration = (hrtime(true) - $start) / 1e9;
+            $timings[$step] = $duration;
+            echo sprintf("ok (%.1fs)\n", $duration);
+        } catch (Throwable $e) {
+            $duration = (hrtime(true) - $start) / 1e9;
+            $timings[$step] = $duration;
+            $failures[$step] = $e->getMessage();
+            echo sprintf("FAIL (%.1fs): %s\n", $duration, $e->getMessage());
+        }
+    }
+
+    $overallDuration = (hrtime(true) - $overallStart) / 1e9;
+    echo sprintf("\nTotal: %.1fs\n", $overallDuration);
 }
