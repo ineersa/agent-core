@@ -107,24 +107,6 @@ function check(): void
         fail_quality('test database migration failed: '.$migrate->getErrorOutput());
     }
 
-    // ── Split into LLM-dependent and non-LLM batches ──
-    // test:controller, test:llm-real, and test:tui all hit
-    // llama_cpp_test/test on port 9052 and must run sequentially
-    // to avoid resource contention.  The remaining steps (deptrac,
-    // unit tests, phpstan, cs-check) are stateless and safe to
-    // parallelise.
-    $parallelSafeSteps = [
-        'deptrac' => $allCheckCommands['deptrac'],
-        'test' => $allCheckCommands['test'],
-        'phpstan' => $allCheckCommands['phpstan'],
-        'cs-check' => $allCheckCommands['cs-check'],
-    ];
-    $llmSequentialSteps = [
-        'test:controller' => $allCheckCommands['test:controller'],
-        'test:llm-real' => $allCheckCommands['test:llm-real'],
-        'test:tui' => $allCheckCommands['test:tui'],
-    ];
-
     $failures = [];
     $timings = [];
 
@@ -132,10 +114,7 @@ function check(): void
     try {
         $useParallel = \PHP_SAPI === 'cli' && function_exists('proc_open');
         if ($useParallel) {
-            // Phase 1: stateless parallel steps
-            run_check_commands_parallel($parallelSafeSteps, $failures, $timings);
-            // Phase 2: LLM-port-dependent steps run sequentially
-            run_check_commands_sequential($llmSequentialSteps, $failures, $timings);
+            run_check_commands_parallel($allCheckCommands, $failures, $timings);
         } else {
             run_check_commands_sequential($allCheckCommands, $failures, $timings);
         }
@@ -2213,7 +2192,7 @@ function rmtree(string $dir): void
  *
  * @return array<string,array{exitCode:int,output:string,duration:float}>
  */
-function run_commands_parallel(array $commands, ?float $timeout = null): array
+function run_commands_parallel(array $commands): array
 {
     $processes = [];
     $results = [];
@@ -2245,7 +2224,6 @@ function run_commands_parallel(array $commands, ?float $timeout = null): array
             'pipes' => [$pipes[1], $pipes[2]],
             'start' => hrtime(true),
             'log' => $info['log'] ?? null,
-            'timedOut' => false,
         ];
     }
 
@@ -2256,15 +2234,6 @@ function run_commands_parallel(array $commands, ?float $timeout = null): array
             $status = proc_get_status($pInfo['handle']);
             if (!$status['running']) {
                 $finished[] = $step;
-            } elseif (null !== $timeout) {
-                $elapsed = (hrtime(true) - $pInfo['start']) / 1e9;
-                if ($elapsed > $timeout) {
-                    proc_terminate($pInfo['handle']);
-                    usleep(100000); // brief grace for SIGTERM
-                    @proc_terminate($pInfo['handle'], 9); // SIGKILL
-                    $processes[$step]['timedOut'] = true;
-                    $finished[] = $step;
-                }
             }
         }
 
@@ -2283,16 +2252,10 @@ function run_commands_parallel(array $commands, ?float $timeout = null): array
 '.$stderr : $stderr;
             }
 
-            if ($pInfo['timedOut']) {
-                $output = "TIMEOUT after {$timeout}s\n".$output;
-                if (0 === $exitCode) {
-                    $exitCode = -1;
-                }
-            }
-
             if (null !== $pInfo['log']) {
                 @mkdir(dirname($pInfo['log']), 0755, true);
-                file_put_contents($pInfo['log'], $output."\n");
+                file_put_contents($pInfo['log'], $output.'
+');
             }
 
             $results[$step] = [
@@ -2345,7 +2308,7 @@ function run_check_commands_parallel(array $steps, array &$failures, array &$tim
     echo '
 ';
 
-    $results = run_commands_parallel($commands, timeout: 300);
+    $results = run_commands_parallel($commands);
 
     foreach ($steps as $step => $_) {
         $result = $results[$step] ?? ['exitCode' => -1, 'output' => 'proc_open failed', 'duration' => 0];
