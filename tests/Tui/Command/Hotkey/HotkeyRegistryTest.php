@@ -241,4 +241,16 @@ final class HotkeyRegistryTest extends TestCase
 
         self::assertCount(1, $this->registry->all());
     }
+
+    public function testConstructorRejectsEmptyKeys(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('HotkeyBindingDTO: $keys must not be empty.');
+
+        new HotkeyBindingDTO(
+            context: 'Global',
+            keys: [],
+            action: 'Test',
+        );
+    }
 }

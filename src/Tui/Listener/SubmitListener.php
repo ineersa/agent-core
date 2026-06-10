@@ -413,6 +413,7 @@ final class SubmitListener implements TuiListenerRegistrar
             default => $blockFactory->system($state->sessionId, $result->text, $seq, $result->style),
         };
     }
+
     // ─── Hotkey table data adapter ────────────────────────────────────
 
     /**

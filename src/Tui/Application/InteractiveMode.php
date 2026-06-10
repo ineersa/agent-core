@@ -157,11 +157,9 @@ final readonly class InteractiveMode
             $screen = new ChatScreen($theme, $state->sessionId, $this->promptEditor);
             $screen->mount($tui);
 
-            // Apply Ctrl+J as portable newline alongside Shift+Enter.
-            // Widget-level keybindings override individual action key lists
-            // via Symfony Keybindings merge/resolution order, preserving
-            // keys from all layers. Both keys are included here so that
-            // Shift+Enter support is preserved alongside Ctrl+J.
+            // Apply Ctrl+J as portable newline, overriding the default new_line
+            // key list.  Both ctrl+j and shift+enter are listed so the default
+            // Shift+Enter behavior is preserved alongside the new portable key.
             $this->promptEditor->setKeybindings(new Keybindings([
                 'new_line' => ['ctrl+j', 'shift+enter'],
             ]));

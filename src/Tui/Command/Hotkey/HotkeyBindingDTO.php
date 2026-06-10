@@ -35,5 +35,8 @@ final readonly class HotkeyBindingDTO
         public string $source = 'core',
         public int $priority = 50,
     ) {
+        if ([] === $keys) {
+            throw new \InvalidArgumentException('HotkeyBindingDTO: $keys must not be empty.');
+        }
     }
 }
