@@ -32,7 +32,7 @@ Parallelizable with: none after dependencies.
 - `castor check` passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/editor-12-keybindings-docs-smoke
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke
 Fork run: b6a2ywizqtru
@@ -137,3 +137,7 @@ Castor Check Output SHA256: c8b1cd3ef2c18cd267365d1d7b99e3b19c1b45b39931955b6777
 - Pushed task/editor-12-keybindings-docs-smoke to origin.
 - branch 'task/editor-12-keybindings-docs-smoke' set up to track 'origin/task/editor-12-keybindings-docs-smoke'.
 - Created PR: https://github.com/ineersa/agent-core/pull/114
+
+## Task workflow update - 2026-06-10T22:19:57.305Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: PR #114 review-iterate: user left one inline comment at config/services.yaml:223 asking whether explicit HotkeyRegistry service registration is needed or whether autowiring already handles it. User also noted maintenance task landed, so branch must sync with latest main and tests may need updates. Moving back to IN-PROGRESS to address PR comment, merge/rebase latest main, and validate.
