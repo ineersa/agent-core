@@ -151,14 +151,14 @@ LLM_MODE=true castor check
 If prerequisites for `LLM_MODE=true castor check` are unavailable (tmux or llama.cpp test server on port 9052), the task must stay IN-PROGRESS with the blocker recorded.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/editor-11-shell-prefix-commands
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-11-shell-prefix-commands
-Fork run: 1wfisqt6byxp
+Fork run: vb8egxvzru6l
 PR URL: https://github.com/ineersa/agent-core/pull/112
-PR Status: open
+PR Status: merged
 Started: 2026-06-09T18:07:09.729Z
-Completed:
+Completed: 2026-06-09T22:45:18.222Z
 
 ## Work log
 - Created: 2026-05-18T00:16:30.829Z
@@ -224,11 +224,11 @@ Completed:
 - Validation: Fork 1wfisqt6byxp validation: `castor test --filter=PharSmokeTest` passed (4 tests, 12 assertions); Fork 1wfisqt6byxp validation: focused shell/editor tests passed (79 tests, 171 assertions); Fork 1wfisqt6byxp validation: `castor test:tui` passed (9 tests, 23 assertions); Fork 1wfisqt6byxp validation: full `castor test` passed (2265 tests, 6598 assertions, 0 errors, 0 failures); Fork 1wfisqt6byxp validation: `castor deptrac` passed (0 violations), `castor phpstan` passed (0 errors), `castor cs-check` clean; Orchestrator verified integration checkout clean/no rebase state and task worktree clean before retrying CODE-REVIEW
 - Summary: PHAR smoke gate blocker fixed at commit 8045d904 (`fix(phar): isolate HOME in smoke tests to prevent user config leakage`). Change is test-only: `tests/CodingAgent/Phar/PharSmokeTest.php` now creates isolated empty HOME directories for PHAR subprocess calls and prefixes shell/Process commands with HOME=<isolated>, preventing real `~/.hatfield/settings.yaml` from leaking into APP_ENV=prod PHAR boot. This preserves PHAR boot/list/help/cache-isolation coverage while avoiding user-local `ai.default_model=llama_cpp_test/test` failures in packaged prod providers. Worktree verified clean at 8045d904; integration checkout verified clean at 49027e30 after transient rebase/conflict cleanup.
 Castor Check Status: passed
-Castor Check Commit: 8045d90486fa9c712dabd70f6a90f51825f565e4
+Castor Check Commit: 591dfff35eab3893cd2800750c4f22647930a972
 Castor Check Command: LLM_MODE=true castor check
 Castor Check Timeout: 900s
-Castor Check Completed: 2026-06-09T21:35:24.572Z
-Castor Check Output SHA256: 2be48eea98d9a4f6d9c03257010373b6e2024b64680d81e7c8d6fc7277c48cf9
+Castor Check Completed: 2026-06-09T22:44:59.826Z
+Castor Check Output SHA256: e3ae4160ed9699de24b6451a80c7fe0d7d708d622610b0f3fdbacfea6e19d319
 
 ## Task workflow update - 2026-06-09T21:35:28.143Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -238,3 +238,65 @@ Castor Check Output SHA256: 2be48eea98d9a4f6d9c03257010373b6e2024b64680d81e7c8d6
 - Created PR: https://github.com/ineersa/agent-core/pull/112
 - Validation: Reviewer: APPROVE WITH SUGGESTIONS, no blockers; castor test:tui: passed (9 tests, 23 assertions); castor test --filter='Shell|PromptHistory|SubmissionRouter|CommandParser|ShellCommandHandler': passed (79 tests, 171 assertions); castor test --filter=PharSmokeTest: passed (4 tests, 12 assertions); castor test: passed (2265 tests, 6598 assertions, 0 errors, 0 failures); castor deptrac: passed (0 violations); castor phpstan: passed (0 errors); castor cs-check: clean
 - Summary: Moving EDITOR-11 to CODE-REVIEW after reviewer APPROVE WITH SUGGESTIONS and passing validation. Implementation supports single `!<command>` shell prefix, rejects `!!`, routes through runtime/shared BashTool path, projects real shell output, avoids model-context injection/LLM turn, and includes real TUI E2E coverage for first-input `!ls -1`, second-turn `!ls -1`, prompt history recall, and `!!` rejection. Additional PHAR smoke isolation fix at 8045d904 prevents user HOME config from leaking into PHAR subprocess tests; full `castor test` passed after this fix.
+
+## Task workflow update - 2026-06-09T22:04:20.687Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Validation: gh pr view 112: state OPEN, mergeStateStatus DIRTY, head task/editor-11-shell-prefix-commands, base main; Integration checkout clean at 3b3096c1 before conflict-resolution iteration; Task worktree clean at 8045d904 before conflict-resolution iteration
+- Summary: PR #112 is conflict/dirty against main (`mergeStateStatus=DIRTY`). Moving back to IN-PROGRESS to resolve conflicts before merge. User authorized resolving conflicts and proceeding to DONE after validation.
+
+## Task workflow update - 2026-06-09T22:04:40.887Z
+- Recorded fork run: vb8egxvzru6l
+- Summary: Launched conflict-resolution fork vb8egxvzru6l on worktree /home/ineersa/projects/agent-core-worktrees/editor-11-shell-prefix-commands. Scope: fetch origin, rebase task/editor-11-shell-prefix-commands onto origin/main, resolve PR #112 conflicts preserving EDITOR-11 shell-prefix semantics and PHAR HOME isolation, run Castor validation, commit result, leave worktree clean. After fork handoff, orchestrator will retry CODE-REVIEW and then move to DONE per user authorization if validation passes.
+
+## Task workflow update - 2026-06-09T22:32:05.605Z
+- Recorded fork run: vb8egxvzru6l
+- Validation: Fork vb8egxvzru6l: rebase onto origin/main completed; origin/main verified ancestor of HEAD; Fork validation: `castor test --filter='Shell|PromptHistory|SubmissionRouter|CommandParser|ShellCommandHandler|PharSmokeTest'` passed (83 tests, 183 assertions); Fork validation: `castor test:tui --filter=ShellPrefix` passed (4 tests, 5 assertions); Fork validation: full `castor test` passed (2296 tests, 6711 assertions, 0 errors, 0 failures); Fork validation: `castor deptrac` passed (0 violations), `castor phpstan` passed (0 errors), `castor cs-check` clean; Fork noted full `castor test:tui` hit known flaky `TuiAgentSmokeTest::testMultiTurnConversationOrder`; ShellPrefix TUI E2E passed
+- Summary: Conflict resolution complete at commit 591dfff3. Fork rebased `task/editor-11-shell-prefix-commands` onto `origin/main` (fef56f4a), resolving the sole conflict in `tests/CodingAgent/Phar/PharSmokeTest.php` by keeping EDITOR-11's generalized isolated-HOME helper approach over origin/main's one-off inline provider config. Overlapping runtime/TUI files (`JsonlProcessAgentSessionClient.php`, `SubmitListener.php`) merged cleanly and EDITOR-11 semantics remain intact: single `!<command>`, `!!` rejected, shell through BashTool/ToolExecutor, output projected without model-context injection/LLM turn, synthetic shell RunStarted for JSONL drain cursor, prompt-history recall, and PHAR smoke HOME isolation. Worktree verified clean at 591dfff3; integration checkout clean at fef56f4a.
+
+## Task workflow update - 2026-06-09T22:45:01.057Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: 591dfff35eab.
+- Pushed task/editor-11-shell-prefix-commands to origin.
+- branch 'task/editor-11-shell-prefix-commands' set up to track 'origin/task/editor-11-shell-prefix-commands'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/112
+- Validation: Conflict resolution fork vb8egxvzru6l complete at 591dfff3; Rebased onto origin/main; origin/main verified ancestor of task HEAD; Remote PR branch updated with `git push --force-with-lease origin task/editor-11-shell-prefix-commands` after non-fast-forward rejection from rebased history; Focused tests passed: `castor test --filter='Shell|PromptHistory|SubmissionRouter|CommandParser|ShellCommandHandler|PharSmokeTest'` (83 tests, 183 assertions); ShellPrefix TUI E2E passed: `castor test:tui --filter=ShellPrefix` (4 tests, 5 assertions); Full `castor test` passed (2296 tests, 6711 assertions); `castor deptrac` passed, `castor phpstan` passed, `castor cs-check` clean
+- Summary: Moving EDITOR-11 back to CODE-REVIEW after conflict resolution and safe force-with-lease update of the rebased PR branch. Branch is rebased onto origin/main at 591dfff3; sole conflict in PharSmokeTest resolved by keeping generalized HOME isolation. EDITOR-11 semantics preserved and focused validation passed, including ShellPrefix TUI E2E and full unit/integration suite. User authorized proceeding through CODE-REVIEW to DONE after conflict resolution.
+
+## Task workflow update - 2026-06-09T22:45:18.222Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/editor-11-shell-prefix-commands into integration checkout.
+- Merge made by the 'ort' strategy.
+ .../Runtime/Contract/AgentSessionClient.php        |  18 +
+ src/CodingAgent/Runtime/Contract/UserCommand.php   |   2 +-
+ .../CommandHandler/ShellCommandHandler.php         | 101 ++++++
+ .../InProcess/InProcessAgentSessionClient.php      | 137 ++++++++
+ .../Process/JsonlProcessAgentSessionClient.php     |  49 +++
+ .../Runtime/Protocol/RuntimeEventTranslator.php    |  22 +-
+ src/Tui/Command/CommandParser.php                  |  15 +-
+ src/Tui/Command/DispatchShellCommand.php           |  25 ++
+ src/Tui/Command/ShellCommand.php                   |   8 +-
+ src/Tui/Command/SubmissionRouter.php               |  26 +-
+ src/Tui/Listener/SubmitListener.php                | 143 ++++++++
+ src/Tui/Listener/TickPollListener.php              |  12 +-
+ src/Tui/Runtime/TuiSessionState.php                |  12 +
+ tests/CodingAgent/Phar/PharSmokeTest.php           |  93 ++---
+ .../BackgroundProcessCompletionPollerTest.php      |   9 +
+ .../CommandHandler/AnswerHumanHandlerTest.php      |  10 +
+ .../CommandHandler/ShellCommandHandlerTest.php     | 236 +++++++++++++
+ tests/Tui/Command/CommandParserTest.php            |  12 +-
+ tests/Tui/Command/SubmissionRouterTest.php         |  33 +-
+ tests/Tui/E2E/ShellPrefixSmokeTest.php             | 374 +++++++++++++++++++++
+ 20 files changed, 1251 insertions(+), 86 deletions(-)
+ create mode 100644 src/CodingAgent/Runtime/Controller/CommandHandler/ShellCommandHandler.php
+ create mode 100644 src/Tui/Command/DispatchShellCommand.php
+ create mode 100644 tests/CodingAgent/Runtime/Controller/CommandHandler/ShellCommandHandlerTest.php
+ create mode 100644 tests/Tui/E2E/ShellPrefixSmokeTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/editor-11-shell-prefix-commands.
+- Pulled integration checkout: Already up to date..
+- Validation: CODE-REVIEW gate passed at commit 591dfff35eab; PR #112 existing and branch pushed after rebase/conflict resolution; User authorized resolving conflicts and moving to DONE
+- Summary: Merging EDITOR-11 after conflict resolution, successful CODE-REVIEW gate, and user authorization to move to DONE. PR #112 branch rebased onto main at 591dfff3, full Castor quality gate passed during CODE-REVIEW transition. Implementation: single `!<command>` shell prefix, `!!` rejected, shell execution through runtime/shared BashTool path, transcript-visible output without model-context injection/LLM turn, synthetic shell RunStarted for JSONL/TUI drain forwarding, prompt-history support, real TUI E2E coverage, and PHAR smoke HOME isolation.
+
+## Task workflow update - 2026-06-09T22:52:21.105Z
+- Updated PR Status: merged
+- Validation: move_task DONE merged task/editor-11-shell-prefix-commands into integration checkout and removed worktree; GitHub PR #112 state: MERGED, mergedAt 2026-06-09T22:45:20Z; Post-merge retry: `LLM_MODE=true castor check` passed: deptrac 0 violations; test 2296 tests/6711 assertions; test:controller 1/7; test:llm-real 5/35; test:tui 11/30; phpstan 0 errors; cs-check clean; quality ok; Integration checkout clean at f516a4c9
+- Summary: Post-merge validation complete for EDITOR-11. Task merged into integration main and PR #112 is marked MERGED on GitHub. Worktree was removed by move_task cleanup. Integration checkout verified clean at f516a4c9. First post-merge `LLM_MODE=true castor check` hit known transient `OutputCapReadFileControllerTest.php:152` LLM-real failure; rerunning the full check immediately passed all gates, confirming no EDITOR-11 regression.

@@ -8,7 +8,6 @@ use Ineersa\CodingAgent\Tests\Support\AgentTestExecutable;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Process;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Built PHAR smoke test.
@@ -29,6 +28,47 @@ use Symfony\Component\Yaml\Yaml;
 #[Group('phar')]
 final class PharSmokeTest extends TestCase
 {
+    /** @var list<string> */
+    private array $isolatedHomeDirs = [];
+
+    protected function tearDown(): void
+    {
+        foreach ($this->isolatedHomeDirs as $dir) {
+            shell_exec('rm -rf '.escapeshellarg($dir));
+        }
+        $this->isolatedHomeDirs = [];
+    }
+
+    /**
+     * Create an isolated HOME directory with no user config.
+     *
+     * The empty HOME dir prevents the PHAR subprocess from inheriting
+     * the real user's ~/.hatfield/settings.yaml, which may reference an
+     * ai.default_model whose provider definition is not available in the
+     * packaged production PHAR (e.g. llama_cpp_test/test defined in a
+     * project-level .hatfield/settings.yaml but not in the PHAR provider
+     * list).  With an empty HOME, built-in defaults apply and the PHAR
+     * picks the first available model from packaged providers.
+     */
+    private function createIsolatedHome(): string
+    {
+        $dir = sys_get_temp_dir().'/phar-smoke-home-'.bin2hex(random_bytes(6));
+        @mkdir($dir, 0755, true);
+        $this->isolatedHomeDirs[] = $dir;
+        return $dir;
+    }
+
+    /**
+     * Run a shell command with an isolated HOME.
+     */
+    private function shellExecIsolated(string $command): string
+    {
+        $home = $this->createIsolatedHome();
+        return shell_exec(
+            sprintf('HOME=%s %s', escapeshellarg($home), $command),
+        ) ?? '';
+    }
+
     /**
      * Default project-relative PHAR path used in skip messages.
      *
@@ -59,7 +99,7 @@ final class PharSmokeTest extends TestCase
         // PHAR is a production artifact — never inherit APP_ENV=test from
         // the PHPUnit parent process (which would trigger
         // Class-not-found for test-only bundles like DAMADoctrineTestBundle).
-        $output = shell_exec('APP_ENV=prod '.$php.' '.escapeshellarg($pharPath).' list 2>&1');
+        $output = $this->shellExecIsolated('APP_ENV=prod '.$php.' '.escapeshellarg($pharPath).' list 2>&1');
         self::assertNotNull($output, 'PHAR list command produced no output');
         self::assertStringContainsString('agent', $output, 'PHAR list output should contain the agent command');
 
@@ -89,7 +129,7 @@ final class PharSmokeTest extends TestCase
         // Also verify that --help works on the agent command.
         // APP_ENV=prod prevents the PHAR from trying to load test-only
         // bundles (DAMADoctrineTestBundle) inherited from the PHPUnit env.
-        $output = shell_exec('APP_ENV=prod '.$php.' '.escapeshellarg($pharPath).' agent --help 2>&1');
+        $output = $this->shellExecIsolated('APP_ENV=prod '.$php.' '.escapeshellarg($pharPath).' agent --help 2>&1');
         self::assertNotNull($output, 'PHAR agent --help produced no output');
         self::assertStringContainsString('Usage:', $output);
     }
@@ -123,8 +163,9 @@ final class PharSmokeTest extends TestCase
         // bundles. Inheriting APP_ENV=test from PHPUnit would cause
         // Class-not-found errors for test-only bundles like DAMADoctrineTestBundle.
         $repoRoot = dirname(__DIR__, 3);
+        $isolatedHome = $this->createIsolatedHome();
         $process = Process::fromShellCommandline(
-            \sprintf('APP_ENV=prod HATFIELD_CACHE_DIR= %s %s list', escapeshellarg($php), escapeshellarg($pharPath)),
+            \sprintf('HOME=%s APP_ENV=prod HATFIELD_CACHE_DIR= %s %s list', escapeshellarg($isolatedHome), escapeshellarg($php), escapeshellarg($pharPath)),
             cwd: $repoRoot,
         );
         $process->mustRun();
@@ -165,47 +206,12 @@ final class PharSmokeTest extends TestCase
         $tmpCwd = sys_get_temp_dir().'/phar-cache-hash-test-'.bin2hex(random_bytes(8));
         @mkdir($tmpCwd, 0755, true);
 
-        // Isolate $HOME so the PHAR does not read the real user's home
-        // settings (which may reference a default model whose provider
-        // definition lives only in the project .hatfield/settings.yaml, not
-        // in the home file).  Without an isolated home, the PHAR boots in
-        // the temp CWD with only the home settings layer and fails loudly
-        // in AppConfig::validateDefaultModel().
-        $homeDir = $tmpCwd.'/home';
-        @mkdir($homeDir.'/.hatfield', 0755, true);
-        \file_put_contents($homeDir.'/.hatfield/settings.yaml', \Symfony\Component\Yaml\Yaml::dump([
-            'ai' => [
-                'default_model' => 'llama_cpp_test/test',
-                'providers' => [
-                    'llama_cpp_test' => [
-                        'type' => 'generic',
-                        'enabled' => true,
-                        'base_url' => 'http://192.168.2.38:9052/v1',
-                        'api' => 'openai-completions',
-                        'api_key' => 'dummy',
-                        'completions_path' => '/chat/completions',
-                        'supports_completions' => true,
-                        'supports_embeddings' => false,
-                        'models' => [
-                            'test' => [
-                                'name' => 'test',
-                                'context_window' => 32768,
-                                'max_tokens' => 32768,
-                                'input' => ['text', 'image'],
-                                'tool_calling' => true,
-                                'cost' => ['input' => 0, 'output' => 0],
-                            ],
-                        ],
-                    ],
-                ],
-            ],
-        ], 6, 4));
-
+        $isolatedHome = $this->createIsolatedHome();
         try {
             $process = Process::fromShellCommandline(
                 \sprintf(
-                    'APP_ENV=prod HATFIELD_CACHE_DIR= HOME=%s %s %s list',
-                    \escapeshellarg($homeDir),
+                    'HOME=%s APP_ENV=prod HATFIELD_CACHE_DIR= %s %s list',
+                    \escapeshellarg($isolatedHome),
                     \escapeshellarg($php),
                     \escapeshellarg($pharPath),
                 ),
