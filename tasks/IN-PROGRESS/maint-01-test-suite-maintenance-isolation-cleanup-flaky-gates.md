@@ -220,3 +220,45 @@ Desired design:
 - Preserve existing exclusions for `tui-e2e` and `llm-real`; those remain separate top-level checks unless intentionally included by `castor check` orchestration.
 
 Rationale: `castor test` alone currently takes roughly 1m40s, so top-level `castor check` parallelization is not enough. Internal PHPUnit suite parallelism is likely the next biggest performance win once test isolation is cleaned up.
+
+## Task workflow update - 2026-06-10T19:52:36.153Z
+- Summary: Scout findings for internal `castor test` parallelization with per-worker DB:
+
+Exact seams:
+1. Test DB is currently hardcoded in `config/packages/test/doctrine.yaml` as `path: '%kernel.project_dir%/var/test/app_test.sqlite'`.
+   - Recommended change: make it env-overridable while preserving default, e.g. `path: '%env(default:kernel.project_dir/var/test/app_test.sqlite:string:HATFIELD_TEST_DATABASE_PATH)%'` or equivalent Symfony env processor syntax.
+   - Castor can then pass `HATFIELD_TEST_DATABASE_PATH=var/test/app_test-<worker>.sqlite` per PHPUnit worker.
+
+2. `castor test()` currently:
+   - creates `var/test/`
+   - runs one migration command: `APP_ENV=test php bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration`
+   - runs `vendor/bin/phpunit --exclude-group tui-e2e --exclude-group llm-real`
+   - in LLM_MODE writes one report pair: `var/reports/phpunit.junit.xml` and `var/reports/phpunit.log`
+   - applies filter by appending `--filter=<filter>`.
+
+3. PHPUnit suites already exist in `phpunit.xml.dist`:
+   - `agent-core` => `tests/AgentCore`
+   - `coding-agent` => `tests/CodingAgent`
+   - `tui` => `tests/Tui`
+   - `platform` => `tests/Platform`
+   - Exclusions for `tui-e2e` and `llm-real` still apply to `castor test`.
+
+4. Collision surfaces for parallel `castor test`:
+   - JUnit XML and logs must be unique per worker, e.g. `phpunit-agent-core.junit.xml`, `phpunit-agent-core.log`.
+   - PHPUnit cache should be unique per worker via `--cache-directory var/cache/.phpunit-<worker>`.
+   - SQLite DB must be unique per DB-using worker via `HATFIELD_TEST_DATABASE_PATH`.
+   - Existing `var/tmp/hatfield-test-*` isolation is random per test and safe.
+
+5. DB migration per worker:
+   - For each DB-using worker, run migrations with `APP_ENV=test HATFIELD_TEST_DATABASE_PATH=<worker-db> php bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration` before that worker's PHPUnit command.
+   - DAMA DoctrineTestBundle static connection is process-local, so separate PHPUnit processes + separate DB files should be safe.
+
+6. Suggested behavior for `castor test --filter=...`:
+   - Keep sequential path for filters to preserve simplicity and expected targeting. Parallelism is useful for full-suite runs, not one filtered class/method.
+
+7. Low-risk implementation strategy:
+   - First pass can split by existing PHPUnit suites: agent-core, coding-agent, tui, platform. Give each worker its own report/cache and DB env to be maximally safe, even if some suites do not use DB. This avoids needing perfect classification up front.
+   - More aggressive future split can separate pure vs kernel DB tests, but existing suite split is enough to reduce the current ~1m40 `castor test` wall time substantially.
+   - `castor check` should call the parallelized `test()` as one branch, and top-level check can also run controller/llm-real/tui/static branches in parallel as separately implemented.
+
+Implementation warning: reports and summaries must aggregate all worker results; do not fail-fast. Keep standalone sequential behavior for filtered runs and ensure `LLM_MODE` summaries still show meaningful combined failure output.
