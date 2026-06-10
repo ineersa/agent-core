@@ -35,7 +35,7 @@ Parallelizable with: none after dependencies.
 Status: IN-PROGRESS
 Branch: task/editor-12-keybindings-docs-smoke
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke
-Fork run: x76yjmx0yw0f
+Fork run: vb78x9cy1wdm
 PR URL:
 PR Status:
 Started: 2026-06-10T19:50:55.944Z
@@ -64,3 +64,7 @@ Completed:
 - Recorded fork run: x76yjmx0yw0f
 - Validation: Fork x76yjmx0yw0f reported `castor test` passed (2303 tests, 6727 assertions); Fork x76yjmx0yw0f reported `castor deptrac` passed (0 violations), `castor phpstan` passed (0 errors), `castor cs-check` clean; Fork x76yjmx0yw0f reported focused Hotkey/Slash/Completion tests passed; Fork x76yjmx0yw0f reported `castor test:tui --filter=HotkeySmoke` failed on Ctrl+J multiline E2E due LLM exploration timeout; required TUI proof remains incomplete; Orchestrator verified worktree dirty/uncommitted after fork, so follow-up implementation fork required
 - Summary: Implementation fork x76yjmx0yw0f returned partially complete and uncommitted. Core code/docs/tests are present in the worktree but dirty at HEAD 86966046. Implemented pieces reported by fork: Ctrl+J keybinding via PromptEditor/InteractiveMode, display-only HotkeyRegistry/HotkeyBindingDTO/HotkeyProviderInterface, app/editor hotkey registrars, `/hotkeys` slash command, docs, unit tests, and initial TUI E2E. Blocking issue: required TmuxHarness E2E proof is not passing — Ctrl+J multiline test waits for assistant output and times out due test LLM exploration loop. Additional cleanup needed: task file was modified under `tasks/TODO/...` in the implementation branch even though workflow state is IN-PROGRESS; follow-up should revert task-file changes from the branch and leave task metadata to workflow tools.
+
+## Task workflow update - 2026-06-10T20:22:26.177Z
+- Recorded fork run: vb78x9cy1wdm
+- Summary: Launched follow-up fork vb78x9cy1wdm to finish revised EDITOR-12 after partial fork x76yjmx0yw0f. Scope: keep previous core implementation, revert unintended task-file changes from the task branch, fix HotkeySmoke TmuxHarness E2E so Ctrl+J multiline proof avoids LLM exploration by using shell-prefix output/canonical events, validate `/hotkeys` E2E, run Castor validation, commit intended source/docs/tests, leave worktree clean. Parent will verify fork result before any CODE-REVIEW workflow.
