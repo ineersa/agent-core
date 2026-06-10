@@ -107,6 +107,24 @@ function check(): void
         fail_quality('test database migration failed: '.$migrate->getErrorOutput());
     }
 
+    // ── Split into LLM-dependent and non-LLM batches ──
+    // test:controller, test:llm-real, and test:tui all hit
+    // llama_cpp_test/test on port 9052 and must run sequentially
+    // to avoid resource contention.  The remaining steps (deptrac,
+    // unit tests, phpstan, cs-check) are stateless and safe to
+    // parallelise.
+    $parallelSafeSteps = [
+        'deptrac' => $allCheckCommands['deptrac'],
+        'test' => $allCheckCommands['test'],
+        'phpstan' => $allCheckCommands['phpstan'],
+        'cs-check' => $allCheckCommands['cs-check'],
+    ];
+    $llmSequentialSteps = [
+        'test:controller' => $allCheckCommands['test:controller'],
+        'test:llm-real' => $allCheckCommands['test:llm-real'],
+        'test:tui' => $allCheckCommands['test:tui'],
+    ];
+
     $failures = [];
     $timings = [];
 
@@ -114,7 +132,10 @@ function check(): void
     try {
         $useParallel = \PHP_SAPI === 'cli' && function_exists('proc_open');
         if ($useParallel) {
-            run_check_commands_parallel($allCheckCommands, $failures, $timings);
+            // Phase 1: stateless parallel steps
+            run_check_commands_parallel($parallelSafeSteps, $failures, $timings);
+            // Phase 2: LLM-port-dependent steps run sequentially
+            run_check_commands_sequential($llmSequentialSteps, $failures, $timings);
         } else {
             run_check_commands_sequential($allCheckCommands, $failures, $timings);
         }
