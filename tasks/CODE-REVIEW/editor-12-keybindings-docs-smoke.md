@@ -32,12 +32,12 @@ Parallelizable with: none after dependencies.
 - `castor check` passes.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/editor-12-keybindings-docs-smoke
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke
 Fork run: b6a2ywizqtru
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/114
+PR Status: open
 Started: 2026-06-10T19:50:55.944Z
 Completed:
 
@@ -124,3 +124,16 @@ Completed:
 - Validation: Reviewer subagent verdict: APPROVE at HEAD 2d69fb29; Local validation: `castor test` passed (tests=2319, assertions=6798, errors=0, failures=0, skipped=0); Local validation: `castor test:tui` passed (tests=13, assertions=48, errors=0, failures=0, skipped=0); Local validation: `castor deptrac` passed (violations=0, errors=0); Local validation: `castor phpstan` passed (errors=0, file_errors=0); Local validation: `castor cs-check` passed (files_fixed=0); Final worktree status clean on branch task/editor-12-keybindings-docs-smoke
 - Summary: Final reviewer re-review at HEAD 2d69fb29 returned APPROVE. Reviewer confirmed prior suggestions addressed, no critical issues or blockers, deptrac layering clean, HotkeyRegistry dedup handles session-switch re-registration, `/hotkeys` rendering is theme-aware through TuiTranscript renderer, and TUI E2E proof is deterministic/purely visual: Ctrl+J test uses real tmux editor state with no events.jsonl, sleeps, shell-prefix, or LLM/session artifacts; `/hotkeys` test asserts visible themed box-drawing table. Local validation run by orchestrator in worktree passed; worktree status clean.
 - task-to-pr: inspected worktree state and full diff stat; ran reviewer on HEAD 664e809b, addressed REQUEST CHANGES via fork uu1qo3b48z9q; re-reviewed HEAD 4e7a02d0 and got APPROVE WITH SUGGESTIONS; addressed sensible suggestions via fork b6a2ywizqtru; final re-review on HEAD 2d69fb29 returned APPROVE; local Castor validation passed.
+Castor Check Status: passed
+Castor Check Commit: 2d69fb291ef908895c73a5cff9e86bfbe7d75292
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 900s
+Castor Check Completed: 2026-06-10T22:01:20.822Z
+Castor Check Output SHA256: c8b1cd3ef2c18cd267365d1d7b99e3b19c1b45b39931955b677765274e9568dd
+
+## Task workflow update - 2026-06-10T22:01:24.364Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: 2d69fb291ef9.
+- Pushed task/editor-12-keybindings-docs-smoke to origin.
+- branch 'task/editor-12-keybindings-docs-smoke' set up to track 'origin/task/editor-12-keybindings-docs-smoke'.
+- Created PR: https://github.com/ineersa/agent-core/pull/114
