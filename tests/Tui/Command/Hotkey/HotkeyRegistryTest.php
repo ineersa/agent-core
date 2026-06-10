@@ -136,4 +136,109 @@ final class HotkeyRegistryTest extends TestCase
         self::assertSame('Global', $contexts[0]);
         self::assertSame('CustomUnknown', $contexts[1]);
     }
+
+    public function testDedupRepeatedSameAddDoesNotDuplicate(): void
+    {
+        $binding = new HotkeyBindingDTO(
+            context: 'Global',
+            keys: ['ctrl+c'],
+            action: 'Clear',
+            source: 'core',
+            priority: 10,
+        );
+
+        // Add the same binding twice (simulates re-registration on session switch)
+        $this->registry->add($binding);
+        $this->registry->add($binding);
+
+        self::assertCount(1, $this->registry->all());
+    }
+
+    public function testDedupSameContextKeysActionSourceDifferentDescription(): void
+    {
+        // Description should not affect dedup (same context+keys+action+source)
+        $this->registry->add(new HotkeyBindingDTO(
+            context: 'Editor',
+            keys: ['enter'],
+            action: 'Submit',
+            source: 'core',
+            description: 'Original',
+        ));
+        $this->registry->add(new HotkeyBindingDTO(
+            context: 'Editor',
+            keys: ['enter'],
+            action: 'Submit',
+            source: 'core',
+            description: 'Updated description',
+        ));
+
+        // Should not duplicate — description is not part of identity
+        self::assertCount(1, $this->registry->all());
+        // The first registered entry is kept
+        self::assertSame('Original', $this->registry->all()[0]->description);
+    }
+
+    public function testDedupDoesNotBlockDifferentBindings(): void
+    {
+        $this->registry->add(new HotkeyBindingDTO(
+            context: 'Global',
+            keys: ['ctrl+c'],
+            action: 'Clear',
+            source: 'core',
+        ));
+        // Same keys but different action — should NOT be deduped
+        $this->registry->add(new HotkeyBindingDTO(
+            context: 'Global',
+            keys: ['ctrl+c'],
+            action: 'Copy',
+            source: 'core',
+        ));
+        // Same action but different context — should NOT be deduped
+        $this->registry->add(new HotkeyBindingDTO(
+            context: 'Editor',
+            keys: ['ctrl+c'],
+            action: 'Copy',
+            source: 'core',
+        ));
+
+        self::assertCount(3, $this->registry->all());
+    }
+
+    public function testClearRemovesAllBindings(): void
+    {
+        $this->registry->add(new HotkeyBindingDTO(
+            context: 'Global',
+            keys: ['ctrl+c'],
+            action: 'Clear',
+            source: 'core',
+        ));
+        $this->registry->add(new HotkeyBindingDTO(
+            context: 'Editor',
+            keys: ['enter'],
+            action: 'Submit',
+            source: 'core',
+        ));
+
+        self::assertCount(2, $this->registry->all());
+
+        $this->registry->clear();
+        self::assertSame([], $this->registry->all());
+        self::assertSame([], $this->registry->grouped());
+    }
+
+    public function testAfterClearCanReAdd(): void
+    {
+        $binding = new HotkeyBindingDTO(
+            context: 'Global',
+            keys: ['ctrl+c'],
+            action: 'Clear',
+            source: 'core',
+        );
+
+        $this->registry->add($binding);
+        $this->registry->clear();
+        $this->registry->add($binding);
+
+        self::assertCount(1, $this->registry->all());
+    }
 }

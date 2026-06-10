@@ -23,11 +23,29 @@ final class HotkeyRegistry
     private array $bindings = [];
 
     /**
-     * Add one or more hotkey hints.
+     * Add a hotkey hint.
+     *
+     * Deduplicates by (context, canonical sorted keys, action, source)
+     * so repeated registrar invocations (e.g. after session switch)
+     * do not accumulate duplicates.
      */
     public function add(HotkeyBindingDTO $binding): void
     {
+        $hash = self::hash($binding);
+        foreach ($this->bindings as $existing) {
+            if (self::hash($existing) === $hash) {
+                return; // duplicate — skip
+            }
+        }
         $this->bindings[] = $binding;
+    }
+
+    /**
+     * Remove all registered hotkey hints.
+     */
+    public function clear(): void
+    {
+        $this->bindings = [];
     }
 
     /**
@@ -73,5 +91,16 @@ final class HotkeyRegistry
         });
 
         return $groups;
+    }
+
+    /**
+     * Compute a deterministic identity hash for deduplication.
+     */
+    private static function hash(HotkeyBindingDTO $b): string
+    {
+        $normalizedKeys = $b->keys;
+        sort($normalizedKeys, \SORT_STRING);
+
+        return serialize([$b->context, $normalizedKeys, $b->action, $b->source]);
     }
 }

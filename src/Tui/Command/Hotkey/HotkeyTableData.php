@@ -15,17 +15,18 @@ use Ineersa\Tui\Command\CommandResult;
  * theme dependencies.
  *
  * The actual themed table rendering happens in TuiListener layer where
- * theme access is allowed by deptrac.
+ * theme access is allowed by deptrac. The empty-message fallback is
+ * owned by the renderer ({@see HotkeyTableRenderer}), not duplicated here.
  */
 final readonly class HotkeyTableData implements CommandResult
 {
     /**
      * @param array<string, list<HotkeyBindingDTO>> $groups       grouped bindings by context
-     * @param string                                $emptyMessage shown when the registry is empty
+     * @param string                                $emptyMessage optional override for the renderer's default empty message
      */
     public function __construct(
         public array $groups,
-        public string $emptyMessage = 'No hotkey hints registered. This is a bug — hotkeys should be populated during TUI startup.',
+        public string $emptyMessage = '',
     ) {
     }
 

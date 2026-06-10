@@ -158,8 +158,10 @@ final readonly class InteractiveMode
             $screen->mount($tui);
 
             // Apply Ctrl+J as portable newline alongside Shift+Enter.
-            // Widget-level keybindings REPLACE the entire action key list,
-            // so both keys are included here to preserve Shift+Enter support.
+            // Widget-level keybindings override individual action key lists
+            // via Symfony Keybindings merge/resolution order, preserving
+            // keys from all layers. Both keys are included here so that
+            // Shift+Enter support is preserved alongside Ctrl+J.
             $this->promptEditor->setKeybindings(new Keybindings([
                 'new_line' => ['ctrl+j', 'shift+enter'],
             ]));

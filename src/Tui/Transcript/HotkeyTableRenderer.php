@@ -30,16 +30,19 @@ final readonly class HotkeyTableRenderer
     /**
      * Width caps for table columns (display columns).
      */
-    private const MAX_KEY_WIDTH = 30;
-    private const MAX_ACTION_WIDTH = 35;
-    private const MAX_DESC_WIDTH = 45;
+    private const MAX_KEY_WIDTH = 25;
+    private const MAX_ACTION_WIDTH = 30;
+    private const MAX_DESC_WIDTH = 40;
 
     /**
      * Render a themed hotkeys table.
      *
+     * The empty-message fallback is owned by this renderer, not the caller.
+     * Pass a non-empty string only to override the default.
+     *
      * @param array<string, list<array{keys: list<string>, action: string, description: string}>> $groups
      *                                                                                                          grouped bindings keyed by context name (e.g. 'Global' → [...], 'Editor' → [...])
-     * @param string                                                                              $emptyMessage message shown when groups is empty
+     * @param string                                                                              $emptyMessage optional override shown when groups is empty; leave empty for renderer default
      */
     public function render(array $groups, TuiTheme $theme, string $emptyMessage = ''): string
     {
