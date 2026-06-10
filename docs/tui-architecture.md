@@ -136,12 +136,26 @@ next switch or quit.
 
 ### Keybindings
 
+The editor receives keybindings from Symfony TUI's {@see EditorWidget} engine. Hatfield
+applies per-widget overrides for portable newline support and surfaces active hotkeys
+via `/hotkeys`.
+
+**App shortcuts** (global, not remappable via editor keybindings):
+
 | Key | Action |
 |-----|--------|
-| Enter | Submit current prompt to agent |
-| Ctrl+D | Exit TUI cleanly |
-| Ctrl+C | Cancel / clear editor (press twice within 1.5s to exit) |
-| Shift+Enter | Insert newline in editor |
+| Ctrl+C | Clear editor (press twice within 1.5s to exit) |
+| Ctrl+D | Exit TUI |
+| Ctrl+P | Cycle model |
+| Shift+Tab | Cycle reasoning level |
+
+**Editor (PromptEditor via Symfony EditorWidget):**
+
+| Key | Action |
+|-----|--------|
+| Enter | Submit prompt to agent |
+| Ctrl+J | Insert newline (portable, supported everywhere) |
+| Shift+Enter | Insert newline (may not work in all terminals) |
 | Escape | Cancel / clear editor |
 | Arrow keys | Navigate cursor |
 | Ctrl+A / Home | Move to line start |
@@ -149,6 +163,15 @@ next switch or quit.
 | Ctrl+W | Delete word backward |
 | Ctrl+K | Delete to end of line |
 | Ctrl+U | Delete to start of line |
+| Tab | Accept/trigger completion |
+| Up on empty editor | Recall previous prompt |
+
+Type `/hotkeys` in the TUI to see the live hotkey catalog.
+
+**Hotkey architecture:** A display-only {@see HotkeyRegistry} (in `src/Tui/Command/Hotkey/`)
+collects hotkey hints from core providers and, through a tagged-provider seam,
+potentially from future extensions. The registry does NOT execute or route input —
+execution stays with the existing listener pipeline and Symfony EditorWidget engine.
 
 ### Event flow
 

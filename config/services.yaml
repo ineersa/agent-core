@@ -217,6 +217,11 @@ services:
     arguments:
       $hooks: !tagged_iterator agent_core.before_provider_request_hook
 
+  # Shared HotkeyRegistry singleton — injected into SlashCommandRegistry
+  # and all TuiListenerRegistrar hotkey providers so /hotkeys sees the
+  # complete catalog populated during TUI startup.
+  Ineersa\Tui\Command\Hotkey\HotkeyRegistry: ~
+
   Ineersa\Tui\Application\InteractiveMode:
     arguments:
       $listenerRegistrars: !tagged_iterator app.tui_listener

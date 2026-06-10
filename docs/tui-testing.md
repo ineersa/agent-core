@@ -44,9 +44,10 @@ the project root to see the fatal error before tmux closes the pane.
 | Key | Action |
 |-----|--------|
 | Enter | Submit the current prompt to the agent |
+| Ctrl+J | Insert newline (portable, works in all terminals) |
+| Shift+Enter | Insert newline (may not work in all terminals) |
 | Ctrl+D | Exit the TUI cleanly |
 | Ctrl+C | Cancel / clear editor (press twice within 1.5s to exit) |
-| Shift+Enter | Insert newline in editor |
 | Escape | Cancel / clear editor |
 | Arrow keys | Navigate editor cursor |
 | Ctrl+A / Home | Move cursor to line start |
@@ -54,6 +55,15 @@ the project root to see the fatal error before tmux closes the pane.
 | Ctrl+W | Delete word backward |
 | Ctrl+K | Delete to end of line |
 | Ctrl+U | Delete to start of line |
+| Tab | Accept/trigger completion |
+| Up on empty editor | Recall previous prompt |
+| Ctrl+P | Cycle model |
+| Shift+Tab | Cycle reasoning level |
+
+Type `/hotkeys` while the TUI is running to see the live hotkey catalog.
+The registry is display-only; input execution stays with the underlying
+Symfony EditorWidget and listener pipeline. There is no user-configurable
+YAML keybinding loader (simplified from the original scope).
 
 ## `castor run:agent-test`
 

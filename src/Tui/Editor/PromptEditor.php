@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Editor;
 
+use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Widget\EditorWidget;
 
 /**
@@ -45,6 +46,23 @@ final class PromptEditor
     public function setMaxVisibleLines(?int $lines): self
     {
         $this->widget->setMaxVisibleLines($lines);
+
+        return $this;
+    }
+
+    /**
+     * Apply custom keybindings to the underlying EditorWidget.
+     *
+     * Widget-level keybindings override EditorWidget defaults for the
+     * same action names. To add a keybinding without removing the
+     * default keys for an action, include both the new and default
+     * key identifiers in the binding list.
+     *
+     * @return $this
+     */
+    public function setKeybindings(Keybindings $keybindings): self
+    {
+        $this->widget->setKeybindings($keybindings);
 
         return $this;
     }

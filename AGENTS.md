@@ -124,6 +124,8 @@ Single-column layout: header → transcript/history → pending messages → wor
 
 Key APIs: `TuiWidget`, `TuiSlotRegistry`, `ChatLayout`, `TuiExtensionContext`, `SlotBasedTuiExtensionContext`, `FooterDataProvider`, `FooterSegmentProvider`, `FooterBarWidget`.
 
+Hotkeys: `/hotkeys` renders a live catalog of keyboard shortcuts grouped by context (Global, Editor, Completion, History, Model). Registry is in `src/Tui/Command/Hotkey/` (display-only metadata — not input routing). Editor hotkeys reflect the active EditorWidget keybindings. There is no user-configurable YAML keybinding loader.
+
 Extensions use `TuiExtensionContext` slot methods (`setHeader`, `setFooter`, `setEditorComponent`, `setWidget`, `setStatus`, `setWorkingMessage`, `setWorkingVisible`, `onTerminalInput`) and must not mutate widgets directly.
 
 Themes use `ThemeColorEnum`, `ThemePalette`, `DefaultTheme`, `ThemeRegistry`, `ThemeLoader`, and YAML files in `config/themes/`. See `docs/tui-architecture.md`.

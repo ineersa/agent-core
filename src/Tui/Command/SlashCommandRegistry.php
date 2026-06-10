@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Command;
 
+use Ineersa\Tui\Command\Hotkey\HotkeyRegistry;
+
 /**
  * Registry of slash commands with built-in help, lookup, and dispatch.
  *
@@ -30,8 +32,9 @@ final class SlashCommandRegistry
     /** @var array<string, string> alias → canonical name */
     private array $aliasMap = [];
 
-    public function __construct()
-    {
+    public function __construct(
+        private readonly HotkeyRegistry $hotkeyRegistry = new HotkeyRegistry(),
+    ) {
         // Built-in /help — metadata only; handle is built-in to execute()
         $this->addMetadata(
             new CommandMetadata(
@@ -39,6 +42,16 @@ final class SlashCommandRegistry
                 aliases: ['h', '?'],
                 description: 'Show available commands and their descriptions',
                 usage: '/help [command]',
+            ),
+        );
+
+        // Built-in /hotkeys — metadata only; handle is built-in to execute()
+        $this->addMetadata(
+            new CommandMetadata(
+                name: 'hotkeys',
+                aliases: ['hk'],
+                description: 'Show keyboard shortcuts grouped by context',
+                usage: '/hotkeys',
             ),
         );
 
@@ -133,6 +146,11 @@ final class SlashCommandRegistry
         // Built-in help (only if no custom handler registered)
         if ('help' === $canonical) {
             return $this->buildHelpMessage($command->args);
+        }
+
+        // Built-in hotkeys (reads from live HotkeyRegistry)
+        if ('hotkeys' === $canonical) {
+            return $this->buildHotkeysMessage();
         }
 
         // Unknown command → friendly typed result
@@ -325,5 +343,104 @@ final class SlashCommandRegistry
             implode("\n", $lines),
             'system',
         );
+    }
+
+    /**
+     * Build a TranscriptMessage with formatted hotkeys table.
+     *
+     * Reads the live {@see HotkeyRegistry} and renders a grouped
+     * table: Context, Keys, Action. Editor bindings reflect the
+     * active EditorWidget keybindings rather than stale defaults.
+     */
+    private function buildHotkeysMessage(): TranscriptMessage
+    {
+        $groups = $this->hotkeyRegistry->grouped();
+
+        if ([] === $groups) {
+            return new TranscriptMessage(
+                'No hotkey hints registered. This is a bug — hotkeys should be populated during TUI startup.',
+                'system',
+            );
+        }
+
+        $lines = ['Keyboard shortcuts:', ''];
+
+        foreach ($groups as $context => $bindings) {
+            $lines[] = \sprintf('  [%s]', $context);
+
+            foreach ($bindings as $b) {
+                $keysStr = implode(', ', array_map(
+                    static fn (string $k): string => self::formatKeyDisplay($k),
+                    $b->keys,
+                ));
+
+                $lines[] = \sprintf(
+                    '    %-28s %s',
+                    $keysStr,
+                    $b->action,
+                );
+
+                if ('' !== $b->description) {
+                    $lines[] = '                               '.$b->description;
+                }
+            }
+
+            $lines[] = '';
+        }
+
+        $lines[] = 'App shortcuts (Ctrl+C, Ctrl+D) are global and cannot be remapped.';
+        $lines[] = 'Editor bindings reflect the current keymap and may differ from defaults.';
+
+        return new TranscriptMessage(
+            implode("\n", $lines),
+            'system',
+        );
+    }
+
+    /**
+     * Format a key identifier string for display.
+     *
+     * Converts lowercase identifiers like 'ctrl+j' to 'Ctrl+J',
+     * 'shift+enter' to 'Shift+Enter', 'up' to '↑', etc.
+     */
+    private static function formatKeyDisplay(string $keyId): string
+    {
+        $normalized = strtolower(trim($keyId));
+        $parts = explode('+', $normalized);
+        $baseKey = array_pop($parts);
+
+        $modifiers = array_map(
+            static fn (string $m): string => match ($m) {
+                'ctrl' => 'Ctrl',
+                'shift' => 'Shift',
+                'alt' => 'Alt',
+                default => ucfirst($m),
+            },
+            $parts,
+        );
+
+        $formattedKey = match ($baseKey) {
+            'up' => '↑',
+            'down' => '↓',
+            'left' => '←',
+            'right' => '→',
+            'enter' => 'Enter',
+            'escape' => 'Esc',
+            'tab' => 'Tab',
+            'space' => 'Space',
+            'backspace' => 'Bksp',
+            'delete' => 'Del',
+            'home' => 'Home',
+            'end' => 'End',
+            'page_up' => 'PgUp',
+            'page_down' => 'PgDn',
+            default => ucfirst($baseKey),
+        };
+
+        if ([] === $modifiers) {
+            return $formattedKey;
+        }
+
+        return implode('+', array_merge($modifiers, [$formattedKey]));
     }
 }

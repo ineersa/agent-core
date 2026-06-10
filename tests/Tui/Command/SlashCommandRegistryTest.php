@@ -421,7 +421,7 @@ final class SlashCommandRegistryTest extends TestCase
         $names = array_map(static fn (CommandMetadata $m) => $m->name, $all);
 
         // Should be sorted alphabetically
-        self::assertSame(['alpha', 'clear', 'exit', 'help', 'zebra'], $names);
+        self::assertSame(['alpha', 'clear', 'exit', 'help', 'hotkeys', 'zebra'], $names);
     }
 
     #[Test]
@@ -437,20 +437,21 @@ final class SlashCommandRegistryTest extends TestCase
         self::assertArrayHasKey('help', $map);
         self::assertArrayHasKey('clear', $map);
         self::assertArrayHasKey('exit', $map);
+        self::assertArrayHasKey('hotkeys', $map);
         self::assertArrayHasKey('custom', $map);
     }
 
     #[Test]
     public function countReflectsRegisteredCommands(): void
     {
-        self::assertSame(3, $this->registry->count()); // help, clear, exit
+        self::assertSame(4, $this->registry->count()); // help, clear, exit, hotkeys
 
         $this->registry->register(
             new CommandMetadata(name: 'extra'),
             $this->createMockHandler(),
         );
 
-        self::assertSame(4, $this->registry->count());
+        self::assertSame(5, $this->registry->count());
     }
 
     // ─── Built-in command metadata ───────────────────────────────────
