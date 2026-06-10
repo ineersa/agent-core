@@ -53,7 +53,7 @@ Important non-goal: Do not delete valuable behavioral tests just to reduce count
 Status: IN-PROGRESS
 Branch: task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates
-Fork run: glfjh5lgz225
+Fork run: 8fvwlep2y2kf
 PR URL:
 PR Status:
 Started: 2026-06-09T22:01:04.785Z
@@ -276,3 +276,10 @@ Important limitation: this fork did not implement the newly requested internal `
 - Summary: Internal `castor test` parallelization fork completed at HEAD 1a4ecf7a and pushed. It added per-suite parallel `castor test` by existing PHPUnit suites (`agent-core`, `coding-agent`, `tui`, `platform`), with one worker per suite, unique SQLite DB filename via `HATFIELD_TEST_DATABASE_PATH`, unique migrations, unique PHPUnit cache dir, unique JUnit XML/log files, no fail-fast, per-suite timings, and sequential fallback. `castor test --filter=...` remains sequential. `config/packages/test/doctrine.yaml` now uses env-overridable DB path with parameter fallback after discovering Symfony `%env(default:...)%` fallback refers to a container parameter. Docs updated in tests/AGENTS.md and testing skill.
 
 Important: fork validated with raw vendor/bin commands because it reported Castor runtime unavailable in worktree; main/orchestrator still needs to run Castor validation before CODE-REVIEW.
+
+## Task workflow update - 2026-06-10T21:01:32.297Z
+- Recorded fork run: 8fvwlep2y2kf
+- Validation: castor test — PASS, 49.7s wall time, 2269 tests across shards: agent-core 1.3s; coding-agent-1 49.7s; coding-agent-2 25.3s; coding-agent-3 9.5s; coding-agent-4 23.5s; tui 0.9s; platform 0.4s; castor test --filter=RunStateTest — PASS (3 tests, 33 assertions); castor deptrac — PASS (0 violations); castor cs-check — PASS (files_fixed=0); castor phpstan — FAIL: 4 errors in .castor/tasks.php; follow-up fork launched
+- Summary: Balanced sharding fork completed at HEAD 71d24966 and pushed. Real orchestrator validation confirmed `castor test` now runs 7 worker shards (`agent-core`, `coding-agent-1..4`, `tui`, `platform`) using proc_open with per-worker DB/cache/report isolation and passes in 49.7s. This is a meaningful speedup from the prior 102s coarse-suite split and from the user's reported ~1m37 baseline. Fork also fixed PHAR smoke env/cache inheritance, PHAR build race with flock, restored rmtree(), and expanded cleanup patterns.
+
+Remaining blocker found by orchestrator validation: `castor phpstan` fails on 4 `.castor/tasks.php` errors (isset.offset, missingType.iterableValue, ternary.shortNotAllowed, parameterByRef.type). Worktree also had untracked `.hatfield/cache-*` generated dirs after `castor test`. Narrow follow-up fork l2st7p7o2st9 launched to fix phpstan and generated cache artifact handling.
