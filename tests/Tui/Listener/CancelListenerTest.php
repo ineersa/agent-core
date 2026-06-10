@@ -18,6 +18,7 @@ use Ineersa\Tui\Listener\CancelListener;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
@@ -32,6 +33,7 @@ use Symfony\Component\Tui\Widget\TextWidget;
 
 class CancelListenerTest extends TestCase
 {
+    use TuiRuntimeContextBuilderTrait;
     private TuiSessionState $state;
     /** @var AgentSessionClient&MockObject */
     private AgentSessionClient $client;
@@ -278,16 +280,12 @@ class CancelListenerTest extends TestCase
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
 
-        $context = new TuiRuntimeContext(
-            tui: $tui,
-            client: $this->client,
-            state: $this->state,
-            screen: $screen,
-            sessionStore: $sessionStore,
-            ticks: new \Ineersa\Tui\Runtime\TuiTickDispatcher(),
-            switch: $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
-            lifecycle: new \Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher(),
-        );
+        $context = $this->buildTuiContext()
+            ->withTui($tui)
+            ->withClient($this->client)
+            ->withState($this->state)
+            ->withScreen($screen)
+            ->build();
 
         $eventDispatcher = new \Symfony\Component\EventDispatcher\EventDispatcher();
         $eventDispatcher->addSubscriber(new RuntimeExceptionPolicySubscriber(

@@ -77,14 +77,17 @@ final class TuiStartupSnapshotTest extends TestCase
             timeout: 10.0,
         );
 
-        // Wait a bit more for the full layout to render
-        usleep(500_000);
+        // Wait for the full layout to render (idle status indicates TUI is ready)
+        $this->tmux->waitForCaptureContains(
+            pane: $pane,
+            needle: '●',
+            timeout: 5.0,
+        );
 
         $capture = $this->tmux->capturePlain($pane);
 
         // Send Ctrl+D to exit the interactive TUI cleanly
         $this->tmux->sendKey($pane, 'C-d');
-        usleep(300_000);
 
         $normalized = $this->tmux->normalizeSnapshot($capture);
 
@@ -138,7 +141,13 @@ final class TuiStartupSnapshotTest extends TestCase
             timeout: 10.0,
         );
 
-        usleep(500_000);
+        // Wait for the full layout to render (idle status indicates TUI is ready)
+        $this->tmux->waitForCaptureContains(
+            pane: $pane,
+            needle: '●',
+            timeout: 5.0,
+        );
+
         $capture = $this->tmux->capturePlain($pane);
 
         // Send Ctrl+D to exit cleanly
