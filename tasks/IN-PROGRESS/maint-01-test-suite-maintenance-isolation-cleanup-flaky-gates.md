@@ -50,7 +50,7 @@ Important non-goal: Do not delete valuable behavioral tests just to reduce count
 - `tests/AGENTS.md` or testing skill documents test standards: no structural getter-only tests, use shared fixtures/builders, use Castor, use TUI E2E proof for TUI behavior, and use cleanup/snapshot conventions.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates
 Fork run: 8ri2bakkcwug
@@ -331,3 +331,7 @@ Castor Check Output SHA256: 0045f011d2cc5c8fdf5f6e032d337b774519092174524bcb8f24
 - Pushed task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates to origin.
 - branch 'task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates' set up to track 'origin/task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates'.
 - PR already exists: https://github.com/ineersa/agent-core/pull/113
+
+## Task workflow update - 2026-06-10T22:09:23.915Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: User requested conflict-fix iteration before merge. Moving back to IN-PROGRESS so a fork can update branch against main, resolve merge conflicts, rerun validation, then return to CODE-REVIEW/DONE flow.
