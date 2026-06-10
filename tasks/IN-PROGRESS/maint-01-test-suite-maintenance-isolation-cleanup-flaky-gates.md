@@ -206,3 +206,17 @@ Acceptance addendum: `LLM_MODE=true castor check` should either run independent 
 Implemented: phar_smoke HOME isolation and try/finally temp cleanup; ViewImageToolE2eTest changed from brittle generic LLM-prose rejection to robust image/tool execution proof plus exact gating-placeholder rejection; castor cleanup expanded for var/tmp, var/test app DB, PHAR dirs, LlamaCpp dirs, and known system /tmp prefixes; ControllerE2eTestCase event helpers added and controller E2E tests migrated; shared TestMessageBus and TestLogger added and 6 duplicate MessageBus test doubles migrated; tests/AGENTS.md added with standards; low-value tests removed/collapsed (ClipboardTest deleted, QuestionRequest readonly-structure test removed, RunState tests collapsed); .agents/skills/testing points to tests/AGENTS.md; castor check parallelization added with one PHAR prebuild, pcntl_fork parallel group for deptrac/test/phpstan/cs-check, sequential fallback, and controller/llm-real/tui serialized for DB/tmux/LLM safety.
 
 Deferred by fork with rationale: TestAiConfigBuilder, TuiRuntimeContextBuilder, TuiE2eTestCase, full rmDir/sys_get_temp_dir migration, TUI startup usleep replacement, and HatfieldSessionStoreTest sleep removal. Fork found HatfieldSession/TimestampableLifecycleTrait uses direct new DateTimeImmutable(), so Clock mocking cannot remove sleep without production timestamp seam changes. Fork also found RuntimeEventTranslator drops tool_batch_committed from stdout stream, so ViewImageToolE2eTest now reads persisted events.jsonl for that proof.
+
+## Task workflow update - 2026-06-10T19:47:37.709Z
+- Summary: Additional performance objective requested by user: split `castor test` internally into parallel PHPUnit suites and isolate DB-using suites with per-worker SQLite DB paths.
+
+Desired design:
+- Replace hardcoded test DB path (`%kernel.project_dir%/var/test/app_test.sqlite`) with an env-driven path such as `%env(default:...:HATFIELD_TEST_DATABASE_PATH)%` or equivalent Symfony config approach.
+- Castor should create/select a unique DB file per PHPUnit worker/suite, run migrations/schema setup for that worker DB, and pass the env var into that suite process.
+- Split `castor test` into logical suites/groups that can run concurrently, for example AgentCore unit, CodingAgent unit/config/filesystem, TUI unit, DB/kernel integration, extensions, etc. Exact split should be based on existing test directory/group layout and isolation risks.
+- `castor test` and `castor check` should run these suites in parallel, with separate JUnit/report/log files per suite and a combined summary. No fail-fast; collect all failures.
+- DB suites can run in parallel if each has its own SQLite DB. Non-DB suites should not pay DB migration cost.
+- Keep `castor test --filter=...` behavior working; filter mode can run a single sequential PHPUnit invocation if easier.
+- Preserve existing exclusions for `tui-e2e` and `llm-real`; those remain separate top-level checks unless intentionally included by `castor check` orchestration.
+
+Rationale: `castor test` alone currently takes roughly 1m40s, so top-level `castor check` parallelization is not enough. Internal PHPUnit suite parallelism is likely the next biggest performance win once test isolation is cleaned up.
