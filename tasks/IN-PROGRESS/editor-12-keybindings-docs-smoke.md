@@ -35,7 +35,7 @@ Parallelizable with: none after dependencies.
 Status: IN-PROGRESS
 Branch: task/editor-12-keybindings-docs-smoke
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke
-Fork run: 021vafrvt41l
+Fork run: h37ng9no7c5l
 PR URL: https://github.com/ineersa/agent-core/pull/114
 PR Status: open
 Started: 2026-06-10T19:50:55.944Z
@@ -153,3 +153,7 @@ Castor Check Output SHA256: c8b1cd3ef2c18cd267365d1d7b99e3b19c1b45b39931955b6777
 
 ## Task workflow update - 2026-06-10T22:24:42.344Z
 - Summary: User instructed not to launch another reviewer for the small PR #114 comment fix. The previous reviewer had already approved the main implementation; the latest change only merged latest main and removed redundant explicit HotkeyRegistry service registration. Proceeding without further reviewer, with Castor validation and move_task quality gate only.
+
+## Task workflow update - 2026-06-10T22:31:30.816Z
+- Recorded fork run: h37ng9no7c5l
+- Summary: move_task back to CODE-REVIEW was manually stopped by user because the Castor quality gate appeared to hang/take too long; task remains IN-PROGRESS at HEAD 7e90c7eb. Launched diagnostic validation fork h37ng9no7c5l to inspect latest origin/main/maintenance commits for test/check behavior changes, run `LLM_MODE=true castor check`, isolate any hanging sub-step via Castor constituent commands if needed, verify HotkeySmoke/focused hotkey paths, and either commit a clear small branch-specific fix or report exact blocker evidence. No reviewer requested; no task moves/push/PR changes from fork.
