@@ -53,7 +53,7 @@ Important non-goal: Do not delete valuable behavioral tests just to reduce count
 Status: IN-PROGRESS
 Branch: task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates
-Fork run: l3wxwzvlu2xw
+Fork run: dezxhw047goz
 PR URL: https://github.com/ineersa/agent-core/pull/113
 PR Status: open
 Started: 2026-06-09T22:01:04.785Z
@@ -314,3 +314,8 @@ Castor Check Output SHA256: a53c390ddf2d8e8ccf2d202a38e561cfc0df64a76da1801c8bae
 ## Task workflow update - 2026-06-10T21:31:29.245Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: User identified PR #113 only completes the urgent stability/performance slice, not the full MAINT-01 acceptance scope. Moving back to IN-PROGRESS to finish remaining maintenance items before review: broad temp-dir/removeDir cleanup, additional helper builders, remaining assertion-bloat/test-count reductions, easy sleep/wait fixes where feasible, and documentation/cleanup consistency. PR remains open but should not be considered ready until remaining scope is completed and full gate passes again.
+
+## Task workflow update - 2026-06-10T21:54:16.360Z
+- Recorded fork run: dezxhw047goz
+- Validation: castor test --filter focused set — PASS per fork (124 tests, 324 assertions); castor test — PASS per fork (45.3s, 2269 tests, 6660 assertions); castor phpstan — PASS; castor deptrac — PASS; castor cs-check — PASS
+- Summary: Finishing fork completed remaining MAINT-01 acceptance scope at HEAD a213737e: removed HatfieldSessionStoreTest sleep(1) via MockClock; replaced TuiStartupSnapshotTest blind waits with condition-based waits; added TuiRuntimeContextBuilderTrait and migrated 5 listener tests; migrated AppConfigTest and HomeSettingsWriterTest to TestDirectoryIsolation/project var/tmp and removed custom recursive cleanup helpers. Some broad candidates were deliberately not changed because they were not true bloat clusters or were too risky, but acceptance is now covered by representative helper/test cleanup plus the prior stability/performance work.
