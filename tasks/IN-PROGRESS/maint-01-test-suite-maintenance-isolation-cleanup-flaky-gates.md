@@ -53,7 +53,7 @@ Important non-goal: Do not delete valuable behavioral tests just to reduce count
 Status: IN-PROGRESS
 Branch: task/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-01-test-suite-maintenance-isolation-cleanup-flaky-gates
-Fork run: dezxhw047goz
+Fork run: 8ri2bakkcwug
 PR URL: https://github.com/ineersa/agent-core/pull/113
 PR Status: open
 Started: 2026-06-09T22:01:04.785Z
@@ -319,3 +319,8 @@ Castor Check Output SHA256: a53c390ddf2d8e8ccf2d202a38e561cfc0df64a76da1801c8bae
 - Recorded fork run: dezxhw047goz
 - Validation: castor test --filter focused set — PASS per fork (124 tests, 324 assertions); castor test — PASS per fork (45.3s, 2269 tests, 6660 assertions); castor phpstan — PASS; castor deptrac — PASS; castor cs-check — PASS
 - Summary: Finishing fork completed remaining MAINT-01 acceptance scope at HEAD a213737e: removed HatfieldSessionStoreTest sleep(1) via MockClock; replaced TuiStartupSnapshotTest blind waits with condition-based waits; added TuiRuntimeContextBuilderTrait and migrated 5 listener tests; migrated AppConfigTest and HomeSettingsWriterTest to TestDirectoryIsolation/project var/tmp and removed custom recursive cleanup helpers. Some broad candidates were deliberately not changed because they were not true bloat clusters or were too risky, but acceptance is now covered by representative helper/test cleanup plus the prior stability/performance work.
+
+## Task workflow update - 2026-06-10T21:54:25.253Z
+- Recorded fork run: 8ri2bakkcwug
+- Validation: castor test:tui — PASS (7 tests, 25 assertions); castor phpstan — PASS (errors=0,file_errors=0); castor cs-check — PASS (files_fixed=0); castor deptrac — PASS (violations=0,errors=0,uncovered=776,allowed=1021); castor test — PASS in 45.1s wall time; shards: agent-core 0.9s, coding-agent-1 45.1s, coding-agent-2 22.9s, coding-agent-3 8.5s, coding-agent-4 22.9s, tui 0.9s, platform 0.4s; 2269 tests total; git status --short after castor test — clean
+- Summary: Narrow TUI E2E regression fix completed at HEAD 5bedd07a: previous wait replacement in TuiStartupSnapshotTest waited for startup idle (`●`) and captured the wrong screen; fix now waits for the auto-submitted prompt text `hello from tmux e2e`, preserving the intended post-submission working-state snapshot without blind sleeps. Orchestrator re-validation confirmed TUI E2E, static checks, deptrac, and full sharded `castor test` are green, with clean worktree after tests.
