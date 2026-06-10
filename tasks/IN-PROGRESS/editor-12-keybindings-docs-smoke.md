@@ -35,7 +35,7 @@ Parallelizable with: none after dependencies.
 Status: IN-PROGRESS
 Branch: task/editor-12-keybindings-docs-smoke
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke
-Fork run: d6zy70so8y9o
+Fork run: 8pvicrpkkgcc
 PR URL:
 PR Status:
 Started: 2026-06-10T19:50:55.944Z
@@ -82,3 +82,7 @@ Completed:
 - Recorded fork run: d6zy70so8y9o
 - Validation: Fork d6zy70so8y9o validation: focused `castor test --filter='Hotkey|Hotkeys|SlashCommandRegistry|SlashCommandCompletion|CompletionListener'` passed (110 tests, 221 assertions); Fork d6zy70so8y9o validation: `castor test:tui --filter=HotkeySmoke` passed (2 tests, 6 assertions); Fork d6zy70so8y9o validation: full `castor test:tui` passed (13 tests, 35 assertions); Fork d6zy70so8y9o validation: full `castor test` passed (2306 tests, 6748 assertions); Fork d6zy70so8y9o validation: `castor deptrac` passed (0 violations), `castor phpstan` passed (0 errors), `castor cs-check` clean; Note for review: fork reported a residual timing risk in the existing Ctrl+J events.jsonl assertion (pane proof passes; event artifact may be timing-sensitive), not introduced by the table-only follow-up
 - Summary: Follow-up `/hotkeys` table polish complete at commit af0cc15f. `/hotkeys` now renders per-context Unicode box-drawing tables with columns Keys, Action, Description; widths are computed from actual content with display-width-aware `mb_strwidth()` padding so arrows and multibyte characters align correctly; long cells truncate with ellipsis. Section names remain plain text because TuiCommand has no allowed dependency on TuiTheme and current TranscriptBlockRenderer applies only one color per block; accent-colored fragments should wait for richer transcript rendering/RENDER-02. Orchestrator verified worktree clean at af0cc15f and integration checkout clean at de434893. Diff: 2 files changed, 256 insertions, 23 deletions.
+
+## Task workflow update - 2026-06-10T20:47:36.942Z
+- Recorded fork run: 8pvicrpkkgcc
+- Summary: Launched follow-up fork 8pvicrpkkgcc after user rejected the plain white `/hotkeys` table. Scope: make `/hotkeys` theme-aware and visually styled using active theme colors, with section/context labels accented, borders muted/subtle, headers/keys/descriptions styled appropriately, without hardcoded ANSI literals and without violating deptrac. Fork may refactor table rendering out of TuiCommand or narrowly extend transcript styling if needed. Must keep HotkeyRegistry display-only, keep slash command flow, update unit and TmuxHarness E2E proof, run Castor validation, commit, and leave worktree clean.
