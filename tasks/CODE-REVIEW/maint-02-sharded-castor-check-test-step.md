@@ -47,3 +47,7 @@ Castor Check Output SHA256: 97fc190141a147a4c951e1bdb86e59b79f07b25d058ea97efda7
 - Pushed task/maint-02-sharded-castor-check-test-step to origin.
 - branch 'task/maint-02-sharded-castor-check-test-step' set up to track 'origin/task/maint-02-sharded-castor-check-test-step'.
 - Created PR: https://github.com/ineersa/agent-core/pull/115
+
+## Task workflow update - 2026-06-11T16:56:05.310Z
+- Validation: castor cs-check: PASS (files_fixed=0)
+- Summary: Updated testing guidance after MAINT-02: .agents/skills/testing/SKILL.md and tests/AGENTS.md now document 13-step sharded castor check, per-worker DB/cache/report isolation, deterministic llama.cpp temp=0 expectation, target-tool controller event collection, precise LLM smoke prompts, short TUI E2E waits, and stale worker cleanup guidance. Pushed commit 1ff847d5 to PR branch.
