@@ -35,7 +35,7 @@ Parallelizable with: none after dependencies.
 Status: IN-PROGRESS
 Branch: task/editor-12-keybindings-docs-smoke
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke
-Fork run: u673gr9aw3eq
+Fork run: 67uly66th0nw
 PR URL: https://github.com/ineersa/agent-core/pull/114
 PR Status: open
 Started: 2026-06-10T19:50:55.944Z
@@ -201,3 +201,7 @@ Castor Check Output SHA256: ac1767549913287296e3cc2691781321ef41e4fcc1fce94d7d90
 ## Task workflow update - 2026-06-11T17:56:18.219Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: PR #114 review-iterate: user rejected ShellPrefixSmokeTest LLM wait increase to 15s as unjustified. Move back to IN-PROGRESS to lower the timeout back to 5s and rerun validation; only if flaky under validation, use 8s maximum. Do not modify Castor/test execution infrastructure.
+
+## Task workflow update - 2026-06-11T17:56:39.169Z
+- Recorded fork run: 67uly66th0nw
+- Summary: Launched fork 67uly66th0nw to address user's timeout feedback. Scope: lower `ShellPrefixSmokeTest::waitForLlmResponse()` assistant marker wait from 15s back to 5s and run validation; only if 5s demonstrates flakiness, raise to 8s maximum and validate. Hard guardrails: no Castor/test-execution infrastructure changes, no sleeps, preserve deterministic TmuxHarness behavior, commit and leave worktree clean.
