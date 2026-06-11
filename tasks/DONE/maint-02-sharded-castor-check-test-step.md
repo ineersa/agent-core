@@ -12,14 +12,14 @@ Post-MAINT-01 issue: standalone `castor test` runs in ~45-51s because it uses th
 - Validation passes: `castor test`, `castor test:tui`, `castor test:llm-real`, `castor phpstan`, `castor deptrac`, `castor cs-check`, and preferably full `LLM_MODE=true castor check`.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/maint-02-sharded-castor-check-test-step
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-02-sharded-castor-check-test-step
 Fork run:
 PR URL: https://github.com/ineersa/agent-core/pull/115
-PR Status: open
+PR Status: merged
 Started: 2026-06-10T23:01:56.649Z
-Completed:
+Completed: 2026-06-11T16:58:49.820Z
 
 ## Work log
 - Created: 2026-06-10T23:01:50.574Z
@@ -51,3 +51,10 @@ Castor Check Output SHA256: 97fc190141a147a4c951e1bdb86e59b79f07b25d058ea97efda7
 ## Task workflow update - 2026-06-11T16:56:05.310Z
 - Validation: castor cs-check: PASS (files_fixed=0)
 - Summary: Updated testing guidance after MAINT-02: .agents/skills/testing/SKILL.md and tests/AGENTS.md now document 13-step sharded castor check, per-worker DB/cache/report isolation, deterministic llama.cpp temp=0 expectation, target-tool controller event collection, precise LLM smoke prompts, short TUI E2E waits, and stale worker cleanup guidance. Pushed commit 1ff847d5 to PR branch.
+
+## Task workflow update - 2026-06-11T16:58:49.820Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/maint-02-sharded-castor-check-test-step into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/maint-02-sharded-castor-check-test-step.
+- Pulled integration checkout: Already up to date..
