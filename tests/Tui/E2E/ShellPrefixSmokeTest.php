@@ -77,7 +77,7 @@ final class ShellPrefixSmokeTest extends TestCase
         );
 
         // Wait for agent boot (logo visible).
-        $this->tmux->waitForCaptureContains($pane, '█', 10.0);
+        $this->tmux->waitForCaptureContains($pane, '█', 5.0);
 
         // Send `!ls -1` — does NOT include the marker filename.
         $this->tmux->sendLiteral($pane, '!ls -1');
@@ -90,7 +90,7 @@ final class ShellPrefixSmokeTest extends TestCase
             static function (string $capture) use ($marker): bool {
                 return str_contains($capture, $marker);
             },
-            timeout: 10.0,
+            timeout: 5.0,
             message: sprintf(
                 'Marker file "%s" never appeared in captured output for !ls -1',
                 $marker,
@@ -139,7 +139,7 @@ final class ShellPrefixSmokeTest extends TestCase
             cwd: $this->testProjectDir,
         );
 
-        $this->tmux->waitForCaptureContains($pane, '█', 10.0);
+        $this->tmux->waitForCaptureContains($pane, '█', 5.0);
 
         // Send normal first prompt and wait for LLM response.
         $this->tmux->sendLiteral($pane, 'Say exactly: hello');
@@ -156,7 +156,7 @@ final class ShellPrefixSmokeTest extends TestCase
             static function (string $capture) use ($marker2): bool {
                 return str_contains($capture, $marker2);
             },
-            timeout: 10.0,
+            timeout: 5.0,
             message: sprintf(
                 'Marker file "%s" never appeared in captured output for second-turn !ls -1',
                 $marker2,
@@ -195,7 +195,7 @@ final class ShellPrefixSmokeTest extends TestCase
             cwd: $this->testProjectDir,
         );
 
-        $this->tmux->waitForCaptureContains($pane, '█', 10.0);
+        $this->tmux->waitForCaptureContains($pane, '█', 5.0);
 
         $fullCmd = '!ls -1';
         $this->tmux->sendLiteral($pane, $fullCmd);
@@ -207,19 +207,25 @@ final class ShellPrefixSmokeTest extends TestCase
             static function (string $capture) use ($marker3): bool {
                 return str_contains($capture, $marker3);
             },
-            timeout: 10.0,
+            timeout: 5.0,
             message: 'Shell output never appeared for prompt-history test',
             history: 2000,
         );
 
-        // Wait for working status cleared + tick processing.
-        usleep(300_000);
+        // Wait for working status to clear before checking prompt history.
+        $this->tmux->waitForCallback(
+            $pane,
+            static function (string $capture): bool {
+                return !str_contains($capture, 'Working...')
+                    && !str_contains($capture, 'Running...');
+            },
+            timeout: 2.0,
+            message: 'Working/Running status never cleared before prompt-history recall.',
+            history: 2000,
+        );
 
         // Press Up to recall the shell command from prompt history.
         $this->tmux->sendKey($pane, 'Up');
-
-        // Wait for editor to update.
-        usleep(200_000);
 
         $capture = $this->tmux->capturePlain($pane);
 
@@ -246,14 +252,16 @@ final class ShellPrefixSmokeTest extends TestCase
             cwd: $this->testProjectDir,
         );
 
-        $this->tmux->waitForCaptureContains($pane, '█', 10.0);
+        $this->tmux->waitForCaptureContains($pane, '█', 5.0);
 
         $this->tmux->sendLiteral($pane, '!!echo should-not-run');
         $this->tmux->sendKey($pane, 'Enter');
 
-        usleep(500_000);
-
-        $capture = $this->tmux->capturePlain($pane);
+        $capture = $this->tmux->waitForCaptureContains(
+            $pane,
+            'not supported',
+            2.0,
+        );
 
         self::assertStringContainsString(
             'not supported',
@@ -273,9 +281,9 @@ final class ShellPrefixSmokeTest extends TestCase
     private function waitForLlmResponse(TmuxPane $pane, string $expectedText): void
     {
         try {
-            $this->tmux->waitForCaptureContains($pane, '◇', 30.0);
+            $this->tmux->waitForCaptureContains($pane, '◇', 5.0);
         } catch (\RuntimeException $e) {
-            $this->tmux->waitForCaptureContains($pane, '✕', 10.0);
+            $this->tmux->waitForCaptureContains($pane, '✕', 2.0);
         }
 
         try {

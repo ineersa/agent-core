@@ -1,7 +1,7 @@
 // @ts-ignore
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 // @ts-ignore
-import { isToolCallEventType } from "@mariozechner/pi-coding-agent";
+import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
 
 const CASTOR_COMMAND_PATTERN = /(^|\s)(?:vendor\/bin\/)?castor(?=\s|$)/;
 const LLM_MODE_PATTERN = /\bLLM_MODE\s*=/;

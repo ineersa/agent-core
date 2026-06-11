@@ -8,8 +8,8 @@ description: "E2E and validation testing strategy. Load this skill when: writing
 ## Castor command reference
 
 ```bash
-castor check                # Full validation: all 7 steps in parallel via proc_open (sequential fallback); per-step timing + log files at var/reports/check-*.log
-castor test                 # unit/integration only; excludes tui-e2e and llm-real; runs agent-core/coding-agent/tui/platform suites in parallel (each with isolated DB)
+castor check                # Full validation: PHAR ensure + 13 top-level parallel steps (deptrac, 7 unit shards, controller, llm-real, tui, phpstan, cs-check); per-step timeouts + logs at var/reports/check-*.log
+castor test                 # unit/integration only; excludes tui-e2e and llm-real; runs 7 parallel workers (agent-core, coding-agent-1..4, tui, platform), each with isolated DB/cache/reports
 castor test --filter=X      # filter tests by name (sequential, single DB)
 castor test:tui [--filter=X]    # tmux TUI e2e snapshots (filter optional)
 castor test:tui-update [--filter=X]  # update TUI snapshot baselines (filter optional)
@@ -28,6 +28,8 @@ castor phar:clean            # Remove worktree-local hatfield.phar
 ## Test LLM
 
 All E2E tests use `llama_cpp_test/test` (port 9052). This is a fast local model for deterministic smoke testing. Never use production LLM providers in E2E tests.
+
+Run the test llama.cpp server deterministically for smoke tests: temperature 0, fixed seed, and the `test` alias on port 9052. The smoke model is expected to answer/tool-call within a few seconds; long 30-60s waits usually hide a bad prompt, stale worker, or stuck process rather than real model latency.
 
 ## Test groups
 
@@ -59,11 +61,11 @@ All E2E tests must use `var/tmp/test-{uuid}` isolation. They must NOT read or wr
 
 ### Per-suite DB isolation
 
-`castor test` runs PHPUnit suites in parallel, each with its own SQLite DB:
+`castor test` and the unit-test shard steps inside `castor check` run PHPUnit workers in parallel, each with its own SQLite DB:
 - `HATFIELD_TEST_DATABASE_PATH` env var controls the DB filename (defaults to `app_test.sqlite`).
-- Parallel workers get `HATFIELD_TEST_DATABASE_PATH=app_test-<suite>.sqlite`.
+- Parallel workers get `HATFIELD_TEST_DATABASE_PATH=app_test-<worker>.sqlite`.
+- `HATFIELD_CACHE_DIR`, PHPUnit cache directory, JUnit XML, and log files are unique per worker.
 - `doctrine:migrations:migrate` runs once per worker on its isolated DB.
-- `--cache-directory var/cache/.phpunit-<suite>` prevents PHPUnit cache collisions.
 - Standalone `vendor/bin/phpunit` runs without Castor must export `HATFIELD_TEST_DATABASE_PATH=app_test.sqlite`.
 - Filtered runs (`castor test --filter=...`) use a single shared DB sequentially.
 
@@ -71,8 +73,8 @@ All E2E tests must use `var/tmp/test-{uuid}` isolation. They must NOT read or wr
 
 | Command | What it tests | Requires |
 |---|---|---|
-| `castor check` | Full validation: all 7 steps in parallel via proc_open (sequential fallback); per-step timing + log files | tmux, llama.cpp on port 9052 |
-| `castor test` | Unit/integration tests (runs 4 PHPUnit suites in parallel, each with isolated DB; sequential fallback) | Nothing (pure PHP) |
+| `castor check` | Full validation: PHAR ensure plus 13 top-level parallel steps: deptrac, 7 unit shards, controller E2E, llm-real E2E, TUI E2E, phpstan, cs-check. Unit shards are direct check steps, not a nested `castor test` subprocess. | tmux, llama.cpp on port 9052 |
+| `castor test` | Unit/integration tests (runs 7 workers in parallel: agent-core, coding-agent-1..4, tui, platform; each has isolated DB/cache/reports; sequential fallback) | Nothing (pure PHP) |
 | `castor test:llm-real` | Real LLM smoke: `ControllerSmokeTest`, `LlamaCppSmokeTest` | llama.cpp on port 9052 |
 | `castor test:controller` | Controller E2E: spawns `--controller`, JSONL protocol | llama.cpp on port 9052 |
 | `castor test:tui` | Tmux TUI E2E snapshot tests | tmux, llama.cpp on port 9052 |
@@ -87,14 +89,14 @@ All E2E tests must use `var/tmp/test-{uuid}` isolation. They must NOT read or wr
 2. Spawns `bin/console agent --controller` via proc_open
 3. Waits for `runtime.ready` event on stdout
 4. Sends `start_run` JSONL command on stdin with a deterministic prompt
-5. Reads JSONL events from stdout, collecting them until terminal state
-6. Asserts event sequence:
+5. Reads JSONL events from stdout, collecting until the event that proves the behavior under test.
+6. Asserts event sequence/proof:
    - `runtime.ready` received
    - `command.ack` received for start_run
    - `run.started` received
-   - `assistant.text_started` or `assistant.message_completed` received
-   - `run.completed` or `run.failed` received (within 60s timeout)
-7. Verifies session artifacts (`state.json`, `events.jsonl`)
+   - for conversational smoke, assistant text/message events and terminal run state
+   - for tool smoke, the intended `tool_execution.started` + matching `tool_execution.completed` by `tool_call_id`
+7. Verifies session artifacts (`state.json`, `events.jsonl`) when relevant
 8. On failure, dumps all collected events, session artifacts, and messenger DB
 
 This exercises the full async runtime pipeline:
@@ -102,6 +104,14 @@ This exercises the full async runtime pipeline:
 - Messenger consumer processes (run_control, llm, tool)
 - LLM consumer stdout streaming of transient deltas
 - Event drain and publish transport polling
+
+### Controller E2E wait strategy
+
+Use the narrowest event proof instead of waiting for the whole run when the feature does not require it:
+- `collectEventsUntil($eventType, 5.0)` for a specific runtime event.
+- `collectEventsUntilToolCompleted($toolName, 5.0)` for tool tests; it tracks `tool_call_id` from `tool_execution.started` to the matching `tool_execution.completed`.
+- Do not hard-require `run.completed` for tests whose real assertion is tool execution. The post-tool assistant turn can be slower or more variable than the tool path itself.
+- Prompts in `llm-real` tests must name the exact tool and exact relative path, e.g. `Call the tool named read exactly once with path ./file.txt`. Avoid vague natural-language prompts that let the small model pick a different tool or shorten paths.
 
 ## Failure diagnostics
 
@@ -123,6 +133,8 @@ Validation must exercise the real user flow: start agent, type prompt, submit, w
 
 If prerequisites are unavailable (tmux not installed, llama.cpp not reachable on port 9052), the task MUST remain IN-PROGRESS with exact environmental blocker output — never mark CODE-REVIEW or DONE without it.
 
+Before re-running failed controller/TUI E2E checks, kill stale worker processes from the failed worktree (`messenger:consume`, `agent --controller`, PHPUnit/Castor children). Orphaned consumers can keep queues busy and make a fixed test appear hung.
+
 ## TUI E2E snapshot artifacts
 
 After `castor test:tui`, passing test snapshots are kept at `var/tmp/tui-e2e-*/` for inspection. Each isolated test directory contains:
@@ -131,7 +143,9 @@ After `castor test:tui`, passing test snapshots are kept at `var/tmp/tui-e2e-*/`
 
 After failures, diagnostics go to `var/tmp/tui-failures/` (ANSI snapshots + plain text dumps).
 
-Run `castor cleanup` to remove all temp/test artifacts. See `tests/AGENTS.md` for full test standards: shared helpers, directory isolation, what not to test, one-class-per-file rules.
+Run `castor cleanup` to remove all temp/test artifacts. See `tests/AGENTS.md` for full test standards: shared helpers, directory isolation, fast E2E waits, what not to test, one-class-per-file rules.
+
+TUI E2E waits should target exact visible proof with short caps (typically 2-5s for startup/status/UI assertions on the local test model). Avoid broad 30-60s waits and fixed `usleep()` calls unless the delay itself is the behavior under test.
 
 ## DB-touching tests
 
