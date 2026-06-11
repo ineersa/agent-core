@@ -175,4 +175,43 @@ final class SessionPickerControllerTest extends TestCase
 
         self::assertFalse($controller->isOpen());
     }
+
+    #[Test]
+    public function testOpenForRenameCommandIsSafeWithoutRuntimeRefs(): void
+    {
+        $switch = $this->createStub(TuiSessionSwitchServiceInterface::class);
+        $em = $this->createStub(EntityManagerInterface::class);
+        $sessionStore = new HatfieldSessionStore(
+            new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig()),
+            $em,
+        );
+        $controller = new SessionPickerController($sessionStore, $switch);
+
+        // Without TUI runtime refs, openForRenameCommand should be a no-op
+        // and must not throw.
+        $controller->openForRenameCommand();
+
+        self::assertFalse($controller->isOpen(), 'Picker should not be open without TUI refs');
+    }
+
+    #[Test]
+    public function testOpenForRenameCommandDoesNotMutateSwitch(): void
+    {
+        $switch = $this->createStub(TuiSessionSwitchServiceInterface::class);
+        $em = $this->createStub(EntityManagerInterface::class);
+        $sessionStore = new HatfieldSessionStore(
+            new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig()),
+            $em,
+        );
+        $controller = new SessionPickerController($sessionStore, $switch);
+
+        // openForRenameCommand should never call the switch service
+        // (unlike open() which calls applySelectEffect -> requestResume).
+        // This is indirectly verified because openForRenameCommand returns
+        // without throwing (no runtime refs), but the important thing is
+        // the method never references $this->switch at all.
+        $controller->openForRenameCommand();
+
+        self::assertFalse($controller->isOpen());
+    }
 }

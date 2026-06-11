@@ -593,7 +593,7 @@ tmux info | grep 'Ms:'           # terminfo clipboard capability present?
 
 ## Session commands
 
-`/new` and `/resume` are registered via `SessionCommandRegistrar`
+`/new`, `/resume`, and `/rename` are registered via `SessionCommandRegistrar`
 (`src/Tui/Listener/SessionCommandRegistrar.php`), a
 `TuiListenerRegistrar` that wires handlers with per-iteration runtime
 references (switch service, session store, picker controller).
@@ -631,6 +631,47 @@ navigate, Enter resumes the selected session, Esc cancels without
 switching. The picker is implemented by
 `SessionPickerController` (`src/Tui/Picker/SessionPickerController.php`).
 
+### `/rename` — rename a session
+
+```
+/rename [session id] [new name]
+```
+
+**With a session ID and new name:** validates the session exists via
+`HatfieldSessionStore::exists()`, then calls
+`HatfieldSessionStore::updateMetadata($sessionId, ['name' => ...])` to
+persist the new name.  The name is trimmed, whitespace-collapsed, and
+capped at 200 characters.  Returns a success message with the persisted
+name.
+
+**With a session ID but no new name:** returns a clear error with a
+concrete hint using the real session id, e.g.
+`Provide a name. Example: "/rename 42 My session name"`.
+
+**Without arguments:** opens the interactive session picker in rename
+mode (header: "Rename session — arrows move, Enter inserts command, Esc
+cancels").  Selecting a session inserts `/rename <id> ` into the prompt
+editor and leaves the cursor ready for the new name — it does NOT execute
+the rename immediately.
+
+### Session-id completions for /resume and /rename
+
+Session ID completion is available for `/resume`, `/r`, and `/rename`
+commands.  Type the command followed by a space to trigger session ID
+completions from the database (most recent sessions first).
+
+- **Tab** inserts the selected session ID into the editor with a trailing
+  space, ready for the next argument.
+- **Enter** accepts the selected completion and submits the command.
+- Typing a prefix (e.g. `/resume 4`) filters completion by session ID.
+- Once a session ID is followed by a space (e.g. `/rename 42 `), no
+  session-ID completions are offered — the user is now typing the new
+  name and completion does not interfere.
+
+Completed by `SessionIdCompletionProvider`
+(`src/Tui/Completion/SessionIdCompletionProvider.php`), priority 95
+(between slash commands at 100 and file mentions at 90).
+
 ### Session picker
 
 `SessionPickerController` follows the same pattern as
@@ -638,6 +679,11 @@ switching. The picker is implemented by
 `setRuntimeRefs()`, `open()` builds items and mounts a
 `PickerOverlay`, `applySelectEffect()` calls the session switch
 service, and `closePicker()` tears down the widget tree.
+
+Two modes are supported:
+- **Resume mode** (`open()`): Enter resumes the selected session.
+- **Rename mode** (`openForRenameCommand()`): Enter inserts
+  `/rename <id> ` into the prompt editor for the user to complete.
 
 Items use a single-column `#<sessionId> — <displayTitle>` label
 with no `description` key so `SelectListWidget` renders at full

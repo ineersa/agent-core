@@ -10,11 +10,11 @@ use Ineersa\Tui\Picker\SessionPickerController;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 
 /**
- * Registers /new and /resume slash commands in the TUI.
+ * Registers /new, /resume, and /rename slash commands in the TUI.
  *
  * On registration (called once per TUI iteration):
  *  - Wires picker controller per-run references.
- *  - Registers /new and /resume commands idempotently so
+ *  - Registers /new, /resume, and /rename commands idempotently so
  *    repeated registrations after session rebuilds do not
  *    cause duplicate-command errors.
  *
@@ -73,6 +73,25 @@ final class SessionCommandRegistrar implements TuiListenerRegistrar
                     acceptsArguments: true,
                 ),
                 $resumeHandler,
+            );
+        }
+
+        // ── Register /rename slash command (idempotent) ──
+        $renameHandler = new RenameSessionCommandHandler(
+            $context->sessionStore,
+            $this->pickerController,
+        );
+        if ($this->commandRegistry->has('rename')) {
+            $this->commandRegistry->setHandler('rename', $renameHandler);
+        } else {
+            $this->commandRegistry->register(
+                new CommandMetadata(
+                    name: 'rename',
+                    description: 'Rename a session',
+                    usage: '/rename [session id] [new name]',
+                    acceptsArguments: true,
+                ),
+                $renameHandler,
             );
         }
     }
