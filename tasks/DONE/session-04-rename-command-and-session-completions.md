@@ -137,14 +137,14 @@ class SessionIdCompletionProvider implements CompletionProvider {
 - Validation uses Castor per project rules; runtime/TUI changes require full `castor check` before CODE-REVIEW.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/session-04-rename-command-and-session-completions
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-04-rename-command-and-session-completions
 Fork run: 00ekz1wt1o7u
 PR URL: https://github.com/ineersa/agent-core/pull/116
-PR Status: open
+PR Status: merged
 Started: 2026-06-10T22:26:17.564Z
-Completed:
+Completed: 2026-06-11T17:15:10.131Z
 
 ## Work log
 - Created: 2026-06-07T20:45:50.100Z
@@ -196,3 +196,10 @@ Castor Check Output SHA256: 7cce3a7510c752e1bc7df9fbd0610682b77727ac3340bfbdf89b
 - Pushed task/session-04-rename-command-and-session-completions to origin.
 - branch 'task/session-04-rename-command-and-session-completions' set up to track 'origin/task/session-04-rename-command-and-session-completions'.
 - Created PR: https://github.com/ineersa/agent-core/pull/116
+
+## Task workflow update - 2026-06-11T17:15:10.131Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/session-04-rename-command-and-session-completions into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/session-04-rename-command-and-session-completions.
+- Pulled integration checkout: Already up to date..
