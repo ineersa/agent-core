@@ -137,12 +137,12 @@ class SessionIdCompletionProvider implements CompletionProvider {
 - Validation uses Castor per project rules; runtime/TUI changes require full `castor check` before CODE-REVIEW.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/session-04-rename-command-and-session-completions
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-04-rename-command-and-session-completions
 Fork run: 00ekz1wt1o7u
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/116
+PR Status: open
 Started: 2026-06-10T22:26:17.564Z
 Completed:
 
@@ -183,3 +183,16 @@ Completed:
 - Recorded fork run: 00ekz1wt1o7u
 - Validation: Fork reported: castor test --filter='RenameSessionCommandHandlerTest|SessionIdCompletionProviderTest|SessionCommandRegistrarTest|SessionPickerControllerTest' — PASS (40 tests, 107 assertions); Fork reported: castor test:tui --filter=SessionRenameE2ETest — PASS (3 tests, 3 assertions); real TmuxHarness + llama_cpp_test/test E2E proof covers direct rename, completion insertion, and picker insertion; Fork reported: castor deptrac — PASS (0 violations); Fork reported: castor phpstan — PASS (0 errors); Fork reported: castor cs-check — PASS (0 files fixed); Fork reported: castor check — PASS; 13/13 steps green, including deptrac, seven unit-test shards, controller E2E, llm-real, TUI E2E, phpstan, cs-check; total about 2.5 minutes; Orchestrator verified branch state after fork: HEAD 70034bd2, worktree clean, aggregate task diff 15 files changed, 1306 insertions, 94 deletions.
 - Summary: Validation/merge fork completed. Latest main merged cleanly into task branch with merge commit 70034bd2; no conflicts and no SESSION-04 test rewrites needed. Working tree clean. Task commits do not touch Castor; Castor-related changes present only as upstream main baseline from merge.
+Castor Check Status: passed
+Castor Check Commit: 70034bd2089f8fbe65c5c22529265c14862199c6
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 900s
+Castor Check Completed: 2026-06-11T17:08:31.382Z
+Castor Check Output SHA256: 7cce3a7510c752e1bc7df9fbd0610682b77727ac3340bfbdf89b7667fcb3cb02
+
+## Task workflow update - 2026-06-11T17:08:35.507Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: 70034bd2089f.
+- Pushed task/session-04-rename-command-and-session-completions to origin.
+- branch 'task/session-04-rename-command-and-session-completions' set up to track 'origin/task/session-04-rename-command-and-session-completions'.
+- Created PR: https://github.com/ineersa/agent-core/pull/116
