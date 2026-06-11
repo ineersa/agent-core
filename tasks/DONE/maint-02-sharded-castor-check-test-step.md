@@ -58,3 +58,7 @@ Castor Check Output SHA256: 97fc190141a147a4c951e1bdb86e59b79f07b25d058ea97efda7
 - Already up to date.
 - Removed worktree /home/ineersa/projects/agent-core-worktrees/maint-02-sharded-castor-check-test-step.
 - Pulled integration checkout: Already up to date..
+
+## Task workflow update - 2026-06-11T17:01:49.071Z
+- Validation: PR #115 was already merged on GitHub; main fast-forwarded before DONE transition.; move_task to DONE: PASS; task branch already up to date, worktree removed, metadata pushed.; Post-merge `LLM_MODE=true castor check`: FAILED only on `test:tui` (exit code 2). Passing steps: deptrac, all 7 unit shards, test:controller, test:llm-real, phpstan, cs-check. Failure: `ShellPrefixSmokeTest::testFirstInputShellLsShowsOutputAndAllowsNextPrompt` timed out after 2s waiting for `✕`; log `var/reports/check-test:tui.log`.; Follow-up task created: `maint-04-shell-prefix-tui-wait-failure`.
+- Summary: Post-merge validation on main found one TUI E2E failure after MAINT-02 was merged: `ShellPrefixSmokeTest::testFirstInputShellLsShowsOutputAndAllowsNextPrompt` timed out after 2s waiting for `✕` while the pane showed shell output succeeded and the following normal prompt was still `◐ Working...` after about 9s. Created follow-up task `maint-04-shell-prefix-tui-wait-failure` for investigation/fix. Worktree cleanup completed by move_task.
