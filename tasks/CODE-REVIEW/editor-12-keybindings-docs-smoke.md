@@ -32,7 +32,7 @@ Parallelizable with: none after dependencies.
 - `castor check` passes.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/editor-12-keybindings-docs-smoke
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke
 Fork run: u673gr9aw3eq
@@ -125,11 +125,11 @@ Completed:
 - Summary: Final reviewer re-review at HEAD 2d69fb29 returned APPROVE. Reviewer confirmed prior suggestions addressed, no critical issues or blockers, deptrac layering clean, HotkeyRegistry dedup handles session-switch re-registration, `/hotkeys` rendering is theme-aware through TuiTranscript renderer, and TUI E2E proof is deterministic/purely visual: Ctrl+J test uses real tmux editor state with no events.jsonl, sleeps, shell-prefix, or LLM/session artifacts; `/hotkeys` test asserts visible themed box-drawing table. Local validation run by orchestrator in worktree passed; worktree status clean.
 - task-to-pr: inspected worktree state and full diff stat; ran reviewer on HEAD 664e809b, addressed REQUEST CHANGES via fork uu1qo3b48z9q; re-reviewed HEAD 4e7a02d0 and got APPROVE WITH SUGGESTIONS; addressed sensible suggestions via fork b6a2ywizqtru; final re-review on HEAD 2d69fb29 returned APPROVE; local Castor validation passed.
 Castor Check Status: passed
-Castor Check Commit: 2d69fb291ef908895c73a5cff9e86bfbe7d75292
+Castor Check Commit: faf6105bc932f2ecdf1c4a70763b82a45d42fb12
 Castor Check Command: LLM_MODE=true castor check
 Castor Check Timeout: 900s
-Castor Check Completed: 2026-06-10T22:01:20.822Z
-Castor Check Output SHA256: c8b1cd3ef2c18cd267365d1d7b99e3b19c1b45b39931955b677765274e9568dd
+Castor Check Completed: 2026-06-11T17:30:18.864Z
+Castor Check Output SHA256: ac1767549913287296e3cc2691781321ef41e4fcc1fce94d7d900c70b45862d0
 
 ## Task workflow update - 2026-06-10T22:01:24.364Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -189,3 +189,11 @@ Castor Check Output SHA256: c8b1cd3ef2c18cd267365d1d7b99e3b19c1b45b39931955b6777
 - Recorded fork run: u673gr9aw3eq
 - Validation: Fork validation: `castor test:tui --filter=HotkeySmoke` passed (2 tests, 18 assertions); Fork validation: `castor test:tui` passed (16 tests, 51 assertions); Fork validation: `castor test` passed (2330 tests, 6837 assertions); Fork validation: `castor deptrac` passed (0 violations); Fork validation: `castor phpstan` passed (0 errors); Fork validation: `castor cs-check` passed (clean); Fork validation: `LLM_MODE=true castor check` passed; all 13 parallel steps green in 1m10s; Orchestrator verification: git status clean; `.castor/tasks.php` diff vs origin/main empty
 - Summary: Validation/merge fork u673gr9aw3eq completed at HEAD faf6105b. It read testing guidance (`.agents/skills/testing/SKILL.md`, `tests/AGENTS.md`, `docs/tui-testing.md`), fetched and merged latest origin/main via merge commit eee2189b (origin/main 118a37a7), preserved EDITOR-12 changes, and kept `.castor/tasks.php` identical to origin/main with no task-branch Castor/test-execution infrastructure changes. One post-merge test update was needed: `tests/Tui/E2E/ShellPrefixSmokeTest.php` increased the LLM response marker wait from 5s to 15s because MAINT-02 reduced TUI waits aggressively and ShellPrefix was failing under parallel Castor check load while the response appeared around 6–7s. Fork committed fix faf6105b. Orchestrator verified worktree clean at faf6105b, branch ahead of origin/task by 43, `.castor/tasks.php` diff vs origin/main empty, and PR diff contains 20 files (+1744/-17).
+
+## Task workflow update - 2026-06-11T17:30:21.186Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: faf6105bc932.
+- Pushed task/editor-12-keybindings-docs-smoke to origin.
+- branch 'task/editor-12-keybindings-docs-smoke' set up to track 'origin/task/editor-12-keybindings-docs-smoke'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/114
+- Summary: Review-iterate complete after latest main merge and validation. Branch merged origin/main 118a37a7 via eee2189b, kept `.castor/tasks.php` identical to origin/main with no task-branch Castor/test-execution infrastructure changes, preserved EDITOR-12 changes and HotkeyRegistry service cleanup, and added one post-merge test adaptation in `ShellPrefixSmokeTest.php` increasing the LLM response marker wait from 5s to 15s after MAINT-02 timeout reductions. Fork validation passed focused TUI, full TUI, full tests, deptrac, phpstan, cs-check, and `LLM_MODE=true castor check` (all 13 parallel steps green in 1m10s). Moving to CODE-REVIEW to run normal gate, push branch, and update PR #114.
