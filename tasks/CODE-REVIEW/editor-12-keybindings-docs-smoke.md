@@ -32,7 +32,7 @@ Parallelizable with: none after dependencies.
 - `castor check` passes.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/editor-12-keybindings-docs-smoke
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke
 Fork run: 67uly66th0nw
@@ -125,11 +125,11 @@ Completed:
 - Summary: Final reviewer re-review at HEAD 2d69fb29 returned APPROVE. Reviewer confirmed prior suggestions addressed, no critical issues or blockers, deptrac layering clean, HotkeyRegistry dedup handles session-switch re-registration, `/hotkeys` rendering is theme-aware through TuiTranscript renderer, and TUI E2E proof is deterministic/purely visual: Ctrl+J test uses real tmux editor state with no events.jsonl, sleeps, shell-prefix, or LLM/session artifacts; `/hotkeys` test asserts visible themed box-drawing table. Local validation run by orchestrator in worktree passed; worktree status clean.
 - task-to-pr: inspected worktree state and full diff stat; ran reviewer on HEAD 664e809b, addressed REQUEST CHANGES via fork uu1qo3b48z9q; re-reviewed HEAD 4e7a02d0 and got APPROVE WITH SUGGESTIONS; addressed sensible suggestions via fork b6a2ywizqtru; final re-review on HEAD 2d69fb29 returned APPROVE; local Castor validation passed.
 Castor Check Status: passed
-Castor Check Commit: faf6105bc932f2ecdf1c4a70763b82a45d42fb12
+Castor Check Commit: 40639634f163476b155a727a240b713630abe299
 Castor Check Command: LLM_MODE=true castor check
 Castor Check Timeout: 900s
-Castor Check Completed: 2026-06-11T17:30:18.864Z
-Castor Check Output SHA256: ac1767549913287296e3cc2691781321ef41e4fcc1fce94d7d900c70b45862d0
+Castor Check Completed: 2026-06-11T18:02:20.991Z
+Castor Check Output SHA256: 74ff0433812203034ac7cb3d7dabc8d42f969bb957b60dccac60dd1129f8aaed
 
 ## Task workflow update - 2026-06-10T22:01:24.364Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -210,3 +210,11 @@ Castor Check Output SHA256: ac1767549913287296e3cc2691781321ef41e4fcc1fce94d7d90
 - Recorded fork run: 67uly66th0nw
 - Validation: 5.0s validation: `castor test:tui --filter=ShellPrefix` failed with assistant marker timeout while TUI showed `◐ Working...` after normal prompt; shell command portion had already passed; 8.0s validation: `castor test:tui --filter=ShellPrefix` passed (4 tests, 5 assertions); 8.0s validation: full `castor test:tui` passed (16 tests, 51 assertions); 8.0s validation: `LLM_MODE=true timeout 600 castor check` passed; all 13 parallel steps green; Orchestrator verification: `tests/Tui/E2E/ShellPrefixSmokeTest.php` line 284 uses `8.0`; `.castor/tasks.php` diff vs origin/main empty; git status clean
 - Summary: Timeout review-iterate fork 67uly66th0nw completed at commit 40639634. It read testing guidance, lowered `ShellPrefixSmokeTest::waitForLlmResponse()` assistant marker timeout from 15s back to 5s, validated, and reproduced the flake under parallel load: after `!ls -1` completed and status cleared, submitting `Say exactly: hello` left the TUI in `◐ Working...` with no `◇` or `✕` within 5s. Per user's instruction, fork raised only to 8s maximum. 8s passes focused ShellPrefix, full TUI, and full `LLM_MODE=true castor check`. No Castor/test-execution infrastructure changed; orchestrator verified `.castor/tasks.php` diff vs origin/main is empty, worktree clean at 40639634, branch ahead of origin/task by 1.
+
+## Task workflow update - 2026-06-11T18:02:22.722Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: 40639634f163.
+- Pushed task/editor-12-keybindings-docs-smoke to origin.
+- branch 'task/editor-12-keybindings-docs-smoke' set up to track 'origin/task/editor-12-keybindings-docs-smoke'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/114
+- Summary: Review-iterate complete for ShellPrefix timeout concern. The previous 15s cap was reduced; 5s was validated first and failed under parallel check load with the TUI still in `◐ Working...`; per user instruction the timeout is now 8s max. Focused ShellPrefix, full TUI, and `LLM_MODE=true castor check` passed in the fork. `.castor/tasks.php` remains identical to origin/main; no Castor/test-execution infrastructure changes. Moving to CODE-REVIEW to run the normal gate, push branch, and update PR #114.
