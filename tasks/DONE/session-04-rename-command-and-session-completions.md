@@ -203,3 +203,7 @@ Castor Check Output SHA256: 7cce3a7510c752e1bc7df9fbd0610682b77727ac3340bfbdf89b
 - Already up to date.
 - Removed worktree /home/ineersa/projects/agent-core-worktrees/session-04-rename-command-and-session-completions.
 - Pulled integration checkout: Already up to date..
+
+## Task workflow update - 2026-06-11T17:59:48.944Z
+- Validation: Post-merge validation: `LLM_MODE=true castor check` was started on main after DONE merge but hung after an unrelated TUI E2E failure in `Ineersa\Tui\Tests\E2E\ShellPrefixSmokeTest::testFirstInputShellLsShowsOutputAndAllowsNextPrompt` (timed out waiting 2s for `✕` while pane showed `Say exactly: hello` still Working). Most check shards passed; `test:tui` failed/hung cleanup left castor:check and PHAR messenger consumers running, which were killed manually.; Post-merge SESSION-04-specific E2E: `castor test:tui --filter=SessionRenameE2ETest` — PASS (3 tests, 3 assertions). User will fix unrelated ShellPrefixSmokeTest/Castor hang in another task.
+- Summary: Task remains DONE. PR #116 was merged and task worktree removed. The only post-merge validation issue observed was unrelated to SESSION-04; SESSION-04 TmuxHarness E2E proof passes on main.
