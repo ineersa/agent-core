@@ -12,12 +12,12 @@ Post-MAINT-01 issue: standalone `castor test` runs in ~45-51s because it uses th
 - Validation passes: `castor test`, `castor test:tui`, `castor test:llm-real`, `castor phpstan`, `castor deptrac`, `castor cs-check`, and preferably full `LLM_MODE=true castor check`.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/maint-02-sharded-castor-check-test-step
 Worktree: /home/ineersa/projects/agent-core-worktrees/maint-02-sharded-castor-check-test-step
 Fork run:
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/115
+PR Status: open
 Started: 2026-06-10T23:01:56.649Z
 Completed:
 
@@ -34,3 +34,16 @@ Completed:
 ## Task workflow update - 2026-06-11T16:51:21.155Z
 - Validation: castor test:llm-real: PASS (5 tests, 51 assertions); LLM_MODE=true timeout --kill-after=15s 140s castor check: PASS; wall time ~52s; all 13 steps OK (deptrac, 7 unit shards, test:controller, test:llm-real, test:tui, phpstan, cs-check)
 - Summary: Implemented direct castor check sharding: check now launches unit shards as first-class parallel steps instead of the monolithic PHPUnit step, with per-step timeout wrapping and collision-free report names. Hardened llm-real smoke tests with target-tool event collection and precise prompts/assertions, and reduced TUI E2E waits to fail fast on exact UI proofs. Temp-0 llama.cpp validation passed; branch pushed at commit 96448f3b.
+Castor Check Status: passed
+Castor Check Commit: 96448f3bca5a5e597c72ea5dba0e312b0997b620
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 180s
+Castor Check Completed: 2026-06-11T16:53:15.000Z
+Castor Check Output SHA256: 97fc190141a147a4c951e1bdb86e59b79f07b25d058ea97efda7c3a59e8d7a35
+
+## Task workflow update - 2026-06-11T16:53:18.590Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (180s timeout). Commit: 96448f3bca5a.
+- Pushed task/maint-02-sharded-castor-check-test-step to origin.
+- branch 'task/maint-02-sharded-castor-check-test-step' set up to track 'origin/task/maint-02-sharded-castor-check-test-step'.
+- Created PR: https://github.com/ineersa/agent-core/pull/115
