@@ -35,7 +35,7 @@ Parallelizable with: none after dependencies.
 Status: IN-PROGRESS
 Branch: task/editor-12-keybindings-docs-smoke
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke
-Fork run: g945ykure7l1
+Fork run: u673gr9aw3eq
 PR URL: https://github.com/ineersa/agent-core/pull/114
 PR Status: open
 Started: 2026-06-10T19:50:55.944Z
@@ -180,3 +180,7 @@ Castor Check Output SHA256: c8b1cd3ef2c18cd267365d1d7b99e3b19c1b45b39931955b6777
 - Recorded fork run: g945ykure7l1
 - Validation: No tests/Castor commands run per user instruction; Git verification only: `.castor/tasks.php` diff vs origin/main is empty; Git verification only: worktree clean at be512fcf on task/editor-12-keybindings-docs-smoke; Git verification only: PR diff excluding .castor contains 19 EDITOR-12 files (+1743/-16)
 - Summary: Revert-only fork g945ykure7l1 completed at commit be512fcf. It reverted the two Castor/test-execution commits (`4dc63017` and `d28e507c`) via a single revert commit `be512fcf`, preserving EDITOR-12 changes and the HotkeyRegistry service-registration cleanup. Orchestrator verified only git state/diff: `.castor/tasks.php` has no diff vs origin/main, PR diff excluding .castor still contains only the 19 EDITOR-12 files (+1743/-16), task worktree is clean and ahead of origin/task/editor-12-keybindings-docs-smoke by 3. No tests or Castor commands were run by the fork or orchestrator after the user's explicit instruction not to touch test execution.
+
+## Task workflow update - 2026-06-11T17:19:33.931Z
+- Recorded fork run: u673gr9aw3eq
+- Summary: Launched review-iterate validation fork u673gr9aw3eq per user request. Scope: merge latest origin/main into task branch (merge, not rebase), read testing skill plus AGENTS/tests AGENTS/docs/tui-testing guidance, update tests only if latest main requires it, preserve deterministic HotkeySmoke TmuxHarness proof, run Castor validation gates including `LLM_MODE=true castor check`, and leave worktree clean. Hard guardrail: do not modify Castor/test-execution infrastructure (`.castor/tasks.php`, parallelization, check scheduling); previous Castor changes remain reverted and `.castor/tasks.php` must stay matching origin/main unless origin/main changed it.
