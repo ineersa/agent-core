@@ -41,14 +41,13 @@ final class WriteFileToolE2eTest extends ControllerE2eTestCase
             'id' => $startCmdId,
             'type' => 'start_run',
             'payload' => [
-                'prompt' => 'Write the text "hello world" to the file '
-                    .$this->targetPath.' using the write_file tool. '
-                    .'Write ONLY "hello world" (no quotes, no newline). '
-                    .'Do NOT respond without calling write_file first.',
+                'prompt' => 'Use exactly one tool call: tool name `write` with arguments `{ "path": "./test-write.txt", "content": "hello world" }`. '
+                    .'Do not use an absolute path, do not omit `./`, and do not call any other tool. '
+                    .'After the tool succeeds, answer exactly `done`.',
             ],
         ]);
 
-        $events = $this->collectEvents(60.0);
+        $events = $this->collectEventsUntilToolCompleted('write', 5.0);
         $byType = $this->indexByType($events);
 
         $this->assertStartRunAcked($events, $startCmdId);
@@ -60,21 +59,31 @@ final class WriteFileToolE2eTest extends ControllerE2eTestCase
         $this->runId = (string) ($runStarted['runId'] ?? $runStarted['payload']['runId'] ?? '');
         self::assertNotEmpty($this->runId);
 
-        // Primary assertion: run must complete (no hang)
-        self::assertTrue(
-            isset($byType['run.completed']) || isset($byType['run.failed']),
-            'Run must complete. Event types: '.implode(', ', array_keys($byType))."\n"
+        // This smoke proves the write tool path through the controller.
+        // Do not require the second post-tool LLM turn to finish inside this
+        // short window; ControllerSmokeTest covers terminal run completion.
+        self::assertArrayHasKey('tool_execution.started', $byType, 'write tool must start. '
+            .$this->collectDiagnostics($events));
+        self::assertSame(
+            'write',
+            $byType['tool_execution.started'][0]['payload']['tool_name'] ?? null,
+            'The LLM must call the write tool with the requested path/content. '
             .$this->collectDiagnostics($events),
         );
+        self::assertArrayHasKey('tool_execution.completed', $byType, 'write tool must complete. '
+            .$this->collectDiagnostics($events));
+        self::assertSame(
+            $byType['tool_execution.started'][0]['payload']['tool_call_id'] ?? null,
+            $byType['tool_execution.completed'][0]['payload']['tool_call_id'] ?? null,
+            'The completed tool execution must be the same write call that started. '
+            .$this->collectDiagnostics($events),
+        );
+        self::assertArrayNotHasKey('tool_execution.failed', $byType, 'write tool must not fail. '
+            .$this->collectDiagnostics($events));
 
-        // Soft assertion: if write_file ran, file should exist
-        if (is_file($this->targetPath)) {
-            fwrite(\STDERR, "[INFO] Target file created: {$this->targetPath} ("
-                .filesize($this->targetPath)." bytes)\n");
-        }
-        if (isset($byType['tool_batch_committed'])) {
-            fwrite(\STDERR, "[INFO] Tool batch committed — AdvanceRun-after-tools path exercised.\n");
-        }
+        self::assertFileExists($this->targetPath, 'write tool must create the target file. '
+            .$this->collectDiagnostics($events));
+        self::assertSame('hello world', trim((string) file_get_contents($this->targetPath)));
 
         $sessionDir = $this->tempDir.'/.hatfield/sessions/'.$this->runId;
         $this->assertSessionArtifactsExist($sessionDir, $events);

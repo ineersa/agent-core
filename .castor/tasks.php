@@ -58,45 +58,77 @@ function check(): void
     // Each step is a shell command that runs the underlying tool
     // directly — not through a Castor task closure — to stay safe
     // inside the Castor PHAR (no pcntl_fork shared-memory issues).
-    $allCheckCommands = [
+    //
+    // The PHPUnit lane is expanded into the same workers used by
+    // `castor test` instead of spawning a nested Castor process or a
+    // monolithic PHPUnit run.  This keeps check() parallel at the top
+    // level while preserving per-worker DB/cache/JUnit isolation.
+    $testCheckCommands = [];
+    foreach (array_merge(['agent-core'], array_keys(coding_agent_shard_groups()), ['tui', 'platform']) as $worker) {
+        $step = match ($worker) {
+            'tui' => 'test-tui-suite',
+            default => 'test-'.$worker,
+        };
+
+        $testCheckCommands[$step] = [
+            'cmd' => timeout_check_command(
+                build_test_worker_command($worker, $pharEnv, 'app_test-'.$worker.'.sqlite', $step),
+                75,
+            ),
+        ];
+    }
+
+    $allCheckCommands = array_merge([
         'deptrac' => [
-            'cmd' => $phpBin.' vendor/bin/deptrac --config-file=depfile.yaml --no-progress --no-ansi'
-                .(is_llm_mode() ? ' --formatter=json' : ''),
+            'cmd' => timeout_check_command(
+                $phpBin.' vendor/bin/deptrac --config-file=depfile.yaml --no-progress --no-ansi'
+                    .(is_llm_mode() ? ' --formatter=json' : ''),
+                30,
+            ),
         ],
-        'test' => [
-            // Delegate to castor test so the full sharded suite runner
-            // (proc_open-based parallel workers with per-worker DB/cache/
-            // report isolation) is used instead of a monolithic phpunit.
-            // Output captured to var/reports/check-test.log.
-            'cmd' => 'APP_ENV=test '.$pharEnv.'castor test',
-        ],
+    ], $testCheckCommands, [
         'test:controller' => [
-            'cmd' => 'APP_ENV=test '.$pharEnv.'LLAMA_CPP_SMOKE_TEST=1 '.$phpBin.' vendor/bin/phpunit'
-                .' --filter=ControllerSmokeTest'
-                .' '.$strictFlags.$llmFlags
-                .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-controller.junit.xml') : ''),
+            'cmd' => timeout_check_command(
+                'APP_ENV=test '.$pharEnv.'LLAMA_CPP_SMOKE_TEST=1 '.$phpBin.' vendor/bin/phpunit'
+                    .' --filter=ControllerSmokeTest'
+                    .' '.$strictFlags.$llmFlags
+                    .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-controller.junit.xml') : ''),
+                30,
+            ),
         ],
         'test:llm-real' => [
-            'cmd' => 'APP_ENV=test '.$pharEnv.'LLAMA_CPP_SMOKE_TEST=1 '.$phpBin.' vendor/bin/phpunit'
-                .' --group llm-real'
-                .' '.$strictFlags.$llmFlags
-                .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-llm-real.junit.xml') : ''),
+            'cmd' => timeout_check_command(
+                'APP_ENV=test '.$pharEnv.'LLAMA_CPP_SMOKE_TEST=1 '.$phpBin.' vendor/bin/phpunit'
+                    .' --group llm-real'
+                    .' '.$strictFlags.$llmFlags
+                    .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-llm-real.junit.xml') : ''),
+                60,
+            ),
         ],
         'test:tui' => [
-            'cmd' => 'APP_ENV=test '.$pharEnv.$phpBin.' vendor/bin/phpunit'
-                .' --group tui-e2e'
-                .' '.$strictFlags.$llmFlags
-                .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-tui.junit.xml') : ''),
+            'cmd' => timeout_check_command(
+                'APP_ENV=test '.$pharEnv.$phpBin.' vendor/bin/phpunit'
+                    .' --group tui-e2e'
+                    .' '.$strictFlags.$llmFlags
+                    .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-tui.junit.xml') : ''),
+                75,
+            ),
         ],
         'phpstan' => [
-            'cmd' => $phpBin.' vendor/bin/phpstan analyse -c phpstan.dist.neon --no-progress'
-                .(is_llm_mode() ? ' --error-format=json --no-ansi' : ''),
+            'cmd' => timeout_check_command(
+                $phpBin.' vendor/bin/phpstan analyse -c phpstan.dist.neon --no-progress'
+                    .(is_llm_mode() ? ' --error-format=json --no-ansi' : ''),
+                30,
+            ),
         ],
         'cs-check' => [
-            'cmd' => $phpBin.' vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php --dry-run --no-ansi'
-                .(is_llm_mode() ? ' --format=json --show-progress=none' : ' --diff'),
+            'cmd' => timeout_check_command(
+                $phpBin.' vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php --dry-run --no-ansi'
+                    .(is_llm_mode() ? ' --format=json --show-progress=none' : ' --diff'),
+                30,
+            ),
         ],
-    ];
+    ]);
 
     // DB schema must be ready before the test / controller / llm-real
     // steps start.  Migrate once (fast, idempotent).
@@ -551,6 +583,7 @@ function build_test_worker_command(
     string $worker,
     string $pharEnv,
     string $dbFilename,
+    ?string $reportWorker = null,
 ): string {
     $dbEnv = 'HATFIELD_TEST_DATABASE_PATH='.escapeshellarg($dbFilename);
     $phpBin = \PHP_BINARY;
@@ -561,7 +594,7 @@ function build_test_worker_command(
     // path → SQLite "database is locked" / wrong-schema errors.
     $cacheDirEnv = 'HATFIELD_CACHE_DIR=.hatfield/cache-'.$worker;
     $cacheDir = 'var/cache/.phpunit-'.$worker;
-    $junitFilename = 'phpunit-'.$worker.'.junit.xml';
+    $junitFilename = 'phpunit-'.($reportWorker ?? $worker).'.junit.xml';
     $junitFlag = is_llm_mode() ? ' --log-junit='.report_path($junitFilename) : '';
     $strictFlags = phpunit_strict_issue_flags();
     $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
@@ -1635,6 +1668,11 @@ function format_step_failures(array $failures): string
     }
 
     return implode("\n", $lines);
+}
+
+function timeout_check_command(string $command, int $seconds): string
+{
+    return 'timeout --kill-after=15s '.max(1, $seconds).'s sh -lc '.escapeshellarg($command);
 }
 
 function fail_quality(string $message): never

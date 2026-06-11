@@ -1,8 +1,8 @@
 // @ts-ignore
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 // @ts-ignore
-import { withFileMutationQueue } from "@mariozechner/pi-coding-agent";
-import { StringEnum } from "@mariozechner/pi-ai";
+import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
+import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { existsSync } from "node:fs";
 import { cp, mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
@@ -187,19 +187,7 @@ async function runCastorCheckGate(
 		}
 	}
 
-	// Hard deadline: worst-case bound.  Even if pi.exec's internal timeout
-	// layer fails (e.g. the Node proc.killed escalation bug in exec.js), this
-	// Promise.race guarantees the gate cannot stall the caller indefinitely.
-	const hardDeadlineMs = (timeout + killAfter + 60) * 1000;
-	const result = await Promise.race([
-		run(pi, "timeout", [`--kill-after=${killAfter}s`, `${timeout}s`, "env", "LLM_MODE=true", "castor", "check"], gateDir, signal, execTimeoutMs),
-		new Promise<ExecResult>((_, reject) =>
-			setTimeout(() => reject(new Error(
-				`Castor gate hard deadline reached after ${timeout + killAfter + 60}s ` +
-				`(timeout=${timeout}s, kill-after=${killAfter}s, extra=60s)`
-			)), hardDeadlineMs)
-		),
-	]);
+	const result = await run(pi, "timeout", [`--kill-after=${killAfter}s`, `${timeout}s`, "env", "LLM_MODE=true", "castor", "check"], gateDir, signal, execTimeoutMs);
 
 	const isTimeout = result.code === 124 || result.code === 137;
 	const killed = result.killed ?? false;

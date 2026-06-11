@@ -12,14 +12,21 @@ Post-MAINT-01 issue: standalone `castor test` runs in ~45-51s because it uses th
 - Validation passes: `castor test`, `castor test:tui`, `castor test:llm-real`, `castor phpstan`, `castor deptrac`, `castor cs-check`, and preferably full `LLM_MODE=true castor check`.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/maint-02-sharded-castor-check-test-step
+Worktree: /home/ineersa/projects/agent-core-worktrees/maint-02-sharded-castor-check-test-step
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-10T23:01:56.649Z
 Completed:
 
 ## Work log
 - Created: 2026-06-10T23:01:50.574Z
+
+## Task workflow update - 2026-06-10T23:01:56.650Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/maint-02-sharded-castor-check-test-step.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/maint-02-sharded-castor-check-test-step.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/maint-02-sharded-castor-check-test-step.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/maint-02-sharded-castor-check-test-step.
