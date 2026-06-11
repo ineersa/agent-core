@@ -32,7 +32,7 @@ Parallelizable with: none after dependencies.
 - `castor check` passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/editor-12-keybindings-docs-smoke
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke
 Fork run: u673gr9aw3eq
@@ -197,3 +197,7 @@ Castor Check Output SHA256: ac1767549913287296e3cc2691781321ef41e4fcc1fce94d7d90
 - branch 'task/editor-12-keybindings-docs-smoke' set up to track 'origin/task/editor-12-keybindings-docs-smoke'.
 - PR already exists: https://github.com/ineersa/agent-core/pull/114
 - Summary: Review-iterate complete after latest main merge and validation. Branch merged origin/main 118a37a7 via eee2189b, kept `.castor/tasks.php` identical to origin/main with no task-branch Castor/test-execution infrastructure changes, preserved EDITOR-12 changes and HotkeyRegistry service cleanup, and added one post-merge test adaptation in `ShellPrefixSmokeTest.php` increasing the LLM response marker wait from 5s to 15s after MAINT-02 timeout reductions. Fork validation passed focused TUI, full TUI, full tests, deptrac, phpstan, cs-check, and `LLM_MODE=true castor check` (all 13 parallel steps green in 1m10s). Moving to CODE-REVIEW to run normal gate, push branch, and update PR #114.
+
+## Task workflow update - 2026-06-11T17:56:18.219Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: PR #114 review-iterate: user rejected ShellPrefixSmokeTest LLM wait increase to 15s as unjustified. Move back to IN-PROGRESS to lower the timeout back to 5s and rerun validation; only if flaky under validation, use 8s maximum. Do not modify Castor/test execution infrastructure.
