@@ -30,3 +30,7 @@ Completed:
 - Created worktree /home/ineersa/projects/agent-core-worktrees/maint-02-sharded-castor-check-test-step.
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/maint-02-sharded-castor-check-test-step.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/maint-02-sharded-castor-check-test-step.
+
+## Task workflow update - 2026-06-11T16:51:21.155Z
+- Validation: castor test:llm-real: PASS (5 tests, 51 assertions); LLM_MODE=true timeout --kill-after=15s 140s castor check: PASS; wall time ~52s; all 13 steps OK (deptrac, 7 unit shards, test:controller, test:llm-real, test:tui, phpstan, cs-check)
+- Summary: Implemented direct castor check sharding: check now launches unit shards as first-class parallel steps instead of the monolithic PHPUnit step, with per-step timeout wrapping and collision-free report names. Hardened llm-real smoke tests with target-tool event collection and precise prompts/assertions, and reduced TUI E2E waits to fail fast on exact UI proofs. Temp-0 llama.cpp validation passed; branch pushed at commit 96448f3b.
