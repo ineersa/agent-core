@@ -1,8 +1,8 @@
 // @ts-ignore
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 // @ts-ignore
-import { withFileMutationQueue } from "@mariozechner/pi-coding-agent";
-import { StringEnum } from "@mariozechner/pi-ai";
+import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
+import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { existsSync } from "node:fs";
 import { cp, mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
