@@ -87,14 +87,14 @@ YAML;
             'id' => $startCmdId,
             'type' => 'start_run',
             'payload' => [
-                'prompt' => 'Read the file ./'.$fileBasename
-                    .' using the read tool with path "./'.$fileBasename.'". '
-                    .'After reading, answer whether the tool output was capped. '
-                    .'Do NOT answer without calling read first.',
+                'prompt' => 'Call the `read` tool now. Set the `path` argument to `./'.$fileBasename.'`. '
+                    .'The file exists in the current working directory. Do not ask a question, '
+                    .'do not use an absolute path, and do not call any other tool. '
+                    .'After the tool succeeds, answer exactly `done`.',
             ],
         ]);
 
-        $events = $this->collectEvents(90.0);
+        $events = $this->collectEventsUntilToolCompleted('read', 5.0);
         $byType = $this->indexByType($events);
 
         // Mandatory: controller acknowledged the start command.
@@ -108,12 +108,24 @@ YAML;
         $this->runId = (string) ($runStarted['runId'] ?? $runStarted['payload']['runId'] ?? '');
         self::assertNotEmpty($this->runId);
 
-        // Mandatory: run must complete (no hang).
-        self::assertTrue(
-            isset($byType['run.completed']) || isset($byType['run.failed']),
-            'Run must complete. Event types: '.implode(', ', array_keys($byType))."\n"
+        self::assertArrayHasKey('tool_execution.started', $byType, 'read tool must start. '
+            .$this->collectDiagnostics($events));
+        self::assertSame(
+            'read',
+            $byType['tool_execution.started'][0]['payload']['tool_name'] ?? null,
+            'The LLM must call the read tool with the requested relative path. '
             .$this->collectDiagnostics($events),
         );
+        self::assertArrayHasKey('tool_execution.completed', $byType, 'read tool must complete. '
+            .$this->collectDiagnostics($events));
+        self::assertSame(
+            $byType['tool_execution.started'][0]['payload']['tool_call_id'] ?? null,
+            $byType['tool_execution.completed'][0]['payload']['tool_call_id'] ?? null,
+            'The completed tool execution must be the same read call that started. '
+            .$this->collectDiagnostics($events),
+        );
+        self::assertArrayNotHasKey('tool_execution.failed', $byType, 'read tool must not fail. '
+            .$this->collectDiagnostics($events));
 
         // Verify session artifacts are written.
         $sessionDir = $this->tempDir.'/.hatfield/sessions/'.$this->runId;

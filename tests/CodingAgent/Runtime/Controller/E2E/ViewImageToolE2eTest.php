@@ -56,12 +56,13 @@ final class ViewImageToolE2eTest extends ControllerE2eTestCase
             'id' => $startCmdId,
             'type' => 'start_run',
             'payload' => [
-                'prompt' => 'Describe the image at '.$this->imagePath
-                    .'. Call view_image first.',
+                'prompt' => 'Use exactly one tool call: tool name `view_image` with arguments `{ "path": "./test-photo.jpeg" }`. '
+                    .'Do not call `read`; `read` is forbidden for this task and cannot view images. '
+                    .'Do not use an absolute path. After the tool succeeds, answer exactly `done`.',
             ],
         ]);
 
-        $events = $this->collectEvents(60.0);
+        $events = $this->collectEventsUntilToolCompleted('view_image', 5.0);
         $byType = $this->indexByType($events);
 
         // Verify command acknowledged
@@ -74,12 +75,12 @@ final class ViewImageToolE2eTest extends ControllerE2eTestCase
         $this->runId = (string) ($runStarted['runId'] ?? $runStarted['payload']['runId'] ?? '');
         self::assertNotEmpty($this->runId);
 
-        // Primary: run must complete (no hang)
-        self::assertTrue(
-            isset($byType['run.completed']) || isset($byType['run.failed']),
-            'Run must complete. Event types: '.implode(', ', array_keys($byType))."\n"
-            .$this->collectDiagnostics($events),
-        );
+        // This test proves the image tool path and provider image-gating
+        // behavior.  Do not wait for the second post-tool LLM turn to finish:
+        // the tool has already completed by this point, and terminal run
+        // completion is covered by ControllerSmokeTest/WriteFileToolE2eTest.
+        self::assertArrayNotHasKey('tool_execution.failed', $byType, 'view_image tool must not fail. '
+            .$this->collectDiagnostics($events));
 
         // Verify the view_image tool was actually invoked.
         // tool_execution.started / tool_execution.completed are streamed
@@ -91,9 +92,21 @@ final class ViewImageToolE2eTest extends ControllerE2eTestCase
             .'Event types: '.implode(', ', array_keys($byType))."\n"
             .$this->collectDiagnostics($events),
         );
+        self::assertSame(
+            'view_image',
+            $byType['tool_execution.started'][0]['payload']['tool_name'] ?? null,
+            'The LLM must call the image tool, not a different file tool. '
+            .$this->collectDiagnostics($events),
+        );
         self::assertArrayHasKey('tool_execution.completed', $byType,
             'view_image tool must complete. '
             .'Event types: '.implode(', ', array_keys($byType))."\n"
+            .$this->collectDiagnostics($events),
+        );
+        self::assertSame(
+            $byType['tool_execution.started'][0]['payload']['tool_call_id'] ?? null,
+            $byType['tool_execution.completed'][0]['payload']['tool_call_id'] ?? null,
+            'The completed tool execution must be the same view_image call that started. '
             .$this->collectDiagnostics($events),
         );
 

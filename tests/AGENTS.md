@@ -36,10 +36,12 @@ Inherited helpers:
 - `indexByType(array $events): array` — index events by type
 - `foundAck(array $events, string $cmdId): bool` — check command.ack presence
 - `assertStartRunAcked(array $events, string $cmdId): void` — assert start_run acknowledged
-- `collectEvents(float $timeout): array` — read JSONL events from controller stdout
+- `collectEvents(float $timeout): array` — read JSONL events from controller stdout until terminal state or timeout
+- `collectEventsUntil(?string $targetType, float $timeout): array` — return as soon as the target runtime event appears
+- `collectEventsUntilToolCompleted(string $toolName, float $timeout): array` — wait for the named tool's matching `tool_execution.completed` using `tool_call_id`
 - `collectDiagnostics(array $events): string` — format diagnostic dump
 
-Do not write inline `byType` loops or ack searches in test methods.
+Do not write inline `byType` loops or ack searches in test methods. For tool-focused LLM smoke tests, prefer `collectEventsUntilToolCompleted()` over waiting for `run.completed`; assert the intended `tool_name`, matching `tool_call_id`, and absence/presence of `tool_execution.failed` as appropriate.
 
 ### TUI E2E tests
 
@@ -47,7 +49,9 @@ Use `TmuxHarness` with `#[Group('tui-e2e')]`. Follow the pattern in `TuiAgentSmo
 - Detached tmux pane via `startDetached()`
 - Isolated project dir with model/provider overrides
 - `--prompt` for auto-submit, `sendLiteral`/`sendKey` for keyboard input
-- `waitForCaptureContains` / `waitForCallback` for expectations
+- `waitForCaptureContains` / `waitForCallback` for exact expectations
+- Short waits for the local smoke model: typically 2-5s for startup/status/UI proof; avoid generic 30-60s waits
+- Prefer explicit waits over fixed `usleep()`; only sleep when timing itself is the behavior under test
 - `saveAnsiSnapshot()` for inspection artifacts
 
 ### Config fixtures
@@ -66,10 +70,10 @@ One representative test covering behavior is sufficient.
 
 ## Castor
 
-All QA commands MUST go through Castor. Never run raw `vendor/bin/*` directly.
+All QA commands MUST go through Castor. Never run raw `vendor/bin/*` directly, except when explicitly isolating a Castor failure.
 
 Key commands:
-- `castor test` — full test suite (runs `agent-core`, `coding-agent`, `tui`, `platform` PHPUnit suites in parallel via proc_open, each with its own isolated SQLite DB; sequential fallback when proc_open unavailable; per-suite reports logged to `var/reports/phpunit-<suite>.*`)
+- `castor test` — full unit/integration suite (runs 7 PHPUnit workers in parallel: `agent-core`, `coding-agent-1..4`, `tui`, `platform`; each has its own isolated SQLite DB/cache/JUnit/log files; sequential fallback when proc_open unavailable)
 - `castor test --filter=XxxTest` — filter to specific tests (sequential; single DB)
 - `castor test:tui` — TUI E2E tests (`#[Group('tui-e2e')]`)
 - `castor test:llm-real` — real-LLM controller E2E tests (`#[Group('llm-real')]`)
@@ -77,7 +81,7 @@ Key commands:
 - `castor deptrac` — layer dependency validation
 - `castor phpstan` — static analysis
 - `castor cs-check` / `castor cs-fix` — code style
-- `LLM_MODE=true castor check` — full quality gate (runs all 7 steps in parallel via proc_open with per-step timing; each `castor test` suite runs its own parallel PHPUnit suites internally; sequential fallback when proc_open unavailable)
+- `LLM_MODE=true castor check` — full quality gate. It runs PHAR ensure, then 13 first-class parallel steps: deptrac, 7 unit shards, controller E2E, llm-real E2E, TUI E2E, phpstan, and cs-check. Unit shards are direct check steps, not a nested `castor test` subprocess.
 - `castor cleanup` — remove all temp/test artifacts
 
 ## Snapshots and cleanup
@@ -86,6 +90,14 @@ Key commands:
 - Failure diagnostics go to `var/tmp/tui-failures/`.
 - Run `castor cleanup` to remove all generated artifacts: TUI dirs, PHAR builds, caches, logs, test DB, OS temp test dirs.
 - Do NOT add snapshot cleanup to `tearDown()`. Keep artifacts for inspection.
+
+## Real LLM smoke-test prompts
+
+The `llama_cpp_test/test` server should run deterministically (temperature 0, fixed seed) on port 9052. Tests should still be robust:
+- Prompt with the exact tool name and exact relative path (`./file.txt`), not vague natural language.
+- Keep model instructions short and schema-like: `Call the tool named read exactly once with path ./file.txt. After the tool succeeds, answer exactly done.`
+- Assert runtime/tool events, not prose. The small model can phrase final text differently even when the tool path is correct.
+- Use fast targeted waits. If a 5s target-tool wait fails on the local test model, debug the prompt/tool route or stale workers rather than increasing to 60s.
 
 ## TUI behavior proof
 
@@ -97,10 +109,11 @@ DB-touching tests must boot the Symfony kernel via `IsolatedKernelTestCase` (or 
 
 ### Parallel suite DB isolation
 
-`castor test` runs PHPUnit suites in parallel, each with its own SQLite DB file to prevent contention:
+`castor test` and the unit-test shard steps inside `castor check` run PHPUnit workers in parallel, each with its own SQLite DB file to prevent contention:
 - DB path is driven by `HATFIELD_TEST_DATABASE_PATH` env var (defaults to `app_test.sqlite`).
-- Castor sets `HATFIELD_TEST_DATABASE_PATH=app_test-<suite>.sqlite` per suite worker.
-- Castor runs `doctrine:migrations:migrate` once per suite on its own DB before PHPUnit.
+- Castor sets `HATFIELD_TEST_DATABASE_PATH=app_test-<worker>.sqlite` per worker.
+- Castor sets unique `HATFIELD_CACHE_DIR`, PHPUnit cache directory, JUnit XML, and log file paths per worker.
+- Castor runs `doctrine:migrations:migrate` once per worker on its own DB before PHPUnit.
 - For standalone `vendor/bin/phpunit` runs without Castor, export `HATFIELD_TEST_DATABASE_PATH=app_test.sqlite` to pick up the default DB.
 - Filtered runs (`castor test --filter=...`) use a single sequential PHPUnit invocation with the default DB.
 
