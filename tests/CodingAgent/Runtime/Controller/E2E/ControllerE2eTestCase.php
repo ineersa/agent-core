@@ -374,6 +374,14 @@ abstract class ControllerE2eTestCase extends TestCase
      */
     protected function collectEvents(float $timeout): array
     {
+        return $this->collectEventsUntil(null, $timeout);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    protected function collectEventsUntil(?string $targetType, float $timeout): array
+    {
         $events = [];
         $deadline = microtime(true) + $timeout;
 
@@ -382,6 +390,69 @@ abstract class ControllerE2eTestCase extends TestCase
                 $events[] = $event;
 
                 $type = $event['type'] ?? '';
+                if ($targetType === $type
+                    || 'run.completed' === $type
+                    || 'run.failed' === $type
+                    || 'run.cancelled' === $type
+                ) {
+                    return $events;
+                }
+            }
+
+            if (!$this->isRunning()) {
+                foreach ($this->readEvents() as $event) {
+                    $events[] = $event;
+                }
+                break;
+            }
+
+            usleep(10_000);
+        }
+
+        return $events;
+    }
+
+    /**
+     * Collect events until a specific tool call has completed.
+     *
+     * The controller stream exposes the tool name on tool_execution.started,
+     * while tool_execution.completed only carries the call id.  Track started
+     * call ids so tests can wait for the tool they actually care about instead
+     * of stopping at the first completed tool if the small smoke-test model
+     * performs an exploratory call first.
+     *
+     * @return list<array<string, mixed>>
+     */
+    protected function collectEventsUntilToolCompleted(string $toolName, float $timeout): array
+    {
+        $events = [];
+        $targetToolCallIds = [];
+        $deadline = microtime(true) + $timeout;
+
+        while (microtime(true) < $deadline) {
+            foreach ($this->readEvents() as $event) {
+                $events[] = $event;
+
+                $type = $event['type'] ?? '';
+                $payload = $event['payload'] ?? [];
+                if (!\is_array($payload)) {
+                    $payload = [];
+                }
+
+                if ('tool_execution.started' === $type
+                    && $toolName === ($payload['tool_name'] ?? null)
+                    && isset($payload['tool_call_id'])
+                ) {
+                    $targetToolCallIds[(string) $payload['tool_call_id']] = true;
+                }
+
+                if ('tool_execution.completed' === $type
+                    && isset($payload['tool_call_id'])
+                    && isset($targetToolCallIds[(string) $payload['tool_call_id']])
+                ) {
+                    return $events;
+                }
+
                 if ('run.completed' === $type || 'run.failed' === $type || 'run.cancelled' === $type) {
                     return $events;
                 }

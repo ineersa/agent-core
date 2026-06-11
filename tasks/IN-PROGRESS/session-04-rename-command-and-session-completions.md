@@ -137,14 +137,44 @@ class SessionIdCompletionProvider implements CompletionProvider {
 - Validation uses Castor per project rules; runtime/TUI changes require full `castor check` before CODE-REVIEW.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
-Fork run:
+Status: IN-PROGRESS
+Branch: task/session-04-rename-command-and-session-completions
+Worktree: /home/ineersa/projects/agent-core-worktrees/session-04-rename-command-and-session-completions
+Fork run: 00ekz1wt1o7u
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-10T22:26:17.564Z
 Completed:
 
 ## Work log
 - Created: 2026-06-07T20:45:50.100Z
+
+## Task workflow update - 2026-06-10T22:26:17.564Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/session-04-rename-command-and-session-completions.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/session-04-rename-command-and-session-completions.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/session-04-rename-command-and-session-completions.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/session-04-rename-command-and-session-completions.
+
+## Task workflow update - 2026-06-10T22:31:45.148Z
+- Orchestrator claimed task and created worktree: /home/ineersa/projects/agent-core-worktrees/session-04-rename-command-and-session-completions
+- Loaded task-workflow/testing/subagents skills. Scout context gathered for slash command architecture, picker/completion APIs, and TUI E2E patterns. Key implementation seams: SessionCommandRegistrar, ResumeSessionCommandHandler, SessionPickerController, PromptEditor::replaceText(), CompletionProviderRegistry/service tags, TuiAgentSmokeTest.
+
+## Task workflow update - 2026-06-10T22:33:58.533Z
+- Recorded fork run: n8mcks4b1o1w
+- Launched implementation fork n8mcks4b1o1w in worktree /home/ineersa/projects/agent-core-worktrees/session-04-rename-command-and-session-completions with explicit instructions for /rename command, session-id completion provider, docs, unit/integration tests, and mandatory TmuxHarness E2E proof.
+
+## Task workflow update - 2026-06-10T22:58:08.812Z
+- Recorded fork run: 6m30iie3bqbi
+- Validation: castor test --filter='RenameSessionCommandHandlerTest|SessionIdCompletionProviderTest|SessionCommandRegistrarTest|SessionPickerControllerTest' — PASS (tests=40, assertions=107); castor test:tui --filter=SessionRenameE2ETest — PASS (tests=3, assertions=3); castor phpstan — PASS; castor cs-check — PASS; castor deptrac — FAIL: 1 violation, TuiCompletion SessionIdCompletionProvider depends on AppSession HatfieldSessionStore
+- Fork n8mcks4b1o1w completed commit de51ed3e; orchestrator verified focused unit tests and TUI E2E pass, plus phpstan/cs-check pass. Deptrac found a TuiCompletion→AppSession boundary violation in SessionIdCompletionProvider, so branch remains IN-PROGRESS.
+- Launched follow-up implementation fork 6m30iie3bqbi to fix the deptrac boundary by introducing a TuiCompletion-owned source interface and an adapter in an allowed layer, then rerun deptrac/phpstan/cs/tests/E2E.
+
+## Task workflow update - 2026-06-10T23:01:41.145Z
+- Recorded fork run: 6m30iie3bqbi
+- Validation: Fork reported: castor deptrac — PASS (violations=0); Fork reported: castor phpstan — PASS; Fork reported: castor cs-check — PASS after cs-fix; Fork reported: castor test --filter='RenameSessionCommandHandlerTest|SessionIdCompletionProviderTest|SessionCommandRegistrarTest|SessionPickerControllerTest' — PASS (40 tests, 107 assertions); Fork reported: castor test:tui --filter=SessionRenameE2ETest — PASS (3 tests, 3 assertions); Orchestrator verified commit/state: HEAD 0e471031, worktree clean, aggregate diff 15 files changed, 1306 insertions, 94 deletions.
+- Summary: Implementation complete in worktree. Commits: de51ed3e adds /rename command, session-id completions, docs, focused tests, and TmuxHarness E2E; 0e471031 fixes deptrac boundary by introducing TuiCompletion-owned SessionCompletionSourceInterface/SessionCompletionRow and a TuiListener adapter wrapping HatfieldSessionStore. Working tree verified clean.
+
+## Task workflow update - 2026-06-11T17:03:34.416Z
+- Recorded fork run: 00ekz1wt1o7u
+- Launched validation/merge fork 00ekz1wt1o7u per user request: merge latest main, read AGENTS/testing skill/docs, rewrite tests if needed, run focused + full Castor validation gates, and ensure Castor files are not touched (revert if changed).

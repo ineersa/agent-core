@@ -35,7 +35,7 @@ Parallelizable with: none after dependencies.
 Status: IN-PROGRESS
 Branch: task/editor-12-keybindings-docs-smoke
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke
-Fork run: 021vafrvt41l
+Fork run: g945ykure7l1
 PR URL: https://github.com/ineersa/agent-core/pull/114
 PR Status: open
 Started: 2026-06-10T19:50:55.944Z
@@ -153,3 +153,30 @@ Castor Check Output SHA256: c8b1cd3ef2c18cd267365d1d7b99e3b19c1b45b39931955b6777
 
 ## Task workflow update - 2026-06-10T22:24:42.344Z
 - Summary: User instructed not to launch another reviewer for the small PR #114 comment fix. The previous reviewer had already approved the main implementation; the latest change only merged latest main and removed redundant explicit HotkeyRegistry service registration. Proceeding without further reviewer, with Castor validation and move_task quality gate only.
+
+## Task workflow update - 2026-06-10T22:31:30.816Z
+- Recorded fork run: h37ng9no7c5l
+- Summary: move_task back to CODE-REVIEW was manually stopped by user because the Castor quality gate appeared to hang/take too long; task remains IN-PROGRESS at HEAD 7e90c7eb. Launched diagnostic validation fork h37ng9no7c5l to inspect latest origin/main/maintenance commits for test/check behavior changes, run `LLM_MODE=true castor check`, isolate any hanging sub-step via Castor constituent commands if needed, verify HotkeySmoke/focused hotkey paths, and either commit a clear small branch-specific fix or report exact blocker evidence. No reviewer requested; no task moves/push/PR changes from fork.
+
+## Task workflow update - 2026-06-10T22:39:08.763Z
+- Recorded fork run: h37ng9no7c5l
+- Validation: Fork h37ng9no7c5l validation: `php -l .castor/tasks.php` passed; Fork h37ng9no7c5l validation: `castor cs-check` passed; Fork h37ng9no7c5l validation: `castor deptrac` passed (0 violations); Fork h37ng9no7c5l validation: `castor test:tui` passed (13 tests, 48 assertions); Fork h37ng9no7c5l validation: focused Hotkey tests passed (99 tests, 229 assertions); Fork h37ng9no7c5l validation: `LLM_MODE=true timeout 360 castor check` passed; all 7 steps passed in ~106.5s total (test longest at 106.5s, test:tui 65.5s, test:llm-real 27.5s)
+- Summary: Diagnostic Castor-check fork h37ng9no7c5l completed at commit 4dc63017. Root cause of apparent gate hang was introduced by the latest maintenance merge: `.castor/tasks.php` parallelized check steps via `run_commands_parallel()` but the helper had no internal timeout, so a stuck child process could spin forever until move_task's outer OS timeout. Fork added an optional per-process timeout to `run_commands_parallel()` and passes 300s from `run_check_commands_parallel()`. No EDITOR-12 production code changed. Orchestrator verified worktree clean at 4dc63017 and branch ahead of origin by 1.
+
+## Task workflow update - 2026-06-10T22:41:46.584Z
+- Recorded fork run: 1o9mdpeq3zm1
+- Summary: Retrying move_task after Castor parallel timeout fix completed the gate but failed only `test:tui` (exit code 2). Failure is not HotkeySmoke; JUnit shows `TuiAgentSmokeTest::testNewSessionCommandAndGetAssistantResponse` timed out waiting 10s for a new user block (`❯`) after `/new` prompt submission. Last capture showed the second prompt visible in the editor/input area with idle status but no new user transcript block. Launched narrow diagnostic/fix fork 1o9mdpeq3zm1 to inspect TuiAgentSmokeTest/TmuxHarness/failure artifacts and maintenance-merge timing changes, fix the smallest deterministic issue without sleeps, preserve HotkeySmoke guarantees, run Castor TUI/full check validation, commit, and leave worktree clean.
+
+## Task workflow update - 2026-06-10T22:51:04.061Z
+- Recorded fork run: 1o9mdpeq3zm1
+- Validation: Fork 1o9mdpeq3zm1 validation: `castor test:tui --filter=HotkeySmoke|testNewSessionCommand` passed (3 tests, 20 assertions); Fork 1o9mdpeq3zm1 validation: full `castor test:tui` passed (13 tests, 48 assertions); Fork 1o9mdpeq3zm1 validation: focused Hotkey/Slash/Completion tests passed (99 tests, 229 assertions); Fork 1o9mdpeq3zm1 validation: `castor deptrac` passed (0 violations), `castor phpstan` passed (0 errors), `castor cs-check` clean
+- Summary: TUI gate failure diagnostic/fix fork 1o9mdpeq3zm1 completed at commit d28e507c. Root cause: maintenance merge parallelized all `castor check` steps, causing `test:controller`, `test:llm-real`, and `test:tui` to hit the same llama_cpp_test/test server on port 9052 concurrently. This created LLM resource contention; `TuiAgentSmokeTest::testNewSessionCommandAndGetAssistantResponse` timed out waiting for a user block after `/new` despite passing reliably in isolation. Fix: `.castor/tasks.php` now runs non-LLM/static steps in parallel (`deptrac`, `test`, `phpstan`, `cs-check`) and LLM-dependent steps sequentially (`test:controller`, `test:llm-real`, `test:tui`) while retaining the 300s per-process timeout from 4dc63017. No EDITOR-12 production code changed. Orchestrator verified task worktree clean at d28e507c, ahead of origin branch by 2; integration checkout clean at 17fe8e5c.
+
+## Task workflow update - 2026-06-10T22:57:49.661Z
+- Recorded fork run: g945ykure7l1
+- Summary: User explicitly rejected the Castor/test-execution changes and instructed not to touch test execution. Launched revert-only fork g945ykure7l1 to revert the two Castor commits (`4dc63017` and `d28e507c`) from the task branch, preserve EDITOR-12 changes and the HotkeyRegistry service-registration cleanup, not run any tests/Castor commands, commit the revert, and leave the worktree clean.
+
+## Task workflow update - 2026-06-10T22:58:58.360Z
+- Recorded fork run: g945ykure7l1
+- Validation: No tests/Castor commands run per user instruction; Git verification only: `.castor/tasks.php` diff vs origin/main is empty; Git verification only: worktree clean at be512fcf on task/editor-12-keybindings-docs-smoke; Git verification only: PR diff excluding .castor contains 19 EDITOR-12 files (+1743/-16)
+- Summary: Revert-only fork g945ykure7l1 completed at commit be512fcf. It reverted the two Castor/test-execution commits (`4dc63017` and `d28e507c`) via a single revert commit `be512fcf`, preserving EDITOR-12 changes and the HotkeyRegistry service-registration cleanup. Orchestrator verified only git state/diff: `.castor/tasks.php` has no diff vs origin/main, PR diff excluding .castor still contains only the 19 EDITOR-12 files (+1743/-16), task worktree is clean and ahead of origin/task/editor-12-keybindings-docs-smoke by 3. No tests or Castor commands were run by the fork or orchestrator after the user's explicit instruction not to touch test execution.

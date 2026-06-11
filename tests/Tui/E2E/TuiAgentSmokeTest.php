@@ -89,7 +89,7 @@ final class TuiAgentSmokeTest extends TestCase
             $this->tmux->waitForCaptureContains(
                 pane: $pane,
                 needle: '█',   // Hatfield logo
-                timeout: 10.0,
+                timeout: 5.0,
             );
             // Step 2: Type a prompt
             $prompt = 'Respond with exactly one word: hello.';
@@ -126,7 +126,7 @@ final class TuiAgentSmokeTest extends TestCase
                 $capture = $this->tmux->waitForCaptureContains(
                     pane: $pane,
                     needle: '◇',    // TranscriptBlockKind::AssistantMessage prefix
-                    timeout: 30.0,
+                    timeout: 5.0,
                 );
             } catch (\RuntimeException $e) {
                 // Maybe the LLM failed — look for an error block instead.
@@ -229,7 +229,7 @@ final class TuiAgentSmokeTest extends TestCase
 
         try {
             // Wait for TUI startup
-            $this->tmux->waitForCaptureContains($pane, '█', 10.0);
+            $this->tmux->waitForCaptureContains($pane, '█', 5.0);
 
             // Send prompt
             $this->tmux->sendLiteral($pane, 'hello');
@@ -238,9 +238,9 @@ final class TuiAgentSmokeTest extends TestCase
             // Wait for either an assistant block or error block.
             // This proves the working status didn't stay stuck.
             try {
-                $this->tmux->waitForCaptureContains($pane, '◇', 30.0);
+                $this->tmux->waitForCaptureContains($pane, '◇', 5.0);
             } catch (\RuntimeException) {
-                $this->tmux->waitForCaptureContains($pane, '✕', 10.0);
+                $this->tmux->waitForCaptureContains($pane, '✕', 2.0);
             }
 
             $capture = $this->tmux->capturePlain($pane);
@@ -286,7 +286,7 @@ final class TuiAgentSmokeTest extends TestCase
 
         try {
             // ── Start first turn ──
-            $this->tmux->waitForCaptureContains($pane, '█', 10.0);
+            $this->tmux->waitForCaptureContains($pane, '█', 5.0);
 
             // Chat-only prompt: multi-turn ordering test, not a tools test.
             $prompt1 = 'Respond with exactly "One". Do not use tools.';
@@ -298,9 +298,9 @@ final class TuiAgentSmokeTest extends TestCase
 
             // Wait for first assistant response using full history
             try {
-                $this->tmux->waitForHistoryContains($pane, '◇', 30.0);
+                $this->tmux->waitForHistoryContains($pane, '◇', 5.0);
             } catch (\RuntimeException) {
-                $this->tmux->waitForHistoryContains($pane, '✕', 10.0);
+                $this->tmux->waitForHistoryContains($pane, '✕', 2.0);
             }
 
             // Capture full history so we don't miss content that scrolled off
@@ -340,7 +340,7 @@ final class TuiAgentSmokeTest extends TestCase
                 $this->tmux->waitForCallback(
                     $pane,
                     static fn (string $capture): bool => \substr_count($capture, '❯') > $beforeUserCount,
-                    10.0,
+                    5.0,
                     'Second ❯ user block did not appear after second prompt submission.',
                 );
             } catch (\RuntimeException $e) {
@@ -356,11 +356,11 @@ final class TuiAgentSmokeTest extends TestCase
                 $this->tmux->waitForCallback(
                     $pane,
                     static fn (string $capture): bool => \substr_count($capture, '◇') > $beforeAsstCount,
-                    30.0,
+                    5.0,
                     'Second assistant block (◇) did not appear after second prompt.',
                 );
             } catch (\RuntimeException) {
-                $this->tmux->waitForHistoryContains($pane, '✕', 10.0);
+                $this->tmux->waitForHistoryContains($pane, '✕', 2.0);
             }
 
             // Exit the agent
@@ -467,10 +467,10 @@ final class TuiAgentSmokeTest extends TestCase
 
         try {
             // ── First run (auto-submit via --prompt) ──
-            $this->tmux->waitForCaptureContains($pane, '█', 10.0);
+            $this->tmux->waitForCaptureContains($pane, '█', 5.0);
 
             // The first run MUST produce an assistant block.  No ✕ fallback.
-            $this->tmux->waitForCaptureContains($pane, '◇', 30.0);
+            $this->tmux->waitForCaptureContains($pane, '◇', 5.0);
 
             // ── Session switch via /new ──
             // The first session is completed; /new triggers a draft switch.
@@ -481,7 +481,7 @@ final class TuiAgentSmokeTest extends TestCase
             // After the switch the terminal is cleared and the TUI
             // rebuilds.  Wait for the Hatfield logo to confirm the
             // new draft session has rendered.
-            $this->tmux->waitForCaptureContains($pane, '█', 10.0);
+            $this->tmux->waitForCaptureContains($pane, '█', 5.0);
 
             // Record baseline counts BEFORE submitting the /new prompt.
             // The tmux scrollback retains pre-clear content, so using
@@ -500,7 +500,7 @@ final class TuiAgentSmokeTest extends TestCase
             $this->tmux->waitForCallback(
                 $pane,
                 static fn (string $capture): bool => \substr_count($capture, '❯') > $beforeUserCount,
-                10.0,
+                5.0,
                 'New user block (❯) did not appear after /new prompt submission.',
             );
 
@@ -509,7 +509,7 @@ final class TuiAgentSmokeTest extends TestCase
             $this->tmux->waitForCallback(
                 $pane,
                 static fn (string $capture): bool => \substr_count($capture, '◇') > $beforeAssistantCount,
-                40.0,
+                5.0,
                 'New assistant block (◇) did not appear after /new prompt.',
             );
 
@@ -574,10 +574,10 @@ final class TuiAgentSmokeTest extends TestCase
 
         try {
             // ── First run (auto-submit via --prompt) creates session 1 ──
-            $this->tmux->waitForCaptureContains($pane, '█', 10.0);
+            $this->tmux->waitForCaptureContains($pane, '█', 5.0);
 
             // The first run MUST produce an assistant block.  No ✕ fallback.
-            $this->tmux->waitForCaptureContains($pane, '◇', 30.0);
+            $this->tmux->waitForCaptureContains($pane, '◇', 5.0);
 
             // ── /resume → picker ──
             $this->tmux->sendLiteral($pane, '/resume');
@@ -596,7 +596,7 @@ final class TuiAgentSmokeTest extends TestCase
             $this->tmux->sendKey($pane, 'Enter');
 
             // After session switch the terminal clears and logo reappears
-            $this->tmux->waitForCaptureContains($pane, '█', 10.0);
+            $this->tmux->waitForCaptureContains($pane, '█', 5.0);
 
             // The replayed transcript should show the old user prompt
             $this->tmux->waitForCaptureContains($pane, 'alpha', 5.0);
@@ -617,7 +617,7 @@ final class TuiAgentSmokeTest extends TestCase
             $this->tmux->waitForCallback(
                 $pane,
                 static fn (string $capture): bool => \substr_count($capture, '❯') > $beforeUserCount,
-                10.0,
+                5.0,
                 'New user block (❯) did not appear after resume follow-up submission.',
             );
 
@@ -626,7 +626,7 @@ final class TuiAgentSmokeTest extends TestCase
             $this->tmux->waitForCallback(
                 $pane,
                 static fn (string $capture): bool => \substr_count($capture, '◇') > $beforeAssistantCount,
-                40.0,
+                5.0,
                 'New assistant block (◇) did not appear after resume follow-up.',
             );
 
