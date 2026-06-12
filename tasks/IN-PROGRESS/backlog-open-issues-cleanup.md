@@ -101,3 +101,8 @@ Completed:
 ## Task workflow update - 2026-06-12T18:07:41.832Z
 - Recorded fork run: d5ci1e50e3ee
 - Dispatched implementation fork d5ci1e50e3ee for issue #118 Delay after submit. Fork instructed to implement immediate submit feedback in TUI, avoid duplicate/non-canonical transcript issues, add real TmuxHarness E2E timing proof, perform manual real-agent tmux snapshot verification, and run Castor validation.
+
+## Task workflow update - 2026-06-12T18:19:52.206Z
+- Validation: Fork reported full LLM_MODE=true castor check passed all 13 steps: deptrac, 7 unit shards, controller, llm-real, tui, phpstan, cs-check.; Fork reported castor test passed all 2,466 unit tests.; Fork reported castor test:tui passed all 19 TUI E2E tests including ImmediateSubmitFeedbackTest.; Manual tmux verification per fork: pre-submit `● idle`; post-submit `◐ Working...` appeared in ~106ms; post-response returned to `● idle`; exactly one user block and one assistant response.; Manual snapshot paths reported: var/tmp/tui-e2e-submit-manual3-7cce64/.hatfield/tmp/tui/smoke/02-post-submit.ansi and 03-post-response.ansi.; Commit reported: c53ec19b on task/backlog-open-issues-cleanup.
+- Summary: Issue #118 implementation completed by fork d5ci1e50e3ee. Commit c53ec19b moves submit Working feedback before synchronous runtime setup and forces an immediate TUI repaint so the user sees `◐ Working...` quickly after pressing Enter. Fork intentionally did not add optimistic transcript blocks to avoid duplicate/canonical replay issues.
+- Awaiting user validation of issue #118 before merging/closing and moving to the next GitHub issue.
