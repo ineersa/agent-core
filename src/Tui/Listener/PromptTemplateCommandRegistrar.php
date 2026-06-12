@@ -38,6 +38,13 @@ final class PromptTemplateCommandRegistrar implements TuiListenerRegistrar
 
     public function register(TuiRuntimeContext $context): void
     {
+        $handler = new class implements SlashCommandHandler {
+            public function handle(SlashCommand $command): DispatchRuntime
+            {
+                return new DispatchRuntime($command->originalText);
+            }
+        };
+
         foreach ($this->catalog->allPromptTemplateCommands() as $template) {
             // Real/built-in commands win — skip if already registered.
             if ($this->registry->has($template->name)) {
@@ -52,12 +59,7 @@ final class PromptTemplateCommandRegistrar implements TuiListenerRegistrar
                     usage: '/'.$template->name.' <args>',
                     acceptsArguments: true,
                 ),
-                new class implements SlashCommandHandler {
-                    public function handle(SlashCommand $command): DispatchRuntime
-                    {
-                        return new DispatchRuntime($command->originalText);
-                    }
-                },
+                $handler,
             );
         }
     }

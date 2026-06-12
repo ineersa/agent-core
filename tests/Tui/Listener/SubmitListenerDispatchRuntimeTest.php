@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Tests\Listener;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
@@ -48,9 +49,12 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
     private SubmissionRouter $router;
     private QuestionCoordinator $questionCoordinator;
     private QuestionController $questionController;
+    private string $tempCwd;
 
     protected function setUp(): void
     {
+        $this->tempCwd = TestDirectoryIsolation::createOsTempDir('hatfield-dispatch');
+
         $this->state = new TuiSessionState('test-session');
         $this->client = $this->createMock(AgentSessionClient::class);
         $this->logger = new NullLogger();
@@ -76,6 +80,12 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
 
         $parser = new CommandParser();
         $this->router = new SubmissionRouter($parser, $this->registry);
+    }
+
+    protected function tearDown(): void
+    {
+        TestDirectoryIsolation::removeDirectory($this->tempCwd);
+        parent::tearDown();
     }
 
     // ── DispatchRuntime starts new run ─────────────────────────────
@@ -237,7 +247,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
     }
 
     #[Test]
-    public function dispatchRuntimeErrorClearsWorkingMessage(): void
+    public function dispatchRuntimeErrorSetsFailedActivity(): void
     {
         $this->state->handle = null;
         $this->state->sessionId = 'test-session';
@@ -247,14 +257,13 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
             ->method('start')
             ->willThrowException(new \RuntimeException('Boom'));
 
-        $screen = $this->dispatchSubmit('/review error');
+        $this->dispatchSubmit('/review error');
 
-        // Working message should be cleared (empty) after error
-        // extract() returns text extracted from editor; after error, working message is ''
-        // We verify by checking that the workingMessage is empty via the screen's extract
-        // Actually, working message set is done through setWorkingMessage(''), and we
-        // can't easily query it back from ChatScreen. But the test passes if activity=Failed.
-        // The visual assertion is covered by checking activity is Failed + transcript has error.
+        // The SubmitListener sets activity to Failed and adds an error
+        // transcript block on runtime exceptions. The working message
+        // is also cleared but there is no public ChatScreen API to query
+        // it directly — the visual outcome is covered by the combination
+        // of Failed state (this test) + error block (dispatchRuntimeErrorAddsErrorBlock).
         self::assertSame(RunActivityStateEnum::Failed, $this->state->activity);
     }
 
@@ -291,7 +300,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
                 tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
                 logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
                 sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
-                cwd: '/tmp',
+                cwd: $this->tempCwd,
             ),
             entityManager: $em,
         );
@@ -435,4 +444,5 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
 
         return $screen;
     }
+
 }
