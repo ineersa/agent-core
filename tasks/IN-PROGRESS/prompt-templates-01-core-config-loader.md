@@ -42,3 +42,9 @@ Completed:
 - Created worktree /home/ineersa/projects/agent-core-worktrees/prompt-templates-01-core-config-loader.
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/prompt-templates-01-core-config-loader.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/prompt-templates-01-core-config-loader.
+
+## Task workflow update - 2026-06-12T01:47:03.503Z
+- Orchestrator claimed task and created worktree `/home/ineersa/projects/agent-core-worktrees/prompt-templates-01-core-config-loader` on branch `task/prompt-templates-01-core-config-loader`.
+- Loaded task-workflow/testing/subagents guidance; read `.pi/plans/prompt-templates-implementation-plan.md` sections for PT-01 scope and validation.
+- Scout findings: add `PromptsConfig` through `AppConfig::fromContainer()` and `AppConfigLoader::PATH_CONFIG['[prompts]']='list'`; use `SettingsPathResolver` for path-bearing settings; add `AppPromptTemplate` deptrac layer and allow AppConfig/AppRuntimeContract/SymfonyYaml (plus logger if needed); add `PromptTemplateCatalogInterface`/`PromptTemplateCommand` under Runtime/Contract so later TUI work stays deptrac-safe.
+- Scout findings: tests should use `TestDirectoryIsolation` and shared `TestLogger`; QA commands must use Castor; PT-01 does not wire runtime/TUI behavior yet, so no TmuxHarness E2E is required for this task.
