@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\DispatchRuntime;
@@ -25,6 +28,7 @@ use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -254,6 +258,89 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         self::assertSame(RunActivityStateEnum::Failed, $this->state->activity);
     }
 
+    // ── Draft session promotion for DispatchRuntime ─────────────
+
+    #[Test]
+    #[AllowMockObjectsWithoutExpectations]
+    public function dispatchRuntimePromotesDraftSession(): void
+    {
+        $this->state->sessionId = '';
+        $this->state->handle = null;
+        $this->state->activity = RunActivityStateEnum::Idle;
+
+        // Set up a mock EntityManager that simulates auto-increment ID
+        // assignment on flush(), so createSession() can return a real ID
+        // without requiring a full SQLite database.
+        $nextId = 1;
+        $persisted = null;
+        $em = $this->createMock(EntityManagerInterface::class);
+        $em->method('persist')->willReturnCallback(function ($entity) use (&$persisted) {
+            $persisted = $entity;
+        });
+        $em->method('flush')->willReturnCallback(function () use (&$persisted, &$nextId) {
+            if ($persisted instanceof HatfieldSession) {
+                $persisted->id = $nextId++;
+                $persisted = null;
+            }
+        });
+        // find() returns null (no existing sessions)
+        $em->method('find')->willReturn(null);
+
+        $sessionStore = new HatfieldSessionStore(
+            appConfig: new \Ineersa\CodingAgent\Config\AppConfig(
+                tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
+                logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
+                sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
+                cwd: '/tmp',
+            ),
+            entityManager: $em,
+        );
+
+        $this->client->expects($this->once())
+            ->method('start')
+            ->with($this->callback(function (StartRunRequest $req): bool {
+                return '/review draft' === $req->prompt;
+            }))
+            ->willReturn(new RunHandle('draft-run-1'));
+
+        $screen = $this->dispatchSubmit('/review draft', $sessionStore);
+
+        self::assertNotSame('', $this->state->sessionId, 'Draft sessionId should be promoted');
+        self::assertSame(RunActivityStateEnum::Starting, $this->state->activity);
+        self::assertNotNull($this->state->handle);
+    }
+
+    // ── Shell restart path for DispatchRuntime ─────────────────
+
+    #[Test]
+    public function dispatchRuntimeStartsNewRunAfterShellRun(): void
+    {
+        // After a first-input ! shell command, isShellRun=true and the
+        // previous run is terminal. A new normal prompt (or DispatchRuntime)
+        // should start a fresh LLM run, not send follow_up on the shell-only
+        // handle whose runner was never initialized via start().
+        $this->state->sessionId = 'test-session';
+        $this->state->handle = new RunHandle('shell-run');
+        $this->state->activity = RunActivityStateEnum::Completed;
+        $this->state->isShellRun = true;
+
+        $this->client->expects($this->once())
+            ->method('start')
+            ->with($this->callback(function (StartRunRequest $req): bool {
+                return '/review restart' === $req->prompt;
+            }))
+            ->willReturn(new RunHandle('fresh-run'));
+
+        $this->client->expects($this->never())
+            ->method('send');
+
+        $this->dispatchSubmit('/review restart');
+
+        self::assertFalse($this->state->isShellRun);
+        self::assertSame('fresh-run', $this->state->handle->runId);
+        self::assertSame(RunActivityStateEnum::Starting, $this->state->activity);
+    }
+
     // ── Normal prompt still works after refactor ────────────────────
 
     #[Test]
@@ -298,9 +385,12 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
      * Register the SubmitListener, extract its SubmitEvent handler,
      * and invoke it with text set in the editor.
      *
+     * Accepts an optional sessionStore override for tests that need
+     * a custom HatfieldSessionStore (e.g. draft promotion with mock EM).
+     *
      * @return ChatScreen the screen after dispatch (for state inspection)
      */
-    private function dispatchSubmit(string $text): ChatScreen
+    private function dispatchSubmit(string $text, ?HatfieldSessionStore $sessionStore = null): ChatScreen
     {
         $tui = new Tui();
         $theme = new DefaultTheme(new ThemePalette('test'));
@@ -310,12 +400,17 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         // Set the text in the editor (will be extracted by SubmitListener)
         $promptEditor->setText($text);
 
-        $context = $this->buildTuiContext()
+        $builder = $this->buildTuiContext()
             ->withTui($tui)
             ->withClient($this->client)
             ->withState($this->state)
-            ->withScreen($screen)
-            ->build();
+            ->withScreen($screen);
+
+        if (null !== $sessionStore) {
+            $builder = $builder->withSessionStore($sessionStore);
+        }
+
+        $context = $builder->build();
 
         $listener = new SubmitListener(
             sessionStore: $context->sessionStore,

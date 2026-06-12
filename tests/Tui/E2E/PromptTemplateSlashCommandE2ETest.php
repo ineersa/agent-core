@@ -19,6 +19,7 @@ use PHPUnit\Framework\TestCase;
  * @group tui-e2e
  */
 #[Group('tui-e2e')]
+#[Group('llm-real')]
 final class PromptTemplateSlashCommandE2ETest extends TestCase
 {
     private TmuxHarness $tmux;

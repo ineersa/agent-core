@@ -7,8 +7,8 @@ namespace Ineersa\Tui\Command;
 /**
  * Forward a raw payload string to the runtime for processing.
  *
- * Intended for future use when commands need to interact with the
- * AgentCore runtime.
+ * Used by prompt-template slash commands and other TUI commands
+ * that need runtime dispatch through {@see SubmitListener}.
  */
 final readonly class DispatchRuntime implements CommandResult
 {

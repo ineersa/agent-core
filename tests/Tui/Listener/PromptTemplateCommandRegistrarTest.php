@@ -113,40 +113,18 @@ final class PromptTemplateCommandRegistrarTest extends TestCase
     #[Test]
     public function skipsWhenRealCommandAlreadyRegistered(): void
     {
-        // Pre-register a real "review" command in the registry
+        // Pre-register a real "review" command, then run the registrar with
+        // a template also named "review". The registrar must skip the template
+        // because the name is already taken — real command handler and metadata
+        // must remain untouched.
         $realHandler = new class implements SlashCommandHandler {
             public function handle(SlashCommand $command): DispatchRuntime
             {
-                // Real commands return something distinct from template
                 return new DispatchRuntime('from-real-handler');
             }
         };
-        // Use registerMetadataAndHandler approach — registry doesn't expose
-        // raw access to handlers/metadata directly for arbitrary insert,
-        // but we can register a synthetic command via the public register().
-        // We need to bypass collision guard, so we call register() first.
-        // Since the registrar checks has() before registering, we just need
-        // the name to be taken.
 
-        // Register a synthetic command via the public API.
-        // But register() throws if already registered, so we must register
-        // it BEFORE the registrar runs.
         $this->registry = new SlashCommandRegistry();
-        $this->registry->execute(new SlashCommand('help', '', '/help')); // just to warm up
-
-        // We register a fake by going through register() which will throw
-        // if already there, so we ensure it's first.
-        $this->catalog->method('allPromptTemplateCommands')->willReturn([
-            new PromptTemplateCommand(name: 'review', description: 'Template review'),
-        ]);
-
-        // First, register a real command
-        // SlashCommandRegistry::register() throws \InvalidArgumentException if name taken.
-        // So register a real command before the registrar runs.
-        // But the built-in registry already has help, clear, exit.
-        // We need a different approach: register a command, then run registrar,
-        // and verify the original handler is still active.
-        // Let's register a fake "review" first, then run the registrar.
         $this->registry->register(
             new \Ineersa\Tui\Command\CommandMetadata(
                 name: 'review',
@@ -156,15 +134,17 @@ final class PromptTemplateCommandRegistrarTest extends TestCase
             $realHandler,
         );
 
+        $this->catalog->method('allPromptTemplateCommands')->willReturn([
+            new PromptTemplateCommand(name: 'review', description: 'Template review'),
+        ]);
+
         $registrar = new PromptTemplateCommandRegistrar($this->registry, $this->catalog);
         $registrar->register($this->buildContext());
 
-        // The real handler should still be in place
         $result = $this->registry->execute(new SlashCommand('review', '', '/review'));
         self::assertInstanceOf(DispatchRuntime::class, $result);
         self::assertSame('from-real-handler', $result->payload, 'Real handler should still execute');
 
-        // Metadata should still be from the real command
         $meta = $this->registry->getMetadata('review');
         self::assertNotNull($meta);
         self::assertSame('Real review command', $meta->description);
