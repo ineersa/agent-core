@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: hgokee78eri3
+Fork run: wlp54a5wdd31
 PR URL:
 PR Status:
 Started: 2026-06-12T16:54:23.580Z
@@ -214,3 +214,8 @@ Completed:
 ## Task workflow update - 2026-06-12T21:30:42.117Z
 - Validation: Attempted `timeout --kill-after=15s 300s env LLM_MODE=true castor check` in backlog worktree. Result: FAIL before tests at llama.cpp generation preflight, curl exit 52 empty reply. Immediately after, direct curl to /health, /v1/models, and /v1/chat/completions all failed with curl exit 7 connection refused; the previously observed llama-server PID 361986 for port 9052 was gone. This indicates the llama.cpp test server crashed/exited during or immediately before preflight, not a test assertion failure.
 - Per user request, main agent ran full Castor check as the only active validation. Pre-run process check showed no stale backlog worktree processes except unrelated root-owned PID 3334. Castor preflight failed with curl exit 52, then direct curls showed port 9052 connection refused and no llama-server process remained.
+
+## Task workflow update - 2026-06-12T21:44:20.631Z
+- Recorded fork run: wlp54a5wdd31
+- Validation: LLM_MODE=true castor check: ALL 14 STEPS PASS (deptrac OK, test-agent-core 292 OK, test-coding-agent-1/2/3/4 OK, test-tui-suite 664 OK, test-platform 54 OK, test:controller 1 OK, test:llm-real 5 OK, test:tui-1 10 OK, test:tui-2 10 OK, phpstan 0 errors OK, cs-check OK)
+- Summary: Fork wlp54a5wdd31 fixed EditorBorderColorTest failure and committed ed269fed. Full LLM_MODE=true castor check passes all 14 steps including test:tui-1 (was FAIL, now OK in 45.7s). Also preserved preflight fix (max_tokens:512). 2 files changed: .castor/helpers.php and tests/Tui/E2E/EditorBorderColorTest.php (rewritten to extract editor border color by finding pure-dash rows and asserting colors differ between reasoning levels).
