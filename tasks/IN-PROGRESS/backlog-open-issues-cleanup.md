@@ -178,3 +178,7 @@ Completed:
 
 ## Task workflow update - 2026-06-12T20:39:00.210Z
 - User validation reports issue #120 editor border reasoning color does not work visually/functionally despite passing TUI E2E shard validation. Treating #120 as failed validation; dispatching scout to reproduce with real TUI snapshots and diagnose why tests did not catch the failure.
+
+## Task workflow update - 2026-06-12T20:45:33.538Z
+- Validation: Scout read testing skill and tests/AGENTS.md; inspected broken snapshots under var/tmp/tui-e2e-border-* showing identical border color ANSI for off/minimal/low.
+- Summary: Scout investigation for failed #120 validation completed. Root cause: ChatScreen::applyEditorBorderColor() adds a stylesheet but never invalidates the EditorWidget; Symfony TUI render cache returns cached editor frame, so border color never changes. Shift+Tab also stops propagation before requestRender. Existing EditorBorderColorTest is a false positive: it asserts border chars/status text and saves snapshots, but does not assert ANSI color changes; scout found off/minimal/low snapshots all use identical cyan border sequence 38;2;0;255;255. Recommended fix: invalidate prompt editor widget and request render after style change; include editor widget in ChatScreen::refresh(); update E2E to assert actual ANSI border color differs/maps across reasoning levels.
