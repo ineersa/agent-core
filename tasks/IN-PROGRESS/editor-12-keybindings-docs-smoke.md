@@ -32,7 +32,7 @@ Parallelizable with: none after dependencies.
 - `castor check` passes.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/editor-12-keybindings-docs-smoke
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke
 Fork run: 67uly66th0nw
@@ -218,3 +218,7 @@ Castor Check Output SHA256: 74ff0433812203034ac7cb3d7dabc8d42f969bb957b60dccac60
 - branch 'task/editor-12-keybindings-docs-smoke' set up to track 'origin/task/editor-12-keybindings-docs-smoke'.
 - PR already exists: https://github.com/ineersa/agent-core/pull/114
 - Summary: Review-iterate complete for ShellPrefix timeout concern. The previous 15s cap was reduced; 5s was validated first and failed under parallel check load with the TUI still in `◐ Working...`; per user instruction the timeout is now 8s max. Focused ShellPrefix, full TUI, and `LLM_MODE=true castor check` passed in the fork. `.castor/tasks.php` remains identical to origin/main; no Castor/test-execution infrastructure changes. Moving to CODE-REVIEW to run the normal gate, push branch, and update PR #114.
+
+## Task workflow update - 2026-06-12T00:26:11.586Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: PR #114 blocker: user reports `castor check` can hang indefinitely after recent maintenance/test changes. This is now critical test-infrastructure/test-timeout work: tests must fail with proper timeouts and no uncapped waits. Moving back to IN-PROGRESS to scout all uncapped timeout paths and fix test timeout issues before returning to review.
