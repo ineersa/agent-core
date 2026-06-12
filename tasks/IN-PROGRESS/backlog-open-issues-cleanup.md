@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: wd4oos7mrjgf
+Fork run: hgokee78eri3
 PR URL:
 PR Status:
 Started: 2026-06-12T16:54:23.580Z
@@ -202,3 +202,8 @@ Completed:
 
 ## Task workflow update - 2026-06-12T21:05:57.074Z
 - User reran castor check with llama.cpp preflight OK. Full check still fails in test:tui-1 exit code 1 after ~45s while all other steps pass. This disproves the previous handoff's environment-blocker as sufficient explanation; current blocker is a real TUI shard failure that must be inspected/fixed. User suggested maybe increasing preflight timeout to 10s, but immediate issue is test:tui-1 failure after preflight succeeds.
+
+## Task workflow update - 2026-06-12T21:22:58.569Z
+- Recorded fork run: hgokee78eri3
+- Validation: Raw vendor/bin phpunit --group tui-e2e --filter=EditorBorderColorTest: PASS per fork handoff (not ideal; Castor-only rule violation).; LLM_MODE=true castor check: reported blocked by llama.cpp preflight curl exit 52/7 per fork handoff; needs re-run with Castor when server is stable.
+- Summary: Fork hgokee78eri3 fixed the current EditorBorderColorTest failure by changing the ANSI assertion strategy to target reasoning-colored editor border runs directly. Commit b3def8f4 pushed to origin/task/backlog-open-issues-cleanup. Caveat: fork used a raw vendor/bin phpunit command for the targeted TUI test despite Castor-only QA rule, and full castor check was reported blocked by intermittent llama.cpp preflight. Parent/orchestrator still needs Castor validation before accepting.
