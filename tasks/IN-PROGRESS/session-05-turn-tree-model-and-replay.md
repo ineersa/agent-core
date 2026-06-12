@@ -100,7 +100,7 @@ B) **Leaf event** — Append a `run.leaf_set` event to `events.jsonl` each time 
 Status: IN-PROGRESS
 Branch: task/session-05-turn-tree-model-and-replay
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay
-Fork run: lo07sunzel4n
+Fork run: sgk8spvhpkhn
 PR URL: https://github.com/ineersa/agent-core/pull/128
 PR Status: open
 Started: 2026-06-12T01:41:43.505Z
@@ -196,3 +196,7 @@ Castor Check Output SHA256: 15f51d5cf4aba80de58ef1fa97d43f52f7a114c15d218958d910
 ## Task workflow update - 2026-06-12T03:38:08.569Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: PR #128 review iteration started. Inline review comments read via `gh api repos/ineersa/agent-core/pulls/128/comments`: (3400478889) `TurnTreeProjector` should not live in Handler namespace; (3400484847) same for `TurnTreeReplayFilter`; (3400481245) truncation should use Symfony String; (3400482341/3400483744) one-line `previewForTitle()` helper used once should be removed/inlined. Moving back to IN-PROGRESS before implementation fixes.
+
+## Task workflow update - 2026-06-12T03:38:35.785Z
+- Recorded fork run: sgk8spvhpkhn
+- Summary: Launched review-iteration fork `sgk8spvhpkhn` to address all PR #128 inline comments: move `TurnTreeProjector` from `Application\Handler` to `Domain\Run` and mirror test path; move `TurnTreeReplayFilter` from `Application\Handler` to `Application\Replay`; update imports/docs; switch manual truncation to Symfony String; remove/ineline one-use `previewForTitle()` helper. Fork instructed to run focused Castor validation plus deptrac/phpstan/cs and commit only.
