@@ -133,7 +133,7 @@ final class PromptTemplateLoader
                 continue;
             }
 
-            // Skip non-Markdown files that happen to end in .md like hidden files.
+            // Hidden .md files (leading dot) are loaded like any other .md file.
             // Pi loads any .md file regardless of leading dot.
             $this->loadFile($filePath, $loadedByName, $diagnostics);
         }

@@ -418,7 +418,6 @@ parameters:
       - AppConfig
       - AppRuntimeContract
       - SymfonyYaml
-      - SymfonyConsole
 
     AppConfig:
       - AppSession
