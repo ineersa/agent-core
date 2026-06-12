@@ -62,3 +62,6 @@ Completed:
 
 ## Task workflow update - 2026-06-12T17:08:55.824Z
 - Post-fork verification found the implementation commit 482cf235 is on the integration checkout branch `main` and included in `origin/main` after task metadata push; the task worktree branch `task/backlog-open-issues-cleanup` remains at 23419aea and does not contain the code commit. Pausing for user validation before any further workflow/branch cleanup or next issue.
+
+## Task workflow update - 2026-06-12T17:10:22.412Z
+- User validation failed issue #117: provided snapshot `/home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup/.hatfield/tmp/tui/snapshots/snapshot-ansi-20260612-130848.ansi`; Shift+Tab still shows nothing. Need fork iteration with real agent tmux verification and proper snapshots per AGENTS.md, not only test harness assumptions.
