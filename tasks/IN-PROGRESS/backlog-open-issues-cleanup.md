@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: 7h6a58rv1hlx
+Fork run: d5ci1e50e3ee
 PR URL:
 PR Status:
 Started: 2026-06-12T16:54:23.580Z
@@ -97,3 +97,7 @@ Completed:
 
 ## Task workflow update - 2026-06-12T18:07:12.951Z
 - Scout investigated issue #118 Delay after submit. Root cause hypothesis: SubmitListener clears editor immediately, then performs synchronous session creation/context discovery/skills/system prompt/runtime start/update metadata before any visible feedback, and user message only appears later via canonical runtime events/poller. Recommended fix: show working status immediately before heavy work, consider optimistic user-message display with canonical replacement, explicitly ensure working visible, and validate with TmuxHarness timing/snapshot proof.
+
+## Task workflow update - 2026-06-12T18:07:41.832Z
+- Recorded fork run: d5ci1e50e3ee
+- Dispatched implementation fork d5ci1e50e3ee for issue #118 Delay after submit. Fork instructed to implement immediate submit feedback in TUI, avoid duplicate/non-canonical transcript issues, add real TmuxHarness E2E timing proof, perform manual real-agent tmux snapshot verification, and run Castor validation.
