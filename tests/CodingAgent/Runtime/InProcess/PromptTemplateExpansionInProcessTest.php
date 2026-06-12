@@ -5,20 +5,15 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\InProcess;
 
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
-use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
+use Ineersa\AgentCore\Domain\Tool\ToolCall;
+use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
-use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
-use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
-use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
-use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
-use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 
 /**
  * @covers \Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient
@@ -34,6 +29,9 @@ final class PromptTemplateExpansionInProcessTest extends IsolatedKernelTestCase
     /** @var FakeCapturingAgentRunner */
     private FakeCapturingAgentRunner $spyRunner;
 
+    /** @var FakeCapturingToolExecutor */
+    private FakeCapturingToolExecutor $spyToolExecutor;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -42,14 +40,19 @@ final class PromptTemplateExpansionInProcessTest extends IsolatedKernelTestCase
 
         // Install our spy runner before any session client is resolved.
         $this->spyRunner = new FakeCapturingAgentRunner();
+        $this->spyToolExecutor = new FakeCapturingToolExecutor();
 
         // Container set() only works before first resolution.
         // InProcessAgentSessionClient is not a shared/lazy service by default
-        // but the container caches after first get(). We set the spy before
+        // but the container caches after first get(). We set the spies before
         // any test code resolves the client.
         self::getContainer()->set(
             AgentRunnerInterface::class,
             $this->spyRunner,
+        );
+        self::getContainer()->set(
+            ToolExecutorInterface::class,
+            $this->spyToolExecutor,
         );
     }
 
@@ -67,21 +70,11 @@ final class PromptTemplateExpansionInProcessTest extends IsolatedKernelTestCase
     private function writeTemplate(string $name, string $content): void
     {
         // Write to the isolated project dir's .hatfield/prompts/
-        $dir = $this->getIsolatedCwd().'/.hatfield/prompts';
+        $dir = $this->isolatedCwd().'/.hatfield/prompts';
         if (!is_dir($dir)) {
             mkdir($dir, 0o755, true);
         }
         file_put_contents($dir.'/'.$name.'.md', $content);
-    }
-
-    private function getIsolatedCwd(): string
-    {
-        // The IsolatedKernelTestCase creates an isolated cwd as a property.
-        // Access it via reflection since it's private.
-        $ref = new \ReflectionProperty(IsolatedKernelTestCase::class, 'isolatedCwd');
-
-        /** @var string */
-        return $ref->getValue($this);
     }
 
     private function client(): InProcessAgentSessionClient
@@ -232,6 +225,36 @@ final class PromptTemplateExpansionInProcessTest extends IsolatedKernelTestCase
         self::assertCount(0, $this->spyRunner->steerMessages);
         self::assertCount(0, $this->spyRunner->followUpMessages);
     }
+
+    // ── send() passthrough ────────────────────────────────────────
+
+    public function testSendPassthroughForNonMatchingSlash(): void
+    {
+        $this->writeTemplate('review', 'expanded:$@');
+
+        // Non-matching slash command passes through unchanged.
+        $this->client()->send('run-1', new UserCommand(type: 'message', text: '/nonexistent foo'));
+
+        self::assertCount(1, $this->spyRunner->steerMessages);
+        self::assertSame('/nonexistent foo', $this->msgText($this->spyRunner->steerMessages[0]));
+    }
+
+    // ── shell_command non-expansion ────────────────────────────────
+
+    public function testShellCommandIsNotExpanded(): void
+    {
+        $this->writeTemplate('review', 'expanded:$@');
+
+        // shell_command text must NOT be expanded — the raw command
+        // text is passed to the tool executor unchanged.
+        $this->client()->send('run-1', new UserCommand(
+            type: 'shell_command',
+            text: '/review rm -rf',
+        ));
+
+        self::assertNotNull($this->spyToolExecutor->lastToolCall);
+        self::assertSame('/review rm -rf', $this->spyToolExecutor->lastToolCall->arguments['command']);
+    }
 }
 
 /**
@@ -278,5 +301,25 @@ final class FakeCapturingAgentRunner implements AgentRunnerInterface
     public function answerHuman(string $runId, string $questionId, mixed $answer): void
     {
         $this->answerHumanCalls[] = ['questionId' => $questionId, 'answer' => $answer];
+    }
+}
+
+/**
+ * @internal
+ */
+final class FakeCapturingToolExecutor implements ToolExecutorInterface
+{
+    public ?ToolCall $lastToolCall = null;
+
+    public function execute(ToolCall $toolCall): ToolResult
+    {
+        $this->lastToolCall = $toolCall;
+
+        return new ToolResult(
+            toolCallId: $toolCall->toolCallId,
+            toolName: $toolCall->toolName,
+            content: [['type' => 'text', 'text' => 'ok']],
+            isError: false,
+        );
     }
 }
