@@ -24,7 +24,7 @@ Can run in parallel with PT-02 after PT-01 lands.
 Status: IN-PROGRESS
 Branch: task/prompt-templates-03-tui-slash-command-dispatch
 Worktree: /home/ineersa/projects/agent-core-worktrees/prompt-templates-03-tui-slash-command-dispatch
-Fork run: t0wmivj7d2pf
+Fork run: i9u6u4tch52o
 PR URL:
 PR Status:
 Started: 2026-06-12T18:08:24.597Z
@@ -59,3 +59,8 @@ Completed:
 - Recorded fork run: t0wmivj7d2pf
 - Validation: first move_task quality gate: all steps OK except `test:tui` exit 124; phpunit log showed OK (20 tests, 59 assertions) in 91.948s, just over the 90s check step timeout; LLM_MODE=true castor test:tui --filter=PromptTemplateSlashCommandE2ETest — OK (1 test, 1 assertion) after wait removal; castor cs-check — OK (0 fixes); fork reported full LLM_MODE=true castor test:tui had unrelated/pre-existing LLM response timeouts in other E2E tests during its run; PT-03 test passed
 - Summary: After first CODE-REVIEW move attempt, Castor quality gate failed only because `test:tui` hit the 90s step timeout although PHPUnit reported OK at 91.948s. Fix fork `t0wmivj7d2pf` committed `9d5f3c5d`, removing the non-essential optional 15s post-assertion assistant/error wait from `PromptTemplateSlashCommandE2ETest` while preserving the real TmuxHarness + test LLM core proof that expanded `Review: <marker>` appears in tmux history. Worktree remains clean at HEAD `9d5f3c5d`. Diff stat now 7 files changed, 1089 insertions, 127 deletions.
+
+## Task workflow update - 2026-06-12T21:50:30.072Z
+- Recorded fork run: i9u6u4tch52o
+- Validation: LLM_MODE=true castor test:tui --filter=PromptTemplateSlashCommandE2ETest — OK (1 test, 1 assertion); castor cs-check — OK (0 fixes); castor deptrac — OK (0 violations, 0 errors); castor phpstan — OK (0 errors, 0 file_errors)
+- Summary: Per user instruction, skipped reviewer step and launched merge fork `i9u6u4tch52o`. Fork merged current `origin/main` (`a0566611`) into PT-03 branch with `--no-ff`, creating clean merge commit `ed200677` with zero conflicts. PT-03 feature diff remains 7 files, +1089/-127. Worktree clean and ready for CODE-REVIEW retry.
