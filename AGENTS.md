@@ -25,6 +25,17 @@ Key commands: `castor check` (full validation), `castor test`, `castor deptrac`,
 
 **Load the `testing` skill** when: running any test, writing tests, debugging test failures, touching runtime/TUI/Messenger code, or needing the full command reference.
 
+## ⚠️ MANDATORY: Read testing docs before touching tests or running QA
+
+Before writing, editing, debugging, reviewing, or running tests — and before touching TUI/runtime/Messenger/DB code that requires validation — every agent, fork, and scout MUST:
+
+1. **Load the `testing` skill** (`.agents/skills/testing/SKILL.md`).
+2. **Read `tests/AGENTS.md`** for shared test infrastructure, helpers, isolation conventions, TUI E2E patterns, controller E2E patterns, and what NOT to test.
+
+This must happen before proposing a test strategy, adding tests, running Castor tests, or handing off validation results. Forks must mention in their handoff that they read both files and followed the shared conventions. A fork handoff that omits this for test-related work is incomplete — the parent agent must not accept the handoff as valid for CODE-REVIEW or DONE without confirming the conventions were followed.
+
+Before re-running `castor check`, `castor test:controller`, or `castor test:tui`, kill stale worker processes from prior runs (e.g., `messenger:consume`, `agent --controller`, orphaned PHPUnit/Castor children). Orphaned consumers steal queue messages and can make passing tests appear hung.
+
 ## E2E Testing Strategy
 
 All E2E tests use `llama_cpp_test/test` (port 9052). Test groups: `#[Group('llm-real')]`, `#[Group('tui-e2e')]`. Tests use `var/tmp/test-{uuid}` isolation, never real `.hatfield/sessions/`.
