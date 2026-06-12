@@ -164,3 +164,6 @@ Completed:
 - Recorded fork run: m1al6j9alq20
 - Validation: castor check with broken llama.cpp generation: fails fast in ~4.5s with clear diagnostic (per fork handoff).
 - Summary: Fork m1al6j9alq20 completed fail-fast LLM generation readiness work. Added Castor curl-based generation preflight, PHPUnit stop-on-error/stop-on-failure for affected E2E tasks, HttpClient timeout defaults/test wiring, and testing docs. Proved castor check now fails in ~4.5s with clear llama.cpp generation diagnostic instead of burning 90s TUI/controller timeouts. Final commits on task/backlog-open-issues-cleanup: 4e11fd7a fix(castor): fail-fast LLM generation readiness check; 227396e0 docs(testing): document LLM generation preflight and stop-on-failure behavior.
+
+## Task workflow update - 2026-06-12T20:25:39.953Z
+- Pushed task/backlog-open-issues-cleanup to origin after fail-fast LLM generation readiness work. Branch now contains #120 implementation, AGENTS/testing docs hardening, and fail-fast Castor/test docs commits.
