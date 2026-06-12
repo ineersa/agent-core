@@ -6,6 +6,7 @@ use Castor\Attribute\AsTask;
 
 use function Castor\run;
 use function CastorTasks\build_idea_run_config_xml;
+use function CastorTasks\check_llm_generation_ready;
 use function CastorTasks\is_llm_mode;
 use function CastorTasks\persist_process_output;
 use function CastorTasks\relative_report_path;
@@ -139,6 +140,12 @@ function check(): void
     if (0 !== $migrate->getExitCode()) {
         fail_quality('test database migration failed: '.$migrate->getErrorOutput());
     }
+
+    // Fail-fast: verify llama.cpp can actually generate before burning
+    // time on controller / llm-real / TUI E2E steps.  Health-only checks
+    // are insufficient — the server can respond to /health and /v1/models
+    // while generation is stuck (corrupted model load, slots busy).
+    check_llm_generation_ready();
 
     $failures = [];
     $timings = [];
@@ -1198,6 +1205,8 @@ function phar_clean(): void
 #[AsTask(name: 'test:tui', description: 'Run TUI e2e snapshot tests (requires tmux), using the built PHAR')]
 function test_tui(string $filter = ''): void
 {
+    check_llm_generation_ready();
+
     $pharPath = phar_path_for_test_task();
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
@@ -1227,6 +1236,8 @@ function test_tui(string $filter = ''): void
 #[AsTask(name: 'test:llm-real', description: 'Run opt-in real llama.cpp smoke test against configured llama_cpp provider')]
 function test_llm_real(string $filter = ''): void
 {
+    check_llm_generation_ready();
+
     $pharPath = phar_path_for_test_task();
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
@@ -1255,6 +1266,8 @@ function test_llm_real(string $filter = ''): void
 #[AsTask(name: 'test:controller', description: 'Run controller E2E smoke test (spawns --controller, sends JSONL)')]
 function test_controller(string $filter = ''): void
 {
+    check_llm_generation_ready();
+
     $pharPath = phar_path_for_test_task();
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
@@ -1272,6 +1285,8 @@ function test_controller(string $filter = ''): void
 #[AsTask(name: 'test:tui-update', description: 'Run TUI e2e tests and update golden snapshots')]
 function test_tui_update(string $filter = ''): void
 {
+    check_llm_generation_ready();
+
     $pharPath = phar_path_for_test_task();
     $pharEnv = '' !== $pharPath ? 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' ' : '';
 
@@ -1741,7 +1756,7 @@ function phpunit_risky_summary(string $logPath): string
  */
 function phpunit_strict_issue_flags(): string
 {
-    return '--fail-on-all-issues --display-all-issues';
+    return '--stop-on-error --stop-on-failure --fail-on-all-issues --display-all-issues';
 }
 
 function run_quality_step(string $stepName, string $command, string $junitFilename, string $logFilename): void

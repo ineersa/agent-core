@@ -14,7 +14,9 @@ use Symfony\AI\Platform\Bridge\Generic\Factory as GenericFactory;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Factory as OpenAICodexFactory;
 use Symfony\AI\Platform\ProviderInterface;
+use Symfony\Component\HttpClient\HttpClient;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
+use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 /**
  * Creates Symfony AI Provider instances from Hatfield AI settings.
@@ -35,6 +37,7 @@ class SymfonyAiProviderFactory
         private readonly EventDispatcherInterface $eventDispatcher,
         private readonly ?CodexAuthStorage $codexAuth = null,
         private readonly ?LoggerInterface $logger = null,
+        private readonly ?HttpClientInterface $httpClient = null,
     ) {
     }
 
@@ -72,6 +75,30 @@ class SymfonyAiProviderFactory
     }
 
     /**
+     * Return a configured HttpClient for outgoing LLM requests.
+     *
+     * When an HttpClient is explicitly injected (e.g. test environment
+     * with short timeout via services_test.yaml), use it directly.
+     * Otherwise create a default one with a permissive fallback timeout
+     * so a stuck generation endpoint cannot hang the agent indefinitely.
+     */
+    private function getHttpClient(): HttpClientInterface
+    {
+        if (null !== $this->httpClient) {
+            return $this->httpClient;
+        }
+
+        // No explicit timeout configured — use a generous default
+        // (30s) that still prevents infinite hangs.  For the local
+        // llama_cpp_test/test smoke model this is still too long, but
+        // Castor-level preflight (check_llm_generation_ready) catches
+        // stuck generation in <5s before tests start.
+        $timeout = (int) ($_ENV['HATFIELD_LLM_HTTP_TIMEOUT'] ?? 30);
+
+        return HttpClient::create(['timeout' => $timeout]);
+    }
+
+    /**
      * Build a single provider from Hatfield config + a projected model catalog.
      */
     private function buildProvider(AiProviderConfig $provider, ProjectedSymfonyModelCatalog $projectedCatalog): ProviderInterface
@@ -83,7 +110,7 @@ class SymfonyAiProviderFactory
         return GenericFactory::createProvider(
             baseUrl: $provider->baseUrl,
             apiKey: $this->resolveApiKey($provider->apiKey),
-            httpClient: null,
+            httpClient: $this->getHttpClient(),
             modelCatalog: $projectedCatalog,
             contract: null,
             eventDispatcher: $this->eventDispatcher,
@@ -118,7 +145,7 @@ class SymfonyAiProviderFactory
             baseUrl: $baseUrl,
             accessToken: $record->access,
             accountId: $record->accountId,
-            httpClient: null,
+            httpClient: $this->getHttpClient(),
             modelCatalog: $projectedCatalog,
             contract: null,
             eventDispatcher: $this->eventDispatcher,

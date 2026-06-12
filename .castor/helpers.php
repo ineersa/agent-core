@@ -918,6 +918,64 @@ function xml_escape(string $value): string
     return htmlspecialchars($value, \ENT_XML1 | \ENT_QUOTES, 'UTF-8');
 }
 
+/**
+ * Fail-fast check: verify the test LLM (llama_cpp_test/test on port 9052)
+ * can actually complete a tiny generation request.
+ *
+ * Health-only checks are insufficient — the server can report /health and
+ * /v1/models while generation is stuck (e.g. corrupted model load, all
+ * slots busy).  This sends a minimal chat completion and fails within 5s
+ * if no valid response arrives, preventing 90s+ timeouts in
+ * test:tui / test:llm-real / test:controller.
+ *
+ * Called before any E2E step that depends on real LLM generation.
+ */
+function check_llm_generation_ready(): void
+{
+    $baseUrl = 'http://192.168.2.38:9052';
+    $model = 'test';
+    $url = $baseUrl.'/v1/chat/completions';
+    $payload = '{"model":"'.$model.'","messages":[{"role":"user","content":"hi"}],"max_tokens":1,"temperature":0,"stream":false}';
+
+    $cmd = 'timeout --kill-after=2s 5s curl -sS -m 4 -o /dev/null -w "%{http_code}"'
+        .' -H "Content-Type: application/json"'
+        .' -d '.escapeshellarg($payload)
+        .' '.escapeshellarg($url);
+
+    $process = run_quiet_command($cmd);
+
+    $httpCode = (int) trim($process->getOutput());
+
+    if (200 === $httpCode && 0 === $process->getExitCode()) {
+        echo 'llama.cpp generation: ok'."\n";
+
+        return;
+    }
+
+    $diagnostic = \sprintf(
+        "\n".
+        "llama.cpp generation readiness check FAILED\n".
+        "  Endpoint: %s\n".
+        "  Model: %s\n".
+        "  Sent: %s\n".
+        "  HTTP status: %d (curl exit: %d)\n".
+        "\n".
+        "  The server responds to /health and /v1/models but cannot complete a\n".
+        "  minimal generation request.  Make sure llama.cpp is running, the\n".
+        "  model is loaded correctly, and no generation slots are stuck.\n".
+        "  Check manually: curl -sS -m 5 -d '%s' %s\n",
+        $url,
+        $model,
+        $payload,
+        $httpCode,
+        $process->getExitCode(),
+        $payload,
+        $url,
+    );
+
+    throw new \RuntimeException($diagnostic);
+}
+
 function build_idea_run_config_xml(string $commandName, string $description): string
 {
     $configurationName = 'castor '.$commandName;
