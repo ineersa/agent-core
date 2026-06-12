@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface;
 use Ineersa\AgentCore\Contract\Model\PlatformInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Model\CostCalculatorInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
@@ -50,6 +51,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         private iterable $transformContextHooks,
         private iterable $convertToLlmHooks,
         private ?LlmStreamObserverInterface $streamObserver,
+        private ?CostCalculatorInterface $costCalculator,
         private LoggerInterface $logger,
     ) {
     }
@@ -89,6 +91,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             $cancelToken,
             $request->input->runId ?? '',
             $request->input->stepId,
+            $request->model,
             $requestSummary,
         );
     }
@@ -217,6 +220,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         CancellationTokenInterface $cancelToken,
         string $runId,
         ?string $stepId,
+        string $modelName = '',
         array $requestSummary = [],
     ): PlatformInvocationResult {
         $aborted = false;
@@ -247,7 +251,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 $requestSummary,
             ));
 
-            return $this->errorResult($deltas, $exception, $deferredResult, $requestSummary);
+            return $this->errorResult($deltas, $exception, $deferredResult, $modelName, $requestSummary);
         }
 
         $this->notifyStreamEnd($runId, $stepId);
@@ -261,7 +265,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         return new PlatformInvocationResult(
             assistantMessage: $assistantMessage,
             deltas: $deltas,
-            usage: $this->extractUsage($deferredResult),
+            usage: $this->extractUsage($deferredResult, $modelName),
             stopReason: $aborted ? 'aborted' : $this->resolveStopReason($assistantMessage),
             error: null,
         );
@@ -383,7 +387,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
      * @param list<DeltaInterface> $deltas
      * @param array<string, mixed> $requestSummary Privacy-safe request summary
      */
-    private function errorResult(array $deltas, \Throwable $exception, DeferredResult $deferredResult, array $requestSummary = []): PlatformInvocationResult
+    private function errorResult(array $deltas, \Throwable $exception, DeferredResult $deferredResult, string $modelName = '', array $requestSummary = []): PlatformInvocationResult
     {
         $error = [
             'type' => $exception::class,
@@ -406,7 +410,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         return new PlatformInvocationResult(
             assistantMessage: $this->buildAssistantMessage($deltas),
             deltas: $deltas,
-            usage: $this->extractUsage($deferredResult),
+            usage: $this->extractUsage($deferredResult, $modelName),
             stopReason: 'error',
             error: $error,
         );
@@ -530,7 +534,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     /**
      * @return array<string, int|float>
      */
-    private function extractUsage(DeferredResult $deferredResult): array
+    private function extractUsage(DeferredResult $deferredResult, string $modelName = ''): array
     {
         $tokenUsage = $deferredResult->getMetadata()->get('token_usage');
 
@@ -538,7 +542,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             return [];
         }
 
-        return array_filter([
+        $usage = array_filter([
             'input_tokens' => $tokenUsage->getPromptTokens(),
             'output_tokens' => $tokenUsage->getCompletionTokens(),
             'thinking_tokens' => $tokenUsage->getThinkingTokens(),
@@ -546,6 +550,18 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             'cached_tokens' => $tokenUsage->getCachedTokens(),
             'total_tokens' => $tokenUsage->getTotalTokens(),
         ], static fn (mixed $value): bool => null !== $value);
+
+        // Compute cost from model pricing and token usage.
+        // Cost flows through LlmStepResult → events → RuntimeEventTranslator
+        // → RuntimeEvent → UsageProjection::accumulate() → TUI footer.
+        if ('' !== $modelName && null !== $this->costCalculator) {
+            $cost = $this->costCalculator->calculateCost($modelName, $usage);
+            if (0.0 !== $cost) {
+                $usage['cost'] = $cost;
+            }
+        }
+
+        return $usage;
     }
 
     /**

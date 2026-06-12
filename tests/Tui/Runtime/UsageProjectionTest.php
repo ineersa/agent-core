@@ -41,7 +41,11 @@ final class UsageProjectionTest extends TestCase
         // Per-turn fields must be reset
         self::assertSame(0, $this->usage->turnOutputTokens);
         self::assertSame(0.0, $this->usage->llmEndTime);
-        self::assertSame(0, $this->usage->latestInputTokens);
+
+        // latestInputTokens must be PRESERVED across turns to prevent the
+        // context window percentage footer from flickering to 0% during
+        // Working... between TurnStarted and the next response.
+        self::assertSame(500, $this->usage->latestInputTokens);
 
         // turnStartTime must be set to a recent timestamp
         self::assertGreaterThan(0.0, $this->usage->turnStartTime);
@@ -173,6 +177,29 @@ final class UsageProjectionTest extends TestCase
         self::assertEqualsWithDelta(0.0018, $this->usage->totalCost, 0.00001);
         // Per-turn reflects only turn 2
         self::assertSame(20, $this->usage->turnOutputTokens);
+    }
+
+    // ── latestInputTokens preservation across turns ──
+
+    public function testLatestInputTokensPreservedAcrossReset(): void
+    {
+        // Simulate turn 1: accumulate sets latestInputTokens
+        $event1 = $this->makeAssistantMessageCompletedEvent([
+            'usage' => ['input_tokens' => 300, 'output_tokens' => 100],
+        ]);
+        $this->usage->accumulate($event1);
+        self::assertSame(300, $this->usage->latestInputTokens);
+
+        // Turn 2 starts: reset per-turn fields but PRESERVE latestInputTokens
+        $this->usage->resetTurn();
+        self::assertSame(300, $this->usage->latestInputTokens, 'latestInputTokens must survive reset so context % footer does not flicker to 0% during Working');
+
+        // Turn 2 completes: fresh usage overwrites the preserved value
+        $event2 = $this->makeAssistantMessageCompletedEvent([
+            'usage' => ['input_tokens' => 500, 'output_tokens' => 50],
+        ]);
+        $this->usage->accumulate($event2);
+        self::assertSame(500, $this->usage->latestInputTokens, 'Fresh turn usage must replace the carried-forward value');
     }
 
     // ── Cost edge cases ──
