@@ -100,8 +100,9 @@ final class ModelControlListener implements TuiListenerRegistrar
                 return;
             }
 
-            // Update footer state for immediate refresh (no persistent status entry)
-            // Use display reasoning so non-thinking models reset footer color to off
+            // Update footer state for immediate refresh.
+            // getDisplayReasoning returns 'off' for non-thinking models so
+            // the diamond/model colour resets correctly.
             $state->footerModel = FooterStateInitializer::shortModelName($nextRef->toString());
             $state->footerReasoning = $modelService->getDisplayReasoning($state->sessionId);
             $state->contextWindow = FooterStateInitializer::resolveContextWindowForRef($appConfig, $nextRef);
@@ -135,17 +136,24 @@ final class ModelControlListener implements TuiListenerRegistrar
             }
             $event->stopPropagation();
 
-            // Try to cycle reasoning.  Even when the model does not support
-            // thinking levels (null return), we still show the current level
-            // so the user always gets visual feedback on Shift+Tab.
+            // Only cycle when the current model supports thinking levels.
+            // When the model does not support thinking, the handler returns
+            // null and we do nothing — no status entry, no footer colour
+            // change, no misleading visual feedback.
             $nextLevel = $modelService->cycleReasoningForCurrentModel($state->sessionId);
-            $currentLevel = $nextLevel ?? $modelService->getDisplayReasoning($state->sessionId);
+            if (null === $nextLevel) {
+                return;
+            }
 
-            // Update footer state for immediate refresh
-            $state->footerReasoning = $currentLevel;
+            // Update footer colour through the state field.
+            // The FooterStateSegmentProvider reads this to colour the ◆
+            // diamond and model name with the appropriate Thinking* token.
+            $state->footerReasoning = $nextLevel;
 
-            // Show the reasoning level in the status panel
-            $screen->setStatus('reasoning', $currentLevel);
+            // Show the new level in the status panel ONLY (not the footer bar).
+            // We set the registry directly so the reasoning key does NOT leak
+            // into FooterDataProvider and its right-side footer text.
+            $screen->registry()->setStatus('reasoning', $nextLevel);
             $screen->refresh();
         }, priority: 95);
     }

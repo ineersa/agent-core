@@ -71,13 +71,16 @@ final class ReasoningCycleTest extends TestCase
         // Wait for agent boot (logo █ visible).
         $this->tmux->waitForCaptureContains($pane, '█', 10.0);
 
-        // At startup, the status panel should already show the reasoning level
-        // (seeded by FooterStateListener from the default_reasoning config).
+        // At startup, reasoning must NOT appear as a status-panel entry.
+        // The status panel renders entries as '  key           value' lines
+        // (12-char left-aligned key).  The word 'reasoning' may appear in
+        // other contexts (help text, hotkey hints, etc.), so we test for the
+        // specific status-panel rendering format.
         $initial = $this->tmux->capturePlainWithHistory($pane, 500);
-        self::assertStringContainsString(
-            'reasoning',
+        self::assertDoesNotMatchRegularExpression(
+            '/^  \breasoning\b/m',
             $initial,
-            'Status panel should show reasoning level at startup, not only after Shift+Tab',
+            'Reasoning must not appear as a status-panel key-label at startup',
         );
 
         // Send Shift+Tab to cycle reasoning from 'off' → 'minimal'.

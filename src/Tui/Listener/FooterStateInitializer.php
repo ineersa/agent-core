@@ -57,7 +57,7 @@ final readonly class FooterStateInitializer
         }
 
         $state->footerModel = self::shortModelName($fullModel);
-        $state->footerReasoning = $reasoning;
+        $state->footerReasoning = self::clampReasoningForModel($this->appConfig, $fullModel, $reasoning);
         $state->contextWindow = self::resolveContextWindow($this->appConfig, $fullModel);
 
         if (0.0 === $state->sessionStartTime) {
@@ -147,6 +147,44 @@ final readonly class FooterStateInitializer
         $definition = $catalog->getModel($ref);
 
         return null !== $definition ? ($definition->contextWindow ?? 0) : 0;
+    }
+
+    /**
+     * Clamp the reasoning level for the resolved model.
+     *
+     * When the active model does not support thinking levels (e.g. llama_cpp
+     * without reasoning:true or a provider with supports_thinking_levels: false),
+     * the footer diamond/model colour must be reset to 'off' regardless of what
+     * session metadata / defaults / request carry.  Otherwise a stale high/xhigh
+     * level from a previous thinking-capable session leaks into a non-thinking
+     * session and confuses the user with an incorrect colour indicator.
+     */
+    private static function clampReasoningForModel(
+        AppConfig $appConfig,
+        string $fullModel,
+        string $reasoning,
+    ): string {
+        if ('' === $fullModel || '' === $reasoning) {
+            return $reasoning;
+        }
+
+        $catalog = $appConfig->catalog;
+        if (null === $catalog) {
+            return $reasoning;
+        }
+
+        $ref = AiModelReference::tryParse($fullModel);
+        if (null === $ref) {
+            return $reasoning;
+        }
+
+        // Non-thinking model: force reasoning to 'off' so the footer
+        // colour indicator stays neutral.
+        if (!$catalog->supportsThinkingLevels($ref)) {
+            return 'off';
+        }
+
+        return $reasoning;
     }
 
     private static function resolveContextWindow(AppConfig $appConfig, string $fullModel): int

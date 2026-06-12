@@ -182,7 +182,6 @@ final class ChatScreen
             function (RenderContext $symfonyCtx): string {
                 $entries = $this->registry->getStatusEntries();
                 $this->statusPanelRenderable->setEntries($entries);
-                $this->footerDataProvider->setStatusEntries($entries);
                 $tuiCtx = $this->tuiContext($symfonyCtx);
 
                 return implode("\n", $this->statusPanelRenderable->render($tuiCtx));

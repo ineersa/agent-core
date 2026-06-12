@@ -31,12 +31,6 @@ final readonly class FooterStateListener implements TuiListenerRegistrar
             new FooterStateSegmentProvider($context->state),
         );
 
-        // Seed the status panel with the current reasoning level so the
-        // user always sees it at startup, even before the first Shift+Tab.
-        if ('' !== $context->state->footerReasoning) {
-            $context->screen->setStatus('reasoning', $context->state->footerReasoning);
-        }
-
         $screen = $context->screen;
         $context->ticks->add(static function () use ($screen): ?bool {
             $screen->refresh();
