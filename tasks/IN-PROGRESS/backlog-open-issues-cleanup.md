@@ -234,3 +234,7 @@ Completed:
 
 ## Task workflow update - 2026-06-12T22:23:53.532Z
 - User decided to manually validate GitHub issue #121 fix and said no need to continue the dedicated E2E proof follow-up. Current #121 implementation remains commit ab1c5eeb plus task metadata commits, awaiting user validation before merge/close.
+
+## Task workflow update - 2026-06-12T22:26:17.972Z
+- Validation: User manually validated #121 fix before merge.; Fork cxg4zugevd6l reported full LLM_MODE=true castor check passed all 14 steps before merge.
+- Summary: completed: merged GitHub issue #121 fix into main via merge commit 80b8ed7c, pushed to origin/main, closed issue #121 with comment. Synced task/backlog-open-issues-cleanup to origin/main via rebase (no reset) and pushed task branch.
