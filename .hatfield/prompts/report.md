@@ -21,11 +21,12 @@ mkdir -p .hatfield/tmp/reports/$(date +%Y%m%d-%H%M%S)
 ```
 
 ### TUI Snapshot
-- If inside tmux: `tmux capture-pane -p > .hatfield/tmp/reports/<ts>/snapshot.ansi`
-- If NOT inside tmux: ask the user for a screenshot, or state "no snapshot available" in the issue.
+`.hatfield/tmp/tui/snapshots` is where user taken snapshots are, check if there is recent/fresh snapshot from past 1-2 minutes. 
+If not there, ask user to take one with C-a + S, after user will send continuation check a directory to get a snapshot file.
 
 ### Run Logs
-Gather recent/current session logs if they exist (`.hatfield/sessions/*/events.jsonl`, `.hatfield/sessions/*/state.json`, `var/log/*.log` relevant lines, `var/reports/*`). **Redact aggressively**: strip API keys, tokens, passwords, raw LLM prompts/responses, environment variable listings, and any other secrets. Save sanitized copies into the timestamped directory.
+Gather recent/current session logs if they exist (`.hatfield/sessions/*/events.jsonl`, `.hatfield/sessions/*/state.json`, `var/log/*.log` relevant lines, `var/reports/*`). **Redact aggressively**: strip API keys, tokens, passwords, raw LLM prompts/responses, environment variable listings, and any other secrets. 
+Save sanitized copies into the timestamped directory.
 
 ### Session and Working Directory
 - Session ID: check `HATFIELD_SESSION_ID` or list `.hatfield/sessions/` for the most recent.
@@ -58,6 +59,7 @@ Gather recent/current session logs if they exist (`.hatfield/sessions/*/events.j
 - OS / terminal:
 - Hatfield version (if known):
 - Model / provider:
+- Branch / worktree:  
 - Running in tmux: yes / no
 ```
 
@@ -65,7 +67,6 @@ Gather recent/current session logs if they exist (`.hatfield/sessions/*/events.j
 
 In order of preference:
 1. **`gh issue create --repo ineersa/agent-core`** — if the GitHub CLI is installed and authenticated. Pipe or pass the title and body.
-2. **Prefilled browser URL** — if `gh` is unavailable, construct `https://github.com/ineersa/agent-core/issues/new?title=<urlencode(title)>&body=<urlencode(body)>` and tell the user to open and submit it.
 
 ## 5. Include Diagnostic Artifacts
 
