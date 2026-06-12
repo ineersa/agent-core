@@ -97,14 +97,14 @@ B) **Leaf event** — Append a `run.leaf_set` event to `events.jsonl` each time 
 - Validation uses Castor per project rules; runtime/Messenger changes require full `castor check` before CODE-REVIEW.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: DONE
 Branch: task/session-05-turn-tree-model-and-replay
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay
 Fork run: sgk8spvhpkhn
 PR URL: https://github.com/ineersa/agent-core/pull/128
-PR Status: open
+PR Status: merged
 Started: 2026-06-12T01:41:43.505Z
-Completed:
+Completed: 2026-06-12T16:13:57.640Z
 
 ## Work log
 - Created: 2026-06-07T20:46:01.617Z
@@ -205,3 +205,12 @@ Castor Check Output SHA256: 15f51d5cf4aba80de58ef1fa97d43f52f7a114c15d218958d910
 - Recorded fork run: sgk8spvhpkhn
 - Validation: Verified `git show --stat --find-renames HEAD`: 9 files changed, 3 renames, 20 insertions, 28 deletions; expected namespace/import/doc/test changes only.; `castor test --filter=TurnTreeProjectorTest` ok (13 tests, 69 assertions).; `castor test --filter=RunStateReplayServiceTest` ok (25 tests, 107 assertions).; `castor test --filter=ReplayServiceTest` ok (28 tests, 127 assertions).; `castor phpstan --path src/AgentCore` ok (errors=0, file_errors=0).; Targeted test phpstan ok for `tests/AgentCore/Domain/Run/TurnTreeProjectorTest.php`, `tests/AgentCore/Application/Handler/RunStateReplayServiceTest.php`, and `tests/AgentCore/Application/Handler/ReplayServiceTest.php`.; `castor deptrac` ok (violations=0, errors=0).; `castor cs-check` ok (files_fixed=0).; Stale reference grep for old `Application\Handler\TurnTree*` and `previewForTitle` returned no matches.
 - Summary: Review-iteration fork completed. Commit `2588049b Address turn tree PR review comments` addresses all PR #128 inline comments: `TurnTreeProjector` moved to `Ineersa\AgentCore\Domain\Run`, `TurnTreeReplayFilter` moved to `Ineersa\AgentCore\Application\Replay`, imports/docs/tests updated, manual truncation replaced with Symfony String `u()->truncate()`, and one-use `previewForTitle()` removed/inlined. Worktree verified clean and ahead of remote by this commit only.
+
+## Task workflow update - 2026-06-12T16:13:57.640Z
+- Moved IN-PROGRESS → DONE.
+- Merged task/session-05-turn-tree-model-and-replay into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay.
+- Pulled integration checkout: Already up to date..
+- Validation: PR #128 state: MERGED.; Integration checkout fast-forwarded to `origin/main` commit `fc0f81f1` (Merge pull request #128).; Post-merge `LLM_MODE=true castor check` passed on main.; PHAR ensure/smoke ok.; Unit/integration shards ok: agent-core 292 tests/1263 assertions; coding-agent shards 324/1057, 370/1019, 399/1001, 340/891; tui suite 664/1660; platform 54/221.; Controller E2E ok (1 test, 7 assertions).; LLM-real E2E ok (5 tests, 51 assertions).; TUI E2E ok (16 tests, 51 assertions).; `deptrac` ok; `phpstan` ok (errors=0, file_errors=0); `cs-check` ok.
+- Summary: Completing task board on main after PR #128 was merged and main was fast-forwarded to `fc0f81f1`. Recreated the task worktree only to recover workflow metadata because main had the task file in IN-PROGRESS after the GitHub PR merge. Implementation is already present on main; post-merge `LLM_MODE=true castor check` passed.
