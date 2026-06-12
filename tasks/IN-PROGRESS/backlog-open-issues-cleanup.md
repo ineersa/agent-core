@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: bd30wksz3kbs
+Fork run: m1al6j9alq20
 PR URL:
 PR Status:
 Started: 2026-06-12T16:54:23.580Z
@@ -159,3 +159,8 @@ Completed:
 
 ## Task workflow update - 2026-06-12T20:15:30.878Z
 - Fork ke68anqevh11 did not complete handoff cleanly; user observed it temporarily removed Castor preflights to verify in-test timeout behavior, ran castor check, and it still hung. Follow-up required: make in-test preflight throw/exit hard on generation timeout, add stop-on-error behavior for affected E2E Castor invocations, prove a single TUI test fails fast even without Castor preflight, then restore Castor preflight.
+
+## Task workflow update - 2026-06-12T20:24:55.004Z
+- Recorded fork run: m1al6j9alq20
+- Validation: castor check with broken llama.cpp generation: fails fast in ~4.5s with clear diagnostic (per fork handoff).
+- Summary: Fork m1al6j9alq20 completed fail-fast LLM generation readiness work. Added Castor curl-based generation preflight, PHPUnit stop-on-error/stop-on-failure for affected E2E tasks, HttpClient timeout defaults/test wiring, and testing docs. Proved castor check now fails in ~4.5s with clear llama.cpp generation diagnostic instead of burning 90s TUI/controller timeouts. Final commits on task/backlog-open-issues-cleanup: 4e11fd7a fix(castor): fail-fast LLM generation readiness check; 227396e0 docs(testing): document LLM generation preflight and stop-on-failure behavior.
