@@ -115,3 +115,8 @@ Completed:
 ## Task workflow update - 2026-06-12T18:34:39.388Z
 - Summary: Issue #119 investigation completed by scout. Root cause: terminals generally do not send image clipboard data on Ctrl+V; Symfony TUI/editor paste handling is text-only and strips binary/control bytes; runtime user message path is text-only while image support currently exists via the agent-side view_image tool. Implementation needs product/UX decisions before dispatching a fork.
 - Paused before implementing #119 to ask user product questions as requested. Key decisions: supported terminals/protocols, where pasted images should be stored, whether pasted image inserts a path/markdown reference vs direct attachment, and desired unsupported-terminal fallback.
+
+## Task workflow update - 2026-06-12T18:41:58.561Z
+- Validation: Created tracked task: tasks/TODO/tui-image-paste-support.md.; Closed GitHub issue #119 via gh issue close with implementation-as-separate-task comment.
+- Summary: Issue #119 was classified as a larger feature/design task rather than a quick backlog fix. Created tasks/TODO/tui-image-paste-support.md with scout findings and acceptance criteria, then closed GitHub issue #119 with a comment pointing to the task.
+- No code implementation for #119 in backlog cleanup. Proceed to next open issue after task creation/closure.
