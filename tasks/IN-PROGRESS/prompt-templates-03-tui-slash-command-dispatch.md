@@ -24,7 +24,7 @@ Can run in parallel with PT-02 after PT-01 lands.
 Status: IN-PROGRESS
 Branch: task/prompt-templates-03-tui-slash-command-dispatch
 Worktree: /home/ineersa/projects/agent-core-worktrees/prompt-templates-03-tui-slash-command-dispatch
-Fork run: cqbtioutbwxy
+Fork run: mzrr2yggobkk, wnmevhdws146, sjfyn0g44gz2
 PR URL:
 PR Status:
 Started: 2026-06-12T18:08:24.597Z
@@ -49,3 +49,8 @@ Completed:
 - Recorded fork run: cqbtioutbwxy
 - Validation: castor test --filter=PromptTemplateCommandRegistrarTest — OK (9 tests, 27 assertions); castor test --filter=SubmitListenerDispatchRuntimeTest — OK (11 tests, 47 assertions); LLM_MODE=true castor test:tui --filter=PromptTemplateSlashCommandE2ETest — OK (1 test, 1 assertion; real TmuxHarness + test LLM proof); castor test — OK (7 suites, 2486 tests, 0 failures); castor deptrac — OK (0 violations); castor phpstan — OK (0 errors); castor cs-check — OK (0 fixes); Note from fork: branch merge-base with origin/main is stale (`7e6e7b0f`); rebase before PR/code-review phase is recommended.
 - Summary: Implementation fork completed and committed `c7adbed7` (`PT-03: TUI prompt-template slash command registration and DispatchRuntime forwarding`). Worktree clean on branch `task/prompt-templates-03-tui-slash-command-dispatch`. Diff stat against `origin/main...HEAD`: 6 files changed, 1002 insertions, 118 deletions. Implemented `PromptTemplateCommandRegistrar` with priority -100, priority-aware TUI listener iterator wiring, `SubmitListener` DispatchRuntime forwarding through shared runtime dispatch helper, unit tests for registrar and SubmitListener behavior, and mandatory TmuxHarness E2E proof for `/review <marker>` prompt template submission. Scope exclusions respected: no docs/PT-04 work, no built-ins, no CommandMetadata argument-hint changes, no runtime/client PT-02 changes.
+
+## Task workflow update - 2026-06-12T19:20:05.313Z
+- Recorded fork run: mzrr2yggobkk, wnmevhdws146, sjfyn0g44gz2
+- Validation: reviewer initial verdict: APPROVE WITH SUGGESTIONS — actionable findings addressed by forks; reviewer follow-up verdict: REQUEST CHANGES — immediate working indicator regression from stale base fixed by rebase/fix fork; reviewer final verdict: APPROVED; castor test — OK: agent-core 292/1263, coding-agent-1 286/816, coding-agent-2 382/990, coding-agent-3 413/1112, coding-agent-4 375/1114, tui 686/1746, platform 54/221; total 2488 tests, 0 failures; LLM_MODE=true castor test:tui — OK (20 tests, 59 assertions, 0 failures, 0 skipped); castor deptrac — OK (0 violations, 0 errors); castor phpstan — OK (0 errors); castor cs-check — OK (0 fixes)
+- Summary: PT-03 task-to-pr review completed. Initial reviewer returned APPROVE WITH SUGGESTIONS; fix fork `mzrr2yggobkk` committed `d00d0ab8` addressing draft-promotion/shell-restart DispatchRuntime test coverage, DispatchRuntime docblock, registrar test comments, and llm-real E2E group. Follow-up fork `wnmevhdws146` committed `f6a18a65` addressing remaining low-risk NTHs (handler reuse, clearer error-activity test naming, TestDirectoryIsolation for draft-promotion sessions). Final reviewer then found a stale-base regression against origin/main immediate working feedback; rebase/fix fork `sjfyn0g44gz2` rebased branch onto current origin/main and produced final HEAD `41202988`, preserving origin/main immediate `Working...` forced-render behavior inside shared `dispatchToRuntime()`. Final reviewer verdict: APPROVED. Worktree clean; merge-base equals origin/main (`6986d44f`). Diff stat: 7 files changed, 1103 insertions, 127 deletions.
