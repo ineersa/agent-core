@@ -175,3 +175,6 @@ Completed:
 - Recorded fork run: bl6ans1hbfs8
 - Validation: LLM_MODE=true castor check: PASS all 14 steps; test:tui-1 OK 57.9s, test:tui-2 OK 53.0s; deptrac, unit shards, controller, llm-real, phpstan, cs-check all OK (per fork handoff).; castor phpstan: PASS (per fork handoff).; castor cs-check: PASS (per fork handoff).
 - Summary: Fork bl6ans1hbfs8 completed Castor TUI E2E sharding fix. Root cause: single castor check test:tui step ran all 20 tui-e2e tests under one 90s timeout; typical runtime ~78s with variance over 90s, causing exit 124 even when tests pass. Fix commit 2d977882 splits castor check into test:tui-1 and test:tui-2 parallel shards with balanced file distribution and 60s per-shard timeout; standalone castor test:tui unchanged. Branch pushed to origin/task/backlog-open-issues-cleanup.
+
+## Task workflow update - 2026-06-12T20:39:00.210Z
+- User validation reports issue #120 editor border reasoning color does not work visually/functionally despite passing TUI E2E shard validation. Treating #120 as failed validation; dispatching scout to reproduce with real TUI snapshots and diagnose why tests did not catch the failure.
