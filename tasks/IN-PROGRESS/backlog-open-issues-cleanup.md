@@ -94,3 +94,6 @@ Completed:
 
 ## Task workflow update - 2026-06-12T18:03:37.404Z
 - User approved stacking workflow going forward: implement next issue on `task/backlog-open-issues-cleanup`, validate one issue, merge/push that branch to main, sync task branch back to latest main, then continue. Starting next open issue investigation.
+
+## Task workflow update - 2026-06-12T18:07:12.951Z
+- Scout investigated issue #118 Delay after submit. Root cause hypothesis: SubmitListener clears editor immediately, then performs synchronous session creation/context discovery/skills/system prompt/runtime start/update metadata before any visible feedback, and user message only appears later via canonical runtime events/poller. Recommended fix: show working status immediately before heavy work, consider optimistic user-message display with canonical replacement, explicitly ensure working visible, and validate with TmuxHarness timing/snapshot proof.
