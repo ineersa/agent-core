@@ -150,3 +150,8 @@ Completed:
 ## Task workflow update - 2026-06-12T02:47:03.937Z
 - Recorded fork run: 7sd6ljvxc7ox
 - Summary: Final reviewer pass returned `APPROVE WITH SUGGESTIONS` with no correctness issues. Remaining actionable convention suggestion: `TurnTreeProjectorTest` tests an Application/Handler class but lived under `tests/AgentCore/Domain/Run`. Launched fork `7sd6ljvxc7ox` to move the test to `tests/AgentCore/Application/Handler`, update namespace, run focused validation, and commit. Other NTH notes were explicitly non-actionable/no-action-needed.
+
+## Task workflow update - 2026-06-12T02:48:27.965Z
+- Recorded fork run: 7sd6ljvxc7ox
+- Validation: Fork validation reported: `castor test --filter=TurnTreeProjectorTest` ok (13 tests, 68 assertions).; Fork validation reported: `castor phpstan --path tests/AgentCore/Application/Handler/TurnTreeProjectorTest.php` ok (errors=0, file_errors=0).; Fork validation reported: `castor cs-check` ok (files_fixed=0).
+- Summary: Final convention-fix fork completed. Commit `9e779948 Move turn tree projector test to handler suite` moved `TurnTreeProjectorTest` from `tests/AgentCore/Domain/Run` to `tests/AgentCore/Application/Handler` and updated its namespace to mirror the production class location. No production code or test assertions changed.
