@@ -100,7 +100,7 @@ B) **Leaf event** — Append a `run.leaf_set` event to `events.jsonl` each time 
 Status: IN-PROGRESS
 Branch: task/session-05-turn-tree-model-and-replay
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay
-Fork run: jgrpy9ac0ebu
+Fork run: d1ekk2pduqld
 PR URL: https://github.com/ineersa/agent-core/pull/128
 PR Status: open
 Started: 2026-06-12T01:41:43.505Z
@@ -220,3 +220,8 @@ Castor Check Output SHA256: 15f51d5cf4aba80de58ef1fa97d43f52f7a114c15d218958d910
 ## Task workflow update - 2026-06-12T03:56:10.237Z
 - Validation: `castor test --filter=TurnTreeProjectorTest` ok (15 tests, 76 assertions).; `castor test --filter=RunStateReplayServiceTest` ok (25 tests, 107 assertions).; `castor test --filter=ReplayServiceTest` failed: `testBranchReplayExcludesAbandonedBranchMessages` threw `RuntimeException: Dangling parent_turn_no 1 while walking active turn path.`
 - Summary: Main verification of commit `772e6f8f` found a focused validation failure after the dangling-parent change: `castor test --filter=ReplayServiceTest` fails in `testBranchReplayExcludesAbandonedBranchMessages` with `Dangling parent_turn_no 1`. Cause: some accepted streams reference root turn 1 as a parent even though turn 1 has user/assistant events but no `turn_advanced` anchor; the previous projector behavior included that root turn in active path for replay filtering. Need to distinguish truly dangling parent refs from root/event-backed turns without turn metadata.
+
+## Task workflow update - 2026-06-12T04:00:16.030Z
+- Recorded fork run: d1ekk2pduqld
+- Validation: Verified `git show --stat --find-renames HEAD`: 2 files changed, 62 insertions, 4 deletions in `TurnTreeProjector.php` and `TurnTreeProjectorTest.php`.; `castor test --filter=TurnTreeProjectorTest` ok (16 tests, 81 assertions).; `castor test --filter=ReplayServiceTest` ok (28 tests, 127 assertions); prior `Dangling parent_turn_no 1` regression fixed.; `castor test --filter=RunStateReplayServiceTest` ok (25 tests, 107 assertions).; `castor phpstan --path src/AgentCore` ok (errors=0, file_errors=0).; `castor phpstan --path tests/AgentCore/Domain/Run/TurnTreeProjectorTest.php` ok (errors=0, file_errors=0).; `castor deptrac` ok (violations=0, errors=0).; `castor cs-check` ok (files_fixed=0).
+- Summary: Regression-fix fork completed. Commit `cc451113 Handle event-backed root turns in tree paths` updates `TurnTreeProjector` so parent turn numbers that have canonical events but no tree anchor are valid terminal roots in `activePathTurnNos`, while truly absent parent turn numbers still throw. Added projector coverage for event-backed root turn inclusion. Verified worktree is clean/ahead of remote by review-iteration commits.
