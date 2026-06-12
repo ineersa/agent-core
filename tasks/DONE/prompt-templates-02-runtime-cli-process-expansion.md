@@ -21,14 +21,14 @@ Can run in parallel with PT-03 after PT-01 lands.
 - Because this touches LLM-visible runtime flow, `LLM_MODE=true castor check` must pass before moving this task to CODE-REVIEW; if prerequisites are unavailable, keep the task IN-PROGRESS and record the blocker.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/prompt-templates-02-runtime-cli-process-expansion
 Worktree: /home/ineersa/projects/agent-core-worktrees/prompt-templates-02-runtime-cli-process-expansion
 Fork run: 0qatpiqlzaue
 PR URL: https://github.com/ineersa/agent-core/pull/136
-PR Status: open
+PR Status: merged
 Started: 2026-06-12T03:25:41.905Z
-Completed:
+Completed: 2026-06-12T16:52:10.609Z
 
 ## Work log
 - Created: 2026-06-09T00:10:00.375Z
@@ -70,3 +70,25 @@ Castor Check Output SHA256: 2356297ba878ae7cec9618b9ba9a5b8f7ce672fad2397f8b1082
 - Created PR: https://github.com/ineersa/agent-core/pull/136
 - Validation: pre-PR local: `castor test` OK (7 suites, 0 failures); pre-PR local: `castor deptrac` OK (violations=0, errors=0); pre-PR local: `castor phpstan` OK (errors=0, file_errors=0); pre-PR local: `castor cs-check` OK (files_fixed=0)
 - Summary: PT-02 prepared for code review. Runtime/CLI/process prompt-template expansion implemented and rebased onto current origin/main. Local validation passed: castor test, deptrac, phpstan, cs-check. Reviewer suggestions addressed; stale-base blocker resolved by rebase per user instruction without another reviewer pass.
+
+## Task workflow update - 2026-06-12T16:52:10.610Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/prompt-templates-02-runtime-cli-process-expansion into integration checkout.
+- Merge made by the 'ort' strategy.
+ depfile.yaml                                       |   2 +
+ src/CodingAgent/CLI/AgentCommand.php               |  18 ++
+ .../PromptTemplatesRuntimeConfig.php               |   4 +-
+ .../InProcess/InProcessAgentSessionClient.php      |  24 +-
+ .../Process/JsonlProcessAgentSessionClient.php     |   3 +
+ .../CLI/AgentCommandPromptTemplatesOptionsTest.php | 111 +++++++
+ .../PromptTemplateExpansionInProcessTest.php       | 325 +++++++++++++++++++++
+ .../JsonlProcessPromptTemplateOptionsTest.php      | 194 ++++++++++++
+ .../TestCase/IsolatedKernelTestCase.php            |  10 +
+ 9 files changed, 685 insertions(+), 6 deletions(-)
+ create mode 100644 tests/CodingAgent/CLI/AgentCommandPromptTemplatesOptionsTest.php
+ create mode 100644 tests/CodingAgent/Runtime/InProcess/PromptTemplateExpansionInProcessTest.php
+ create mode 100644 tests/CodingAgent/Runtime/Process/JsonlProcessPromptTemplateOptionsTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/prompt-templates-02-runtime-cli-process-expansion.
+- Pulled integration checkout: Merge made by the 'ort' strategy..
+- Validation: pre-DONE: `gh pr view https://github.com/ineersa/agent-core/pull/136 --json state,mergeCommit,mergedAt` reported state MERGED, mergedAt 2026-06-12T16:51:31Z, mergeCommit 3c4a3b2714c53c2f5a38da9fff2eb3c89c5278ab
+- Summary: PR #136 was already merged on GitHub at 2026-06-12T16:51:31Z (merge commit 3c4a3b2714c53c2f5a38da9fff2eb3c89c5278ab). Completing tracked task and syncing integration checkout.
