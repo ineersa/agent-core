@@ -159,3 +159,8 @@ Completed:
 ## Task workflow update - 2026-06-12T02:58:34.824Z
 - Recorded fork run: d5cn0j1flb83
 - Summary: Reviewer after test move still returned `APPROVE WITH SUGGESTIONS`. No critical issues. Actionable final items: replace inconsistent `isset(parent_turn_no)` checks in `TurnTreeProjector` with `array_key_exists`, document that `turn_branched` is explicit new-style tree metadata for future emitters, and add a comment explaining the defensive metadata inclusion safety net in `TurnTreeReplayFilter`. Launched fork `d5cn0j1flb83` for minimal fixes plus focused Castor validation.
+
+## Task workflow update - 2026-06-12T03:01:01.129Z
+- Recorded fork run: d5cn0j1flb83
+- Validation: Fork validation reported: `castor test --filter=TurnTreeProjectorTest` ok (13 tests, 69 assertions).; Fork validation reported: `castor test --filter=RunStateReplayServiceTest` ok (25 tests, 107 assertions).; Fork validation reported: `castor phpstan --path src/AgentCore` ok (errors=0, file_errors=0).; Fork validation reported: `castor cs-check` ok (files_fixed=0).
+- Summary: Final metadata-handling fork completed. Commit `3e92baae Tighten turn tree metadata handling` replaces `isset(parent_turn_no)` checks with `array_key_exists` in `TurnTreeProjector`, documents `turn_branched` future-emitter requirements, documents the defensive tree-metadata inclusion safety net in `TurnTreeReplayFilter`, and adds an explicit `parent_turn_no => null` assertion. No broad refactors or behavioral replay changes.
