@@ -187,3 +187,6 @@ Completed:
 - Recorded fork run: mbbwe3j3zxwm
 - Validation: ChatScreen unit tests: PASS (8 tests) per fork handoff.; castor phpstan: PASS per fork handoff.; castor cs-check: PASS per fork handoff.; E2E blocked: llama.cpp test server at 192.168.2.38:9052 is connection refused; fail-fast preflight correctly blocks castor test:tui until server is restarted.
 - Summary: Fork mbbwe3j3zxwm fixed failed #120 validation. ChatScreen::applyEditorBorderColor() now invalidates the EditorWidget and requests render after stylesheet update; ChatScreen::refresh() also invalidates the editor widget. EditorBorderColorTest now parses actual ANSI `38;2;R;G;B` sequences from editor border lines and asserts off→minimal→low color changes, eliminating the previous false positive that only checked status text/border chars. Commit 0d2207ea pushed to origin/task/backlog-open-issues-cleanup.
+
+## Task workflow update - 2026-06-12T20:52:38.350Z
+- User reported remaining #120/#117 model-switch reasoning issue: when current reasoning is xhigh for a model like deepseek, Ctrl+P switching to a model such as z.ai that supports high but not xhigh should clamp/swap effective reasoning to high. Current behavior apparently leaves xhigh or otherwise does not clamp correctly. Dispatching scout to investigate exact model selection/reasoning persistence path before implementation.
