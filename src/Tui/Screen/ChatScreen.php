@@ -380,6 +380,12 @@ final class ChatScreen
         $this->tui->addStyleSheet(new StyleSheet([
             EditorWidget::class.'::frame' => $style,
         ]));
+
+        // Invalidate the editor widget so its cached render (which
+        // used the old stylesheet) is discarded and the frame is
+        // repainted with the new colour.
+        $this->promptEditor->getWidget()->invalidate();
+        $this->tui->requestRender();
     }
 
     /**
@@ -410,6 +416,9 @@ final class ChatScreen
         $this->aboveEditorWidget->invalidate();
         $this->belowEditorWidget->invalidate();
         $this->footerWidget->invalidate();
+        // Invalidate the editor widget so broad screen refreshes (startup,
+        // model change) also re-render the editor frame with current styles.
+        $this->promptEditor->getWidget()->invalidate();
     }
 
     /* ────────── Overlay management ────────── */

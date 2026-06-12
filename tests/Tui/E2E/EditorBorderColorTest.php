@@ -5,27 +5,30 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\E2E;
 
 use Ineersa\CodingAgent\Tests\Support\AgentTestExecutable;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
  * End-to-end test for editor border colour following reasoning level.
  *
- * Verifies that pressing Shift+Tab to cycle the reasoning level also
- * changes the editor widget's frame/border colour.
+ * Verifies that pressing Shift+Tab to cycle the reasoning level changes
+ * the ANSI colour of the editor widget's frame.
  *
  * Proof strategy:
  *  1. Start the TUI with a model that supports thinking levels.
  *  2. Wait for the TUI to boot.
- *  3. Verify the editor border is visible (─ chars present).
+ *  3. Capture ANSI and extract the editor border colour after boot (off).
  *  4. Send Shift+Tab to cycle reasoning from 'off' → 'minimal'.
- *  5. Wait for the status panel to confirm the new reasoning level.
- *  6. Save ANSI snapshots for manual colour verification.
- *  7. Send a second Shift+Tab and confirm 'low' in the status panel.
+ *  5. Wait for the status panel to confirm 'minimal'.
+ *  6. Capture ANSI, extract border colour, assert it differs from 'off'.
+ *  7. Send second Shift+Tab: minimal → low.
+ *  8. Capture ANSI, extract border colour, assert it differs from 'minimal'.
  *
- * The colour change itself is verified through ANSI snapshot inspection.
- * The status-panel text assertions prove the reasoning flow works
- * end-to-end through the same code paths that update the border colour.
+ * The oh-p-dark theme maps reasoning to hex colours:
+ *   off     → gray1  (#3e4452)
+ *   minimal → gray2  (#5c6370)
+ *   low     → blue   (#5b9bf5)
  *
  * @group tui-e2e
  */
@@ -49,20 +52,18 @@ final class EditorBorderColorTest extends TestCase
 
     protected function tearDown(): void
     {
-        // TmuxHarness destructor kills all sessions.
+        if (isset($this->tmux)) {
+            $this->tmux->killAll();
+        }
+        if (isset($this->testProjectDir)) {
+            TestDirectoryIsolation::removeDirectory($this->testProjectDir);
+        }
     }
 
     /**
      * @test
      *
-     * Shift+Tab cycles reasoning and the editor border colour changes.
-     *
-     * Automated assertions:
-     *  - Editor border ─ chars are visible.
-     *  - Status panel shows reasoning level after each Shift+Tab.
-     *
-     * The colour change is captured via ANSI snapshots for manual
-     * verification (the test saves snapshots that can be diffed).
+     * Shift+Tab cycles reasoning and the editor border ANSI colour changes.
      */
     public function testEditorBorderColorChangesWithReasoningLevel(): void
     {
@@ -88,6 +89,16 @@ final class EditorBorderColorTest extends TestCase
         // Save initial ANSI snapshot for manual inspection.
         $this->saveAnsiSnapshot($pane, 'border-off');
 
+        // Extract the editor border ANSI colour after boot (reasoning = off).
+        $offAnsi = $this->tmux->captureAnsi($pane);
+        $offBorderColor = $this->extractBorderColor($offAnsi);
+        self::assertNotNull(
+            $offBorderColor,
+            'Could not extract editor border ANSI colour from initial capture',
+        );
+
+        $this->saveAnsiSnapshot($pane, 'border-off');
+
         // ── Send Shift+Tab to cycle reasoning from 'off' → 'minimal' ──
         $this->tmux->sendLiteral($pane, "\x1b[Z");
 
@@ -102,21 +113,22 @@ final class EditorBorderColorTest extends TestCase
             history: 500,
         );
 
-        // Verify reasoning key-label is visible in status panel.
-        $afterMinimal = $this->tmux->capturePlainWithHistory($pane, 500);
-        self::assertStringContainsString(
-            'reasoning',
-            $afterMinimal,
-            'Status panel should contain the "reasoning" key label after Shift+Tab',
-        );
-        self::assertStringContainsString(
-            'minimal',
-            $afterMinimal,
-            'Status panel should show "minimal" reasoning level after Shift+Tab',
+        // Capture ANSI after first reasoning change and extract border colour.
+        $minimalAnsi = $this->tmux->captureAnsi($pane);
+        $minimalBorderColor = $this->extractBorderColor($minimalAnsi);
+        self::assertNotNull(
+            $minimalBorderColor,
+            'Could not extract editor border ANSI colour after Shift+Tab to minimal',
         );
 
-        // Save ANSI snapshot after first reasoning change.
         $this->saveAnsiSnapshot($pane, 'border-minimal');
+
+        // Assert the border colour differs from 'off'.
+        self::assertNotSame(
+            $offBorderColor,
+            $minimalBorderColor,
+            'Editor border ANSI colour should change when reasoning cycles from off → minimal',
+        );
 
         // ── Send second Shift+Tab: minimal → low ──
         $this->tmux->sendLiteral($pane, "\x1b[Z");
@@ -131,14 +143,64 @@ final class EditorBorderColorTest extends TestCase
             history: 500,
         );
 
-        // Save ANSI snapshot after second reasoning change.
+        // Capture ANSI after second reasoning change.
+        $lowAnsi = $this->tmux->captureAnsi($pane);
+        $lowBorderColor = $this->extractBorderColor($lowAnsi);
+        self::assertNotNull(
+            $lowBorderColor,
+            'Could not extract editor border ANSI colour after Shift+Tab to low',
+        );
+
         $this->saveAnsiSnapshot($pane, 'border-low');
+
+        // Assert the border colour differs from 'minimal'.
+        self::assertNotSame(
+            $minimalBorderColor,
+            $lowBorderColor,
+            'Editor border ANSI colour should change when reasoning cycles from minimal → low',
+        );
 
         // Send Ctrl+D to exit cleanly
         $this->tmux->sendKey($pane, 'C-d');
     }
 
     // ── Helpers ───────────────────────────────────────────────
+
+    /**
+     * Extract the ANSI true-color sequence from the first editor border line.
+     *
+     * The editor frame border consists of '─' characters rendered with
+     * the thinking-level colour. This helper finds the first line
+     * containing '─' preceded by an ANSI SGR sequence (e.g.
+     * "\e[38;2;62;68;82m") and returns the colour portion
+     * "38;2;R;G;B" or the full SGR sequence.
+     *
+     * Returns null if no border line with ANSI colour is found.
+     */
+    private function extractBorderColor(string $ansi): ?string
+    {
+        $lines = explode("\n", $ansi);
+
+        foreach ($lines as $line) {
+            // Look for lines containing border characters (─) with ANSI colour.
+            // Strip trailing ANSI reset sequences for cleaner comparison.
+            if (!str_contains($line, '─')) {
+                continue;
+            }
+
+            // Extract ANSI true-colour SGR: \e[38;2;R;G;Bm
+            if (preg_match('/\e\[(38;2;\d+;\d+;\d+)m/', $line, $matches)) {
+                return $matches[1];
+            }
+
+            // Also match 256-colour: \e[38;5;Nm
+            if (preg_match('/\e\[(38;5;\d+)m/', $line, $matches)) {
+                return $matches[1];
+            }
+        }
+
+        return null;
+    }
 
     /**
      * Save an ANSI snapshot of the current pane content.
@@ -157,8 +219,8 @@ final class EditorBorderColorTest extends TestCase
         @\mkdir($dir, 0o777, true);
         \file_put_contents("{$dir}/{$label}.ansi", $ansi);
 
-        // Also write the path so the test runner can locate the snapshots
-        $this->addToAssertionCount(1); // snapshot saved — not a pass/fail
+        // Count the snapshot save as an assertion for reporting.
+        $this->addToAssertionCount(1);
     }
 
     private function agentCommand(): string
@@ -174,15 +236,10 @@ final class EditorBorderColorTest extends TestCase
     }
 
     /**
-     * Create an isolated project directory where the test model
-     * supports thinking levels.
+     * Create an isolated project directory with the oh-p-dark theme.
      *
-     * The llama_cpp_test/test model is configured with:
-     *  - reasoning: true
-     *  - thinking_level_map with all 6 levels
-     *  - supports_thinking_levels: true on the provider
-     *
-     * This allows Shift+Tab to cycle through off/minimal/low/medium/high/xhigh.
+     * The llama_cpp_test/test model supports thinking levels so
+     * Shift+Tab cycles through off/minimal/low/medium/high/xhigh.
      */
     private function createIsolatedProjectDir(): string
     {
