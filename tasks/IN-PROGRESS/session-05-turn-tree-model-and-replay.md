@@ -100,7 +100,7 @@ B) **Leaf event** — Append a `run.leaf_set` event to `events.jsonl` each time 
 Status: IN-PROGRESS
 Branch: task/session-05-turn-tree-model-and-replay
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay
-Fork run: sgk8spvhpkhn
+Fork run: 5rowk3bcy2hb
 PR URL: https://github.com/ineersa/agent-core/pull/128
 PR Status: open
 Started: 2026-06-12T01:41:43.505Z
@@ -208,3 +208,7 @@ Castor Check Output SHA256: 15f51d5cf4aba80de58ef1fa97d43f52f7a114c15d218958d910
 
 ## Task workflow update - 2026-06-12T03:50:54.541Z
 - Summary: Reviewer subagent re-reviewed commit `2588049b` and returned `APPROVE WITH SUGGESTIONS`. PR inline comments are resolved, but reviewer found two actionable follow-ups: inconsistent ASCII vs Unicode ellipsis in `TurnTreeProjector` prompt preview truncation, and `walkActivePath()` silently truncates active path if an intermediate parent turn reference is missing. Launching a narrow follow-up fork to fix both with tests.
+
+## Task workflow update - 2026-06-12T03:51:12.510Z
+- Recorded fork run: 5rowk3bcy2hb
+- Summary: Launched follow-up fork `5rowk3bcy2hb` to address reviewer actionable findings after `2588049b`: use `TurnTreeProjector::truncate()` for `promptPreview` to keep Unicode ellipsis consistent, add dangling parent detection in `walkActivePath()`, and add/update focused projector tests. Fork instructed to run focused Castor validation and commit.
