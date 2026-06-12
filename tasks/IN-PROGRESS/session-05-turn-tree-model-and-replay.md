@@ -132,3 +132,8 @@ Completed:
 ## Task workflow update - 2026-06-12T02:18:33.992Z
 - Recorded fork run: zlk8lxlq5po8
 - Summary: Reviewer subagent returned `APPROVE WITH SUGGESTIONS` for commit `e8cac9d3`. Actionable findings: stale `RunStateReplayService::replay()` contiguity docblock, document `TurnTreeNodeDTO::lastSeq` semantics for rewound/non-last leaves, remove dead `$turnIndicesByTurnNo` in `TurnTreeProjector`, and remove empty no-op test helper conditional. Launched review-fix fork `zlk8lxlq5po8` in the task worktree with focused Castor validation instructions. Skipped broader NTH refactors for now (projector extraction, replay message allowlist, double-sort optimization) because they are non-blocking and higher-risk/subjective for this PR-prep pass.
+
+## Task workflow update - 2026-06-12T02:21:04.065Z
+- Recorded fork run: zlk8lxlq5po8
+- Validation: Fork validation reported: `castor test --filter=TurnTreeProjectorTest` ok (10 tests, 56 assertions).; Fork validation reported: `castor test --filter=RunStateReplayServiceTest` ok (25 tests, 107 assertions).; Fork validation reported: `castor phpstan` ok (errors=0, file_errors=0).; Fork validation reported: `castor cs-fix` ok (1 formatting-only file fixed), then `castor cs-check` ok (files_fixed=0).
+- Summary: Review-fix fork completed. Applied reviewer suggestions in commit `182bf592 Address turn tree review feedback`: updated branch-filtered replay docblock, documented `TurnTreeNodeDTO::lastSeq` semantics, removed dead `$turnIndicesByTurnNo`, and removed a no-op test-helper conditional. Fork reports no behavioral changes and no broader refactors.
