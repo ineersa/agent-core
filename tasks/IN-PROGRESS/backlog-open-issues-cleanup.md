@@ -59,3 +59,6 @@ Completed:
 - Validation: Fork reported: LLM_MODE=true castor check passed fully, including deptrac, all unit shards, controller E2E, llm-real, tui E2E, phpstan, and cs-check.; Fork reported new TUI E2E test: tests/Tui/E2E/ReasoningCycleTest.php proving Shift+Tab cycles off→minimal→low and shows status text.; Commit reported by fork: 482cf235b7f53b7e3a981acd1451b9aa1fe6308d.
 - Summary: Issue #117 implementation completed by fork 7nz1rximl6ud. Fix restores visible thinking level feedback when Shift+Tab cycles reasoning by showing the new level in the status panel and adds a real TmuxHarness E2E proof. Work intentionally left task IN-PROGRESS and did not open PR or run reviewer per user instruction to stop after one issue for validation.
 - Stopped after fixing issue #117 as requested. Awaiting user validation before moving to the next open GitHub issue.
+
+## Task workflow update - 2026-06-12T17:08:55.824Z
+- Post-fork verification found the implementation commit 482cf235 is on the integration checkout branch `main` and included in `origin/main` after task metadata push; the task worktree branch `task/backlog-open-issues-cleanup` remains at 23419aea and does not contain the code commit. Pausing for user validation before any further workflow/branch cleanup or next issue.
