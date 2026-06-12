@@ -97,12 +97,12 @@ B) **Leaf event** — Append a `run.leaf_set` event to `events.jsonl` each time 
 - Validation uses Castor per project rules; runtime/Messenger changes require full `castor check` before CODE-REVIEW.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/session-05-turn-tree-model-and-replay
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay
 Fork run: lo07sunzel4n
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/128
+PR Status: open
 Started: 2026-06-12T01:41:43.505Z
 Completed:
 
@@ -177,3 +177,18 @@ Completed:
 ## Task workflow update - 2026-06-12T03:21:14.037Z
 - Validation: Local validation on worktree at HEAD `4c7f5002`: `castor test` ok across 7 suites (agent-core 289 tests/1251 assertions; coding-agent shards 374/1058, 373/965, 309/1038, 287/752; tui 664/1660; platform 54/221), total 56.7s.; Local validation: `castor deptrac` ok (violations=0, errors=0, uncovered=796, allowed=1096).; Local validation: `castor phpstan` ok (errors=0, file_errors=0).; Local validation: `castor cs-check` ok (files_fixed=0).
 - Summary: PR-prep review loop completed. Latest reviewer pass found no critical/issues; only non-blocking design/NTH notes remained. All actionable findings from prior passes were addressed in commits `182bf592`, `6be3c4cb`, `9e779948`, `3e92baae`, and `4c7f5002`. User directed to stop further reviewer loops and move to CODE-REVIEW.
+Castor Check Status: passed
+Castor Check Commit: 4c7f500244f45b4ba759eda45c9c61ef87557045
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 240s
+Castor Check Completed: 2026-06-12T03:22:35.931Z
+Castor Check Output SHA256: 15f51d5cf4aba80de58ef1fa97d43f52f7a114c15d218958d9102e6aa33a9124
+
+## Task workflow update - 2026-06-12T03:22:39.421Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (240s timeout). Commit: 4c7f500244f4.
+- Pushed task/session-05-turn-tree-model-and-replay to origin.
+- branch 'task/session-05-turn-tree-model-and-replay' set up to track 'origin/task/session-05-turn-tree-model-and-replay'.
+- Created PR: https://github.com/ineersa/agent-core/pull/128
+- Validation: `castor test` ok across 7 suites, total 56.7s (agent-core 289 tests/1251 assertions; coding-agent shards 374/1058, 373/965, 309/1038, 287/752; tui 664/1660; platform 54/221).; `castor deptrac` ok (violations=0, errors=0).; `castor phpstan` ok (errors=0, file_errors=0).; `castor cs-check` ok (files_fixed=0).; Focused fork validations also passed for TurnTreeProjectorTest, RunStateReplayServiceTest, ReplayServiceTest, AdvanceRunHandlerTest, RuntimeEventMapperTest, and scoped PHPStan/CS checks.; Full `LLM_MODE=true castor check` to be run by move_task CODE-REVIEW gate.
+- Summary: Prepared for code review. Implementation stack through `4c7f5002` adds canonical turn tree metadata events, turn tree DTO/projector/replay filter, branch-aware RunState/hot-prompt replay, runtime protocol drops for internal metadata, docs, and tests. Review iterations addressed all actionable findings; remaining reviewer notes were non-blocking design/NTH items. Local Castor validation passed before PR handoff.
