@@ -42,13 +42,6 @@ final class TurnTreeReplayFilter
         $canonicalEventCount = \count($events);
         $canonicalLastSeq = $this->maxSeq($events);
 
-        $isIncludedType = static function (RunEvent $event): bool {
-            return \in_array($event->type, [
-                RunEventTypeEnum::LeafSet->value,
-                RunEventTypeEnum::TurnBranched->value,
-            ], true);
-        };
-
         $filtered = [];
         foreach ($events as $event) {
             // Include run-level events (turn 0, e.g. run_started).
@@ -68,7 +61,7 @@ final class TurnTreeReplayFilter
             // These are no-op reducers during replay — they exist only for
             // future navigation/audit metadata and do not affect prompt
             // context or RunState reconstruction.
-            if ($isIncludedType($event)) {
+            if ($this->isTreeMetadataEvent($event)) {
                 $filtered[] = $event;
             }
         }
@@ -83,6 +76,14 @@ final class TurnTreeReplayFilter
             activePathTurnNos: $activePathTurnNos,
             currentLeafTurnNo: $tree->currentLeafTurnNo,
         );
+    }
+
+    private function isTreeMetadataEvent(RunEvent $event): bool
+    {
+        return \in_array($event->type, [
+            RunEventTypeEnum::LeafSet->value,
+            RunEventTypeEnum::TurnBranched->value,
+        ], true);
     }
 
     /**

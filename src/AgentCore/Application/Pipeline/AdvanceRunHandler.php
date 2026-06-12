@@ -158,6 +158,11 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 'turn_no' => $nextTurnNo,
                 'payload' => [
                     'turn_no' => $nextTurnNo,
+                    // In the normal continue path, previous_turn_no and parent_turn_no
+                    // intentionally coincide (both equal the turn we are leaving).
+                    // Future rewind/branch emitters may diverge them:
+                    //   previous_turn_no = the turn being abandoned,
+                    //   parent_turn_no   = the common ancestor for the new branch.
                     'previous_turn_no' => $parentTurnNo,
                     'parent_turn_no' => $parentTurnNo,
                     'reason' => 'continue',

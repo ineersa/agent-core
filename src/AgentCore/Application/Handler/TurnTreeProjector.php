@@ -147,7 +147,7 @@ final class TurnTreeProjector
         $rootTurnNos = [];
 
         foreach ($turnInfo as $turnNo => $info) {
-            $title = $this->titleForTurn($turnNo, $info['anchorIndex'], $sorted, $info['anchorSeq']);
+            $title = $this->titleForTurn($turnNo, $info['anchorIndex'], $sorted);
 
             $node = new TurnTreeNodeDTO(
                 turnNo: $turnNo,
@@ -284,7 +284,7 @@ final class TurnTreeProjector
      *
      * @param list<RunEvent> $sortedEvents
      */
-    private function titleForTurn(int $turnNo, int $anchorIndex, array $sortedEvents, int $anchorSeq): string
+    private function titleForTurn(int $turnNo, int $anchorIndex, array $sortedEvents): string
     {
         // Walk backward from the turn_advanced event to find a descriptive message.
         for ($i = $anchorIndex - 1; $i >= 0; --$i) {
@@ -307,6 +307,8 @@ final class TurnTreeProjector
             }
         }
 
+        // No user-visible text found in the event stream for this turn
+        // (e.g. old/minimal streams with bare turn_advanced anchors only).
         return "Turn {$turnNo}";
     }
 
