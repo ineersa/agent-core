@@ -123,3 +123,7 @@ Completed:
 
 ## Task workflow update - 2026-06-12T18:42:57.793Z
 - Moving to next open issue after #119 was converted to a tracked task and closed. Syncing backlog worktree to latest origin/main and starting #120 investigation.
+
+## Task workflow update - 2026-06-12T18:46:47.844Z
+- Summary: Issue #120 scout investigation completed. Feasible small TUI feature: color editor border using same thinking/reasoning color mapping as footer; update on startup/resume, Shift+Tab, Ctrl+P and /model changes if applicable; add ANSI TmuxHarness proof.
+- No product question needed for #120 at this stage: issue request is clear and implementation path is low-risk. Proceeding to fork implementation with mandatory TUI E2E/ANSI/manual snapshot validation.
