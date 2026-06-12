@@ -72,6 +72,8 @@ One representative test covering behavior is sufficient.
 
 All QA commands MUST go through Castor. Never run raw `vendor/bin/*` directly, except when explicitly isolating a Castor failure.
 
+All PHPUnit invocations include `--stop-on-error --stop-on-failure --fail-on-all-issues --display-all-issues`.
+
 Key commands:
 - `castor test` — full unit/integration suite (runs 7 PHPUnit workers in parallel: `agent-core`, `coding-agent-1..4`, `tui`, `platform`; each has its own isolated SQLite DB/cache/JUnit/log files; sequential fallback when proc_open unavailable)
 - `castor test --filter=XxxTest` — filter to specific tests (sequential; single DB)
@@ -98,6 +100,10 @@ The `llama_cpp_test/test` server should run deterministically (temperature 0, fi
 - Keep model instructions short and schema-like: `Call the tool named read exactly once with path ./file.txt. After the tool succeeds, answer exactly done.`
 - Assert runtime/tool events, not prose. The small model can phrase final text differently even when the tool path is correct.
 - Use fast targeted waits. If a 5s target-tool wait fails on the local test model, debug the prompt/tool route or stale workers rather than increasing to 60s.
+
+### LLM generation preflight
+
+`castor check`, `test:tui`, `test:llm-real`, `test:controller`, and `test:tui-update` all run a ~4s curl-based preflight (`check_llm_generation_ready`) before any E2E test starts. It verifies the test LLM can complete a tiny generation request. If the server responds to `/health` and `/v1/models` but generation is stuck (corrupted model load, stuck slots), Castor fails immediately with a diagnostic instead of burning step timeouts. Fix or restart the llama.cpp server before retrying.
 
 ## TUI behavior proof
 
