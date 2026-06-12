@@ -17,18 +17,17 @@ use PHPUnit\Framework\TestCase;
  *
  * Proof strategy:
  *  1. Start the TUI with a model that supports thinking levels.
- *  2. Wait for the TUI to boot.
- *  3. Capture ANSI and extract the editor border colour after boot (off).
- *  4. Send Shift+Tab to cycle reasoning from 'off' → 'minimal'.
- *  5. Wait for the status panel to confirm 'minimal'.
- *  6. Capture ANSI, extract border colour, assert it differs from 'off'.
- *  7. Send second Shift+Tab: minimal → low.
- *  8. Capture ANSI, extract border colour, assert it differs from 'minimal'.
+ *  2. Wait for the TUI to boot (verify border chars visible).
+ *  3. Send Shift+Tab to cycle reasoning from 'off' → 'minimal'.
+ *  4. Wait for the status panel to confirm 'minimal'.
+ *  5. Assert the ANSI capture contains smoke-coloured border runs.
+ *  6. Send second Shift+Tab: minimal → low.
+ *  7. Wait for the status panel to confirm 'low'.
+ *  8. Assert the ANSI capture contains electric-coloured border runs.
  *
- * The oh-p-dark theme maps reasoning to hex colours:
- *   off     → gray1  (#3e4452)
- *   minimal → gray2  (#5c6370)
- *   low     → blue   (#5b9bf5)
+ * Coloured border runs are identified as \e[38;2;R;G;Bm followed by
+ * 10+ BOX DRAWINGS LIGHT HORIZONTAL characters (U+2500 ─).  These
+ * uniquely identify the editor frame rendered by EditorRenderer.
  *
  * @group tui-e2e
  */
@@ -89,18 +88,9 @@ final class EditorBorderColorTest extends TestCase
         // Save initial ANSI snapshot for manual inspection.
         $this->saveAnsiSnapshot($pane, 'border-off');
 
-        // Collect all border-line colours after boot (reasoning = off).
-        // The editor frame border ─-rows are full-width; collecting colours
-        // from those rows creates a fingerprint that changes when the
-        // reasoning-level colour is applied to the editor frame.
+        // Capture initial state.
         $offAnsi = $this->tmux->captureAnsi($pane);
-        $offBorderColors = $this->extractBorderColors($offAnsi);
-        self::assertNotEmpty(
-            $offBorderColors,
-            'Could not extract any border-line ANSI colours from initial capture',
-        );
-
-        $this->saveAnsiSnapshot($pane, 'border-off');
+        self::assertNotEmpty($offAnsi, 'Initial ANSI capture should not be empty');
 
         // ── Send Shift+Tab to cycle reasoning from 'off' → 'minimal' ──
         $this->tmux->sendLiteral($pane, "\x1b[Z");
@@ -118,19 +108,19 @@ final class EditorBorderColorTest extends TestCase
 
         // Capture ANSI after first reasoning change.
         $minimalAnsi = $this->tmux->captureAnsi($pane);
-        $minimalBorderColors = $this->extractBorderColors($minimalAnsi);
-        self::assertNotEmpty(
-            $minimalBorderColors,
-            'Could not extract border-line ANSI colours after Shift+Tab to minimal',
-        );
+        self::assertNotEmpty($minimalAnsi, 'ANSI capture after Shift+Tab to minimal should not be empty');
 
         $this->saveAnsiSnapshot($pane, 'border-minimal');
 
-        // Assert the border-line colour fingerprint differs from 'off'.
-        self::assertNotSame(
-            $offBorderColors,
-            $minimalBorderColors,
-            'Editor border colours should change when reasoning cycles from off → minimal',
+        // Assert the editor border colour changed from off (steel=74;85;104)
+        // to minimal (smoke=113;128;150).  The editor frame is rendered by
+        // EditorRenderer applying a colour Style to full-width ─ rows.
+        // Search for the smoke-coloured border run.
+        // \x{2500} is U+2500 BOX DRAWINGS LIGHT HORIZONTAL (─).
+        self::assertMatchesRegularExpression(
+            '/\x1b\[38;2;113;128;150m\x{2500}{10,}/u',
+            $minimalAnsi,
+            'Editor border should show minimal/smoke colour after first Shift+Tab',
         );
 
         // ── Send second Shift+Tab: minimal → low ──
@@ -148,19 +138,16 @@ final class EditorBorderColorTest extends TestCase
 
         // Capture ANSI after second reasoning change.
         $lowAnsi = $this->tmux->captureAnsi($pane);
-        $lowBorderColors = $this->extractBorderColors($lowAnsi);
-        self::assertNotEmpty(
-            $lowBorderColors,
-            'Could not extract border-line ANSI colours after Shift+Tab to low',
-        );
+        self::assertNotEmpty($lowAnsi, 'ANSI capture after Shift+Tab to low should not be empty');
 
         $this->saveAnsiSnapshot($pane, 'border-low');
 
-        // Assert the border-line colour fingerprint differs from 'minimal'.
-        self::assertNotSame(
-            $minimalBorderColors,
-            $lowBorderColors,
-            'Editor border colours should change when reasoning cycles from minimal → low',
+        // Assert the editor border colour changed from minimal (smoke=113;128;150)
+        // to low (electric=0;255;255).  Search for electric-coloured border runs.
+        self::assertMatchesRegularExpression(
+            '/\x1b\[38;2;0;255;255m\x{2500}{10,}/u',
+            $lowAnsi,
+            'Editor border should show low/electric colour after second Shift+Tab',
         );
 
         // Send Ctrl+D to exit cleanly
@@ -168,62 +155,6 @@ final class EditorBorderColorTest extends TestCase
     }
 
     // ── Helpers ───────────────────────────────────────────────
-
-    /**
-     * Collect unique ANSI true-colour sequences from full-width border
-     * rows (lines containing many ─ characters).
-     *
-     * The editor frame borders are full-width ─-rows at the bottom of
-     * the pane; collecting colours from ALL such rows creates a
-     * fingerprint that changes when the reasoning-level colour is
-     * applied to the editor frame (even when other separators use
-     * constant colours).
-     *
-     * Returns a sorted list of unique colour strings like
-     * ["38;2;62;68;82", "38;2;92;99;112"].
-     * Returns an empty list if no qualifying border line is found.
-     *
-     * @return list<string>
-     */
-    private function extractBorderColors(string $ansi): array
-    {
-        $lines = explode("\n", $ansi);
-        $colors = [];
-        $dashCounts = [];
-
-        // First pass: count ─ chars per line to find the widest border rows.
-        foreach ($lines as $idx => $line) {
-            $dashCounts[$idx] = mb_substr_count($line, '─');
-        }
-
-        // Heuristic: full-width border rows have significantly more ─
-        // chars than incidental dashes in logo lines or status text.
-        // Use ≥ half the max dash count as the threshold (e.g. 60 of 120).
-        $maxDashes = !empty($dashCounts) ? max($dashCounts) : 0;
-        $threshold = (int) max(floor($maxDashes * 0.5), 1);
-
-        foreach ($lines as $idx => $line) {
-            if ($dashCounts[$idx] < $threshold) {
-                continue;
-            }
-
-            // Extract ANSI true-colour SGR: \e[38;2;R;G;Bm
-            if (preg_match('/\e\[(38;2;\d+;\d+;\d+)m/', $line, $matches)) {
-                $colors[$matches[1]] = true;
-                continue;
-            }
-
-            // Also match 256-colour: \e[38;5;Nm
-            if (preg_match('/\e\[(38;5;\d+)m/', $line, $matches)) {
-                $colors[$matches[1]] = true;
-            }
-        }
-
-        $result = array_keys($colors);
-        sort($result);
-
-        return $result;
-    }
 
     /**
      * Save an ANSI snapshot of the current pane content.
