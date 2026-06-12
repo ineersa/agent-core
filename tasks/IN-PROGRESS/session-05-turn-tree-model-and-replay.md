@@ -100,7 +100,7 @@ B) **Leaf event** — Append a `run.leaf_set` event to `events.jsonl` each time 
 Status: IN-PROGRESS
 Branch: task/session-05-turn-tree-model-and-replay
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay
-Fork run: ta7fy8pux9bu
+Fork run: 7sd6ljvxc7ox
 PR URL:
 PR Status:
 Started: 2026-06-12T01:41:43.505Z
@@ -146,3 +146,7 @@ Completed:
 - Recorded fork run: ta7fy8pux9bu
 - Validation: Fork validation reported: `castor test --filter=TurnTreeProjectorTest` ok (13 tests, 68 assertions).; Fork validation reported: `castor test --filter=RunStateReplayServiceTest` ok (25 tests, 107 assertions).; Fork validation reported: focused combined tests (`RunStateReplayServiceTest|ReplayServiceTest|AdvanceRunHandlerTest|RuntimeEventMapperTest|TurnTreeProjectorTest`) ok (85 tests, 371 assertions).; Fork validation reported: `castor phpstan --path src/AgentCore` ok (errors=0, file_errors=0).; Fork validation reported: `castor cs-check` initially required formatting; `castor cs-fix` then `castor cs-check` ok (files_fixed=0).
 - Summary: Last-seq edge-case fork completed. Commit `6be3c4cb Fix turn tree node last sequence projection` changes `TurnTreeProjector` to compute node `lastSeq` by max event sequence scoped to each `RunEvent::$turnNo`, updates `TurnTreeNodeDTO` docs, removes now-unused anchor-window/maxSeq code, and adds explicit linear/rewind/abandoned-branch `lastSeq` tests. Replay/filter behavior was intentionally unchanged.
+
+## Task workflow update - 2026-06-12T02:47:03.937Z
+- Recorded fork run: 7sd6ljvxc7ox
+- Summary: Final reviewer pass returned `APPROVE WITH SUGGESTIONS` with no correctness issues. Remaining actionable convention suggestion: `TurnTreeProjectorTest` tests an Application/Handler class but lived under `tests/AgentCore/Domain/Run`. Launched fork `7sd6ljvxc7ox` to move the test to `tests/AgentCore/Application/Handler`, update namespace, run focused validation, and commit. Other NTH notes were explicitly non-actionable/no-action-needed.
