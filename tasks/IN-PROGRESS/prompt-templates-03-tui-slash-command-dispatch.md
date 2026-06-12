@@ -21,14 +21,22 @@ Can run in parallel with PT-02 after PT-01 lands.
 - Because this touches TUI/runtime flow, `LLM_MODE=true castor check` must pass before moving this task to CODE-REVIEW; if prerequisites are unavailable, keep the task IN-PROGRESS and record the blocker.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/prompt-templates-03-tui-slash-command-dispatch
+Worktree: /home/ineersa/projects/agent-core-worktrees/prompt-templates-03-tui-slash-command-dispatch
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-12T18:08:24.597Z
 Completed:
 
 ## Work log
 - Created: 2026-06-09T00:10:10.866Z
+
+## Task workflow update - 2026-06-12T18:08:24.597Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/prompt-templates-03-tui-slash-command-dispatch.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/prompt-templates-03-tui-slash-command-dispatch.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/prompt-templates-03-tui-slash-command-dispatch.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/prompt-templates-03-tui-slash-command-dispatch.
+- Summary: Claiming PT-03 for TUI prompt-template slash command registration and SubmitListener DispatchRuntime forwarding. Depends on PT-01/PT-02 now merged. Implementation must include real TmuxHarness + test LLM E2E proof for the user-visible `/template args` TUI path before handoff.
