@@ -99,3 +99,8 @@ Castor Check Output SHA256: 0b90fc800baaca8f517f434766888c7f657394adaacfcf85249b
 - Pulled integration checkout: Already up to date..
 - Validation: Pre-DONE: `gh pr view https://github.com/ineersa/agent-core/pull/126 --json state,mergedAt,...` returned state `MERGED`, mergedAt `2026-06-12T03:05:37Z`.; Pre-DONE: `git pull --ff-only` fast-forwarded main from `a543640e` to `9f3f6597` (`Merge pull request #126 from ineersa/task/prompt-templates-01-core-config-loader`).
 - Summary: PR #126 was already merged on GitHub at 2026-06-12T03:05:37Z. Integration checkout pulled `origin/main` fast-forward to merge commit `9f3f6597` before moving task to DONE.
+
+## Task workflow update - 2026-06-12T03:08:19.725Z
+- Updated PR Status: merged
+- Validation: Post-merge: `LLM_MODE=true castor check` OK. PHAR rebuilt and smoke tests OK.; Check summary: deptrac OK (1.1s); test-agent-core OK (271 tests, 1145 assertions); test-coding-agent-1 OK (324 tests, 1057 assertions); test-coding-agent-2 OK (370 tests, 1019 assertions); test-coding-agent-3 OK (399 tests, 1001 assertions); test-coding-agent-4 OK (338 tests, 889 assertions); test-tui-suite OK (664 tests, 1660 assertions); test-platform OK (54 tests, 221 assertions); test:controller OK (1 test, 7 assertions); test:llm-real OK (5 tests, 51 assertions); test:tui OK (16 tests, 51 assertions); phpstan OK (errors=0, file_errors=0); cs-check OK; quality OK.
+- Summary: Post-merge validation on integration checkout `main` passed after moving task to DONE. PR #126 had already been merged via GitHub UI; main was fast-forwarded to merge commit `9f3f6597`, task workflow metadata was moved to DONE, task worktree was removed, and full `LLM_MODE=true castor check` passed.
