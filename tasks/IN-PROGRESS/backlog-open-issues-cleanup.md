@@ -29,14 +29,22 @@ Connected open issues as of 2026-06-12:
 - Task remains IN-PROGRESS during one-by-one cleanup until user explicitly asks to move forward.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/backlog-open-issues-cleanup
+Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-12T16:54:23.580Z
 Completed:
 
 ## Work log
 - Created: 2026-06-12T16:54:16.266Z
+
+## Task workflow update - 2026-06-12T16:54:23.580Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/backlog-open-issues-cleanup.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup.
+- Summary: Started umbrella backlog cleanup per user request. Will investigate and fix one GitHub issue at a time using scouts for root-cause analysis and forks for implementation, then stop for user validation after the first fix.
