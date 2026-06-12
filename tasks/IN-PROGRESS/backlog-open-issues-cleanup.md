@@ -120,3 +120,6 @@ Completed:
 - Validation: Created tracked task: tasks/TODO/tui-image-paste-support.md.; Closed GitHub issue #119 via gh issue close with implementation-as-separate-task comment.
 - Summary: Issue #119 was classified as a larger feature/design task rather than a quick backlog fix. Created tasks/TODO/tui-image-paste-support.md with scout findings and acceptance criteria, then closed GitHub issue #119 with a comment pointing to the task.
 - No code implementation for #119 in backlog cleanup. Proceed to next open issue after task creation/closure.
+
+## Task workflow update - 2026-06-12T18:42:57.793Z
+- Moving to next open issue after #119 was converted to a tracked task and closed. Syncing backlog worktree to latest origin/main and starting #120 investigation.
