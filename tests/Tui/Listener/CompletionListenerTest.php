@@ -121,13 +121,13 @@ final class CompletionListenerTest extends TestCase
         // Open menu (index 0: /clear)
         $this->tui->handleInput("\t");
 
-        // Press Up to wrap to last item (/help)
+        // Press Up to wrap to last item (/hotkeys)
         $this->tui->handleInput("\x1b[A");
 
         // Accept
         $this->tui->handleInput("\t");
 
-        $this->assertSame('/help ', $this->editor->getText());
+        $this->assertSame('/hotkeys ', $this->editor->getText());
     }
 
     // ── Multiline: slash after newline does not trigger ────────────
@@ -223,10 +223,10 @@ final class CompletionListenerTest extends TestCase
         // Up with alternate sequence \x1bOA
         $this->tui->handleInput("\x1bOA");
 
-        // Accept — wraps to last (/help)
+        // Accept — wraps to last (/hotkeys)
         $this->tui->handleInput("\t");
 
-        $this->assertSame('/help ', $this->editor->getText());
+        $this->assertSame('/hotkeys ', $this->editor->getText());
     }
 
     #[Test]

@@ -176,7 +176,7 @@ final class TuiStartupSnapshotTest extends TestCase
         [$php, $script] = AgentTestExecutable::command();
 
         return \sprintf(
-            'APP_ENV=dev HOME=%s %s %s agent --model=llama_cpp_test/test --prompt="hello from tmux e2e" --tools-excluded=bash 2>&1; echo; echo "── TUI exited ──"; exec sleep 3600',
+            'APP_ENV=dev HOME=%s %s %s agent --model=llama_cpp_test/test --prompt="hello from tmux e2e" --tools-excluded=bash 2>&1; exec sleep 10',
             \escapeshellarg($this->testProjectDir.'/home'),
             \escapeshellarg($php),
             \escapeshellarg($script),

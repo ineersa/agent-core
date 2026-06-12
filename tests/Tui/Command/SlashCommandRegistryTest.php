@@ -252,6 +252,93 @@ final class SlashCommandRegistryTest extends TestCase
         self::assertSame('replaced', $result->text);
     }
 
+    // ─── Built-in: /hotkeys table ────────────────────────────────────
+
+    #[Test]
+    public function executeHotkeysReturnsHotkeyTableDataForEmptyRegistry(): void
+    {
+        // Default registry has an empty HotkeyRegistry → HotkeyTableData with isEmpty=true
+        $result = $this->registry->execute(new SlashCommand('hotkeys', '', '/hotkeys'));
+
+        self::assertInstanceOf(
+            \Ineersa\Tui\Command\Hotkey\HotkeyTableData::class,
+            $result,
+        );
+        // @phpstan-ignore-next-line
+        self::assertTrue($result->isEmpty());
+    }
+
+    #[Test]
+    public function executeHotkeysReturnsHotkeyTableDataWithGroupedBindings(): void
+    {
+        $hotkeyReg = new \Ineersa\Tui\Command\Hotkey\HotkeyRegistry();
+        $hotkeyReg->add(new \Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO(
+            context: 'Global',
+            keys: ['ctrl+c'],
+            action: 'Clear editor / cancel',
+            description: 'Clear or double-exit',
+            priority: 10,
+        ));
+        $hotkeyReg->add(new \Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO(
+            context: 'Editor',
+            keys: ['enter'],
+            action: 'Submit prompt',
+            description: 'Send editor content',
+            priority: 10,
+        ));
+        $hotkeyReg->add(new \Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO(
+            context: 'Editor',
+            keys: ['ctrl+j', 'shift+enter'],
+            action: 'Insert newline',
+            description: 'Start a new line',
+            priority: 20,
+        ));
+
+        $reg = new SlashCommandRegistry($hotkeyReg);
+        $result = $reg->execute(new SlashCommand('hotkeys', '', '/hotkeys'));
+
+        self::assertInstanceOf(
+            \Ineersa\Tui\Command\Hotkey\HotkeyTableData::class,
+            $result,
+        );
+
+        // @phpstan-ignore-next-line
+        self::assertFalse($result->isEmpty());
+
+        // @phpstan-ignore-next-line
+        $groups = $result->groups;
+        self::assertArrayHasKey('Global', $groups);
+        self::assertArrayHasKey('Editor', $groups);
+
+        // Check representative hotkey data is present in the groups
+        $globalBindings = $groups['Global'];
+        self::assertCount(1, $globalBindings);
+        self::assertSame('Clear editor / cancel', $globalBindings[0]->action);
+
+        $editorBindings = $groups['Editor'];
+        self::assertCount(2, $editorBindings);
+        $actions = array_map(
+            static fn (\Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO $b): string => $b->action,
+            $editorBindings,
+        );
+        self::assertContains('Submit prompt', $actions);
+        self::assertContains('Insert newline', $actions);
+    }
+
+    #[Test]
+    public function executeHotkeysViaAlias(): void
+    {
+        // 'hk' is an alias for 'hotkeys'
+        $result = $this->registry->execute(new SlashCommand('hk', '', '/hk'));
+
+        self::assertInstanceOf(
+            \Ineersa\Tui\Command\Hotkey\HotkeyTableData::class,
+            $result,
+        );
+        // @phpstan-ignore-next-line
+        self::assertTrue($result->isEmpty());
+    }
+
     // ─── Built-in: /clear ────────────────────────────────────────────
 
     #[Test]
@@ -421,7 +508,7 @@ final class SlashCommandRegistryTest extends TestCase
         $names = array_map(static fn (CommandMetadata $m) => $m->name, $all);
 
         // Should be sorted alphabetically
-        self::assertSame(['alpha', 'clear', 'exit', 'help', 'zebra'], $names);
+        self::assertSame(['alpha', 'clear', 'exit', 'help', 'hotkeys', 'zebra'], $names);
     }
 
     #[Test]
@@ -437,20 +524,21 @@ final class SlashCommandRegistryTest extends TestCase
         self::assertArrayHasKey('help', $map);
         self::assertArrayHasKey('clear', $map);
         self::assertArrayHasKey('exit', $map);
+        self::assertArrayHasKey('hotkeys', $map);
         self::assertArrayHasKey('custom', $map);
     }
 
     #[Test]
     public function countReflectsRegisteredCommands(): void
     {
-        self::assertSame(3, $this->registry->count()); // help, clear, exit
+        self::assertSame(4, $this->registry->count()); // help, clear, exit, hotkeys
 
         $this->registry->register(
             new CommandMetadata(name: 'extra'),
             $this->createMockHandler(),
         );
 
-        self::assertSame(4, $this->registry->count());
+        self::assertSame(5, $this->registry->count());
     }
 
     // ─── Built-in command metadata ───────────────────────────────────

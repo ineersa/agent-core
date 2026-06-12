@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Command;
 
+use Ineersa\Tui\Command\Hotkey\HotkeyRegistry;
+use Ineersa\Tui\Command\Hotkey\HotkeyTableData;
+
 /**
  * Registry of slash commands with built-in help, lookup, and dispatch.
  *
@@ -30,8 +33,9 @@ final class SlashCommandRegistry
     /** @var array<string, string> alias → canonical name */
     private array $aliasMap = [];
 
-    public function __construct()
-    {
+    public function __construct(
+        private readonly HotkeyRegistry $hotkeyRegistry = new HotkeyRegistry(),
+    ) {
         // Built-in /help — metadata only; handle is built-in to execute()
         $this->addMetadata(
             new CommandMetadata(
@@ -39,6 +43,16 @@ final class SlashCommandRegistry
                 aliases: ['h', '?'],
                 description: 'Show available commands and their descriptions',
                 usage: '/help [command]',
+            ),
+        );
+
+        // Built-in /hotkeys — metadata only; handle is built-in to execute()
+        $this->addMetadata(
+            new CommandMetadata(
+                name: 'hotkeys',
+                aliases: ['hk'],
+                description: 'Show keyboard shortcuts grouped by context',
+                usage: '/hotkeys',
             ),
         );
 
@@ -133,6 +147,11 @@ final class SlashCommandRegistry
         // Built-in help (only if no custom handler registered)
         if ('help' === $canonical) {
             return $this->buildHelpMessage($command->args);
+        }
+
+        // Built-in hotkeys (reads from live HotkeyRegistry)
+        if ('hotkeys' === $canonical) {
+            return new HotkeyTableData($this->hotkeyRegistry->grouped());
         }
 
         // Unknown command → friendly typed result

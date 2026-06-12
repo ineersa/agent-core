@@ -278,8 +278,8 @@ final class SlashCommandCompletionProviderTest extends TestCase
         $suggestions = $this->provider->getSuggestions(CompletionContext::forCursorAtEnd('/'));
 
         $displays = array_map(static fn (CompletionSuggestion $s) => $s->display, $suggestions);
-        // Registry sorts alphabetically by canonical name: clear → exit → help
-        $expected = ['/clear', '/exit', '/help'];
+        // Registry sorts alphabetically by canonical name: clear → exit → help → hotkeys
+        $expected = ['/clear', '/exit', '/help', '/hotkeys'];
         $this->assertSame($expected, $displays);
     }
 

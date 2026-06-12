@@ -22,6 +22,7 @@ use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Tui\Event\TickEvent;
+use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Tui;
 
 /**
@@ -155,6 +156,13 @@ final readonly class InteractiveMode
             $tui = new Tui();
             $screen = new ChatScreen($theme, $state->sessionId, $this->promptEditor);
             $screen->mount($tui);
+
+            // Apply Ctrl+J as portable newline, overriding the default new_line
+            // key list.  Both ctrl+j and shift+enter are listed so the default
+            // Shift+Enter behavior is preserved alongside the new portable key.
+            $this->promptEditor->setKeybindings(new Keybindings([
+                'new_line' => ['ctrl+j', 'shift+enter'],
+            ]));
 
             // Set initial transcript
             $screen->setTranscriptBlocks($state->transcript);

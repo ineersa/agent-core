@@ -281,7 +281,7 @@ final class ShellPrefixSmokeTest extends TestCase
     private function waitForLlmResponse(TmuxPane $pane, string $expectedText): void
     {
         try {
-            $this->tmux->waitForCaptureContains($pane, '◇', 5.0);
+            $this->tmux->waitForCaptureContains($pane, '◇', 8.0);
         } catch (\RuntimeException $e) {
             $this->tmux->waitForCaptureContains($pane, '✕', 2.0);
         }

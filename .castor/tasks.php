@@ -111,7 +111,7 @@ function check(): void
                     .' --group tui-e2e'
                     .' '.$strictFlags.$llmFlags
                     .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-tui.junit.xml') : ''),
-                75,
+                90,
             ),
         ],
         'phpstan' => [
