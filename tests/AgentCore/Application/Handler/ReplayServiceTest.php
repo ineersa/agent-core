@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Application\Handler;
 
 use Ineersa\AgentCore\Application\Handler\ReplayService;
-use Ineersa\AgentCore\Application\Handler\TurnTreeProjector;
-use Ineersa\AgentCore\Application\Handler\TurnTreeReplayFilter;
+use Ineersa\AgentCore\Domain\Run\TurnTreeProjector;
+use Ineersa\AgentCore\Application\Replay\TurnTreeReplayFilter;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;

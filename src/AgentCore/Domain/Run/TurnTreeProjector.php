@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Application\Handler;
+namespace Ineersa\AgentCore\Domain\Run;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Domain\Run\TurnTreeDTO;
-use Ineersa\AgentCore\Domain\Run\TurnTreeNodeDTO;
+
+use function Symfony\Component\String\u;
 
 /**
  * Builds a {@see TurnTreeDTO} from the canonical run event stream.
@@ -156,7 +156,7 @@ final class TurnTreeProjector
                 anchorSeq: $info['anchorSeq'],
                 lastSeq: $lastSeqs[$turnNo] ?? $info['anchorSeq'],
                 title: $title,
-                promptPreview: $this->previewForTitle($title),
+                promptPreview: u($title)->truncate(60, '...')->toString(),
                 createdAt: $info['createdAt'],
                 isCurrentLeaf: $turnNo === $currentLeafTurnNo,
                 reason: $info['reason'] ?? null,
@@ -438,23 +438,12 @@ final class TurnTreeProjector
     }
 
     /**
-     * Truncate a string to a maximum length, adding ellipsis if needed.
+     * Truncate a string to a maximum length using Symfony String
+     * (grapheme-safe), appending a Unicode ellipsis when truncated.
      */
     private function truncate(string $text, int $maxLen): string
     {
-        if (mb_strlen($text) <= $maxLen) {
-            return $text;
-        }
-
-        return mb_substr($text, 0, $maxLen).'…';
-    }
-
-    /**
-     * Create a short preview from a title for compact display.
-     */
-    private function previewForTitle(string $title): string
-    {
-        return $this->truncate($title, 60);
+        return u($text)->truncate($maxLen, '…')->toString();
     }
 
     /**

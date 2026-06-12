@@ -7,7 +7,7 @@ namespace Ineersa\AgentCore\Domain\Run;
 /**
  * Read-only turn tree for a single session/run.
  *
- * Built from the canonical event stream by {@see \Ineersa\AgentCore\Application\Handler\TurnTreeProjector}.
+ * Built from the canonical event stream by {@see TurnTreeProjector}.
  * Provides the data model for branch/replay filtering and future /tree UI rendering.
  */
 final readonly class TurnTreeDTO

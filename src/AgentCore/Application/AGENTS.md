@@ -60,8 +60,8 @@ event stream to only events on the active branch path. See `docs/session-storage
 "Turn tree model" for semantics.
 
 Key replay services and their tree integration:
-- `TurnTreeProjector` — builds `TurnTreeDTO` from canonical events (pure domain service).
-- `TurnTreeReplayFilter` — uses the projector to filter events to the active branch.
+- `TurnTreeProjector` (Domain) — builds `TurnTreeDTO` from canonical events (pure domain service).
+- `TurnTreeReplayFilter` (Application\Replay) — uses the projector to filter events to the active branch.
 - `RunStateReplayService` — filters events before replaying into `RunState`; runs
   integrity checks on the full canonical stream, not the filtered stream.
 - `ReplayService` — filters events before replaying prompt messages; reports
