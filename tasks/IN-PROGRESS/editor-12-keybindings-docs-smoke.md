@@ -35,7 +35,7 @@ Parallelizable with: none after dependencies.
 Status: IN-PROGRESS
 Branch: task/editor-12-keybindings-docs-smoke
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke
-Fork run: 67uly66th0nw
+Fork run: n1quu8reb70t
 PR URL: https://github.com/ineersa/agent-core/pull/114
 PR Status: open
 Started: 2026-06-10T19:50:55.944Z
@@ -222,3 +222,7 @@ Castor Check Output SHA256: 74ff0433812203034ac7cb3d7dabc8d42f969bb957b60dccac60
 ## Task workflow update - 2026-06-12T00:26:11.586Z
 - Moved CODE-REVIEW → IN-PROGRESS.
 - Summary: PR #114 blocker: user reports `castor check` can hang indefinitely after recent maintenance/test changes. This is now critical test-infrastructure/test-timeout work: tests must fail with proper timeouts and no uncapped waits. Moving back to IN-PROGRESS to scout all uncapped timeout paths and fix test timeout issues before returning to review.
+
+## Task workflow update - 2026-06-12T00:39:54.365Z
+- Recorded fork run: n1quu8reb70t
+- Summary: Critical test hang investigation: relaunched scouts and read their combined report from `/home/ineersa/.pi/agent/tmp/2026-06--faa7d82a.txt`. Key findings: `castor check` step commands are timeout-wrapped but TUI test support has uncapped tmux `shell_exec`/`exec` calls in `TmuxHarness`; `TuiStartupSnapshotTest` appends `exec sleep 3600`, which can leave hour-long tmux orphan sessions if teardown is skipped; TmuxHarness polling loops themselves are deadline-based; controller E2E loops are mostly bounded; do not follow stale-dir cleanup recommendations because tests/AGENTS.md requires preserving TUI E2E artifacts. Launched implementation fork n1quu8reb70t to fix high-confidence tests/test-support uncapped waits only, with hard guardrail not to modify `.castor/tasks.php` or Castor/check scheduling. Required fixes: bounded tmux command helper in `TmuxHarness`, remove/replace the one-hour startup snapshot sleep, preserve snapshot artifact retention, validate with focused/full TUI, castor test/deptrac/phpstan/cs-check, and `LLM_MODE=true castor check`.
