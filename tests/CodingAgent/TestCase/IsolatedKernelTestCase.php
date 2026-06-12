@@ -117,4 +117,14 @@ abstract class IsolatedKernelTestCase extends KernelTestCase
     }
 
     // ─── Utility ─────────────────────────────────────────────────────
+
+    /**
+     * Returns the isolated project temp directory created during setUp().
+     * Subclasses writing temp files (e.g. prompt templates) can use this
+     * instead of reflection to find the isolated CWD.
+     */
+    protected function isolatedCwd(): string
+    {
+        return $this->isolatedCwd;
+    }
 }

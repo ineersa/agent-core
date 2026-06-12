@@ -401,6 +401,7 @@ parameters:
       - AppSystemPrompt
       - AppSkills
       - AppTool
+      - AppPromptTemplate
       - AgentCore
       - AppConfig
       - SymfonyConsole
@@ -453,6 +454,7 @@ parameters:
       - AppRuntimeProjectionPipeline
       - AppRuntimeInternals
       - AppSkills
+      - AppPromptTemplate
       - AppSession
       - AppConfig
       - TuiApplication
