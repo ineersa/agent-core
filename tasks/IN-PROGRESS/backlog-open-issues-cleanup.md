@@ -219,3 +219,6 @@ Completed:
 - Recorded fork run: wlp54a5wdd31
 - Validation: LLM_MODE=true castor check: ALL 14 STEPS PASS (deptrac OK, test-agent-core 292 OK, test-coding-agent-1/2/3/4 OK, test-tui-suite 664 OK, test-platform 54 OK, test:controller 1 OK, test:llm-real 5 OK, test:tui-1 10 OK, test:tui-2 10 OK, phpstan 0 errors OK, cs-check OK)
 - Summary: Fork wlp54a5wdd31 fixed EditorBorderColorTest failure and committed ed269fed. Full LLM_MODE=true castor check passes all 14 steps including test:tui-1 (was FAIL, now OK in 45.7s). Also preserved preflight fix (max_tokens:512). 2 files changed: .castor/helpers.php and tests/Tui/E2E/EditorBorderColorTest.php (rewritten to extract editor border color by finding pure-dash rows and asserting colors differ between reasoning levels).
+
+## Task workflow update - 2026-06-12T21:52:02.927Z
+- Starting GitHub issue #121 investigation. User context: intermittent issue; no known session id; occurred on main tree; maybe logs exist. Symptom: after a run is cancelled, the next message sometimes does not trigger continuation. User requested scouts to figure out what's happening.
