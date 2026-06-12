@@ -65,3 +65,6 @@ Completed:
 - Recorded fork run: lrh416qv4ipw
 - Validation: Fork reported: `castor test --filter=PromptTemplateServiceTest` OK (10 tests, 16 assertions, 0 failures).; Fork reported: `castor test --filter=PromptTemplateSubstitutorTest` OK (24 tests, 25 assertions, 0 failures).; Fork reported: `castor phpstan` OK (0 errors).; Fork reported: `castor cs-check` OK (0 fixes).; Orchestrator verification: `git status --short --branch` clean on `task/prompt-templates-01-core-config-loader`.; Orchestrator verification: `git log --oneline --decorate -5` shows HEAD `ce058dd6` followed by implementation commit `24aedbf7`.
 - Summary: Review-fix fork completed and committed `ce058dd6` (`PT-01 review: remove loadResult() public API, add ${@} edge-behavior docblock + test`). Changes remove public `PromptTemplateService::loadResult()` and update cache test to use public API only; document/test actual `${@}` passthrough behavior. Worktree verified clean at `ce058dd6`.
+
+## Task workflow update - 2026-06-12T02:30:22.621Z
+- Second reviewer pass returned `APPROVED`. It also listed two minor non-blocking polish findings: clarify a misleading `PromptTemplateLoader` comment about hidden `.md` files, and remove unused `SymfonyConsole` allowance from the `AppPromptTemplate` deptrac ruleset. Launched polish fork `wg2nk5byx3sg` to address both before PR preparation.
