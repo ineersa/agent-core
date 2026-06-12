@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Tests\Domain\Run;
+namespace Ineersa\AgentCore\Tests\Application\Handler;
 
 use Ineersa\AgentCore\Application\Handler\TurnTreeProjector;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
