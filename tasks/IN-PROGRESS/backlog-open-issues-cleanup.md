@@ -241,3 +241,7 @@ Completed:
 
 ## Task workflow update - 2026-06-12T22:29:35.958Z
 - Starting GitHub issue #122 investigation per user request. Continue orchestrator workflow: scout first, then fork implementation only after root cause/plan is clear; no reset --hard.
+
+## Task workflow update - 2026-06-12T22:33:18.036Z
+- Summary: Issue #122 scout investigation complete. Report: footer bugs are (1) context/tokens drop to 0% during Working because UsageProjection::resetTurn() zeros latestInputTokens on TurnStarted until AssistantMessageCompleted arrives; (2) cost remains $0.00 because LlmPlatformAdapter::extractUsage() emits token counts but never a cost field, while UsageProjection::accumulate() only increments cost if usage['cost']/['total_cost'] exists. Pricing AiCost exists in model config but is not bridged into usage events. Resume usage replay appears already fixed by prior work; current live path and cost pipeline remain.
+- Scouts recommended minimal token fix: preserve latestInputTokens across resetTurn so footer shows last-known context while streaming. Cost fix options: compute from AiCost/model pricing in runtime/adapter pipeline (preferred) or in TUI projection layer; thinking tokens likely billed as output tokens unless model config gains a separate rate. Required validation: unit tests for UsageProjection/reset/cost, adapter or pipeline cost test, TmuxHarness E2E footer proof for non-zero context during Working and cost display where possible, full castor check.
