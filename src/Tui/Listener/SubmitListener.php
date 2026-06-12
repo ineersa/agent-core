@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Command\ClearTranscript;
 use Ineersa\Tui\Command\CommandResult;
+use Ineersa\Tui\Command\DispatchRuntime;
 use Ineersa\Tui\Command\DispatchShellCommand;
 use Ineersa\Tui\Command\ExitApplication;
 use Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO;
@@ -101,148 +102,27 @@ final class SubmitListener implements TuiListenerRegistrar
                     return;
                 }
 
+                // ── DispatchRuntime — forward payload to runtime ──
+                if ($commandResult instanceof DispatchRuntime) {
+                    self::dispatchToRuntime(
+                        $commandResult->payload, $state, $screen,
+                        $sessionStore, $blockFactory, $client, $logger, $tui,
+                    );
+
+                    return;
+                }
+
                 // ── Local command — apply typed effect ──
                 self::applyCommandResult($commandResult, $state, $screen, $sessionStore, $tui, $blockFactory);
 
                 return;
             }
 
-            // ── Normal prompt — route to runtime (existing behavior) ──
+            // ── Normal prompt — route to runtime ──
             // No local echo or persistence: canonical runtime events project
             // user blocks (avoiding duplicate block IDs), and events.jsonl is
             // the single source of truth for transcript replay on resume.
-            //
-            // Show immediate visual feedback (◐ Working...) before heavy
-            // synchronous work (session creation, system prompt discovery,
-            // skills context building, runner start).  Force a terminal
-            // repaint so the user sees the indicator instantly instead of
-            // staring at a blank editor until the work completes.
-            $screen->setWorkingMessage('Working...');
-            try {
-                $tui->requestRender();
-                $tui->processRender();
-            } catch (\Throwable $e) {
-                // Non-fatal: render may fail if the terminal is in a
-                // transient state.  The next tick will render normally.
-            }
-
-            try {
-                // Start a run if this is the first message
-                if (null === $state->handle && (null === $state->request || '' === $state->sessionId)) {
-                    // ── Draft session promotion ──
-                    // If this is a lazy draft (sessionId === ''), create the
-                    // real session row now so no orphan records are left when
-                    // /new is typed but never followed by a message.
-                    if ('' === $state->sessionId) {
-                        $state->sessionId = $sessionStore->createSession($text);
-                        $screen->updateSessionId($state->sessionId);
-                        $logger->info('Draft session promoted to real session', [
-                            'component' => 'SubmitListener',
-                            'event_type' => 'draft_promoted',
-                            'session_id' => $state->sessionId,
-                        ]);
-                    }
-
-                    // Merge any pre-configured draft request (e.g. from /new --model)
-                    // with the submitted text so model/reasoning metadata carries
-                    // forward and the run starts with the user-typed prompt.
-                    $mergedRequest = new StartRunRequest(
-                        prompt: $text,
-                        runId: $state->sessionId,
-                        // $state->request is nullable; nullsafe is required
-                        // to avoid a property-access error on null during
-                        // draft promotion from a plain /new without --model.
-                        // @phpstan-ignore nullsafe.neverNull
-                        cwd: $state->request?->cwd ?? '',
-                        // @phpstan-ignore nullsafe.neverNull
-                        options: $state->request?->options ?? [],
-                        model: $state->request?->model,
-                        reasoning: $state->request?->reasoning,
-                    );
-                    $state->request = $mergedRequest;
-                    $state->handle = $client->start($state->request);
-                    $state->activity = RunActivityStateEnum::Starting;
-                    $sessionStore->updateMetadata(
-                        $state->sessionId,
-                        [
-                            'run_id' => $state->sessionId,
-                            'prompt' => $text,
-                        ],
-                    );
-                    $state->lastSeq = 0;
-                } elseif (null !== $state->handle && $state->isShellRun && $state->activity->isTerminal()) {
-                    // The previous run was a standalone shell command (first-input
-                    // !) that completed without ever calling runner->start().
-                    // Sending a follow_up on it would fail because the runner
-                    // does not know about this run ID.  Start a fresh LLM run
-                    // for this normal prompt.
-                    $state->isShellRun = false;
-                    $state->handle = null;
-
-                    $state->request = new StartRunRequest(
-                        prompt: $text,
-                        runId: $state->sessionId,
-                        cwd: $state->request->cwd ?? '',
-                    );
-                    $state->handle = $client->start($state->request);
-                    $state->activity = RunActivityStateEnum::Starting;
-                    $sessionStore->updateMetadata(
-                        $state->sessionId,
-                        [
-                            'run_id' => $state->sessionId,
-                            'prompt' => $text,
-                        ],
-                    );
-                    $state->lastSeq = 0;
-                } elseif (null !== $state->handle) {
-                    // Route subsequent chat messages as follow_up or steer
-                    // based on authoritative run activity state:
-                    //   - follow_up: normal next user message when idle/completed
-                    //   - steer:     steering/injected message while active
-                    //
-                    // Special case — Cancelling:
-                    //   The run is in a grace window (tools/LLM aborting).
-                    //   Sending steer would be rejected by AgentCore; sending
-                    //   follow_up would race with the AdvanceRun dispatched by
-                    //   the cancellation abort flow.  Queue the message locally
-                    //   and dispatch it as follow_up only after the real
-                    //   Cancelled transition is observed by the poller.
-                    if (RunActivityStateEnum::Cancelling === $state->activity) {
-                        $state->queuedFollowUp = $text;
-                        $screen->setWorkingMessage('Message queued — waiting for cancellation to complete...');
-                    } elseif ($state->activity->isActive()) {
-                        $client->send(
-                            $state->handle->runId,
-                            new UserCommand(type: 'steer', text: $text),
-                        );
-                    } else {
-                        $client->send(
-                            $state->handle->runId,
-                            new UserCommand(type: 'follow_up', text: $text),
-                        );
-                        // Transition to Starting so that subsequent submits
-                        // while the agent picks up the follow_up use steer.
-                        $state->activity = RunActivityStateEnum::Starting;
-                    }
-                }
-            } catch (\Throwable $e) {
-                $state->activity = RunActivityStateEnum::Failed;
-                $state->transcript[] = $blockFactory->error(
-                    runId: $state->sessionId,
-                    text: 'Runtime error: '.$e->getMessage(),
-                    seq: \count($state->transcript) + 1,
-                );
-                $screen->setWorkingMessage('');
-                $screen->setTranscriptBlocks($state->transcript);
-
-                return;
-            }
-
-            // Update transcript display.
-            // The working indicator was already shown before the
-            // synchronous work above; the poller will transition it
-            // to idle when runtime events arrive.
-            $screen->setTranscriptBlocks($state->transcript);
+            self::dispatchToRuntime($text, $state, $screen, $sessionStore, $blockFactory, $client, $logger, $tui);
         });
     }
 
@@ -309,8 +189,158 @@ final class SubmitListener implements TuiListenerRegistrar
             return;
         }
 
-        // NoOp, DispatchRuntime, and unknown future variants are silently ignored.
-        // DispatchRuntime will be wired by future tasks that add runtime execution.
+        // NoOp and unknown future variants are silently ignored.
+        // DispatchRuntime is handled before applyCommandResult (see above).
+    }
+
+    /**
+     * Dispatch a normal prompt or DispatchRuntime payload to the runtime.
+     *
+     * No local echo or persistence: canonical runtime events project
+     * user blocks (avoiding duplicate block IDs), and events.jsonl is
+     * the single source of truth for transcript replay on resume.
+     */
+    private static function dispatchToRuntime(
+        string $text,
+        TuiSessionState $state,
+        ChatScreen $screen,
+        HatfieldSessionStore $sessionStore,
+        TranscriptBlockFactory $blockFactory,
+        \Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient $client,
+        LoggerInterface $logger,
+        Tui $tui,
+    ): void {
+        // Show immediate visual feedback (◐ Working...) before heavy
+        // synchronous work (session creation, system prompt discovery,
+        // skills context building, runner start).  Force a terminal
+        // repaint so the user sees the indicator instantly instead of
+        // staring at a blank editor until the work completes.
+        $screen->setWorkingMessage('Working...');
+        try {
+            $tui->requestRender();
+            $tui->processRender();
+        } catch (\Throwable $e) {
+            // Non-fatal: render may fail if the terminal is in a
+            // transient state.  The next tick will render normally.
+        }
+
+        try {
+            // Start a run if this is the first message
+            if (null === $state->handle && (null === $state->request || '' === $state->sessionId)) {
+                // ── Draft session promotion ──
+                // If this is a lazy draft (sessionId === ''), create the
+                // real session row now so no orphan records are left when
+                // /new is typed but never followed by a message.
+                if ('' === $state->sessionId) {
+                    $state->sessionId = $sessionStore->createSession($text);
+                    $screen->updateSessionId($state->sessionId);
+                    $logger->info('Draft session promoted to real session', [
+                        'component' => 'SubmitListener',
+                        'event_type' => 'draft_promoted',
+                        'session_id' => $state->sessionId,
+                    ]);
+                }
+
+                // Merge any pre-configured draft request (e.g. from /new --model)
+                // with the submitted text so model/reasoning metadata carries
+                // forward and the run starts with the user-typed prompt.
+                $mergedRequest = new StartRunRequest(
+                    prompt: $text,
+                    runId: $state->sessionId,
+                    // $state->request is nullable; nullsafe is required
+                    // to avoid a property-access error on null during
+                    // draft promotion from a plain /new without --model.
+                    // @phpstan-ignore nullsafe.neverNull
+                    cwd: $state->request?->cwd ?? '',
+                    // @phpstan-ignore nullsafe.neverNull
+                    options: $state->request?->options ?? [],
+                    model: $state->request?->model,
+                    reasoning: $state->request?->reasoning,
+                );
+                $state->request = $mergedRequest;
+                $state->handle = $client->start($state->request);
+                $state->activity = RunActivityStateEnum::Starting;
+                $sessionStore->updateMetadata(
+                    $state->sessionId,
+                    [
+                        'run_id' => $state->sessionId,
+                        'prompt' => $text,
+                    ],
+                );
+                $state->lastSeq = 0;
+            } elseif (null !== $state->handle && $state->isShellRun && $state->activity->isTerminal()) {
+                // The previous run was a standalone shell command (first-input
+                // !) that completed without ever calling runner->start().
+                // Sending a follow_up on it would fail because the runner
+                // does not know about this run ID.  Start a fresh LLM run
+                // for this normal prompt.
+                $state->isShellRun = false;
+                $state->handle = null;
+
+                $state->request = new StartRunRequest(
+                    prompt: $text,
+                    runId: $state->sessionId,
+                    cwd: $state->request->cwd ?? '',
+                );
+                $state->handle = $client->start($state->request);
+                $state->activity = RunActivityStateEnum::Starting;
+                $sessionStore->updateMetadata(
+                    $state->sessionId,
+                    [
+                        'run_id' => $state->sessionId,
+                        'prompt' => $text,
+                    ],
+                );
+                $state->lastSeq = 0;
+            } elseif (null !== $state->handle) {
+                // Route subsequent chat messages as follow_up or steer
+                // based on authoritative run activity state:
+                //   - follow_up: normal next user message when idle/completed
+                //   - steer:     steering/injected message while active
+                //
+                // Special case — Cancelling:
+                //   The run is in a grace window (tools/LLM aborting).
+                //   Sending steer would be rejected by AgentCore; sending
+                //   follow_up would race with the AdvanceRun dispatched by
+                //   the cancellation abort flow.  Queue the message locally
+                //   and dispatch it as follow_up only after the real
+                //   Cancelled transition is observed by the poller.
+                if (RunActivityStateEnum::Cancelling === $state->activity) {
+                    $state->queuedFollowUp = $text;
+                    $screen->setWorkingMessage('Message queued — waiting for cancellation to complete...');
+                } elseif ($state->activity->isActive()) {
+                    $client->send(
+                        $state->handle->runId,
+                        new UserCommand(type: 'steer', text: $text),
+                    );
+                } else {
+                    $client->send(
+                        $state->handle->runId,
+                        new UserCommand(type: 'follow_up', text: $text),
+                    );
+                    // Transition to Starting so that subsequent submits
+                    // while the agent picks up the follow_up use steer.
+                    $state->activity = RunActivityStateEnum::Starting;
+                }
+            }
+        } catch (\Throwable $e) {
+            $state->activity = RunActivityStateEnum::Failed;
+            $state->transcript[] = $blockFactory->error(
+                runId: $state->sessionId,
+                text: 'Runtime error: '.$e->getMessage(),
+                seq: \count($state->transcript) + 1,
+            );
+            $screen->setWorkingMessage('');
+            $screen->setTranscriptBlocks($state->transcript);
+
+            return;
+        }
+
+        // Update transcript display.
+        // The working indicator was already shown before the
+        // synchronous work above; the poller will transition it
+        // to idle when runtime events arrive.
+        $screen->setTranscriptBlocks($state->transcript);
     }
 
     /**

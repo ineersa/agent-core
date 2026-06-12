@@ -237,7 +237,7 @@ services:
 
   Ineersa\Tui\Application\InteractiveMode:
     arguments:
-      $listenerRegistrars: !tagged_iterator app.tui_listener
+      $listenerRegistrars: !tagged_iterator { tag: app.tui_listener, default_priority_method: getPriority }
 
   # ─── Runtime stream wiring ───
 
