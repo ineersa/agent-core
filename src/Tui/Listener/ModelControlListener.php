@@ -52,7 +52,7 @@ final class ModelControlListener implements TuiListenerRegistrar
         $this->favPickerController->setRuntimeRefs($tui, $screen, $state);
 
         // ── Register /model slash command (idempotent) ──
-        $modelHandler = new ModelCommandHandler($modelService, $appConfig, $state, $this->pickerController, $this->favPickerController, $this->logger);
+        $modelHandler = new ModelCommandHandler($modelService, $appConfig, $state, $this->pickerController, $this->favPickerController, $this->logger, $screen);
         if ($this->commandRegistry->has('model')) {
             $this->commandRegistry->setHandler('model', $modelHandler);
         } else {
@@ -69,7 +69,7 @@ final class ModelControlListener implements TuiListenerRegistrar
         }
 
         // ── Register /model-favourites slash command ──
-        $favCmdHandler = new ModelCommandHandler($modelService, $appConfig, $state, $this->pickerController, $this->favPickerController, $this->logger, isFavourites: true);
+        $favCmdHandler = new ModelCommandHandler($modelService, $appConfig, $state, $this->pickerController, $this->favPickerController, $this->logger, $screen, isFavourites: true);
         if ($this->commandRegistry->has('model-favourites')) {
             $this->commandRegistry->setHandler('model-favourites', $favCmdHandler);
         } else {
@@ -87,7 +87,7 @@ final class ModelControlListener implements TuiListenerRegistrar
 
         // ── Register Ctrl+P — cycle favorite models ──
         $tui->addListener(static function (InputEvent $event) use (
-            $modelService, $state, $appConfig,
+            $modelService, $state, $appConfig, $screen,
         ): void {
             // Ctrl+P is \x10
             if ("\x10" !== $event->getData()) {
@@ -106,6 +106,9 @@ final class ModelControlListener implements TuiListenerRegistrar
             $state->footerModel = FooterStateInitializer::shortModelName($nextRef->toString());
             $state->footerReasoning = $modelService->getDisplayReasoning($state->sessionId);
             $state->contextWindow = FooterStateInitializer::resolveContextWindowForRef($appConfig, $nextRef);
+
+            // Apply editor border colour matching the new reasoning level.
+            $screen->applyEditorBorderColor($state->footerReasoning);
 
             // For draft sessions, carry the model into the request so it is
             // used when the draft is promoted on first submit.  Without this,
@@ -155,6 +158,9 @@ final class ModelControlListener implements TuiListenerRegistrar
             // into FooterDataProvider and its right-side footer text.
             $screen->registry()->setStatus('reasoning', $nextLevel);
             $screen->refresh();
+
+            // Apply editor border colour matching the new reasoning level.
+            $screen->applyEditorBorderColor($nextLevel);
         }, priority: 95);
     }
 }

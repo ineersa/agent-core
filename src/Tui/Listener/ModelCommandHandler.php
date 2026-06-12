@@ -15,6 +15,7 @@ use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Picker\FavoritePickerController;
 use Ineersa\Tui\Picker\ModelPickerController;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Screen\ChatScreen;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -42,6 +43,7 @@ final class ModelCommandHandler implements SlashCommandHandler
         private readonly ModelPickerController $pickerController,
         private readonly FavoritePickerController $favPickerController,
         private readonly LoggerInterface $logger,
+        private readonly ?ChatScreen $screen = null,
         private readonly bool $isFavourites = false,
     ) {
     }
@@ -123,6 +125,9 @@ final class ModelCommandHandler implements SlashCommandHandler
         );
         $this->state->footerReasoning = $this->modelService->getDisplayReasoning($this->state->sessionId);
         $this->state->contextWindow = FooterStateInitializer::resolveContextWindowForRef($this->appConfig, $ref);
+
+        // Apply editor border colour matching the new reasoning level.
+        $this->screen?->applyEditorBorderColor($this->state->footerReasoning);
 
         return new TranscriptMessage(
             \sprintf('Model changed to %s.', $ref->toString()),

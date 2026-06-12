@@ -23,6 +23,8 @@ use Ineersa\Tui\Widget\LiveTextWidget;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\WidgetPlacementEnum;
 use Symfony\Component\Tui\Render\RenderContext;
+use Symfony\Component\Tui\Style\Style;
+use Symfony\Component\Tui\Style\StyleSheet;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\AbstractWidget;
 use Symfony\Component\Tui\Widget\EditorWidget;
@@ -352,6 +354,32 @@ final class ChatScreen
         $this->footerDataProvider->setStatus($key, $text);
         $this->statusPanelWidget->invalidate();
         $this->footerWidget->invalidate();
+    }
+
+    /**
+     * Apply the editor border colour matching the current reasoning level.
+     *
+     * Maps reasoning levels (off, minimal, low, medium, high, xhigh) to the
+     * corresponding theme thinking-colour tokens and updates the Symfony TUI
+     * stylesheet so the EditorWidget frame is rendered in that colour.
+     *
+     * Uses {@see FooterStateSegmentProvider::thinkingColor()} so the
+     * mapping stays consistent between the footer diamond/model and the
+     * editor border.
+     */
+    public function applyEditorBorderColor(string $reasoning): void
+    {
+        if (null === $this->tui) {
+            return;
+        }
+
+        $colorEnum = ThemeColorEnum::forReasoning($reasoning);
+        $colorSpec = $this->theme->getPalette()->get($colorEnum);
+
+        $style = new Style(color: $colorSpec);
+        $this->tui->addStyleSheet(new StyleSheet([
+            EditorWidget::class.'::frame' => $style,
+        ]));
     }
 
     /**

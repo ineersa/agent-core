@@ -94,4 +94,23 @@ enum ThemeColorEnum: string
     case ThinkingHigh = 'thinking_high';
     case ThinkingXhigh = 'thinking_xhigh';
     case BashMode = 'bash_mode';
+
+    /**
+     * Map a reasoning level string to the corresponding thinking colour token.
+     *
+     * Shared between the footer segment provider and the editor border
+     * colour so the same mapping is used everywhere.
+     */
+    public static function forReasoning(string $reasoning): self
+    {
+        return match ($reasoning) {
+            'xhigh' => self::ThinkingXhigh,
+            'high' => self::ThinkingHigh,
+            'medium' => self::ThinkingMedium,
+            'low' => self::ThinkingLow,
+            'minimal' => self::ThinkingMinimal,
+            'off' => self::ThinkingOff,
+            default => self::ThinkingText,
+        };
+    }
 }
