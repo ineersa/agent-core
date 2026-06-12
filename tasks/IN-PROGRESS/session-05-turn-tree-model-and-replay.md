@@ -100,7 +100,7 @@ B) **Leaf event** — Append a `run.leaf_set` event to `events.jsonl` each time 
 Status: IN-PROGRESS
 Branch: task/session-05-turn-tree-model-and-replay
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay
-Fork run: zlk8lxlq5po8
+Fork run: ta7fy8pux9bu
 PR URL:
 PR Status:
 Started: 2026-06-12T01:41:43.505Z
@@ -137,3 +137,7 @@ Completed:
 - Recorded fork run: zlk8lxlq5po8
 - Validation: Fork validation reported: `castor test --filter=TurnTreeProjectorTest` ok (10 tests, 56 assertions).; Fork validation reported: `castor test --filter=RunStateReplayServiceTest` ok (25 tests, 107 assertions).; Fork validation reported: `castor phpstan` ok (errors=0, file_errors=0).; Fork validation reported: `castor cs-fix` ok (1 formatting-only file fixed), then `castor cs-check` ok (files_fixed=0).
 - Summary: Review-fix fork completed. Applied reviewer suggestions in commit `182bf592 Address turn tree review feedback`: updated branch-filtered replay docblock, documented `TurnTreeNodeDTO::lastSeq` semantics, removed dead `$turnIndicesByTurnNo`, and removed a no-op test-helper conditional. Fork reports no behavioral changes and no broader refactors.
+
+## Task workflow update - 2026-06-12T02:31:13.016Z
+- Recorded fork run: ta7fy8pux9bu
+- Summary: Second reviewer pass still returned `APPROVE WITH SUGGESTIONS`. Prior review fixes were confirmed. Remaining actionable edge-case: `TurnTreeProjector::computeLastSeqs()` has no direct coverage and may misattribute rewind-only `leaf_set` events to the abandoned last anchored turn. Launched fork `ta7fy8pux9bu` to make node `lastSeq` reflect max event seq scoped to each turn, update DTO docs, add linear/rewind/branch lastSeq tests, and run focused Castor validation. Non-blocking design/NTH items (projector location, direct filter tests, minor simplification) intentionally not included unless required for the edge-case fix.
