@@ -173,6 +173,7 @@ final class PlatformIntegrationTest extends TestCase
             transformContextHooks: [$transformHook],
             convertToLlmHooks: [$convertHook],
             streamObserver: null,
+            costCalculator: null,
             logger: new NullLogger(),
         );
 
@@ -318,6 +319,7 @@ final class PlatformIntegrationTest extends TestCase
             transformContextHooks: [],
             convertToLlmHooks: [],
             streamObserver: null,
+            costCalculator: null,
             logger: new NullLogger(),
         );
 
