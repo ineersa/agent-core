@@ -24,12 +24,12 @@ Enables parallel follow-up: PT-02 and PT-03 can start after this lands.
 - `castor test`, `castor deptrac`, `castor phpstan`, and `castor cs-check` pass for the focused implementation.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/prompt-templates-01-core-config-loader
 Worktree: /home/ineersa/projects/agent-core-worktrees/prompt-templates-01-core-config-loader
 Fork run: wg2nk5byx3sg
-PR URL:
-PR Status:
+PR URL: https://github.com/ineersa/agent-core/pull/126
+PR Status: open
 Started: 2026-06-12T01:42:36.569Z
 Completed:
 
@@ -77,3 +77,16 @@ Completed:
 ## Task workflow update - 2026-06-12T02:36:34.747Z
 - Validation: Reviewer decision: APPROVED for current HEAD `5d5dfe53b815bd80f640b9e1f9136a26dc00505b`.; Local: `castor test` OK. PHAR rebuilt and smoke tests OK; parallel PHPUnit summary: agent-core 271 tests/1145 assertions, coding-agent-1 324/1057, coding-agent-2 370/1019, coding-agent-3 399/1001, coding-agent-4 338/889, tui 664/1660, platform 54/221; all errors=0 failures=0 skipped=0; total 58.8s.; Local: `castor deptrac` OK (violations=0, errors=0, uncovered=795, allowed=1104).; Local: `castor phpstan` OK (errors=0, file_errors=0).; Local: `castor cs-check` OK (files_fixed=0).; Local: `git status --short --branch` clean on `task/prompt-templates-01-core-config-loader` at `5d5dfe53b815bd80f640b9e1f9136a26dc00505b`.
 - Summary: Final reviewer subagent decision for current HEAD `5d5dfe53b815bd80f640b9e1f9136a26dc00505b`: APPROVED. Reviewer verified the polish commit was minimal/correct, no new issues, acceptance criteria remain met, no runtime/TUI wiring beyond Runtime/Contract DTO/interface, and no TmuxHarness E2E required for this non-TUI foundation task. Local validation passed; worktree clean.
+Castor Check Status: passed
+Castor Check Commit: 5d5dfe53b815bd80f640b9e1f9136a26dc00505b
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 900s
+Castor Check Completed: 2026-06-12T02:38:05.149Z
+Castor Check Output SHA256: 0b90fc800baaca8f517f434766888c7f657394adaacfcf85249bcb3ad90c7460
+
+## Task workflow update - 2026-06-12T02:38:08.523Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: 5d5dfe53b815.
+- Pushed task/prompt-templates-01-core-config-loader to origin.
+- branch 'task/prompt-templates-01-core-config-loader' set up to track 'origin/task/prompt-templates-01-core-config-loader'.
+- Created PR: https://github.com/ineersa/agent-core/pull/126
