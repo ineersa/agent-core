@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: 7nz1rximl6ud
+Fork run: e3ji2jgnic2e
 PR URL:
 PR Status:
 Started: 2026-06-12T16:54:23.580Z
@@ -65,3 +65,7 @@ Completed:
 
 ## Task workflow update - 2026-06-12T17:10:22.412Z
 - User validation failed issue #117: provided snapshot `/home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup/.hatfield/tmp/tui/snapshots/snapshot-ansi-20260612-130848.ansi`; Shift+Tab still shows nothing. Need fork iteration with real agent tmux verification and proper snapshots per AGENTS.md, not only test harness assumptions.
+
+## Task workflow update - 2026-06-12T17:10:58.765Z
+- Recorded fork run: e3ji2jgnic2e
+- Dispatched iteration fork e3ji2jgnic2e for issue #117 after failed user validation. Fork instructed to inspect the user's snapshot artifact, diagnose why prior fix did not show in real TUI, implement only #117, and verify via real interactive agent tmux with sent Shift+Tab keys and captured snapshots in addition to Castor TUI/check validation.
