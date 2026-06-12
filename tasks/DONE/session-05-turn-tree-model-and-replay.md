@@ -97,14 +97,14 @@ B) **Leaf event** — Append a `run.leaf_set` event to `events.jsonl` each time 
 - Validation uses Castor per project rules; runtime/Messenger changes require full `castor check` before CODE-REVIEW.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/session-05-turn-tree-model-and-replay
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay
 Fork run: d1ekk2pduqld
 PR URL: https://github.com/ineersa/agent-core/pull/128
-PR Status: open
+PR Status: merged
 Started: 2026-06-12T01:41:43.505Z
-Completed:
+Completed: 2026-06-12T16:10:35.284Z
 
 ## Work log
 - Created: 2026-06-07T20:46:01.617Z
@@ -238,3 +238,36 @@ Castor Check Output SHA256: 1a01e22df9ef9ff08359c0d92d150763fd745b98e4bd5d331078
 - PR already exists: https://github.com/ineersa/agent-core/pull/128
 - Validation: `castor test --filter=TurnTreeProjectorTest` ok (16 tests, 81 assertions).; `castor test --filter=ReplayServiceTest` ok (28 tests, 127 assertions).; `castor test --filter=RunStateReplayServiceTest` ok (25 tests, 107 assertions).; `castor phpstan --path src/AgentCore` ok (errors=0, file_errors=0).; `castor phpstan --path tests/AgentCore/Domain/Run/TurnTreeProjectorTest.php` ok (errors=0, file_errors=0).; `castor deptrac` ok (violations=0, errors=0).; `castor cs-check` ok (files_fixed=0).; Final reviewer subagent: APPROVE WITH SUGGESTIONS, no actionable blockers/regressions.; Full `LLM_MODE=true castor check` to be run by move_task CODE-REVIEW gate.
 - Summary: Addressed PR #128 code review feedback and moved back to code review. Review-iteration stack through `cc451113` resolves all owner inline comments: moved `TurnTreeProjector` to `Domain\Run`, moved `TurnTreeReplayFilter` to `Application\Replay`, updated imports/docs/tests, switched truncation to Symfony String, removed `previewForTitle`, tightened dangling-parent handling, documented exceptions, and fixed event-backed root turn active-path regression. Final reviewer found no actionable issues; only non-blocking convention notes remained.
+
+## Task workflow update - 2026-06-12T16:10:35.284Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/session-05-turn-tree-model-and-replay into integration checkout.
+- Merge made by the 'ort' strategy.
+ docs/session-storage.md                            |  78 ++-
+ src/AgentCore/Application/AGENTS.md                |  14 +
+ .../Application/Dto/TurnBranchReplayDTO.php        |  33 ++
+ .../Application/Handler/ReplayService.php          |  15 +-
+ .../Application/Handler/RunStateReplayService.php  |  52 +-
+ .../Application/Pipeline/AdvanceRunHandler.php     |  18 +
+ .../Application/Replay/TurnTreeReplayFilter.php    | 101 ++++
+ src/AgentCore/Domain/Event/RunEventTypeEnum.php    |   4 +
+ src/AgentCore/Domain/Run/TurnTreeDTO.php           |  28 +
+ src/AgentCore/Domain/Run/TurnTreeNodeDTO.php       |  43 ++
+ src/AgentCore/Domain/Run/TurnTreeProjector.php     | 488 ++++++++++++++++++
+ .../Runtime/Protocol/RuntimeEventTranslator.php    |   3 +
+ .../Application/Handler/ReplayServiceTest.php      |  99 ++++
+ .../Handler/RunStateReplayServiceTest.php          | 216 ++++++++
+ .../Application/Pipeline/AdvanceRunHandlerTest.php |  58 ++-
+ .../AgentCore/Domain/Run/TurnTreeProjectorTest.php | 561 +++++++++++++++++++++
+ .../CodingAgent/Runtime/RuntimeEventMapperTest.php |  27 +
+ 17 files changed, 1828 insertions(+), 10 deletions(-)
+ create mode 100644 src/AgentCore/Application/Dto/TurnBranchReplayDTO.php
+ create mode 100644 src/AgentCore/Application/Replay/TurnTreeReplayFilter.php
+ create mode 100644 src/AgentCore/Domain/Run/TurnTreeDTO.php
+ create mode 100644 src/AgentCore/Domain/Run/TurnTreeNodeDTO.php
+ create mode 100644 src/AgentCore/Domain/Run/TurnTreeProjector.php
+ create mode 100644 tests/AgentCore/Domain/Run/TurnTreeProjectorTest.php
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay.
+- Pulled integration checkout: Already up to date..
+- Validation: Pre-completion check: PR #128 state from GitHub is MERGED; head `task/session-05-turn-tree-model-and-replay`, base `main`.; Pre-completion check: task status CODE-REVIEW with Castor gate passed at `cc451113ede5`.
+- Summary: Completing reviewed task. PR #128 is already merged on GitHub; user requested completion. Moving task to DONE, syncing integration checkout, and cleaning task worktree. Post-merge validation will run afterward on the integration checkout.
