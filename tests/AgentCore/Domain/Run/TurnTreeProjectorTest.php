@@ -338,10 +338,8 @@ final class TurnTreeProjectorTest extends TestCase
             'step_id' => 'step-' . $turnNo,
         ];
 
-        if (null !== $parentTurnNo || $turnNo > 1) {
-            // Include parent_turn_no key for new-style streams when explicit.
-            // For old-style streams (tests that pass null), omit the key.
-        }
+        // Include parent_turn_no key for new-style streams when explicit.
+        // For old-style streams (tests that pass null), omit the key.
         if (null !== $parentTurnNo) {
             $payload['parent_turn_no'] = $parentTurnNo;
         }

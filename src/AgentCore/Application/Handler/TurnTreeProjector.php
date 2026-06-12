@@ -66,7 +66,6 @@ final class TurnTreeProjector
         // Build intermediate data.
         // turnInfo[turnNo] = { parentTurnNo, anchorSeq, anchorIndex, reason }
         $turnInfo = [];
-        $turnIndicesByTurnNo = []; // turnNo → index in sorted array
 
         foreach ($turnAdvancedEvents as $index => $event) {
             $turnNo = (int) ($event->payload['turn_no'] ?? $event->turnNo);
@@ -86,7 +85,6 @@ final class TurnTreeProjector
                 'anchorIndex' => $index,
                 'createdAt' => $event->createdAt,
             ];
-            $turnIndicesByTurnNo[$turnNo] = $index;
         }
 
         // Also collect turn_branched events for any additional metadata.
@@ -108,7 +106,6 @@ final class TurnTreeProjector
                         'createdAt' => $event->createdAt,
                         'reason' => $reason,
                     ];
-                    $turnIndicesByTurnNo[$turnNo] = $index;
                 } elseif (null !== $reason) {
                     $turnInfo[$turnNo]['reason'] = $reason;
                 }

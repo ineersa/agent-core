@@ -177,10 +177,12 @@ final readonly class RunStateReplayService
      * retryableFailure} are populated from events; isStreaming is false
      * and streamingMessage is null after replay.
      *
-     * **Caller must provide sorted, contiguous, duplicate-free events.**
+     * **Caller must provide events sorted ascending by sequence.**
+     * Events MAY have gaps (non-contiguous sequences) when branch-filtered;
+     * canonical duplicate/contiguity validation happens on the full event
+     * stream in {@see rebuildIfStale()} before branch filtering.
      * This method does NOT detect gaps, validate ordering, or check for
-     * duplicate sequences.  Use {@see rebuildIfStale()} for production
-     * replay that includes full integrity checks (contiguity + duplicates).
+     * duplicate sequences.
      *
      * **By-ref accumulator invariant:** Reducers mutate {@see $messages} and
      * {@see $pendingToolCalls} by reference as the source of truth for the
@@ -191,7 +193,7 @@ final readonly class RunStateReplayService
      * rely on {@see $state->messages} or {@see $state->pendingToolCalls}
      * for current accumulator state during iteration.
      *
-     * @param list<RunEvent> $events sorted ascending by seq, no gaps, no duplicates
+     * @param list<RunEvent> $events sorted ascending by seq; may have gaps after branch filtering
      */
     public function replay(RunState $existingState, array $events): RunState
     {
