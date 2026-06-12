@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run:
+Fork run: 7nz1rximl6ud
 PR URL:
 PR Status:
 Started: 2026-06-12T16:54:23.580Z
@@ -48,3 +48,9 @@ Completed:
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup.
 - Summary: Started umbrella backlog cleanup per user request. Will investigate and fix one GitHub issue at a time using scouts for root-cause analysis and forks for implementation, then stop for user validation after the first fix.
+
+## Task workflow update - 2026-06-12T16:57:38.802Z
+- Recorded fork run: 7nz1rximl6ud
+- Started issue #117 first (oldest open issue): Shift+Tab not showing thinking level chosen.
+- Scout completed root-cause analysis: footer intentionally hides reasoning text and tests enforce absence; Shift+Tab updates state without immediate footer invalidation; TUI E2E proof required.
+- Fork 7nz1rximl6ud dispatched in worktree to implement only #117 with unit + TmuxHarness E2E validation.
