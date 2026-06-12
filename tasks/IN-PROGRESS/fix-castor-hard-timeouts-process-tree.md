@@ -11,14 +11,23 @@ Follow-up from PT-03 post-merge validation: `LLM_MODE=true castor check` was man
 - Validation includes a targeted reproduction/smoke proving a timed command that leaks a child holding stdout open returns within the configured timeout, plus `LLM_MODE=true castor check` or a justified subset including `castor test:tui`.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/fix-castor-hard-timeouts-process-tree
+Worktree: /home/ineersa/projects/agent-core-worktrees/fix-castor-hard-timeouts-process-tree
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-12T22:51:50.812Z
 Completed:
 
 ## Work log
 - Created: 2026-06-12T22:51:42.900Z
+
+## Task workflow update - 2026-06-12T22:51:50.812Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/fix-castor-hard-timeouts-process-tree.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/fix-castor-hard-timeouts-process-tree.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/fix-castor-hard-timeouts-process-tree.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/fix-castor-hard-timeouts-process-tree.
+- Validation: Observed stale integration PHAR messenger consumers adopted by systemd user with fds to PHPUnit/controller pipes after cancelled post-merge castor check.; Observed retry with outer timeout 180s reports test:tui-1 exit 124 at 60.0s, proving per-step timeout fires but does not guarantee clean process-tree/pipes semantics.
+- Summary: Starting urgent follow-up to fix Castor timeout/process-tree cleanup after PT-03 post-merge check hung despite per-step timeout wrappers.
