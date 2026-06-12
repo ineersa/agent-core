@@ -97,7 +97,7 @@ B) **Leaf event** — Append a `run.leaf_set` event to `events.jsonl` each time 
 - Validation uses Castor per project rules; runtime/Messenger changes require full `castor check` before CODE-REVIEW.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/session-05-turn-tree-model-and-replay
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay
 Fork run: lo07sunzel4n
@@ -192,3 +192,7 @@ Castor Check Output SHA256: 15f51d5cf4aba80de58ef1fa97d43f52f7a114c15d218958d910
 - Created PR: https://github.com/ineersa/agent-core/pull/128
 - Validation: `castor test` ok across 7 suites, total 56.7s (agent-core 289 tests/1251 assertions; coding-agent shards 374/1058, 373/965, 309/1038, 287/752; tui 664/1660; platform 54/221).; `castor deptrac` ok (violations=0, errors=0).; `castor phpstan` ok (errors=0, file_errors=0).; `castor cs-check` ok (files_fixed=0).; Focused fork validations also passed for TurnTreeProjectorTest, RunStateReplayServiceTest, ReplayServiceTest, AdvanceRunHandlerTest, RuntimeEventMapperTest, and scoped PHPStan/CS checks.; Full `LLM_MODE=true castor check` to be run by move_task CODE-REVIEW gate.
 - Summary: Prepared for code review. Implementation stack through `4c7f5002` adds canonical turn tree metadata events, turn tree DTO/projector/replay filter, branch-aware RunState/hot-prompt replay, runtime protocol drops for internal metadata, docs, and tests. Review iterations addressed all actionable findings; remaining reviewer notes were non-blocking design/NTH items. Local Castor validation passed before PR handoff.
+
+## Task workflow update - 2026-06-12T03:38:08.569Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: PR #128 review iteration started. Inline review comments read via `gh api repos/ineersa/agent-core/pulls/128/comments`: (3400478889) `TurnTreeProjector` should not live in Handler namespace; (3400484847) same for `TurnTreeReplayFilter`; (3400481245) truncation should use Symfony String; (3400482341/3400483744) one-line `previewForTitle()` helper used once should be removed/inlined. Moving back to IN-PROGRESS before implementation fixes.
