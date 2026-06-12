@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: d5ci1e50e3ee
+Fork run: vhofw0omriji
 PR URL:
 PR Status:
 Started: 2026-06-12T16:54:23.580Z
@@ -127,3 +127,7 @@ Completed:
 ## Task workflow update - 2026-06-12T18:46:47.844Z
 - Summary: Issue #120 scout investigation completed. Feasible small TUI feature: color editor border using same thinking/reasoning color mapping as footer; update on startup/resume, Shift+Tab, Ctrl+P and /model changes if applicable; add ANSI TmuxHarness proof.
 - No product question needed for #120 at this stage: issue request is clear and implementation path is low-risk. Proceeding to fork implementation with mandatory TUI E2E/ANSI/manual snapshot validation.
+
+## Task workflow update - 2026-06-12T18:47:15.378Z
+- Recorded fork run: vhofw0omriji
+- Dispatched implementation fork vhofw0omriji for issue #120. Fork instructed to color editor border according to effective reasoning level, update on startup/resume and model/reasoning changes, add ANSI TmuxHarness proof plus manual tmux snapshots, and run Castor validation.
