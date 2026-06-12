@@ -88,7 +88,9 @@ final class PromptTemplateSlashCommandE2ETest extends TestCase
             history: 2000,
         );
 
-        // Capture full history to confirm the expanded text.
+        // Capture full history and assert the expanded text is visible.
+        // This is the core proof: the slash-command → DispatchRuntime →
+        // SubmitListener → in-process runtime expansion chain worked.
         $capture = $this->tmux->capturePlainWithHistory($pane, 2000);
 
         self::assertStringContainsString(
@@ -99,22 +101,6 @@ final class PromptTemplateSlashCommandE2ETest extends TestCase
                 $expectedText,
             ),
         );
-
-        // Optionally wait for assistant response or error block to confirm full pipeline.
-        try {
-            $this->tmux->waitForCallback(
-                $pane,
-                static function (string $capture): bool {
-                    return str_contains($capture, '◇') || str_contains($capture, '✕');
-                },
-                timeout: 15.0,
-                message: 'No assistant block or error block appeared after template expansion.',
-                history: 2000,
-            );
-        } catch (\RuntimeException $e) {
-            // This is non-fatal — the core assertion (expanded text visible) already passed.
-            // If the LLM doesn't respond in time, the test still proves template dispatch works.
-        }
 
         $this->saveAnsiSnapshot($pane, 'review-template-expanded');
     }
