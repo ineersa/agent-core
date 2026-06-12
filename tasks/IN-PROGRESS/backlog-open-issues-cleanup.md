@@ -69,3 +69,8 @@ Completed:
 ## Task workflow update - 2026-06-12T17:10:58.765Z
 - Recorded fork run: e3ji2jgnic2e
 - Dispatched iteration fork e3ji2jgnic2e for issue #117 after failed user validation. Fork instructed to inspect the user's snapshot artifact, diagnose why prior fix did not show in real TUI, implement only #117, and verify via real interactive agent tmux with sent Shift+Tab keys and captured snapshots in addition to Castor TUI/check validation.
+
+## Task workflow update - 2026-06-12T17:21:43.172Z
+- Validation: castor test:tui --filter ReasoningCycle: OK per fork report.; castor test --filter FooterStateSegmentProvider: OK per fork report.; castor test --filter 'ModelControl|FooterState|Reasoning': OK per fork report.; Manual real TmuxHarness capture: OK per fork report; first Shift+Tab showed `reasoning    minimal`, second showed `reasoning    low`.; castor phpstan: OK per fork report.; LLM_MODE=true castor check: all steps OK except phpstan timed out inside check (exit 124); standalone castor phpstan passed. Not claiming a fully green full check until rerun passes without timeout.
+- Summary: Issue #117 iteration completed by fork e3ji2jgnic2e after failed user validation. New fix shows reasoning status at startup and after every Shift+Tab press, including no-op/non-thinking model cases by falling back to display reasoning. Fork committed c82683aab9166a9e9302b03b872fade894fbb15e on task/backlog-open-issues-cleanup.
+- Awaiting user validation of issue #117 iteration before moving to the next GitHub issue.
