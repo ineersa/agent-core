@@ -35,7 +35,7 @@ Parallelizable with: none after dependencies.
 Status: IN-PROGRESS
 Branch: task/editor-12-keybindings-docs-smoke
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke
-Fork run: 10r3osnq68d7
+Fork run: xj15ax4myylt
 PR URL: https://github.com/ineersa/agent-core/pull/114
 PR Status: open
 Started: 2026-06-10T19:50:55.944Z
@@ -244,3 +244,7 @@ Castor Check Output SHA256: 74ff0433812203034ac7cb3d7dabc8d42f969bb957b60dccac60
 - Recorded fork run: 10r3osnq68d7
 - Validation: php -l tests/Tui/E2E/TmuxHarness.php: OK; castor test:tui --filter=TuiStartupSnapshot: OK (2 tests, 7 assertions); castor test:tui: OK (16 tests, 51 assertions, ~71s standalone; ~69.2s under parallel check load, within 75s budget); castor test:llm-real --filter=OutputCapReadFileControllerTest x3: OK (1 test, 11 assertions each); castor test:llm-real: OK (5 tests, 51 assertions); castor deptrac: OK (0 violations); castor phpstan: OK (0 errors); castor cs-check: OK (0 files fixed); LLM_MODE=true castor check: OK, all 13 steps green in ~73s
 - Summary: Fork 10r3osnq68d7 completed at commit `3d09e743`; worktree verified clean on branch `task/editor-12-keybindings-docs-smoke`. It replaces uncapped TmuxHarness `shell_exec()`/`exec()` paths with a low-overhead direct `proc_open()` deadline helper, avoiding the prior Symfony Process overhead while satisfying the hard no-uncapped-waits requirement. Timeout strategy: 2s for `isAvailable()`/`paneExists()`, 5s for capture/send/cleanup commands, 10s for session start; cleanup/destructor paths are bounded and non-throwing, active operations throw clear errors on timeout. It preserves `TuiStartupSnapshotTest`'s bounded `exec sleep 10` pane keeper and keeps ShellPrefix LLM wait at 8s. Exact changed files from previous commit: `tests/Tui/E2E/TmuxHarness.php` and `tests/Tui/Snapshots/startup-120x40.txt`. Verified no diff for `.castor/tasks.php`, `.castor/helpers.php`, or `castor.php` versus `origin/main`. Branch is ready for CODE-REVIEW update/push when requested.
+
+## Task workflow update - 2026-06-12T01:18:31.466Z
+- Recorded fork run: xj15ax4myylt
+- Summary: Fork xj15ax4myylt completed at commit `40168e0c`; worktree verified clean. User explicitly approved moving Castor `test:tui` check step timeout from 75s to 90s. Change is one line in `.castor/tasks.php`: `test:tui` timeout `75` -> `90`. Rationale: PHPUnit TUI suite completed successfully around 70s, but the 75s OS wrapper was too tight once startup/teardown overhead is included; 90s provides headroom while keeping the step bounded. Previous TmuxHarness bounded `proc_open()` timeout helper and OutputCap stability fixes remain intact.
