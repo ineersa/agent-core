@@ -439,6 +439,40 @@ final class TurnTreeProjectorTest extends TestCase
         $this->projector->build($this->runId, $events);
     }
 
+    public function testEventBackedRootTurnIncludedInActivePath(): void
+    {
+        // Turn 1 has canonical events (user/assistant messages) but no
+        // turn_advanced anchor. Turn 3 references turn 1 as its parent.
+        // walkActivePath must include turn 1 in the active path as a valid
+        // terminal root with canonical stream events.
+        $events = [
+            $this->runEvent('run_started', 1, 0, ['payload' => ['messages' => []]]),
+            $this->runEvent('assistant_message', 2, 1, ['message' => [
+                'role' => 'assistant',
+                'content' => [['type' => 'text', 'text' => 'Hello from turn 1']],
+            ]]),
+            $this->turnAdvancedEvent(3, 2, 1),
+            $this->leafSetEvent(4, 2, 1, 1, 'continue'),
+            $this->turnAdvancedEvent(5, 3, 1),
+            $this->leafSetEvent(6, 3, 2, 1, 'continue'),
+        ];
+
+        $tree = $this->projector->build($this->runId, $events);
+
+        // leaf should be turn 3
+        self::assertSame(3, $tree->currentLeafTurnNo);
+        // active path must include event-backed root turn 1, but NOT
+        // the abandoned sibling turn 2 (leaf_set rewinded before
+        // turn 3 was created).
+        self::assertSame([1, 3], $tree->activePathTurnNos);
+
+        // Turns 2 and 3 both have turn 1 as parent
+        self::assertSame(1, $tree->nodesByTurnNo[2]->parentTurnNo);
+        self::assertSame(1, $tree->nodesByTurnNo[3]->parentTurnNo);
+        // Turn 1 itself has no node (no turn_advanced anchor)
+        self::assertFalse(isset($tree->nodesByTurnNo[1]), 'Turn 1 has no turn_advanced anchor, so no node');
+    }
+
     public function testDanglingParentTurnNoThrowsException(): void
     {
         // Turn 2 has parent_turn_no = 99, which does not exist in turnInfo.

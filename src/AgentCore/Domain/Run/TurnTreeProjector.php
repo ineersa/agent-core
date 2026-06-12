@@ -30,7 +30,7 @@ final class TurnTreeProjector
      *
      * @param list<RunEvent> $events
      *
-     * @throws \RuntimeException if a cycle is detected or a parent turn reference is missing
+     * @throws \RuntimeException if a cycle is detected or a parent turn reference is missing from the stream
      */
     public function build(string $runId, array $events): TurnTreeDTO
     {
@@ -134,8 +134,22 @@ final class TurnTreeProjector
             }
         }
 
+        // Collect known turn numbers from the full canonical stream so that
+        // walkActivePath can include parent turns that have events but no
+        // turn_advanced/turn_branched anchor (e.g. turn 1 introduced as the
+        // parent of a rewinded branch).
+        $knownTurnNos = [];
+        foreach ($sorted as $event) {
+            if ($event->turnNo > 0) {
+                $knownTurnNos[$event->turnNo] = true;
+            }
+        }
+        foreach ($turnInfo as $turnNo => $_) {
+            $knownTurnNos[$turnNo] = true;
+        }
+
         // Compute active path from current leaf to root.
-        $activePathTurnNos = $this->walkActivePath($currentLeafTurnNo, $turnInfo);
+        $activePathTurnNos = $this->walkActivePath($currentLeafTurnNo, $turnInfo, $knownTurnNos);
 
         // Compute lastSeq for each turn as the max event sequence scoped to that turn
         // (grouped by RunEvent::$turnNo), falling back to anchor seq for turns with no
@@ -182,14 +196,16 @@ final class TurnTreeProjector
      * Walk from the current leaf turn number up to the root, collecting turn numbers.
      *
      * @param array<int, array{parentTurnNo: int|null, ...}> $turnInfo
+     * @param array<int, true>                               $knownTurnNos set of turn numbers that exist in the
+     *                                                                     canonical event stream
      *
      * @return list<int> Turn numbers in order from root to leaf
      *
      * @throws \RuntimeException if a cycle is detected or a parent turn is missing
      */
-    private function walkActivePath(?int $currentLeafTurnNo, array $turnInfo): array
+    private function walkActivePath(?int $currentLeafTurnNo, array $turnInfo, array $knownTurnNos = []): array
     {
-        if (null === $currentLeafTurnNo || !isset($turnInfo[$currentLeafTurnNo])) {
+        if (null === $currentLeafTurnNo || !isset($knownTurnNos[$currentLeafTurnNo])) {
             return [];
         }
 
@@ -206,6 +222,14 @@ final class TurnTreeProjector
             $path[] = $cursor;
 
             if (!isset($turnInfo[$cursor])) {
+                // The cursor is a canonical turn number (has events in the stream)
+                // but lacks a turn_advanced/turn_branched anchor — this is a valid
+                // terminal root (e.g. turn 1 with user/assistant events but no
+                // explicit turn boundary event). Stop the walk here.
+                if (isset($knownTurnNos[$cursor])) {
+                    break;
+                }
+
                 throw new \RuntimeException(\sprintf('Dangling parent_turn_no %d while walking active turn path.', $cursor));
             }
 
