@@ -238,3 +238,6 @@ Completed:
 ## Task workflow update - 2026-06-12T22:26:17.972Z
 - Validation: User manually validated #121 fix before merge.; Fork cxg4zugevd6l reported full LLM_MODE=true castor check passed all 14 steps before merge.
 - Summary: completed: merged GitHub issue #121 fix into main via merge commit 80b8ed7c, pushed to origin/main, closed issue #121 with comment. Synced task/backlog-open-issues-cleanup to origin/main via rebase (no reset) and pushed task branch.
+
+## Task workflow update - 2026-06-12T22:29:35.958Z
+- Starting GitHub issue #122 investigation per user request. Continue orchestrator workflow: scout first, then fork implementation only after root cause/plan is clear; no reset --hard.
