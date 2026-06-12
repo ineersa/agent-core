@@ -71,9 +71,14 @@ final class ReasoningCycleTest extends TestCase
         // Wait for agent boot (logo █ visible).
         $this->tmux->waitForCaptureContains($pane, '█', 10.0);
 
-        // At this point the TUI is idle — no prompt has been submitted.
-        // The footer shows ◆ test with thinking-off color.
-        // The status panel is empty (no setStatus calls yet).
+        // At startup, the status panel should already show the reasoning level
+        // (seeded by FooterStateListener from the default_reasoning config).
+        $initial = $this->tmux->capturePlainWithHistory($pane, 500);
+        self::assertStringContainsString(
+            'reasoning',
+            $initial,
+            'Status panel should show reasoning level at startup, not only after Shift+Tab',
+        );
 
         // Send Shift+Tab to cycle reasoning from 'off' → 'minimal'.
         // Shift+Tab sends the escape sequence \x1b[Z (CSI Z).

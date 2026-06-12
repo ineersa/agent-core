@@ -135,17 +135,17 @@ final class ModelControlListener implements TuiListenerRegistrar
             }
             $event->stopPropagation();
 
-            // Only cycle when the current model supports thinking levels
+            // Try to cycle reasoning.  Even when the model does not support
+            // thinking levels (null return), we still show the current level
+            // so the user always gets visual feedback on Shift+Tab.
             $nextLevel = $modelService->cycleReasoningForCurrentModel($state->sessionId);
-            if (null === $nextLevel) {
-                return;
-            }
+            $currentLevel = $nextLevel ?? $modelService->getDisplayReasoning($state->sessionId);
 
             // Update footer state for immediate refresh
-            $state->footerReasoning = $nextLevel;
+            $state->footerReasoning = $currentLevel;
 
-            // Show the new reasoning level in the status panel
-            $screen->setStatus('reasoning', $nextLevel);
+            // Show the reasoning level in the status panel
+            $screen->setStatus('reasoning', $currentLevel);
             $screen->refresh();
         }, priority: 95);
     }
