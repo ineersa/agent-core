@@ -24,7 +24,7 @@ Can run in parallel with PT-03 after PT-01 lands.
 Status: IN-PROGRESS
 Branch: task/prompt-templates-02-runtime-cli-process-expansion
 Worktree: /home/ineersa/projects/agent-core-worktrees/prompt-templates-02-runtime-cli-process-expansion
-Fork run: 6dbfsfr0omnx
+Fork run: 0qatpiqlzaue
 PR URL:
 PR Status:
 Started: 2026-06-12T03:25:41.905Z
@@ -50,3 +50,8 @@ Completed:
 - Recorded fork run: 6dbfsfr0omnx
 - Validation: review-fix fork: `castor test --filter=PromptTemplateExpansionInProcessTest` OK (11 tests, 25 assertions); review-fix fork: `castor test --filter=AgentCommandPromptTemplatesOptionsTest` OK (8 tests, 11 assertions); review-fix fork: `castor phpstan` OK (0 errors); review-fix fork: `castor cs-fix` OK (files_fixed=0); review-fix fork: `castor cs-check` OK (files_fixed=0); orchestrator: `git status --short --branch` clean on `task/prompt-templates-02-runtime-cli-process-expansion`; `git diff --stat origin/main...HEAD` shows 9 files changed, 685 insertions, 6 deletions
 - Summary: Review-fix fork completed and committed `7ee60fc3ff4e0d33826b931e04bbc51b5872f633`. Addressed reviewer suggestions: updated stale `PromptTemplatesRuntimeConfig` docblock; added test-only `IsolatedKernelTestCase::isolatedCwd()` accessor to remove reflection from `PromptTemplateExpansionInProcessTest`; added `send()` non-matching slash passthrough coverage; added `shell_command` non-expansion coverage via local fake `ToolExecutorInterface` spy. Worktree clean at HEAD `7ee60fc3`.
+
+## Task workflow update - 2026-06-12T16:46:46.640Z
+- Recorded fork run: 0qatpiqlzaue
+- Validation: reviewer: initial review `APPROVE WITH SUGGESTIONS`; review-fix fork addressed all suggestions; reviewer re-review: `REQUEST CHANGES` solely due stale branch base causing apparent SESSION-05/usage-fix regressions; resolved by rebase onto `origin/main` without another reviewer per user instruction; orchestrator: `git status --short --branch` clean on task branch; orchestrator: HEAD `b38a2256ac0af0f33d07c30fd1f65ca1d67710e1`; merge-base with `origin/main` `ff7e2bcc294a528c54e1389cf5bedaef99482619`; orchestrator: `git diff --stat origin/main...HEAD` shows 9 files changed, 685 insertions, 6 deletions, limited to PT-02 files; orchestrator: `castor test` OK (7 suites: agent-core 292/1263, coding-agent-1 286/816, coding-agent-2 382/990, coding-agent-3 413/1112, coding-agent-4 375/1114, tui 664/1660, platform 54/221; 0 failures); orchestrator: `castor deptrac` OK (violations=0, errors=0); orchestrator: `castor phpstan` OK (errors=0, file_errors=0); orchestrator: `castor cs-check` OK (files_fixed=0)
+- Summary: Prepared for CODE-REVIEW per user instruction after resolving reviewer blocker without another reviewer pass. Latest reviewer had `REQUEST CHANGES` only because branch base was stale and appeared to revert SESSION-05/usage-fix main changes. Rebase/fix fork updated task branch onto current `origin/main`; orchestrator confirmed worktree clean at rebased HEAD `b38a2256ac0af0f33d07c30fd1f65ca1d67710e1`, merge-base with `origin/main` is `ff7e2bcc294a528c54e1389cf5bedaef99482619`, and `git diff --stat origin/main...HEAD` is limited to 9 PT-02 files (runtime/CLI/process prompt-template files, depfile, and tests). No turn-tree/session-storage deletions remain.
