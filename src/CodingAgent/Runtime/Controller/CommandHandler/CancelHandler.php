@@ -6,8 +6,6 @@ namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
@@ -48,12 +46,13 @@ final readonly class CancelHandler
         // Request asynchronous cancellation through AgentCore.
         $this->client->cancel($runId);
 
-        $event->emit(new RuntimeEvent(
-            type: RuntimeEventTypeEnum::RunCancelled->value,
-            runId: $runId,
-            seq: 0,
-        ));
+        // Do NOT emit a synthetic RunCancelled here.  The real RunCancelled
+        // event is produced by AgentCore when cancellation completes
+        // (LlmStepResultHandler or AdvanceRunHandler), and arriving
+        // prematurely can make the controller think the run is Cancelled
+        // before AgentCore has left Cancelling — causing follow-up commands
+        // to be rejected.
 
-        $this->logger->info('Cancel event emitted', ['runId' => $runId]);
+        $this->logger->info('Cancel dispatched to AgentCore', ['runId' => $runId]);
     }
 }

@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: wlp54a5wdd31
+Fork run: cxg4zugevd6l
 PR URL:
 PR Status:
 Started: 2026-06-12T16:54:23.580Z
@@ -226,3 +226,15 @@ Completed:
 ## Task workflow update - 2026-06-12T21:58:50.207Z
 - Summary: Issue #121 scout investigation completed. Both scouts found timing-dependent cancel/follow-up race. Scout 1 identified process-controller CancelHandler emitting synthetic run.cancelled immediately after asynchronously dispatching cancel, letting TUI believe run is terminal before AgentCore leaves Cancelling; a quick follow_up then gets rejected by ApplyCommandHandler because core status is still Cancelling. Scout 2 independently found TUI SubmitListener routes messages as steer while activity is Cancelling because RunActivityStateEnum::isActive() returns true for Cancelling; steer is rejected during core Cancelling and rejection is not visibly surfaced. Shared invariant: user input during/just after cancellation can be silently rejected/lost, so next message appears not to continue.
 - Scouts read testing skill and tests/AGENTS.md. Recommended fix direction: remove premature synthetic run.cancelled from controller path and ensure TUI/runtime does not silently drop user messages submitted while cancellation is in progress (queue/defer until real cancelled, or otherwise provide visible feedback and reliable follow-up). Add controller/TUI E2E proof for cancel followed by immediate next message.
+
+## Task workflow update - 2026-06-12T22:22:48.304Z
+- Recorded fork run: cxg4zugevd6l
+- Validation: Per fork handoff: LLM_MODE=true castor check passed all 14 steps (test:tui-1 OK 45.4s, test:tui-2 OK 38.7s, phpstan OK, cs-check OK).; Per fork handoff: targeted Castor tests passed: castor test, castor phpstan, castor cs-check, castor test:tui --filter=EditorBorderColorTest x15, ApplyCommandHandlerTest, CancelListenerTest, AdvanceRunHandlerTest, RuntimeEventPollerTest.
+- Summary: Fork cxg4zugevd6l implemented GitHub issue #121 fix in commit ab1c5eeb: removed premature synthetic RunCancelled from controller CancelHandler; added TUI queuedFollowUp during Cancelling in TuiSessionState/SubmitListener; RuntimeEventPoller dispatches queued text as follow_up after real RunCancelled; added RuntimeEventPoller unit tests; full LLM_MODE=true castor check reported green. Caveat: fork did not add a dedicated TmuxHarness E2E proof for the #121 cancel-then-immediate-follow-up user flow despite instructions; it only rewrote EditorBorderColorTest and added runtime unit tests. Per project TUI E2E proof rule, follow-up test work is still needed before accepting/merging #121.
+
+## Task workflow update - 2026-06-12T22:23:53.532Z
+- User decided to manually validate GitHub issue #121 fix and said no need to continue the dedicated E2E proof follow-up. Current #121 implementation remains commit ab1c5eeb plus task metadata commits, awaiting user validation before merge/close.
+
+## Task workflow update - 2026-06-12T22:26:17.972Z
+- Validation: User manually validated #121 fix before merge.; Fork cxg4zugevd6l reported full LLM_MODE=true castor check passed all 14 steps before merge.
+- Summary: completed: merged GitHub issue #121 fix into main via merge commit 80b8ed7c, pushed to origin/main, closed issue #121 with comment. Synced task/backlog-open-issues-cleanup to origin/main via rebase (no reset) and pushed task branch.

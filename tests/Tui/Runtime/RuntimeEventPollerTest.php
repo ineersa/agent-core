@@ -6,6 +6,7 @@ namespace Ineersa\Tests\Tui\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -362,6 +363,74 @@ final class RuntimeEventPollerTest extends TestCase
         self::assertNotNull($called);
         self::assertSame(RuntimeEventTypeEnum::ToolExecutionFailed->value, $called->type);
         self::assertSame('tc-456', $called->payload['tool_call_id'] ?? null);
+    }
+
+    public function testQueuedFollowUpDispatchedOnRunCancelled(): void
+    {
+        $this->state->queuedFollowUp = 'Continue after cancel';
+        $this->state->activity = RunActivityStateEnum::Cancelling;
+
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::RunCancelled->value,
+            runId: 'test-run',
+            seq: 10,
+        );
+
+        $this->client->expects(self::once())
+            ->method('events')
+            ->with('test-run')
+            ->willReturn([$event]);
+
+        // Expect the client to receive a follow_up command with the queued text
+        $this->client->expects(self::once())
+            ->method('send')
+            ->with(
+                'test-run',
+                self::callback(static fn ($cmd): bool =>
+                    $cmd instanceof UserCommand
+                    && 'follow_up' === $cmd->type
+                    && 'Continue after cancel' === $cmd->text
+                ),
+            );
+
+        $this->projector->method('accept');
+        $this->projector->method('blocks')->willReturn([]);
+
+        $this->poller->poll($this->state, $this->client);
+
+        // Queued text should be cleared after dispatch
+        self::assertNull($this->state->queuedFollowUp);
+        // Activity should transition to Cancelled (from RunCancelled event),
+        // then to Starting (from the follow_up dispatch)
+        self::assertSame(RunActivityStateEnum::Starting, $this->state->activity);
+    }
+
+    public function testQueuedFollowUpNotDispatchedWithoutRunCancelled(): void
+    {
+        $this->state->queuedFollowUp = 'Waiting message';
+
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::TurnStarted->value,
+            runId: 'test-run',
+            seq: 10,
+        );
+
+        $this->client->expects(self::once())
+            ->method('events')
+            ->with('test-run')
+            ->willReturn([$event]);
+
+        $this->client->expects(self::never())
+            ->method('send');
+
+        $this->projector->method('accept');
+        $this->projector->method('blocks')->willReturn([]);
+
+        $this->poller->poll($this->state, $this->client);
+
+        // Queued text should persist — only cleared on RunCancelled
+        self::assertNotNull($this->state->queuedFollowUp);
+        self::assertSame('Waiting message', $this->state->queuedFollowUp);
     }
 
     public function testOnToolTerminalNotCalledForNonTerminalEvents(): void
