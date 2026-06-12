@@ -156,7 +156,7 @@ final class TurnTreeProjector
                 anchorSeq: $info['anchorSeq'],
                 lastSeq: $lastSeqs[$turnNo] ?? $info['anchorSeq'],
                 title: $title,
-                promptPreview: u($title)->truncate(60, '...')->toString(),
+                promptPreview: $this->truncate($title, 60),
                 createdAt: $info['createdAt'],
                 isCurrentLeaf: $turnNo === $currentLeafTurnNo,
                 reason: $info['reason'] ?? null,
@@ -185,7 +185,7 @@ final class TurnTreeProjector
      *
      * @return list<int> Turn numbers in order from root to leaf
      *
-     * @throws \RuntimeException if a cycle is detected
+     * @throws \RuntimeException if a cycle is detected or a parent turn is missing
      */
     private function walkActivePath(?int $currentLeafTurnNo, array $turnInfo): array
     {
@@ -205,9 +205,11 @@ final class TurnTreeProjector
             $visited[] = $cursor;
             $path[] = $cursor;
 
-            $cursor = isset($turnInfo[$cursor])
-                ? $turnInfo[$cursor]['parentTurnNo']
-                : null;
+            if (!isset($turnInfo[$cursor])) {
+                throw new \RuntimeException(\sprintf('Dangling parent_turn_no %d while walking active turn path.', $cursor));
+            }
+
+            $cursor = $turnInfo[$cursor]['parentTurnNo'];
         }
 
         // Reverse to get root-to-leaf order.

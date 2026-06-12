@@ -392,6 +392,34 @@ final class TurnTreeProjectorTest extends TestCase
         self::assertSame(11, $tree->nodesByTurnNo[3]->lastSeq, 'Turn 3 lastSeq includes its own scoped max');
     }
 
+    public function testPromptPreviewTruncationUsesUnicodeEllipsis(): void
+    {
+        $longText = str_repeat('A very long title that exceeds the prompt preview limit of sixty characters. ', 2);
+        $events = [
+            $this->runEvent('run_started', 1, 0, [
+                'payload' => ['messages' => [
+                    ['role' => 'user', 'content' => [['type' => 'text', 'text' => $longText]]],
+                ]],
+            ]),
+            $this->turnAdvancedEvent(2, 1, null),
+            $this->leafSetEvent(3, 1, null, null, 'continue'),
+        ];
+
+        $tree = $this->projector->build($this->runId, $events);
+        $turn1 = $tree->nodesByTurnNo[1];
+
+        $title = $turn1->title;
+        $preview = $turn1->promptPreview;
+
+        // Title is truncated at 80 chars; promptPreview at 60 chars.
+        // Both must use the same Unicode ellipsis (…) from the truncate() helper,
+        // never ASCII "...".
+        self::assertStringEndsWith('…', $title, 'Title should end with Unicode ellipsis when truncated');
+        self::assertStringEndsWith('…', $preview, 'promptPreview should end with Unicode ellipsis, not ASCII dots');
+        self::assertLessThan(\strlen($title), \strlen($preview), 'promptPreview should be shorter than title');
+        self::assertLessThanOrEqual(60, mb_strlen($preview), 'promptPreview should be at most 60 characters');
+    }
+
     // ── Cycle detection ──────────────────────────────────────────────────────
 
     public function testCycleDetectionThrowsException(): void
@@ -407,6 +435,25 @@ final class TurnTreeProjectorTest extends TestCase
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Cycle detected');
+
+        $this->projector->build($this->runId, $events);
+    }
+
+    public function testDanglingParentTurnNoThrowsException(): void
+    {
+        // Turn 2 has parent_turn_no = 99, which does not exist in turnInfo.
+        // leaf_set points to turn 2 as the current leaf.
+        // walkActivePath should throw when it encounters the dangling reference.
+        $events = [
+            $this->runEvent('run_started', 1, 0, ['payload' => ['messages' => []]]),
+            $this->turnAdvancedEvent(2, 1, null),
+            $this->leafSetEvent(3, 1, null, null, 'continue'),
+            $this->turnAdvancedEvent(4, 2, 99), // parent 99 — non-existent
+            $this->leafSetEvent(5, 2, 1, 99, 'continue'),
+        ];
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Dangling parent_turn_no 99');
 
         $this->projector->build($this->runId, $events);
     }
