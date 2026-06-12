@@ -35,7 +35,7 @@ Parallelizable with: none after dependencies.
 Status: IN-PROGRESS
 Branch: task/editor-12-keybindings-docs-smoke
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke
-Fork run: vlon1dgjztk7
+Fork run: 10r3osnq68d7
 PR URL: https://github.com/ineersa/agent-core/pull/114
 PR Status: open
 Started: 2026-06-10T19:50:55.944Z
@@ -235,3 +235,7 @@ Castor Check Output SHA256: 74ff0433812203034ac7cb3d7dabc8d42f969bb957b60dccac60
 - Recorded fork run: vlon1dgjztk7
 - Validation: castor test:llm-real --filter=OutputCapReadFileControllerTest (3 consecutive focused runs): OK (1 test, 11 assertions each); castor test:tui: OK (16 tests, 51 assertions, ~64s standalone; ~68.3s under check, below 75s step timeout); castor deptrac: OK (0 violations); castor phpstan: OK (0 errors); castor cs-check: OK (0 files fixed); LLM_MODE=true castor check: OK / quality: ok, all 13 steps green; test:llm-real OK (5 tests, 51 assertions), test:tui OK (16 tests, 51 assertions)
 - Summary: Fork vlon1dgjztk7 completed at commit `cb537632` on branch `task/editor-12-keybindings-docs-smoke`; worktree verified clean. It fixed the remaining blocker by reverting the Process-based TmuxHarness wrapper added in `fa59b661` back to direct `shell_exec()` polling because the Symfony Process per-call overhead in tmux polling loops slowed `test:tui` enough under parallel LLM load to create cascading `test:llm-real`/OutputCap timeouts. It preserved the bounded `TuiStartupSnapshotTest` pane-keeper change (`exec sleep 3600` -> `exec sleep 10`) from the prior fork and updated the startup golden snapshot. Exact delta from prior fork: `tests/Tui/E2E/TmuxHarness.php` and `tests/Tui/Snapshots/startup-120x40.txt` only. Verified in worktree: HEAD `cb537632`, branch `task/editor-12-keybindings-docs-smoke`, clean status, and no diff for `.castor/tasks.php`, `.castor/helpers.php`, or `castor.php` versus `origin/main`. Fork reports OutputCapReadFileControllerTest was not a production/test logic bug: it passed focused and under full `castor check` once TUI polling overhead was removed; `collectEventsUntilToolCompleted('read', 5.0)` and prompt are already explicit and deterministic.
+
+## Task workflow update - 2026-06-12T01:05:14.058Z
+- Recorded fork run: 10r3osnq68d7
+- Summary: Although fork vlon1dgjztk7 made `LLM_MODE=true castor check` green at `cb537632`, orchestrator rejected it as final because it reintroduced uncapped `shell_exec()` tmux calls in `TmuxHarness`, conflicting with the user’s hard requirement that tests must fail with proper timeouts and have no uncapped waits. Launched follow-up fork 10r3osnq68d7 to preserve OutputCap/check stability while replacing TmuxHarness shell calls with a low-overhead bounded direct `proc_open()` helper (not Symfony Process, which previous fork measured as too slow in polling loops). Guardrails: do not touch Castor/check infrastructure, keep `exec sleep 10` bounded startup pane keeper, preserve TUI artifact retention, keep ShellPrefix timeout <=8s, validate focused/full TUI, repeated OutputCap, full llm-real, deptrac/phpstan/cs-check, and full `LLM_MODE=true castor check`.
