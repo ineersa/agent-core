@@ -131,3 +131,8 @@ Completed:
 ## Task workflow update - 2026-06-12T18:47:15.378Z
 - Recorded fork run: vhofw0omriji
 - Dispatched implementation fork vhofw0omriji for issue #120. Fork instructed to color editor border according to effective reasoning level, update on startup/resume and model/reasoning changes, add ANSI TmuxHarness proof plus manual tmux snapshots, and run Castor validation.
+
+## Task workflow update - 2026-06-12T19:29:35.349Z
+- Validation: Fork reported castor test passed all 2,466 unit tests.; Fork reported castor test:tui passed all 20 TUI E2E tests including new EditorBorderColorTest.; Fork reported castor deptrac, castor phpstan, castor cs-check passed.; Fork reported PHAR build/smoke passed.; Fork reported controller/check validation was blocked by environmental root-owned orphaned worker pid 3334 stealing queue messages; not claiming full LLM_MODE=true castor check passed until blocker is cleared and rerun.; ANSI snapshots reported under var/tmp/tui-e2e-border-snap-* for off/minimal/low border comparison.; Commit reported: 0c142d7f on task/backlog-open-issues-cleanup.
+- Summary: Issue #120 implementation completed by fork vhofw0omriji. Commit 0c142d7f colors the editor border from the effective reasoning level and updates it on startup/resume, Shift+Tab, Ctrl+P, /model selection, and picker selection. Added shared ThemeColorEnum::forReasoning() mapping and ANSI-oriented TmuxHarness E2E snapshots.
+- Awaiting user validation of issue #120 editor border color behavior before merge/close.
