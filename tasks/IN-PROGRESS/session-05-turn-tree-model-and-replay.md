@@ -100,7 +100,7 @@ B) **Leaf event** — Append a `run.leaf_set` event to `events.jsonl` each time 
 Status: IN-PROGRESS
 Branch: task/session-05-turn-tree-model-and-replay
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay
-Fork run: 7sd6ljvxc7ox
+Fork run: d5cn0j1flb83
 PR URL:
 PR Status:
 Started: 2026-06-12T01:41:43.505Z
@@ -155,3 +155,7 @@ Completed:
 - Recorded fork run: 7sd6ljvxc7ox
 - Validation: Fork validation reported: `castor test --filter=TurnTreeProjectorTest` ok (13 tests, 68 assertions).; Fork validation reported: `castor phpstan --path tests/AgentCore/Application/Handler/TurnTreeProjectorTest.php` ok (errors=0, file_errors=0).; Fork validation reported: `castor cs-check` ok (files_fixed=0).
 - Summary: Final convention-fix fork completed. Commit `9e779948 Move turn tree projector test to handler suite` moved `TurnTreeProjectorTest` from `tests/AgentCore/Domain/Run` to `tests/AgentCore/Application/Handler` and updated its namespace to mirror the production class location. No production code or test assertions changed.
+
+## Task workflow update - 2026-06-12T02:58:34.824Z
+- Recorded fork run: d5cn0j1flb83
+- Summary: Reviewer after test move still returned `APPROVE WITH SUGGESTIONS`. No critical issues. Actionable final items: replace inconsistent `isset(parent_turn_no)` checks in `TurnTreeProjector` with `array_key_exists`, document that `turn_branched` is explicit new-style tree metadata for future emitters, and add a comment explaining the defensive metadata inclusion safety net in `TurnTreeReplayFilter`. Launched fork `d5cn0j1flb83` for minimal fixes plus focused Castor validation.
