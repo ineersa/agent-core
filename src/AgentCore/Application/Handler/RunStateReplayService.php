@@ -32,6 +32,7 @@ final readonly class RunStateReplayService
     public function __construct(
         private EventStoreInterface $eventStore,
         private LoggerInterface $logger,
+        private ?TurnTreeReplayFilter $turnTreeReplayFilter = null,
     ) {
     }
 
@@ -109,7 +110,43 @@ final readonly class RunStateReplayService
                 throw new RunStateReplayException(\sprintf('Cannot replay run %s: event history has %d missing sequences. Expected contiguous range 1..%d, found gaps at: %s.', $runId, \count($missingSequences), $maxEventSeq, implode(', ', array_map('strval', \array_slice($missingSequences, 0, 10)))));
             }
 
-            $rebuiltState = $this->replay($state, $sortedEvents);
+            // Filter to active branch events when tree metadata is available.
+            // Abandoned sibling branch events (message/tool/assistant content for
+            // turns not on the active path) are excluded from replay while the
+            // canonical stream integrity checks remain on the full sorted stream.
+            $filteredEvents = $sortedEvents;
+            if (null !== $this->turnTreeReplayFilter) {
+                $branchReplay = $this->turnTreeReplayFilter->filter($runId, $sortedEvents);
+                $filteredEvents = $branchReplay->events;
+
+                $this->logger->info('run_state_replay.branch_filtered', [
+                    'run_id' => $runId,
+                    'canonical_event_count' => $branchReplay->canonicalEventCount,
+                    'filtered_event_count' => \count($filteredEvents),
+                    'current_leaf_turn_no' => $branchReplay->currentLeafTurnNo,
+                    'active_branch_turns' => $branchReplay->activePathTurnNos,
+                ]);
+            }
+
+            $rebuiltState = $this->replay($state, $filteredEvents);
+
+            // After replay, ensure lastSeq reflects the full canonical stream
+            // so state is current with respect to the append-only event log,
+            // even when replaying an earlier branch/leaf.
+            $rebuiltState = new RunState(
+                runId: $rebuiltState->runId,
+                status: $rebuiltState->status,
+                version: $rebuiltState->version,
+                turnNo: $rebuiltState->turnNo,
+                lastSeq: $maxEventSeq,
+                isStreaming: $rebuiltState->isStreaming,
+                streamingMessage: $rebuiltState->streamingMessage,
+                pendingToolCalls: $rebuiltState->pendingToolCalls,
+                errorMessage: $rebuiltState->errorMessage,
+                messages: $rebuiltState->messages,
+                activeStepId: $rebuiltState->activeStepId,
+                retryableFailure: $rebuiltState->retryableFailure,
+            );
 
             $this->logger->info('run_state_replay.rebuilt', [
                 'run_id' => $runId,
@@ -244,6 +281,8 @@ final readonly class RunStateReplayService
             RunEventTypeEnum::AgentCommandQueued->value,
             RunEventTypeEnum::AgentCommandSuperseded->value,
             RunEventTypeEnum::StaleResultIgnored->value => $this->applyNoMutation($event, $state),
+            RunEventTypeEnum::TurnBranched->value,
+            RunEventTypeEnum::LeafSet->value => $this->applyNoMutation($event, $state),
             default => $this->applyNoMutation($event, $state),
         };
     }

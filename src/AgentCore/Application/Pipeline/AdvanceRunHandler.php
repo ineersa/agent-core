@@ -140,6 +140,8 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             toolsRef: \sprintf('toolset:run:%s:turn:%d', $runId, $nextTurnNo),
         );
 
+        $parentTurnNo = $preparedState->turnNo > 0 ? $preparedState->turnNo : null;
+
         $eventSpecs = [
             ...$boundaryEventSpecs,
             [
@@ -148,6 +150,17 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 'payload' => [
                     'step_id' => $nextStepId,
                     'turn_no' => $nextTurnNo,
+                    'parent_turn_no' => $parentTurnNo,
+                ],
+            ],
+            [
+                'type' => RunEventTypeEnum::LeafSet->value,
+                'turn_no' => $nextTurnNo,
+                'payload' => [
+                    'turn_no' => $nextTurnNo,
+                    'previous_turn_no' => $parentTurnNo,
+                    'parent_turn_no' => $parentTurnNo,
+                    'reason' => 'continue',
                 ],
             ],
         ];

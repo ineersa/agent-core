@@ -53,6 +53,20 @@ Note: `CollectToolBatch` is routed to `agent.execution.bus` in `config/messenger
 - `ReplayService` increments rebuild counters and contributes replay tracing for hot-state rebuild operations.
 - `RunDebugService` exposes the current metrics snapshot for `agent-loop:run-inspect` output.
 
+## Turn tree replay
+
+Before RunState or hot-prompt replay, `TurnTreeReplayFilter` filters the canonical
+event stream to only events on the active branch path. See `docs/session-storage.md`
+"Turn tree model" for semantics.
+
+Key replay services and their tree integration:
+- `TurnTreeProjector` — builds `TurnTreeDTO` from canonical events (pure domain service).
+- `TurnTreeReplayFilter` — uses the projector to filter events to the active branch.
+- `RunStateReplayService` — filters events before replaying into `RunState`; runs
+  integrity checks on the full canonical stream, not the filtered stream.
+- `ReplayService` — filters events before replaying prompt messages; reports
+  integrity (eventCount, lastSeq, contiguity) from the full canonical stream.
+
 ## Maintenance rule
 
 When routing, handlers, projector flow, or subscriber contracts change, update this file in the same change.
