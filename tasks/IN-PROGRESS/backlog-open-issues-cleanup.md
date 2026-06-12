@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: vhofw0omriji
+Fork run: bd30wksz3kbs
 PR URL:
 PR Status:
 Started: 2026-06-12T16:54:23.580Z
@@ -136,3 +136,7 @@ Completed:
 - Validation: Fork reported castor test passed all 2,466 unit tests.; Fork reported castor test:tui passed all 20 TUI E2E tests including new EditorBorderColorTest.; Fork reported castor deptrac, castor phpstan, castor cs-check passed.; Fork reported PHAR build/smoke passed.; Fork reported controller/check validation was blocked by environmental root-owned orphaned worker pid 3334 stealing queue messages; not claiming full LLM_MODE=true castor check passed until blocker is cleared and rerun.; ANSI snapshots reported under var/tmp/tui-e2e-border-snap-* for off/minimal/low border comparison.; Commit reported: 0c142d7f on task/backlog-open-issues-cleanup.
 - Summary: Issue #120 implementation completed by fork vhofw0omriji. Commit 0c142d7f colors the editor border from the effective reasoning level and updates it on startup/resume, Shift+Tab, Ctrl+P, /model selection, and picker selection. Added shared ThemeColorEnum::forReasoning() mapping and ANSI-oriented TmuxHarness E2E snapshots.
 - Awaiting user validation of issue #120 editor border color behavior before merge/close.
+
+## Task workflow update - 2026-06-12T19:32:35.520Z
+- Recorded fork run: bd30wksz3kbs
+- User reported castor check hangs and requested a mandatory AGENTS.md rule requiring agents/forks to read the testing skill and tests/AGENTS.md before doing anything test-related. Dispatched documentation-hardening fork bd30wksz3kbs to update root AGENTS.md only.
