@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\CLI;
 
 use Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator;
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
@@ -48,6 +49,7 @@ final class AgentCommand
         private InteractiveMode $interactiveMode,
         private HatfieldSessionStore $sessionStore,
         private SkillsConfig $skillsConfig,
+        private PromptTemplatesRuntimeConfig $promptTemplatesConfig,
         private LoggerInterface $logger,
         private readonly ?StartupDatabaseMigrator $startupDatabaseMigrator = null,
         private ?HeadlessController $controller = null,
@@ -55,6 +57,9 @@ final class AgentCommand
     ) {
     }
 
+    /**
+     * @param list<string> $promptTemplate
+     */
     public function __invoke(
         #[Option(description: 'Run in headless JSONL protocol mode (stdin/stdout)')]
         bool $headless = false,
@@ -95,6 +100,12 @@ final class AgentCommand
         #[Option(description: 'Comma-separated denylist of tool names to hide from the model')]
         string $toolsExcluded = '',
 
+        #[Option(description: 'Load a prompt template file or directory (repeatable)')]
+        array $promptTemplate = [],
+
+        #[Option(description: 'Disable prompt template auto-discovery and settings-loaded templates; --prompt-template paths still load')]
+        bool $noPromptTemplates = false,
+
         ?OutputInterface $output = null,
     ): int {
         if (null === $output) {
@@ -124,6 +135,13 @@ final class AgentCommand
             $this->skillsConfig->noSkills = $noSkills;
             $this->skillsConfig->skillsPaths = $skillsPath;
             $this->skillsConfig->preloadSkills = $skills;
+
+            // Populate prompt-template runtime config from CLI options.
+            // This is read by PromptTemplateLoader when the service first
+            // loads templates, and by JsonlProcessAgentSessionClient when
+            // spawning a controller child process.
+            $this->promptTemplatesConfig->promptTemplatePaths = $promptTemplate;
+            $this->promptTemplatesConfig->noPromptTemplates = $noPromptTemplates;
 
             // Apply tool filtering before any session/client starts so the
             // system prompt and toolbox reflect CLI-specified allowlist/denylist.

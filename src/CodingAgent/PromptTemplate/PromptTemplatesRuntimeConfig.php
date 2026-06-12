@@ -7,8 +7,8 @@ namespace Ineersa\CodingAgent\PromptTemplate;
 /**
  * Mutable per-invocation overrides for prompt-template loading.
  *
- * Populated by AgentCommand from CLI options during process startup.
- * Not wired to CLI yet — PT-02 will add those options.
+ * Populated by AgentCommand from CLI options during process startup
+ * and forwarded to controller subprocesses when needed.
  *
  * @internal
  */

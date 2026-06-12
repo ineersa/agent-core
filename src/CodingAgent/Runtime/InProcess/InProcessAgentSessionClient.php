@@ -13,6 +13,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
@@ -46,6 +47,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly AgentsContextDiscovery $agentsContextDiscovery,
         private readonly AgentsContextRenderer $agentsContextRenderer,
         private readonly SkillsContextBuilder $skillsContextBuilder,
+        private readonly PromptTemplateService $promptTemplateService,
         private readonly ?RuntimeEventSinkInterface $transientSink = null,
         private readonly ?ToolQuestionStoreInterface $toolQuestionStore = null,
         private readonly ToolQuestionAnswerResolver $answerResolver = new ToolQuestionAnswerResolver(),
@@ -100,10 +102,15 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             );
         }
 
-        if ('' !== $request->prompt) {
+        // Expand prompt templates in the user input before passing to the model.
+        // Single-pass expansion: if a template body starts with "/other", it
+        // is NOT expanded again — the model receives the literal text.
+        $prompt = $this->promptTemplateService->expandPromptTemplate($request->prompt);
+
+        if ('' !== $prompt) {
             $messages[] = new AgentMessage(
                 role: 'user',
-                content: [['type' => 'text', 'text' => $request->prompt]],
+                content: [['type' => 'text', 'text' => $prompt]],
             );
         }
 
@@ -128,19 +135,28 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
     public function send(string $runId, UserCommand $command): void
     {
+        $text = $command->text ?? '';
+
+        // Expand prompt templates for user-initiated interactive commands.
+        // answer_human, answer_tool_question, and shell_command carry
+        // machine/payload answers — they are NOT expanded.
+        if (\in_array($command->type, ['message', 'steer', 'follow_up'], true)) {
+            $text = $this->promptTemplateService->expandPromptTemplate($text);
+        }
+
         match ($command->type) {
             'steer', 'message' => $this->runner->steer(
                 $runId,
                 new AgentMessage(
                     role: 'user',
-                    content: [['type' => 'text', 'text' => $command->text ?? '']],
+                    content: [['type' => 'text', 'text' => $text]],
                 ),
             ),
             'follow_up' => $this->runner->followUp(
                 $runId,
                 new AgentMessage(
                     role: 'user',
-                    content: [['type' => 'text', 'text' => $command->text ?? '']],
+                    content: [['type' => 'text', 'text' => $text]],
                 ),
             ),
             'answer_human' => $this->runner->answerHuman(
