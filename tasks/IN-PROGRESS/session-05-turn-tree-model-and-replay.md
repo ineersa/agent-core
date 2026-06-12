@@ -100,7 +100,7 @@ B) **Leaf event** — Append a `run.leaf_set` event to `events.jsonl` each time 
 Status: IN-PROGRESS
 Branch: task/session-05-turn-tree-model-and-replay
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay
-Fork run: 9o47vlbpy830
+Fork run: zlk8lxlq5po8
 PR URL:
 PR Status:
 Started: 2026-06-12T01:41:43.505Z
@@ -128,3 +128,7 @@ Completed:
 - Recorded fork run: 9o47vlbpy830
 - Validation: Verified commit: `git -C /home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay rev-parse --verify HEAD` → `e8cac9d37bff189765318be84be8f358614c1c80`.; Verified branch/status: `git -C /home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay status --short` → clean; branch `task/session-05-turn-tree-model-and-replay`.; Verified changed files: `git diff --stat HEAD~1..HEAD` → 17 files, 1621 insertions, 6 deletions; expected AgentCore turn tree/replay/runtime/docs/tests files changed.; Fork validation reported: `castor phpstan` ok; `castor test --filter=TurnTreeProjectorTest` ok (10 tests, 56 assertions); focused replay/pipeline/runtime mapper tests ok (72 tests, 303 assertions); full `castor test` ok (2,347 tests, 0 failures); `castor cs-check` ok after `castor cs-fix`; `castor deptrac` ok (0 violations/errors).; Not run by design: `LLM_MODE=true castor check`; deferred to `task-to-pr`.
 - Summary: Implementation fork completed successfully. Verified worktree `/home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay` is clean on branch `task/session-05-turn-tree-model-and-replay` at commit `e8cac9d37bff189765318be84be8f358614c1c80` (`e8cac9d3 Implement turn tree replay anchors`). Diff stat shows 17 files changed: new TurnTree DTO/projector/filter/replay DTO, AgentCore event/replay/pipeline updates, runtime protocol drop handling, docs, and tests. SESSION-05 remains core/runtime data foundation only; no TUI feature or TmuxHarness E2E was required/added. Noted fork caveat: `TurnTreeReplayFilter` is constructor-injected as nullable and should be verified during review/container validation; services.yaml resource autowiring includes `src/AgentCore/**/*.php`, so the service should be available.
+
+## Task workflow update - 2026-06-12T02:18:33.992Z
+- Recorded fork run: zlk8lxlq5po8
+- Summary: Reviewer subagent returned `APPROVE WITH SUGGESTIONS` for commit `e8cac9d3`. Actionable findings: stale `RunStateReplayService::replay()` contiguity docblock, document `TurnTreeNodeDTO::lastSeq` semantics for rewound/non-last leaves, remove dead `$turnIndicesByTurnNo` in `TurnTreeProjector`, and remove empty no-op test helper conditional. Launched review-fix fork `zlk8lxlq5po8` in the task worktree with focused Castor validation instructions. Skipped broader NTH refactors for now (projector extraction, replay message allowlist, double-sort optimization) because they are non-blocking and higher-risk/subjective for this PR-prep pass.
