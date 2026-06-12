@@ -100,7 +100,7 @@ B) **Leaf event** — Append a `run.leaf_set` event to `events.jsonl` each time 
 Status: IN-PROGRESS
 Branch: task/session-05-turn-tree-model-and-replay
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay
-Fork run: d5cn0j1flb83
+Fork run: lo07sunzel4n
 PR URL:
 PR Status:
 Started: 2026-06-12T01:41:43.505Z
@@ -164,3 +164,7 @@ Completed:
 - Recorded fork run: d5cn0j1flb83
 - Validation: Fork validation reported: `castor test --filter=TurnTreeProjectorTest` ok (13 tests, 69 assertions).; Fork validation reported: `castor test --filter=RunStateReplayServiceTest` ok (25 tests, 107 assertions).; Fork validation reported: `castor phpstan --path src/AgentCore` ok (errors=0, file_errors=0).; Fork validation reported: `castor cs-check` ok (files_fixed=0).
 - Summary: Final metadata-handling fork completed. Commit `3e92baae Tighten turn tree metadata handling` replaces `isset(parent_turn_no)` checks with `array_key_exists` in `TurnTreeProjector`, documents `turn_branched` future-emitter requirements, documents the defensive tree-metadata inclusion safety net in `TurnTreeReplayFilter`, and adds an explicit `parent_turn_no => null` assertion. No broad refactors or behavioral replay changes.
+
+## Task workflow update - 2026-06-12T03:09:44.201Z
+- Recorded fork run: lo07sunzel4n
+- Summary: Final-final reviewer returned `APPROVE WITH SUGGESTIONS` with no issues/critical findings. To satisfy actionable quality feedback, launched fork `lo07sunzel4n` for low-risk polish: remove unused `titleForTurn($anchorSeq)` parameter, add generic-title fallback comment, replace/simplify the single-use tree-metadata closure in `TurnTreeReplayFilter`, and comment why `leaf_set.previous_turn_no` and `parent_turn_no` intentionally coincide in the normal continue path. Broader suggestions such as `RunState::withLastSeq()` and DTO moves are intentionally skipped as non-blocking future cleanup.
