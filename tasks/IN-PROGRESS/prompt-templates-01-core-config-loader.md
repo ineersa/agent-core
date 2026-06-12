@@ -27,7 +27,7 @@ Enables parallel follow-up: PT-02 and PT-03 can start after this lands.
 Status: IN-PROGRESS
 Branch: task/prompt-templates-01-core-config-loader
 Worktree: /home/ineersa/projects/agent-core-worktrees/prompt-templates-01-core-config-loader
-Fork run:
+Fork run: dxxpp2hl1jgb
 PR URL:
 PR Status:
 Started: 2026-06-12T01:42:36.569Z
@@ -48,3 +48,7 @@ Completed:
 - Loaded task-workflow/testing/subagents guidance; read `.pi/plans/prompt-templates-implementation-plan.md` sections for PT-01 scope and validation.
 - Scout findings: add `PromptsConfig` through `AppConfig::fromContainer()` and `AppConfigLoader::PATH_CONFIG['[prompts]']='list'`; use `SettingsPathResolver` for path-bearing settings; add `AppPromptTemplate` deptrac layer and allow AppConfig/AppRuntimeContract/SymfonyYaml (plus logger if needed); add `PromptTemplateCatalogInterface`/`PromptTemplateCommand` under Runtime/Contract so later TUI work stays deptrac-safe.
 - Scout findings: tests should use `TestDirectoryIsolation` and shared `TestLogger`; QA commands must use Castor; PT-01 does not wire runtime/TUI behavior yet, so no TmuxHarness E2E is required for this task.
+
+## Task workflow update - 2026-06-12T01:48:11.490Z
+- Recorded fork run: dxxpp2hl1jgb
+- Launched implementation fork `dxxpp2hl1jgb` in worktree `/home/ineersa/projects/agent-core-worktrees/prompt-templates-01-core-config-loader` with explicit PT-01 scope, boundaries, files, tests, Castor validation commands, and commit/report requirements.
