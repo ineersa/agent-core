@@ -439,6 +439,36 @@ bash tool execution. Output exceeding this limit is passed through
 
 **Default:** `20000`
 
+### `prompts`
+
+A list of additional prompt-template file or directory paths. Prompt
+templates are Markdown files invoked with `/name` in the TUI, where `name`
+is the lowercase filename without `.md` (e.g. `review.md` → `/review`).
+
+Auto-discovery always scans these non-recursive directories before
+loading explicit paths:
+- `~/.hatfield/prompts/*.md` (global)
+- `<cwd>/.hatfield/prompts/*.md` (project)
+
+Paths support the usual placeholders (`~`, `%kernel.project_dir%`,
+relative paths). Because list settings replace rather than append, a
+project `.hatfield/settings.yaml` `prompts:` list will replace the home
+`prompts:` list entirely. The auto-discovery directories are always
+scanned regardless of the `prompts:` list.
+
+A future `--no-prompt-templates` CLI option will disable auto-discovery
+and settings paths; CLI `--prompt-template <path>` paths will still load
+when it is implemented. Currently there are no CLI flags.
+
+**Default:** `[]` (empty — only auto-discovery directories are scanned).
+
+**Example:**
+```yaml
+prompts:
+  - .hatfield/team-prompts
+  - ~/shared/prompts/review.md
+```
+
 ### `extensions.enabled`
 
 List of enabled extension class names. Each class must implement

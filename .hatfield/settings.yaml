@@ -4,6 +4,21 @@
 # When adding new settings keys, update this file and AGENTS.md.
 
 # ---------------------------------------------------------------------------
+# Prompt templates
+# ---------------------------------------------------------------------------
+# Prompt templates are Markdown files invoked with /name. Uncomment and
+# add template files or directories below. Paths support ~,
+# %kernel.project_dir%, and relative paths.
+#
+# Auto-discovery scans ~/.hatfield/prompts/*.md and
+# <cwd>/.hatfield/prompts/*.md non-recursively.
+#
+# Example:
+# prompts:
+#   - .hatfield/team-prompts
+#   - ~/shared/prompts/review.md
+
+# ---------------------------------------------------------------------------
 # Tool output capping
 # ---------------------------------------------------------------------------
 #

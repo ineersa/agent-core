@@ -108,6 +108,24 @@ services:
       $denormalizer: '@Symfony\Component\Serializer\SerializerInterface'
       $cwd: '%app.cwd%'
 
+  # ─── Prompt Templates ───
+
+  Ineersa\CodingAgent\Config\PromptsConfig:
+    factory: ['Ineersa\CodingAgent\Config\PromptsConfig', 'fromAppConfig']
+    arguments:
+      - '@Ineersa\CodingAgent\Config\AppConfig'
+
+  Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig: ~
+
+  Ineersa\CodingAgent\PromptTemplate\PromptTemplateLoader:
+    arguments:
+      $promptsConfig: '@Ineersa\CodingAgent\Config\PromptsConfig'
+      $runtimeConfig: '@Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig'
+      $cwd: '%app.cwd%'
+
+  Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCatalogInterface:
+    alias: Ineersa\CodingAgent\PromptTemplate\PromptTemplateService
+
   # ─── Extension wiring ───
 
   Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge:

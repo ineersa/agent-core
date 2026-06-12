@@ -239,6 +239,24 @@ logging:
     max_files: 14
 
 # ---------------------------------------------------------------------------
+# Prompt templates
+# ---------------------------------------------------------------------------
+# Prompt templates are Markdown files invoked with /name, where name is the
+# filename without .md. Auto-discovery scans these non-recursive directories:
+#   ~/.hatfield/prompts/*.md
+#   <cwd>/.hatfield/prompts/*.md
+#
+# Add extra template files or directories here. Paths support ~,
+# %kernel.project_dir%, and relative paths. Relative paths resolve against
+# the project working directory (CWD).
+#
+# Example:
+# prompts:
+#   - '.hatfield/team-prompts'
+#   - '~/shared/prompts/review.md'
+prompts: []
+
+# ---------------------------------------------------------------------------
 # AI provider and model configuration
 # ---------------------------------------------------------------------------
 #
