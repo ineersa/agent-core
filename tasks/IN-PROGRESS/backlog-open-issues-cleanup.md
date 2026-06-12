@@ -111,3 +111,7 @@ Completed:
 - Validation: User validation: #118 feels way nicer and approved merge.; Fork validation before merge: full LLM_MODE=true castor check passed all 13 steps on the task branch.; Merged/pushed commit: 77918076 fix(tui): show working indicator immediately after submit.; Closed GitHub issue #118 via gh issue close.
 - Summary: Issue #118 validated by user and merged using the stacking workflow. Rebased task/backlog-open-issues-cleanup onto origin/main, fast-forwarded main to include commit 77918076 (rebased from c53ec19b), pushed to origin/main, and closed GitHub issue #118. Umbrella task remains IN-PROGRESS for remaining issues.
 - Used the approved stacking workflow: rebase task branch onto latest origin/main, fast-forward main to task branch, push, close only validated issue, then continue backlog cleanup.
+
+## Task workflow update - 2026-06-12T18:34:39.388Z
+- Summary: Issue #119 investigation completed by scout. Root cause: terminals generally do not send image clipboard data on Ctrl+V; Symfony TUI/editor paste handling is text-only and strips binary/control bytes; runtime user message path is text-only while image support currently exists via the agent-side view_image tool. Implementation needs product/UX decisions before dispatching a fork.
+- Paused before implementing #119 to ask user product questions as requested. Key decisions: supported terminals/protocols, where pasted images should be stored, whether pasted image inserts a path/markdown reference vs direct attachment, and desired unsupported-terminal fallback.
