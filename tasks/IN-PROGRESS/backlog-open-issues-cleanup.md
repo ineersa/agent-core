@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: e3ji2jgnic2e
+Fork run: 7h6a58rv1hlx
 PR URL:
 PR Status:
 Started: 2026-06-12T16:54:23.580Z
@@ -77,3 +77,7 @@ Completed:
 
 ## Task workflow update - 2026-06-12T17:29:37.804Z
 - User validation found additional #117 reasoning-level issues after c82683aa: xhigh appears in footer but should not; reasoning status is shown persistently/at startup but should appear only when reasoning is actually changed and disappear/overwrite when work/status changes; Shift+Tab should do nothing for models without thinking support and color must remain correct; Ctrl+P and /model changes must clamp/set reasoning to highest available level when the selected model does not support the persisted level (e.g. xhigh); reopening Hatfield must initialize reasoning correctly (user observed llama_cpp opening with high).
+
+## Task workflow update - 2026-06-12T17:30:01.660Z
+- Recorded fork run: 7h6a58rv1hlx
+- Dispatched iteration fork 7h6a58rv1hlx for #117 reasoning-level correctness issues: remove persistent/startup reasoning status; prevent xhigh/status text leakage into footer; make Shift+Tab a no-op for non-thinking models; clamp reasoning correctly on Ctrl+P, /model change, and reopen/startup; verify with TmuxHarness E2E plus real interactive tmux snapshots.
