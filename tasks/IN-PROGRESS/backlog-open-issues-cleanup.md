@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: m1al6j9alq20
+Fork run: bl6ans1hbfs8
 PR URL:
 PR Status:
 Started: 2026-06-12T16:54:23.580Z
@@ -170,3 +170,8 @@ Completed:
 
 ## Task workflow update - 2026-06-12T20:28:53.598Z
 - User ran castor check after LLM generation recovered: all steps pass except test:tui times out at 90s (exit 124). This suggests LLM preflight is fixed but the full TUI E2E suite now exceeds the per-step timeout, likely due to accumulated TUI E2E tests. Dispatching fork to investigate test:tui timing and implement an appropriate Castor split/timeout fix, likely parallel TUI shards for castor check.
+
+## Task workflow update - 2026-06-12T20:38:18.969Z
+- Recorded fork run: bl6ans1hbfs8
+- Validation: LLM_MODE=true castor check: PASS all 14 steps; test:tui-1 OK 57.9s, test:tui-2 OK 53.0s; deptrac, unit shards, controller, llm-real, phpstan, cs-check all OK (per fork handoff).; castor phpstan: PASS (per fork handoff).; castor cs-check: PASS (per fork handoff).
+- Summary: Fork bl6ans1hbfs8 completed Castor TUI E2E sharding fix. Root cause: single castor check test:tui step ran all 20 tui-e2e tests under one 90s timeout; typical runtime ~78s with variance over 90s, causing exit 124 even when tests pass. Fix commit 2d977882 splits castor check into test:tui-1 and test:tui-2 parallel shards with balanced file distribution and 60s per-shard timeout; standalone castor test:tui unchanged. Branch pushed to origin/task/backlog-open-issues-cleanup.
