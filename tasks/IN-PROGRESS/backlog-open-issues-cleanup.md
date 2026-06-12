@@ -81,3 +81,8 @@ Completed:
 ## Task workflow update - 2026-06-12T17:30:01.660Z
 - Recorded fork run: 7h6a58rv1hlx
 - Dispatched iteration fork 7h6a58rv1hlx for #117 reasoning-level correctness issues: remove persistent/startup reasoning status; prevent xhigh/status text leakage into footer; make Shift+Tab a no-op for non-thinking models; clamp reasoning correctly on Ctrl+P, /model change, and reopen/startup; verify with TmuxHarness E2E plus real interactive tmux snapshots.
+
+## Task workflow update - 2026-06-12T17:47:56.805Z
+- Validation: Fork reported full LLM_MODE=true castor check passed all 13 steps: deptrac, 7 unit shards, controller, llm-real, tui, phpstan, cs-check.; Fork reported castor test passed all 2,466 unit tests.; Fork reported castor test:tui passed all 17 TUI E2E tests including updated ReasoningCycleTest.; Fork reported manual tmux verification: startup has no reasoning status line; Shift+Tab shows `reasoning    minimal` in status panel only; footer remains clean; second Shift+Tab shows `reasoning    low`.; Commit reported: 61ceed95 on task/backlog-open-issues-cleanup.
+- Summary: Issue #117 follow-up iteration completed by fork 7h6a58rv1hlx. Commit 61ceed95 fixes reasoning status lifecycle and model-support/clamping behavior: reasoning status is not seeded at startup, Shift+Tab is no-op for non-thinking models, reasoning status uses panel-only registry so it no longer leaks xhigh/text into footer, startup clamps non-thinking models to off, and existing model switch paths use display reasoning/clamping.
+- Awaiting user validation of #117 reasoning-level fixes before proceeding to the next GitHub issue.
