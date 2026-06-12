@@ -27,7 +27,7 @@ Enables parallel follow-up: PT-02 and PT-03 can start after this lands.
 Status: IN-PROGRESS
 Branch: task/prompt-templates-01-core-config-loader
 Worktree: /home/ineersa/projects/agent-core-worktrees/prompt-templates-01-core-config-loader
-Fork run: lrh416qv4ipw
+Fork run: wg2nk5byx3sg
 PR URL:
 PR Status:
 Started: 2026-06-12T01:42:36.569Z
@@ -68,3 +68,8 @@ Completed:
 
 ## Task workflow update - 2026-06-12T02:30:22.621Z
 - Second reviewer pass returned `APPROVED`. It also listed two minor non-blocking polish findings: clarify a misleading `PromptTemplateLoader` comment about hidden `.md` files, and remove unused `SymfonyConsole` allowance from the `AppPromptTemplate` deptrac ruleset. Launched polish fork `wg2nk5byx3sg` to address both before PR preparation.
+
+## Task workflow update - 2026-06-12T02:31:32.337Z
+- Recorded fork run: wg2nk5byx3sg
+- Validation: Fork reported: `castor deptrac` OK (violations=0, errors=0).; Fork reported: `castor cs-check` OK (files_fixed=0).; Orchestrator verification: `git status --short --branch` clean on `task/prompt-templates-01-core-config-loader`.; Orchestrator verification: `git log --oneline --decorate -5` shows HEAD `5d5dfe53`, then `ce058dd6`, then `24aedbf7`.; Orchestrator verification: `git diff --stat origin/main...HEAD` shows 25 files changed, 2163 insertions.
+- Summary: Polish fork completed and committed `5d5dfe53b815bd80f640b9e1f9136a26dc00505b` (`PT-01 polish: fix misleading .md loading comment; drop unused SymfonyConsole from PromptTemplate deptrac ruleset`). Changes are non-behavioral/minimal: comment clarification in `PromptTemplateLoader.php` and tighter AppPromptTemplate deptrac rules. Worktree verified clean at `5d5dfe53`.
