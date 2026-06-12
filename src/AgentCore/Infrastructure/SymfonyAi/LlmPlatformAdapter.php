@@ -9,12 +9,14 @@ use Ineersa\AgentCore\Contract\Hook\ConvertToLlmHookInterface;
 use Ineersa\AgentCore\Contract\Hook\LlmStreamObserverInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Hook\TransformContextHookInterface;
+use Ineersa\AgentCore\Contract\Model\ModelResolverInterface;
 use Ineersa\AgentCore\Contract\Model\PlatformInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Model\CostCalculatorInterface;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
+use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Input;
@@ -53,6 +55,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         private ?LlmStreamObserverInterface $streamObserver,
         private ?CostCalculatorInterface $costCalculator,
         private LoggerInterface $logger,
+        private ?ModelResolverInterface $modelResolver = null,
     ) {
     }
 
@@ -79,6 +82,21 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             'tool_count' => \is_array($inputOptions['tools'] ?? null) ? \count($inputOptions['tools']) : 0,
         ];
 
+        // Resolve the effective model ref for cost calculation and any
+        // model-aware logic.  $request->model is the legacy empty-string
+        // container parameter (app.default_model), not a user override;
+        // SessionAwareModelResolver picks the real model from session
+        // metadata / provider defaults without an explicit override.
+        $effectiveModel = $request->model;
+        if (null !== $this->modelResolver) {
+            $effectiveModel = $this->modelResolver->resolve(
+                defaultModel: $request->model,
+                messages: $messageBag,
+                input: $request->input,
+                options: new ModelResolutionOptions($inputOptions),
+            )->model;
+        }
+
         return $this->consumeStream(
             $this->platform->invoke(
                 $input->getModel(),
@@ -91,7 +109,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             $cancelToken,
             $request->input->runId ?? '',
             $request->input->stepId,
-            $request->model,
+            $effectiveModel,
             $requestSummary,
         );
     }
