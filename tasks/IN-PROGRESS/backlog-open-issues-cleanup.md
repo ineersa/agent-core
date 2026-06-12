@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: bl6ans1hbfs8
+Fork run: mbbwe3j3zxwm
 PR URL:
 PR Status:
 Started: 2026-06-12T16:54:23.580Z
@@ -182,3 +182,8 @@ Completed:
 ## Task workflow update - 2026-06-12T20:45:33.538Z
 - Validation: Scout read testing skill and tests/AGENTS.md; inspected broken snapshots under var/tmp/tui-e2e-border-* showing identical border color ANSI for off/minimal/low.
 - Summary: Scout investigation for failed #120 validation completed. Root cause: ChatScreen::applyEditorBorderColor() adds a stylesheet but never invalidates the EditorWidget; Symfony TUI render cache returns cached editor frame, so border color never changes. Shift+Tab also stops propagation before requestRender. Existing EditorBorderColorTest is a false positive: it asserts border chars/status text and saves snapshots, but does not assert ANSI color changes; scout found off/minimal/low snapshots all use identical cyan border sequence 38;2;0;255;255. Recommended fix: invalidate prompt editor widget and request render after style change; include editor widget in ChatScreen::refresh(); update E2E to assert actual ANSI border color differs/maps across reasoning levels.
+
+## Task workflow update - 2026-06-12T20:50:20.255Z
+- Recorded fork run: mbbwe3j3zxwm
+- Validation: ChatScreen unit tests: PASS (8 tests) per fork handoff.; castor phpstan: PASS per fork handoff.; castor cs-check: PASS per fork handoff.; E2E blocked: llama.cpp test server at 192.168.2.38:9052 is connection refused; fail-fast preflight correctly blocks castor test:tui until server is restarted.
+- Summary: Fork mbbwe3j3zxwm fixed failed #120 validation. ChatScreen::applyEditorBorderColor() now invalidates the EditorWidget and requests render after stylesheet update; ChatScreen::refresh() also invalidates the editor widget. EditorBorderColorTest now parses actual ANSI `38;2;R;G;B` sequences from editor border lines and asserts off→minimal→low color changes, eliminating the previous false positive that only checked status text/border chars. Commit 0d2207ea pushed to origin/task/backlog-open-issues-cleanup.
