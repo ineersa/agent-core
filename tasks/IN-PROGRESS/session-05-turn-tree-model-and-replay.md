@@ -115,3 +115,7 @@ Completed:
 - Created worktree /home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay.
 - Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay.
 - Copied .vera index into /home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay.
+
+## Task workflow update - 2026-06-12T01:48:30.411Z
+- Validation: Read-only setup/context gathering only; no code validation run in orchestrator.
+- Summary: Claimed task and created worktree `/home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay` on branch `task/session-05-turn-tree-model-and-replay`. Loaded task-workflow/testing/subagents skills. Read task context, docs/session-storage.md, src/AgentCore Domain/Application AGENTS docs, tests/AGENTS.md, and future SESSION-06/07/08 task context. Scout subagents mapped AgentCore run event/replay seams and runtime/TUI projection seams; SESSION-05 appears core/runtime data foundation, not a TUI feature, so no TmuxHarness E2E proof is required unless the implementation adds user-visible TUI behavior. Full runtime validation remains for task-to-pr; implementation fork should run focused Castor tests only.
