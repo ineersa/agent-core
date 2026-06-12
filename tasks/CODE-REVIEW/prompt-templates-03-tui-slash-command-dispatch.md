@@ -24,7 +24,7 @@ Can run in parallel with PT-02 after PT-01 lands.
 Status: CODE-REVIEW
 Branch: task/prompt-templates-03-tui-slash-command-dispatch
 Worktree: /home/ineersa/projects/agent-core-worktrees/prompt-templates-03-tui-slash-command-dispatch
-Fork run: i9u6u4tch52o
+Fork run: 67zr7nu1f2ms, ogehkokb3cag
 PR URL: https://github.com/ineersa/agent-core/pull/138
 PR Status: open
 Started: 2026-06-12T18:08:24.597Z
@@ -79,3 +79,8 @@ Castor Check Output SHA256: 009333342cce68707db7b67d9fd09db478bbad5bf7307ad46c1a
 - Created PR: https://github.com/ineersa/agent-core/pull/138
 - Validation: merge fork i9u6u4tch52o: `git merge --no-ff origin/main` clean; HEAD `ed200677`; LLM_MODE=true castor test:tui --filter=PromptTemplateSlashCommandE2ETest — OK (1 test, 1 assertion); castor cs-check — OK (0 fixes); castor deptrac — OK (0 violations, 0 errors); castor phpstan — OK (0 errors, 0 file_errors)
 - Summary: Moving PT-03 to CODE-REVIEW per user instruction, with no additional reviewer step. Branch was merge-updated from current origin/main by fork `i9u6u4tch52o` at merge commit `ed200677` (clean merge, zero conflicts). Focused validation passed after merge; move_task will run the full `LLM_MODE=true castor check` quality gate before pushing/opening PR.
+
+## Task workflow update - 2026-06-12T22:05:18.808Z
+- Recorded fork run: 67zr7nu1f2ms, ogehkokb3cag
+- Validation: castor cs-check — OK (0 fixes); manual file inspection: `.hatfield/prompts/report.md` frontmatter contains only supported `description`; body starts with `User reported issue:` fenced `text` block containing `$ARGUMENTS`; git push origin task/prompt-templates-03-tui-slash-command-dispatch — OK; origin updated ed200677..8f012b46
+- Summary: Added daily-use project prompt template `.hatfield/prompts/report.md` on the PT-03 PR branch and pushed it to PR #138. The final amended commit is `8f012b46` (`Add report prompt template for /report issue filing with diagnostics`). The template uses `$ARGUMENTS` in the body as the actual prompt-template argument substitution mechanism, rendering `/report <issue>` as a fenced `User reported issue` block before model instructions. The misleading ignored `arguments:` frontmatter was removed. Branch is now synced with origin.
