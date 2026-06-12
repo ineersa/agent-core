@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\E2E;
 
-use Symfony\Component\Process\Process;
-
 /**
  * PHPUnit-compatible tmux test harness for TUI e2e/snapshot tests.
  *
@@ -13,9 +11,11 @@ use Symfony\Component\Process\Process;
  * plain-text / ANSI snapshots, polls for content, and
  * normalises dynamic text (UUIDs, run IDs, absolute paths).
  *
- * All tmux commands run through Symfony Process with explicit
- * per-call deadlines so that a stuck or deadlocked tmux server
- * cannot hang the test suite indefinitely.
+ * Tmux commands use shell_exec() for minimal overhead in
+ * polling loops. Per-call timeout safety is provided by the
+ * `timeout` wrapper applied at the Castor check step level;
+ * adding per-call process-spawning overhead inside the
+ * harness makes parallel-load TUI suites too slow.
  *
  * Sessions are killed automatically when the harness is
  * destructed or when kill() is called explicitly.
@@ -28,18 +28,6 @@ final class TmuxHarness
     /** @var list<non-empty-string> */
     private array $sessionNames = [];
 
-    /**
-     * Per-call timeout for interactive tmux control commands
-     * (capture, send-key, display-message, etc.).
-     */
-    private const float TMUX_CMD_TIMEOUT = 5.0;
-
-    /**
-     * Per-call timeout for session-creation commands, which can
-     * be slightly slower due to shell startup.
-     */
-    private const float TMUX_SESSION_TIMEOUT = 10.0;
-
     public function __construct()
     {
         $this->root = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
@@ -51,60 +39,6 @@ final class TmuxHarness
         $this->killAll();
     }
 
-    // ── internal shell ─────────────────────────────────────
-
-    /**
-     * Run a tmux command with an explicit deadline.
-     *
-     * Every tmux interaction goes through this helper so that a
-     * deadlocked tmux server cannot block the test suite forever.
-     *
-     * @param string $cmd            full tmux command (e.g. "tmux capture-pane -p -t %0")
-     * @param float  $timeout        seconds before the Process is killed
-     * @param bool   $throwOnTimeout  when true, throw RuntimeException on timeout;
-     *                                when false, return empty string (for cleanup paths)
-     *
-     * @return string trimmed stdout, or empty string on timeout/non-zero exit (non-throwing mode)
-     *
-     * @throws \RuntimeException when the process times out and throwOnTimeout is true
-     */
-    private function runTmux(string $cmd, float $timeout = 5.0, bool $throwOnTimeout = true): string
-    {
-        $process = Process::fromShellCommandline($cmd);
-        $process->setTimeout($timeout);
-
-        try {
-            $process->run();
-        } catch (\Symfony\Component\Process\Exception\ProcessTimedOutException $e) {
-            if ($throwOnTimeout) {
-                throw new \RuntimeException(
-                    \sprintf('tmux command timed out after %.1fs: %s', $timeout, $cmd),
-                    0,
-                    $e,
-                );
-            }
-
-            // Cleanup path — return whatever partial output exists.
-            return trim($process->getOutput());
-        } catch (\Throwable $e) {
-            // Process failed to start (e.g. invalid command, fork failure).
-            if ($throwOnTimeout) {
-                throw new \RuntimeException(
-                    \sprintf('tmux command failed: %s — %s', $cmd, $e->getMessage()),
-                    0,
-                    $e,
-                );
-            }
-
-            return '';
-        }
-
-        // Preserve output even on non-zero exit — captures like
-        // `tmux capture-pane -t <dead-pane>` may exit 1 but still
-        // return useful content.  shell_exec had the same semantics.
-        return trim($process->getOutput());
-    }
-
     // ── availability ──────────────────────────────────────
 
     /**
@@ -112,11 +46,9 @@ final class TmuxHarness
      */
     public static function isAvailable(): bool
     {
-        $process = Process::fromShellCommandline('which tmux 2>/dev/null');
-        $process->setTimeout(5.0);
-        $process->run();
+        $which = trim(shell_exec('which tmux 2>/dev/null') ?? '');
 
-        return '' !== trim($process->getOutput());
+        return '' !== $which;
     }
 
     // ── session management ─────────────────────────────────
@@ -155,23 +87,24 @@ final class TmuxHarness
             escapeshellarg($innerCmd),
         );
 
-        $output = $this->runTmux($cmd, self::TMUX_SESSION_TIMEOUT);
-        if ('' === $output) {
+        $output = shell_exec($cmd);
+        if (null === $output) {
             throw new \RuntimeException(\sprintf('Failed to execute tmux command: %s', $cmd));
         }
 
-        $paneId = $output;
+        $paneId = trim($output);
         if ('' === $paneId || !str_starts_with($paneId, '%')) {
             throw new \RuntimeException(\sprintf('Failed to create tmux session "%s". Output: %s', $session, $output));
         }
 
         // Some tmux servers ignore new-session -x/-y and keep the global
         // default-size (often 80x24). Force the requested deterministic size.
-        $this->runTmux(
-            \sprintf('tmux resize-window -t %s -x %d -y %d 2>/dev/null', escapeshellarg($session), $width, $height),
-            self::TMUX_CMD_TIMEOUT,
-            throwOnTimeout: false,
-        );
+        shell_exec(\sprintf(
+            'tmux resize-window -t %s -x %d -y %d 2>/dev/null',
+            escapeshellarg($session),
+            $width,
+            $height,
+        ));
 
         return new TmuxPane(
             session: $session,
@@ -188,11 +121,9 @@ final class TmuxHarness
      */
     public function capturePlain(TmuxPane $pane): string
     {
-        return $this->runTmux(
+        return shell_exec(
             \sprintf('tmux capture-pane -p -t %s 2>&1', escapeshellarg($pane->paneId)),
-            self::TMUX_CMD_TIMEOUT,
-            throwOnTimeout: false,
-        );
+        ) ?? '';
     }
 
     /**
@@ -207,11 +138,13 @@ final class TmuxHarness
      */
     public function capturePlainWithHistory(TmuxPane $pane, int $lines = 1000): string
     {
-        return $this->runTmux(
-            \sprintf('tmux capture-pane -p -S -%d -E - -t %s 2>&1', $lines, escapeshellarg($pane->paneId)),
-            self::TMUX_CMD_TIMEOUT,
-            throwOnTimeout: false,
-        );
+        return shell_exec(
+            \sprintf(
+                'tmux capture-pane -p -S -%d -E - -t %s 2>&1',
+                $lines,
+                escapeshellarg($pane->paneId),
+            ),
+        ) ?? '';
     }
 
     /**
@@ -219,11 +152,9 @@ final class TmuxHarness
      */
     public function captureAnsi(TmuxPane $pane): string
     {
-        return $this->runTmux(
+        return shell_exec(
             \sprintf('tmux capture-pane -p -e -t %s 2>&1', escapeshellarg($pane->paneId)),
-            self::TMUX_CMD_TIMEOUT,
-            throwOnTimeout: false,
-        );
+        ) ?? '';
     }
 
     // ── send keys ──────────────────────────────────────────
@@ -233,10 +164,11 @@ final class TmuxHarness
      */
     public function sendLiteral(TmuxPane $pane, string $text): void
     {
-        $this->runTmux(
-            \sprintf('tmux send-keys -t %s -l %s', escapeshellarg($pane->paneId), escapeshellarg($text)),
-            self::TMUX_CMD_TIMEOUT,
-        );
+        shell_exec(\sprintf(
+            'tmux send-keys -t %s -l %s',
+            escapeshellarg($pane->paneId),
+            escapeshellarg($text),
+        ));
     }
 
     /**
@@ -244,21 +176,19 @@ final class TmuxHarness
      */
     public function sendKey(TmuxPane $pane, string $key): void
     {
-        $this->runTmux(
-            \sprintf('tmux send-keys -t %s %s', escapeshellarg($pane->paneId), escapeshellarg($key)),
-            self::TMUX_CMD_TIMEOUT,
-        );
+        shell_exec(\sprintf(
+            'tmux send-keys -t %s %s',
+            escapeshellarg($pane->paneId),
+            escapeshellarg($key),
+        ));
     }
 
     public function paneExists(TmuxPane $pane): bool
     {
-        $result = $this->runTmux(
-            \sprintf('tmux display-message -p -t %s "#{pane_id}" 2>/dev/null', escapeshellarg($pane->paneId)),
-            self::TMUX_CMD_TIMEOUT,
-            throwOnTimeout: false,
-        );
+        $output = [];
+        exec(\sprintf('tmux display-message -p -t %s "#{pane_id}" 2>/dev/null', escapeshellarg($pane->paneId)), $output, $exitCode);
 
-        return '' !== $result;
+        return 0 === $exitCode;
     }
 
     // ── polling ────────────────────────────────────────────
@@ -436,11 +366,10 @@ final class TmuxHarness
      */
     public function killSession(TmuxPane $pane): void
     {
-        $this->runTmux(
-            \sprintf('tmux kill-session -t %s 2>/dev/null', escapeshellarg($pane->session)),
-            self::TMUX_CMD_TIMEOUT,
-            throwOnTimeout: false,
-        );
+        shell_exec(\sprintf(
+            'tmux kill-session -t %s 2>/dev/null',
+            escapeshellarg($pane->session),
+        ));
         $this->sessionNames = array_values(
             array_filter($this->sessionNames, static fn (string $n) => $n !== $pane->session),
         );
@@ -448,18 +377,14 @@ final class TmuxHarness
 
     /**
      * Kill all sessions created by this harness instance.
-     *
-     * Cleanup path — timeouts are caught and ignored so the
-     * destructor never throws.
      */
     public function killAll(): void
     {
         foreach ($this->sessionNames as $session) {
-            $this->runTmux(
-                \sprintf('tmux kill-session -t %s 2>/dev/null', escapeshellarg($session)),
-                self::TMUX_CMD_TIMEOUT,
-                throwOnTimeout: false,
-            );
+            shell_exec(\sprintf(
+                'tmux kill-session -t %s 2>/dev/null',
+                escapeshellarg($session),
+            ));
         }
         $this->sessionNames = [];
     }
