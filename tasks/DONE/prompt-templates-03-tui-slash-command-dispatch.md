@@ -21,14 +21,14 @@ Can run in parallel with PT-02 after PT-01 lands.
 - Because this touches TUI/runtime flow, `LLM_MODE=true castor check` must pass before moving this task to CODE-REVIEW; if prerequisites are unavailable, keep the task IN-PROGRESS and record the blocker.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/prompt-templates-03-tui-slash-command-dispatch
 Worktree: /home/ineersa/projects/agent-core-worktrees/prompt-templates-03-tui-slash-command-dispatch
 Fork run: k8t52x1i0r37
 PR URL: https://github.com/ineersa/agent-core/pull/138
-PR Status: open
+PR Status: merged
 Started: 2026-06-12T18:08:24.597Z
-Completed:
+Completed: 2026-06-12T22:37:38.129Z
 
 ## Work log
 - Created: 2026-06-09T00:10:10.866Z
@@ -107,3 +107,12 @@ Castor Check Output SHA256: e05f2e8f061e0dd0499bf4f15a5fce174abfc5713a870cf7d6d9
 - Skipped PR creation (pushOnly: true).
 - Validation: manual LLM_MODE=true castor check — OK (quality OK across all steps); move_task gate retry failed once on EditorBorderColorTest flake; focused LLM_MODE=true castor test:tui --filter=EditorBorderColorTest immediately passed (1 test, 6 assertions) after clearing stale PT-03 PHAR processes; stale PT-03 PHAR processes were checked/killed before retry
 - Summary: Returning PT-03 to CODE-REVIEW after manual full quality gate passed and retrying after transient EditorBorderColorTest flake. Branch includes merge commit `5545d6e2` resolving origin/main conflict, user report-template commit `89ded6a7`, and no reviewer step per user instruction.
+
+## Task workflow update - 2026-06-12T22:37:38.129Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/prompt-templates-03-tui-slash-command-dispatch into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/prompt-templates-03-tui-slash-command-dispatch.
+- Pulled integration checkout: Already up to date..
+- Validation: gh pr view 138 — state MERGED, mergedAt 2026-06-12T22:36:51Z, merge commit a725449ce2841b215ff8d034ebe0ed7e080eec93; git pull --ff-only — OK; main fast-forwarded from 80af46f2 to a725449c
+- Summary: Completing PT-03 after PR #138 was merged on GitHub (merge commit `a725449c`). Integration checkout was fast-forwarded to `origin/main` before task completion.
