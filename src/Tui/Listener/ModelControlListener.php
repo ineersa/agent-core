@@ -127,7 +127,7 @@ final class ModelControlListener implements TuiListenerRegistrar
 
         // ── Register Shift+Tab — cycle reasoning levels ──
         $tui->addListener(static function (InputEvent $event) use (
-            $modelService, $state,
+            $modelService, $state, $screen,
         ): void {
             // Shift+Tab sends \x1b[Z
             if ("\x1b[Z" !== $event->getData()) {
@@ -141,8 +141,12 @@ final class ModelControlListener implements TuiListenerRegistrar
                 return;
             }
 
-            // Update footer state for immediate refresh (no persistent status entry)
+            // Update footer state for immediate refresh
             $state->footerReasoning = $nextLevel;
+
+            // Show the new reasoning level in the status panel
+            $screen->setStatus('reasoning', $nextLevel);
+            $screen->refresh();
         }, priority: 95);
     }
 }
