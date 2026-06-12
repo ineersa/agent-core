@@ -156,3 +156,6 @@ Completed:
 
 ## Task workflow update - 2026-06-12T19:55:03.511Z
 - Identified castor test:tui hang is environmental/preflight failure: llama.cpp port 9052 responds to /health and /v1/models, but generation endpoints (/v1/chat/completions, /v1/completions, /completion) time out after 10s with zero bytes. Current tests do not fail fast on generation readiness; they proceed into controller/TUI waits and time out later. Dispatching fork to add deterministic generation preflight/fail-fast behavior for LLM-backed Castor test tasks.
+
+## Task workflow update - 2026-06-12T20:15:30.878Z
+- Fork ke68anqevh11 did not complete handoff cleanly; user observed it temporarily removed Castor preflights to verify in-test timeout behavior, ran castor check, and it still hung. Follow-up required: make in-test preflight throw/exit hard on generation timeout, add stop-on-error behavior for affected E2E Castor invocations, prove a single TUI test fails fast even without Castor preflight, then restore Castor preflight.
