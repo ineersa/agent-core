@@ -199,7 +199,18 @@ final class SubmitListener implements TuiListenerRegistrar
                     // based on authoritative run activity state:
                     //   - follow_up: normal next user message when idle/completed
                     //   - steer:     steering/injected message while active
-                    if ($state->activity->isActive()) {
+                    //
+                    // Special case — Cancelling:
+                    //   The run is in a grace window (tools/LLM aborting).
+                    //   Sending steer would be rejected by AgentCore; sending
+                    //   follow_up would race with the AdvanceRun dispatched by
+                    //   the cancellation abort flow.  Queue the message locally
+                    //   and dispatch it as follow_up only after the real
+                    //   Cancelled transition is observed by the poller.
+                    if (RunActivityStateEnum::Cancelling === $state->activity) {
+                        $state->queuedFollowUp = $text;
+                        $screen->setWorkingMessage('Message queued — waiting for cancellation to complete...');
+                    } elseif ($state->activity->isActive()) {
                         $client->send(
                             $state->handle->runId,
                             new UserCommand(type: 'steer', text: $text),

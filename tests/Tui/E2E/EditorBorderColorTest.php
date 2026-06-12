@@ -16,6 +16,22 @@ use PHPUnit\Framework\TestCase;
  * should change colour.  This test does NOT submit prompts or wait for LLM
  * responses, so the terminal layout is completely deterministic.
  *
+ * Layout at 120×40 (verified via ANSI snapshots):
+ *
+ *   Lines 1-6   Logo (electric 0;255;255)
+ *   Line  7     Header separator (steel 74;85;104) ─
+ *   Line  8     Welcome message
+ *   Line  9     Status (● idle)
+ *   Line 10     Editor TOP BORDER (reasoning color) ─
+ *   Line 11-14  Editor area (empty / prompt text)
+ *   Line 15     Editor BOTTOM BORDER (reasoning color) ─
+ *   Line 16     Footer separator (steel) ─
+ *   Line 17     Footer bar (◆)
+ *
+ * The footer bar line (contains ◆) is the anchor.  Editor bottom border
+ * is exactly 2 lines above it (skip the steel footer separator).
+ * Both borders are full-width ─ (U+2500) rows ≥ 100 characters wide.
+ *
  * @group tui-e2e
  */
 #[Group('tui-e2e')]
@@ -61,16 +77,14 @@ final class EditorBorderColorTest extends TestCase
 
         $this->tmux->waitForCaptureContains($pane, '█', 10.0);
 
-        $initialPlain = $this->tmux->capturePlainWithHistory($pane, 200);
-        self::assertStringContainsString(
-            '─',
-            $initialPlain,
-            'Editor border ─ chars should be visible in the initial capture',
-        );
+        // ── off (default) ────────────────────────────────────────────
 
-        $offBorderColour = $this->editorBorderColour($pane);
+        $off = $this->editorBorderColour($pane);
+        self::assertNotNull($off, 'Border colour at reasoning=off should not be null');
+        self::assertNotEmpty($off, 'Border colour at reasoning=off should not be empty');
 
-        // Shift+Tab: off → minimal
+        // ── Shift+Tab: off → minimal ─────────────────────────────────
+
         $this->tmux->sendLiteral($pane, "\x1b[Z");
 
         $this->tmux->waitForCallback(
@@ -81,16 +95,21 @@ final class EditorBorderColorTest extends TestCase
             history: 500,
         );
 
-        $minimalBorderColour = $this->editorBorderColour($pane);
-        self::assertNotNull($minimalBorderColour, 'minimal border colour');
+        $minimal = $this->editorBorderColour($pane);
+        self::assertNotNull($minimal, 'Border colour at reasoning=minimal should not be null');
 
         self::assertNotSame(
-            $offBorderColour,
-            $minimalBorderColour,
-            'Border colour should change from off → minimal',
+            $off,
+            $minimal,
+            \sprintf(
+                'Border colour should change off(%s) → minimal(%s)',
+                $off,
+                $minimal,
+            ),
         );
 
-        // Shift+Tab: minimal → low
+        // ── Shift+Tab: minimal → low ─────────────────────────────────
+
         $this->tmux->sendLiteral($pane, "\x1b[Z");
 
         $this->tmux->waitForCallback(
@@ -101,13 +120,17 @@ final class EditorBorderColorTest extends TestCase
             history: 500,
         );
 
-        $lowBorderColour = $this->editorBorderColour($pane);
-        self::assertNotNull($lowBorderColour, 'low border colour');
+        $low = $this->editorBorderColour($pane);
+        self::assertNotNull($low, 'Border colour at reasoning=low should not be null');
 
         self::assertNotSame(
-            $minimalBorderColour,
-            $lowBorderColour,
-            'Border colour should change from minimal → low',
+            $minimal,
+            $low,
+            \sprintf(
+                'Border colour should change minimal(%s) → low(%s)',
+                $minimal,
+                $low,
+            ),
         );
 
         $this->tmux->sendKey($pane, 'C-d');
@@ -116,52 +139,73 @@ final class EditorBorderColorTest extends TestCase
     // ── Helpers ───────────────────────────────────────────────
 
     /**
-     * Capture the pane and extract the ANSI true-colour sequence from the
-     * first pure-dash editor frame border line that is NOT a fixed steel
-     * separator (header / footer separators always use 38;2;74;85;104).
+     * Extract the ANSI colour of the editor BOTTOM border.
      *
-     * Editor frame borders are full-width ─ (U+2500) rows with no other
-     * glyphs.  If all pure-dash lines are steel separators (or uncoloured),
-     * returns null.
+     * Strategy: find the footer bar anchor (unique ◆ character), count
+     * up 2 lines to the editor bottom border (skipping the steel footer
+     * separator).  The editor bottom border is always a full-width ─ row
+     * immediately above the steel footer separator.
      *
-     * Returns e.g. "38;2;113;128;150" or null.
+     * This anchor is deterministic regardless of whether the status
+     * panel shows "reasoning" text (it was removed from startup seeding
+     * in issue #117, only appearing after the first Shift+Tab).
+     *
+     * Returns the colour portion of the ANSI SGR sequence, e.g.
+     * "38;2;113;128;150" for smoke, "38;2;0;255;255" for electric,
+     * or "default" if no colour SGR is found.
+     *
+     * Returns null if the anchor row cannot be located.
      */
     private function editorBorderColour(TmuxPane $pane): ?string
     {
         $ansi = $this->tmux->captureAnsi($pane);
+        $lines = explode("\n", $ansi);
 
-        foreach (explode("\n", $ansi) as $line) {
-            if (\mb_substr_count($line, "\u{2500}") < 40) {
-                continue;
+        // Find the footer bar anchor: the last line containing ◆.
+        // Search backward so trailing blank lines don't shift the index.
+        $footerIdx = null;
+        for ($i = \count($lines) - 1; $i >= 0; --$i) {
+            if (str_contains($lines[$i], '◆')) {
+                $footerIdx = $i;
+
+                break;
             }
-
-            $plain = \preg_replace('/\x1b\[[0-9;]*m/', '', $line);
-            $plain = \trim($plain);
-
-            // Only pure-dash lines (no logo/text/status mixed in).
-            if (\preg_match('/[^─ \t]/u', $plain)) {
-                continue;
-            }
-
-            // Extract colour.
-            if (\preg_match('/\x1b\[38;2;(\d+);(\d+);(\d+)m/', $line, $m)) {
-                $colour = \vsprintf('38;2;%s;%s;%s', [$m[1], $m[2], $m[3]]);
-                // Skip fixed steel separators (header / footer).
-                if ('38;2;74;85;104' !== $colour) {
-                    return $colour;
-                }
-                continue;
-            }
-            if (\preg_match('/\x1b\[38;5;(\d+)m/', $line, $m)) {
-                return \sprintf('38;5;%s', $m[1]);
-            }
-
-            // Pure-dash line with no colour — editor border in default.
-            return 'default';
         }
 
-        return null;
+        if (null === $footerIdx) {
+            return null;
+        }
+
+        // Editor bottom border is 2 lines above the footer bar:
+        //   footerIdx - 0  = footer bar (◆ test | 0/0 ...)
+        //   footerIdx - 1  = footer separator (steel ─)
+        //   footerIdx - 2  = editor BOTTOM border (reasoning colour ─)
+        $borderIdx = $footerIdx - 2;
+        if ($borderIdx < 0 || !isset($lines[$borderIdx])) {
+            return null;
+        }
+
+        $borderLine = $lines[$borderIdx];
+
+        // Ensure it's actually a dash row (belt-and-suspenders).
+        if (\mb_substr_count($borderLine, "\u{2500}") < 100) {
+            return null;
+        }
+
+        // Extract the first ANSI true-colour SGR from the line.
+        if (\preg_match('/\x1b\[38;2;(\d+);(\d+);(\d+)m/', $borderLine, $m)) {
+            return \vsprintf('38;2;%s;%s;%s', [$m[1], $m[2], $m[3]]);
+        }
+
+        // 256-colour fallback.
+        if (\preg_match('/\x1b\[38;5;(\d+)m/', $borderLine, $m)) {
+            return \sprintf('38;5;%s', $m[1]);
+        }
+
+        return 'default';
     }
+
+    // ── Test infrastructure ─────────────────────────────────────
 
     private function agentCommand(): string
     {
