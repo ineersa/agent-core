@@ -111,6 +111,20 @@ final class SubmitListener implements TuiListenerRegistrar
             // No local echo or persistence: canonical runtime events project
             // user blocks (avoiding duplicate block IDs), and events.jsonl is
             // the single source of truth for transcript replay on resume.
+            //
+            // Show immediate visual feedback (◐ Working...) before heavy
+            // synchronous work (session creation, system prompt discovery,
+            // skills context building, runner start).  Force a terminal
+            // repaint so the user sees the indicator instantly instead of
+            // staring at a blank editor until the work completes.
+            $screen->setWorkingMessage('Working...');
+            try {
+                $tui->requestRender();
+                $tui->processRender();
+            } catch (\Throwable $e) {
+                // Non-fatal: render may fail if the terminal is in a
+                // transient state.  The next tick will render normally.
+            }
 
             try {
                 // Start a run if this is the first message
@@ -213,14 +227,10 @@ final class SubmitListener implements TuiListenerRegistrar
                 return;
             }
 
-            // Show processing indicator via the working status widget.
-            // We intentionally do NOT add a "Processing..." transcript
-            // block — it duplicates the Working status and clutters the
-            // transcript.  The RuntimeEventPoller will transition the
-            // working state to idle when events arrive.
-            $screen->setWorkingMessage('Working...');
-
-            // Update transcript display
+            // Update transcript display.
+            // The working indicator was already shown before the
+            // synchronous work above; the poller will transition it
+            // to idle when runtime events arrive.
             $screen->setTranscriptBlocks($state->transcript);
         });
     }
