@@ -35,7 +35,7 @@ Parallelizable with: none after dependencies.
 Status: IN-PROGRESS
 Branch: task/editor-12-keybindings-docs-smoke
 Worktree: /home/ineersa/projects/agent-core-worktrees/editor-12-keybindings-docs-smoke
-Fork run: n1quu8reb70t
+Fork run: vlon1dgjztk7
 PR URL: https://github.com/ineersa/agent-core/pull/114
 PR Status: open
 Started: 2026-06-10T19:50:55.944Z
@@ -226,3 +226,7 @@ Castor Check Output SHA256: 74ff0433812203034ac7cb3d7dabc8d42f969bb957b60dccac60
 ## Task workflow update - 2026-06-12T00:39:54.365Z
 - Recorded fork run: n1quu8reb70t
 - Summary: Critical test hang investigation: relaunched scouts and read their combined report from `/home/ineersa/.pi/agent/tmp/2026-06--faa7d82a.txt`. Key findings: `castor check` step commands are timeout-wrapped but TUI test support has uncapped tmux `shell_exec`/`exec` calls in `TmuxHarness`; `TuiStartupSnapshotTest` appends `exec sleep 3600`, which can leave hour-long tmux orphan sessions if teardown is skipped; TmuxHarness polling loops themselves are deadline-based; controller E2E loops are mostly bounded; do not follow stale-dir cleanup recommendations because tests/AGENTS.md requires preserving TUI E2E artifacts. Launched implementation fork n1quu8reb70t to fix high-confidence tests/test-support uncapped waits only, with hard guardrail not to modify `.castor/tasks.php` or Castor/check scheduling. Required fixes: bounded tmux command helper in `TmuxHarness`, remove/replace the one-hour startup snapshot sleep, preserve snapshot artifact retention, validate with focused/full TUI, castor test/deptrac/phpstan/cs-check, and `LLM_MODE=true castor check`.
+
+## Task workflow update - 2026-06-12T00:49:41.011Z
+- Recorded fork run: vlon1dgjztk7
+- Summary: Retrieved failed fork n1quu8reb70t artifact despite signal_aborted. It committed `fa59b661`: bounded all TmuxHarness tmux shell calls with Symfony Process timeouts (5s normal/capture/send, 10s session start), changed TuiStartupSnapshotTest from `exec sleep 3600` to bounded `exec sleep 10`, updated startup snapshot, kept `.castor/tasks.php` unchanged, and full `castor test:tui` passed. Its `LLM_MODE=true timeout 90 castor check` completed without hanging but failed `test:llm-real` at OutputCapReadFileControllerTest because read `tool_execution.completed` never arrived before timeout; fork dismissed that as known flaky. User rejected that: OutputCap flake MUST be fixed. Relaunched fork vlon1dgjztk7 on worktree HEAD `fa59b661` with explicit scope to reproduce, diagnose, and fix OutputCapReadFileControllerTest under `test:llm-real`/`castor check` while preserving TUI timeout fixes and not touching Castor/check infrastructure.
