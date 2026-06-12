@@ -91,3 +91,6 @@ Completed:
 - Validation: User validation: #117 good/seems done.; Full LLM_MODE=true castor check passed on task branch per fork 7h6a58rv1hlx before merge.; Merged commits pushed to origin/main: cf9f7c72, 1ad4d68a.; Closed GitHub issue #117 via gh issue close.
 - Summary: Issue #117 validated by user and merged into main via cherry-picks cf9f7c72 and 1ad4d68a from task branch fixes. Pushed to origin/main. GitHub issue #117 closed with commit reference. Umbrella task remains IN-PROGRESS for remaining issues.
 - Per user instruction, merged validated #117 fix into main, kept the umbrella task/worktree for continued backlog cleanup, and closed only issue #117.
+
+## Task workflow update - 2026-06-12T18:03:37.404Z
+- User approved stacking workflow going forward: implement next issue on `task/backlog-open-issues-cleanup`, validate one issue, merge/push that branch to main, sync task branch back to latest main, then continue. Starting next open issue investigation.
