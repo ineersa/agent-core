@@ -21,7 +21,7 @@ Can run in parallel with PT-02 after PT-01 lands.
 - Because this touches TUI/runtime flow, `LLM_MODE=true castor check` must pass before moving this task to CODE-REVIEW; if prerequisites are unavailable, keep the task IN-PROGRESS and record the blocker.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: IN-PROGRESS
 Branch: task/prompt-templates-03-tui-slash-command-dispatch
 Worktree: /home/ineersa/projects/agent-core-worktrees/prompt-templates-03-tui-slash-command-dispatch
 Fork run: 67zr7nu1f2ms, ogehkokb3cag
@@ -84,3 +84,7 @@ Castor Check Output SHA256: 009333342cce68707db7b67d9fd09db478bbad5bf7307ad46c1a
 - Recorded fork run: 67zr7nu1f2ms, ogehkokb3cag
 - Validation: castor cs-check — OK (0 fixes); manual file inspection: `.hatfield/prompts/report.md` frontmatter contains only supported `description`; body starts with `User reported issue:` fenced `text` block containing `$ARGUMENTS`; git push origin task/prompt-templates-03-tui-slash-command-dispatch — OK; origin updated ed200677..8f012b46
 - Summary: Added daily-use project prompt template `.hatfield/prompts/report.md` on the PT-03 PR branch and pushed it to PR #138. The final amended commit is `8f012b46` (`Add report prompt template for /report issue filing with diagnostics`). The template uses `$ARGUMENTS` in the body as the actual prompt-template argument substitution mechanism, rendering `/report <issue>` as a fenced `User reported issue` block before model instructions. The misleading ignored `arguments:` frontmatter was removed. Branch is now synced with origin.
+
+## Task workflow update - 2026-06-12T22:08:10.333Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: Reopening PT-03 for a small prompt-template refinement requested by user: remove gist/upload attachment guidance from `.hatfield/prompts/report.md` and instruct the model to provide absolute local paths to sanitized snapshot/log artifacts instead. PR #138 remains open; no reviewer step required for this prompt-only tweak unless requested.
