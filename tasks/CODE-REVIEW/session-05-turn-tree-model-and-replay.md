@@ -97,7 +97,7 @@ B) **Leaf event** — Append a `run.leaf_set` event to `events.jsonl` each time 
 - Validation uses Castor per project rules; runtime/Messenger changes require full `castor check` before CODE-REVIEW.
 
 ## Workflow metadata
-Status: IN-PROGRESS
+Status: CODE-REVIEW
 Branch: task/session-05-turn-tree-model-and-replay
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay
 Fork run: d1ekk2pduqld
@@ -178,11 +178,11 @@ Completed:
 - Validation: Local validation on worktree at HEAD `4c7f5002`: `castor test` ok across 7 suites (agent-core 289 tests/1251 assertions; coding-agent shards 374/1058, 373/965, 309/1038, 287/752; tui 664/1660; platform 54/221), total 56.7s.; Local validation: `castor deptrac` ok (violations=0, errors=0, uncovered=796, allowed=1096).; Local validation: `castor phpstan` ok (errors=0, file_errors=0).; Local validation: `castor cs-check` ok (files_fixed=0).
 - Summary: PR-prep review loop completed. Latest reviewer pass found no critical/issues; only non-blocking design/NTH notes remained. All actionable findings from prior passes were addressed in commits `182bf592`, `6be3c4cb`, `9e779948`, `3e92baae`, and `4c7f5002`. User directed to stop further reviewer loops and move to CODE-REVIEW.
 Castor Check Status: passed
-Castor Check Commit: 4c7f500244f45b4ba759eda45c9c61ef87557045
+Castor Check Commit: cc451113ede59d8db5d4fa0b61c76de8006e4c63
 Castor Check Command: LLM_MODE=true castor check
 Castor Check Timeout: 240s
-Castor Check Completed: 2026-06-12T03:22:35.931Z
-Castor Check Output SHA256: 15f51d5cf4aba80de58ef1fa97d43f52f7a114c15d218958d9102e6aa33a9124
+Castor Check Completed: 2026-06-12T04:07:18.611Z
+Castor Check Output SHA256: 1a01e22df9ef9ff08359c0d92d150763fd745b98e4bd5d331078f7b08269e3c9
 
 ## Task workflow update - 2026-06-12T03:22:39.421Z
 - Moved IN-PROGRESS → CODE-REVIEW.
@@ -229,3 +229,12 @@ Castor Check Output SHA256: 15f51d5cf4aba80de58ef1fa97d43f52f7a114c15d218958d910
 ## Task workflow update - 2026-06-12T04:05:52.614Z
 - Validation: Reviewer verified review-iteration commits `2588049b` through `cc451113` and found no actionable blockers/regressions.; Focused validation before re-review passed: `TurnTreeProjectorTest`, `ReplayServiceTest`, `RunStateReplayServiceTest`, `phpstan --path src/AgentCore`, targeted test phpstan, `deptrac`, and `cs-check`.
 - Summary: Reviewer subagent final re-review at HEAD `cc451113` returned `APPROVE WITH SUGGESTIONS` with no critical issues and no actionable issues. Non-blocking notes only: Symfony String function import in Domain is philosophically impure but accepted; default argument on private `walkActivePath()` is harmless. All PR #128 inline comments and follow-up regressions are resolved. Proceeding back to CODE-REVIEW.
+
+## Task workflow update - 2026-06-12T04:07:20.488Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (240s timeout). Commit: cc451113ede5.
+- Pushed task/session-05-turn-tree-model-and-replay to origin.
+- branch 'task/session-05-turn-tree-model-and-replay' set up to track 'origin/task/session-05-turn-tree-model-and-replay'.
+- PR already exists: https://github.com/ineersa/agent-core/pull/128
+- Validation: `castor test --filter=TurnTreeProjectorTest` ok (16 tests, 81 assertions).; `castor test --filter=ReplayServiceTest` ok (28 tests, 127 assertions).; `castor test --filter=RunStateReplayServiceTest` ok (25 tests, 107 assertions).; `castor phpstan --path src/AgentCore` ok (errors=0, file_errors=0).; `castor phpstan --path tests/AgentCore/Domain/Run/TurnTreeProjectorTest.php` ok (errors=0, file_errors=0).; `castor deptrac` ok (violations=0, errors=0).; `castor cs-check` ok (files_fixed=0).; Final reviewer subagent: APPROVE WITH SUGGESTIONS, no actionable blockers/regressions.; Full `LLM_MODE=true castor check` to be run by move_task CODE-REVIEW gate.
+- Summary: Addressed PR #128 code review feedback and moved back to code review. Review-iteration stack through `cc451113` resolves all owner inline comments: moved `TurnTreeProjector` to `Domain\Run`, moved `TurnTreeReplayFilter` to `Application\Replay`, updated imports/docs/tests, switched truncation to Symfony String, removed `previewForTitle`, tightened dangling-parent handling, documented exceptions, and fixed event-backed root turn active-path regression. Final reviewer found no actionable issues; only non-blocking convention notes remained.
