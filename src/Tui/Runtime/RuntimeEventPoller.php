@@ -98,6 +98,24 @@ final class RuntimeEventPoller
                 }
 
                 $state->activity = ActivityStateMachine::transition($state->activity, $runtimeEvent);
+
+                // Auto-dispatch a queued follow-up when cancellation completes.
+                // The user may have typed a message during the Cancelling grace
+                // window; it was queued in $state->queuedFollowUp instead of
+                // being sent immediately (where it would be rejected).
+                if (RuntimeEventTypeEnum::RunCancelled->value === $runtimeEvent->type
+                    && null !== $state->queuedFollowUp
+                    && null !== $state->handle) {
+                    $queuedText = $state->queuedFollowUp;
+                    $state->queuedFollowUp = null;
+
+                    $client->send(
+                        $state->handle->runId,
+                        new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(type: 'follow_up', text: $queuedText),
+                    );
+                    $state->activity = RunActivityStateEnum::Starting;
+                }
+
                 $this->projector->accept($runtimeEvent->toArray());
 
                 // Notify handlers for specific event types.
