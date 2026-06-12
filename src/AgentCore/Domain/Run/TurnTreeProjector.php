@@ -30,7 +30,7 @@ final class TurnTreeProjector
      *
      * @param list<RunEvent> $events
      *
-     * @throws \RuntimeException if a cycle is detected in parent references
+     * @throws \RuntimeException if a cycle is detected or a parent turn reference is missing
      */
     public function build(string $runId, array $events): TurnTreeDTO
     {
