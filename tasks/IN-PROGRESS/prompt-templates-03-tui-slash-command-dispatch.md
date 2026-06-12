@@ -24,9 +24,9 @@ Can run in parallel with PT-02 after PT-01 lands.
 Status: IN-PROGRESS
 Branch: task/prompt-templates-03-tui-slash-command-dispatch
 Worktree: /home/ineersa/projects/agent-core-worktrees/prompt-templates-03-tui-slash-command-dispatch
-Fork run: t0wmivj7d2pf
-PR URL:
-PR Status:
+Fork run: oswftse07w4a
+PR URL: https://github.com/ineersa/agent-core/pull/138
+PR Status: open
 Started: 2026-06-12T18:08:24.597Z
 Completed:
 
@@ -59,3 +59,37 @@ Completed:
 - Recorded fork run: t0wmivj7d2pf
 - Validation: first move_task quality gate: all steps OK except `test:tui` exit 124; phpunit log showed OK (20 tests, 59 assertions) in 91.948s, just over the 90s check step timeout; LLM_MODE=true castor test:tui --filter=PromptTemplateSlashCommandE2ETest — OK (1 test, 1 assertion) after wait removal; castor cs-check — OK (0 fixes); fork reported full LLM_MODE=true castor test:tui had unrelated/pre-existing LLM response timeouts in other E2E tests during its run; PT-03 test passed
 - Summary: After first CODE-REVIEW move attempt, Castor quality gate failed only because `test:tui` hit the 90s step timeout although PHPUnit reported OK at 91.948s. Fix fork `t0wmivj7d2pf` committed `9d5f3c5d`, removing the non-essential optional 15s post-assertion assistant/error wait from `PromptTemplateSlashCommandE2ETest` while preserving the real TmuxHarness + test LLM core proof that expanded `Review: <marker>` appears in tmux history. Worktree remains clean at HEAD `9d5f3c5d`. Diff stat now 7 files changed, 1089 insertions, 127 deletions.
+
+## Task workflow update - 2026-06-12T21:50:30.072Z
+- Recorded fork run: i9u6u4tch52o
+- Validation: LLM_MODE=true castor test:tui --filter=PromptTemplateSlashCommandE2ETest — OK (1 test, 1 assertion); castor cs-check — OK (0 fixes); castor deptrac — OK (0 violations, 0 errors); castor phpstan — OK (0 errors, 0 file_errors)
+- Summary: Per user instruction, skipped reviewer step and launched merge fork `i9u6u4tch52o`. Fork merged current `origin/main` (`a0566611`) into PT-03 branch with `--no-ff`, creating clean merge commit `ed200677` with zero conflicts. PT-03 feature diff remains 7 files, +1089/-127. Worktree clean and ready for CODE-REVIEW retry.
+Castor Check Status: passed
+Castor Check Commit: ed20067708b44ec8b6525ffb40996216848d6dda
+Castor Check Command: LLM_MODE=true castor check
+Castor Check Timeout: 900s
+Castor Check Completed: 2026-06-12T21:51:41.129Z
+Castor Check Output SHA256: 009333342cce68707db7b67d9fd09db478bbad5bf7307ad46c1a800ebe841a8d
+
+## Task workflow update - 2026-06-12T21:51:44.227Z
+- Moved IN-PROGRESS → CODE-REVIEW.
+- Castor quality gate passed (900s timeout). Commit: ed20067708b4.
+- Pushed task/prompt-templates-03-tui-slash-command-dispatch to origin.
+- branch 'task/prompt-templates-03-tui-slash-command-dispatch' set up to track 'origin/task/prompt-templates-03-tui-slash-command-dispatch'.
+- Created PR: https://github.com/ineersa/agent-core/pull/138
+- Validation: merge fork i9u6u4tch52o: `git merge --no-ff origin/main` clean; HEAD `ed200677`; LLM_MODE=true castor test:tui --filter=PromptTemplateSlashCommandE2ETest — OK (1 test, 1 assertion); castor cs-check — OK (0 fixes); castor deptrac — OK (0 violations, 0 errors); castor phpstan — OK (0 errors, 0 file_errors)
+- Summary: Moving PT-03 to CODE-REVIEW per user instruction, with no additional reviewer step. Branch was merge-updated from current origin/main by fork `i9u6u4tch52o` at merge commit `ed200677` (clean merge, zero conflicts). Focused validation passed after merge; move_task will run the full `LLM_MODE=true castor check` quality gate before pushing/opening PR.
+
+## Task workflow update - 2026-06-12T22:05:18.808Z
+- Recorded fork run: 67zr7nu1f2ms, ogehkokb3cag
+- Validation: castor cs-check — OK (0 fixes); manual file inspection: `.hatfield/prompts/report.md` frontmatter contains only supported `description`; body starts with `User reported issue:` fenced `text` block containing `$ARGUMENTS`; git push origin task/prompt-templates-03-tui-slash-command-dispatch — OK; origin updated ed200677..8f012b46
+- Summary: Added daily-use project prompt template `.hatfield/prompts/report.md` on the PT-03 PR branch and pushed it to PR #138. The final amended commit is `8f012b46` (`Add report prompt template for /report issue filing with diagnostics`). The template uses `$ARGUMENTS` in the body as the actual prompt-template argument substitution mechanism, rendering `/report <issue>` as a fenced `User reported issue` block before model instructions. The misleading ignored `arguments:` frontmatter was removed. Branch is now synced with origin.
+
+## Task workflow update - 2026-06-12T22:08:10.333Z
+- Moved CODE-REVIEW → IN-PROGRESS.
+- Summary: Reopening PT-03 for a small prompt-template refinement requested by user: remove gist/upload attachment guidance from `.hatfield/prompts/report.md` and instruct the model to provide absolute local paths to sanitized snapshot/log artifacts instead. PR #138 remains open; no reviewer step required for this prompt-only tweak unless requested.
+
+## Task workflow update - 2026-06-12T22:09:22.355Z
+- Recorded fork run: oswftse07w4a
+- Validation: castor cs-check — OK (0 fixes); manual file inspection: section 5 is now `Include Diagnostic Artifacts` and lists absolute local snapshot/log paths; `$ARGUMENTS` fenced block remains unchanged at top; git push --force-with-lease origin task/prompt-templates-03-tui-slash-command-dispatch — OK (forced update 8f012b46...9621e8ae)
+- Summary: Refined `.hatfield/prompts/report.md` per user feedback: removed gist/upload workaround guidance and now instructs the model to include absolute paths to sanitized local diagnostic artifacts directly in the issue body/final response. Fork amended report-template commit to `9621e8ae`; branch was force-pushed with lease to update PR #138 from prior `8f012b46` to `9621e8ae`. Worktree clean.
