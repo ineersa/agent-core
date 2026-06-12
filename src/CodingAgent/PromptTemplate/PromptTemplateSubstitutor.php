@@ -25,6 +25,9 @@ namespace Ineersa\CodingAgent\PromptTemplate;
  *  - ${@:N:L} with zero length returns empty; length past end clamps.
  *  - $ARGUMENTS and $@ produce all args joined by a single space.
  *  - $ARGUMENTS_EXTRA replaces the $ARGUMENTS prefix and leaves _EXTRA.
+ *  - ${@} without a colon and digit is not slice syntax (the regex requires
+ *    ${@:N} or ${@:N:L}). It passes through unchanged because $@ is not a
+ *    substring of ${@} (the { character sits between $ and @).
  *  - Case-sensitive: $arguments is NOT replaced.
  *  - Backslash is literal and does not escape placeholders.
  *

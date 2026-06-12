@@ -112,17 +112,23 @@ final class PromptTemplateServiceTest extends TestCase
             new PromptTemplateSubstitutor(),
         );
 
-        // Call both catalog and expand — the result stores a cached value internally.
+        // Prime the cache via public catalog call — only "test" is loaded.
         $commands = $this->service->allPromptTemplateCommands();
         self::assertCount(1, $commands);
+        self::assertSame('test', $commands[0]->name);
 
-        // Expanding an unknown template still reuses the cache.
-        $result = $this->service->expandPromptTemplate('/nonexistent');
-        self::assertSame('/nonexistent', $result);
+        // Write a second template AFTER the cache is primed.
+        $this->writeFile($this->homeDir.'/.hatfield/prompts/second.md', "Second template.\n");
 
-        // The loadResult should have the same template.
-        $loadResult = $this->service->loadResult();
-        self::assertCount(1, $loadResult->templates);
+        // Catalog still returns only the first template (process-lifetime cache).
+        $commands2 = $this->service->allPromptTemplateCommands();
+        self::assertCount(1, $commands2);
+
+        // Expanding the second template name passthrough because it was not in cache.
+        self::assertSame('/second', $this->service->expandPromptTemplate('/second'));
+
+        // Expanding the cached template still works.
+        self::assertStringContainsString('Test content', $this->service->expandPromptTemplate('/test'));
     }
 
     // ─── Expansion ───

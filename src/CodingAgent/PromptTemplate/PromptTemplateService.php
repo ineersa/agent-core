@@ -82,17 +82,6 @@ final class PromptTemplateService implements PromptTemplateCatalogInterface
         return $text;
     }
 
-    /**
-     * Access the load result for tests / internal diagnostics.
-     *
-     * Not a production API — prefer testing through allPromptTemplateCommands()
-     * and expandPromptTemplate().
-     */
-    public function loadResult(): PromptTemplateLoadResult
-    {
-        return $this->result();
-    }
-
     private function result(): PromptTemplateLoadResult
     {
         return $this->cached ??= $this->loader->load();

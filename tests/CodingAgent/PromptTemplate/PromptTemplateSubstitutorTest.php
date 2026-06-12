@@ -102,6 +102,17 @@ final class PromptTemplateSubstitutorTest extends TestCase
         self::assertSame('a b', $result);
     }
 
+    public function testAtInBracesIsNotSliceSyntax(): void
+    {
+        // ${@} without a colon and digit is NOT slice syntax.
+        // The slice regex requires ${@:N} or ${@:N:L}. ${@}
+        // passes through unchanged — $@ is not a substring
+        // of ${@} because { sits between $ and @.
+        $content = 'prefix ${@} suffix';
+        $result = $this->substitutor->substitute($content, ['a', 'b']);
+        self::assertSame('prefix ${@} suffix', $result);
+    }
+
     public function testArgumentsExtraPrefix(): void
     {
         // $ARGUMENTS_EXTRA should replace the $ARGUMENTS prefix and leave _EXTRA
