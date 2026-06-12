@@ -293,6 +293,104 @@ final class TurnTreeProjectorTest extends TestCase
         self::assertSame($createdAt->getTimestamp(), $turn1->createdAt->getTimestamp());
     }
 
+    // ── Last sequence projection ─────────────────────────────────────────────
+
+    public function testLastSeqInLinearNewStyleStream(): void
+    {
+        // Stream: turn1 has seq 2-5, turn2 (current leaf) has seq 6-8.
+        $events = [
+            $this->runEvent('run_started', 1, 0, ['payload' => ['messages' => []]]),
+            $this->turnAdvancedEvent(2, 1, null),
+            $this->leafSetEvent(3, 1, null, null, 'continue'),
+            $this->runEvent('llm_step_completed', 4, 1, ['text' => 'Answer A']),
+            $this->runEvent('agent_command_applied', 5, 1, ['kind' => 'steer', 'text' => 'Do more']),
+            $this->turnAdvancedEvent(6, 2, 1),
+            $this->leafSetEvent(7, 2, 1, 1, 'continue'),
+            $this->runEvent('llm_step_completed', 8, 2, ['text' => 'Answer B']),
+        ];
+
+        $tree = $this->projector->build($this->runId, $events);
+
+        // Turn 1 is not the current leaf. Its last event is seq 5 (agent_command_applied).
+        self::assertSame(5, $tree->nodesByTurnNo[1]->lastSeq, 'Turn 1 lastSeq covers its own scoped events only');
+
+        // Turn 2 is the current leaf. Its anchor is seq 6, max scoped seq is 8.
+        self::assertSame(8, $tree->nodesByTurnNo[2]->lastSeq, 'Turn 2 lastSeq covers its own scoped events up to max');
+    }
+
+    public function testLastSeqRewindOnlyNoNewBranch(): void
+    {
+        // Turn 1 → Turn 2, then leaf_set rewinds to Turn 1 with no new branch yet.
+        // Turn 1 should claim the rewind leaf_set seq (canonical max).
+        // Abandoned Turn 2 should remain capped at its own last event.
+        $events = [
+            $this->runEvent('run_started', 1, 0, ['payload' => ['messages' => []]]),
+            $this->turnAdvancedEvent(2, 1, null),
+            $this->leafSetEvent(3, 1, null, null, 'continue'),
+            $this->runEvent('llm_step_completed', 4, 1, ['text' => 'Turn 1 answer']),
+            // Turn 2 from turn 1
+            $this->turnAdvancedEvent(5, 2, 1),
+            $this->leafSetEvent(6, 2, 1, 1, 'continue'),
+            $this->runEvent('llm_step_completed', 7, 2, ['text' => 'Turn 2 answer (abandoned)']),
+            $this->runEvent('agent_command_applied', 8, 2, ['kind' => 'steer', 'text' => 'Try again']),
+            // Rewind: leaf_set back to turn 1, no new turn_advanced follows
+            $this->leafSetEvent(9, 1, 2, 2, 'rewind'),
+        ];
+
+        $tree = $this->projector->build($this->runId, $events);
+
+        self::assertCount(2, $tree->nodesByTurnNo);
+        self::assertSame(1, $tree->currentLeafTurnNo, 'Leaf should be back at turn 1 after rewind');
+        self::assertSame([1], $tree->activePathTurnNos);
+
+        // Turn 1 is now the current leaf. The rewind leaf_set at seq 9 is scoped to turn 1,
+        // so turn 1 lastSeq should include it, not stop at the next anchor (seq 5).
+        self::assertSame(9, $tree->nodesByTurnNo[1]->lastSeq, 'Rewound turn 1 lastSeq includes rewind leaf_set');
+
+        // Turn 2 is abandoned. Its last event is seq 8 (agent_command_applied).
+        // It must NOT claim the canonical max (seq 9) because leaf_set belongs to turn 1.
+        self::assertSame(8, $tree->nodesByTurnNo[2]->lastSeq, 'Abandoned turn 2 lastSeq is capped at its own events');
+    }
+
+    public function testLastSeqAbandonedTurnDoesNotClaimActiveBranchMax(): void
+    {
+        // Turn 1 → Turn 2 (abandoned) → rewind to Turn 1 → Turn 3 (active).
+        // The abandoned Turn 2 must NOT claim the later active branch's max seq.
+        $events = [
+            $this->runEvent('run_started', 1, 0, ['payload' => ['messages' => []]]),
+            $this->turnAdvancedEvent(2, 1, null),
+            $this->leafSetEvent(3, 1, null, null, 'continue'),
+            $this->runEvent('llm_step_completed', 4, 1, ['text' => 'Answer from turn 1']),
+            // Turn 2 (branch, will be abandoned)
+            $this->turnAdvancedEvent(5, 2, 1),
+            $this->leafSetEvent(6, 2, 1, 1, 'continue'),
+            $this->runEvent('llm_step_completed', 7, 2, ['text' => 'Answer from turn 2 (abandoned)']),
+            // Rewind to turn 1
+            $this->leafSetEvent(8, 1, 2, 2, 'rewind'),
+            // Turn 3 (new branch from turn 1, active)
+            $this->turnAdvancedEvent(9, 3, 1),
+            $this->leafSetEvent(10, 3, 1, 1, 'continue'),
+            $this->runEvent('llm_step_completed', 11, 3, ['text' => 'Answer from turn 3 (active)']),
+        ];
+
+        $tree = $this->projector->build($this->runId, $events);
+
+        self::assertSame(3, $tree->currentLeafTurnNo, 'Current leaf is turn 3');
+        self::assertSame([1, 3], $tree->activePathTurnNos);
+
+        // Turn 2 is abandoned. Its own last event is seq 7 (llm_step_completed).
+        // It must NOT capture rewind leaf_set (seq 8, scoped to turn 1) or
+        // active branch events (seq 9+, scoped to turn 3).
+        self::assertSame(7, $tree->nodesByTurnNo[2]->lastSeq, 'Abandoned turn 2 must not claim active branch max seq');
+
+        // Turn 1's lastSeq includes the rewind leaf_set (seq 8) scoped to turn 1,
+        // not capped by turn 3's later anchor.
+        self::assertSame(8, $tree->nodesByTurnNo[1]->lastSeq, 'Turn 1 lastSeq includes rewind leaf_set before turn 3');
+
+        // Turn 3 (current leaf) includes its own max scoped seq (11).
+        self::assertSame(11, $tree->nodesByTurnNo[3]->lastSeq, 'Turn 3 lastSeq includes its own scoped max');
+    }
+
     // ── Cycle detection ──────────────────────────────────────────────────────
 
     public function testCycleDetectionThrowsException(): void

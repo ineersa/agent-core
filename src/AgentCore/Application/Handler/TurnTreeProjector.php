@@ -45,7 +45,6 @@ final class TurnTreeProjector
         }
 
         $sorted = $this->sortBySeq($events);
-        $maxEventSeq = $this->maxSeq($sorted);
 
         // Find turn_advanced and leaf_set events.
         $turnAdvancedEvents = [];
@@ -134,16 +133,10 @@ final class TurnTreeProjector
         // Compute active path from current leaf to root.
         $activePathTurnNos = $this->walkActivePath($currentLeafTurnNo, $turnInfo);
 
-        // Compute lastSeq for each turn.
-        // For non-current-leaf turns: lastSeq = next sibling's anchorSeq - 1, or the minimum of all later turn_advanced anchorSeqs - 1
-        // For current leaf: lastSeq = maxEventSeq
-        $turnAnchorsBySeq = [];
-        foreach ($turnInfo as $tn => $info) {
-            $turnAnchorsBySeq[$info['anchorSeq']] = $tn;
-        }
-        ksort($turnAnchorsBySeq);
-
-        $lastSeqs = $this->computeLastSeqs($turnInfo, $turnAnchorsBySeq, $currentLeafTurnNo, $maxEventSeq);
+        // Compute lastSeq for each turn as the max event sequence scoped to that turn
+        // (grouped by RunEvent::$turnNo), falling back to anchor seq for turns with no
+        // additional scoped events beyond their turn_advanced anchor.
+        $lastSeqs = $this->computeLastSeqs($turnInfo, $sorted);
 
         // Build nodes.
         $nodesByTurnNo = [];
@@ -242,34 +235,36 @@ final class TurnTreeProjector
     }
 
     /**
-     * Compute lastSeq for each turn.
+     * Compute lastSeq for each turn by finding the maximum canonical event
+     * sequence whose {@see RunEvent::$turnNo} belongs to that turn.
      *
-     * For non-current-leaf turns: the sequence number just before the next
-     * turn_advanced anchor (i.e. the end of events belonging to this turn).
-     * For the current leaf: the max canonical event sequence.
+     * Tree metadata events (leaf_set, turn_branched) carry the selected turn
+     * number, so a rewind leaf_set updates the target leaf's lastSeq.
+     * Abandoned sibling turns only capture events scoped to their own turn
+     * number and never chase the canonical max from later branches.
+     *
+     * Each node is initialized to its anchor seq so a turn with only a
+     * turn_advanced anchor (no scoped message/tool/metadata events) still
+     * has a valid lastSeq.
      *
      * @param array<int, array{anchorSeq: int, ...}> $turnInfo
-     * @param array<int, int>                        $turnAnchorsBySeq seq → turnNo map, sorted by key
+     * @param list<RunEvent>                         $sortedEvents sorted ascending by seq
      *
      * @return array<int, int>
      */
-    private function computeLastSeqs(array $turnInfo, array $turnAnchorsBySeq, ?int $currentLeafTurnNo, int $maxEventSeq): array
+    private function computeLastSeqs(array $turnInfo, array $sortedEvents): array
     {
+        // Initialize each turn to its anchor seq as a floor.
         $lastSeqs = [];
-        $anchorSeqs = array_keys($turnAnchorsBySeq);
-        $n = \count($anchorSeqs);
+        foreach ($turnInfo as $turnNo => $info) {
+            $lastSeqs[$turnNo] = $info['anchorSeq'];
+        }
 
-        for ($i = 0; $i < $n; ++$i) {
-            $seq = $anchorSeqs[$i];
-            $turnNo = $turnAnchorsBySeq[$seq];
-
-            if ($turnNo === $currentLeafTurnNo && $i === $n - 1) {
-                // Last turn and also current leaf → lastSeq = max canonical seq.
-                $lastSeqs[$turnNo] = $maxEventSeq;
-            } else {
-                // Next anchor seq - 1 is the last event belonging to this turn.
-                $nextAnchor = $i + 1 < $n ? $anchorSeqs[$i + 1] : $maxEventSeq + 1;
-                $lastSeqs[$turnNo] = $nextAnchor - 1;
+        // Walk all events, for each known turn take the max seq.
+        foreach ($sortedEvents as $event) {
+            $eventTurn = $event->turnNo;
+            if (isset($lastSeqs[$eventTurn])) {
+                $lastSeqs[$eventTurn] = max($lastSeqs[$eventTurn], $event->seq);
             }
         }
 
@@ -468,19 +463,5 @@ final class TurnTreeProjector
         usort($events, static fn (RunEvent $left, RunEvent $right): int => $left->seq <=> $right->seq);
 
         return $events;
-    }
-
-    /**
-     * Find the maximum sequence number in a sorted event list.
-     *
-     * @param list<RunEvent> $events
-     */
-    private function maxSeq(array $events): int
-    {
-        if ([] === $events) {
-            return 0;
-        }
-
-        return (int) max(array_map(static fn (RunEvent $event): int => $event->seq, $events));
     }
 }
