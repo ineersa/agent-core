@@ -97,14 +97,21 @@ B) **Leaf event** — Append a `run.leaf_set` event to `events.jsonl` each time 
 - Validation uses Castor per project rules; runtime/Messenger changes require full `castor check` before CODE-REVIEW.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/session-05-turn-tree-model-and-replay
+Worktree: /home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-12T01:41:43.505Z
 Completed:
 
 ## Work log
 - Created: 2026-06-07T20:46:01.617Z
+
+## Task workflow update - 2026-06-12T01:41:43.505Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/session-05-turn-tree-model-and-replay.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay.
