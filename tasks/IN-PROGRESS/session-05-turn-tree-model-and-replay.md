@@ -168,3 +168,8 @@ Completed:
 ## Task workflow update - 2026-06-12T03:09:44.201Z
 - Recorded fork run: lo07sunzel4n
 - Summary: Final-final reviewer returned `APPROVE WITH SUGGESTIONS` with no issues/critical findings. To satisfy actionable quality feedback, launched fork `lo07sunzel4n` for low-risk polish: remove unused `titleForTurn($anchorSeq)` parameter, add generic-title fallback comment, replace/simplify the single-use tree-metadata closure in `TurnTreeReplayFilter`, and comment why `leaf_set.previous_turn_no` and `parent_turn_no` intentionally coincide in the normal continue path. Broader suggestions such as `RunState::withLastSeq()` and DTO moves are intentionally skipped as non-blocking future cleanup.
+
+## Task workflow update - 2026-06-12T03:11:10.000Z
+- Recorded fork run: lo07sunzel4n
+- Validation: Fork validation reported: `castor test --filter=TurnTreeProjectorTest` ok (13 tests, 68 assertions).; Fork validation reported: `castor test --filter=RunStateReplayServiceTest` ok (25 tests, 107 assertions).; Fork validation reported: `castor test --filter=AdvanceRunHandlerTest` ok.; Fork validation reported: `castor phpstan --path src/AgentCore` ok (errors=0, file_errors=0).; Fork validation reported: `castor cs-check` ok (files_fixed=0).
+- Summary: Polish fork completed. Commit `4c7f5002 Polish turn tree review findings` removes the unused `titleForTurn($anchorSeq)` parameter, adds a generic title fallback comment, extracts `TurnTreeReplayFilter` tree-metadata check into a private method, and documents why `leaf_set.previous_turn_no` and `parent_turn_no` coincide in the normal continue path. No behavior changes.
