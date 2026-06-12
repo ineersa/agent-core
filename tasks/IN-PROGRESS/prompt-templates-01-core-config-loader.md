@@ -24,14 +24,21 @@ Enables parallel follow-up: PT-02 and PT-03 can start after this lands.
 - `castor test`, `castor deptrac`, `castor phpstan`, and `castor cs-check` pass for the focused implementation.
 
 ## Workflow metadata
-Status: TODO
-Branch:
-Worktree:
+Status: IN-PROGRESS
+Branch: task/prompt-templates-01-core-config-loader
+Worktree: /home/ineersa/projects/agent-core-worktrees/prompt-templates-01-core-config-loader
 Fork run:
 PR URL:
 PR Status:
-Started:
+Started: 2026-06-12T01:42:36.569Z
 Completed:
 
 ## Work log
 - Created: 2026-06-09T00:09:50.965Z
+
+## Task workflow update - 2026-06-12T01:42:36.569Z
+- Moved TODO → IN-PROGRESS.
+- Created branch task/prompt-templates-01-core-config-loader.
+- Created worktree /home/ineersa/projects/agent-core-worktrees/prompt-templates-01-core-config-loader.
+- Copied vendor directory into /home/ineersa/projects/agent-core-worktrees/prompt-templates-01-core-config-loader.
+- Copied .vera index into /home/ineersa/projects/agent-core-worktrees/prompt-templates-01-core-config-loader.
