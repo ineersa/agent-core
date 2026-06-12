@@ -70,7 +70,7 @@ final class TurnTreeProjector
             $turnNo = (int) ($event->payload['turn_no'] ?? $event->turnNo);
 
             if ($hasExplicitTreeMetadata) {
-                $parentTurnNo = isset($event->payload['parent_turn_no'])
+                $parentTurnNo = \array_key_exists('parent_turn_no', $event->payload)
                     ? (\is_int($event->payload['parent_turn_no']) ? $event->payload['parent_turn_no'] : null)
                     : null;
             } else {
@@ -87,10 +87,14 @@ final class TurnTreeProjector
         }
 
         // Also collect turn_branched events for any additional metadata.
+        // turn_branched is explicit new-style tree metadata.  Future emitters
+        // (e.g. SESSION-07 rewind pipeline) MUST provide 'turn_no' and
+        // 'parent_turn_no' (nullable for root) in the payload, and set the
+        // correct RunEvent::$turnNo matching the payload's turn_no.
         foreach ($sorted as $index => $event) {
             if (RunEventTypeEnum::TurnBranched->value === $event->type) {
                 $turnNo = (int) ($event->payload['turn_no'] ?? $event->turnNo);
-                $parentTurnNo = isset($event->payload['parent_turn_no'])
+                $parentTurnNo = \array_key_exists('parent_turn_no', $event->payload)
                     ? (\is_int($event->payload['parent_turn_no']) ? $event->payload['parent_turn_no'] : null)
                     : null;
                 $reason = isset($event->payload['reason']) && \is_string($event->payload['reason'])

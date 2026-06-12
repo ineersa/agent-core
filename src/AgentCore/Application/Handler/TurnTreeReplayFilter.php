@@ -64,7 +64,10 @@ final class TurnTreeReplayFilter
             }
 
             // Include tree metadata events (leaf_set, turn_branched) even
-            // if their turnNo is not in the active path (safety net).
+            // if their turnNo is not in the active path (defensive safety net).
+            // These are no-op reducers during replay — they exist only for
+            // future navigation/audit metadata and do not affect prompt
+            // context or RunState reconstruction.
             if ($isIncludedType($event)) {
                 $filtered[] = $event;
             }

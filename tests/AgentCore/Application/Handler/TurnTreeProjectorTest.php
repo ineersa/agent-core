@@ -288,6 +288,7 @@ final class TurnTreeProjectorTest extends TestCase
         $tree = $this->projector->build($this->runId, $events);
 
         $turn1 = $tree->nodesByTurnNo[1];
+        self::assertNull($turn1->parentTurnNo, 'Explicit parent_turn_no => null should yield null parent');
         self::assertSame(1, $turn1->anchorSeq);
         self::assertNotNull($turn1->createdAt);
         self::assertSame($createdAt->getTimestamp(), $turn1->createdAt->getTimestamp());
