@@ -24,14 +24,14 @@ Enables parallel follow-up: PT-02 and PT-03 can start after this lands.
 - `castor test`, `castor deptrac`, `castor phpstan`, and `castor cs-check` pass for the focused implementation.
 
 ## Workflow metadata
-Status: CODE-REVIEW
+Status: DONE
 Branch: task/prompt-templates-01-core-config-loader
 Worktree: /home/ineersa/projects/agent-core-worktrees/prompt-templates-01-core-config-loader
 Fork run: wg2nk5byx3sg
 PR URL: https://github.com/ineersa/agent-core/pull/126
-PR Status: open
+PR Status: merged
 Started: 2026-06-12T01:42:36.569Z
-Completed:
+Completed: 2026-06-12T03:06:15.358Z
 
 ## Work log
 - Created: 2026-06-09T00:09:50.965Z
@@ -90,3 +90,12 @@ Castor Check Output SHA256: 0b90fc800baaca8f517f434766888c7f657394adaacfcf85249b
 - Pushed task/prompt-templates-01-core-config-loader to origin.
 - branch 'task/prompt-templates-01-core-config-loader' set up to track 'origin/task/prompt-templates-01-core-config-loader'.
 - Created PR: https://github.com/ineersa/agent-core/pull/126
+
+## Task workflow update - 2026-06-12T03:06:15.358Z
+- Moved CODE-REVIEW → DONE.
+- Merged task/prompt-templates-01-core-config-loader into integration checkout.
+- Already up to date.
+- Removed worktree /home/ineersa/projects/agent-core-worktrees/prompt-templates-01-core-config-loader.
+- Pulled integration checkout: Already up to date..
+- Validation: Pre-DONE: `gh pr view https://github.com/ineersa/agent-core/pull/126 --json state,mergedAt,...` returned state `MERGED`, mergedAt `2026-06-12T03:05:37Z`.; Pre-DONE: `git pull --ff-only` fast-forwarded main from `a543640e` to `9f3f6597` (`Merge pull request #126 from ineersa/task/prompt-templates-01-core-config-loader`).
+- Summary: PR #126 was already merged on GitHub at 2026-06-12T03:05:37Z. Integration checkout pulled `origin/main` fast-forward to merge commit `9f3f6597` before moving task to DONE.
