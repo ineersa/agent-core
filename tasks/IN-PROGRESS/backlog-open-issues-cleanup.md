@@ -167,3 +167,6 @@ Completed:
 
 ## Task workflow update - 2026-06-12T20:25:39.953Z
 - Pushed task/backlog-open-issues-cleanup to origin after fail-fast LLM generation readiness work. Branch now contains #120 implementation, AGENTS/testing docs hardening, and fail-fast Castor/test docs commits.
+
+## Task workflow update - 2026-06-12T20:28:53.598Z
+- User ran castor check after LLM generation recovered: all steps pass except test:tui times out at 90s (exit 124). This suggests LLM preflight is fixed but the full TUI E2E suite now exceeds the per-step timeout, likely due to accumulated TUI E2E tests. Dispatching fork to investigate test:tui timing and implement an appropriate Castor split/timeout fix, likely parallel TUI shards for castor check.
