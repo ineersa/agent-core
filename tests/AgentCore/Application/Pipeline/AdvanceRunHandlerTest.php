@@ -60,11 +60,16 @@ final class AdvanceRunHandlerTest extends TestCase
         $this->assertSame(RunStatus::Running, $result->nextState->status);
         $this->assertSame(8, $result->nextState->version);
         $this->assertSame(3, $result->nextState->turnNo);
-        $this->assertSame(12, $result->nextState->lastSeq);
+        $this->assertSame(13, $result->nextState->lastSeq);
         $this->assertSame('turn-3-step', $result->nextState->activeStepId);
 
-        $this->assertCount(1, $result->events);
+        $this->assertCount(2, $result->events);
         $this->assertSame('turn_advanced', $result->events[0]->type);
+        $this->assertSame('leaf_set', $result->events[1]->type);
+        $this->assertSame(3, $result->events[1]->payload['turn_no']);
+        $this->assertSame('continue', $result->events[1]->payload['reason']);
+        $this->assertSame(3, $result->events[0]->payload['turn_no']);
+        $this->assertSame(2, $result->events[0]->payload['parent_turn_no']);
 
         $this->assertCount(1, $result->effects);
         $this->assertInstanceOf(ExecuteLlmStep::class, $result->effects[0]);
@@ -125,14 +130,61 @@ final class AdvanceRunHandlerTest extends TestCase
         $this->assertSame(2, $result->nextState->turnNo, 'Turn should advance from 1 to 2');
         $this->assertNull($result->nextState->errorMessage, 'errorMessage should be cleared when transitioning Cancelled → Running');
 
-        // Should produce events including agent_command_applied and turn_advanced
+        // Should produce events including agent_command_applied, turn_advanced, and leaf_set
         $eventTypes = array_map(static fn ($e) => $e->type, $result->events);
         $this->assertContains('agent_command_applied', $eventTypes, 'Expected agent_command_applied event');
         $this->assertContains('turn_advanced', $eventTypes, 'Expected turn_advanced event');
+        $this->assertContains('leaf_set', $eventTypes, 'Expected leaf_set event');
 
         // Should produce an LLM step effect (the agent will process the follow-up)
         $this->assertCount(1, $result->effects);
         $this->assertInstanceOf(ExecuteLlmStep::class, $result->effects[0]);
+    }
+
+    public function testHandleFirstTurnHasNullParentTurnNo(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+        );
+
+        $handler = new AdvanceRunHandler(
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+        );
+
+        // Initial state: turnNo=0 (as after StartRun)
+        $state = RunStateBuilder::create('run-root-turn')
+            ->withStatus(RunStatus::Running)
+            ->withVersion(1)
+            ->withTurnNo(0)
+            ->withLastSeq(3)
+            ->build();
+
+        $message = AdvanceRunMessageBuilder::create('run-root-turn')
+            ->withTurnNo(0)
+            ->withStepId('turn-1-step')
+            ->withIdempotencyKey('root-advance-1')
+            ->build();
+
+        $result = $handler->handle($message, $state);
+
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(1, $result->nextState->turnNo);
+
+        // leaf_set must be present
+        $this->assertCount(2, $result->events);
+        $this->assertSame('turn_advanced', $result->events[0]->type);
+        $this->assertSame('leaf_set', $result->events[1]->type);
+
+        // parent_turn_no must be null for the root turn (turnNo 1)
+        $this->assertArrayHasKey('parent_turn_no', $result->events[0]->payload);
+        $this->assertNull($result->events[0]->payload['parent_turn_no']);
+        $this->assertSame(1, $result->events[0]->payload['turn_no']);
+        $this->assertSame(1, $result->events[1]->payload['turn_no']);
+        $this->assertNull($result->events[1]->payload['parent_turn_no']);
+        $this->assertNull($result->events[1]->payload['previous_turn_no']);
     }
 
     public function testCancelledRunWithNoPendingCommandsIsNoOp(): void

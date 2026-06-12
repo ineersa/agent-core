@@ -428,6 +428,82 @@ same ID everywhere will work. Sessions with mismatched IDs will fail on
 validation and can be fixed manually by editing the directory name or rewriting
 embedded IDs.
 
+## Turn tree model
+
+Within a single session timeline, the turn tree model enables branching conversation
+paths — rewinding to an earlier turn and continuing in a new direction without
+destroying the original history.
+
+### Canonical event stream (append-only)
+
+Turn tree metadata lives in `events.jsonl` alongside all other domain events.
+The stream remains **append-only** — branching never truncates or rewrites
+existing events. Two new event types carry tree structure:
+
+| Event type | Purpose |
+|------------|---------|
+| `turn_advanced` (extended) | Carries `parent_turn_no` (nullable int; null for root turn) to link turn nodes. The existing `turn_no` field remains the stable turn identifier. |
+| `leaf_set` | Marks the current active leaf/head of the conversation. Payload includes `turn_no` (target leaf), `previous_turn_no` (prior leaf, nullable), `parent_turn_no`, and `reason` (e.g. `"continue"`, `"rewind"`, `"fork"`). |
+| `turn_branched` (reserved) | Reserved for explicit branch metadata in future rewind/branch commands. Not emitted by the continue path. |
+
+Each normal turn advance emits a `turn_advanced` event followed immediately by a
+`leaf_set` event confirming the new leaf position. The pair is atomic within the
+same handler execution.
+
+### Leaf pointer
+
+`leaf_set` is the canonical current leaf marker. On replay:
+1. Process all `leaf_set` events in seq order — the last one wins.
+2. If no `leaf_set` events exist (old linear stream), the highest turn number
+   is the implicit current leaf.
+
+### Read model: TurnTreeDTO
+
+`TurnTreeProjector` builds a `TurnTreeDTO` from the canonical event stream:
+- `nodesByTurnNo` — map from turn number to `TurnTreeNodeDTO` (turnNo, parentTurnNo,
+  childTurnNos, anchorSeq, title, promptPreview, isCurrentLeaf).
+- `activePathTurnNos` — ordered list of turn numbers from root to current leaf.
+- `rootTurnNos` — turn numbers with no parent.
+- `currentLeafTurnNo` — the current active leaf.
+
+Titles and previews are best-effort from safe message fields: initial user messages
+in `run_started`, steer/follow-up text in `agent_command_applied`, assistant text in
+`llm_step_completed`. Raw system prompts are excluded.
+
+### Branch-aware replay
+
+`TurnTreeReplayFilter` uses the projector to filter the event stream to only events
+on the active branch path:
+- Includes run-level events (`turnNo === 0`, e.g. `run_started`).
+- Includes events whose `turnNo` is in the active path.
+- Includes tree metadata events (`leaf_set`, `turn_branched`).
+- **Excludes** abandoned sibling branch events (message/tool/assistant content
+  for turns not on the active path).
+
+**Integrity checks** (duplicate sequences, missing-sequence contiguity) are always
+performed on the **full canonical sorted event stream**, not the filtered active-branch
+stream. Filtered branch paths naturally have sequence gaps because abandoned sibling
+events remain in `events.jsonl`.
+
+`RunStateReplayService` and `ReplayService` both integrate `TurnTreeReplayFilter`:
+- State/messages are rebuilt from filtered active-branch events.
+- `lastSeq` in the rebuilt state is set to the full canonical max event sequence
+  so state is current with respect to the append-only stream.
+- `leaf_set` and `turn_branched` are no-op reducers during RunState replay;
+  they do not change status, messages, or turn counters.
+
+### Old / no-tree streams
+
+Sessions without `leaf_set`/`parent_turn_no` are treated as a linear single-branch
+tree. The projector derives parent relationships as `turn_no - 1` and the current
+leaf as the highest turn number. No migration is required.
+
+### Future `/tree` UI
+
+The `TurnTreeDTO` read model provides everything needed for a `/tree` picker
+(render nodes, highlight current leaf, navigate branches). The tree data is
+reusable without destructive truncation or separate tree files.
+
 ## Open gaps and future work
 
 | Gap | Priority | Notes |
@@ -435,7 +511,7 @@ embedded IDs.
 | Messenger synchronous bus wiring | High | `config/packages/messenger.yaml` buses have empty middleware arrays. `RunOrchestrator` handlers are registered but messages may not be dispatched. Required for actual run persistence end-to-end. |
 | File-backed CommandStore | Medium | `InMemoryCommandStore` loses pending commands on restart. Step IDs use `hrtime()` so duplicates are unlikely, but file backing would improve durability. |
 | File-backed MessageIdempotencyService | Low | In-memory idempotency state is lost on restart. Not critical because step IDs are time-based and won't repeat. |
-| Session listing (`listSessions()`) | **Done** | `HatfieldSessionStore::listSessions()` returns catalog rows with `displayTitle`. Tree listing (`tree()`) remains future (SESSION-05/06/07). |
+| Session listing (`listSessions()`) | **Done** | `HatfieldSessionStore::listSessions()` returns catalog rows with `displayTitle`. Turn tree read model (`TurnTreeDTO`, `TurnTreeProjector`) done (SESSION-05); `/tree` UI picker remains future (SESSION-06/07). |
 | Session pruning/cleanup | Low | No auto-expiry or `session:prune` command. Orphaned sessions accumulate. |
 | Fork command (`session:fork`) | Medium | Planned; storage model is ready. Needs rewrite logic + CLI command. |
 | Attachments storage (`attachments/`) | Low | Directory created in layout docs but not yet used. Will store pasted files, images, diffs. |

@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Application\Dto\ReplayIntegrity;
 use Ineersa\AgentCore\Application\Dto\ResolvedReplayEvents;
+use Ineersa\AgentCore\Application\Replay\TurnTreeReplayFilter;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\PromptStateStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -18,6 +19,7 @@ final readonly class ReplayService
         private PromptStateStoreInterface $promptStateStore,
         private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
+        private ?TurnTreeReplayFilter $turnTreeReplayFilter = null,
     ) {
     }
 
@@ -29,7 +31,18 @@ final readonly class ReplayService
         $rebuild = function () use ($runId): PromptState {
             $resolvedReplayEvents = $this->eventsForReplay($runId);
 
-            $messages = $this->replayMessages($resolvedReplayEvents->events);
+            // Filter to active branch when tree metadata is available.
+            // Messages come from filtered branch events; integrity
+            // (eventCount, lastSeq, missingSequences, isContiguous)
+            // describes the full canonical stream so active-branch gaps
+            // are not reported as corruption.
+            $canonicalEvents = $resolvedReplayEvents->events;
+            $filteredEvents = $canonicalEvents;
+            if (null !== $this->turnTreeReplayFilter) {
+                $filteredEvents = $this->turnTreeReplayFilter->filter($runId, $canonicalEvents)->events;
+            }
+
+            $messages = $this->replayMessages($filteredEvents);
             $integrity = $this->integrityFromResolvedReplayEvents($runId, $resolvedReplayEvents);
 
             $promptState = new PromptState(

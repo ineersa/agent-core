@@ -6,6 +6,8 @@ namespace Ineersa\AgentCore\Tests\Application\Handler;
 
 use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
 use Ineersa\AgentCore\Application\Handler\RunStateReplayService;
+use Ineersa\AgentCore\Domain\Run\TurnTreeProjector;
+use Ineersa\AgentCore\Application\Replay\TurnTreeReplayFilter;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -18,14 +20,17 @@ final class RunStateReplayServiceTest extends TestCase
 {
     private RunEventStore $eventStore;
     private RunStateReplayService $service;
+    private TurnTreeReplayFilter $treeFilter;
     private string $runId = 'run-replay-test';
 
     protected function setUp(): void
     {
         $this->eventStore = new RunEventStore();
+        $this->treeFilter = new TurnTreeReplayFilter(new TurnTreeProjector());
         $this->service = new RunStateReplayService(
             $this->eventStore,
             new NullLogger(),
+            $this->treeFilter,
         );
     }
 
@@ -667,6 +672,200 @@ final class RunStateReplayServiceTest extends TestCase
         self::assertSame(RunStatus::Running, $result->rebuiltState->status);
     }
 
+    // ── Branch replay ───────────────────────────────────────────────────────
+
+    public function testBranchReplayExcludesAbandonedTurnMessages(): void
+    {
+        // Build a canonical stream where:
+        //   - Turn 1: initial user message, assistant response
+        //   - Turn 2: follow-up user message, assistant response (abandoned)
+        //   - Turn 3: new user message, assistant response (active branch from turn 1)
+        $this->appendEventWithTurn('run_started', 1, 0, [
+            'step_id' => 's0',
+            'payload' => ['messages' => [
+                ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hello']], 'is_error' => false],
+            ]],
+        ]);
+
+        // Turn 1
+        $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 2, 1, [
+            'turn_no' => 1,
+            'parent_turn_no' => null,
+            'step_id' => 'step-1',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 3, 1, [
+            'turn_no' => 1,
+            'parent_turn_no' => null,
+            'previous_turn_no' => null,
+            'reason' => 'continue',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::LlmStepCompleted->value, 4, 1, [
+            'assistant_message' => [
+                'role' => 'assistant',
+                'content' => [['type' => 'text', 'text' => 'Hi! How can I help?']],
+                'is_error' => false,
+            ],
+        ]);
+
+        // Turn 2: follow-up from user (ABANDONED branch)
+        $this->appendEventWithTurn(RunEventTypeEnum::AgentCommandApplied->value, 5, 1, [
+            'kind' => 'steer',
+            'idempotency_key' => 'steer-2',
+            'message' => [
+                'role' => 'user',
+                'content' => [['type' => 'text', 'text' => 'Write it in Python.']],
+                'is_error' => false,
+            ],
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 6, 2, [
+            'turn_no' => 2,
+            'parent_turn_no' => 1,
+            'step_id' => 'step-2',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 7, 2, [
+            'turn_no' => 2,
+            'parent_turn_no' => 1,
+            'previous_turn_no' => 1,
+            'reason' => 'continue',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::LlmStepCompleted->value, 8, 2, [
+            'assistant_message' => [
+                'role' => 'assistant',
+                'content' => [['type' => 'text', 'text' => 'ABANDONED Python code here...']],
+                'is_error' => false,
+            ],
+        ]);
+
+        // Turn 3: new user message branching from turn 1 (ACTIVE branch)
+        $this->appendEventWithTurn(RunEventTypeEnum::AgentCommandApplied->value, 9, 1, [
+            'kind' => 'steer',
+            'idempotency_key' => 'steer-3',
+            'message' => [
+                'role' => 'user',
+                'content' => [['type' => 'text', 'text' => 'Actually, write it in Rust.']],
+                'is_error' => false,
+            ],
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 10, 1, [
+            'turn_no' => 1,
+            'parent_turn_no' => null,
+            'previous_turn_no' => 2,
+            'reason' => 'rewind',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 11, 3, [
+            'turn_no' => 3,
+            'parent_turn_no' => 1,
+            'step_id' => 'step-3',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 12, 3, [
+            'turn_no' => 3,
+            'parent_turn_no' => 1,
+            'previous_turn_no' => 1,
+            'reason' => 'continue',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::LlmStepCompleted->value, 13, 3, [
+            'assistant_message' => [
+                'role' => 'assistant',
+                'content' => [['type' => 'text', 'text' => 'ACTIVE Rust code here...']],
+                'is_error' => false,
+            ],
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        self::assertNotNull($result->rebuiltState);
+
+        $messages = $result->rebuiltState->messages;
+
+        // Should include: system, initial user, turn 1 assistant, steer-2 user,
+        // steer-3 user, turn 3 assistant.
+        // Must NOT include: turn 2 assistant (abandoned branch).
+        $assistantTexts = [];
+        foreach ($messages as $msg) {
+            if ('assistant' === $msg->role && [] !== $msg->content) {
+                $assistantTexts[] = $msg->content[0]['text'] ?? '';
+            }
+        }
+
+        self::assertContains('Hi! How can I help?', $assistantTexts, 'Turn 1 assistant must be present');
+        self::assertContains('ACTIVE Rust code here...', $assistantTexts, 'Turn 3 assistant must be present');
+        self::assertNotContains('ABANDONED Python code here...', $assistantTexts, 'Turn 2 assistant must be excluded');
+
+        // lastSeq must be the full canonical max (13), not the last filtered event.
+        self::assertSame(13, $result->rebuiltState->lastSeq);
+        self::assertSame(3, $result->rebuiltState->turnNo, 'Turn number should be 3 (current leaf)');
+    }
+
+    public function testBranchReplayThrowsNoExceptionDespiteFilteredGaps(): void
+    {
+        // Verify that branch filtering does NOT trigger a non-contiguous
+        // exception. Integrity checks run on the full stream which is contiguous.
+        $this->appendEventWithTurn('run_started', 1, 0, [
+            'step_id' => 's0',
+            'payload' => ['messages' => []],
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 2, 1, [
+            'turn_no' => 1, 'parent_turn_no' => null, 'step_id' => 's1',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 3, 1, [
+            'turn_no' => 1, 'reason' => 'continue',
+        ]);
+        // Turn 2: abandoned
+        $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 4, 2, [
+            'turn_no' => 2, 'parent_turn_no' => 1, 'step_id' => 's2',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 5, 2, [
+            'turn_no' => 2, 'reason' => 'continue',
+        ]);
+        // Rewind to turn 1 and create turn 3
+        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 6, 1, [
+            'turn_no' => 1, 'reason' => 'rewind',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::TurnAdvanced->value, 7, 3, [
+            'turn_no' => 3, 'parent_turn_no' => 1, 'step_id' => 's3',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 8, 3, [
+            'turn_no' => 3, 'reason' => 'continue',
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        self::assertSame(8, $result->rebuiltState->lastSeq, 'lastSeq must be the full canonical max');
+        self::assertSame(3, $result->rebuiltState->turnNo);
+    }
+
+    // ── Leaf_set and turn_branched are no-op reducers ───────────────────────
+
+    public function testLeafSetIsNoOpDuringReplay(): void
+    {
+        $this->appendEventWithTurn('run_started', 1, 0, [
+            'step_id' => 's0',
+            'payload' => ['messages' => []],
+        ]);
+        // leaf_set and turn_branched events must not change RunState.
+        $this->appendEventWithTurn(RunEventTypeEnum::LeafSet->value, 2, 1, [
+            'turn_no' => 1,
+            'reason' => 'continue',
+        ]);
+        $this->appendEventWithTurn(RunEventTypeEnum::TurnBranched->value, 3, 1, [
+            'turn_no' => 1,
+            'parent_turn_no' => null,
+            'reason' => 'rewind',
+        ]);
+
+        $state = RunState::queued($this->runId);
+        $result = $this->service->rebuildIfStale($state, $this->runId);
+
+        self::assertTrue($result->rebuilt);
+        // Status should remain the same as after run_started (Running)
+        self::assertSame(RunStatus::Running, $result->rebuiltState->status);
+        self::assertSame(0, $result->rebuiltState->turnNo, 'leaf_set/turn_branched must not advance turn');
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────
 
     /**
@@ -678,6 +877,23 @@ final class RunStateReplayServiceTest extends TestCase
             runId: $this->runId,
             seq: $seq,
             turnNo: 0,
+            type: $type,
+            payload: $payload,
+            createdAt: new \DateTimeImmutable(),
+        ));
+    }
+
+    /**
+     * Append an event with an explicit turn number (for branch replay tests).
+     *
+     * @param array<string, mixed> $payload
+     */
+    private function appendEventWithTurn(string $type, int $seq, int $turnNo, array $payload): void
+    {
+        $this->eventStore->append(new RunEvent(
+            runId: $this->runId,
+            seq: $seq,
+            turnNo: $turnNo,
             type: $type,
             payload: $payload,
             createdAt: new \DateTimeImmutable(),
