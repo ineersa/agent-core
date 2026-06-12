@@ -654,4 +654,83 @@ class ModelSelectionServiceTest extends KernelTestCase
         self::assertNotNull($appConfig->ai);
         self::assertContains('llama_cpp/flash', $appConfig->ai->favoriteModels);
     }
+
+    // ──────────────────────────────────────────────
+    //  Reasoning clamping on model switch
+    // ──────────────────────────────────────────────
+
+    /**
+     * When switching from a model with xhigh to one with only high,
+     * changeModel must clamp the persisted reasoning from xhigh → high.
+     */
+    public function testChangeModelClampsReasoningWhenNewModelLacksXhigh(): void
+    {
+        $aiData = [
+            'default_model' => 'deepseek/deepseek-v4-pro',
+            'default_reasoning' => 'xhigh',
+            'providers' => [
+                'deepseek' => [
+                    'type' => 'generic',
+                    'enabled' => true,
+                    'base_url' => 'https://api.deepseek.com',
+                    'models' => [
+                        'deepseek-v4-pro' => [
+                            'id' => 'deepseek-v4-pro',
+                            'name' => 'DeepSeek V4 Pro',
+                            'context_window' => 131072,
+                            'max_tokens' => 131072,
+                            'input' => ['text'],
+                            'reasoning' => true,
+                            'thinking_level_map' => [
+                                'minimal' => 'minimal',
+                                'low' => 'low',
+                                'medium' => 'medium',
+                                'high' => 'high',
+                                'xhigh' => 'max',
+                            ],
+                        ],
+                    ],
+                ],
+                'zai' => [
+                    'type' => 'generic',
+                    'enabled' => true,
+                    'base_url' => 'https://api.z.ai',
+                    'models' => [
+                        'glm-5.1' => [
+                            'id' => 'glm-5.1',
+                            'name' => 'GLM 5.1',
+                            'context_window' => 131072,
+                            'max_tokens' => 131072,
+                            'input' => ['text'],
+                            'reasoning' => true,
+                            'thinking_level_map' => [
+                                'minimal' => 'minimal',
+                                'low' => 'low',
+                                'medium' => 'medium',
+                                'high' => 'high',
+                                // No xhigh
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+        [$service, $appConfig] = $this->buildServiceWithConfig($aiData);
+
+        // Before switch: display returns xhigh (deepseek supports it)
+        self::assertSame('xhigh', $service->getDisplayReasoning($this->sessionId));
+
+        // Switch to z.ai (only supports up to high)
+        $service->changeModel(new AiModelReference('zai', 'glm-5.1'), $this->sessionId);
+
+        // After switch: display must clamp to high
+        self::assertSame('high', $service->getDisplayReasoning($this->sessionId));
+
+        // Persisted reasoning must also be clamped
+        self::assertSame('high', $service->getCurrentReasoning($this->sessionId));
+
+        // AppConfig in-memory must reflect the clamp
+        self::assertNotNull($appConfig->ai);
+        self::assertSame('high', $service->resolveInitialReasoning(null, $this->sessionId));
+    }
 }

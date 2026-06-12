@@ -37,5 +37,12 @@ final readonly class FooterStateListener implements TuiListenerRegistrar
 
             return null;
         });
+
+        // Apply initial editor border colour matching the default reasoning
+        // level.  This must happen after FooterStateInitializer seeds
+        // $state->footerReasoning.
+        if ('' !== $context->state->footerReasoning) {
+            $context->screen->applyEditorBorderColor($context->state->footerReasoning);
+        }
     }
 }

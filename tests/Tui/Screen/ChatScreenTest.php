@@ -81,6 +81,14 @@ class ChatScreenTest extends TestCase
             {
                 return $text;
             }
+
+            public function getPalette(): \Ineersa\Tui\Theme\ThemePalette
+            {
+                return new \Ineersa\Tui\Theme\ThemePalette(
+                    name: 'test',
+                    colors: [],
+                );
+            }
         };
 
         $this->screen = new ChatScreen(
@@ -287,6 +295,10 @@ class ChatScreenTest extends TestCase
             public function success(string $text): string { return $text; }
             public function warning(string $text): string { return $text; }
             public function error(string $text): string { return $text; }
+            public function getPalette(): \Ineersa\Tui\Theme\ThemePalette
+            {
+                return new \Ineersa\Tui\Theme\ThemePalette(name: 'test', colors: []);
+            }
         };
     }
 }

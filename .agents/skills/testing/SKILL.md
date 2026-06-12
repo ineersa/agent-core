@@ -7,6 +7,8 @@ description: "E2E and validation testing strategy. Load this skill when: writing
 
 ## Castor command reference
 
+All PHPUnit invocations include `--stop-on-error --stop-on-failure --fail-on-all-issues --display-all-issues`.
+
 ```bash
 castor check                # Full validation: PHAR ensure + 13 top-level parallel steps (deptrac, 7 unit shards, controller, llm-real, tui, phpstan, cs-check); per-step timeouts + logs at var/reports/check-*.log
 castor test                 # unit/integration only; excludes tui-e2e and llm-real; runs 7 parallel workers (agent-core, coding-agent-1..4, tui, platform), each with isolated DB/cache/reports
@@ -30,6 +32,23 @@ castor phar:clean            # Remove worktree-local hatfield.phar
 All E2E tests use `llama_cpp_test/test` (port 9052). This is a fast local model for deterministic smoke testing. Never use production LLM providers in E2E tests.
 
 Run the test llama.cpp server deterministically for smoke tests: temperature 0, fixed seed, and the `test` alias on port 9052. The smoke model is expected to answer/tool-call within a few seconds; long 30-60s waits usually hide a bad prompt, stale worker, or stuck process rather than real model latency.
+
+### LLM generation readiness preflight
+
+Before `castor check`, `test:tui`, `test:llm-real`, `test:controller`, and `test:tui-update` run any E2E tests, Castor runs `check_llm_generation_ready()` — a ~4s curl-based preflight that sends a tiny `max_tokens=1` chat completion to `llama_cpp_test/test`. If the server responds to `/health` and `/v1/models` but generation hangs (corrupted model load, stuck slots), this preflight fails immediately with a clear diagnostic instead of burning 30-90s Castor step timeouts.
+
+If you see:
+```
+llama.cpp generation readiness check FAILED
+  Endpoint: http://192.168.2.38:9052/v1/chat/completions
+  Model: test
+  HTTP status: 0 (curl exit: 28)
+```
+Restart or fix the llama.cpp server. Health-only checks are insufficient.
+
+### HTTP timeout fallback
+
+`SymfonyAiProviderFactory` injects a default 30s `HttpClient` timeout for all LLM requests when no explicit timeout is configured, preventing infinite hangs. The test environment (`config/services_test.yaml`) overrides this to 5s. The `HATFIELD_LLM_HTTP_TIMEOUT` env var allows per-environment override.
 
 ## Test groups
 

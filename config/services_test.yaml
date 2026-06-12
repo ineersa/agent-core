@@ -24,3 +24,14 @@ services:
       $config: '@Ineersa\CodingAgent\Config\BackgroundProcessConfig'
       $logger: '@Psr\Log\LoggerInterface'
     # No calls: registerShutdownHandler is intentionally omitted.
+
+  # Short HTTP timeout for LLM requests so controller/llm-real/TUI E2E
+  # tests fail fast (within 5s) when llama.cpp generation is stuck instead
+  # of hanging for 90s+ until the Castor-level timeout. Production/dev runs
+  # use a permissive 300s default via SymfonyAiProviderFactory::getHttpClient()
+  # when no explicit HttpClient is injected.
+  Symfony\Contracts\HttpClient\HttpClientInterface:
+    factory: ['Symfony\Component\HttpClient\HttpClient', 'create']
+    arguments:
+      $defaultOptions:
+        timeout: 5

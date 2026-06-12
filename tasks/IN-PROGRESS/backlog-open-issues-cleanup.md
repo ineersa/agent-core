@@ -32,7 +32,7 @@ Connected open issues as of 2026-06-12:
 Status: IN-PROGRESS
 Branch: task/backlog-open-issues-cleanup
 Worktree: /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup
-Fork run: vhofw0omriji
+Fork run: wlp54a5wdd31
 PR URL:
 PR Status:
 Started: 2026-06-12T16:54:23.580Z
@@ -131,3 +131,91 @@ Completed:
 ## Task workflow update - 2026-06-12T18:47:15.378Z
 - Recorded fork run: vhofw0omriji
 - Dispatched implementation fork vhofw0omriji for issue #120. Fork instructed to color editor border according to effective reasoning level, update on startup/resume and model/reasoning changes, add ANSI TmuxHarness proof plus manual tmux snapshots, and run Castor validation.
+
+## Task workflow update - 2026-06-12T19:29:35.349Z
+- Validation: Fork reported castor test passed all 2,466 unit tests.; Fork reported castor test:tui passed all 20 TUI E2E tests including new EditorBorderColorTest.; Fork reported castor deptrac, castor phpstan, castor cs-check passed.; Fork reported PHAR build/smoke passed.; Fork reported controller/check validation was blocked by environmental root-owned orphaned worker pid 3334 stealing queue messages; not claiming full LLM_MODE=true castor check passed until blocker is cleared and rerun.; ANSI snapshots reported under var/tmp/tui-e2e-border-snap-* for off/minimal/low border comparison.; Commit reported: 0c142d7f on task/backlog-open-issues-cleanup.
+- Summary: Issue #120 implementation completed by fork vhofw0omriji. Commit 0c142d7f colors the editor border from the effective reasoning level and updates it on startup/resume, Shift+Tab, Ctrl+P, /model selection, and picker selection. Added shared ThemeColorEnum::forReasoning() mapping and ANSI-oriented TmuxHarness E2E snapshots.
+- Awaiting user validation of issue #120 editor border color behavior before merge/close.
+
+## Task workflow update - 2026-06-12T19:32:35.520Z
+- Recorded fork run: bd30wksz3kbs
+- User reported castor check hangs and requested a mandatory AGENTS.md rule requiring agents/forks to read the testing skill and tests/AGENTS.md before doing anything test-related. Dispatched documentation-hardening fork bd30wksz3kbs to update root AGENTS.md only.
+
+## Task workflow update - 2026-06-12T19:34:22.104Z
+- Validation: Docs-only commit 6200e89e on task/backlog-open-issues-cleanup; no Castor validation needed for docs-only change.; Both integration checkout and worktree reported clean by fork.
+- Summary: Docs hardening fork bd30wksz3kbs completed commit 6200e89e adding a mandatory AGENTS.md rule: agents/forks/scouts must load the testing skill and read tests/AGENTS.md before test-related work or QA, must mention both in handoff, and must clean stale E2E workers before rerunning Castor checks.
+- Treating prior #120 implementation handoff as not fully acceptable for test-related work until a follow-up audit confirms tests obey testing skill + tests/AGENTS.md conventions and hanging Castor processes are understood/cleaned.
+
+## Task workflow update - 2026-06-12T19:36:38.715Z
+- Validation: Scout audit confirmed mandatory testing docs were read before inspection.; Terminated user-owned stale backlog worktree processes: PHAR agent/controller/messenger consumers from prior runs.; Confirmed no remaining user-owned processes matching /home/ineersa/projects/agent-core-worktrees/backlog-open-issues-cleanup after cleanup.; Root-owned suspect remains: pid 3334 `php bin/console messenger:consume --all --exclude-receivers=failed`; cannot be killed by non-root user.
+- Summary: Follow-up audit of #120 test/hang concern completed. A scout read the testing skill and tests/AGENTS.md first, then audited commit 0c142d7f. Findings: no uncapped shell_exec/raw vendor commands; #120 EditorBorderColorTest uses short targeted TmuxHarness waits and does not submit prompts or spawn controller/Messenger processes; ANSI color proof is snapshot/manual rather than parsed assertion; minor hygiene issues mirror existing E2E patterns. Stale backlog worktree PHAR agents/controllers/messenger consumers were terminated. Root-owned pid 3334 remains and requires sudo/root if it is still poisoning queues.
+- Do not run/accept full castor check until root-owned pid 3334 is killed or confirmed isolated from test queues.
+
+## Task workflow update - 2026-06-12T19:40:15.307Z
+- User clarified root-owned pid 3334 belongs to a different Docker/project context and is not the cause. User authorized direct main-agent investigation/implementation of recent-main castor check hang with bounded 120s timeout runs.
+
+## Task workflow update - 2026-06-12T19:55:03.511Z
+- Identified castor test:tui hang is environmental/preflight failure: llama.cpp port 9052 responds to /health and /v1/models, but generation endpoints (/v1/chat/completions, /v1/completions, /completion) time out after 10s with zero bytes. Current tests do not fail fast on generation readiness; they proceed into controller/TUI waits and time out later. Dispatching fork to add deterministic generation preflight/fail-fast behavior for LLM-backed Castor test tasks.
+
+## Task workflow update - 2026-06-12T20:15:30.878Z
+- Fork ke68anqevh11 did not complete handoff cleanly; user observed it temporarily removed Castor preflights to verify in-test timeout behavior, ran castor check, and it still hung. Follow-up required: make in-test preflight throw/exit hard on generation timeout, add stop-on-error behavior for affected E2E Castor invocations, prove a single TUI test fails fast even without Castor preflight, then restore Castor preflight.
+
+## Task workflow update - 2026-06-12T20:24:55.004Z
+- Recorded fork run: m1al6j9alq20
+- Validation: castor check with broken llama.cpp generation: fails fast in ~4.5s with clear diagnostic (per fork handoff).
+- Summary: Fork m1al6j9alq20 completed fail-fast LLM generation readiness work. Added Castor curl-based generation preflight, PHPUnit stop-on-error/stop-on-failure for affected E2E tasks, HttpClient timeout defaults/test wiring, and testing docs. Proved castor check now fails in ~4.5s with clear llama.cpp generation diagnostic instead of burning 90s TUI/controller timeouts. Final commits on task/backlog-open-issues-cleanup: 4e11fd7a fix(castor): fail-fast LLM generation readiness check; 227396e0 docs(testing): document LLM generation preflight and stop-on-failure behavior.
+
+## Task workflow update - 2026-06-12T20:25:39.953Z
+- Pushed task/backlog-open-issues-cleanup to origin after fail-fast LLM generation readiness work. Branch now contains #120 implementation, AGENTS/testing docs hardening, and fail-fast Castor/test docs commits.
+
+## Task workflow update - 2026-06-12T20:28:53.598Z
+- User ran castor check after LLM generation recovered: all steps pass except test:tui times out at 90s (exit 124). This suggests LLM preflight is fixed but the full TUI E2E suite now exceeds the per-step timeout, likely due to accumulated TUI E2E tests. Dispatching fork to investigate test:tui timing and implement an appropriate Castor split/timeout fix, likely parallel TUI shards for castor check.
+
+## Task workflow update - 2026-06-12T20:38:18.969Z
+- Recorded fork run: bl6ans1hbfs8
+- Validation: LLM_MODE=true castor check: PASS all 14 steps; test:tui-1 OK 57.9s, test:tui-2 OK 53.0s; deptrac, unit shards, controller, llm-real, phpstan, cs-check all OK (per fork handoff).; castor phpstan: PASS (per fork handoff).; castor cs-check: PASS (per fork handoff).
+- Summary: Fork bl6ans1hbfs8 completed Castor TUI E2E sharding fix. Root cause: single castor check test:tui step ran all 20 tui-e2e tests under one 90s timeout; typical runtime ~78s with variance over 90s, causing exit 124 even when tests pass. Fix commit 2d977882 splits castor check into test:tui-1 and test:tui-2 parallel shards with balanced file distribution and 60s per-shard timeout; standalone castor test:tui unchanged. Branch pushed to origin/task/backlog-open-issues-cleanup.
+
+## Task workflow update - 2026-06-12T20:39:00.210Z
+- User validation reports issue #120 editor border reasoning color does not work visually/functionally despite passing TUI E2E shard validation. Treating #120 as failed validation; dispatching scout to reproduce with real TUI snapshots and diagnose why tests did not catch the failure.
+
+## Task workflow update - 2026-06-12T20:45:33.538Z
+- Validation: Scout read testing skill and tests/AGENTS.md; inspected broken snapshots under var/tmp/tui-e2e-border-* showing identical border color ANSI for off/minimal/low.
+- Summary: Scout investigation for failed #120 validation completed. Root cause: ChatScreen::applyEditorBorderColor() adds a stylesheet but never invalidates the EditorWidget; Symfony TUI render cache returns cached editor frame, so border color never changes. Shift+Tab also stops propagation before requestRender. Existing EditorBorderColorTest is a false positive: it asserts border chars/status text and saves snapshots, but does not assert ANSI color changes; scout found off/minimal/low snapshots all use identical cyan border sequence 38;2;0;255;255. Recommended fix: invalidate prompt editor widget and request render after style change; include editor widget in ChatScreen::refresh(); update E2E to assert actual ANSI border color differs/maps across reasoning levels.
+
+## Task workflow update - 2026-06-12T20:50:20.255Z
+- Recorded fork run: mbbwe3j3zxwm
+- Validation: ChatScreen unit tests: PASS (8 tests) per fork handoff.; castor phpstan: PASS per fork handoff.; castor cs-check: PASS per fork handoff.; E2E blocked: llama.cpp test server at 192.168.2.38:9052 is connection refused; fail-fast preflight correctly blocks castor test:tui until server is restarted.
+- Summary: Fork mbbwe3j3zxwm fixed failed #120 validation. ChatScreen::applyEditorBorderColor() now invalidates the EditorWidget and requests render after stylesheet update; ChatScreen::refresh() also invalidates the editor widget. EditorBorderColorTest now parses actual ANSI `38;2;R;G;B` sequences from editor border lines and asserts off→minimal→low color changes, eliminating the previous false positive that only checked status text/border chars. Commit 0d2207ea pushed to origin/task/backlog-open-issues-cleanup.
+
+## Task workflow update - 2026-06-12T20:52:38.350Z
+- User reported remaining #120/#117 model-switch reasoning issue: when current reasoning is xhigh for a model like deepseek, Ctrl+P switching to a model such as z.ai that supports high but not xhigh should clamp/swap effective reasoning to high. Current behavior apparently leaves xhigh or otherwise does not clamp correctly. Dispatching scout to investigate exact model selection/reasoning persistence path before implementation.
+
+## Task workflow update - 2026-06-12T20:55:16.605Z
+- Validation: User castor check with llama.cpp generation ok: deptrac/unit/controller/llm-real/test:tui-2/phpstan/cs-check all OK; test:tui-1 FAIL exit code 1 after 44s.
+- Summary: Scout report for remaining reasoning clamp bug completed. Root cause: getDisplayReasoning() only checks whether selected model supports any thinking, not whether persisted reasoning (e.g. xhigh) is supported by the model's thinkingLevelMap; z.ai high-only models therefore display/use xhigh. ReasoningOptionsResolver also silently drops unsupported xhigh, so API request may disable thinking instead of clamping to high. Affected paths: Ctrl+P, /model, picker, startup/reopen, API invocation; Shift+Tab only clamps through supported-level cycling but falls to off if persisted xhigh not found. User also ran castor check with llama.cpp healthy; all passed except test:tui-1 failed exit 1 in 44s, so implementation fork must inspect/fix that failure and run full castor check.
+
+## Task workflow update - 2026-06-12T21:04:52.690Z
+- Recorded fork run: wd4oos7mrjgf
+- Validation: castor test --filter=ModelResolverTest: PASS (36 tests, 64 assertions) per fork handoff.; castor test --filter=ModelSelectionServiceTest: PASS (28 tests, 78 assertions) per fork handoff.; castor test: PASS (2,472 tests, 7,189 assertions) per fork handoff.; castor phpstan: PASS (0 errors) per fork handoff.; castor cs-check: PASS per fork handoff.; LLM_MODE=true castor check: attempted but blocked by llama.cpp generation preflight; server intermittently returns curl exit 52 empty reply. Full E2E validation pending stable llama.cpp.
+- Summary: Fork wd4oos7mrjgf completed remaining reasoning clamp fix and current test:tui-1 failure fix. Commit 37b56385 pushed to origin/task/backlog-open-issues-cleanup. Reasoning is now clamped to model-supported levels: xhigh persists/works on xhigh-capable models, but explicit model switch to a high-only thinking model clamps to high and persists the clamped value so footer/editor/API/next Shift+Tab use high. SessionAwareModelResolver also clamps before provider request. EditorBorderColorTest ANSI parser was fixed to collect color sets from full-width border rows instead of the first dash line/header separator.
+
+## Task workflow update - 2026-06-12T21:05:57.074Z
+- User reran castor check with llama.cpp preflight OK. Full check still fails in test:tui-1 exit code 1 after ~45s while all other steps pass. This disproves the previous handoff's environment-blocker as sufficient explanation; current blocker is a real TUI shard failure that must be inspected/fixed. User suggested maybe increasing preflight timeout to 10s, but immediate issue is test:tui-1 failure after preflight succeeds.
+
+## Task workflow update - 2026-06-12T21:22:58.569Z
+- Recorded fork run: hgokee78eri3
+- Validation: Raw vendor/bin phpunit --group tui-e2e --filter=EditorBorderColorTest: PASS per fork handoff (not ideal; Castor-only rule violation).; LLM_MODE=true castor check: reported blocked by llama.cpp preflight curl exit 52/7 per fork handoff; needs re-run with Castor when server is stable.
+- Summary: Fork hgokee78eri3 fixed the current EditorBorderColorTest failure by changing the ANSI assertion strategy to target reasoning-colored editor border runs directly. Commit b3def8f4 pushed to origin/task/backlog-open-issues-cleanup. Caveat: fork used a raw vendor/bin phpunit command for the targeted TUI test despite Castor-only QA rule, and full castor check was reported blocked by intermittent llama.cpp preflight. Parent/orchestrator still needs Castor validation before accepting.
+
+## Task workflow update - 2026-06-12T21:28:16.091Z
+- After user frustration about llama.cpp/preflight reports, main agent inspected worktree processes and found stale messenger:consume workers from the canceled/overlapping castor check attempt (PIDs 356955, 356956, 356958, 356960, 356961). Killed those user-owned stale worktree workers. Subsequent targeted Castor TUI run hit preflight failure; direct curl immediately after reported connection refused (curl exit 7), indicating current server availability issue from this environment. Likely compounding factor: overlapping Castor checks/forks/user checks against same llama.cpp can overload/ destabilize the shared test server; avoid concurrent full checks.
+
+## Task workflow update - 2026-06-12T21:30:42.117Z
+- Validation: Attempted `timeout --kill-after=15s 300s env LLM_MODE=true castor check` in backlog worktree. Result: FAIL before tests at llama.cpp generation preflight, curl exit 52 empty reply. Immediately after, direct curl to /health, /v1/models, and /v1/chat/completions all failed with curl exit 7 connection refused; the previously observed llama-server PID 361986 for port 9052 was gone. This indicates the llama.cpp test server crashed/exited during or immediately before preflight, not a test assertion failure.
+- Per user request, main agent ran full Castor check as the only active validation. Pre-run process check showed no stale backlog worktree processes except unrelated root-owned PID 3334. Castor preflight failed with curl exit 52, then direct curls showed port 9052 connection refused and no llama-server process remained.
+
+## Task workflow update - 2026-06-12T21:44:20.631Z
+- Recorded fork run: wlp54a5wdd31
+- Validation: LLM_MODE=true castor check: ALL 14 STEPS PASS (deptrac OK, test-agent-core 292 OK, test-coding-agent-1/2/3/4 OK, test-tui-suite 664 OK, test-platform 54 OK, test:controller 1 OK, test:llm-real 5 OK, test:tui-1 10 OK, test:tui-2 10 OK, phpstan 0 errors OK, cs-check OK)
+- Summary: Fork wlp54a5wdd31 fixed EditorBorderColorTest failure and committed ed269fed. Full LLM_MODE=true castor check passes all 14 steps including test:tui-1 (was FAIL, now OK in 45.7s). Also preserved preflight fix (max_tokens:512). 2 files changed: .castor/helpers.php and tests/Tui/E2E/EditorBorderColorTest.php (rewritten to extract editor border color by finding pure-dash rows and asserting colors differ between reasoning levels).
