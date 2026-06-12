@@ -253,3 +253,7 @@ Completed:
 
 ## Task workflow update - 2026-06-12T22:56:07.990Z
 - User manually tested #122: token/context % footer behavior works correctly, but cost still remains $0.00. User suggested making llama_cpp_test priced with cost { input: 1000.0, output: 100000.0, cache_read: 0, cache_write: 0 } to make cost visibly testable. Current fork fix for cost is insufficient or not wired on the actual runtime path. Need diagnose and iterate before merge/close #122.
+
+## Task workflow update - 2026-06-12T22:59:58.271Z
+- Summary: Cost bug follow-up scout found root cause: LlmPlatformAdapter cost fix passes `$request->model` into extractUsage(), but ExecuteLlmStepWorker default model is empty string and Symfony AI resolves the real model later via ModelRoutingEvent/ModelResolverRoutingSubscriber. The resolved model (e.g. llama_cpp_test/test) is used for provider invocation but is not propagated back to LlmPlatformAdapter; DeferredResult has no model accessor. Therefore extractUsage sees modelName='' and skips costCalculator. llama_cpp_test already has pricing in .hatfield/settings.yaml per scout, but cost calculation is never reached.
+- Need iterate #122: pass the resolved model into cost calculation. Minimal robust options: capture resolved model around ModelRoutingEvent/PlatformInvocationMetadata, resolve model in adapter using existing resolver/session context before invoking, or otherwise make LlmPlatformAdapter know the effective model used. User suggested high llama_cpp_test pricing for visible testing; include this in test strategy if appropriate.
