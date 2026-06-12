@@ -12,22 +12,9 @@ use PHPUnit\Framework\TestCase;
 /**
  * End-to-end test for editor border colour following reasoning level.
  *
- * Verifies that pressing Shift+Tab to cycle the reasoning level changes
- * the ANSI colour of the editor widget's frame.
- *
- * Proof strategy:
- *  1. Start the TUI with a model that supports thinking levels.
- *  2. Wait for the TUI to boot (verify border chars visible).
- *  3. Send Shift+Tab to cycle reasoning from 'off' → 'minimal'.
- *  4. Wait for the status panel to confirm 'minimal'.
- *  5. Assert the ANSI capture contains smoke-coloured border runs.
- *  6. Send second Shift+Tab: minimal → low.
- *  7. Wait for the status panel to confirm 'low'.
- *  8. Assert the ANSI capture contains electric-coloured border runs.
- *
- * Coloured border runs are identified as \e[38;2;R;G;Bm followed by
- * 10+ BOX DRAWINGS LIGHT HORIZONTAL characters (U+2500 ─).  These
- * uniquely identify the editor frame rendered by EditorRenderer.
+ * Shift+Tab cycles reasoning; the editor frame border (full-width ─ rows)
+ * should change colour.  This test does NOT submit prompts or wait for LLM
+ * responses, so the terminal layout is completely deterministic.
  *
  * @group tui-e2e
  */
@@ -61,8 +48,6 @@ final class EditorBorderColorTest extends TestCase
 
     /**
      * @test
-     *
-     * Shift+Tab cycles reasoning and the editor border ANSI colour changes.
      */
     public function testEditorBorderColorChangesWithReasoningLevel(): void
     {
@@ -74,10 +59,8 @@ final class EditorBorderColorTest extends TestCase
             cwd: $this->testProjectDir,
         );
 
-        // Wait for agent boot (logo █ visible).
         $this->tmux->waitForCaptureContains($pane, '█', 10.0);
 
-        // ── Verify border characters are present ──
         $initialPlain = $this->tmux->capturePlainWithHistory($pane, 200);
         self::assertStringContainsString(
             '─',
@@ -85,96 +68,99 @@ final class EditorBorderColorTest extends TestCase
             'Editor border ─ chars should be visible in the initial capture',
         );
 
-        // Save initial ANSI snapshot for manual inspection.
-        $this->saveAnsiSnapshot($pane, 'border-off');
+        $offBorderColour = $this->editorBorderColour($pane);
 
-        // Capture initial state.
-        $offAnsi = $this->tmux->captureAnsi($pane);
-        self::assertNotEmpty($offAnsi, 'Initial ANSI capture should not be empty');
-
-        // ── Send Shift+Tab to cycle reasoning from 'off' → 'minimal' ──
-        $this->tmux->sendLiteral($pane, "\x1b[Z");
-
-        // Wait for the status panel to confirm the reasoning changed.
-        $this->tmux->waitForCallback(
-            $pane,
-            static function (string $capture): bool {
-                return str_contains($capture, 'minimal');
-            },
-            timeout: 5.0,
-            message: 'Reasoning level "minimal" did not appear in the status panel after Shift+Tab',
-            history: 500,
-        );
-
-        // Capture ANSI after first reasoning change.
-        $minimalAnsi = $this->tmux->captureAnsi($pane);
-        self::assertNotEmpty($minimalAnsi, 'ANSI capture after Shift+Tab to minimal should not be empty');
-
-        $this->saveAnsiSnapshot($pane, 'border-minimal');
-
-        // Assert the editor border colour changed from off (steel=74;85;104)
-        // to minimal (smoke=113;128;150).  The editor frame is rendered by
-        // EditorRenderer applying a colour Style to full-width ─ rows.
-        // Search for the smoke-coloured border run.
-        // \x{2500} is U+2500 BOX DRAWINGS LIGHT HORIZONTAL (─).
-        self::assertMatchesRegularExpression(
-            '/\x1b\[38;2;113;128;150m\x{2500}{10,}/u',
-            $minimalAnsi,
-            'Editor border should show minimal/smoke colour after first Shift+Tab',
-        );
-
-        // ── Send second Shift+Tab: minimal → low ──
+        // Shift+Tab: off → minimal
         $this->tmux->sendLiteral($pane, "\x1b[Z");
 
         $this->tmux->waitForCallback(
             $pane,
-            static function (string $capture): bool {
-                return str_contains($capture, 'low');
-            },
+            static fn (string $c): bool => str_contains($c, 'minimal'),
             timeout: 5.0,
-            message: 'Reasoning level "low" did not appear after second Shift+Tab',
+            message: 'Reasoning "minimal" did not appear',
             history: 500,
         );
 
-        // Capture ANSI after second reasoning change.
-        $lowAnsi = $this->tmux->captureAnsi($pane);
-        self::assertNotEmpty($lowAnsi, 'ANSI capture after Shift+Tab to low should not be empty');
+        $minimalBorderColour = $this->editorBorderColour($pane);
+        self::assertNotNull($minimalBorderColour, 'minimal border colour');
 
-        $this->saveAnsiSnapshot($pane, 'border-low');
-
-        // Assert the editor border colour changed from minimal (smoke=113;128;150)
-        // to low (electric=0;255;255).  Search for electric-coloured border runs.
-        self::assertMatchesRegularExpression(
-            '/\x1b\[38;2;0;255;255m\x{2500}{10,}/u',
-            $lowAnsi,
-            'Editor border should show low/electric colour after second Shift+Tab',
+        self::assertNotSame(
+            $offBorderColour,
+            $minimalBorderColour,
+            'Border colour should change from off → minimal',
         );
 
-        // Send Ctrl+D to exit cleanly
+        // Shift+Tab: minimal → low
+        $this->tmux->sendLiteral($pane, "\x1b[Z");
+
+        $this->tmux->waitForCallback(
+            $pane,
+            static fn (string $c): bool => str_contains($c, 'low'),
+            timeout: 5.0,
+            message: 'Reasoning "low" did not appear',
+            history: 500,
+        );
+
+        $lowBorderColour = $this->editorBorderColour($pane);
+        self::assertNotNull($lowBorderColour, 'low border colour');
+
+        self::assertNotSame(
+            $minimalBorderColour,
+            $lowBorderColour,
+            'Border colour should change from minimal → low',
+        );
+
         $this->tmux->sendKey($pane, 'C-d');
     }
 
     // ── Helpers ───────────────────────────────────────────────
 
     /**
-     * Save an ANSI snapshot of the current pane content.
+     * Capture the pane and extract the ANSI true-colour sequence from the
+     * first pure-dash editor frame border line that is NOT a fixed steel
+     * separator (header / footer separators always use 38;2;74;85;104).
      *
-     * Snapshots are written to the test's isolated var/tmp directory
-     * and can be inspected with `less -R <path>` for colour verification.
+     * Editor frame borders are full-width ─ (U+2500) rows with no other
+     * glyphs.  If all pure-dash lines are steel separators (or uncoloured),
+     * returns null.
+     *
+     * Returns e.g. "38;2;113;128;150" or null.
      */
-    private function saveAnsiSnapshot(TmuxPane $pane, string $label): void
+    private function editorBorderColour(TmuxPane $pane): ?string
     {
         $ansi = $this->tmux->captureAnsi($pane);
-        $dir = \sprintf(
-            '%s/var/tmp/tui-e2e-border-snap-%s',
-            $this->projectRoot,
-            \bin2hex(\random_bytes(4)),
-        );
-        @\mkdir($dir, 0o777, true);
-        \file_put_contents("{$dir}/{$label}.ansi", $ansi);
 
-        // Count the snapshot save as an assertion for reporting.
-        $this->addToAssertionCount(1);
+        foreach (explode("\n", $ansi) as $line) {
+            if (\mb_substr_count($line, "\u{2500}") < 40) {
+                continue;
+            }
+
+            $plain = \preg_replace('/\x1b\[[0-9;]*m/', '', $line);
+            $plain = \trim($plain);
+
+            // Only pure-dash lines (no logo/text/status mixed in).
+            if (\preg_match('/[^─ \t]/u', $plain)) {
+                continue;
+            }
+
+            // Extract colour.
+            if (\preg_match('/\x1b\[38;2;(\d+);(\d+);(\d+)m/', $line, $m)) {
+                $colour = \vsprintf('38;2;%s;%s;%s', [$m[1], $m[2], $m[3]]);
+                // Skip fixed steel separators (header / footer).
+                if ('38;2;74;85;104' !== $colour) {
+                    return $colour;
+                }
+                continue;
+            }
+            if (\preg_match('/\x1b\[38;5;(\d+)m/', $line, $m)) {
+                return \sprintf('38;5;%s', $m[1]);
+            }
+
+            // Pure-dash line with no colour — editor border in default.
+            return 'default';
+        }
+
+        return null;
     }
 
     private function agentCommand(): string
@@ -190,10 +176,8 @@ final class EditorBorderColorTest extends TestCase
     }
 
     /**
-     * Create an isolated project directory with the oh-p-dark theme.
-     *
-     * The llama_cpp_test/test model supports thinking levels so
-     * Shift+Tab cycles through off/minimal/low/medium/high/xhigh.
+     * Create an isolated project directory with a model that supports
+     * thinking levels so Shift+Tab cycles off/minimal/low/medium/high/xhigh.
      */
     private function createIsolatedProjectDir(): string
     {

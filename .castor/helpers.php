@@ -935,9 +935,13 @@ function check_llm_generation_ready(): void
     $baseUrl = 'http://192.168.2.38:9052';
     $model = 'test';
     $url = $baseUrl.'/v1/chat/completions';
-    $payload = '{"model":"'.$model.'","messages":[{"role":"user","content":"hi"}],"max_tokens":1,"temperature":0,"stream":false}';
+    // Use a realistic smoke-test prompt with enough max_tokens to avoid
+    // truncating reasoning mid-stream, which can crash llama.cpp during
+    // slot cleanup (ggml_abort in common_context_seq_rm).  The old 1-token
+    // preflight would cut off reasoning models and trigger server aborts.
+    $payload = '{"model":"'.$model.'","messages":[{"role":"user","content":"Respond with exactly one word: hello."}],"max_tokens":512,"temperature":0,"stream":false}';
 
-    $cmd = 'timeout --kill-after=2s 5s curl -sS -m 4 -o /dev/null -w "%{http_code}"'
+    $cmd = 'timeout --kill-after=5s 15s curl -sS -m 10 -o /dev/null -w "%{http_code}"'
         .' -H "Content-Type: application/json"'
         .' -d '.escapeshellarg($payload)
         .' '.escapeshellarg($url);
