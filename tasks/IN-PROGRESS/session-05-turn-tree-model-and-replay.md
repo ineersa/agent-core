@@ -100,7 +100,7 @@ B) **Leaf event** — Append a `run.leaf_set` event to `events.jsonl` each time 
 Status: IN-PROGRESS
 Branch: task/session-05-turn-tree-model-and-replay
 Worktree: /home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay
-Fork run:
+Fork run: 9o47vlbpy830
 PR URL:
 PR Status:
 Started: 2026-06-12T01:41:43.505Z
@@ -119,3 +119,7 @@ Completed:
 ## Task workflow update - 2026-06-12T01:48:30.411Z
 - Validation: Read-only setup/context gathering only; no code validation run in orchestrator.
 - Summary: Claimed task and created worktree `/home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay` on branch `task/session-05-turn-tree-model-and-replay`. Loaded task-workflow/testing/subagents skills. Read task context, docs/session-storage.md, src/AgentCore Domain/Application AGENTS docs, tests/AGENTS.md, and future SESSION-06/07/08 task context. Scout subagents mapped AgentCore run event/replay seams and runtime/TUI projection seams; SESSION-05 appears core/runtime data foundation, not a TUI feature, so no TmuxHarness E2E proof is required unless the implementation adds user-visible TUI behavior. Full runtime validation remains for task-to-pr; implementation fork should run focused Castor tests only.
+
+## Task workflow update - 2026-06-12T01:50:05.727Z
+- Recorded fork run: 9o47vlbpy830
+- Summary: Launched implementation fork `9o47vlbpy830` in worktree `/home/ineersa/projects/agent-core-worktrees/session-05-turn-tree-model-and-replay`. Fork instructions require core/runtime turn tree metadata, branch-aware replay filtering, docs/tests, focused Castor validation, and a branch commit. Fork explicitly must not move task, push, open PR, or run `LLM_MODE=true castor check`; full gate is deferred to task-to-pr.
