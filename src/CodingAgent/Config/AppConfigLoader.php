@@ -59,6 +59,7 @@ final class AppConfigLoader
         '[logging][path]' => 'string',
         '[tools][output_cap][path]' => 'string',
         '[tools][background_process][path]' => 'string',
+        '[prompts]' => 'list',
     ];
 
     public function __construct(

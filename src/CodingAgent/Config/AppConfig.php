@@ -39,6 +39,7 @@ final class AppConfig
         public ExtensionsConfig $extensions = new ExtensionsConfig(),
         public ToolsConfig $tools = new ToolsConfig(),
         public ?AiConfig $ai = null,
+        public PromptsConfig $prompts = new PromptsConfig(),
         /** @var array<string, mixed> Raw merged data for forward compatibility */
         public array $raw = [],
         public ?HatfieldModelCatalog $catalog = null,
@@ -96,6 +97,7 @@ final class AppConfig
                 ToolsConfig::class,
             ),
             ai: $ai,
+            prompts: PromptsConfig::fromRaw($data['prompts'] ?? []),
             raw: $data,
             catalog: $catalog,
             cwd: $cwd,

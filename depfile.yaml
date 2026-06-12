@@ -140,6 +140,11 @@ parameters:
         - type: directory
           value: src/CodingAgent/Runtime/ProjectionPipeline/.*
 
+    - name: AppPromptTemplate
+      collectors:
+        - type: directory
+          value: src/CodingAgent/PromptTemplate/.*
+
     - name: AppConfig
       collectors:
         - type: directory
@@ -408,6 +413,12 @@ parameters:
       - AgentCore
       - SymfonyConsole
       - SymfonyEventDispatcher
+
+    AppPromptTemplate:
+      - AppConfig
+      - AppRuntimeContract
+      - SymfonyYaml
+      - SymfonyConsole
 
     AppConfig:
       - AppSession
